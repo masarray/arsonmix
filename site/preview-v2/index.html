@@ -384,7 +384,7 @@
       </div>
       <div class="wire-config-row">
         <label for="wireView">CABLE DISPLAY</label>
-        <select class="wire-view-select" id="wireView" title="Cable display only; does not change the audio graph" aria-label="Wire cable display"><option value="focus">Focus</option><option value="out">OUT only</option><option value="all">All wires</option></select>
+        <select class="wire-view-select" id="wireView" title="Cable display only; does not change the audio graph" aria-label="Wire cable display"><option value="focus">Selected IN + OUT</option><option value="out">Selected OUT only</option></select>
       </div>
       <div class="wire-config-context"><span class="wire-config-caption">SELECTED ROUTES & QUICK PATCH</span><div class="wire-legend" id="wireLegend" aria-live="polite">Select a channel for IN / OUT</div></div>
       <div class="wire-config-foot">Mode affects new wires only · View never changes audio · GUI reference, no PCM</div>
@@ -609,7 +609,7 @@ function wireGraphCommit(ops,{record=true}={}){
 }
 function wireFor(src,dst){return wireEdges.find(e=>e.enabled&&e.sourceId===src&&e.destId===dst);}
 function outgoingWires(id){return wireEdges.filter(e=>e.enabled&&e.sourceId===id);}
-function wireOutgoingCount(id){return outgoingWires(id).length;}
+function wireOutgoingCount(id){return outgoingWires(id).filter(e=>e.destId!==master.id).length;}
 function wireIsCycle(src,dst){
  if(src===dst)return true;
  const candidate={id:nextWireId,sourceId:src,destId:dst,kind:'send',mode:'send',levelDb:0,enabled:true};
@@ -803,14 +803,14 @@ function compactWireActivity(t){
  // CH→MAIN is also an actual graph route, not hidden OUT metadata.
  return {
   incoming:wireEdges.filter(e=>e.enabled&&e.destId===t.id).length,
-  outgoing:wireEdges.filter(e=>e.enabled&&e.sourceId===t.id).length
+  outgoing:wireEdges.filter(e=>e.enabled&&e.sourceId===t.id&&e.destId!==master.id).length
  };
 }
 function compactWireSummary(t){
  const {incoming,outgoing}=compactWireActivity(t);
- const activeIn=incoming>0,activeOut=outgoing>0,connected=activeIn||activeOut;
+ const activeIn=t.kind!=='master'&&incoming>0,activeOut=outgoing>0,connected=activeIn||activeOut;
  const title='Expand WIRE · '+t.name+' · '+incoming+' incoming, '+outgoing+
-  ' outgoing canonical edges (including MAIN)';
+  ' outgoing custom wires · MAIN uses its focused plug';
  // 1:1 physical order with the expanded patch:
  // solid OUT dot LEFT, larger recessed IN circle RIGHT (with small center dot).
  // Both muted while unused. A channel-hue indicator lights independently
@@ -1148,20 +1148,19 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3,progress=Math.max(0,Math.min(1,elapsedMs/1600));
- // V44 geometric witness: 10.5px produced only 4.17px broad visible jolt
- // against the approved >5px gate. 13.4 restores a gentle >5px packet,
- // still below the retired 13.8px short/fast impulse; 1600ms remains.
- const center=.99-progress*.98,amp=13.4*Math.exp(-progress*3.5);
+ // Stronger pulse travels from receiver IN all the way to source OUT.
+ // Attenuate continuously towards OUT, while pinning the physical endpoints.
+ const center=.97-progress*.92,amp=22*Math.exp(-progress*.72);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- // Smooth curve samples; zero displacement at both anchored ends.
  for(let i=1;i<=56;i++){
   const t=i/56,u=1-t;
   const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
   const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
   const dx=6*u*t*(x1-x0),dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
-  const norm=Math.hypot(dx,dy)||1,delta=t-center;
-  const pulse=amp*Math.exp(-(delta*delta)/(.30*.30))*
-   Math.sin(delta*10-progress*6)*Math.sin(Math.PI*t);
+  const delta=t-center,norm=Math.hypot(dx,dy)||1;
+  const attenuation=.22+.78*t;
+  const pinned=Math.max(0,Math.min(1,t/.10,(1-t)/.10));
+  const pulse=amp*attenuation*pinned*Math.exp(-(delta*delta)/(.19*.19))*Math.cos(delta*11);
   d+=' L '+(x-dy/norm*pulse).toFixed(1)+' '+(y+dx/norm*pulse).toFixed(1);
  }
  return d;
@@ -1530,8 +1529,10 @@ function wireJackRect(button){
 }
 /* One pair of short MAIN-colored stubs is a projection of ONE real edgeId. */
 function syncMainWireFragments(){
- const selectedSources=selection().filter(t=>t.kind!=='master');
- const focus=armedWireSource()||(selectedSources.length===1?selectedSources[0]:null);
+ // Keep default CH→MAIN as a real edge, but paint its stub ONLY when one
+ // channel is selected. A pinned patch source alone cannot reveal a cable.
+ const chosen=selection().filter(t=>t.kind!=='master');
+ const focus=chosen.length===1?chosen[0]:null;
  const selected=focus&&wireFor(focus.id,master.id);
  for(const t of tracks){
   const edge=wireFor(t.id,master.id);
@@ -1540,6 +1541,8 @@ function syncMainWireFragments(){
    if(!el)continue;
    if(edge)el.setAttribute('data-wire-main-edge',String(edge.id));
    else el.removeAttribute('data-wire-main-edge');
+   if(edge&&focus?.id===t.id)el.setAttribute('data-wire-display-focus','true');
+   else el.removeAttribute('data-wire-display-focus');
    el.style.setProperty('--main-wire-hue',master.color);
   }
  }
@@ -1560,8 +1563,9 @@ function renderWireRouting(){
  // Display focus must NOT depend on an armed OUT. A mixer channel being
  // inspected always reveals its existing INCOMING and OUTGOING cables.
  // The separate 'focus' remains the only authority for making new routes.
+ const selectedChannels=selection().filter(t=>t.kind!=='master');
  const source=dragging?wireSourceTrack(wireGesture.sourceId):
-  (focus||selection().find(t=>t.kind!=='master')||null);
+  (selectedChannels.length===1?selectedChannels[0]:null);
  const legend=document.getElementById('wireLegend'),main=document.getElementById('wireMaster');
  if(legend){
   const filter=document.getElementById('viewFilter').value;
@@ -1622,32 +1626,12 @@ function renderWireRouting(){
  const sagLimit=wireSagClearance(anchor,well);
  const paths=[];
  wireMotionGeometry=new Map();
- // V30 optional ALL: draw non-focused, currently visible paths in the back.
- // Never simulate a cable across hidden banks; the compact legend retains
- // the selected channel's complete routing status across those banks.
- if(wireView==='all'&&!dragging){
-  for(const edge of routes){
-   if(edge.sourceId===source.id||edge.destId===source.id)continue;
-   const sender=wireSourceTrack(edge.sourceId);
-   const fromNode=viewport.querySelector?.('.strip[data-id="'+edge.sourceId+'"] .wire-node-out');
-   const toNode=viewport.querySelector?.('.strip[data-id="'+edge.destId+'"] .wire-node-in');
-   const a=wireJackRect(fromNode),b=wireJackRect(toNode);
-   if(!sender||!a?.width||!b?.width)continue;
-   const bay=fromNode.closest?.('.send-section')?.getBoundingClientRect?.();
-   const lift=wireSagClearance(a,bay);
-   const d=wirePathFor(edge,a.left-vp.left+a.width*.5,a.top-vp.top+a.height*.5,
-    b.left-vp.left+b.width*.5,b.top-vp.top+b.height*.5,lift);
-   paths.push('<path class="wire-context-line" data-cable-key="'+wireCableKey(edge)+'" data-from="'+edge.sourceId+
-    '" data-to="'+edge.destId+'" data-route-kind="'+edge.kind+
-    '" d="'+d+'" stroke="'+sender.color+
-    '" stroke-width="1.25" opacity=".20" fill="none" stroke-linecap="round"/>');
-  }
- }
+ // Only the selected channel's paths are drawn. Unrelated edges remain
+ // inspectable in the canonical Navigator/Matrix, never drawn as clutter.
  // Physical incoming cables remain visible even when OUT is unarmed.
  // If patch source is pinned, also show inputs of the inspected channel.
- const inspected=selection().find(t=>t.kind!=='master');
- const receiverIds=new Set([source.id,inspected?.id].filter(Number.isFinite));
- const incoming=routes.filter(e=>receiverIds.has(e.destId)&&e.sourceId!==e.destId);
+ const incoming=wireView==='out'?[]:
+  routes.filter(e=>e.destId===source.id&&e.sourceId!==e.destId&&e.sourceId!==master.id);
  let offBankIncoming=0;
  for(const edge of incoming){
   const sender=wireSourceTrack(edge.sourceId);
@@ -1747,8 +1731,14 @@ function syncVisibleWireDots(svg){
  // Physical WIRE material follows accepted edges only; legacy SEND/OUT/split
  // metadata remains in Navigator but cannot light an unplugged WIRE jack.
  const committed=wireEdges.filter(e=>e.enabled);
- const arrivals=new Set(committed.map(e=>String(e.destId)));
- const sends=new Set(committed.map(e=>String(e.sourceId)));
+ const custom=committed.filter(e=>e.destId!==master.id);
+ const selectedChannels=selection().filter(t=>t.kind!=='master');
+ const mainFocus=selectedChannels.length===1?wireFor(selectedChannels[0].id,master.id):null;
+ const arrivals=new Set(custom.map(e=>String(e.destId)));
+ if(mainFocus)arrivals.add(String(master.id));
+ // MAIN is default output, not a custom send and never a lit OUT node.
+ const sends=new Set(custom.map(e=>String(e.sourceId)));
+ if(mainFocus)visible.set(String(master.id)+':in',{color:master.color,opacity:1});
  for(const path of svg.querySelectorAll('path.wire-incoming-line,path.wire-outgoing-line,path.wire-context-line')){
   // A hover hint is not a plugged-in cable. Keep snap/hover illumination
   // independent of physical connection state and endpoint paint.
@@ -1766,7 +1756,7 @@ function syncVisibleWireDots(svg){
   const isInput=node.classList.contains('wire-node-in');
   const trackId=node.closest('.strip')?.dataset.id;
   const key=trackId+':'+(isInput?'in':'out');
-  const connected=isInput?arrivals.has(trackId):sends.has(trackId);
+  const connected=isInput?committed.some(e=>String(e.destId)===trackId):sends.has(trackId);
   if(connected)node.setAttribute('data-wire-connected','true');
   else node.removeAttribute('data-wire-connected');
   // Connected paint follows committed model; cable display focus never changes it.
@@ -2687,9 +2677,9 @@ document.getElementById('wireMode').addEventListener('change',()=>{
 });
 document.getElementById('wireView').addEventListener('change',()=>{
  const next=document.getElementById('wireView').value;
- wireView=['focus','out','all'].includes(next)?next:'focus';
+ wireView=['focus','out'].includes(next)?next:'focus';
  renderWireRouting(); // Visualization only: never touch wireEdges or DSP state
- say('WIRE VIEW '+(wireView==='focus'?'FOCUS · incoming behind outgoing':wireView==='out'?'OUT ONLY · selected sends':'ALL VISIBLE ROUTES · selected channel highlighted')+' · display only');
+ say('WIRE VIEW '+(wireView==='focus'?'SELECTED · incoming behind outgoing':'SELECTED OUT ONLY')+' · display only');
 });
 function toggleDirectMain(){
  const t=armedWireSource()||selection().find(x=>x.kind!=='master');
