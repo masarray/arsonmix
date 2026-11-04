@@ -70,11 +70,15 @@ jobs:
         run: python tests/gui_baseline_lock_test.py
       - name: Validate smart audio architecture handoff contract
         run: node --test tests/smart_audio_ard_contract_test.mjs
+      - name: WIRE A canonical graph transaction/DAG unit contract
+        run: node tests/wire_graph_canonical_model.test.cjs
       - name: Install Chromium testing dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: WIRE A main edge and safe graph integration in real Chromium DOM
+        run: python tests/pages_wire_first_canonical_main_smoke.py
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
         run: python tests/pages_wire_v49_direct_controls_smoke.py
       - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
