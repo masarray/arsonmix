@@ -800,9 +800,10 @@ function wireTray(t){
 /* Compact WIRE receives/sends: recomputed on DOM render, never in the audio
    callback. Count only custom intra-mixer paths; direct MAIN stays in I/O. */
 function compactWireActivity(t){
- // CH→MAIN is also an actual graph route, not hidden OUT metadata.
+ // Folded socket LEDs represent only explicit non-MAIN patch cords.
+ // Keep CH→MAIN in the canonical graph; never let it color either dot.
  return {
-  incoming:wireEdges.filter(e=>e.enabled&&e.destId===t.id).length,
+  incoming:wireEdges.filter(e=>e.enabled&&e.destId===t.id&&e.destId!==master.id).length,
   outgoing:wireEdges.filter(e=>e.enabled&&e.sourceId===t.id&&e.destId!==master.id).length
  };
 }
@@ -1537,7 +1538,7 @@ function syncMainWireFragments(){
  for(const t of tracks){
   const edge=wireFor(t.id,master.id);
   const lane=document.querySelector('.strip[data-id="'+t.id+'"]');
-  for(const el of [lane?.querySelector('.wire-node-out'),lane?.querySelector('.wire-fold-summary')]){
+  for(const el of [lane?.querySelector('.wire-node-out')]){
    if(!el)continue;
    if(edge)el.setAttribute('data-wire-main-edge',String(edge.id));
    else el.removeAttribute('data-wire-main-edge');
@@ -1546,7 +1547,7 @@ function syncMainWireFragments(){
    el.style.setProperty('--main-wire-hue',master.color);
   }
  }
- for(const el of [masterEl.querySelector('.wire-node-in'),masterEl.querySelector('.wire-fold-summary')]){
+ for(const el of [masterEl.querySelector('.wire-node-in')]){
   if(!el)continue;
   if(selected)el.setAttribute('data-wire-main-edge',String(selected.id));
   else el.removeAttribute('data-wire-main-edge');
@@ -1736,7 +1737,8 @@ function syncVisibleWireDots(svg){
  const committed=wireEdges.filter(e=>e.enabled);
  const custom=committed.filter(e=>e.destId!==master.id);
  const selectedChannels=selection().filter(t=>t.kind!=='master');
- const mainFocus=selectedChannels.length===1?wireFor(selectedChannels[0].id,master.id):null;
+ const folded=document.querySelector('.console-body')?.classList.contains('collapsed-send');
+ const mainFocus=!folded&&selectedChannels.length===1?wireFor(selectedChannels[0].id,master.id):null;
  const arrivals=new Set(custom.map(e=>String(e.destId)));
  if(mainFocus)arrivals.add(String(master.id));
  // MAIN is default output, not a custom send and never a lit OUT node.
