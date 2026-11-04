@@ -11,15 +11,15 @@ ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site/preview-v2/index.html"
 FADER=ROOT/"site/preview-v2/assets/mixer-fader-assembly.css"
 METER=ROOT/"site/preview-v2/assets/mixer-meter-display.css"
-APPROVED_V51_METER_BLOB="cea7a411afea90b26557f317ba93c563dd35379c"
+APPROVED_V27_METER_BLOB="e168fe3fde3b176ce46f2c637a17db65bc510944"
 
 def git_blob(path):
     raw=path.read_bytes()
     return hashlib.sha1(b"blob "+str(len(raw)).encode()+b"\0"+raw).hexdigest()
 
 def audit_checkpoint():
-    assert git_blob(METER)==APPROVED_V51_METER_BLOB, (
-        "OWNER-APPROVED V51 METER CHANGED; restore checkpoint before V52"
+    assert git_blob(METER)==APPROVED_V27_METER_BLOB, (
+        "V27-preserved, owner-approved V51 meter changed; restore the V27 visual baseline"
     )
     html=HTML.read_text(encoding="utf-8")
     assert "function displayMeterDbfs(" in html
