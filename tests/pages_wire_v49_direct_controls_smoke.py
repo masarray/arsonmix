@@ -21,6 +21,13 @@ def run():
             body=page.locator(".console-body")
             if "collapsed-send" in (body.get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
+            # WIRE-first sessions start connected to MAIN. Explicitly unplug
+            # CH05 to exercise a *truly* empty original V49 OUT jack.
+            page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+            page.locator("#wireConfigToggle").click()
+            assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+            page.locator("#wireMaster").click()
+            page.locator("#wireConfigClose").click()
             source=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
             destination=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
             # An actually unpatched OUT stays neutral even if its channel is selected.
