@@ -35,7 +35,7 @@ def verify_bundle(dist):
     assert meta["wire_source_sha256"]==hashlib.sha256(original.encode()).hexdigest()
     assert "url=../preview/" in (dist/"preview-v2/index.html").read_text(encoding="utf-8")
     assert "url=../preview/" in (dist/"preview-buttons/index.html").read_text(encoding="utf-8")
-    assert "http-equiv=\\"refresh\\"" in (dist/"preview/mixer.html").read_text(encoding="utf-8")
+    assert 'http-equiv="refresh"' in (dist/"preview/mixer.html").read_text(encoding="utf-8")
 
     # Strip only the two deliberate fingerprinted CSS/JS URLs. Everything
     # else, including the V46+ WIRE model and channel events, must be 1:1.
