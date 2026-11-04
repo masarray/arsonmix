@@ -62,7 +62,8 @@ test('JUCE native resources use EXACT assembled Pages /preview/, not archived we
   assert.doesNotMatch(cmake,/^\s+web\/index\.html web\/styles\.css/m);
   assert.match(generator,/scripts" \/ "build_pages\.py"/);
   assert.match(pagesBuilder,/APPROVED_SINGLE_GUI/);
-  assert.match(pagesBuilder,/buttons_dest=dst\/'preview'/);
+  assert.match(pagesBuilder,/dest = dst \/ "preview"/);
+  assert.match(pagesBuilder,/SOURCE = ROOT \/ "site" \/ "preview"/);
   assert.match(generator,/approvedPagesHtmlSha256/);
   assert.match(generator,/SCAFFOLD_ONLY__NOT_LIVE_PCM/);
   assert.match(nativeAdapter,/acceptedGraphConnected: false/);
