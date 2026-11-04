@@ -68,6 +68,13 @@ def main():
     body=page.locator(".console-body")
     if "collapsed-send" in (body.get_attribute("class") or ""):
      page.locator('.section-rail [data-section="send"]').click()
+    # WIRE-first default CH→MAIN is real. Disconnect this particular OUT
+    # using the operator UI so legacy neutral-pin physics remain testable.
+    page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+    page.locator("#wireConfigToggle").click()
+    assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+    page.locator("#wireMaster").click()
+    page.locator("#wireConfigClose").click()
     src=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
     pin=src.locator(".wire-pin")
     receiver=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
