@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 // FAT regression tests share the existing Windows Node contract runner.
 import './m3e_fat_evidence_gate.test.mjs';
 const read=path=>readFileSync(path,'utf8');
@@ -127,4 +128,36 @@ test('M3-E same-SHA native ZIP carries SHA-pinned FAT tools and no fake hardware
   assert.match(checker,/PENDING_NATIVE_CALLBACK_PROOF/);
   assert.match(checker,/EVIDENCE_READY_FOR_HUMAN_REVIEW/);
   assert.doesNotMatch(checker,/hardwareCertified:true/);
+});
+
+test('FAT PowerShell tools parse on real Windows PowerShell before native build',()=>{
+  if (process.platform !== 'win32') return;
+  for (const file of [
+    'scripts/collect_hardware_fat_windows.ps1',
+    'scripts/package_native_windows.ps1',
+    'scripts/verify_native_windows_artifact.ps1'
+  ]) {
+    const command="$tokens=$null;$parseErrors=$null;" +
+      "[System.Management.Automation.Language.Parser]::ParseFile('"+file+"',[ref]$tokens,[ref]$parseErrors)|Out-Null;" +
+      "if($parseErrors.Count -gt 0){$parseErrors|ForEach-Object{Write-Output $_.Message};exit 1}";
+    assert.doesNotThrow(()=>execFileSync('powershell.exe',
+      ['-NoProfile','-NonInteractive','-Command',command],
+      {cwd:process.cwd(),encoding:'utf8',timeout:15000}),
+      file+' must have a complete parseable PowerShell AST');
+  }
+});
+
+test('FAT collector requires an exact rate and real endpoints before timers, plus both-rate honest summary',()=>{
+  const source=read('scripts/collect_hardware_fat_windows.ps1');
+  const verifier=read('scripts/verify_native_windows_artifact.ps1');
+  assert.match(source,/SampleRate -notin @\(44100,48000\)/);
+  assert.match(source,/Real physical capture\/render endpoint identity required before timer starts/);
+  assert.match(source,/\$_.mode -eq 'DRY_THROUGH_0FX' -and \[int\]\$_.sampleRate -eq \$SampleRate/);
+  assert.match(source,/foreach \(\$rate in @\(44100,48000\)\)/);
+  assert.match(source,/verified CLEAR observation and human witness required/);
+  assert.match(source,/native report SHA256 mismatch/);
+  assert.match(verifier,/M3-E evidence tool hash missing/);
+  assert.match(verifier,/FAT tool differs from exact source \/ manifest/);
+  assert.match(verifier,/FAT tool ZIP payload digest differs/);
+  assert.doesNotMatch(verifier,/\n\) \{\n\s*throw "M3-E evidence tool hash missing/);
 });

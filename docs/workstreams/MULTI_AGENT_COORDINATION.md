@@ -61,6 +61,18 @@ For merge safety, require the exact GitHub Actions job check **PR coordination a
 
 **Admin limitation:** the connected GitHub app cannot write protection/rulesets. Until enabled, a successful CI job is a meaningful PR signal, but it cannot stop an authorized maintainer from bypassing review or pushing directly to `main`. Hardware FAT #15 and exact-sha production gates remain independent and mandatory.
 
+## P0 product qualification — conditional native CI with one required verdict
+
+**Owner:** INTEGRATOR, control tower #397. No second native producer, GUI renderer, DSP callback or workflow file.
+
+The existing `.github/workflows/ui-smoke.yml` is the sole PR entry point. Its always-on `PR coordination admission` computes **`run_ui`** and **`run_native`** from the GitHub API's exact PR changed filenames. It invokes the existing `.github/workflows/p1-windows.yml` as a **reusable workflow** only when native source/ABI, Windows packaging, or release-admission files changed. The Windows workflow still independently builds and packages on `main` pushes/manual dispatch; it no longer starts a **duplicate** path-filtered PR Windows run.
+
+A separate tiny **`Product Qualification`** fan-in runs for every PR, even when its dependencies fail or are skipped. It succeeds **only** if ownership admission passes and every selected lane completes successfully: required Chromium frontend for UI changes; required Windows JUCE/CTest for native changes; both for mixed bridge changes. Docs-only PRs require only admission. A cancelled/failing/skipped **required** lane is a failure, never a fake PASS. Exact-head checks are attached to the PR by the caller workflow; source checkout and ABI ownership are unchanged.
+
+Native classification covers `integration/**/*.h/.hpp/.cpp` (including M3 `ApprovedNative*` headers) and release-admission scripts; isolated `integration/*.mjs` and documentation are **not** blanket triggers. The existing Windows `main` push path filters also include newly covered C++ headers and release gate scripts. The Windows CRLF/LF checkout discrepancy in M2.6 tests is normalized before parsing workflow triggers.
+
+**Administrator action after a green PR:** add the exact GitHub Actions check **`Product Qualification`** to [Protected Main ruleset](https://github.com/masarray/arsonmix/rules/26568033) alongside the existing `PR coordination admission` check, keeping up-to-date branches enabled. The connector cannot alter repository rulesets. Until this is done, the new verdict is visible and functional but not formally a required merge check.
+
 ## Administrative limitation
 
 GitHub may allow a maintainer to merge even with a failed check unless **required status checks** and appropriate branch protection/rulesets are configured. App connections cannot always administer these. Treat #397 as the human coordination gate, and enable branch protection for existing Windows/Chromium checks (or a dedicated required coordination check if introduced later) through repository Settings when available. This policy does not magically observe unpushed private ChatGPT threads.

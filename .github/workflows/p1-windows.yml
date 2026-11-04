@@ -7,6 +7,13 @@ on:
     paths:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
+      # Native headers may live outside console-v6 (M3 readback/ABI).
+      - 'integration/*.h'
+      - 'integration/*.hpp'
+      - 'integration/*.cpp'
+      - 'integration/**/*.h'
+      - 'integration/**/*.hpp'
+      - 'integration/**/*.cpp'
       - 'src/**'
       - 'web/approved-native-bridge.js'
       - 'web/approved-native-contract.js'
@@ -20,38 +27,23 @@ on:
       - 'tests/*.cpp'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/collect_hardware_fat_windows.ps1'
+      - 'scripts/console_v6_fat_gate.mjs'
+      - 'scripts/verify_console_s0_native_fixture.mjs'
+      - 'scripts/run_console_native_s0.mjs'
+      - 'scripts/check_console_puzzle.mjs'
+      - 'scripts/check_approved_native_gui_release.mjs'
+      - 'scripts/check_pr278_console_authority.mjs'
+      - 'scripts/m3e_fat_evidence_gate.mjs'
       - 'scripts/factoryfx_release_bundle.py'
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
-  # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
-  # Native bridge changes still require Windows; pure visual GUI follows Pages only.
-  # A full executable/package is still produced on native main and explicit FAT.
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
-    paths:
-      - 'CMakeLists.txt'
-      - 'integration/console-v6/**'
-      - 'src/**'
-      - 'web/approved-native-bridge.js'
-      - 'web/approved-native-contract.js'
-      - 'tests/approved_native_m2_contract.test.cjs'
-      - 'scripts/build_approved_native_gui.py'
-      - 'tests/approved_native_gui_bundle_test.py'
-      - 'web/bridge.js'
-      - 'web/monitor.js'
-      - 'engine/**'
-      - 'tests/*.cpp'
-      - 'tests/*native*contract*.mjs'
-      - 'tests/live_graph_contract_test.mjs'
-      - 'scripts/package_native_windows.ps1'
-      - 'scripts/verify_native_windows_artifact.ps1'
-      - 'scripts/factoryfx_release_bundle.py'
-      - 'config/factoryfx-approved-releases.json'
-      - 'config/factoryfx-notices/**'
-      - 'scripts/tests/test_factoryfx_release_bundle.py'
-      - '.github/workflows/p1-windows.yml'
+  # PR native compile is called ONLY by UI smoke's Product Qualification fan-in.
+  # GUI/docs-only PRs skip Windows entirely; main and manual release stay here.
+  # Called by the all-PR quality workflow. No duplicate Windows PR run.
+  workflow_call:
   workflow_dispatch:
 
 concurrency:

@@ -46,6 +46,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       run_ui: ${{ steps.pr_scope.outputs.run_ui || steps.push_scope.outputs.run_ui }}
+      run_native: ${{ steps.pr_scope.outputs.run_native }}
     steps:
       - uses: actions/checkout@v4
       - name: Audit PR metadata, file ownership and runtime collisions
@@ -61,6 +62,51 @@ jobs:
         run: echo "run_ui=true" >> "$GITHUB_OUTPUT"
       - name: Fast offline coordination contract regression
         run: node --test tests/workstream_coordination_contract.test.mjs
+  native:
+    needs: coordination
+    if: ${{ github.event_name == 'pull_request' && needs.coordination.outputs.run_native == 'true' }}
+    uses: ./.github/workflows/p1-windows.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  qualification:
+    name: Product Qualification
+    needs: [coordination, frontend, native]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Enforce actual outcomes for every selected test lane
+        shell: bash
+        env:
+          COORD_RESULT: ${{ needs.coordination.result }}
+          UI_RESULT: ${{ needs.frontend.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+          RUN_UI: ${{ needs.coordination.outputs.run_ui }}
+          RUN_NATIVE: ${{ needs.coordination.outputs.run_native }}
+        run: |
+          set -euo pipefail
+          echo "Coordination: $COORD_RESULT, Chromium: $UI_RESULT ($RUN_UI), Windows: $NATIVE_RESULT ($RUN_NATIVE)"
+          if [[ "$COORD_RESULT" != "success" ]]; then
+            echo "::error::Coordination must PASS."
+            exit 1
+          fi
+          if [[ "$RUN_UI" != "true" && "$RUN_UI" != "false" ]] ||
+             [[ "$RUN_NATIVE" != "true" && "$RUN_NATIVE" != "false" ]]; then
+            echo "::error::Missing/malformed PR qualification scope."
+            exit 1
+          fi
+          if [[ "$RUN_UI" == "true" && "$UI_RESULT" != "success" ]]; then
+            echo "::error::Required Chromium UI smoke did not PASS."
+            exit 1
+          fi
+          if [[ "$RUN_NATIVE" == "true" && "$NATIVE_RESULT" != "success" ]]; then
+            echo "::error::Required Windows native CTest did not PASS."
+            exit 1
+          fi
+          echo "Product Qualification PASS for selected lanes at this PR revision."
+
   frontend:
     needs: coordination
     if: ${{ github.event_name != 'pull_request' || needs.coordination.outputs.run_ui == 'true' }}
