@@ -58,6 +58,18 @@ $gitSha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
     throw "Cannot attest packaged source Git commit"
 }
+# Refuse a valid PE/CTest artifact which embeds the WRONG browser renderer.
+# This is the source/asset attestation for the exact approved Pages GUI.
+$approvedGuiDir = Join-Path $BuildDir "approved_gui"
+& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+if ($LASTEXITCODE -ne 0) { throw "APPROVED GUI PROVENANCE MISMATCH: generated bundle differs from Pages" }
+$approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
+$approvedGui = Get-Content -LiteralPath $approvedGuiManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($approvedGui.authoritativePagesRoute -ne "/preview/" -or
+    $approvedGui.authoritativePagesIframe -ne "/preview-buttons/index.html" -or
+    $approvedGui.adapterState -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM") {
+    throw "Native GUI bundle does not match approved Pages renderer and truthful M1 status"
+}
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $exeName = "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $destination = Join-Path $OutputDir $exeName
@@ -93,15 +105,17 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-    indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
-    appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiCssSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiJsSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    bridgeJsSha256 = (Get-FileHash -LiteralPath "web/bridge.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    monitorJsSha256 = (Get-FileHash -LiteralPath "web/monitor.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    guiSource = "web/index.html + web/styles.css + web/plugin-ui.css + web/app.js + web/plugin-ui.js + web/bridge.js + web/monitor.js (JUCE BinaryData)"
-    guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
+    approvedGuiRoute = $approvedGui.authoritativePagesRoute
+    approvedGuiIframe = $approvedGui.authoritativePagesIframe
+    approvedGuiCanonicalSource = $approvedGui.canonicalSource
+    approvedGuiCanonicalSha256 = $approvedGui.canonicalSourceSha256
+    approvedGuiPagesSha256 = $approvedGui.approvedPagesHtmlSha256
+    approvedGuiNativeHtmlSha256 = $approvedGui.nativeHtmlSha256
+    approvedGuiManifestSha256 = (Get-FileHash -LiteralPath $approvedGuiManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    approvedGuiResourceCount = @($approvedGui.files).Count
+    approvedGuiSource = "site/preview-v2 DOM + site/preview-buttons approved PNG skin (deterministic JUCE BinaryData)"
+    approvedGuiAdapterStatus = "SCAFFOLD_ONLY__NOT_LIVE_PCM"
+    guiCalibration = "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }
