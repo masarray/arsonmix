@@ -23,7 +23,9 @@ def main():
                         v=node(page,ch,direction)
                         assert v["paint"]=="idle" and v["visible"] is None,(w,density,ch,direction,v)
                         if direction=="in": assert v["connected"] is None,(w,density,"phantom receiving wire",ch,v)
-                        else: assert v["connected"]=="true",(w,density,"default MAIN edge missing",ch,v)
+                        else:
+                            assert v["connected"] is None,(w,density,"MAIN must not light custom OUT",ch,v)
+                            assert page.locator(f'#tracks .strip[data-id="{ch}"] .wire-node-out').get_attribute("data-wire-main-edge")
                         assert v["color"]=="rgb(75, 83, 91)",(w,density,ch,direction,v)
                 cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap').first
                 shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
@@ -37,7 +39,7 @@ def main():
                     a=node(page,5,"out");b=node(page,3,"in")
                     assert a["connected"]=="true" and a["paint"]=="connected",(w,a)
                     assert b["connected"]=="true" and b["paint"]=="connected",(w,b)
-                    assert node(page,1,"out")["connected"]=="true" and node(page,1,"out")["paint"]=="idle"
+                    assert node(page,1,"out")["connected"] is None and node(page,1,"out")["paint"]=="idle"
                     page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
                     hidden=node(page,3,"in")
                     assert hidden["connected"]=="true" and hidden["paint"]=="idle",(w,density,hidden)
@@ -46,7 +48,7 @@ def main():
                     assert node(page,3,"in")["paint"]=="connected"
                     page.locator("#wireNavigatorToggle").click()
                     page.locator("#wireWsUndo").click()
-                    assert node(page,5,"out")["connected"]=="true" and node(page,5,"out")["paint"]=="idle"
+                    assert node(page,5,"out")["connected"] is None and node(page,5,"out")["paint"]=="idle"
                     assert node(page,3,"in")["paint"]=="idle"
                 page.close()
         browser.close()
