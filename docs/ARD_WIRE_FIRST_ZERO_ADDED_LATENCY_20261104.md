@@ -1,3 +1,5 @@
+> **Merged V59 display vs native engine reconciliation (2026-11-04):** [Current main-native WIRE handoff](workstreams/WIRE_V59_MAIN_NATIVE_ENGINE_RECONCILIATION_20261104.md) controls any conflicting display examples below. Default CH→MAIN stays a real accepted edge, but physical cable fragments paint only for one selected expanded channel; collapsed paints none, and OUT color counts only custom non-MAIN connections. Engine PR #266/C1 #384 and production GUI #271 still need accepted v8 producer/consumer schema and non-LIVE readiness alignment; this ARD is not evidence of native audio completion.
+
 # ARD — WIRE-First Canonical Routing, MAIN Patch and Zero-Added-Latency Engine
 
 **Date:** 2026-11-04. **Status:** normative target, not PCM completion evidence. Companion [PRD](PRD_WIRE_FIRST_LIVE_ROUTING_20261104.md) and [execution handoff](workstreams/HANDOFF_WIRE_FIRST_GUI_ENGINE_FAT_20261104.md). This overrides dedicated BUS/FX creation as a *first-release priority*, not the existing v8 ABI, native ownership, VST3 leases, Show/legacy AUX compatibility, approved GUI layout, or release/safety gates.
