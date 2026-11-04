@@ -648,7 +648,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  max-height:var(--switch-h)!important;
  padding:0!important;
  align-items:center!important;justify-content:center!important;
- background:#273b46!important;color:#a7bfca!important;
+ background:#213640!important;color:#a7bfca!important;
  border-bottom:1px solid #172730!important;
  box-shadow:inset 0 1px #ffffff12!important;
 }
@@ -715,7 +715,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .console-body .section-rail .rail-cell.send{
   height:var(--send-h)!important;min-height:var(--send-h)!important;
   flex:0 0 var(--send-h)!important;
-  background:linear-gradient(#263b45,#1d303a)!important;
+  background:linear-gradient(#263a45,#20333d)!important;
   color:#a4d6e2!important;
 }
 .console-body .strip .send-section{
@@ -880,8 +880,15 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 .window-title{background:#101f28!important;box-shadow:inset 0 -1px #526a743b!important}
 .command-bar{background:#1b2d38!important;box-shadow:inset 0 1px #ffffff0b,inset 0 -1px #07131b!important}
 .mixer-title{background:#162934!important;box-shadow:inset 0 -1px #5c758039!important}
-.console-body .section-rail{box-shadow:inset -1px #07131b!important}
-.console-body .section-rail>.rail-cell{border-bottom:1px solid #172a33!important;}
+.console-body .section-rail{
+ background:#1f323c!important;
+ box-shadow:inset 1px 0 #57717e38,inset -1px 0 #07131b!important;
+}
+.console-body .section-rail>.rail-cell{
+ background:#213640!important;
+ border-bottom:1px solid #142832!important;
+ box-shadow:inset 0 1px #66838e1b!important;
+}
 .console-body .strip .section{
  border-bottom:1px solid #102630!important;
  box-shadow:inset 0 -1px #7a98a11b!important;
@@ -892,7 +899,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  border-bottom:1px solid #10232c!important;
  box-shadow:inset 0 1px #77939b17!important;
 }
-.console-body .rail-cell.fader{background:#243641!important}
+.console-body .rail-cell.fader{background:#213640!important}
 .console-body .strip .route-caption,
 .console-body .strip .subhead .hint{color:#b8cbd5!important}
 .console-body .strip .route-select,
