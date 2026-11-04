@@ -65,8 +65,8 @@ test('JUCE native resources use EXACT assembled Pages /preview/, not archived we
   assert.match(pagesBuilder,/buttons_dest=dst\/'preview'/);
   assert.match(generator,/approvedPagesHtmlSha256/);
   assert.match(generator,/SCAFFOLD_ONLY__NOT_LIVE_PCM/);
-  assert.match(nativeAdapter,/acceptedGraphConnected: false/);
-  assert.match(nativeAdapter,/productionCallbackLive: false/);
+  assert.match(nativeAdapter,/acceptedGraphConnected:false/);
+  assert.match(nativeAdapter,/productionCallbackLive:false/);
   // Historical web app still verifies its archival CSS/standalone consistency.
   // It is NEVER the native compiled mixer or a second GUI product.
   assert.ok(css.endsWith(oldSourceCss),'archival CSS byte relationship drift');
