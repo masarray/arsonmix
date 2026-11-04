@@ -641,7 +641,9 @@ async def main():
 
         # F8 searches ONLY the native catalog and adds through one typed intent.
         # An epoch change clears prior selection; one native ChannelId is required.
-        assert await page.locator(".arV6SelectionCount").inner_text()=="0 SEL"
+        assert await page.locator(".arV6SelectionCount").get_attribute(
+            "data-mx-hw-legend")=="0 SEL"
+        assert await page.locator(".arV6SelectionCount .mx-hw-screen-reader").inner_text()=="0 SEL"
         await page.keyboard.press("F8")
         manager=page.locator("#arV6PluginPanel")
         assert await manager.is_visible()
