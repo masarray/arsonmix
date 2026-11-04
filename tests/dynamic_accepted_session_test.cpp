@@ -251,6 +251,11 @@ int main() {
         assert(result.ok());
         const auto edgeId=wire.acceptedRoster().find(source)->sends.front().edgeId;
         assert(edgeId!=0);
+        const auto* initialView=wire.acceptedRouting(wireEpoch,2);
+        assert(initialView && initialView->edges.size()==1);
+        assert(initialView->edges.front().edgeId==edgeId &&
+               initialView->edges.front().source==source &&
+               initialView->edges.front().destination==main);
         std::array<float,64> impulse{},left{},right{};
         impulse[7]=.5f;
         const float* pins[]{impulse.data()};
@@ -328,6 +333,15 @@ int main() {
         assert(retargeted && retargeted->sends.size()==1);
         assert(retargeted->sends.front().edgeId==submixEdge &&
                retargeted->sends.front().destination==main);
+        const auto* acceptedWires=wire.acceptedRouting(wireEpoch,7);
+        assert(acceptedWires && acceptedWires->edges.size()==2);
+        const auto projected=std::find_if(acceptedWires->edges.begin(),
+            acceptedWires->edges.end(),
+            [submixEdge](const ConsoleWireView& edge) {
+                return edge.edgeId==submixEdge;
+            });
+        assert(projected!=acceptedWires->edges.end() &&
+               projected->destination==main);
         assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
                            64,false,noFx) && near(left[7],direct));
         wire.unpublish();wire.pollRetirement();
