@@ -260,20 +260,20 @@ def main():
         # No V27 common stem/ferrule; do not change any live routing semantics.
         assert_true(page.locator('#wireLayer .wire-origin-stem,#wireLayer .wire-origin-junction').count()==0,
                     'V27 rigid source ferrule must be undone')
-        # Pointerdown on the receiving jack selects CH03; its newly accepted
-        # leftward signal cable is therefore shown as INCOMING for CH03.
-        incoming=page.locator('#wireLayer path.wire-incoming-line[data-from="8"][data-to="3"]')
-        assert_true(incoming.count()==1,'Selected receiver incoming wire is missing')
+        # Drag starts on CH08 OUT: only that source receives pointerdown;
+        # release over CH03 IN does not change channel selection.
+        outgoing=page.locator('#wireLayer path.wire-outgoing-line[data-from="8"][data-to="3"]')
+        assert_true(outgoing.count()==1,'Selected source outgoing wire is missing')
         # V43: plug-in launches a finite 36-frame socket-originated wavy impact.
         # The old V31 gravity-curve contract concerns the SETTLED cable. Wait
         # until the impact returns to its canonical cubic (no sleeps, no
         # disabled animation, no weakening of either regression assertion).
         page.wait_for_function("""()=>{
-          const path=document.querySelector('#wireLayer path.wire-incoming-line[data-from="8"][data-to="3"]');
+          const path=document.querySelector('#wireLayer path.wire-outgoing-line[data-from="8"][data-to="3"]');
           return !!path && (path.getAttribute('d')||'').includes(' C ');
         }""",timeout=4000)
         import re
-        nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',incoming.first.get_attribute('d'))]
+        nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',outgoing.first.get_attribute('d'))]
         assert_true(len(nums)==8 and nums[3]>nums[1]+20 and nums[5]>nums[7]+20,
                     'V31 WIRE must hang below both top-mounted OUT/IN anchors')
         assert_true(abs(nums[2]-nums[0])<.1 and abs(nums[4]-nums[6])<.1,
