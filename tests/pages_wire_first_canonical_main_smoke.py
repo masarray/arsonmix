@@ -18,6 +18,66 @@ def main_button(page, channel):
     assert control.is_enabled(), ("MAIN button disabled",channel)
     return control
 
+
+def physical_main_plug(page):
+    """Exercise the actual pinned MAIN jack pointer gesture, not a toggle button."""
+    page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+    body=page.locator(".console-body")
+    if "collapsed-send" in (body.get_attribute("class") or ""):
+        page.locator('.section-rail [data-section="send"]').click()
+    jack=page.locator("#master .wire-node-in")
+    source=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
+    original=source.get_attribute("data-wire-main-edge")
+    assert original and jack.get_attribute("data-wire-main-edge")==original
+    # The empty WIRE bay is an intentional detach target; avoid magnetic jacks.
+    blank=page.evaluate("""() => {
+      const bay=document.querySelector('#tracks .strip .send-section');
+      const vp=document.getElementById('viewport');
+      if(!bay||!vp)return null;
+      const b=bay.getBoundingClientRect(),v=vp.getBoundingClientRect();
+      const sockets=[...document.querySelectorAll('.wire-node-in')]
+        .map(el=>el.getBoundingClientRect()).filter(r=>r.width&&r.height);
+      for(let y=b.top+Math.min(20,b.height/2);y<b.bottom-3;y+=9)
+        for(let x=v.left+18;x<v.right-18;x+=12)
+          if(sockets.every(r=>Math.hypot(x-r.left-r.width/2,y-r.top-r.height/2)>42))
+            return {x,y};
+      return null;
+    }""")
+    assert blank, "no safe blank WIRE bay release position"
+    def drag_to(point,escape=False):
+        r=jack.bounding_box()
+        assert r, "MAIN jack hidden"
+        start=(r["x"]+r["width"]/2,r["y"]+r["height"]/2)
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(point["x"],point["y"],steps=12)
+        if escape:
+            page.keyboard.press("Escape")
+        page.mouse.up()
+    # Escape returns the original graph and edge identity unchanged.
+    drag_to(blank,escape=True)
+    assert source.get_attribute("data-wire-main-edge")==original,"Escape changed MAIN edge"
+    assert jack.get_attribute("data-wire-main-edge")==original
+    # Deliberate physical unplug disconnects ONLY the focused source.
+    drag_to(blank)
+    assert source.get_attribute("data-wire-main-edge") is None,"MAIN plug drag failed to unplug CH5"
+    assert page.locator('#tracks .strip[data-id="6"] .wire-node-out').get_attribute("data-wire-main-edge"),"MAIN drag disconnected neighbor"
+    page.locator("#wireNavigatorToggle").click()
+    page.locator("#wireWsUndo").click()
+    page.locator("#wireNavigatorToggle").click()
+    assert source.get_attribute("data-wire-main-edge")==original,"Undo did not restore same MAIN edge"
+    # Direct MAIN->CH3 replug preserves the edgeId and updates receiving socket.
+    dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in').bounding_box()
+    assert dest, "CH3 receiver hidden"
+    drag_to({"x":dest["x"]+dest["width"]/2,"y":dest["y"]+dest["height"]/2})
+    assert source.get_attribute("data-wire-main-edge") is None,"Replug left duplicate direct MAIN edge"
+    recv=page.locator('#tracks .strip[data-id="3"] .wire-gain')
+    assert recv.count()==1,"Retargeted exact MAIN edge not reflected at receiving jack"
+    assert recv.get_attribute("data-wire-id")==original,"Replug lost stable edge identity"
+    page.locator("#wireNavigatorToggle").click()
+    page.locator("#wireWsUndo").click()
+    assert source.get_attribute("data-wire-main-edge")==original,"Retarget Undo did not restore MAIN"
+
 def run():
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True)
@@ -89,6 +149,11 @@ def run():
             assert edge(page,5,"out")==initial
             assert not errors,(width,errors)
             page.close()
+        # The pinned MAIN jack itself must be draggable, cancellable and reversible.
+        physical_page=browser.new_page(viewport={"width":1680,"height":900})
+        physical_page.goto(PAGE.as_uri())
+        physical_main_plug(physical_page)
+        physical_page.close()
         # A versioned Scene must remember that a MAIN wire was unplugged.
         page=browser.new_page(viewport={"width":1680,"height":900})
         page.goto(PAGE.as_uri())
@@ -112,7 +177,7 @@ def run():
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"
         page.close()
         browser.close()
-    print("PASS WIRE A: real Chrome defaults, paired MAIN IDs, detach/undo, cycle guard, Scene/SAFE, 3 widths")
+    print("PASS WIRE A: real Chrome MAIN edgeId, physical plug Escape/unplug/replug/Undo, cycle guard, Scene/SAFE, 3 widths")
 
 if __name__=="__main__":
     run()
