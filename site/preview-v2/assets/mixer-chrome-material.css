@@ -1,0 +1,1243 @@
+/* V18 — shared operator material and legacy geometry; original declaration order. */
+/* Unaltered operator-approved BTN-180 recipe, copied from web/styles-src/20-button-180.css */
+/* Button 180 is the ONE shared material for channel, MASTER, toolbar and left-rail pads. */
+/* BUTTON 180 — one identical RESTING surface for OFF and ON.
+   Semantic colors alone define the latched state; only the transient :active
+   pointer press moves the cap inward by 1px without changing its layout slot. */
+
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){
+ /* Exact same inset + outside-edge model as the previously approved ON face.
+    All layers are shared; only --b180-border is allowed to tint the edge. */
+ --b180-shadow-surface:
+  inset 5px 5px 2px -1px rgba(0,0,0,.18),
+  inset 0 0 1px 1px rgba(255,255,255,.14),
+  inset 0 1px 20px rgba(0,0,0,.12),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13);
+ border:1px solid var(--b180-border)!important;
+ letter-spacing:1px;
+ padding:8px 20px;
+ font-size:14px;
+ text-transform:uppercase;
+ border-radius:3px!important;
+ outline:none;
+ transform:translateY(0px)!important;
+ position:relative;
+ /* Shared geometry and shading; OFF/ON are merely different colorways. */
+ box-shadow:var(--b180-shadow-surface)!important;
+ background:var(--b180-color)!important;
+ filter:none!important;
+ color:var(--b180-ink)!important;
+ text-shadow:0 1px 0 rgba(255,255,255,.16)!important;
+ transition:background-color 45ms linear, border-color 45ms linear, color 0ms, transform 0ms!important;
+ font-family:Arial,Helvetica,sans-serif;
+ cursor:pointer;text-decoration:none;user-select:none;
+ display:inline-flex;justify-content:center;align-items:center;
+ font-weight:700;
+}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):disabled{
+ pointer-events:none;opacity:.65;color:#7e7e7e!important;
+ background:#dcdcdc!important;box-shadow:none!important;
+ text-shadow:none!important;border:none!important;
+}
+/* Glass glint is drawn by inset shadows only; no pseudo-elements. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::before,:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn)::after{content:none!important}
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn):focus-visible{outline:2px solid #9ceaff;outline-offset:1px}
+/* Geometry-only accommodation for 27–34px mixer slots. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,.left-rail .tabs button.btn-180,
+.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+.left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,
+#masterLeft .master-tools button,.native-btn){padding:0 3px!important;letter-spacing:.12px!important;font-size:11px!important;min-width:0}
+.toolbar .nav button.btn-180{letter-spacing:.35px!important}
+.left-rail .rail-presets button.btn-180{text-align:left;justify-content:flex-start;padding:0 9px!important}
+.toolbar .spec-device{text-transform:none;letter-spacing:0!important}
+/* Semantic ON palette is defined exactly once after the recessed state. */
+#masterLeft .master-actions .master-stereo-badge{
+ border:1px solid #4b6779;background:linear-gradient(#233a49,#102635 60%,#203442);
+ box-shadow:inset 0 1px 2px #020c18c0,0 1px 0 #68859940;color:#a9d6e6;cursor:default
+}
+
+/* Latching OFF/ON must NOT alter material, depth or layout. The physical
+   press response below exists only while :active, never on .active/.selected. */
+/* Latch LED colors only; dark captions are legible on bright faces. */
+/* Native dialog buttons keep native cyan; toolbar and rail states below
+   each have ONE scope owner, with no competing earlier palette selectors. */
+:is(.native-btn.primary,.native-btn.on){--b180-color:#22bbcc;--b180-border:#087b8e;--b180-ink:#041c27}
+/* Utility ON is exclusively cyan, owned by the more specific scoped rule below. */
+:is(.strip .channel-actions .mute.active,#masterLeft #masterMute.active,
+ .native-btn.warn){--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.strip .channel-actions .solo.active{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+#masterLeft .master-tools button.active{--b180-color:var(--b180-on-purple);--b180-border:#8668b8;--b180-ink:#26163c}
+:is(.strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-tools button,.toolbar .nav button.btn-180,.left-rail .tabs button.btn-180,
+ .left-rail .rail-presets button.btn-180,.left-rail .rail-bottom button.btn-180,.native-btn){
+ color:var(--b180-ink,#f2f8fb)!important;
+}
+/* Keep pre-refactor fixed-sized buttons and their existing rails.
+   The strip name is painted above the A/B shadow, not moved away. */
+.strip .fader-tools,#masterLeft .master-tools{position:relative;z-index:1;isolation:isolate}
+.strip .strip-name,#masterLeft .master-strip-name{position:relative;z-index:2;isolation:isolate}
+/* No odd vertical displacement of the active nav relative to its neighbors. */
+
+/* Issue #56: passive hover has no filter or animated shadow.
+   Preserve all seven resting / seven pressed shadows and 1px tactile response.
+   Historical brightness is isolated to opt-in baseline A/B only. */
+
+/* Hardware tactility: brief pointer/keyboard activation presses the SAME cap
+   1px into the control panel. The layout and hit target stay the same; only
+   the rendered face shifts, while the lower cast shadow collapses inward.
+   Identical response for gray OFF and colored ON; no persistent pressed skin. */
+:is(.btn-180,.toolbar .nav button.btn-180,.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,.strip .fader-tools button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180,.native-btn):active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+
+/* OFF uses the same shared material with a brighter light-steel face.
+   Bright ON color recipes above remain untouched. */
+:is(.toolbar .spec-device,
+ .strip .channel-actions .candy,.strip .utility-row button,
+ #masterLeft .master-actions button,#masterLeft .master-tools button,
+ .left-rail .tabs button.btn-180,.left-rail .rail-presets button.btn-180,
+ .left-rail .rail-bottom button.btn-180):not(.active):not(.selected):not(.on):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ color:var(--b180-ink)!important;
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.toolbar .nav button.btn-180,.toolbar .spec-device,.strip .channel-actions .candy,
+ .strip .utility-row button,.left-rail button.btn-180){transition:none!important}
+}
+
+/* Scope-specific ON palette: only variables change; all keys share
+   the same seven-layer pad and exact press recipe above. */
+#app .toolbar-actions .nav button.btn-180.selected{
+ --b180-color:#e5f4a2;--b180-border:#8baf48;--b180-ink:#1c2b14;
+}
+#app .left-rail button.btn-180:is(.selected,.active){
+ --b180-color:var(--b180-on-magenta);--b180-border:#ad6d9f;--b180-ink:#32172f;
+}
+/* Polarity/HPF share the gentle cyan pad; MUTE/SOLO keep their alert palettes. */
+#app #mixer .strip .utility-row button.btn-180.active{
+ --b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c;
+}
+#app .left-rail .rail-presets button.btn-180{text-transform:none}
+#app .toolbar-actions .nav button.btn-180{height:34px;min-height:34px;min-width:77px;padding:0 10px!important;letter-spacing:.35px!important}
+#app .left-rail button.btn-180 > span,
+#app .toolbar-actions .nav button.btn-180 > span{transform:none!important;transition:none!important}
+
+/* Device is a standard toolbar-size BTN-180 pad, not the old cyan-caption spec.
+   Green indicates verified connected native audio status only. Preview is OFF. */
+#app .toolbar .spec-device{
+ height:34px;min-height:34px;
+ padding:0 10px!important;letter-spacing:.35px!important;
+}
+#app .toolbar .spec-device #headerDriver{
+ color:var(--b180-ink)!important;
+}
+#app .toolbar .spec-device.on{
+ --b180-color:var(--b180-on-green);
+ --b180-border:#3a9b68;
+ --b180-ink:#113322;
+}
+/* Toolbar actions are NEUTRAL when idle, green only for selected/active.
+   One solid repaint on state change, never a hover filter or glow. */
+#app .toolbar-actions .nav button.btn-180:not(.selected):not(.active):not([aria-pressed="true"]){
+ --b180-color:var(--b180-off);--b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+}
+#app .toolbar-actions .nav button.btn-180:is(.selected,.active,[aria-pressed="true"]){
+ --b180-color:#b2e8a0;--b180-border:#649c62;--b180-ink:#1a361d;
+}
+/* P0 low-end GPU: hover does not repaint BTN-180. Focus-visible,
+   1px hardware press, shared static shadows and semantic ON stay unchanged. */
+
+
+/* V4 production artwork recipes port. All section dimensions are shared by Master. */
+.console-body{--eq-h:0px;--channel-w:148px}
+.console-body:not(.collapsed-fx){--fx-h:173px}
+
+.console-body .section-rail .rail-cell.fader{min-height:145px}
+.console-body #master{flex:0 0 var(--channel-w)!important;width:var(--channel-w)!important;min-width:var(--channel-w)!important;max-width:var(--channel-w)!important}
+.console-body #master>.strip.master{width:100%!important;min-width:0!important;max-width:100%!important}
+.console-body .tracks{grid-template-columns:repeat(var(--bank-columns,10),minmax(0,1fr))!important}
+.console-body .switch-section{height:var(--switch-h)!important;flex:0 0 var(--switch-h)!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important;padding:5px 5px 6px!important}
+.console-body .switch.btn-180{
+ width:100%!important;height:29px!important;min-height:29px!important;min-width:0!important;max-width:none!important;flex:none!important;
+ border:1px solid var(--b180-border)!important;border-radius:3px!important;
+ 
+ 
+ font:700 10px/1 Arial,Helvetica,sans-serif!important;letter-spacing:.12px!important;padding:0 2px!important;
+ text-transform:uppercase!important;
+}
+
+
+
+.console-body .switch.btn-180:active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+.console-body .gain-scale-travel{position:absolute;top:38px;bottom:39px;left:0;right:0}
+.console-body .gain-tick{position:absolute;top:0;height:0;left:0;right:0}
+.console-body .gain-tick::before{content:"";position:absolute;left:1px;top:0;height:1px;width:3px;background:#687d89}
+.console-body .gain-tick.major::before{width:6px;background:#a4b9c4}
+.console-body .gain-tick span{position:absolute;top:-6px;left:8px;right:0;text-align:right;font:9px/12px Consolas,monospace;white-space:nowrap;color:#a8b9c3}
+.console-body .trim-section{height:var(--trim-h)!important;flex:0 0 var(--trim-h)!important;display:grid!important;grid-template-columns:26px minmax(0,1fr) 31px!important;gap:3px!important;align-items:center!important}
+.console-body .trim-label,.console-body .sendlevel label{color:#9cb0b8;font:9px/1 'Segoe UI',Arial,sans-serif}
+.console-body .ari-horizontal{
+ -webkit-appearance:none!important;appearance:none!important;min-width:0!important;width:100%!important;
+ height:40px!important;min-height:40px!important;margin:0!important;padding:0!important;
+ background:transparent!important;cursor:ew-resize;
+}
+.console-body .ari-horizontal::-webkit-slider-runnable-track{
+ height:5px!important;border-radius:2px!important;border:1px solid #06090b!important;
+ background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)!important;
+ box-shadow:inset 0 1px 2px #000,inset 0 -1px #50616a50!important;
+}
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ -webkit-appearance:none!important;appearance:none!important;width:18px!important;height:40px!important;
+ margin-top:-18px!important;border:0!important;border-radius:0!important;
+ background:var(--ari-pan) center/18px 40px no-repeat!important;box-shadow:none!important;
+}
+.console-body .ari-horizontal::-moz-range-track{height:5px;border-radius:2px;border:1px solid #06090b;background:linear-gradient(to right,#35b1cb 0%,#35b1cb var(--range-pct,50%),#0b151a var(--range-pct,50%),#0b151a 100%)}
+.console-body .ari-horizontal::-moz-range-thumb{width:18px!important;height:40px!important;border:0!important;border-radius:0!important;background:var(--ari-pan) center/18px 40px no-repeat!important}
+.console-body .send-section .sendlevel{height:42px!important;min-height:42px!important;flex:0 0 42px!important;display:grid!important;grid-template-columns:29px minmax(0,1fr) 27px!important;gap:2px!important}
+.console-body .send-section .sendlevel output{font:9px Consolas,monospace}
+
+
+/* Hard layout invariant: one physical width for all VU/fader modules and Master. */
+.console-body .tracks>.strip{box-sizing:border-box;min-width:0!important;max-width:none!important}
+.console-body #master{box-sizing:border-box}
+
+/* BTN-180 latch colors: ON uses the SAME original seven-shadow chassis as OFF.
+   Override historical V3 solid red/yellow legacy declarations; only color variables differ. */
+.console-body .switch.btn-180.on.mute,
+.console-body .switch.btn-180.on.solo,
+.console-body .switch.btn-180.on.cue{
+ background:var(--b180-color)!important;color:var(--b180-ink)!important;
+ border-color:var(--b180-border)!important;
+ box-shadow:var(--b180-shadow-surface)!important;
+}
+.console-body .switch.btn-180.on:active:not(:disabled){
+ box-shadow:inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+
+/* V5 FINAL CHROME: old ArSonMix materials, slimmer physical fader and no blue lumen. */
+.console-body{--route-h:76px;--fx-h:194px;--send-h:23px;--footer-h:46px;--trim-h:0px}
+
+.console-body:not(.collapsed-send){--send-h:103px}
+.console-body.collapsed-send{--send-h:23px}
+.console-body .route-section{height:var(--route-h)!important;flex:0 0 var(--route-h)!important;padding:3px 4px!important}
+.console-body .route-top{height:17px!important;min-height:17px!important;flex:0 0 17px!important}
+.console-body .route-field{height:24px!important;min-height:24px!important;flex:0 0 24px!important;display:grid!important;grid-template-columns:20px minmax(0,1fr)!important;align-items:center!important;gap:4px!important;overflow:visible!important}
+.console-body .route-caption{font-size:10px!important}
+.console-body .route-select{display:block!important;width:100%!important;min-width:0!important;height:22px!important;min-height:22px!important;padding:0 9px 0 4px!important;font-size:11px!important;line-height:20px!important;color:#e0eff5!important;background:#10212c!important;border:1px solid #435968!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+.console-body .route-identity{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.console-body .subhead{background:#112530!important}
+.console-body .trim-section,.console-body .rail-cell.trim{display:none!important}
+
+/* V5 live surface: more FX rack where vertical room exists, no forced tall rack at 768px. */
+
+
+
+/* V6 CONSOLIDATED COLOR/MATERIAL SYSTEM — owner-approved old chrome with new Console UX.
+   Design tokens: navy metal body + two-tone channel nameplates; BTN-180 plastic face.
+   No heavy card shadows on the mixer; active colors are state/identity only. */
+:root{
+ --am-metal-base:#15232c;
+ --am-metal-panel:#22333d;
+ --am-metal-raised:#2b3f4b;
+ --am-metal-edge:#41515b;
+ --am-metal-inset:#060d12;
+ --am-text-primary:#e1ebee;
+ --am-text-muted:#afc0c6;
+ --am-accent:#6cb9ca;
+ --am-crystal:#e7eff0;
+ --b180-off:var(--am-crystal);
+ --b180-edge:#899aa0;
+ --b180-off-ink:#12212a;
+ /* Shared BTN-180 palette; final approved V13 values */
+ --b180-color:var(--b180-off);
+ --b180-border:var(--b180-edge);
+ --b180-ink:var(--b180-off-ink);
+ --b180-on-cyan:#94e8ed;
+ --b180-on-green:#91edac;
+ --b180-on-magenta:#edb8df;
+ --b180-on-purple:#d6b9f0;
+ --b180-on-mute:#f99aa4;
+ --b180-on-solo:#f4d479;
+ --b180-on-stereo:#9dd2f0;
+ /* Reusable hardware-key material, relief and microglints */
+ --am-hw-key-neutral:#3b4e59;
+ --am-hw-key-dark:#344650;
+ --am-hw-key-rim:#637783;
+ --am-hw-key-radius:2px;
+ --am-hw-key-press-y:1px;
+ --am-hw-key-face:var(--am-hw-key-neutral);
+ --am-hw-key-ink:#e3edf1;
+ --am-hw-key-border:var(--am-hw-key-rim);
+ --am-hw-key-bright:#586c79;
+ --am-hw-key-deep:#202f39;
+ --am-hw-key-wall:#1d2c35;
+ --am-hw-key-relief:inset 1px 0 0 #ecf9ff36,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #ffffff22,inset 0 -1px 0 #0008,
+   0 1px 0 var(--am-hw-key-wall),0 2px 0 #070d12;
+ --am-hw-key-flat:inset 1px 0 0 #ecf9ff25,inset -1px 0 0 #040b106b,
+   inset 0 1px 0 #0005,inset 0 -1px 0 #ffffff12,
+   0 1px 0 #070d12;
+ --am-hw-key-upper-glint:linear-gradient(90deg,transparent 0%,#ffffff3a 28%,#ffffffaa 50%,#ffffff3a 72%,transparent 100%);
+ --am-hw-key-lower-glint:linear-gradient(90deg,transparent 0%,#ffffff0d 30%,#ffffff48 50%,#ffffff0d 70%,transparent 100%);
+ /* Compact 30px utility key material */
+ --am-key30-top:#738692;
+ --am-key30-bottom:#354750;
+ --am-key30-hover-top:#8296a0;
+ --am-key30-hover-bottom:#40535d;
+ --am-key30-down-top:#27353d;
+ --am-key30-down-bottom:#151e25;
+ --am-key30-hairline:linear-gradient(90deg,transparent 0%,#ecfaffb0 50%,transparent 100%);
+ --am-key30-lowline:linear-gradient(90deg,transparent 0%,#a8c6d858 50%,transparent 100%);
+}
+html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)}
+.app{background:var(--am-metal-base)!important}
+.window-title{
+ border-bottom:1px solid #293c47!important;color:var(--am-text-primary)!important;
+}
+.window-title .logo{color:#75d4ec!important}
+.window-title .file-name{color:#b8cbd4!important}
+.window-title .study{color:#7f9eaa!important}
+.command-bar{
+ display:flex!important;
+}
+.command-bar>*,.command-bar>label,.command-bar>.sep{
+ align-self:center!important;vertical-align:middle!important;
+}
+.command-bar .tool.btn-180,
+.command-bar .more-tools summary.tool.btn-180,
+.more-tools-panel button.tool.btn-180{
+ --b180-color:var(--am-crystal);
+ --b180-border:#87969c;
+ --b180-ink:#12212a;
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ height:29px!important;min-height:29px!important;max-height:29px!important;
+ flex:0 0 auto!important;min-width:0!important;
+ padding:0 10px!important;font:700 10px/1 Arial,Helvetica,sans-serif!important;
+ letter-spacing:.11px!important;white-space:nowrap!important;text-transform:none!important;
+ background:var(--b180-color)!important;color:var(--b180-ink)!important;
+ border:1px solid var(--b180-border)!important;box-shadow:var(--b180-shadow-surface)!important;
+ text-shadow:0 1px #fff5!important;border-radius:3px!important;
+}
+.command-bar .tool.btn-180:hover:not(:disabled),
+.command-bar .more-tools summary.tool.btn-180:hover{
+ --b180-color:#f3f9fa;
+ --b180-border:#a6b9bd;
+}
+.command-bar .tool.btn-180.active,
+.command-bar .tool.btn-180[aria-pressed="true"],
+.command-bar .more-tools[open] summary.tool.btn-180{
+ --b180-color:#aee7ea;--b180-border:#5d9eac;--b180-ink:#0c2932;
+}
+.command-bar .tool.btn-180:active:not(:disabled){
+ transform:translateY(1px)!important;
+ box-shadow:
+  inset 3px 2px 2px -1px rgba(0,0,0,.50),
+  inset 0 0 1px 0 rgba(255,255,255,.14),
+  inset 0 1px 15px rgba(0,0,0,.29),
+  inset 0 -1px 2px rgba(0,0,0,.32),
+  0 0 0 1px var(--b180-border),
+  0 1px 1px rgba(0,0,0,.28),
+  0 2px 3px rgba(0,0,0,.13)!important;
+}
+.command-bar .toolbar-select,
+.command-bar .density-select{
+ height:29px!important;min-height:29px!important;max-height:29px!important;
+ box-sizing:border-box!important;margin:0!important;
+ background-color:#0c1a23!important;color:#d9e8ef!important;
+ border:1px solid #506370!important;border-radius:3px!important;
+ font:500 11px/1 "Segoe UI",Arial,sans-serif!important;
+ padding:0 20px 0 7px!important;align-self:center!important;
+}
+.command-bar .toolbar-label{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-height:29px!important;height:29px!important;font:600 9px/1 "Segoe UI",Arial,sans-serif!important;
+ letter-spacing:.055em!important;color:#a7bdc8!important;
+}
+.command-bar .sep{height:18px!important;margin:0 1px!important;background:#46607077!important}
+.command-bar .bank-arrow{min-width:31px!important;max-width:31px!important;
+ height:29px!important;
+}
+.command-bar .bank-arrow svg{
+ color:#1f1f1f!important;fill:#1f1f1f!important;
+ flex:none!important;pointer-events:none!important;
+}
+.command-bar .bank-arrow:disabled{opacity:.54!important}
+.command-bar .short-help{color:#91a9b6!important}
+.mixer-title{
+ 
+ border-top:1px solid #324653!important;border-bottom:1px solid #040c11!important;
+ color:#c5dde7!important;
+}
+.mixer-title .accent{background:#6bccdc!important}
+.mixer-title .right{color:#90aab7!important}
+.console-pane,.console-body,.tracks-viewport{background:var(--am-metal-base)!important}
+.console-body .rail-cell.identity{
+ display:flex!important;height:var(--identity-h)!important;flex:0 0 var(--identity-h)!important;
+ align-items:center;justify-content:center;background:linear-gradient(#2b414e,#122631)!important;
+ color:#d9edf3!important;font:600 10px/1 Arial,sans-serif!important;
+ border-bottom:2px solid #61c9de!important;
+}
+.console-body .strip{
+ --ch:var(--track-color,#5f91ad);
+}
+
+.console-body .strip-identity-top{
+ width:100%!important;min-width:0!important;flex:0 0 var(--identity-h)!important;
+ height:var(--identity-h)!important;min-height:var(--identity-h)!important;
+ display:grid!important;grid-template-columns:auto minmax(0,1fr) 19px!important;
+ column-gap:5px!important;align-items:center!important;padding:0 6px!important;
+ margin:0!important;border:0!important;border-radius:0!important;
+ border-bottom:2px solid var(--ch)!important;
+ color:#f3f9fb!important;
+ background:
+  linear-gradient(180deg,color-mix(in srgb,var(--ch) 78%,#1f3946),
+                         color-mix(in srgb,var(--ch) 56%,#07131b))!important;
+ box-shadow:inset 0 1px #ffffff36,inset 0 -1px #0008!important;
+ font:600 10px/1.1 "Segoe UI",Arial,sans-serif!important;
+ text-align:left!important;cursor:pointer!important;text-shadow:0 1px #0009!important;
+}
+.console-body .strip-identity-top:hover{filter:brightness(1.10)!important}
+.console-body .strip-identity-top .identity-number{
+ opacity:.89!important;letter-spacing:.025em!important;
+ font:700 9px/1 Arial,sans-serif!important;white-space:nowrap!important;
+}
+.console-body .strip-identity-top .identity-name{
+ overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+ font-weight:600!important;font-size:11px!important;text-align:center!important;
+}
+.console-body .strip-identity-top .identity-symbol{
+ display:flex;align-items:center;justify-content:center;
+ width:19px;height:22px;font-size:14px!important;line-height:1!important;
+}
+.console-body .strip .route-section,
+.console-body .strip .fx-section,
+.console-body .strip .send-section,
+.console-body .strip .pan-section,
+.console-body .strip .switch-section{
+ background:#152631!important;
+}
+
+
+.console-body .route-section .route-select{color:#e0eff4!important;background-color:#0c1d27!important;border-color:#34515f!important}
+.console-body .strip .bottom-section{padding:0 2px 2px!important;
+ height:var(--footer-h)!important;flex:0 0 var(--footer-h)!important;
+}
+.console-body .strip .db-value{height:15px!important;min-height:15px!important;flex:0 0 15px!important;font-size:10px!important}
+.console-body .strip .footer-label{
+ position:relative!important;display:grid!important;
+ grid-template-columns:minmax(0,1fr) 23px!important;
+ grid-template-rows:1fr!important;align-items:center!important;
+ height:33px!important;min-height:33px!important;flex:0 0 33px!important;
+ border:0!important;border-top:1px solid #ffffff3d!important;
+ border-bottom:3px solid var(--ch)!important;
+ border-radius:1px!important;overflow:hidden!important;
+ background:
+  linear-gradient(180deg,color-mix(in srgb,var(--ch) 74%,#1c3540),
+                         color-mix(in srgb,var(--ch) 51%,#091820))!important;
+ box-shadow:inset 0 1px #ffffff22,inset 0 -1px #0006!important;
+}
+.console-body .strip .footer-label .name{
+ display:block!important;min-width:0!important;
+ overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;
+ color:#f6fbff!important;font:600 11px/1.2 "Segoe UI",Arial,sans-serif!important;
+ padding:0 2px 0 6px!important;text-shadow:0 1px 1px #000a!important;
+ text-align:center!important;cursor:pointer!important;
+}
+.console-body .strip .footer-label .footer-icon{
+ display:flex;align-items:center;justify-content:center;
+ width:21px;height:100%!important;font-size:15px!important;line-height:1!important;
+ color:#fff!important;text-shadow:0 1px #0007;
+ cursor:pointer;
+}
+.console-body .strip .footer-label .color-strip{display:none!important}
+.console-body .strip.master .footer-label,
+.console-body .strip.bus .footer-label,
+.console-body .strip.fx .footer-label{background:linear-gradient(180deg,color-mix(in srgb,var(--ch) 74%,#1c3540),color-mix(in srgb,var(--ch) 51%,#091820))!important}
+.console-body .switch.btn-180{
+ --b180-color:var(--am-crystal);
+ --b180-border:#899aa0;
+ --b180-ink:#12212a;
+ background:var(--b180-color)!important;border-color:var(--b180-border)!important;
+ color:var(--b180-ink)!important;
+ box-shadow:var(--b180-shadow-surface)!important;
+ text-shadow:0 1px #fff7!important;
+}
+.console-body .switch.btn-180:not(.on):hover{--b180-color:#f4f9fa;--b180-border:#a5b6bb}
+.console-body .switch.btn-180.on.mute{--b180-color:var(--b180-on-mute);--b180-border:#b14a5f;--b180-ink:#32151e}
+.console-body .switch.btn-180.on.solo{--b180-color:var(--b180-on-solo);--b180-border:#a48337;--b180-ink:#2b210b}
+.console-body .switch.btn-180.on.cue{--b180-color:var(--b180-on-cyan);--b180-border:#38909e;--b180-ink:#12323c}
+/* Channel identity editor: same glass/metal background as plugin manager, not generic modal. */
+.channel-identity{
+ position:absolute;z-index:115;left:28px;top:100px;width:302px;max-width:calc(100% - 24px);
+ padding:10px;display:flex;flex-direction:column;gap:7px;
+ background:linear-gradient(#213642,#132630)!important;
+ border:1px solid #688595;border-radius:5px;
+ box-shadow:0 14px 28px #000b,0 0 0 1px #08131b;
+ color:#dbe8ee;
+}
+.channel-identity[hidden]{display:none!important}
+.identity-head{display:flex;align-items:center;justify-content:space-between;min-height:23px;color:#e5f2f7;font:600 11px/1 "Segoe UI",Arial,sans-serif}
+.identity-head #identityClose{background:transparent;border:0;color:#d9e9f1;font-size:19px;padding:0 5px}
+.identity-label{font:600 9px/1 Arial,sans-serif;letter-spacing:.07em;color:#a8c9d5}
+#identityName{width:100%;height:30px;background:#07151e;border:1px solid #557380;border-radius:3px;color:#e9f4f7;padding:0 8px;font-size:11px}
+.identity-icons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.identity-icon{height:30px;display:flex;align-items:center;justify-content:center;font-size:16px;background:#283a45;color:#eff9fc;border:1px solid #4c6571;border-radius:3px}
+.identity-icon.selected{background:#466270;border-color:#b7e1ef;box-shadow:inset 0 0 0 1px #bedde8}
+.identity-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+.identity-swatch{height:24px;background:var(--choice);border:2px solid #0d1d27;border-radius:3px;box-shadow:inset 0 1px #ffffff59,0 1px #0009}
+.identity-swatch.selected{outline:2px solid #effbff;outline-offset:1px}
+.identity-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:3px}
+.identity-actions .btn-180{height:29px!important;min-height:29px!important;min-width:75px!important;font-size:10px!important;--b180-color:var(--am-crystal);--b180-border:#86969e}
+#identitySave{--b180-color:#a7e4eb;--b180-border:#5b9fae}
+@media(max-width:1100px){
+ .command-bar{gap:4px!important;padding:0 5px!important}
+ .command-bar .tool.btn-180{padding:0 7px!important}
+ .command-bar .toolbar-label{font-size:8px!important}
+ .command-bar .sep{display:none}
+}
+
+
+/* V7 CRITICAL VISUAL REBALANCE — measured against the 1666x888 owner screenshot.
+   Hierarchy: chrome header > route > compact FX insert rack > sends/PAN > direct
+   mute/solo/PFL > tactile fader + peak meters. NO web-style blue black voids. */
+
+/* CSS variable on parent rail and strips drives identical FX geometry. */
+.console-body:not(.collapsed-fx){--fx-h:clamp(111px,13.5vh,137px)!important}
+.console-body.collapsed-fx{--fx-h:23px!important}
+.console-body .strip.selected{
+ position:relative!important;
+}
+.console-body .strip .subhead{background:linear-gradient(#233946,#1c2e39)!important}
+.console-body .strip .route-select{background-color:#132630!important;border-color:#526672!important}
+.console-body .strip .route-caption{color:#b1c5cf!important}
+/* Old glossy plastic buttons looked bolted on from a different application.
+   All header and live controls share fine-edged satin/brushed steel. */
+.command-bar{
+ border-top:1px solid #65808c3b!important;
+ border-bottom:1px solid #0c171f!important;
+}
+.command-bar .tool,
+.command-bar .more-tools summary.tool,
+.more-tools-panel .tool,
+.identity-actions .console-control{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-width:0!important;height:29px!important;min-height:29px!important;max-height:29px!important;
+ border:1px solid #536773!important;border-radius:3px!important;
+ background:linear-gradient(#405460,#2c3f4c 47%,#263845 48%,#314550)!important;
+ color:#e6eef2!important;text-shadow:0 1px #000b!important;
+ box-shadow:inset 0 1px #ffffff23,inset 0 -1px #101c25,0 1px 1px #0005!important;
+ font:600 10px/1.1 "Segoe UI",Arial,sans-serif!important;
+ letter-spacing:0!important;padding:0 10px!important;text-transform:none!important;
+ filter:none!important;transform:none!important;
+}
+.command-bar .tool:hover:not(:disabled),
+.more-tools-panel .tool:hover:not(:disabled),
+.identity-actions .console-control:hover{
+ background:linear-gradient(#4b6571,#354c59 48%,#304651 49%,#3a5360)!important;
+ color:#fff!important;
+}
+.command-bar .tool:active:not(:disabled),.identity-actions .console-control:active{
+ background:linear-gradient(#1a2b35,#304350)!important;
+ box-shadow:inset 1px 2px 3px #0009,0 1px #67808c22!important;
+}
+.command-bar .tool[aria-pressed="true"],.command-bar .more-tools[open] summary.tool{
+ background:linear-gradient(#406575,#244956)!important;
+ border-color:#5595a8!important;color:#c7eff9!important;
+}
+.command-bar .bank-arrow{padding:0!important;width:31px!important}
+.command-bar .bank-arrow svg{display:block!important;width:24px!important;height:24px!important}
+.command-bar .bank-arrow svg path{fill:#e0eef3!important}
+/* Preserve user's exact SVG path and element fill; display on dark face via CSS path override. */
+.command-bar .toolbar-select,.command-bar .density-select{background-color:#132733!important;border-color:#5a7280!important}
+.console-body .switch-section .switch{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ width:100%!important;min-width:0!important;height:29px!important;min-height:29px!important;
+ flex:none!important;padding:0 2px!important;
+ background:linear-gradient(#52616a,#334751 47%,#2b3d47 48%,#3e515d)!important;
+ border:1px solid #617681!important;border-radius:3px!important;
+ color:#e8f3f7!important;text-shadow:0 1px #000a!important;
+ box-shadow:inset 0 1px #ffffff31,inset 0 -1px #0f1c25,0 1px 2px #0006!important;
+ font:700 10px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;
+ filter:none!important;
+}
+.console-body .switch-section .switch:hover{border-color:#91a9b3!important;filter:brightness(1.05)!important}
+.console-body .switch-section .switch.on.mute{
+ background:linear-gradient(#ad5660,#7f303c)!important;border-color:#c16e78!important;color:#fff4f4!important;
+}
+.console-body .switch-section .switch.on.solo{
+ background:linear-gradient(#d3b365,#a58439)!important;border-color:#e9cb80!important;color:#1d251b!important;text-shadow:0 1px #ffffff66!important;
+}
+.console-body .switch-section .switch.on.cue{
+ background:linear-gradient(#64b9c3,#307783)!important;border-color:#85d4da!important;color:#081b22!important;text-shadow:0 1px #ffffff44!important;
+}
+.console-body .gain-scale-travel{top:27px!important;bottom:27px!important}
+/* Slider: original assets, smaller thumb, deliberately 3px lower than the rail center. */
+.console-body .center-pan::-webkit-slider-thumb,
+.console-body .ari-horizontal::-webkit-slider-thumb{
+ width:15px!important;height:32px!important;margin-top:-12px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+ border:0!important;box-shadow:none!important;
+}
+.console-body .center-pan::-moz-range-thumb,
+.console-body .ari-horizontal::-moz-range-thumb{
+ width:15px!important;height:32px!important;
+ background:var(--ari-pan) center/15px 32px no-repeat!important;
+}
+.console-body .sendlevel .ari-horizontal{margin-top:3px!important}/* Modeless Plugin Manager — draggable and resizable, no scrim, no forced strip reflow. */
+
+.plugin-minimize{height:28px;min-width:28px;background:#324956;border:1px solid #58717c;color:#dbeaf0;font-size:17px;border-radius:3px}/* Header drag updates inline left/top: must overrule old fixed right/top CSS !important. */
+
+/* Plugin drag coordinate is an inline important top; do not override it. */
+
+
+/* V7 rendered-Chromium finding: .console-body .switch{flex:1 1 auto}
+   also matched the LEFT RAIL .rail-cell.switch and stretched M/S/C by 127px.
+   Pin the label to the same immutable physical row as the strip controls. */
+.console-body .section-rail .rail-cell.switch{
+ flex:0 0 var(--switch-h)!important;
+ height:var(--switch-h)!important;
+ min-height:var(--switch-h)!important;
+ max-height:var(--switch-h)!important;
+ padding:0!important;
+ align-items:center!important;justify-content:center!important;
+ background:#213640!important;color:#a7bfca!important;
+ border-bottom:1px solid #172730!important;
+ box-shadow:inset 0 1px #ffffff12!important;
+}
+
+/* V8: Collapse hides the content, not merely the container's height.
+   Earlier high-specificity route/select and send/display rules forced expanded
+   controls into 23px collapsed rails. All strip + rail heights use one token. */
+.console-body.collapsed-route .strip .route-section{padding:0 4px!important}
+.console-body.collapsed-route .strip .route-section .route-field{display:none!important}
+.console-body.collapsed-route .strip .route-section .route-top{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-fx .strip .subhead{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-section{padding:0 3px!important}
+.console-body.collapsed-send .strip .send-section .send-select,
+.console-body.collapsed-send .strip .send-section .sendlevel{display:none!important}
+.console-body.collapsed-send .strip .send-header{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important}
+.console-body.collapsed-send .strip .send-header .send-slot,
+.console-body.collapsed-send .strip .send-header .send-compact{
+ display:block!important;flex:1 1 0!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body.collapsed-send .strip .send-header .push{display:none!important}
+.console-body.collapsed-send .strip .send-header .sendtag{
+ max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.console-body .section-rail .rail-cell.route{height:var(--route-h)!important;flex:0 0 var(--route-h)!important}
+.console-body .section-rail .rail-cell.fx{height:var(--fx-h)!important;flex:0 0 var(--fx-h)!important}
+
+/* V9: CONSOLE MECHANICAL LAYOUT — Rack owns freed height, never the live fader.
+   Fader height is invariant when ROUTE / SEND are expanded/collapsed. Master and
+   rail are siblings in the same flex-height contract, not independent rulers.
+   The rack becomes the variable-height processing workspace. */.console-body:not(.collapsed-fx) .section-rail .rail-cell.fader{
+  flex:0 0 var(--fader-fixed-h)!important;
+  height:var(--fader-fixed-h)!important;
+  min-height:var(--fader-fixed-h)!important;
+  max-height:var(--fader-fixed-h)!important;
+}
+.console-body:not(.collapsed-fx) .section-rail .rail-cell.fx{
+  flex:1 1 var(--fx-h)!important;
+  height:auto!important;min-height:23px!important;max-height:none!important;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fx{
+  flex:0 0 23px!important;height:23px!important;min-height:23px!important;
+  max-height:23px!important;
+}
+/* Only if the operator intentionally COLLAPSES FX does the fader absorb slack. */
+.console-body.collapsed-fx .strip .fader-section,
+.console-body.collapsed-fx .section-rail .rail-cell.fader{
+  flex:1 1 var(--fader-fixed-h)!important;
+  height:auto!important;min-height:130px!important;max-height:none!important;
+}
+@media(max-height:680px){
+  .console-body{--fader-fixed-h:clamp(135px,28vh,190px);--route-h:56px;--pan-h:36px;--switch-h:40px;--footer-h:45px}
+}
+/* Hardware continuity: satin upper plates, subtle milled lines, consistent hierarchy. */
+.console-body .strip .split-count{font:600 9px/1.2 Consolas,monospace;color:#b5e8f1;
+ border:1px solid #5d8291;border-radius:2px;padding:1px 2px;white-space:nowrap}
+
+/* V11 — FL-style selectable source/target wiring in the MIDDLE (SEND/BUS) strip.
+   Only visual reference. Default SEND rack collapsed, its wire tray stays visible.
+   Do not move hardware faders, clip VU or shrink expandable FX slot rack. */
+.console-body.collapsed-send{--send-h:53px!important}
+.console-body:not(.collapsed-send){--send-h:129px!important}
+.console-body .section-rail .rail-cell.send{
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;
+  background:linear-gradient(#263a45,#20333d)!important;
+  color:#a4d6e2!important;
+}
+.console-body .strip .send-section{
+  display:flex!important;flex-direction:column!important;
+  height:var(--send-h)!important;min-height:var(--send-h)!important;
+  flex:0 0 var(--send-h)!important;overflow:hidden!important;
+}
+.tracks-viewport{position:relative!important;isolation:isolate}
+.routing-wire-overlay{
+  position:absolute;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none;contain:paint;
+}
+@media(max-width:1000px){.wire-legend{max-width:220px}}
+@media(max-height:680px){.console-body.collapsed-send{--send-h:49px!important}}
+.routing-wire-overlay{filter:drop-shadow(0 0 1.2px #5cc67f40)}
+@media(max-width:1250px){.wire-legend{max-width:145px}.wire-mode-select{max-width:112px;font-size:9px}.wire-master{min-width:55px;padding:0 4px}}
+@media(max-width:970px){.wire-legend{display:none}.wire-mode-label{display:none}}
+
+/* V12-P0 CONVERGENCE: native owner's latest passing physical geometry baseline.
+   The center wire strip costs 30px more than the pre-wire SEND row; recover
+   its space from compact top chrome and fixed mechanical label wells, not
+   from FX visibility or any accidental ROUTE-driven fader movement. */
+.window-title{height:23px!important;min-height:23px!important;flex:0 0 23px!important}
+.command-bar{height:35px!important;min-height:35px!important;flex:0 0 35px!important}
+.status-bar{height:20px!important;min-height:20px!important;flex:0 0 20px!important}
+.console-body{
+ --identity-h:25px!important;--footer-h:48px!important;
+ --pan-h:37px;--switch-h:40px;
+ --p0-fader-standard:clamp(215px,calc(100dvh - 510px),600px);
+ --p0-fader-h:var(--p0-fader-standard);
+ --fader-fixed-h:var(--p0-fader-h); /* feeds earlier high-specificity fader selectors */
+}
+.console-body:not(.collapsed-send){
+ --p0-fader-h:max(150px,calc(var(--p0-fader-standard) - 80px));
+}
+@media(max-height:680px){
+ .console-body{--p0-fader-standard:clamp(155px,calc(100dvh - 505px),300px)}
+ .console-body:not(.collapsed-send){--p0-fader-h:max(118px,calc(var(--p0-fader-standard) - 80px))}
+}
+.console-body .strip .fader-section,
+.console-body .section-rail > .rail-cell.fader{
+ flex:0 0 var(--p0-fader-h)!important;height:var(--p0-fader-h)!important;
+ min-height:var(--p0-fader-h)!important;max-height:var(--p0-fader-h)!important;
+}
+
+
+/* When intentionally collapsing the entire FX section, unused room may return
+   to the physical fader, but never when only ROUTE is collapsed. */
+
+
+/* V13 physical routing bay — no old DAW send form in mixer strips.
+   Compact: 80px, Expanded: 160px; +80px fold is balanced by P0 fader
+   budget on expand, preserving the rack's four legible insert rows. */.console-body.wire-routing-v13:not(.collapsed-send){--send-h:160px!important}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{
+ font:600 12px Arial,sans-serif!important;
+ color:#b1dae4!important;
+}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send::after{
+ content:"WIRE";display:block;font:600 7px/8px Arial,sans-serif;
+ color:#78afb5;letter-spacing:.4px;
+}
+.console-body.wire-routing-v13:not(.collapsed-send) .section-rail .rail-cell.send::after{content:"PATCH"}
+.console-body.wire-routing-v13 .strip .send-header,
+.console-body.wire-routing-v13 .strip .send-select,
+.console-body.wire-routing-v13 .strip .sendlevel,
+.console-body.wire-routing-v13 .strip .send-slot{display:none!important}
+.routing-wire-overlay{z-index:6;pointer-events:none!important}
+/* Keep compact routing visible on short stage laptops; no legacy form resurfaces. */
+@media(max-height:680px){
+ .console-body.wire-routing-v13:not(.collapsed-send){--send-h:138px!important}
+ .console-body.wire-routing-v13 .strip .wire-deck{padding-top:3px}
+ .console-body.wire-routing-v13 .strip .wire-deck-status{display:none}
+}
+/* V13 OPERATOR CONSOLE: flat anodized metal and a STATIONARY lower block.
+   ROUTE / FX / SEND own the entire flexible upper region; PAN + M/S/PFL +
+   FADER + footer never resize or move when any section is toggled. Styles
+   deliberately live at the end, after legacy V9-V12 chrome precedence. */
+.console-body{
+ --p0-fader-h:var(--v13-fader-h)!important;
+ --fader-fixed-h:var(--v13-fader-h)!important;
+}
+.console-body .strip .route-section,
+.console-body.collapsed-route .strip .route-section,
+.console-body .section-rail>.rail-cell.route{
+ flex:0 0 var(--route-h)!important;
+ height:var(--route-h)!important;
+ min-height:var(--route-h)!important;
+ max-height:var(--route-h)!important;
+}
+.console-body .strip .send-section,
+.console-body.collapsed-send .strip .send-section,
+.console-body .section-rail>.rail-cell.send{
+ flex:0 0 var(--send-h)!important;
+ height:var(--send-h)!important;
+ min-height:var(--send-h)!important;
+ max-height:var(--send-h)!important;
+}
+/* FX absorbs differences in both ROUTE and SEND height, on every channel
+   and on the left rail. The min accommodates 4×25px rows + 25px header. */
+.console-body:not(.collapsed-fx) .strip .fx-section,
+.console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
+ flex:1 1 125px!important;height:auto!important;
+ min-height:125px!important;max-height:none!important;
+}
+.console-body.collapsed-fx .strip .fx-section,
+.console-body.collapsed-fx .section-rail>.rail-cell.fx{
+ flex:0 0 23px!important;height:23px!important;
+ min-height:23px!important;max-height:23px!important;
+}
+/* FX is intentionally closed: SEND (if open) absorbs the spare upper height,
+   otherwise the upper region leaves a deliberate gap, never fader stretch. */
+.console-body.collapsed-fx:not(.collapsed-send) .strip .send-section,
+.console-body.collapsed-fx:not(.collapsed-send) .section-rail>.rail-cell.send{
+ flex:1 1 var(--send-h)!important;
+ height:auto!important;max-height:none!important;
+}
+.console-body .strip .pan-section,
+.console-body .section-rail>.rail-cell.pan{
+ height:var(--pan-h)!important;min-height:var(--pan-h)!important;
+ max-height:var(--pan-h)!important;flex:0 0 var(--pan-h)!important;
+}
+.console-body .strip .switch-section,
+.console-body .section-rail>.rail-cell.switch{
+ height:var(--switch-h)!important;min-height:var(--switch-h)!important;
+ max-height:var(--switch-h)!important;flex:0 0 var(--switch-h)!important;
+}
+.console-body .strip .fader-section,
+.console-body.collapsed-fx .strip .fader-section,
+.console-body.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body .section-rail>.rail-cell.fader,
+.console-body.collapsed-fx .section-rail>.rail-cell.fader,
+.console-body.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader{
+ height:var(--v13-fader-h)!important;min-height:var(--v13-fader-h)!important;
+ max-height:var(--v13-fader-h)!important;flex:0 0 var(--v13-fader-h)!important;
+}
+.console-body .strip .bottom-section,
+.console-body .section-rail>.rail-cell.footer{
+ height:var(--footer-h)!important;min-height:var(--footer-h)!important;
+ max-height:var(--footer-h)!important;flex:0 0 var(--footer-h)!important;
+}
+/* PAN is the boundary: keep lower console docked to the bottom when all
+   upper compartments are intentionally collapsed. */
+.console-body.collapsed-fx.collapsed-send .strip .pan-section,/* V14: THREE-way collapse is the sole exception to the anchored lower
+   deck. CSS flex consumes freed upper space with a taller fader rising toward
+   the collapsed controls; PAN/SOLO follow upward as a coherent unit. For any
+   other combination, original deck geometry remains unchanged. No resize JS. */
+.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .pan-section,
+.console-body.collapsed-route.collapsed-fx.collapsed-send .section-rail>.rail-cell.pan{
+ margin-top:0!important;
+}
+.console-body.collapsed-route.collapsed-fx.collapsed-send .strip .fader-section,
+.console-body.collapsed-route.collapsed-fx.collapsed-send .section-rail>.rail-cell.fader{
+ flex:1 1 var(--v13-fader-h)!important;
+ height:auto!important;
+ min-height:var(--v13-fader-h)!important;
+ max-height:none!important;
+}
+/* Colored channel nameplates and LEDs remain meaningful on a dark, satin,
+   untextured metal desk. Shadows only define seams and mechanical recesses. */
+/* FLAT plate language: no large face gradients, glow, brushed stripes or
+   uneven fading. Light/dark gradients remain only inside actual meter LEDs
+   and the original PNG thumbs, never across a panel's surface. */
+.window-title{background:#101f28!important;box-shadow:inset 0 -1px #526a743b!important}
+.command-bar{background:#1b2d38!important;box-shadow:inset 0 1px #ffffff0b,inset 0 -1px #07131b!important}
+.mixer-title{background:#162934!important;box-shadow:inset 0 -1px #5c758039!important}
+.console-body .section-rail{
+ background:#1f323c!important;
+ box-shadow:inset 1px 0 #57717e38,inset -1px 0 #07131b!important;
+}
+.console-body .section-rail>.rail-cell{
+ background:#213640!important;
+ border-bottom:1px solid #142832!important;
+ box-shadow:inset 0 1px #66838e1b!important;
+}
+.console-body .strip .section{
+ border-bottom:1px solid #102630!important;
+ box-shadow:inset 0 -1px #7a98a11b!important;
+}
+.console-body .strip .subhead,
+.console-body .strip .send-header{
+ background:#142732!important;
+ border-bottom:1px solid #10232c!important;
+ box-shadow:inset 0 1px #77939b17!important;
+}
+.console-body .rail-cell.fader{background:#213640!important}
+.console-body .strip .route-caption,
+.console-body .strip .subhead .hint{color:#b8cbd5!important}
+.console-body .strip .route-select,
+.console-body .strip .send-select{background:#0e222d!important}
+
+/* Integration with contemporary V13 WIRE bay. The wire bay may use 160px
+   on tall desks; stage laptop uses 148px to protect 4 inserts + fixed fader.
+   Wire controls, semantics and dynamic SVG routings are unchanged. */
+@media(max-height:820px){
+ .console-body.wire-routing-v13:not(.collapsed-send){--send-h:148px!important}
+}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{border-top:1px solid #617d8a43!important;
+}
+/* A carefully restrained physical edge is fine; broad face gradients and
+   worn-metal zebra strokes are not. */
+
+/* V14.1 physical hierarchy: three upper modules can close independently.
+   SEND close is a TRUE 23px folded header, not a tiny still-active patch bay.
+   The source/destination graph belongs to state, not to the SVG or DOM nodes. */
+.console-body.wire-routing-v13.collapsed-send{
+ --send-h:23px!important;
+}
+@media(max-height:680px){
+ .console-body.wire-routing-v13.collapsed-send{--send-h:23px!important}
+}
+.console-body.wire-routing-v13.collapsed-send .routing-wire-overlay{
+ display:none!important;
+}
+.console-body.wire-routing-v13.collapsed-send .section-rail .rail-cell.send::after{
+ content:"OPEN"!important;
+ color:#91bac5!important;
+}
+/* Dark premium satin graphite: uniform plate colors, no giant highlights.
+   Only section borders, actual recessed fader grooves and meter LEDs have
+   relief. The physical thumb asset is intentionally untouched. */
+.console-body{
+ --v13-plate:#182832;
+ --v13-route:#172731;
+ --v13-insert:#142630;
+ --v13-send:#182a34;
+ --v13-lower:#192b35;
+ --v13-edge:#3e5661;
+}
+.console-body .strip{
+ background:#1b2c36!important;
+ border-right:1px solid #0b1a22!important;
+ box-shadow:inset 1px 0 #94b4c11b,inset -1px 0 #06121955!important;
+}
+.console-body .strip.selected{
+ background:#20333e!important;
+ box-shadow:inset 0 0 0 1px var(--ch),inset 0 0 0 2px #0c1a24!important;
+}
+.console-body .strip .route-section{background:var(--v13-route)!important}
+.console-body .strip .send-section{background:var(--v13-send)!important}
+.console-body .strip .pan-section,
+.console-body .strip .switch-section{background:var(--v13-lower)!important}
+.console-body .strip .bottom-section{background:#182832!important}
+.console-body .section-rail{background:#152630!important}
+.console-body .section-rail>.rail-cell{
+ background:#1a2c37!important;
+ box-shadow:inset 0 1px #ffffff08!important;
+}
+.console-body.wire-routing-v13 .section-rail .rail-cell.send{background:#192d38!important}
+
+/* ARSONMIX GLOBAL HARDWARE KEY V1 — owner approved MUTE/SOLO material.
+   This is one reusable material token, NOT a new button geometry/layout.
+   Never apply to circular WIRE connectors, fader thumb, meter LEDs, sliders,
+   section-rail disclosures, or drag targets. All colors are semantic variants.
+   No animations, filters, textures, permanent pressed state, or extra JS. */
+
+/* A single mechanical face for every ordinary PUSH button; retain existing
+   29px header / strip widths and accessibility semantics. New buttons opt
+   in with .hw-key instead of inheriting unexpected styling on rotary/jacks. */
+:is(
+ .command-bar button.tool,
+ .command-bar summary.tool,
+ .more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,
+ .plugin-footer button,
+ .route-choice-head button,
+ .route-choice-option,
+ button.hw-key
+){
+ position:relative!important;
+ border:1px solid var(--am-hw-key-border)!important;
+}
+/* EXACT top/bottom edge glints: no inset offset on the key face. The whitened
+   core fades horizontally to transparent at both ends. */
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::before{
+ content:""!important;position:absolute!important;pointer-events:none!important;
+ border:0!important;box-shadow:none!important;opacity:1!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+)::after{
+ content:""!important;position:absolute!important;pointer-events:none!important;
+ border:0!important;box-shadow:none!important;opacity:1!important;
+}
+/* The key actually sinks into the surrounding socket only during touch/click.
+   A latched MUTE/SOLO remains raised, changing ONLY semantic color. */
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):active:not(:disabled){
+ filter:none!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):focus-visible{
+ outline:2px solid #9ceaff!important;outline-offset:2px!important;
+}
+:is(
+ .command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key
+):disabled{
+ opacity:.5!important;cursor:not-allowed!important;
+}
+/* Family colorways only. Physical edges and shadows are shared unchanged. */
+.command-bar button.tool,
+.command-bar summary.tool,
+.more-tools-panel button.tool,.command-bar button.tool:is(.active,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],
+.more-tools[open] summary.tool{
+ --am-hw-key-face:#6498a9;
+ --am-hw-key-ink:#081b23;
+ --am-hw-key-border:#6ca5b5;
+}
+@media(prefers-reduced-motion:reduce){
+ :is(.command-bar .tool,.console-body .switch-section .switch,.route-choice-option,button.hw-key){
+  transition:none!important;
+ }
+}
+.routing-wire-overlay{filter:none!important}
+
+
+
+/* V18 HARDWARE KEY SOCKET + CRISP LED METER — owner visual audit, 2026-11-02.
+   Material token stays global. The body is a real recessed mounting well:
+   dark 1px machined cut, light 1px metal lip, cap stands 1px above its well.
+   Only semantic color differs between controls; no blurred shadows, filters,
+   backdrop filters, RAF style recalculation or extra LED DOM nodes. */
+
+/* A recessed common switch bay is machined into the STRIP panel, not
+   painted halfway across the top face. Housing never moves with buttons. */
+.console-body .strip .switch-section {
+ position:relative!important;
+ isolation:isolate;
+}
+.console-body .strip .switch-section button.switch{
+ z-index:1!important;
+ border-radius:var(--am-hw-key-radius)!important;
+ box-shadow:var(--am-hw-key-relief)!important;
+}
+/* Every hardware PUSH key shares the same outer socket, sharp relief and
+   very shallow mechanical travel. Do not flatten latched MUTE/SOLO. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ will-change:auto!important;
+}
+/* Remove convolution-style glow and blur work. All depth comes from
+   1px crisp borders, embossed edges, static face gradients, native textures. */
+html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .app *)::after{
+ filter:none!important;
+ backdrop-filter:none!important;
+ -webkit-backdrop-filter:none!important;
+}
+.plugin-browser,.channel-identity,.route-choice,.more-tools-panel{
+ box-shadow:0 0 0 1px #60717b,0 1px 0 1px #07141b!important;
+}
+
+
+/* V19 FUTURE-CONSOLE KEY MATERIAL — graphite + restrained status illumination.
+   Visual inspiration: dark hardware surfaces, jewel status keys and tightly
+   machined sockets on modern large-format digital mixing consoles.
+   Shared material: same 2px square-rounded cap, 1px press, one chrome
+   edge-light recipe, NO diffuse shadows, blur, filter, animations, or DOM. */
+
+/* Important: one real physical material for push-buttons. Layout stays put. */
+:is(.command-bar button.tool,.command-bar summary.tool,
+ .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ color:var(--am-hw-key-ink)!important;
+ border-color:var(--am-hw-key-border)!important;
+ text-shadow:0 1px 0 rgba(0,0,0,.23)!important;
+}
+
+/* A deliberate narrow white reflection ON THE EDGE, never in the middle. */
+
+
+/* Graphite OFF, colored ON — same geometry. No always-on glow. */
+.command-bar button.tool,
+.command-bar summary.tool,
+.more-tools-panel button.tool,
+.route-choice-head button {
+ --am-hw-key-ink:#e2ecf0;
+ --am-hw-key-border:#647783;
+}
+.command-bar button.tool:is(.active,.primary,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],
+.more-tools[open] summary.tool {
+ --am-hw-key-ink:#f3fcff;
+ --am-hw-key-border:#6fb3c2;
+}
+.console-body .strip .switch-section button.switch:not(.on) {
+ --am-hw-key-ink:#e4edf0;
+ --am-hw-key-border:#72838c;
+}
+.console-body .strip .switch-section button.switch.on.mute {
+ text-shadow:0 -1px 0 rgba(56,0,9,.5)!important;
+}
+.console-body .strip .switch-section button.switch.on.solo {
+ text-shadow:0 1px 0 rgba(255,255,255,.2)!important;
+}
+.route-choice-option.primary{
+ --am-hw-key-ink:#f0fff9;
+ --am-hw-key-border:#6ac6a3;
+}
+#identitySave {
+ --am-hw-key-ink:#f2fcff;
+ --am-hw-key-border:#7ed4e1;
+}
+/* Socket bezel belongs to the console, not floating in the button face. *//* Keep every control crisp on modest GPU hardware. */
+
+/* V20 CUBE/ILLUMINATED HARDWARE KEY — single material extension, zero blur.
+   Face appears internally backlit; three crisp unblurred sidewall lines
+   plus a dark socket convey cube depth. Press is precisely 1px. */
+
+/* The same cap surface for ALL push-buttons: near-vertical satin
+   highlight, colored lens middle, dark lower skirt, sharp edge. */
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key){
+ --am-hw-key-press-y:1px;
+ user-select:none!important;-webkit-user-select:none!important;
+ border-radius:2px!important;
+ transform:translateY(0)!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ top:0!important;left:1px!important;right:1px!important;height:2px!important;
+ background:var(--am-hw-key-upper-glint)!important;
+}
+:is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+ .console-body .strip .switch-section button.switch,
+ .identity-actions button.console-control,.plugin-footer button,
+ .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ bottom:0!important;left:2px!important;right:2px!important;height:1px!important;
+ background:var(--am-hw-key-lower-glint)!important;
+}
+/* Machined socket behind keycaps, not light bleeding onto the chassis. *//* Off and on use same geometry. Only optical material tokens change. */
+.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
+.route-choice-head button{
+ --am-hw-key-face:#374c58;--am-hw-key-bright:#5c7582;
+ --am-hw-key-deep:#1a2b35;--am-hw-key-wall:#1c303b;
+}
+.command-bar button.tool:is(.active,.primary,[aria-pressed="true"]),
+.command-bar summary.tool[aria-expanded="true"],.more-tools[open] summary.tool{
+ --am-hw-key-face:#2d7386;--am-hw-key-bright:#71c3d8;
+ --am-hw-key-deep:#153e4a;--am-hw-key-wall:#1b5060;
+}
+.console-body .strip .switch-section button.switch:not(.on){
+ --am-hw-key-face:#405360;--am-hw-key-bright:#586c79;
+ --am-hw-key-deep:#202f39;--am-hw-key-wall:#1d2c35;
+}
+.console-body .strip .switch-section button.switch.on.mute{
+ --am-hw-key-face:#ae3346;--am-hw-key-bright:#f26e7c;
+ --am-hw-key-deep:#581e2b;--am-hw-key-wall:#611e2c;
+ --am-hw-key-ink:#fff7f8;--am-hw-key-border:#eb7380;
+}
+.console-body .strip .switch-section button.switch.on.solo{
+ --am-hw-key-face:#bc8f2e;--am-hw-key-bright:#ffe08a;
+ --am-hw-key-deep:#654811;--am-hw-key-wall:#715520;
+ --am-hw-key-ink:#261d09;--am-hw-key-border:#f4d370;
+}
+.console-body .strip .switch-section button.switch.on.cue{
+ --am-hw-key-face:#2a879e;--am-hw-key-bright:#79d8ed;
+ --am-hw-key-deep:#134458;--am-hw-key-wall:#185468;
+ --am-hw-key-ink:#f4fdff;--am-hw-key-border:#7fd7e8;
+}
+.route-choice-option.primary{
+ --am-hw-key-face:#327b64;--am-hw-key-bright:#7fdec0;
+ --am-hw-key-deep:#164b3c;--am-hw-key-wall:#185341;
+}
+#identitySave{
+ --am-hw-key-face:#2d8597;--am-hw-key-bright:#80d5e7;
+ --am-hw-key-deep:#174757;--am-hw-key-wall:#185468;
+}
+/* Explicitly no optical postprocessing / blur / expensive animation. */
+:is(.command-bar,.console-body,.plugin-browser,.route-choice) button{
+ filter:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+}
+
+
+
+/* V50 operator-first title: a single 27px status seam, no setup controls
+   embedded in the audio workspace. WIRE settings live in the modeless
+   Config window; Routes / Matrix are dedicated command-bar tools. */
+.mixer-title{
+ box-sizing:border-box!important;display:flex!important;flex-direction:row!important;
+ align-items:center!important;justify-content:flex-start!important;
+ height:27px!important;min-height:27px!important;flex:0 0 27px!important;
+ padding:2px 9px!important;gap:8px!important;
+}
+.mixer-title .accent{flex:none}
+.mixer-title .panel-name{white-space:nowrap}
+.mixer-title .panel-sub{display:inline-flex;align-items:center;justify-content:center}
+.mixer-title .right{
+ flex:0 1 auto;margin-left:auto!important;min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;
+}
+.command-bar>.wire-command{min-width:0!important;padding:0 7px!important}
+/* More must paint ABOVE modeless routes/matrix; operator can switch tools
+   without dismissing the current dialog or relying on force clicks. */
+.command-bar{z-index:34!important}
+.more-tools-panel .wire-overflow{display:none!important}
+@media(max-width:1250px){
+ .command-bar>.wire-command{display:none!important}
+ .more-tools-panel .wire-overflow{display:block!important}
+}

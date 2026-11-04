@@ -1,0 +1,12 @@
+{
+  "kind": "REFERENCE_WORKFLOW_QA_ONLY",
+  "source_pr": 278,
+  "source_branch": "main/site/preview-v2",
+  "source_sha": "bea579a5c5cdc13b8891a7eeff17a27515bde8c8",
+  "source_blob_sha": "b61273756c2091406125c315ad5b7f27520e969b",
+  "ci_run": 41459741941,
+  "ci_conclusion": "success",
+  "live_audio": false,
+  "note": "PR285 V34 Smart WIRE is active Pages candidate based on PR278. V33 immutable archive at /preview-v33/. GUI reference ONLY, no native PCM.",
+  "feature_pr": 285
+}
