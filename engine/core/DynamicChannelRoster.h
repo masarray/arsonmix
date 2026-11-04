@@ -29,6 +29,7 @@ struct ChannelSendRef final {
     bool preFader=false;
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
+    std::uint64_t edgeId=0; // control-owned stable identity, never a PCM buffer
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -76,6 +77,15 @@ struct ChannelEditResult final {
     std::uint64_t revision=0;
     std::vector<ChannelId> createdIds;
     bool ok() const noexcept {return fault==ChannelEditFault::none;}
+};
+
+struct WireChange final {
+    enum class Kind : std::uint8_t { connect, remove, retarget, routeOnly };
+    Kind kind=Kind::connect;
+    std::uint64_t edgeId=0; // REMOVE/RETARGET must address exact accepted edge
+    ChannelId source{},destination{};
+    float gain=1.f;
+    bool preFader=false;
 };
 
 class DynamicChannelRoster final {
@@ -276,12 +286,127 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        if(!assignMissingEdges(candidate,nextEdgeId_)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
         index_.swap(stagedIndex);
         nextId_=next;
         result.revision=++revision_;
         return result;
+    }
+
+    // CONTROL only: one atomic WIRE batch against the canonical roster.
+    // Native PCM compile/publish is performed by DynamicAcceptedSession.
+    // Edge identity survives RETARGET and unrelated graph edits.
+    ChannelEditResult wireTransaction(std::uint64_t expectedRevision,
+                                     std::span<const WireChange> changes) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_) {
+            result.fault=ChannelEditFault::staleRevision;return result;
+        }
+        if(changes.empty() || revision_==std::numeric_limits<std::uint64_t>::max()) {
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        auto candidate=channels_;
+        auto edgeCounter=nextEdgeId_;
+        if(!assignMissingEdges(candidate,edgeCounter)) {
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        const auto findRow=[&](ChannelId id) {
+            return std::find_if(candidate.begin(),candidate.end(),
+                [id](const auto& row){return row.id==id;});
+        };
+        const auto findEdge=[&](std::uint64_t id) {
+            for(auto& row:candidate)
+                for(auto it=row.sends.begin();it!=row.sends.end();++it)
+                    if(it->edgeId==id)
+                        return std::pair{&row,it};
+            return std::pair<ChannelStripDefinition*,
+                             std::vector<ChannelSendRef>::iterator>{nullptr,{}};
+        };
+        const auto legal=[&](ChannelId from,ChannelId to,float gain) {
+            const auto a=findRow(from),b=findRow(to);
+            return from.value && to.value && from!=to &&
+                a!=candidate.end() && b!=candidate.end() &&
+                a->role!=ChannelRole::main && a->role!=ChannelRole::monitor &&
+                b->role!=ChannelRole::monitor &&
+                std::isfinite(gain) && gain>=0.f && gain<=4.f;
+        };
+        const auto duplicate=[&](ChannelId from,ChannelId to) {
+            const auto row=findRow(from);
+            return row!=candidate.end() &&
+                std::any_of(row->sends.begin(),row->sends.end(),
+                    [to](const auto& e){return e.destination==to;});
+        };
+        const auto connect=[&](ChannelId from,ChannelId to,float gain,
+                               bool pre) {
+            auto row=findRow(from);
+            if(!legal(from,to,gain) || duplicate(from,to) ||
+               row->sends.size()>=budget_.maximumSendsPerChannel ||
+               edgeCounter==0 || edgeCounter==std::numeric_limits<std::uint64_t>::max())
+                return false;
+            row->sends.push_back({to,gain,pre,0.f,false,edgeCounter++});
+            return true;
+        };
+        for(std::size_t i=0;i<changes.size();++i) {
+            const auto& change=changes[i];
+            result.actionIndex=i;
+            bool ok=false;
+            switch(change.kind) {
+            case WireChange::Kind::connect:
+                ok=connect(change.source,change.destination,change.gain,
+                           change.preFader);
+                break;
+            case WireChange::Kind::remove: {
+                if(!change.edgeId)break;
+                auto [row,it]=findEdge(change.edgeId);
+                if(row) {row->sends.erase(it);ok=true;}
+                break;
+            }
+            case WireChange::Kind::retarget: {
+                if(!change.edgeId)break;
+                auto [row,it]=findEdge(change.edgeId);
+                if(!row || !legal(row->id,change.destination,it->gain))break;
+                if(it->destination!=change.destination &&
+                   duplicate(row->id,change.destination))break;
+                it->destination=change.destination;
+                ok=true;break;
+            }
+            case WireChange::Kind::routeOnly: {
+                const auto src=findRow(change.source);
+                if(src==candidate.end())break;
+                const auto master=std::find_if(candidate.begin(),candidate.end(),
+                    [](const auto& row){return row.role==ChannelRole::main;});
+                if(master==candidate.end() ||
+                   !legal(change.source,change.destination,change.gain) ||
+                   change.destination==master->id ||
+                   duplicate(change.source,change.destination))break;
+                const auto mainId=master->id;
+                auto& sends=src->sends;
+                sends.erase(std::remove_if(sends.begin(),sends.end(),
+                    [mainId](const auto& e){return e.destination==mainId;}),
+                    sends.end());
+                ok=connect(change.source,change.destination,change.gain,
+                           change.preFader);
+                break;
+            }
+            }
+            if(!ok) {result.fault=ChannelEditFault::invalidValue;return result;}
+        }
+        if(!withinBudget(candidate)) {
+            result.fault=ChannelEditFault::budgetExceeded;return result;
+        }
+        if(!assignMissingEdges(candidate,nextEdgeId_)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
+        auto stagedIndex=buildIndex(candidate);
+        channels_.swap(candidate);index_.swap(stagedIndex);
+        nextEdgeId_=edgeCounter;
+        result.revision=++revision_;return result;
     }
 
     // Studio Console Add Bus / Add FX Channel: allocate a fresh independent
@@ -322,6 +447,10 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        if(!assignMissingEdges(candidate,nextEdgeId_)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
         index_.swap(stagedIndex);result.createdIds.push_back({nextId_++});
@@ -377,6 +506,10 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        if(!assignMissingEdges(candidate,nextEdgeId_)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
         index_.swap(stagedIndex);
@@ -457,6 +590,10 @@ public:
         // Structural edits are infrequent and prepared entirely on CONTROL.
         // Rebuild before acceptance: rejected/failed edits cannot leave the
         // active stable-ID map pointing into an old reordered vector.
+        if(!assignMissingEdges(candidate,nextEdgeId_)) {
+            result.fault=ChannelEditFault::idExhausted;
+            result.createdIds.clear();return result;
+        }
         auto stagedIndex=buildIndex(candidate);
         channels_.swap(candidate);
         index_.swap(stagedIndex);
@@ -466,6 +603,17 @@ public:
     }
 
 private:
+    static bool assignMissingEdges(std::vector<ChannelStripDefinition>& rows,
+                                   std::uint64_t& next) noexcept {
+        for(auto& row:rows)
+            for(auto& edge:row.sends)
+                if(!edge.edgeId) {
+                    if(!next || next==std::numeric_limits<std::uint64_t>::max())
+                        return false;
+                    edge.edgeId=next++;
+                }
+        return true;
+    }
     static std::unordered_map<std::uint64_t,std::size_t> buildIndex(
             const std::vector<ChannelStripDefinition>& rows) {
         std::unordered_map<std::uint64_t,std::size_t> index;
@@ -506,6 +654,6 @@ private:
     ChannelRosterBudget budget_;
     std::vector<ChannelStripDefinition> channels_;
     std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
-    std::uint64_t revision_=0, nextId_=1;
+    std::uint64_t revision_=0, nextId_=1, nextEdgeId_=1;
 };
 } // namespace armix::mixer
