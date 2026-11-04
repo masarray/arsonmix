@@ -1528,6 +1528,72 @@ public:
         }
     }
 
+
+    // Real installed ChannelId PCM transaction. No alternate router: compile
+    // the accepted roster's SAME send inventory, lease the SAME native VST3
+    // processors and publish once to the JUCE callback's existing publisher.
+    // M4 cannot represent arbitrary WIRE afterwards; never downgrade it.
+    NativeBusResult applyNativeWireTransaction(
+            std::uint64_t ep,std::uint64_t expectedPcmRev,
+            std::uint64_t expectedRosterRev,
+            std::span<const armix::mixer::WireChange> changes,
+            bool outputsDisarmed=false) {
+        using namespace armix::mixer;
+        NativeBusResult r{};
+        r.pcmRevision=nativeAccepted_.pcmRevision;
+        r.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed){r.error="OUTPUT_MUST_BE_DISARMED";return r;}
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
+           !nativeAccepted_.fxOwners||
+           expectedPcmRev!=nativeAccepted_.pcmRevision||
+           expectedRosterRev!=nativeAccepted_.graph.roster.revision()) {
+            r.error="STALE_NATIVE_WIRE_GRAPH";return r;
+        }
+        if(changes.empty()||changes.size()>256){
+            r.error="INVALID_NATIVE_WIRE_BATCH";return r;
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            const auto changed=roster.wireTransaction(expectedRosterRev,changes);
+            if(!changed.ok()){
+                r.error="NATIVE_WIRE_TRANSACTION_REJECTED";return r;
+            }
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(
+                    ep,expectedPcmRev+1,*nativeAccepted_.fxOwners,bank)!=
+               DynamicChannelFxLeaseBank::Fault::none){
+                r.error="NATIVE_WIRE_FX_LEASE_REJECTED";return r;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.deviceEpoch=ep;
+            fx.graphRevision=expectedPcmRev+1;
+            const auto published=nativePublisher_.commit(
+                roster,nativeAccepted_.graph.request,expectedPcmRev,
+                ep,epoch(),true,std::move(fx));
+            if(!published.ok()){
+                r.error="NATIVE_WIRE_PCM_GRAPH_REJECTED";return r;
+            }
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true; // never fall back to incompatible M4
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            r.accepted=true;r.error="";
+            r.pcmRevision=published.revision;
+            r.rosterRevision=nativeAccepted_.graph.roster.revision();
+            return r;
+        }catch(...){
+            r.error="NATIVE_WIRE_PREPARE_FAILED";return r;
+        }
+    }
+
     // Live dynamic-input controls: one canonical ChannelId PCM callback,
     // no M4 ordinal alias, vendor reload or RT thread allocation.
     bool setNativeInputMix(std::uint64_t epochValue,std::uint64_t revision,
@@ -1695,6 +1761,22 @@ public:
             rows.add(juce::var(row.release()));
         }
         state->setProperty("channels",juce::var(rows));
+        juce::Array<juce::var> edges;
+        for(const auto& accepted:routing->edges) {
+            auto edge=std::make_unique<juce::DynamicObject>();
+            edge->setProperty("edgeId",juce::String(
+                std::to_string(accepted.edgeId)));
+            edge->setProperty("from",juce::String(
+                std::to_string(accepted.from.value)));
+            edge->setProperty("to",juce::String(
+                std::to_string(accepted.to.value)));
+            edge->setProperty("gainLinear",
+                static_cast<double>(accepted.gainLinear));
+            edge->setProperty("tap",accepted.preFader?"PRE_FADER":"POST_FADER");
+            edge->setProperty("primaryOutput",accepted.primaryOutput);
+            edges.add(juce::var(edge.release()));
+        }
+        state->setProperty("edges",juce::var(edges));
         return juce::var(state.release());
     }
 
