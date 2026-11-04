@@ -75,15 +75,71 @@
     // Advertised LIVE is gated by real native callback, valid graph, and actual hardware.
     // A dishonest producer cannot be "fixed" by manufacturing Channels in JS.
     const mainCount = g.channels.filter(ch=>ch.role==="MAIN").length;
-    const admitted = raw.productionCallbackLive === true && caps.callbackOwnsChannelIds === true &&
+    // Real accepted ChannelId PCM may exist before vendor/Show/hardware product
+    // FAT. Never equate an installed PCM graph with a release-ready product.
+    // Conversely, callbackOwnsChannelIds is ONLY advertised by the real
+    // installed callback; the legacy M4/Pages demo must remain unadmitted.
+    const admitted = caps.callbackOwnsChannelIds === true &&
       cmp(d.epoch,"0") > 0 && cmp(g.revision,"0") > 0 &&
+      d.sampleRate > 0 && d.bufferFrames > 0 &&
+      d.enabledOutputs.length > 0 && d.outputEndpoints.length > 0 &&
       Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
       typeof g.mainChannelId === "string" &&
-      g.channels.some(ch => ch.id === g.mainChannelId && ch.role === "MAIN");
-    if (!admitted && (raw.productionCallbackLive || caps.callbackOwnsChannelIds) &&
-        g.channels.length === 0) return null;
+      g.channels.some(ch => ch.id === g.mainChannelId && ch.role === "MAIN") &&
+      g.channels.every(ch => fields(ch,["controls","inserts","sends"]) &&
+        fields(ch.controls,["faderDb","pan","mute","solo"]) &&
+        Number.isFinite(ch.controls.faderDb) &&
+        Number.isFinite(ch.controls.pan) && isBool(ch.controls.mute) &&
+        isBool(ch.controls.solo) && Array.isArray(ch.inserts) &&
+        Array.isArray(ch.sends));
+    // A producer may stage PCM without claiming full release/UAT. A producer
+    // must NEVER claim product LIVE without an admitted PCM graph.
+    if (raw.productionCallbackLive && !admitted) return null;
+    if (caps.callbackOwnsChannelIds && !admitted) return null;
     return { raw, device:d, graph:g, telemetry:t, admitted,
+      productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
+  }
+  // ACK alone is never physical evidence. Readback must prove that a known
+  // control/route actually reached the accepted native graph. No invented UI
+  // updates and no optimistic fader/edge commits.
+  function readbackProvesIntent(next, pending) {
+    const {operation,targetChannelId,payload} = pending;
+    const ch = next.graph.channels.find(c=>c.id===targetChannelId);
+    if (!ch) return false;
+    if (operation === "SET_FADER")
+      return Number.isFinite(payload.valueDb) &&
+        Math.abs(ch.controls.faderDb-payload.valueDb)<=0.11;
+    if (operation === "SET_PAN")
+      return Number.isFinite(payload.value) &&
+        Math.abs(ch.controls.pan-payload.value)<=0.015;
+    if (operation === "SET_MUTE" || operation === "SET_SOLO")
+      return typeof payload.value==="boolean" &&
+        ch.controls[operation==="SET_MUTE"?"mute":"solo"]===payload.value;
+    if (operation !== "APPLY_WIRE_TRANSACTION" ||
+        !Array.isArray(payload.changes) || !payload.changes.length) return false;
+    // A structural WIRE transaction must advance the actual PCM graph.
+    if (cmp(next.graph.revision,pending.baseGraphRevision)<=0) return false;
+    const edges=next.graph.edges.filter(e=>e.enabled);
+    return payload.changes.every(edit=>{
+      if (!object(edit) || decimal(edit.sourceId)===null) return false;
+      if (edit.type==="REMOVE" || edit.type==="DISCONNECT")
+        return decimal(edit.edgeId)!==null &&
+          !edges.some(e=>e.edgeId===edit.edgeId);
+      if (edit.type==="CONNECT" || edit.type==="ROUTE_ONLY")
+        return decimal(edit.destId)!==null &&
+          edges.some(e=>e.from===edit.sourceId&&e.to===edit.destId);
+      if (edit.type==="REPLUG")
+        return decimal(edit.edgeId)!==null && decimal(edit.destId)!==null &&
+          edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.sourceId&&e.to===edit.destId);
+      if (edit.type==="GAIN")
+        return decimal(edit.edgeId)!==null && Number.isFinite(edit.levelDb) &&
+          edges.some(e=>e.edgeId===edit.edgeId&&e.from===edit.sourceId&&
+            Math.abs((e.gainLinear>0?20*Math.log10(e.gainLinear):-60)-edit.levelDb)<=0.21);
+      // MODE and other operations require a native readback verifier before
+      // they can be advertised as effective by this consumer.
+      return false;
+    });
   }
   function createController({emit, onStatus=()=>{}, onAccepted=()=>{}}) {
     if (typeof emit !== "function") throw Error("Native emitter required");
@@ -126,6 +182,10 @@
           pending=null;lastError="STALE_DEVICE";
         } else if (next.graph.revision === ack.graphRevision &&
                    next.graph.rosterRevision === ack.rosterRevision) {
+          if (!readbackProvesIntent(next,pending)) {
+            pending=null;lastError="ACK_READBACK_EFFECT_MISMATCH";
+            subscribe();notify();return false;
+          }
           pending=null;lastError="ACCEPTED_READBACK";
           current=next;onAccepted(next);
           notify();return true;
@@ -157,8 +217,9 @@
         baseGraphRevision:current.graph.revision,
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
-      pending={requestId,operation,deviceEpoch:msg.deviceEpoch,
-        baseGraphRevision:msg.baseGraphRevision,baseRosterRevision:msg.baseRosterRevision,ack:null};
+      pending={requestId,operation,targetChannelId,payload,
+        deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,
+        baseRosterRevision:msg.baseRosterRevision,ack:null};
       lastError="PENDING_NATIVE_ACK";
       emit("arMixConsoleIntent",msg);notify();return {ok:true,requestId};
     }
@@ -194,5 +255,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,createController});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,createController});
 });
