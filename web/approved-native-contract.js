@@ -110,6 +110,14 @@
           pending=null;lastError="STALE_DEVICE";
         }
       }
+      if (pending && !pending.ack) {
+        // Unsolicited snapshot must never repaint an un-ACKed local edit.
+        notify();return true;
+      }
+      if (pending && pending.ack && !next.admitted) {
+        pending=null;lastError="CALLBACK_UNADMITTED";
+        notify();return false;
+      }
       if (pending && pending.ack) {
         const ack=pending.ack;
         if (next.device.epoch !== ack.deviceEpoch) {
@@ -177,7 +185,12 @@
       subscribe();
       return true;
     }
-    return Object.freeze({subscribe,onSnapshot,onAck,intent,state});
+    function expire(requestId) {
+      if (!pending || pending.requestId!==requestId) return false;
+      pending=null;lastError="NATIVE_ACK_OR_READBACK_TIMEOUT";
+      subscribe();notify();return true;
+    }
+    return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
   return Object.freeze({decimal,cmp,normalizeSnapshot,createController});
 });
