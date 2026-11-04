@@ -89,6 +89,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
   for (const filename of [
     'tests/pages_wire_first_canonical_main_smoke.py',
     'tests/wire_graph_canonical_model.test.cjs',
+    'tests/wire_main_native_handoff_contract.test.cjs',
     'tests/ci_workflow_efficiency_test.mjs'
   ]) {
     assert.equal(selected(windowsPR, filename), false);
@@ -103,6 +104,7 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /cancel-in-progress: true/);
   assert.match(ui, /python tests\/pages_wire_first_canonical_main_smoke.py/);
   assert.match(ui, /python tests\/pages_v55_context_wire_fader_smoke.py/);
+  assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
   assert.match(ui, /python tests\/pages_v51_portrait_led_peak_hold_smoke.py/);
   const fullOnly = [...ui.matchAll(/^\s{8}if: .*workflow_dispatch.*integration\/product-/gm)].length;
   assert.ok(fullOnly >= 35, 'Historical/extended GUI steps must be opt-in, found ' + fullOnly);
@@ -125,6 +127,11 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.match(pages, /workflows: \["UI smoke \(Chromium\)"\]/);
   assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(pages, /git ls-remote origin refs\/heads\/main/);
+  assert.match(pages, /fetch-depth: 2/);
+  assert.match(pages, /git diff --quiet HEAD\^ HEAD --/);
+  assert.match(pages, /site\/ web\/ AR-MIX-Live-FX-Host-Standalone-v0\.3\.html/);
+  assert.match(pages, /scripts\/build_pages\.py scripts\/build_ui_css\.py/);
+  assert.match(pages, /Skipping Pages: no published GUI\/landing\/assets changed/);
   assert.match(pages, /needs\.build\.outputs\.fresh == 'true'/);
   assert.doesNotMatch(ui, /actions\/deploy-pages@/);
   assert.doesNotMatch(native, /actions\/deploy-pages@/);
