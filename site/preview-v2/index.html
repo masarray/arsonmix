@@ -1539,6 +1539,10 @@ function paintMainWireFragment(strip,edge,isMain){
  if(!edge||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
   layer?.remove();return;
  }
+ // Pointer-motion repaint must not synchronously remeasure every channel.
+ // Structural render, bank, density and resize remount the section; a
+ // changed accepted edgeId invalidates this tiny projection automatically.
+ if(layer?.dataset.edgeId===String(edge.id))return;
  const jack=section.querySelector(isMain?'.wire-node-in .wire-arrow':'.wire-node-out .wire-pin');
  const sectionRect=section.getBoundingClientRect(),pin=jack?.getBoundingClientRect();
  if(!pin||!sectionRect.width||!sectionRect.height)return;
