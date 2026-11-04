@@ -76,6 +76,11 @@ function verifySession(run,mode,rate,root,blockers){
     blockers.push(tag+': invalid actual physical pin inventory');
   const inCount=Array.isArray(run.capturePins)?run.capturePins.length:0;
   const outCount=Array.isArray(run.renderPins)?run.renderPins.length:0;
+  // A manual port ordinal without the actual capture/render endpoint identity
+  // cannot establish that 0FX and 1FX used the same wired device.
+  if((mode!=='OUTPUT_ONLY_TONE'&&!nonempty(run.captureEndpoint))||
+     (mode!=='CAPTURE_ONLY'&&!nonempty(run.renderEndpoint)))
+    blockers.push(tag+': actual capture/render endpoint identity missing');
   if((mode==='OUTPUT_ONLY_TONE'&&(inCount!==0||outCount===0))||
      (mode==='CAPTURE_ONLY'&&(outCount!==0||inCount===0))||
      (mode.includes('THROUGH')&&(inCount===0||outCount===0||run.wired!==true)))
@@ -109,8 +114,8 @@ function verifySession(run,mode,rate,root,blockers){
   return true;
 }
 function comparable(a,b){
-  return ['backend','sampleRate','bufferFrames','captureEndpoint','renderEndpoint'].every(k=>
-    nonempty(a?.[k])||nonempty(b?.[k])?a?.[k]===b?.[k]:a?.[k]===b?.[k])&&
+  return ['backend','sampleRate','bufferFrames','captureEndpoint','renderEndpoint']
+    .every(k=>a?.[k]===b?.[k])&&
     same(a?.capturePins,b?.capturePins)&&same(a?.renderPins,b?.renderPins);
 }
 export function inspectM3eJournal(journal,{root='.'}={}){

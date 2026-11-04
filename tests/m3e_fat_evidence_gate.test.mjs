@@ -160,3 +160,12 @@ test('an active FAT timer, missing native vendor identity or fake VST in 0FX blo
   assert.match(inspectM3eJournal(j,{root:d}).blockers.join(' '),/zero active VST3/);
  }finally{clean(d);}
 });
+
+test('physical endpoint IDs are mandatory for wired 0FX/1FX evidence, not just pin ordinals',()=>{
+ const d=makeTemp();try{
+  const j=journal(d);
+  for(const s of j.sessions)if(s.mode==='DRY_THROUGH_0FX')s.renderEndpoint='';
+  assert.equal(inspectM3eJournal(j,{root:d}).physical,'PENDING');
+  assert.match(inspectM3eJournal(j,{root:d}).blockers.join(' '),/actual capture\/render endpoint identity missing/);
+ }finally{clean(d);}
+});
