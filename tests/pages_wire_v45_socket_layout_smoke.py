@@ -64,7 +64,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"Pages did not publish canonical V45 console"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==STYLE.read_bytes(),"Pages lost WIRE CSS"
-  assert "assets/mixer-wire-dots.css?v=v54-graph-socket-context" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v55-accepted-wire-paint" in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680,1920):
@@ -102,7 +102,10 @@ def main():
     assert p.locator('#wireLayer path.wire-outgoing-line[data-from="5"][data-to="3"]').count()==0
     hidden=channel_ring(dest)
     assert hidden["arrival"]=="true",(width,"committed route lost arrival when filtered",hidden)
-    assert hidden["border"]==connected["border"] and hidden["background"]==connected["background"],(width,"committed route incorrectly looks unplugged",hidden)
+    assert hidden["border"]=="rgb(57, 74, 85)" and hidden["background"]=="rgb(27, 43, 53)",(width,"hidden WIRE jack must be graphite while semantic arrival persists",hidden)
+    p.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
+    restored=channel_ring(dest)
+    assert restored["arrival"]=="true" and restored["border"]==connected["border"] and restored["background"]==connected["background"],(width,"visible accepted cable must relight destination",restored)
     # Compact is a spatial fallback, not a different hit-test or route state.
     if width==1366:
      p.locator('#densitySelect').select_option(label="Compact")
