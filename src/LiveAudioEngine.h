@@ -1387,6 +1387,24 @@ public:
         return dryRoutingLab_.setNativePrimaryOutput(
             ep,pcmRev,rosterRev,src,dst,true);
     }
+    // JUCE control-thread gateway to the already installed ChannelId renderer.
+    // No callback detach or alternate route ownership. Preserve device,
+    // original vendor VST3 leases and physical output-arm safety gates.
+    LiveDryRoutingLab::NativeBusResult applyNativeWireTransaction(
+            std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,
+            std::span<const armix::mixer::WireChange> changes) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="HARDWARE_NOT_DISARMED";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal||
+           !allOutputsDisarmed()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return fail;
+        return dryRoutingLab_.applyNativeWireTransaction(
+            ep,pcmRev,rosterRev,changes,true);
+    }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
         if(independent_.active()||!directFence_.permitted()||
