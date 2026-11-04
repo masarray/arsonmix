@@ -235,8 +235,8 @@ def main():
                     "CH8 → CH3 leftward drop failed to create link")
         # CH08 starts with a real CH→MAIN edge; the new CH08→CH03 SEND
         # adds a SECOND accepted outgoing edge, not a ghost or replacement.
-        assert_true('⇢2' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
-                    "Source count must include default MAIN + leftward SEND")
+        assert_true('⇢1' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
+                    "Custom OUT count must exclude default MAIN")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
         active=page.locator('#tracks .strip[data-id="3"] .wire-pot.is-active')
