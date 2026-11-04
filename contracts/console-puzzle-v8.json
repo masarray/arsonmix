@@ -4,17 +4,73 @@
   "wire": {
     "uint64": "canonical decimal string, compare as BigInt in JS",
     "requestId": "unique WebView session prefix plus monotonically increasing local token",
-    "events": ["arMixConsoleSubscribe", "arMixConsoleSnapshot", "arMixConsoleIntent", "arMixConsoleAck"]
+    "events": [
+      "arMixConsoleSubscribe",
+      "arMixConsoleSnapshot",
+      "arMixConsoleIntent",
+      "arMixConsoleAck"
+    ]
   },
   "requiredSnapshotFields": {
-    "root": ["schemaVersion", "productionCallbackLive", "device", "graph", "telemetry"],
-    "device": ["epoch", "backend", "captureDevice", "playbackDevice", "inputEndpoints", "outputEndpoints", "enabledInputs", "enabledOutputs", "sampleRate", "bufferFrames", "outputArmed"],
-    "graph": ["revision", "rosterRevision", "channels", "destinations", "capabilities"],
-    "capabilities": ["callbackOwnsChannelIds", "supportedOps", "dynamicChannels", "groups", "fxReturns", "monitor"],
-    "telemetry": ["rawCapturePresent", "rawCapturePeak", "mainPcmPresent", "monitorPcmPresent"]
+    "root": [
+      "schemaVersion",
+      "productionCallbackLive",
+      "device",
+      "graph",
+      "telemetry"
+    ],
+    "device": [
+      "epoch",
+      "backend",
+      "captureDevice",
+      "playbackDevice",
+      "inputEndpoints",
+      "outputEndpoints",
+      "enabledInputs",
+      "enabledOutputs",
+      "sampleRate",
+      "bufferFrames",
+      "outputArmed"
+    ],
+    "graph": [
+      "revision",
+      "rosterRevision",
+      "channels",
+      "destinations",
+      "capabilities"
+    ],
+    "capabilities": [
+      "callbackOwnsChannelIds",
+      "supportedOps",
+      "dynamicChannels",
+      "groups",
+      "fxReturns",
+      "monitor"
+    ],
+    "telemetry": [
+      "rawCapturePresent",
+      "rawCapturePeak",
+      "mainPcmPresent",
+      "monitorPcmPresent"
+    ]
   },
-  "intentRequired": ["requestId", "deviceEpoch", "baseGraphRevision", "baseRosterRevision", "operation", "targetChannelId", "payload"],
-  "ackRequired": ["requestId", "status", "deviceEpoch", "graphRevision", "rosterRevision", "errorCode"],
+  "intentRequired": [
+    "requestId",
+    "deviceEpoch",
+    "baseGraphRevision",
+    "baseRosterRevision",
+    "operation",
+    "targetChannelId",
+    "payload"
+  ],
+  "ackRequired": [
+    "requestId",
+    "status",
+    "deviceEpoch",
+    "graphRevision",
+    "rosterRevision",
+    "errorCode"
+  ],
   "integratedJourneys": [
     "one verified pin -> CH07 MONO -> native MAIN with RAW/MAIN PCM",
     "two independently verified pins -> CH07 and CH02 -> independent native VST3",
@@ -22,5 +78,49 @@
     "invalid source and stale epoch -> rejected with accepted graph and sound preserved",
     "Show save/restore -> stable ChannelId plus plugin vendor state"
   ],
-  "userUATGate": "only after complete integrated Windows application, exact SHA tests, internal hardware qualification or explicit pending disclosure"
+  "userUATGate": "only after complete integrated Windows application, exact SHA tests, internal hardware qualification or explicit pending disclosure",
+  "wireAcceptedProjection": {
+    "status": "additive conditional wire graph contract; reference GUI alone is simulation",
+    "operation": "APPLY_WIRE_TRANSACTION",
+    "requiredNativeReadback": {
+      "graph": [
+        "mainChannelId",
+        "channels",
+        "edges",
+        "revision",
+        "rosterRevision"
+      ],
+      "channel": [
+        "id",
+        "role",
+        "name",
+        "processingFormat",
+        "inserts",
+        "sends"
+      ],
+      "edge": [
+        "edgeId",
+        "from",
+        "to",
+        "tap",
+        "gainLinear",
+        "enabled",
+        "signalKind"
+      ],
+      "ids": "canonical decimal uint64 strings, never Number",
+      "signalKind": "AUDIO"
+    },
+    "publicationGate": "Expose operation only when installed ChannelId PCM owns accepted graph at current device epoch and revisions; never fabricate from legacyM4 or site preview",
+    "display": {
+      "cables": "only a single uniquely selected channel; accepted incoming and outgoing; never ALL unselected paths",
+      "mainFragments": "paired one-edgeId source/MAIN inner-dot only when one selected channel and expanded",
+      "collapsed": "no MAIN physical cable or pseudo-tail",
+      "outConnected": "enabled outgoing edges where to!=mainChannelId",
+      "inConnected": "enabled incoming non-MAIN edges",
+      "selection": "UI-only, must never change audio graph"
+    },
+    "stagePolicy": "Keep productionCallbackLive false until full parity; staged native readback must explicitly reconcile #384 producer with #271 consumer; never change LIVE flag to bypass validation",
+    "consistency": "ACK accepted + matching deviceEpoch, graphRevision and rosterRevision on later native snapshot before repaint",
+    "owner": "ENGINE #266/C1 #384 -> GUI #271 -> FAT #270; main GUI V59 #383 is approved visual behavior"
+  }
 }
