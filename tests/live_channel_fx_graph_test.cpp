@@ -957,6 +957,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
         int liveMixes=0;
         int nativeInputCreates=0,nativeInputPatches=0;
         int nativeInputMixes=0,nativeInputToggles=0;
+        int nativeWireRoutes=0;
         Report createNativeInputChannel(std::uint64_t ep,std::uint64_t pcm,
             std::uint64_t roster,const std::string& name,
             ProcessingFormat format){
@@ -990,6 +991,12 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
             assert(id.value==18&&near(gain,.5f)&&near(pan,0.f));
             ++liveMixes;return true;
         }
+        Report setNativePrimaryOutput(std::uint64_t ep,std::uint64_t pcm,
+            std::uint64_t roster,ChannelId src,ChannelId dst) {
+            assert(ep==9007199254740993ULL&&pcm==3&&roster==4);
+            assert(src.value==20&&dst.value==18);
+            ++nativeWireRoutes;return {true,{},4,5,""};
+        }
         Report editNativeBus(std::uint64_t ep,std::uint64_t pcm,
                             std::uint64_t roster,ChannelRole role,
                             std::span<const ChannelId> selected,
@@ -1003,6 +1010,14 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
             return {true,{19},4,5,""};
         }
     } busControl;
+
+    // Control-thread test: no vendor VST3 effect required for routing.
+    const auto routeBusIntent=[&](const juce::var& intent) {
+        return bridge.processNativeBusIntent(intent,snap,busControl,false,
+            [](const juce::String&,ChannelId,const juce::var&,
+               std::uint64_t,std::uint64_t,std::uint64_t)
+               ->BusControl::Report { return {}; });
+    };
     const auto makeBusIntent=[&](const juce::String& req) {
         auto command=std::make_unique<juce::DynamicObject>();
         command->setProperty("requestId",req);
@@ -1029,7 +1044,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     inputPayload->setProperty("format","MONO");
     create.getDynamicObject()->setProperty(
         "payload",juce::var(inputPayload.release()));
-    auto inputAck=bridge.processNativeBusIntent(create,snap,busControl);
+    auto inputAck=routeBusIntent(create);
     assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
     assert(inputAck.getProperty("createdChannelId","").toString()=="20");
     assert(busControl.nativeInputCreates==1);
@@ -1041,7 +1056,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     patchPayload->setProperty("physicalRight",-1);
     patchPayload->setProperty("sourceFormat","MONO");
     patch.getDynamicObject()->setProperty("payload",juce::var(patchPayload.release()));
-    inputAck=bridge.processNativeBusIntent(patch,snap,busControl);
+    inputAck=routeBusIntent(patch);
     assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.nativeInputPatches==1);
     auto inputMix=makeBusIntent("native:ch11:3");
@@ -1052,7 +1067,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     controlPayload->setProperty("pan",0.0);
     inputMix.getDynamicObject()->setProperty(
         "payload",juce::var(controlPayload.release()));
-    inputAck=bridge.processNativeBusIntent(inputMix,snap,busControl);
+    inputAck=routeBusIntent(inputMix);
     assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.nativeInputMixes==1);
     auto inputToggle=makeBusIntent("native:ch11:4");
@@ -1063,26 +1078,37 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     togglePayload->setProperty("mute",true);togglePayload->setProperty("solo",false);
     inputToggle.getDynamicObject()->setProperty(
         "payload",juce::var(togglePayload.release()));
-    inputAck=bridge.processNativeBusIntent(inputToggle,snap,busControl);
+    inputAck=routeBusIntent(inputToggle);
     assert(inputAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.nativeInputToggles==1);
-    auto nativeAck=bridge.processNativeBusIntent(
-        makeBusIntent("native:bus:1"),snap,busControl);
+    auto nativeAck=routeBusIntent(
+        makeBusIntent("native:bus:1"));
     assert(nativeAck.getProperty("status","").toString()=="ACCEPTED");
     assert(nativeAck.getProperty("graphRevision","").toString()=="0");
     assert(nativeAck.getProperty("nativeGraphRevision","").toString()=="4");
     assert(nativeAck.getProperty("nativeRosterRevision","").toString()=="5");
     assert(nativeAck.getProperty("createdChannelId","").toString()=="19");
     assert(busControl.commits==1);
-    nativeAck=bridge.processNativeBusIntent(
-        makeBusIntent("native:bus:1"),snap,busControl);
+    nativeAck=routeBusIntent(
+        makeBusIntent("native:bus:1"));
     assert(nativeAck.getProperty("errorCode","").toString()=="DUPLICATE_REQUEST_ID");
     assert(busControl.commits==1);
     auto staleBus=makeBusIntent("native:bus:2");
     staleBus.getDynamicObject()->setProperty("nativeGraphRevision","2");
-    nativeAck=bridge.processNativeBusIntent(staleBus,snap,busControl);
+    nativeAck=routeBusIntent(staleBus);
     assert(nativeAck.getProperty("status","").toString()=="REJECTED");
     assert(busControl.commits==1);
+
+    auto wireIntent=makeBusIntent("native:wire:1");
+    wireIntent.getDynamicObject()->setProperty("operation","NATIVE_SET_PRIMARY_OUT");
+    wireIntent.getDynamicObject()->setProperty("targetChannelId","20");
+    auto wirePayload=std::make_unique<juce::DynamicObject>();
+    wirePayload->setProperty("destinationId","18");
+    wireIntent.getDynamicObject()->setProperty(
+        "payload",juce::var(wirePayload.release()));
+    const auto wireAck=routeBusIntent(wireIntent);
+    assert(wireAck.getProperty("status","").toString()=="ACCEPTED");
+    assert(busControl.nativeWireRoutes==1);
     auto liveMixIntent=makeBusIntent("native:mix:1");
     liveMixIntent.getDynamicObject()->setProperty(
         "operation","NATIVE_SET_BUS_MIX");
@@ -1092,8 +1118,8 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     mixPayload->setProperty("pan",0.0);
     liveMixIntent.getDynamicObject()->setProperty(
         "payload",juce::var(mixPayload.release()));
-    const auto mixAck=bridge.processNativeBusIntent(
-        liveMixIntent,snap,busControl);
+    const auto mixAck=routeBusIntent(
+        liveMixIntent);
     assert(mixAck.getProperty("status","").toString()=="ACCEPTED");
     assert(busControl.liveMixes==1&&busControl.commits==1);
     // Fail-closed device fault: do not advertise a compatibility actuator
