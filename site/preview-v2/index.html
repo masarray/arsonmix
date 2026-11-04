@@ -303,8 +303,8 @@
       <div class="more-tools-panel">
         <span class="more-tools-caption">CHANNEL SETUP</span>
         <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
-        <button class="tool" id="addBus" title="Create group bus">+ Bus</button>
-        <button class="tool" id="addFx" title="Create a send FX return">+ FX Return</button>
+        <button class="tool" id="addBus" title="Use a universal receiving channel" hidden>+ Bus</button>
+        <button class="tool" id="addFx" title="Use a universal channel with FX insert" hidden>+ FX Return</button>
         <span class="more-tools-caption">VIEW & SELECTION</span>
         <button class="tool" id="mode" aria-pressed="false" title="Compact narrow channel strips">Narrow</button>
         <select id="viewFilter" class="toolbar-select" aria-label="Filter channel types"><option value="all">All</option><option value="audio">Audio</option><option value="bus">Buses</option><option value="fx">FX Returns</option><option value="solo">Solo</option></select>
@@ -417,6 +417,7 @@
   </main>
   <footer class="status-bar"><span class="state" id="transport">Stopped</span><span id="info" class="last-action" role="status" aria-live="polite">Interactive visual reference. Changes are local to this mockup.</span><span class="warning">SIMULATED METERS · NO REAL AUDIO</span></footer>
 </div>
+<script src="assets/wire-graph-model.js?v=wire-a1"></script>
 <script>
 (function(){
 'use strict';
@@ -455,7 +456,9 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';tracks[0].send='Bus A';tracks[0].sendOn=true;tracks[1].send='Bus A';tracks[1].sendOn=true;tracks[0].selected=true;render();}
+function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';const migrated=ArSonWireGraph.migrateLegacy(tracks,master.id);
+if(!migrated.ok)throw Error('Invalid initial graph: '+migrated.error);
+wireEdges=migrated.edges;nextWireId=migrated.nextId;tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -583,38 +586,38 @@ function sectionFx(t){
  return out+'</div></div>';
 }
 
-/* V12 wire graph is independent of receiver IN; multiple send sources may sum.
-   This is a GUI reference edge model, NOT native PCM/GraphRevision admission. */
-function wireFor(src,dst){return wireEdges.find(e=>e.sourceId===src&&e.destId===dst&&e.enabled);}
-function outgoingWires(id){return wireEdges.filter(e=>e.enabled&&e.sourceId===id);}
-function wireOutgoingCount(id){return outgoingWires(id).length+tracks.filter(t=>parseSplitSource(t.input)?.sourceId===id&&!wireFor(id,t.id)).length;}
-function wireIsCycle(sourceId,destId){
- if(sourceId===destId)return true;
- const visited=new Set(),stack=[destId];
- while(stack.length){
-  const id=stack.pop();if(id===sourceId)return true;
-  if(visited.has(id))continue;visited.add(id);
-  for(const edge of wireEdges)if(edge.enabled&&edge.sourceId===id)stack.push(edge.destId);
-  for(const track of tracks)if(parseSplitSource(track.input)?.sourceId===id)stack.push(track.id);
-  const track=tracks.find(t=>t.id===id);
-  if(track&&track.kind!=='master'){
-   const output=tracks.find(t=>t.name===track.output&&(t.kind==='bus'||t.kind==='fx'));
-   if(output)stack.push(output.id);
-   if(track.kind==='bus')for(const slot of track.sendSlots)if(slot.sendOn){
-    const downstream=tracks.find(t=>t.name===slot.send);
-    if(downstream)stack.push(downstream.id);
-   }
-  }
+/* ONE deterministic reference graph. OUTPUT is a compatibility projection,
+   not an independent PCM route. Native owns actual graph ACK and audio. */
+function syncWireOutputProjection(){
+ for(const t of tracks){
+  const primary=wireEdges.find(e=>e.enabled&&e.sourceId===t.id&&e.kind==='primary');
+  const dest=primary&&tracks.concat(master).find(x=>x.id===primary.destId);
+  t.output=dest?dest.kind==='master'?'Master':dest.name:'SOURCE ONLY (No Main)';
  }
- return false;
 }
-function hasLegacySendTo(source,dest){
- if(dest.kind!=='bus'&&dest.kind!=='fx'||!source.sendSlots)return false;
- return source.sendSlots.some((slot,i)=>{
-  const value=i===source.activeSend?source:slot;
-  return value.sendOn&&value.send===dest.name;
- });
+function wireGraphCommit(ops,{record=true}={}){
+ const before=record?wireWsSnapshot():null;
+ const result=ArSonWireGraph.applyWireTransaction({
+  channels:tracks,mainId:master.id,edges:wireEdges,nextId:nextWireId
+ },ops);
+ if(!result.ok){say('ROUTING GUARDIAN: '+result.error+' · graph unchanged');return false;}
+ wireEdges=result.edges;nextWireId=result.nextId;
+ if(selectedWireEdgeId!==null&&!wireEdges.some(e=>e.id===selectedWireEdgeId))selectedWireEdgeId=null;
+ syncWireOutputProjection();
+ if(record)wireWsRecord(before);
+ return true;
 }
+function wireFor(src,dst){return wireEdges.find(e=>e.enabled&&e.sourceId===src&&e.destId===dst);}
+function outgoingWires(id){return wireEdges.filter(e=>e.enabled&&e.sourceId===id);}
+function wireOutgoingCount(id){return outgoingWires(id).length;}
+function wireIsCycle(src,dst){
+ if(src===dst)return true;
+ const candidate={id:nextWireId,sourceId:src,destId:dst,kind:'send',mode:'send',levelDb:0,enabled:true};
+ const result=ArSonWireGraph.validateCandidateGraph(tracks,master.id,
+  [...wireEdges.filter(e=>e.sourceId!==src||e.destId!==dst),candidate]);
+ return !result.ok&&result.error==='FEEDBACK_CYCLE';
+}
+function hasLegacySendTo(){return false;} // old slots migrated, never a second graph
 function wireSourceTrack(id){return tracks.find(t=>t.id===id&&t.kind!=='master');}
 // Transient WIRE source focus is separate from mixer-channel selection.
  // Clearing this tool never alters a committed route or native audio state.
@@ -650,115 +653,62 @@ function showRouteChoice(source,dest,anchor){
  return true;
 }
 function commitRouteChoice(kind){
- const wireWsBefore=wireWsPendingBefore;wireWsPendingBefore=null;
- const p=pendingBusRoute;if(!p)return false;
- const source=wireSourceTrack(p.sourceId),dest=tracks.find(t=>t.id===p.destId&&t.kind==='bus');
- if(!source||!dest||wireIsCycle(source.id,dest.id)||hasLegacySendTo(source,dest)){
-  closeRouteChoice();say('BUS ROUTE REJECTED: source, destination or graph changed');return false;
- }
- const old=wireFor(source.id,dest.id);
- if(kind==='only'){
-  wireEdges=wireEdges.filter(e=>e.sourceId!==source.id||e.kind!=='primary');
-  if(old)wireEdges=wireEdges.filter(e=>e.id!==old.id);
-  source.output=dest.name;
-  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'primary',mode:'routeOnly',levelDb:0,enabled:true});
- }else if(kind==='parallel'){
-  if(old)wireEdges=wireEdges.filter(e=>e.id!==old.id);
-  if(old?.kind==='primary'&&source.output===dest.name)source.output='Master';
-  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,kind:'send',mode:'send',levelDb:0,enabled:true});
- }else return false;
- closeRouteChoice();render();kickWireSpring(source.id,dest.id);wireWsRecord(wireWsBefore);
- say(source.name+' → '+dest.name+' · '+(kind==='only'?'VIA BUS ONLY · no direct MAIN':'PARALLEL SEND · original primary output preserved')+' · GUI DEMO ONLY');
+ const p=pendingBusRoute,source=p&&wireSourceTrack(p.sourceId),dest=p&&tracks.find(t=>t.id===p.destId);
+ if(!source||!dest){closeRouteChoice();return false;}
+ const type=kind==='only'?'ROUTE_ONLY':kind==='parallel'?'CONNECT':null;
+ if(!type)return false;
+ const ok=wireGraphCommit([{type,sourceId:source.id,destId:dest.id}]);
+ closeRouteChoice();if(!ok)return false;
+ render();kickWireSpring(source.id,dest.id);
+ say(source.name+' → '+dest.name+' · '+(kind==='only'?'ROUTE ONLY':'PARALLEL SEND')+' · reference only');
  return true;
 }
 function requestWireConnection(source,dest,anchor){
- if(!source||!dest||source.id===dest.id){say('WIRE: choose a different destination');return false;}
- if(dest.kind!=='master'&&hasLegacySendTo(source,dest)){
-  say('ALREADY CONNECTED: '+source.name+' → '+dest.name+' via existing SEND slot · duplicate cable prevented');
-  return false;
- }
+ if(!source||!dest||source.id===dest.id)return false;
+ const existing=wireFor(source.id,dest.id);
+ if(existing){selectWireEdge(existing);return true;}
  if(dest.kind==='master'){
-  if(source.output!=='Master'&&source.output!=='SOURCE ONLY (No Main)'){
-   say('MAIN DROP BLOCKED: '+source.name+' primary OUT is '+source.output+' · use route inspector to change the Bus path');
-   return false;
-  }
-  wireSourceId=source.id;toggleDirectMain();return true;
+  if(!wireGraphCommit([{type:'CONNECT',sourceId:source.id,destId:master.id}]))return false;
+  render();say(source.name+' → MAIN connected · reference only');return true;
  }
- if(dest.kind==='bus'&&!wireFor(source.id,dest.id))return showRouteChoice(source,dest,anchor);
+ if(dest.kind==='bus')return showRouteChoice(source,dest,anchor);
  return wireConnect(source,dest);
 }
 function wireConnect(source,dest){
  if(!source||source.kind==='master'||!dest||dest.kind==='master'||source.id===dest.id)return false;
  const old=wireFor(source.id,dest.id);
- if(old){const before=wireWsSnapshot();wireEdges=wireEdges.filter(e=>e.id!==old.id);if(old.kind==='primary'&&source.output===dest.name)source.output='SOURCE ONLY (No Main)';render();wireWsRecord(before);say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
- if(hasLegacySendTo(source,dest)){
-  say('WIRE not added: '+source.name+' already sends to '+dest.name+' via SEND slot · avoids doubled audio');return false;
- }
- if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
- const before=wireWsSnapshot();
- wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();wireWsRecord(before);kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
- return true;
+ if(old){selectWireEdge(old);return true;}
+ if(!wireGraphCommit([{type:'CONNECT',sourceId:source.id,destId:dest.id,mode:wireMode}]))return false;
+ render();kickWireSpring(source.id,dest.id);
+ say('WIRE '+source.name+' → '+dest.name+' · reference graph, no JS PCM');return true;
 }
 
 /* Atomic V18 wire replug: preserve the same edge id, gain, mode, and tap.
    Existing graph is untouched on illegal destinations or canceled gestures. */
 function replugWireEdge(sourceId,oldDestId,nextDestId){
- const source=wireSourceTrack(sourceId),edge=wireFor(sourceId,oldDestId);
- const previous=tracks.find(t=>t.id===oldDestId);
- if(!source||!edge||!previous){say('WIRE REPLUG: edge changed during drag; original graph kept');return false;}
- if(oldDestId===nextDestId){say('WIRE kept · original socket');return true;}
- if(nextDestId===null){
-  wireEdges=wireEdges.filter(e=>e.id!==edge.id);
-  if(edge.kind==='primary'&&source.output===previous.name)source.output='SOURCE ONLY (No Main)';
-  wireAnchorId=null;render();
-  say('WIRE unplugged '+source.name+' → '+previous.name+' · GUI DEMO');return true;
- }
- if(nextDestId===master.id){
-  if(edge.kind==='primary'&&source.output===previous.name){
-   wireEdges=wireEdges.filter(e=>e.id!==edge.id);
-   source.output='Master';wireAnchorId=null;render();
-   say('WIRE rerouted to MAIN · direct output restored · GUI DEMO');return true;
-  }
-  if(source.output==='Master'||source.output==='SOURCE ONLY (No Main)'){
-   wireEdges=wireEdges.filter(e=>e.id!==edge.id);
-   source.output='Master';wireAnchorId=null;render();
-   say('WIRE rerouted to MAIN · original send removed · GUI DEMO');return true;
-  }
-  say('WIRE REPLUG BLOCKED: primary output '+source.output+' remains unchanged');return false;
- }
- const dest=tracks.find(t=>t.id===nextDestId);
- if(!dest||dest.id===sourceId){say('WIRE REPLUG REJECTED: invalid receiving socket');return false;}
- if(edge.kind==='primary'&&dest.kind!=='bus'){
-  say('WIRE REPLUG REJECTED: a Bus-only primary wire requires BUS or MAIN');return false;
- }
- if(wireFor(source.id,dest.id)||hasLegacySendTo(source,dest)||wireIsCycle(source.id,dest.id)){
-  say('WIRE REPLUG REJECTED: duplicate edge, hidden Send or feedback path; original kept');return false;
- }
- edge.destId=dest.id;
- if(edge.kind==='primary'&&source.output===previous.name)source.output=dest.name;
- wireAnchorId=dest.id;render();kickWireSpring(source.id,dest.id);
- say('WIRE rerouted '+source.name+' · '+previous.name+' → '+dest.name+
-  ' · '+wireDbText(edge.levelDb)+' preserved · GUI DEMO');return true;
+ const edge=wireFor(sourceId,oldDestId);
+ if(!edge||!wireSourceTrack(sourceId)){say('WIRE REPLUG: stale edge; graph kept');return false;}
+ if(nextDestId===oldDestId)return true;
+ const op=nextDestId===null?{type:'REMOVE',sourceId,edgeId:edge.id}:
+  {type:'RETARGET',sourceId,edgeId:edge.id,destId:nextDestId};
+ if(!wireGraphCommit([op],{record:false}))return false;
+ wireAnchorId=nextDestId;render();
+ if(nextDestId!==null&&nextDestId!==master.id)kickWireSpring(sourceId,nextDestId);
+ say('WIRE '+(nextDestId===null?'unplugged':'replugged')+' · edge '+edge.id+' · reference only');
+ return true;
 }
 function wireConnectRange(source,anchorId,finalId){
- const bankCapacityNow=bankCapacity(),page=Number(document.getElementById('bankSelect').value)||0;
+ const page=Number(document.getElementById('bankSelect').value)||0;
  const filter=document.getElementById('viewFilter').value;
  const shown=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter))
-  .slice(page*bankCapacityNow,(page+1)*bankCapacityNow);
+  .slice(page*bankCapacity(),(page+1)*bankCapacity());
  const a=shown.findIndex(x=>x.id===anchorId),b=shown.findIndex(x=>x.id===finalId);
- if(a<0||b<0){say('WIRE RANGE: select two destination arrows in the SAME visible bank');return false;}
- const batch=shown.slice(Math.min(a,b),Math.max(a,b)+1)
-  .filter(t=>t.kind!=='master'&&t.id!==source.id&&!wireFor(source.id,t.id));
- if(!batch.length){say('WIRE RANGE: destinations already linked');return false;}
- // Batch is fail-closed: do not apply some edges then discover a loop later.
- if(batch.some(t=>wireIsCycle(source.id,t.id)||hasLegacySendTo(source,t))){
-  say('WIRE RANGE REJECTED: duplicate SEND or feedback path; no links changed');return false;
- }
- for(const t of batch)wireEdges.push({id:nextWireId++,sourceId:source.id,destId:t.id,
-  mode:wireMode,levelDb:0,enabled:true});
- render();say(source.name+' → '+batch.length+' destinations linked with SHIFT · GUI DEMO ONLY');
- return true;
+ if(a<0||b<0){say('WIRE RANGE: same bank only');return false;}
+ const targets=shown.slice(Math.min(a,b),Math.max(a,b)+1)
+  .filter(t=>t.id!==source.id&&!wireFor(source.id,t.id));
+ if(!targets.length)return false;
+ if(!wireGraphCommit(targets.map(t=>({type:'CONNECT',sourceId:source.id,destId:t.id}))))return false;
+ render();say('WIRE RANGE · '+targets.length+' accepted edges · reference only');return true;
 }
 function wireDbText(db){return db<=-60?'−∞':(db>0?'+':'')+Number(db).toFixed(1)+' dB';}
 function wireGainValue(db){return Math.round(Math.max(-60,Math.min(6,Number(db)||0))*10)/10;}
@@ -2679,12 +2629,12 @@ document.getElementById('wireView').addEventListener('change',()=>{
 });
 function toggleDirectMain(){
  const t=armedWireSource()||selection().find(x=>x.kind!=='master');
- if(!t){say('Select a channel or click WIRE OUT before changing MAIN');return;}
- if(t.output!=='Master'&&t.output!=='SOURCE ONLY (No Main)'){
-  say('MAIN link not changed: '+t.name+' primary OUT is '+t.output+' · change OUT explicitly');return;
- }
- t.output=t.output==='Master'?'SOURCE ONLY (No Main)':'Master';
- render();say(t.name+(t.output==='Master'?' direct MAIN enabled':' direct MAIN disconnected')+' · wire feeds unchanged · DEMO ONLY');
+ if(!t){say('Select a channel for MAIN');return;}
+ const edge=wireFor(t.id,master.id);
+ const op=edge?{type:'REMOVE',sourceId:t.id,edgeId:edge.id}:
+  {type:'CONNECT',sourceId:t.id,destId:master.id};
+ if(!wireGraphCommit([op]))return;
+ render();say(t.name+(edge?' MAIN unplugged':' MAIN connected')+' · reference only');
 }
 document.getElementById('routeOnly').addEventListener('click',()=>commitRouteChoice('only'));
 document.getElementById('routeParallel').addEventListener('click',()=>commitRouteChoice('parallel'));
@@ -2693,15 +2643,16 @@ document.getElementById('wireMaster').addEventListener('click',toggleDirectMain)
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
- const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);revealTrack(t);say('Added '+t.name+' · visual only');
+ const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);
+ if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks=tracks.filter(x=>x.id!==t.id);return;}revealTrack(t);say('Added '+t.name+' → MAIN · reference only');
 });
 document.getElementById('addFx').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='fx').length+1,t=make('FX '+n,'fx','#8b709a');
- t.fx[0]='Studio Reverb';tracks.push(t);revealTrack(t);
+ t.fx[0]='Studio Reverb';tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks.pop();return;}revealTrack(t);
  say('Added FX Return '+t.name+' · send destination with insert processing');
 });
 document.getElementById('addBus').addEventListener('click',()=>{
- const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);revealTrack(t);say('Added '+t.name+' · visual only');
+ const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks.pop();return;}revealTrack(t);say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');setDensity('comfort');init();say('Reference mixer reset; saved scenes remain available.');});
