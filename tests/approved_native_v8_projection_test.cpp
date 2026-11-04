@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // M3-B CONTROL-thread projection regression. No mock PCM is installed.
 #include "../integration/ApprovedNativeV8Projection.h"
+#include "../integration/ApprovedNativeControlIntent.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -50,6 +51,136 @@ static void noMutationOnReject(juce::var snapshot,juce::var bus,bool admitted) {
     assert(!projectApprovedNativeV8(snapshot,bus,admitted));
     assert(juce::JSON::toString(snapshot,false)==before);
 }
+
+static void controlIntentTranslationCases(const juce::var& canonical,
+                                          const juce::var& rawBus) {
+    // Simulate an admitted native CONTROL ABI, not physical PCM. Real engine
+    // MUST expose these capabilities only after CH1-10 and dynamic IDs work.
+    auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
+    auto bus=juce::JSON::parse(juce::JSON::toString(rawBus,false));
+    juce::Array<juce::var> publicOps;
+    for(const char* op:{"SET_FADER","SET_PAN","SET_MUTE","SET_SOLO"})
+        publicOps.add(juce::String(op));
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    juce::Array<juce::var> nativeOps;
+    for(const char* op:{"NATIVE_SET_CHANNEL_MIX",
+                        "NATIVE_SET_CHANNEL_MUTE_SOLO","NATIVE_SET_BUS_MIX"})
+        nativeOps.add(juce::String(op));
+    bus.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    const auto source=juce::String("9007199254740993");
+    const auto device=accepted.getProperty("device",{});
+    const auto graph=accepted.getProperty("graph",{});
+    auto makeIntent=[&](const char* operation,const juce::var& value,
+                        const juce::String& id)->juce::var {
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty(juce::String(operation)=="SET_FADER"?
+                             "valueDb":"value",value);
+        auto request=std::make_unique<juce::DynamicObject>();
+        request->setProperty("requestId","m3b-controlled-intent-001");
+        request->setProperty("deviceEpoch",device.getProperty("epoch",{}));
+        request->setProperty("baseGraphRevision",graph.getProperty("revision",{}));
+        request->setProperty("baseRosterRevision",graph.getProperty("rosterRevision",{}));
+        request->setProperty("operation",operation);
+        request->setProperty("targetChannelId",id);
+        request->setProperty("payload",juce::var(payload.release()));
+        return juce::var(request.release());
+    };
+    const auto fader=makeIntent("SET_FADER",juce::var(-12.0),source);
+    const auto translated=translateApprovedNativeControl(fader,accepted,bus);
+    assert(translated.ok());
+    assert(translated.translated.getProperty("operation","").toString()
+           =="NATIVE_SET_CHANNEL_MIX");
+    assert(translated.translated.getProperty("targetChannelId","").toString()
+           ==source);
+    assert(translated.translated.getProperty("requestId","").toString()
+           =="m3b-controlled-intent-001");
+    const auto gain=translated.translated.getProperty("payload",{})
+                                     .getProperty("gain",{});
+    const auto keptPan=translated.translated.getProperty("payload",{})
+                                        .getProperty("pan",{});
+    assert(std::abs(static_cast<double>(gain)-std::pow(10.,-12./20.))<0.000001);
+    assert(std::abs(static_cast<double>(keptPan))<0.000001);
+    const auto pan=translateApprovedNativeControl(
+        makeIntent("SET_PAN",juce::var(0.75),source),accepted,bus);
+    assert(pan.ok());
+    assert(std::abs(static_cast<double>(pan.translated.getProperty("payload",{})
+                   .getProperty("gain",{}))-.5)<0.000001);
+    assert(std::abs(static_cast<double>(pan.translated.getProperty("payload",{})
+                   .getProperty("pan",{}))-.75)<0.000001);
+    const auto muted=translateApprovedNativeControl(
+        makeIntent("SET_MUTE",juce::var(true),source),accepted,bus);
+    assert(muted.ok());
+    assert(muted.translated.getProperty("operation","").toString()
+           =="NATIVE_SET_CHANNEL_MUTE_SOLO");
+    assert(static_cast<bool>(muted.translated.getProperty("payload",{})
+                                    .getProperty("mute",false)));
+    assert(!static_cast<bool>(muted.translated.getProperty("payload",{})
+                                     .getProperty("solo",true)));
+    const auto solo=translateApprovedNativeControl(
+        makeIntent("SET_SOLO",juce::var(true),source),accepted,bus);
+    assert(solo.ok());
+    assert(!static_cast<bool>(solo.translated.getProperty("payload",{})
+                                    .getProperty("mute",true)));
+    assert(static_cast<bool>(solo.translated.getProperty("payload",{})
+                                    .getProperty("solo",false)));
+    // Nothing in the original request or accepted readback was edited.
+    assert(fader.getProperty("operation","").toString()=="SET_FADER");
+    assert(graph.getProperty("channels",{})[0].getProperty("controls",{})
+                .getProperty("faderDb",0.0)==canonical.getProperty("graph",{})
+                .getProperty("channels",{})[0].getProperty("controls",{})
+                .getProperty("faderDb",0.0));
+    const auto before=juce::JSON::toString(accepted,false);
+    auto fail=[&](const juce::var& request,const juce::var& pub,
+                  const juce::var& native)->juce::String {
+        const auto oldPub=juce::JSON::toString(pub,false);
+        const auto oldBus=juce::JSON::toString(native,false);
+        const auto result=translateApprovedNativeControl(request,pub,native);
+        assert(!result.ok());
+        assert(!result.translated.isObject());
+        assert(juce::JSON::toString(pub,false)==oldPub);
+        assert(juce::JSON::toString(native,false)==oldBus);
+        return result.error;
+    };
+    assert(fail(fader,canonical,bus)=="CHANNELID_CALLBACK_NOT_ADMITTED");
+    assert(fail(makeIntent("SET_FADER",juce::var(-100.),source),
+                accepted,bus)=="INVALID_FADER_VALUE");
+    assert(fail(makeIntent("SET_PAN",juce::var(2.),source),
+                accepted,bus)=="INVALID_PAN_VALUE");
+    assert(fail(makeIntent("SET_MUTE",juce::var(1),source),
+                accepted,bus)=="INVALID_MUTE_SOLO_VALUE");
+    assert(fail(makeIntent("SET_FADER",juce::var(-12.),
+                           "9007199254740994"),accepted,bus)
+           =="UNKNOWN_OR_STALE_CHANNELID");
+    assert(fail(makeIntent("SET_MUTE",juce::var(true),
+                           "18446744073709551615"),accepted,bus)
+           =="CHANNEL_ROLE_NOT_MUTABLE");
+    const auto stale=makeIntent("SET_PAN",juce::var(0.5),source);
+    stale.getDynamicObject()->setProperty("baseGraphRevision","24");
+    assert(fail(stale,accepted,bus)=="STALE_NATIVE_CONTROL_REVISION");
+    const auto fakeOp=makeIntent("SET_FADER",juce::var(-12.),source);
+    fakeOp.getDynamicObject()->setProperty("operation","NATIVE_SET_CHANNEL_MIX");
+    assert(fail(fakeOp,accepted,bus)=="UNSUPPORTED_APPROVED_CONTROL");
+    auto unadvertised=juce::JSON::parse(juce::JSON::toString(accepted,false));
+    unadvertised.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",
+                                         juce::var(juce::Array<juce::var>{}));
+    assert(fail(fader,unadvertised,bus)=="PUBLIC_CONTROL_NOT_ADMITTED");
+    auto noLease=juce::JSON::parse(juce::JSON::toString(bus,false));
+    noLease.getDynamicObject()->setProperty("supportedOps",
+                                            juce::var(juce::Array<juce::var>{}));
+    assert(fail(fader,accepted,noLease)=="NATIVE_PCM_OPERATION_NOT_ADMITTED");
+    auto staleReadback=juce::JSON::parse(juce::JSON::toString(bus,false));
+    staleReadback.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("fader",0.25);
+    assert(fail(fader,accepted,staleReadback)=="STALE_NATIVE_CONTROL_READBACK");
+    auto wrongRole=juce::JSON::parse(juce::JSON::toString(bus,false));
+    wrongRole.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("role","GROUP");
+    assert(fail(fader,accepted,wrongRole)=="NATIVE_ROLE_MISMATCH");
+    assert(juce::JSON::toString(accepted,false)==before);
+}
+
 int main() {
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
@@ -79,6 +210,8 @@ int main() {
         .getProperty("callbackOwnsChannelIds",false)));
     // NOTE: structural ChannelId proof NEVER promotes universal product-live.
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
+
+    controlIntentTranslationCases(snap,bus);
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()
