@@ -19,7 +19,7 @@ expected=source
 for name in ('mixer-control-keys.css','mixer-control-keys.js'):
     require(name in revisions and re.fullmatch('[0-9a-f]{16}',revisions[name]) is not None,'missing versioned approved key')
     token='assets/'+name
-    pattern=re.compile(re.escape(token)+r'(?:\\?[^"\\s>]+)?')
+    pattern=re.compile(re.escape(token)+r'(?:\?[^"\s>]+)?')
     require(len(pattern.findall(expected))==1,'approved key CSS/JS link missing or duplicated: '+name)
     expected=pattern.sub(token+'?rev='+revisions[name],expected)
     approved=ROOT/'site/preview-buttons/assets'/name
