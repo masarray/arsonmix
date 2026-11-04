@@ -53,7 +53,7 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
 
 test('independent release gate rejects old self-consistent web hash artifact',()=>{
   for(const field of [
-    'approvedGuiRoute','approvedGuiIframe','approvedGuiPagesSha256',
+    'approvedGuiRoute','approvedGuiOutput','approvedGuiPagesSha256',
     'approvedGuiNativeHtmlSha256','approvedGuiManifestSha256',
     'approvedGuiCanonicalSha256','approvedGuiResourceCount','approvedGuiAdapterStatus'
   ]) {
