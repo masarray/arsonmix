@@ -80,7 +80,7 @@ def physical_main_plug(page):
 
 
 def audit_visual_matrix(browser):
-    """Nine real Chromium renders: viewport, density, focus, collapse, plug."""
+    """Nine renders: selected physical MAIN only, graphite folded bay, reversible plug."""
     for width,height in ((1366,768),(1680,900),(1920,1080)):
         for density in ("comfort","standard","compact"):
             page=browser.new_page(viewport={"width":width,"height":height},
@@ -96,12 +96,16 @@ def audit_visual_matrix(browser):
             if density=="compact":
                 assert "collapsed-send" in (body.get_attribute("class") or "")
                 initial=edge(page,1,"out")
-                assert initial and page.locator(
+                assert initial, (width,density,"real MAIN edge missing")
+                assert page.locator(
                     '#tracks .strip[data-id="1"] .wire-fold-summary'
-                ).get_attribute("data-wire-main-edge")==initial
+                ).get_attribute("data-wire-main-edge") is None
                 assert page.locator(
                     '#master .wire-fold-summary'
-                ).get_attribute("data-wire-main-edge")==initial
+                ).get_attribute("data-wire-main-edge") is None
+                assert page.locator('#tracks .strip[data-id="1"] .fold-link-out').evaluate(
+                    "el=>getComputedStyle(el).fill")=="rgb(50, 73, 86)", (
+                    width,density,"MAIN-only folded OUT must stay graphite")
                 assert page.locator(".wire-main-fragment").count()==0
                 page.screenshot(path=str(PAGE.parents[2]/
                     f"pages-wire-main-{width}x{height}-{density}.png"))
@@ -138,8 +142,8 @@ def audit_visual_matrix(browser):
             }""")
             assert pair["source"] and pair["source"]==pair["main"]==pair["connected"],(
                 width,height,density,"MAIN fragments do not share exact graph edge",pair)
-            assert pair["sources"]==pair["painted"],(
-                width,height,density,"one physical MAIN fragment per connected source",pair)
+            assert pair["painted"]==1 and pair["sources"]>=1,(
+                width,height,density,"only uniquely selected CH may paint MAIN",pair)
             for side in ("sourceGeometry","mainGeometry"):
                 geom=pair[side]
                 assert geom and geom["bounded"] and geom["cubic"] and geom["error"]<=1.1,(
@@ -149,9 +153,14 @@ def audit_visual_matrix(browser):
             focused=page.locator('#master .wire-main-fragment').get_attribute("data-edge-id")
             assert focused==edge(page,5,"out") and focused!=pair["source"],(
                 width,height,density,"focused MAIN edge selection")
+            assert page.locator('#tracks .strip[data-id="1"] .wire-main-fragment').count()==0
+            assert page.locator('#tracks .strip[data-id="5"] .wire-main-fragment').count()==1
             page.locator('.section-rail [data-section="send"]').click()
             assert page.locator('.wire-main-fragment').count()==0,(
                 width,height,density,"collapsed MAIN fragments not retired")
+            for folded in page.locator('.wire-fold-summary').all():
+                assert folded.get_attribute("data-wire-main-edge") is None
+                assert folded.evaluate("el=>getComputedStyle(el,'::after').content") in ("none","normal")
             page.locator('.section-rail [data-section="send"]').click()
             assert page.locator('#master .wire-main-fragment').get_attribute("data-edge-id")==focused
             page.screenshot(path=str(PAGE.parents[2]/
@@ -189,7 +198,8 @@ def run():
             assert main_stub.get_attribute("data-edge-id")==initial
             assert " C" in source_stub.locator(".wire-main-jacket").get_attribute("d")
             assert " C" in main_stub.locator(".wire-main-jacket").get_attribute("d")
-            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==1
+            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==0,(
+                width,"unselected channel must not paint MAIN fragment")
 
             # Distinct disconnect is reversible and only affects this channel.
             control.click()
