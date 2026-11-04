@@ -1545,7 +1545,29 @@ function wireJackRect(button){
  const dot=button.querySelector?.(button.classList.contains('wire-node-out')?'.wire-pin':'.wire-arrow');
  return (dot||button).getBoundingClientRect?.()||null;
 }
+/* One pair of short MAIN-colored stubs is a projection of ONE real edgeId. */
+function syncMainWireFragments(){
+ const focus=armedWireSource()||selection().filter(t=>t.kind!=='master').at(0);
+ const selected=focus&&wireFor(focus.id,master.id);
+ for(const t of tracks){
+  const edge=wireFor(t.id,master.id);
+  const lane=document.querySelector('.strip[data-id="'+t.id+'"]');
+  for(const el of [lane?.querySelector('.wire-node-out'),lane?.querySelector('.wire-fold-summary')]){
+   if(!el)continue;
+   if(edge)el.setAttribute('data-wire-main-edge',String(edge.id));
+   else el.removeAttribute('data-wire-main-edge');
+   el.style.setProperty('--main-wire-hue',master.color);
+  }
+ }
+ for(const el of [masterEl.querySelector('.wire-node-in'),masterEl.querySelector('.wire-fold-summary')]){
+  if(!el)continue;
+  if(selected)el.setAttribute('data-wire-main-edge',String(selected.id));
+  else el.removeAttribute('data-wire-main-edge');
+  el.style.setProperty('--main-wire-hue',master.color);
+ }
+}
 function renderWireRouting(){
+ syncMainWireFragments();
  if(wireWsOpen&&!wireGesture?.active)renderWireWorkspace();
  document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
@@ -1587,7 +1609,7 @@ function renderWireRouting(){
   if(!source){main.textContent='MAIN';main.setAttribute('aria-pressed','false');}
  }
  if(main&&source){
-  const direct=source.output==='Master';
+  const direct=!!wireFor(source.id,master.id);
   main.textContent=direct?'MAIN ON':'MAIN OFF';main.setAttribute('aria-pressed',String(direct));
   main.title='Direct source output: '+source.output+' · click to toggle Main only when currently mapped to Main or Source Only';
  }
@@ -1994,7 +2016,10 @@ consoleBody.addEventListener('pointerdown',ev=>{
  const socket=directIn||(!other?tray?.querySelector?.('.wire-node-in'):null);
  const receiver=socket?findTrack(socket):null;
  const activeSource=armedWireSource();
- const incoming=receiver&&receiver.kind!=='master'?incomingWireEdges(receiver.id):[];
+ const mainFocus=armedWireSource()||selection().filter(t=>t.kind!=='master').at(0);
+ const incoming=receiver?(receiver.kind==='master'?
+  (mainFocus?[wireFor(mainFocus.id,master.id)].filter(Boolean):[]):
+  incomingWireEdges(receiver.id)):[];
  const existing=incoming.find(e=>e.id===selectedWireEdgeId)||
   (incoming.length===1?incoming[0]:
    (activeSource&&receiver?wireFor(activeSource.id,receiver.id):null));
@@ -2060,13 +2085,14 @@ function finishFaderPointer(ev){
    if(g.movingEdgeId!==null){
     const bay=consoleBody.querySelector('.strip .send-section')?.getBoundingClientRect();
     const vp=document.getElementById('viewport')?.getBoundingClientRect();
-    const blankInBay=!snap&&bay&&vp&&ev.clientX>=vp.left&&ev.clientX<=vp.right&&
-     ev.clientY>=bay.top&&ev.clientY<=bay.bottom;
+    const masterBay=masterEl.querySelector('.send-section')?.getBoundingClientRect();
+    const blankMainBay=!snap&&masterBay&&ev.clientX>=masterBay.left&&
+     ev.clientX<=masterBay.right&&ev.clientY>=masterBay.top&&ev.clientY<=masterBay.bottom;
+    const blankInBay=!snap&&((bay&&vp&&ev.clientX>=vp.left&&ev.clientX<=vp.right&&
+     ev.clientY>=bay.top&&ev.clientY<=bay.bottom)||blankMainBay);
     const edge=wireEdges.find(e=>e.id===g.movingEdgeId&&e.destId===g.originDestId);
     if(!edge||(!snap&&!blankInBay)){
      say('WIRE drop canceled · invalid area; routing unchanged');
-    }else if(!snap&&edge.kind==='primary'){
-     say('WIRE primary output protected · use Routes inspector to disconnect');
     }else{
      const before=wireWsSnapshot();
      if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)){
@@ -2137,7 +2163,13 @@ document.querySelector('.console-body').addEventListener('click',e=>{
    inspectIncomingWireRoutes(t);return;
   }
   if(!source||t.id===source.id){say('Select a source and another destination');return;}
-  if(t.kind==='master'){toggleDirectMain();return;}
+  if(t.kind==='master'){
+   const focused=armedWireSource()||selection().filter(x=>x.kind!=='master').at(0);
+   const edge=focused&&wireFor(focused.id,master.id);
+   if(edge){selectWireEdge(edge);return;}
+   if(focused)requestWireConnection(focused,t,btn);
+   return;
+  }
   if(e.shiftKey&&wireAnchorId!==null){wireConnectRange(source,wireAnchorId,t.id);wireAnchorId=t.id;return;}
   requestWireConnection(source,t,btn);wireAnchorId=t.id;return;
  }
@@ -2989,6 +3021,12 @@ window.addEventListener('keydown',e=>{
   if(e.key.toLowerCase()==='c'){e.preventDefault();copyChannels();return;}
   if(e.key.toLowerCase()==='v'){e.preventDefault();pasteChannels();return;}
   if(e.key.toLowerCase()==='g'){e.preventDefault();e.shiftKey?ungroupSelected():groupSelected();return;}
+ }
+ if(e.key==='Escape'&&wireGesture){
+  wireGesture=null;setWireSnapTarget(null);consoleBody.classList.remove('wire-dragging');
+  consoleBody.querySelectorAll('.is-replug-origin,.is-drag-origin').forEach(el=>
+   el.classList.remove('is-replug-origin','is-drag-origin'));
+  renderWireRouting();say('WIRE canceled · original edge unchanged');return;
  }
  if(e.key==='Escape'&&sofEnabled){toggleSof(false);return;}
  if(e.key==='F8'&&!textEntry){e.preventDefault();pluginOpen?setBrowser(false):openPluginBrowser();return;}
