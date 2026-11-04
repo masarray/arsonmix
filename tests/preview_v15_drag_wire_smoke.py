@@ -233,10 +233,10 @@ def main():
         page.mouse.up()
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-node-in.is-linked').count()==1,
                     "CH8 → CH3 leftward drop failed to create link")
-        # CH08 starts with a real CH→MAIN edge; the new CH08→CH03 SEND
-        # adds a SECOND accepted outgoing edge, not a ghost or replacement.
-        assert_true('⇢2' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
-                    "Source count must include default MAIN + leftward SEND")
+        # CH08 retains its canonical default MAIN edge, but the custom OUT
+        # badge counts only the single CH08→CH03 SEND. No false MAIN activity.
+        assert_true('⇢1' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
+                    "Custom OUT count must exclude the default MAIN route")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
         active=page.locator('#tracks .strip[data-id="3"] .wire-pot.is-active')
@@ -260,18 +260,20 @@ def main():
         # No V27 common stem/ferrule; do not change any live routing semantics.
         assert_true(page.locator('#wireLayer .wire-origin-stem,#wireLayer .wire-origin-junction').count()==0,
                     'V27 rigid source ferrule must be undone')
-        outgoing=page.locator('#wireLayer path.wire-outgoing-line')
-        assert_true(outgoing.count()==1,'Active source wire is missing')
+        # Pointerdown on the receiving jack selects CH03; its newly accepted
+        # leftward signal cable is therefore shown as INCOMING for CH03.
+        incoming=page.locator('#wireLayer path.wire-incoming-line[data-from="8"][data-to="3"]')
+        assert_true(incoming.count()==1,'Selected receiver incoming wire is missing')
         # V43: plug-in launches a finite 36-frame socket-originated wavy impact.
         # The old V31 gravity-curve contract concerns the SETTLED cable. Wait
         # until the impact returns to its canonical cubic (no sleeps, no
         # disabled animation, no weakening of either regression assertion).
         page.wait_for_function("""()=>{
-          const path=document.querySelector('#wireLayer path.wire-outgoing-line');
+          const path=document.querySelector('#wireLayer path.wire-incoming-line[data-from="8"][data-to="3"]');
           return !!path && (path.getAttribute('d')||'').includes(' C ');
         }""",timeout=4000)
         import re
-        nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',outgoing.first.get_attribute('d'))]
+        nums=[float(a) for a in re.findall(r'-?\d+(?:\.\d+)?',incoming.first.get_attribute('d'))]
         assert_true(len(nums)==8 and nums[3]>nums[1]+20 and nums[5]>nums[7]+20,
                     'V31 WIRE must hang below both top-mounted OUT/IN anchors')
         assert_true(abs(nums[2]-nums[0])<.1 and abs(nums[4]-nums[6])<.1,
