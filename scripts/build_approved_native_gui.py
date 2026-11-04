@@ -123,7 +123,7 @@ def stage(out: Path) -> dict:
         "schema": SCHEMA,
         "authoritativePagesRoute": "/preview/",
         "authoritativePagesOutput": "preview/index.html",
-        "canonicalSource": "site/preview-v2/index.html",
+        "canonicalSource": "site/preview/index.html",
         "canonicalSourceSha256": sha256((CANONICAL / "index.html").read_bytes()),
         "approvedPagesHtmlSha256": sha256(approved),
         "nativeHtmlSha256": sha256(native),

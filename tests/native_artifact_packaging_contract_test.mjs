@@ -40,8 +40,8 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   assert.match(sourceBlock,/ARMIX_APPROVED_GUI_BINARIES/);
   assert.doesNotMatch(sourceBlock,/web\/index\.html|web\/console-native\.html/);
   assert.match(cmake,/build_approved_native_gui\.py/);
-  assert.match(cmake,/site\/preview-v2/);
-  assert.match(cmake,/site\/preview-buttons/);
+  assert.match(cmake,/site\/preview\/\*/);
+  assert.doesNotMatch(cmake,/site\/preview-v2|site\/preview-buttons/);
   assert.match(nativeMain,/ApprovedGuiResources\.h/);
   assert.match(nativeMain,/resolveApprovedGuiResource \(path, data, size, mime\)/);
   assert.doesNotMatch(nativeMain,/BinaryData::consolenative_html|BinaryData::index_html|BinaryData::app_js/);

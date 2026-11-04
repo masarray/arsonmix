@@ -6,7 +6,7 @@
   "use strict";
   const backend = window.__JUCE__?.backend;
   const descriptor = Object.freeze({
-    source: "site/preview-v2 + site/preview-buttons",
+    source: "site/preview + site/preview-buttons",
     pagesRoute: "/preview/",
     nativeTransport: Boolean(backend?.emitEvent && backend?.addEventListener),
     acceptedGraphConnected: false,

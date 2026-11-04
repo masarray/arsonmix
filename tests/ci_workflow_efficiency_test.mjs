@@ -43,7 +43,7 @@ const selected = (paths, file) => paths.some(p => globMatches(p, file));
 
 test('visual GUI changes never consume Windows native runner on a PR or on main', () => {
   for (const filename of [
-    'site/preview-v2/index.html', 'site/preview-v2/assets/mixer-fader-assembly.css',
+    'site/preview/index.html', 'site/preview/assets/mixer-fader-assembly.css',
     'web/mixer-layout.js', 'web/mixer-io.js',
     'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
   ]) {
