@@ -104,6 +104,14 @@ if(BUILD_TESTING)
   add_test(NAME ConsoleV6NativeAcceptedSnapshotAndGoldenPCM COMMAND ARMixConsoleBridgeV6Tests)
   # Existing Windows build target pulls in this test without a second workflow.
   add_dependencies(ARMixMixerRoutingTests ARMixConsoleBridgeV6Tests)
+  # M3-B INTEGRATOR-only readback serialization of real ChannelId PCM.
+  # Never installs a second callback, renderer or fake live source.
+  juce_add_console_app(ARMixNativeV8ProjectionTests PRODUCT_NAME "ArSonMix Native V8 Readback Projection Tests")
+  target_sources(ARMixNativeV8ProjectionTests PRIVATE tests/approved_native_v8_projection_test.cpp integration/ApprovedNativeV8Projection.h)
+  target_link_libraries(ARMixNativeV8ProjectionTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
+  add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)
