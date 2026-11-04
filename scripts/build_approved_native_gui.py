@@ -74,6 +74,17 @@ NATIVE_EVENT_HOOKS = (
      "document.querySelector('.console-body').addEventListener('dblclick',e=>{\n"
      " const t=findTrack(e.target);if(!t)return;\n"
      " if(window.__ARMIX_NATIVE_M2__?.consumeDoubleClick?.(e,t))return;\n"),
+    # Native-only: prevent keyboard FX moves from mutating demo inserts in JUCE.
+    ("function fxNativeTransactionRequired(){\n",
+     "function fxNativeTransactionRequired(){\n"
+     " if(window.__ARMIX_NATIVE_M2__?.enabled)return true;\n"),
+    # Source's pointerup clears faderGesture BEFORE the later deferred bridge
+    # listener runs. Dispatch exactly once at the actual gesture commit point.
+    (" const g=faderGesture;faderGesture=null;\n"
+     " g.box.releasePointerCapture?.(ev.pointerId);\n",
+     " const g=faderGesture;faderGesture=null;\n"
+     " g.box.releasePointerCapture?.(ev.pointerId);\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeField?.({target:g.input,type:'change'}))return;\n"),
 )
 
 
