@@ -1263,9 +1263,11 @@ function wireWsUndo(){
   say('WIRE UNDO canceled: graph changed outside Navigator · current routes preserved');
   renderWireWorkspace();return false;
  }
+ const valid=ArSonWireGraph.validateCandidateGraph(tracks,master.id,entry.before.edges);
+ if(!valid.ok){say('WIRE UNDO BLOCKED: '+valid.error);return false;}
  wireWsHistory.pop();wireEdges=clone(entry.before.edges);nextWireId=entry.before.nextId;
- const outputs=new Map(entry.before.outputs);
- tracks.forEach(t=>{if(outputs.has(t.id))t.output=outputs.get(t.id);});
+ selectedWireEdgeId=wireEdges.some(e=>e.id===selectedWireEdgeId)?selectedWireEdgeId:null;
+ syncWireOutputProjection();
  wireWsInspect=null;wireWsRemoveConfirm=null;
  render();renderWireWorkspace();
  say('WIRE UNDO · previous routing restored · unrelated mixer settings kept');
@@ -1838,7 +1840,7 @@ function wouldFeedback(source,destination){
  }
  return false;
 }
-const COPY_KEYS=['fx','slotBypass','fxOn','send','sendOn','pre','sendLevel','sendPan','activeSend','sendSlots','eq','pan','trim','mute','solo','level'];
+const COPY_KEYS=['fx','slotBypass','fxOn','eq','pan','trim','mute','solo','level'];
 function copyChannels(){
  const src=selection()[0];if(!src){say('Select a channel to copy settings');return;}
  clipboard=Object.fromEntries(COPY_KEYS.map(k=>[k,clone(src[k])]));
@@ -1863,25 +1865,44 @@ function refreshScenes(){
 }
 function saveScene(){
  const name='Scene '+(scenes.length+1);
- scenes.push({name,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,wireAnchorId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
+ scenes.push({name,wireGraphVersion:1,nextId,nextGroup,wireEdges:clone(wireEdges),nextWireId,wireMode,wireSourceId,wireAnchorId,tracks:clone(tracks),master:clone(master),filter:document.getElementById('viewFilter').value,narrow:document.querySelector('.console-body').classList.contains('narrow'),density:document.querySelector('.console-body').dataset.density||'comfort'});
  refreshScenes();document.getElementById('sceneSelect').value=String(scenes.length-1);
  say('Scene saved: '+scenes[scenes.length-1].name+' · local reference session only');
 }
 function recallScene(){
- if(sofEnabled)toggleSof(false);
  const value=document.getElementById('sceneSelect').value;
- if(value===''){say('Choose a saved Scene first');return;}
+ if(value===''){say('Choose a saved Scene');return;}
  const scene=scenes[Number(value)];if(!scene)return;
  const protectedChannels=new Map(tracks.concat(master).filter(t=>t.safe).map(t=>[t.id,clone(t)]));
- nextId=scene.nextId;nextGroup=scene.nextGroup;tracks=clone(scene.tracks);master=clone(scene.master);
- wireEdges=clone(scene.wireEdges||[]);nextWireId=scene.nextWireId||1;wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||1;wireAnchorId=scene.wireAnchorId??null;document.getElementById('wireMode').value=wireMode;
- tracks=tracks.map(t=>protectedChannels.get(t.id)||t);
- for(const [id,t] of protectedChannels){if(t.kind!=='master'&&!tracks.some(ch=>ch.id===id))tracks.push(t);}
- if(protectedChannels.has(master.id))master=protectedChannels.get(master.id);
- nextId=Math.max(nextId,1,...tracks.map(t=>t.id+1),master.id+1);
+ let nextTracks=clone(scene.tracks).map(t=>protectedChannels.get(t.id)||t);
+ for(const [id,t] of protectedChannels)if(t.kind!=='master'&&!nextTracks.some(x=>x.id===id))
+  nextTracks.push(t);
+ const nextMaster=protectedChannels.get(master.id)||clone(scene.master);
+ if(nextMaster.id!==master.id){say('SCENE REJECTED: MAIN identity changed');return;}
+ const migrated=ArSonWireGraph.migrateLegacy(nextTracks,nextMaster.id,
+  clone(scene.wireEdges||[]),scene.nextWireId||1,{graphVersion:scene.wireGraphVersion||0});
+ if(!migrated.ok){say('SCENE REJECTED: '+migrated.error);return;}
+ const protectedIds=new Set(protectedChannels.keys());
+ const retain=wireEdges.filter(e=>protectedIds.has(e.sourceId)||protectedIds.has(e.destId));
+ let nextEdges=migrated.edges.filter(e=>!protectedIds.has(e.sourceId)&&!protectedIds.has(e.destId));
+ const taken=new Set(retain.map(e=>e.id));
+ let seq=Math.max(1,scene.nextWireId||1,...retain.map(e=>e.id+1),...nextEdges.map(e=>e.id+1));
+ nextEdges=nextEdges.map(e=>{if(taken.has(e.id))e.id=seq++;taken.add(e.id);return e;});
+ nextEdges=[...retain,...nextEdges];
+ const valid=ArSonWireGraph.validateCandidateGraph(nextTracks,nextMaster.id,nextEdges);
+ if(!valid.ok){say('SCENE REJECTED: '+valid.error+' · current graph kept');return;}
+ if(sofEnabled)toggleSof(false);
+ tracks=nextTracks;master=nextMaster;wireEdges=nextEdges;
+ nextId=Math.max(scene.nextId||1,...tracks.map(t=>t.id+1),master.id+1);
+ nextGroup=scene.nextGroup||1;nextWireId=Math.max(seq,...wireEdges.map(e=>e.id+1),1);
+ wireMode=scene.wireMode||'send';wireSourceId=scene.wireSourceId||null;
+ wireAnchorId=scene.wireAnchorId??null;selectedWireEdgeId=null;
+ wireWsHistory=[];wireWsInspect=null;wireWsRemoveConfirm=null;
+ document.getElementById('wireMode').value=wireMode;
  document.getElementById('viewFilter').value=scene.filter;
+ syncWireOutputProjection();
  setDensity(scene.density||(scene.narrow?'compact':'comfort'));
- render();say('Recalled Scene: '+scene.name+' · GUI state only');
+ render();say('Scene '+scene.name+' accepted · reference graph only');
 }
 function groupSelected(){
  const selected=selection().filter(t=>t.kind!=='master');
@@ -2647,15 +2668,15 @@ document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='audio').length+1,t=make('Track '+n,'audio',COLORS[(n-1)%COLORS.length]);const firstBus=tracks.findIndex(x=>x.kind==='bus');tracks.splice(firstBus<0?tracks.length:firstBus,0,t);
- if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks=tracks.filter(x=>x.id!==t.id);return;}revealTrack(t);say('Added '+t.name+' → MAIN · reference only');
+ if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}],{record:false})){tracks=tracks.filter(x=>x.id!==t.id);return;}revealTrack(t);say('Added '+t.name+' → MAIN · reference only');
 });
 document.getElementById('addFx').addEventListener('click',()=>{
  const n=tracks.filter(t=>t.kind==='fx').length+1,t=make('FX '+n,'fx','#8b709a');
- t.fx[0]='Studio Reverb';tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks.pop();return;}revealTrack(t);
+ t.fx[0]='Studio Reverb';tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}],{record:false})){tracks.pop();return;}revealTrack(t);
  say('Added FX Return '+t.name+' · send destination with insert processing');
 });
 document.getElementById('addBus').addEventListener('click',()=>{
- const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}])){tracks.pop();return;}revealTrack(t);say('Added '+t.name+' · visual only');
+ const n=tracks.filter(t=>t.kind==='bus').length+1,t=make('Bus '+String.fromCharCode(65+((n-1)%26)),'bus','#846e9e');tracks.push(t);if(!wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:master.id}],{record:false})){tracks.pop();return;}revealTrack(t);say('Added '+t.name+' · visual only');
 });
 document.getElementById('clearCue').addEventListener('click',()=>{tracks.forEach(t=>t.cue=false);master.cue=false;render();say('All Cue / PFL requests cleared · no hardware monitor connected');});
 document.getElementById('reset').addEventListener('click',()=>{if(preview)togglePreview();document.getElementById('viewFilter').value='all';document.getElementById('bankSelect').value='all';sofEnabled=false;document.getElementById('sofToggle').classList.remove('active');document.getElementById('sofToggle').setAttribute('aria-pressed','false');document.querySelector('.console-body').classList.remove('sends-mode');setDensity('comfort');init();say('Reference mixer reset; saved scenes remain available.');});
