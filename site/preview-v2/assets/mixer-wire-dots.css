@@ -818,6 +818,33 @@
  flex:0 0 26px!important;height:26px!important;min-height:26px!important;max-height:26px!important;
 }
 
+/* V49 premium WIRE interaction: logical edge ↔ one precise transparent hit
+   curve. 6% dead ends on either side protect physical IN/OUT jack hitboxes. */
+#wireLayer path.wire-interaction-hit{
+ pointer-events:stroke!important;fill:none!important;stroke:transparent!important;
+ stroke-width:12px!important;stroke-linecap:butt!important;cursor:pointer;
+}
+#wireLayer path.wire-interaction-hit.is-wire-selected{
+ stroke:rgba(136,217,241,.19)!important;
+}
+#wireLayer path.wire-incoming-line.is-wire-selected,
+#wireLayer path.wire-outgoing-line.is-wire-selected,
+#wireLayer path.wire-context-line.is-wire-selected{
+ stroke-width:3px!important;opacity:1!important;
+}
+/* Source selection is temporary intent, while cable connection derives only
+   from the committed route model. No phantom lit output without an edge. */
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)
+ .strip .wire-tray .wire-node-out:not([data-wire-connected="true"]):not(.is-near):not(.is-source):not(:hover) .wire-pin{
+ background:#4b535b!important;border-color:#627681!important;
+ box-shadow:inset 0 1px 2px #061017!important;
+}
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)
+ .strip .wire-tray .wire-node-out[data-wire-connected="true"]:not([data-wire-visible="true"]) .wire-pin{
+ background:var(--ch,#9fc9d4)!important;border-color:#a8ced8!important;
+ box-shadow:inset 0 1px #ffffff38!important;
+}
+
 /* V50 WIRE CONFIGURATION — the same modeless physical tool family as
    Navigator/Matrix, without stealing any fader/FX/meter workspace height. */
 .wire-config-window[hidden]{display:none!important}

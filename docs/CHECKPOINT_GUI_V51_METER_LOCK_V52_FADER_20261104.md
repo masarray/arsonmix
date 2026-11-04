@@ -46,3 +46,7 @@ CSS animation, `backdrop-filter`, new DOM, timer, React, or audio/DSP work.
 
 **Scope:** HTML/browser visual reference. This checkpoint is not evidence of
 native Windows PCM, ASIO or VST3 hosting; unrelated ENGINE/integration PRs remain isolated.
+
+## V27 convergence
+
+The V52 CSS is ported onto current V27 `main` without reverting the 37 V27 eliminated loser declarations or any concurrent native ENGINE changes. The historical V27 visual comparison runs on immutable V27 assets and returns to current V52 before later tests. Published fader cache token: `css-owner-v27-fader-pruned-v52-recess`.

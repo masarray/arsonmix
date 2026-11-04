@@ -18,25 +18,9 @@
  border-bottom:1px solid #415764!important;
  box-shadow:inset 0 1px #02090d,inset 0 -1px #2c424e!important;
 }
-.console-body .strip .switch-section .hw-switch-socket{
- background:#061118!important;
- border:1px solid #050b0f!important;
- border-radius:3px!important;
- box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #000,
-            inset -1px 0 0 #425965,inset 0 -1px 0 #435a64!important;
- transform:none!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::before{
- background:linear-gradient(180deg,#030a10,#142630)!important;
- z-index:0!important;
-}
-.console-body .strip .switch-section .hw-switch-socket::after{
- z-index:4!important;
- pointer-events:none!important;
- border-radius:3px!important;
- box-shadow:inset 0 1px 0 #b1cdd43b,inset 1px 0 0 #9cb9c32f,
-            inset -1px 0 0 #000e,inset 0 -1px 0 #050b10!important;
-}
+
+
+
 /* This one shared satin-material token also styles toolbar and ordinary
    rectangular push controls, but never faders, sockets for patch cables,
    VU meter or pan thumb. No layered waves or bright-dark-bright cycles. */
@@ -145,15 +129,9 @@
  background:linear-gradient(180deg,transparent,var(--am-key30-led) 38%,
       var(--am-key30-led) 62%,transparent)!important;
 }
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.mute{
- --am-key30-led:#ef6376;color:#ffe9ed!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.solo{
- --am-key30-led:#f6d16b;color:#fff0c0!important;
-}
-.console-body .strip .switch-section .hw-switch-socket>.switch.on.cue{
- --am-key30-led:#78d3e9;color:#dffaff!important;
-}
+
+
+
 :is(
  .command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section .hw-switch-socket>.switch,

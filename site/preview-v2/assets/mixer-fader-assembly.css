@@ -261,7 +261,7 @@
 }
 .console-body .strip .fader-readout{text-shadow:none!important;color:#98e6f5!important}
 .console-body .strip .fader-box{
- /* Thin machined lip; real recessed optics are drawn INSIDE ::before. */
+ /* Narrow inner machined rim, no outer glow or layer filter. */
  box-shadow:inset 1px 0 #78909b3b,inset -1px 0 #050b0f,inset 0 1px #b8d7e119!important;
  border-radius:3px!important;
 }
@@ -275,14 +275,12 @@
 }
 .console-body .strip .fader-box{background:#30434d!important}
 .console-body .strip .fader-box::before{
- /* Recessed border, flat graphite center. Narrow fixed gradients only:
-    NO full-face shine / shadow over the hand-operated fader surface. */
+ /* Center stays flat: only the narrow edge bevel and interior well recede. */
  background:linear-gradient(90deg,
    #081219 0%,#101d25 16%,#15232b 29%,#15232b 71%,
    #0d1921 87%,#071117 100%)!important;
  border:1px solid #09131b!important;
- box-shadow:
-   inset 2px 0 3px #000a,inset -2px 0 3px #000b,
+ box-shadow:inset 2px 0 3px #000a,inset -2px 0 3px #000b,
    inset 0 3px 3px #0008,inset 0 -1px #b3ccd01a!important;
 }
 .console-body .strip .fader-head{
@@ -293,7 +291,7 @@
 }
 .console-body .strip .fader-travel .cap {
 
- filter:none!important;box-shadow:0 1px 0 #010508!important;
+ 
 }
 
 
@@ -331,8 +329,6 @@
    Vertical M2 geometry is tied to the cap center and physical dB ticks.
    No timer, layout JS, animated shadows, blur, or audio DSP changes. */
 .console-body .strip .fader-workspace{
- /* One coherent illuminated chassis behind both fader pocket and dB ruler.
-    Flat surface, not three competing gradients. Width = thumb + 2px. */
  grid-template-columns:70px 29px 26px!important;
  gap:3px!important;justify-content:start!important;
  background:#263944!important;
@@ -359,8 +355,8 @@
  top:27px!important;bottom:27px!important;height:calc(100% - 54px)!important;
 }
 .console-body .strip .fader-box::after{
- /* Machined 5px black travel slot with a quiet deep-teal gain hint
-    BELOW the thumb; the upper dark aperture stays near absolute black. */
+ /* --fader-y comes from the existing interaction model; bright below
+    handle, unlit above. Static paint only, no per-meter-frame work. */
  top:27px!important;bottom:27px!important;
  background:linear-gradient(to bottom,
    #010407 0%,#010407 var(--fader-y,50%),
@@ -413,9 +409,8 @@
 .console-body[data-density="standard"] .strip .fader-box::before{width:calc(100% - 2px)!important}
 .console-body[data-density="standard"] .strip .fader-scale{width:28px!important;min-width:28px!important}
 
-/* V52: visible, optically light grounding UNDER the exact approved 27/25px
-   transparent PNG. Two small fixed shadows (no filter, glow, compositing
-   layer, CSS transitions or repainting full-console surfaces). */
+/* V52: static lower grounding under approved silver/rose original PNG,
+   no filter, no compositing animation, no per-frame work. */
 .console-body .strip .fader-travel .cap{
  box-shadow:0 3px 3px -1px #000d,0 7px 5px -3px #000a!important;
  filter:none!important;
