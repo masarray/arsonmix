@@ -2425,11 +2425,16 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  if(input.dataset.field==='pan')input.dataset.panKeyboard='true';
  handleField({target:input,type:'input',altKey:e.altKey});
 },{passive:false});
-// One capture-phase selection path for every part of a channel, including
-// empty WIRE tray, OUT, IN and knob. Does not steal pointer capture from jacks.
+// Ordinary strip gestures may focus their channel, but touching the pinned
+// MAIN receive jack must never change the *source* under inspection. Capture
+// selection runs before bubble-phase wireGesture creation: selecting MAIN
+// here used to destroy the unique CH focus and made its plug undraggable.
+// MASTER identity remains separately selectable without affecting WIRE.
 consoleBody.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  const t=findTrack(e.target);
+ if(t?.kind==='master'&&e.target.closest?.('.wire-node-in,.wire-tray,.wire-fold-summary'))
+  return;
  if(t)selectTrack(t,e.ctrlKey||e.metaKey||e.shiftKey);
 },true);
 // Proximity uses one delegated pointer signal and static CSS, never a
