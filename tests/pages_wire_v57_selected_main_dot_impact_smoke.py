@@ -91,15 +91,16 @@ def run():
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
             if width == 1680:
-                # Observe the real animated SVG path rather than calling
-                # the private renderer function from outside its closure.
+                # Pointerdown on destination changes selected channel to CH3;
+                # the accepted 5->3 route is correctly displayed as INCOMING.
+                # Observe that actual rendered SVG, never a detached OUT node.
                 page.evaluate("""() => {
                   window.__v57Impact = [];
                   new MutationObserver(records => {
                     for (const r of records) {
                       const path = r.target;
                       if (r.type !== 'attributes' ||
-                          !path.matches?.('path.wire-outgoing-line[data-cable-key="5-3"]')) continue;
+                          !path.matches?.('path.wire-incoming-line[data-cable-key="5-3"]')) continue;
                       const d = path.getAttribute('d');
                       if (d?.includes(' L ') && window.__v57Impact.at(-1) !== d)
                         window.__v57Impact.push(d);
@@ -116,7 +117,7 @@ def run():
                 page.wait_for_timeout(1950)
                 captured = page.evaluate("""() => ({
                   frames:window.__v57Impact,
-                  base:document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')?.getAttribute('d')
+                  base:document.querySelector('#wireLayer path.wire-incoming-line[data-cable-key="5-3"]')?.getAttribute('d')
                 })""")
                 assert len(captured["frames"]) >= 8, (
                     "impact not repainted over multiple frames", width, len(captured["frames"]), captured["base"])
