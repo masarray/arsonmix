@@ -201,6 +201,34 @@ static void verifyConsoleWirePrimaryOutputPcm() {
 }
 
 int main() {
+
+    // WIRE-first regression: PRE and POST to the SAME destination are
+    // NOT two valid edges. Reject before accepting duplicate dry PCM.
+    // A failed compile must preserve the previous prepared graph.
+    {
+        DynamicChannelRoster roster;
+        const std::array<ChannelEdit,2> create{
+            add(0,ChannelRole::input,"WIRE SRC"),
+            add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+        };
+        const auto created=roster.edit(0,create);
+        assert(created.ok() && created.createdIds.size()==2);
+        const auto src=created.createdIds[0], dst=created.createdIds[1];
+        const std::array<ChannelEdit,1> first{output(src,dst)};
+        assert(roster.edit(1,first).ok());
+        DynamicGraphRequest request;
+        request.maxFrames=64;
+        DynamicPreparedMixerBlock block;
+        DynamicGraphError fault;
+        assert(DynamicPreparedMixerBlock::compile(roster,request,block,fault));
+        assert(block.channelCount()==2);
+        const std::array<ChannelEdit,1> duplicate{send(src,dst,.5f,true)};
+        assert(roster.edit(2,duplicate).ok()); // legacy draft may still hold it
+        assert(!DynamicPreparedMixerBlock::compile(roster,request,block,fault));
+        assert(fault.fault==DynamicGraphFault::duplicateSend);
+        assert(block.channelCount()==2); // previous prepared PCM untouched
+    }
+
     verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     constexpr std::uint64_t epoch=77;
