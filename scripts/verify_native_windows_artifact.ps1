@@ -76,7 +76,7 @@ $approved = Get-Content -LiteralPath $approvedPath -Raw -Encoding UTF8 | Convert
 $approvedHash = (Get-FileHash -LiteralPath $approvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($manifest.approvedGuiManifestSha256 -ne $approvedHash -or
     $manifest.approvedGuiRoute -ne "/preview/" -or
-    $manifest.approvedGuiIframe -ne "/preview-buttons/index.html" -or
+    $manifest.approvedGuiOutput -ne "preview/index.html" -or
     $manifest.approvedGuiPagesSha256 -ne $approved.approvedPagesHtmlSha256 -or
     $manifest.approvedGuiNativeHtmlSha256 -ne $approved.nativeHtmlSha256 -or
     $manifest.approvedGuiCanonicalSha256 -ne $approved.canonicalSourceSha256 -or
