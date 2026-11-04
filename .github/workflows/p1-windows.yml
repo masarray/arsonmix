@@ -132,6 +132,8 @@ jobs:
           -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+      - name: Verify exact ONE approved /preview/ GUI CMake bundle
+        run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
       - name: Build executable and native RT tests
         run: cmake --build build --config Release --target ARMixConsole ARMixFactoryFxRegistryTests ARMixFxOrderTests ARMixFxStructuralHandoffTests ARMixMixerRoutingTests ARMixChannelRoutingContractTests ARMixChannelSendTests ARMixPreparedMixerBlockTests ARMixLiveRoutingEpochTests ARMixJucePortMaskTests ARMixNativeMixerSessionTests ARMixNativeDrySendTests ARMixLiveChannelFxTests ARMixDedicatedAuxBusTests ARMixTenChannelLiveControlTests ARMixWorkspaceTests ARMixVaultTests ARMixBackupTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixOrbitMotionTests ARMixOrbitDistanceTests ARMixFxBypassEnvelopeTests ARMixDearVrPolarPolicyTests ARMixRTTests ARMixPresetTests ARMixShowSchemaTests ARMixShowStoreTests ARMixLiveShowCaptureTests ARMixNativeMasterLoudnessTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCaptureBoundaryTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
