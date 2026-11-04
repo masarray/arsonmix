@@ -2,6 +2,7 @@
 // M3-B CONTROL-thread projection regression. No mock PCM is installed.
 #include "../integration/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
+#include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -142,7 +143,7 @@ static void controlIntentTranslationCases(const juce::var& canonical,
         assert(juce::JSON::toString(native,false)==oldBus);
         return result.error;
     };
-    assert(fail(fader,canonical,bus)=="CHANNELID_CALLBACK_NOT_ADMITTED");
+    assert(fail(fader,canonicalSnapshot(),bus)=="CHANNELID_CALLBACK_NOT_ADMITTED");
     assert(fail(makeIntent("SET_FADER",juce::var(-100.),source),
                 accepted,bus)=="INVALID_FADER_VALUE");
     assert(fail(makeIntent("SET_PAN",juce::var(2.),source),
@@ -181,6 +182,62 @@ static void controlIntentTranslationCases(const juce::var& canonical,
     assert(juce::JSON::toString(accepted,false)==before);
 }
 
+
+static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
+    // This fixture is ONLY accepted native readback; not a hardware device.
+    // It proves Main.cpp cannot publish a fake live graph from G0/M4 JSON.
+    auto snap=canonicalSnapshot();
+    auto dev=snap.getProperty("device",{});
+    dev.getDynamicObject()->setProperty("sampleRate",48000.0);
+    dev.getDynamicObject()->setProperty("bufferFrames",256);
+    juce::Array<juce::var> inputs,outputs;
+    inputs.add(0);outputs.add(0);outputs.add(1);
+    dev.getDynamicObject()->setProperty("enabledInputs",juce::var(inputs));
+    dev.getDynamicObject()->setProperty("enabledOutputs",juce::var(outputs));
+    auto live=parse(R"JSON({"connected":true,"directRouteAuthorized":true,
+      "adaptiveClockActive":false,"dryRoutingLab":{"ready":true,
+      "hasAcceptedRoute":true,"topologyFault":false,
+      "nativeChannelIdPcmActive":true,"epoch":91}})JSON");
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeBus",rawBus);
+    auto fail=[&](const juce::var& candidate) {
+        auto before=juce::JSON::toString(snap,false);
+        assert(!projectInstalledNativeChannelIdGraph(snap,candidate));
+        assert(juce::JSON::toString(snap,false)==before);
+    };
+    fail(parse(R"JSON({"dryRoutingLab":{"nativeBus":{}}})JSON"));
+    auto deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeChannelIdPcmActive",false);
+    fail(deny);
+    deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("topologyFault",true);
+    fail(deny);
+    deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("epoch",92);
+    fail(deny);
+    deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getDynamicObject()->setProperty("directRouteAuthorized",false);
+    fail(deny);
+    deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getDynamicObject()->setProperty("adaptiveClockActive",true);
+    fail(deny);
+    deny=juce::JSON::parse(juce::JSON::toString(live,false));
+    deny.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeBus",juce::var());
+    fail(deny);
+    assert(projectInstalledNativeChannelIdGraph(snap,live));
+    const auto graph=snap.getProperty("graph",{});
+    assert(static_cast<bool>(graph.getProperty("capabilities",{})
+                                 .getProperty("callbackOwnsChannelIds",false)));
+    assert(graph.getProperty("channels",{}).getArray()->size()==2);
+    assert(graph.getProperty("capabilities",{})
+                 .getProperty("supportedOps",{}).getArray()->isEmpty());
+    assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
+}
+
 int main() {
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
@@ -212,6 +269,7 @@ int main() {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 
     controlIntentTranslationCases(snap,bus);
+    installedCallbackAdmissionRegression(bus);
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()
