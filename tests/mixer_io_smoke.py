@@ -22,9 +22,35 @@ async def main():
         await page.goto((root/"web/index.html").as_uri())
         assert await page.locator("#mixer .rack").count()==10
         assert await page.locator("#mixer .arChannelBank").count()==10
+        # The REAL M4 host, not the future v6 demo, opens one console:
+        # actual native selectors, six VST3 slots and four AUX controls
+        # coexist in every input strip without FX/ROUTE/SENDS switching.
+        assert await page.locator('#mixer').get_attribute('data-io-mode')=='CONSOLE'
+        assert await page.locator('[data-mix-mode="CONSOLE"]').get_attribute('aria-pressed')=='true'
+        assert await page.locator('#mixer .arBankSource:visible').count()==10
+        assert await page.locator('#mixer .arBankOutput:visible').count()==10
+        assert await page.locator('#mixer .rack .insert-slot').count()==60
+        assert await page.locator('#mixer .arSendBank:visible').count()==10
+        await page.screenshot(path='mixer-m4-unified-1366.png')
+        # Main is visually pinned during navigation across the 10 real strips.
+        # Do not accept a CSS "sticky" label if its pixels are offscreen.
+        main_geom=await page.evaluate("""() => {
+          const mixer=document.querySelector('#mixer');
+          const master=document.querySelector('#masterLeft');
+          const start=master.getBoundingClientRect();
+          const frame=mixer.getBoundingClientRect();
+          mixer.scrollLeft=99999;
+          const end=master.getBoundingClientRect();
+          mixer.scrollLeft=0;
+          return {left:start.left,right:start.right,endLeft:end.left,endRight:end.right,
+            frameRight:frame.right,frameLeft:frame.left};
+        }""")
+        assert main_geom['right']<=main_geom['frameRight']+2,main_geom
+        assert main_geom['left']>=main_geom['frameLeft']-2,main_geom
+        assert abs(main_geom['right']-main_geom['endRight'])<2,main_geom
         assert await page.locator('.arChannelSignalFlow [data-focus-step]').count()==4
         assert 'NO NATIVE ACK' in await page.locator('[data-focus-source]').inner_text()
-        assert await page.locator("[data-mix-mode]").count()==3
+        assert await page.locator("[data-mix-mode]").count()==4
         status=await page.evaluate("""() => {
           const ch=Array.from({length:10},()=>({mode:'NONE',left:-1,right:-1,gain:.25,pan:0,main:true,mute:false,solo:false,fxId:''}));
           const auxes=Array.from({length:4},()=>({enabled:false,gain:1,main:true,mute:false,fxId:''}));
@@ -137,7 +163,7 @@ async def main():
         await page.locator('#arIOAudioPath [data-io-signal-check]').click()
         assert await page.locator('#arSignalOverlay').evaluate("(e)=>e.classList.contains('open')")
         await page.locator('#arSignalClose').click()
-        assert "LIVE" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
+        assert "ROUTE ACK" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         assert 'Microphone 1' in await page.locator('[data-focus-source]').inner_text()
         assert 'MAIN' in await page.locator('[data-focus-out]').inner_text()
         # M2 Studio-style BUS: one existing empty native lane, no phantom
@@ -281,6 +307,19 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton').count()==2
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         assert await page.locator('.arIODevicePatchMatrix').is_visible()
+        assert not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        # No large software-input / crosspoint DOM until explicitly requested.
+        assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()==0
+        assert await page.locator('.arIODevicePins').is_visible()
+        await page.locator('.arIODevicePatchMatrix > summary').click()
+        assert await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        # Details toggle is asynchronous; rendering the costly matrix only
+        # AFTER toggle is intentional, not a race to be hidden by time.sleep.
+        await page.locator('.arIODeviceDirectMatrix > summary').wait_for(state='visible')
+        # Matrix itself is an opt-in nested inspector; its individual cells
+        # must be visible only after expanding that native crosspoint layer.
+        await page.locator('.arIODeviceDirectMatrix > summary').click()
+        await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').first.wait_for(state='visible')
         assert await page.locator('.arIODevicePatchMatrix .arIOMatrixCell').count()>0
         # FAST3 source one-gesture has already completed an ARM ACK above.
         # This separate DEVICE APPLY must produce ONE new guarded arm, not
@@ -362,6 +401,7 @@ async def main():
         assert await page.locator('.arIODeviceDriverButton[aria-pressed="true"]').inner_text()=='ASIO'
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('#arIOBody .arIOQuickRow').count()==10
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         # Operator-first mapper is visible; crosspoint is explicitly advanced.
         assert await page.locator('#arIOQuickPatch, .arIOQuickPatch').count()==1
         assert await page.locator('[data-io-quick-row]').count()==10
@@ -381,6 +421,11 @@ async def main():
         # Preserve the pre-test accepted route for later AUX negative tests.
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
         await page.locator('[data-io-tab="outputs"]').click()
+        assert await page.locator('.arIOSimpleMain').is_visible()
+        assert await page.locator('.arIOMainOutput').count()==2
+        assert await page.locator('.arIOAdvancedMatrix').count()==1
+        if not await page.locator('.arIOAdvancedMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIOAdvancedMatrix > summary').click()
         outputs=await page.locator('#arIOBody').inner_text()
         assert "HW OUT 1" in outputs and "HW OUT 2" in outputs,outputs
         assert await page.locator('[data-io-matrix-kind="outputs"]').count()==4
@@ -391,7 +436,7 @@ async def main():
         assert duplicate['ok'] is False and 'different' in duplicate['error'],duplicate
         assert (await page.evaluate('()=>window.__arMixRouteView().draftMainOutputs'))==[1,0]
         await page.evaluate('()=>window.__arMixRevertMixerDraft()')
-        assert "AUX1" in outputs and "not physical" in outputs,outputs
+        assert "AUX1–4 are internal FX returns, not hardware ports" in outputs,outputs
         await page.locator('[data-io-tab="device"]').click()
         await page.evaluate("""() => window.__armixTestEmit('arMixAudioDeviceInventory',{
           types:[{name:'ASIO',active:true,inputs:['Mic 1','Mic 2'],outputs:['Out 1','Out 2']}]
@@ -679,7 +724,7 @@ async def main():
           window.__armixTestEmit('arMixStatus',status);
           return status;
         }""",status)
-        assert "LIVE" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
+        assert "ROUTE ACK" in await page.locator('[data-strip="1"] .arBankStage').inner_text()
         # Accepted source automatically begins the final guarded hardware
         # ARM. Reject ARM deliberately for this G5 structural/FX fixture:
         # the new source route remains accepted, output remains safely
@@ -810,8 +855,12 @@ async def main():
         }""",status)
         await page.locator('[data-io-open]').click()
         await page.locator('[data-io-tab="outputs"]').click()
-        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
+        assert await page.locator('.arIOSimpleMain').is_visible()
         assert await page.locator('.arIOMainOutput').count()==2
+        # Crosspoint remains available, but is no longer the normal workflow.
+        if not await page.locator('.arIOAdvancedMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIOAdvancedMatrix > summary').click()
+        # Exercise actual sparse-pin OUTPUT crosspoints, not hidden fallback dropdowns.
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="0"][data-io-matrix-pin="4"]').click()
         await page.locator('[data-io-matrix-kind="outputs"][data-io-matrix-row="1"][data-io-matrix-pin="5"]').click()
         assert await page.evaluate("""()=>window.__arMixRouteView().draftMainOutputs.join(',')""")=='4,5'
@@ -864,6 +913,8 @@ async def main():
         await page.locator('[data-io-tab="inputs"]').click()
         assert await page.locator('.arIOQuickPatch').is_visible()
         assert await page.locator('[data-io-quick-row]').count()==10
+        await page.locator('[data-io-jump]').select_option('2')
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         assert await page.locator('[data-io-quick-row="2"] [data-io-quick-pin="left"] option').count()==5
         # R7: each USE INPUT commits the existing guarded native route
         # automatically, without a second STAGE/MUTE/APPLY button ritual.
@@ -891,7 +942,7 @@ async def main():
           window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
           window.__armixTestEmit('arMixStatus',status);return status;
         }""",status)
-        assert 'LIVE' in await ch3.locator('.arIOQuickState').inner_text()
+        assert 'ROUTE ACK' in await ch3.locator('.arIOQuickState').inner_text()
         await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
           error:'Output kept safely muted during multi-source setup'
@@ -900,6 +951,9 @@ async def main():
         # Sparse driver pins 5/8 -> CH6 stereo, independent of CH3's
         # accepted mono processing and with no fabricated adjacent R pin.
         ch6=page.locator('[data-io-quick-row="5"]')
+        await page.locator('[data-io-jump]').select_option('5')
+        assert await ch6.is_visible()
+        assert await page.locator('[data-io-quick-row]:visible').count()==1
         await ch6.locator('[data-io-quick-mode]').select_option('STEREO')
         await ch6.locator('[data-io-quick-pin="left"]').select_option('4')
         await ch6.locator('[data-io-quick-pin="right"]').select_option('7')
@@ -923,7 +977,7 @@ async def main():
           window.__armixTestEmit('arMixRoutingLabAck',{ok:true,state:lab});
           window.__armixTestEmit('arMixStatus',status);return status;
         }""",status)
-        assert 'LIVE' in await ch6.locator('.arIOQuickState').inner_text()
+        assert 'ROUTE ACK' in await ch6.locator('.arIOQuickState').inner_text()
         await page.evaluate("""status=>window.__armixTestEmit('arMixAudioArmAck',{
           ok:false,armed:false,deviceEpoch:status.dryRoutingLab.epoch,
           error:'Output intentionally stays muted in this fixture'
@@ -943,6 +997,11 @@ async def main():
         # DEVICE4: name one logical stereo INPUT over sparse verified hardware,
         # then rename and remove it. Metadata must not emit routingDryApply.
         await page.locator('[data-io-tab="device"]').click()
+        if not await page.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open'):
+            await page.locator('.arIODevicePatchMatrix > summary').click()
+        # Demand-mounted logical-input matrix is appended on the details
+        # toggle; wait for real UI state instead of assuming synchronous DOM.
+        await page.locator('.arIOSoftwareGrid').wait_for(state='visible')
         assert await page.locator('.arIOSoftwareGrid').is_visible()
         count_before=await page.evaluate("""()=>window.__armixTestActions.filter(x=>
           x.name==='arMixAction'&&x.data.action==='routingDryApply').length""")
@@ -1159,6 +1218,74 @@ async def main():
         assert len(armed)==1 and armed[0]['data']['expectedEpoch']==31,armed
         assert armed[0]['data']['expectedRevision']==3,armed
         await qp.close()
+
+        # Field screenshot regression: one enabled VB-Cable/recording pin may
+        # ONLY be selected as mono. Do not fabricate a second R endpoint.
+        one=await browser.new_page(viewport={"width":1366,"height":768})
+        await one.add_init_script("""(() => {
+          const listeners={};
+          window.__armixTestActions=[];
+          window.__JUCE__={backend:{
+            addEventListener(name,fn){(listeners[name]??=[]).push(fn)},
+            emitEvent(name,data){window.__armixTestActions.push({name,data})}
+          }};
+          window.__armixTestEmit=(name,datum)=>(listeners[name]||[]).forEach(fn=>fn(datum));
+        })();""")
+        await one.goto((root/"web/index.html").as_uri())
+        await one.evaluate("""() => {
+          const channels=Array.from({length:10},()=>({
+            mode:'NONE',left:-1,right:-1,gain:.25,pan:0,main:true,
+            mute:false,solo:false,fxId:''}));
+          const auxes=Array.from({length:4},()=>({
+            enabled:false,gain:1,main:true,mute:false,fxId:''}));
+          const lab={active:true,ready:true,epoch:51,revision:3,
+            ports:[{port:0,label:'CABLE Output capture pin 1'}],
+            outputPorts:[0,1],
+            acceptedRoute:{deviceEpoch:51,channels,auxes,sends:[]}};
+          window.__armixTestEmit('arMixStatus',{
+            connected:true,directRouteAuthorized:true,driver:'Windows Audio',
+            rate:48000,buffer:480,monitor:false,masterMute:false,
+            chainCount:0,dryRoutingLab:lab});
+          window.__armixTestEmit('arMixAudioDeviceInventory',{
+            currentType:'Windows Audio',
+            active:{backend:'Windows Audio',
+              captureDevice:'CABLE Output (VB-Audio Virtual Cable)',
+              playbackDevice:'Realtek HD Audio 2nd output',open:true,
+              authorized:true,deviceGeneration:51,enabledInputs:[0],
+              enabledOutputs:[0,1],inputNames:['CABLE recording'],
+              outputNames:['Speakers L','Speakers R']},
+            types:[{name:'Windows Audio',active:true,separate:true,
+              inputs:['CABLE Output (VB-Audio Virtual Cable)'],
+              outputs:['Realtek HD Audio 2nd output']}]});
+        }""")
+        await one.locator('#audioSetupBtn').click()
+        # Actual native Windows UI uses a compact right-side hardware drawer,
+        # not the old centered 920px blocking routing wizard.
+        drawer=await one.locator('#arIOOverlay .arIOWindow').bounding_box()
+        assert drawer and drawer['width']<=600,drawer
+        assert abs(drawer['x']+drawer['width']-1366)<2,drawer
+        assert await one.locator('.arIODevicePin').count()==3
+        assert 'MONO ONLY' in await one.locator('.arIOPinHeading').inner_text()
+        assert not await one.locator('.arIODevicePatchMatrix').evaluate('(e)=>e.open')
+        await one.locator('[data-io-tab="inputs"]').click()
+        assert await one.locator('[data-io-quick-row]:visible').count()==1
+        ch1=one.locator('[data-io-quick-row="0"]')
+        assert await ch1.locator('[data-io-quick-mode] option[value="STEREO"]').is_disabled()
+        await ch1.locator('[data-io-quick-mode]').select_option('MONO')
+        await ch1.locator('[data-io-quick-pin="left"]').select_option('0')
+        await ch1.locator('[data-io-quick-stage]').click()
+        sent=await one.evaluate("""() => window.__armixTestActions.filter(
+          x=>x.name==='arMixAction'&&x.data.action==='routingDryApply')""")
+        assert len(sent)==1,sent
+        assert sent[0]['data']['value']['channels'][0]['mode']=='MONO',sent
+        assert sent[0]['data']['value']['channels'][0]['left']==0,sent
+        assert sent[0]['data']['value']['channels'][0]['right']==-1,sent
+        # A pending routing command does not claim input PCM, MAIN sound, or
+        # output ARM. These require native acceptance and capture telemetry.
+        assert not await one.evaluate("""() => window.__armixTestActions.some(
+          x=>x.data?.action==='monitor'&&x.data.value===true)""")
+        await one.screenshot(path='audio-setup-one-pin-1366.png')
+        await one.close()
         await browser.close()
         print("PASS: G1/G2 + G3 real PRE/POST draft, AUX return, 0-gain bypass, native ACK/reject/revert, stable rack and 3 viewports")
 

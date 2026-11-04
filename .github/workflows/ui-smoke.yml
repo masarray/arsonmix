@@ -264,6 +264,10 @@ jobs:
         run: python tests/pages_m1_meter_gain_calibration_smoke.py
       - name: Verify M3 meter/clip/menu/FX/receiving multi-wire operator contract
         run: python tests/pages_m3_operator_visual_interaction_smoke.py
+      - name: Verify native v8 ACK, WIRE and accepted-snapshot consumer
+        run: python tests/operator_console_v6_smoke.py
+      - name: Validate native V6 published visual identity and control parity
+        run: node tests/operator_visual_identity_v6_contract_test.mjs
       - name: Run mixer UI smoke tests
         run: python tests/ui_smoke.py
       - name: Verify Preview V2 V7 physical visual geometry and modeless mixer workflow
@@ -298,6 +302,8 @@ jobs:
           path: |
             pages-wire-main-1680.png
             pages-wire-main-*.png
+            operator-console-v6-1366-768.png
+            operator-console-v6-1680-900.png
             pages-v51-portrait-meter-1680.png
             pages-fader-rollback-console-1680.png
             pages-fader-rollback-detail-1680.png
