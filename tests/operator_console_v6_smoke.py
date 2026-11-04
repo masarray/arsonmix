@@ -880,6 +880,21 @@ async def main():
         assert wire_command["targetChannelId"]=="7"
         assert wire_command["payload"]=={"reason":"UNPLUG",
                                         "changes":[{"op":"REMOVE","edgeId":"107"}]}
+        # Native graph mutation cannot be committed at its old revision.
+        await page.evaluate("""(x)=>window.__v6Test.publish('arMixConsoleAck',x)""",{
+            "requestId":wire_command["requestId"],"status":"ACCEPTED",
+            "deviceEpoch":"9","graphRevision":"9","rosterRevision":"9","errorCode":""})
+        assert await page.evaluate(
+            "()=>window.__arMixV6ReadOnly().pendingCount")==0
+        assert await page.evaluate(
+            "()=>window.__arMixNativeWire.focusedMainEdge('7').edgeId")=="107"
+        assert "INVALID ACK REVISION" in await page.evaluate(
+            "()=>window.__arMixV6ReadOnly().feedback")
+        assert await page.evaluate(
+            "()=>window.__arMixNativeWire.unplugFocusedMain('7')")
+        wire_command=await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert wire_command["baseGraphRevision"]=="9"
         # An ACK alone must NEVER optimistically erase an accepted physical cable.
         await page.evaluate("""(x)=>window.__v6Test.publish('arMixConsoleAck',x)""",{
             "requestId":wire_command["requestId"],"status":"ACCEPTED",
