@@ -1529,6 +1529,49 @@ function wireJackRect(button){
  return (dot||button).getBoundingClientRect?.()||null;
 }
 /* One pair of short MAIN-colored stubs is a projection of ONE real edgeId. */
+/* One accepted CH→MAIN edge is represented by two local cable fragments.
+   Physical coordinates are measured from actual sockets; never connect strips
+   with a long SVG crossing banks or alter the audio graph. */
+function paintMainWireFragment(strip,edge,isMain){
+ const section=strip?.querySelector('.send-section.wire-section');
+ if(!section)return;
+ let layer=section.querySelector('.wire-main-fragment');
+ if(!edge||document.querySelector('.console-body')?.classList.contains('collapsed-send')){
+  layer?.remove();return;
+ }
+ const jack=section.querySelector(isMain?'.wire-node-in .wire-arrow':'.wire-node-out .wire-pin');
+ const sectionRect=section.getBoundingClientRect(),pin=jack?.getBoundingClientRect();
+ if(!pin||!sectionRect.width||!sectionRect.height)return;
+ const x=pin.left+pin.width/2-sectionRect.left;
+ const y=pin.top+pin.height/2-sectionRect.top;
+ const lower=Math.min(sectionRect.height-2,Math.max(y+5,sectionRect.height-2));
+ const dx=Math.min(8,Math.max(3,sectionRect.width*.07));
+ const start=isMain?[x+dx,lower]:[x,y];
+ const end=isMain?[x,y]:[x+dx,lower];
+ const c1=isMain?[start[0],start[1]-Math.max(8,(lower-y)*.65)]:
+  [start[0],start[1]+Math.max(8,(lower-y)*.65)];
+ const c2=isMain?[end[0]+dx*.65,end[1]+Math.max(4,(lower-y)*.35)]:
+  [end[0]+dx*.65,end[1]-Math.max(4,(lower-y)*.35)];
+ const path='M'+start.map(n=>n.toFixed(2)).join(' ')+
+  ' C'+c1.map(n=>n.toFixed(2)).join(' ')+','+
+  c2.map(n=>n.toFixed(2)).join(' ')+','+
+  end.map(n=>n.toFixed(2)).join(' ');
+ const sig=edge.id+':'+sectionRect.width.toFixed(1)+':'+sectionRect.height.toFixed(1)+':'+path;
+ if(layer?.dataset.geometry===sig)return;
+ if(!layer){
+  layer=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  layer.setAttribute('class','wire-main-fragment');
+  layer.setAttribute('aria-hidden','true');
+  section.appendChild(layer);
+ }
+ layer.dataset.geometry=sig;layer.dataset.edgeId=String(edge.id);
+ layer.setAttribute('viewBox','0 0 '+sectionRect.width+' '+sectionRect.height);
+ const p=(className,d)=>'<path class="'+className+'" d="'+d+'"/>';
+ layer.innerHTML=p('wire-main-shadow',path)+p('wire-main-jacket',path)+
+  p('wire-main-sheen',path)+
+  '<circle class="wire-main-plug" cx="'+x.toFixed(2)+'" cy="'+y.toFixed(2)+'" r="2.3"/>';
+ layer.style.setProperty('--main-wire-hue',master.color);
+}
 function syncMainWireFragments(){
  const selectedSources=selection().filter(t=>t.kind!=='master');
  const focus=armedWireSource()||(selectedSources.length===1?selectedSources[0]:null);
@@ -1536,6 +1579,7 @@ function syncMainWireFragments(){
  for(const t of tracks){
   const edge=wireFor(t.id,master.id);
   const lane=document.querySelector('.strip[data-id="'+t.id+'"]');
+  paintMainWireFragment(lane,edge,false);
   for(const el of [lane?.querySelector('.wire-node-out'),lane?.querySelector('.wire-fold-summary')]){
    if(!el)continue;
    if(edge)el.setAttribute('data-wire-main-edge',String(edge.id));
@@ -1543,6 +1587,7 @@ function syncMainWireFragments(){
    el.style.setProperty('--main-wire-hue',master.color);
   }
  }
+ paintMainWireFragment(masterEl,selected,true);
  for(const el of [masterEl.querySelector('.wire-node-in'),masterEl.querySelector('.wire-fold-summary')]){
   if(!el)continue;
   if(selected)el.setAttribute('data-wire-main-edge',String(selected.id));
