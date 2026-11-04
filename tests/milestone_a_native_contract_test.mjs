@@ -26,7 +26,7 @@ test('obsolete renderer regression immediately fails the non-release source pref
   const b={...sources,entry:sources.entry+
     '\ndata = BinaryData::consolenative_html;\n'};
   assert.equal(status(inspect(b),'no-retired-console-renderer').pass,false);
-  const c={...sources,cmake:sources.cmake.replace(
+  const c={...sources,cmake:sources.cmake.replaceAll(
     'build_approved_native_gui.py','nonapproved_gui.py')};
   assert.equal(status(inspect(c),'single-approved-pages-source').pass,false);
 });
