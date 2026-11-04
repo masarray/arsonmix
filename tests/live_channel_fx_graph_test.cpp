@@ -1188,10 +1188,24 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     auto* v8BusObject=v8Bus.getDynamicObject();
     assert(v8BusObject);
     const auto v8Rows=v8Bus.getProperty("channels",{});
-    auto v8Input=std::make_unique<juce::DynamicObject>();
-    v8Input->setProperty("id","20");
-    v8Input->setProperty("role","INPUT");
-    v8Rows.getArray()->add(juce::var(v8Input.release()));
+    // Make the synthetic fixture structurally complete: partial native
+    // rows must not advertise accepted ChannelId support.
+    auto makeNativeRow=[](const char* id,const char* role) {
+        auto view=std::make_unique<juce::DynamicObject>();
+        view->setProperty("id",id);view->setProperty("role",role);
+        view->setProperty("name",role);view->setProperty("format","STEREO");
+        view->setProperty("primaryOutput","0");
+        view->setProperty("fader",1.);view->setProperty("pan",0.);
+        view->setProperty("mute",false);view->setProperty("solo",false);
+        view->setProperty("inserts",juce::var(juce::Array<juce::var>{}));
+        view->setProperty("peakL",.25);view->setProperty("peakR",.2);
+        return juce::var(view.release());
+    };
+    v8Rows.getArray()->clear();
+    auto nativeInput=makeNativeRow("20","INPUT");
+    nativeInput.getDynamicObject()->setProperty("primaryOutput","18");
+    v8Rows.getArray()->add(nativeInput);
+    v8Rows.getArray()->add(makeNativeRow("18","MAIN"));
     juce::Array<juce::var> v8Edges;
     auto v8Edge=std::make_unique<juce::DynamicObject>();
     v8Edge->setProperty("edgeId","77");
@@ -1199,6 +1213,7 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     v8Edge->setProperty("to","18");
     v8Edge->setProperty("tap","POST_FADER");
     v8Edge->setProperty("gainLinear",.5);
+    v8Edge->setProperty("primaryOutput",true);
     v8Edges.add(juce::var(v8Edge.release()));
     v8BusObject->setProperty("edges",juce::var(v8Edges));
     juce::Array<juce::var> v8InstalledOps;
@@ -1211,7 +1226,14 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
     assert(acceptedV8Graph.getProperty("revision","").toString()=="3");
     assert(acceptedV8Graph.getProperty("rosterRevision","").toString()=="4");
     assert(acceptedV8Graph.getProperty("channels",{}).getArray()->size()==2);
+    assert(acceptedV8Graph.getProperty("mainChannelId","").toString()=="18");
+    const auto publicChannel=acceptedV8Graph.getProperty("channels",{})
+        .getArray()->getReference(0);
+    assert(publicChannel.getProperty("processingFormat","").toString()=="STEREO");
+    assert(publicChannel.getProperty("controls",{}).getProperty("faderDb",{}).isDouble());
     assert(acceptedV8Graph.getProperty("edges",{}).getArray()->size()==1);
+    assert(acceptedV8Graph.getProperty("edges",{}).getArray()->getReference(0)
+        .getProperty("signalKind","").toString()=="AUDIO");
     assert(acceptedV8Graph.getProperty("edges",{}).getArray()->getReference(0)
                .getProperty("edgeId","").toString()=="77");
     assert(static_cast<bool>(acceptedV8Caps.getProperty("callbackOwnsChannelIds",false)));
@@ -1334,6 +1356,18 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
                 auto view=std::make_unique<juce::DynamicObject>();
                 view->setProperty("id",juce::String(std::to_string(row.id.value)));
                 view->setProperty("role",row.role==ChannelRole::main?"MAIN":"INPUT");
+                view->setProperty("name",juce::String(row.name));
+                view->setProperty("format",row.format==ProcessingFormat::mono?"MONO":"STEREO");
+                view->setProperty("primaryOutput",
+                    juce::String(std::to_string(row.primaryOutput.value)));
+                const auto* admitted=pcm.acceptedRoster().find(row.id);
+                assert(admitted);
+                view->setProperty("fader",static_cast<double>(admitted->faderLinear));
+                view->setProperty("pan",static_cast<double>(admitted->pan));
+                view->setProperty("mute",admitted->mute);
+                view->setProperty("solo",admitted->solo);
+                view->setProperty("inserts",juce::var(juce::Array<juce::var>{}));
+                view->setProperty("peakL",.3);view->setProperty("peakR",.3);
                 rows.add(juce::var(view.release()));
             }
             for(const auto& edge:accepted->edges) {

@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include "../integration/ConsoleNativeContractV6.h"
 #include "../engine/core/ConsolePuzzleV8Wire.h"
+#include "ApprovedNativeV8Projection.h"
 #include <cstdint>
 #include <deque>
 #include <cmath>
@@ -170,27 +171,16 @@ public:
                         const auto nativeOps=bus.getProperty("supportedOps",{});
                         std::uint64_t graphId=0,rosterId=0;
                         const auto* ops=nativeOps.getArray();
+                        // Project REAL native PCM state to the public v8 ABI.
+                        // Raw nativeBus fields must not be published verbatim:
+                        // fader is linear, format/primaryOutput are internal,
+                        // and native edges lack enabled/signalKind.
                         if(channels.isArray() && edges.isArray() && ops &&
                            ops->contains(juce::var(juce::String(
                                "NATIVE_APPLY_WIRE_TRANSACTION"))) &&
                            decodeDecimal(rev,graphId) && graphId &&
-                           decodeDecimal(roster,rosterId) && rosterId) {
-                            const auto graph=actual.getProperty("graph",{});
-                            if(auto* accepted=graph.getDynamicObject()) {
-                                accepted->setProperty("revision",rev);
-                                accepted->setProperty("rosterRevision",roster);
-                                accepted->setProperty("channels",channels);
-                                accepted->setProperty("edges",edges);
-                                const auto capabilities=graph.getProperty("capabilities",{});
-                                if(auto* caps=capabilities.getDynamicObject()) {
-                                    caps->setProperty("callbackOwnsChannelIds",true);
-                                    juce::Array<juce::var> available;
-                                    available.add(juce::var(juce::String(
-                                        "APPLY_WIRE_TRANSACTION")));
-                                    caps->setProperty("supportedOps",juce::var(available));
-                                }
-                            }
-                        }
+                           decodeDecimal(roster,rosterId) && rosterId)
+                            (void)projectApprovedNativeV8(actual,bus);
                         // Full product-LIVE remains gated on VST3/Show/monitor
                         // parity and measured hardware FAT (#15).
                     }
