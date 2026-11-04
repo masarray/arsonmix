@@ -200,7 +200,137 @@ static void verifyConsoleWirePrimaryOutputPcm() {
     session.pollRetirement();
 }
 
+
+// Native WIRE-first acceptance: exactly ONE immutable PCM graph owner.
+// Direct, nested and reconvergent paths process within the SAME sample block;
+// exact edgeId detach only affects its source, rejected DAG stays audible.
+static void verifyAtomicWireTransactionAndZeroSampleHops() {
+    constexpr std::uint64_t epoch=9909;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=1;physical.maxFrames=64;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"INPUT"),
+        add(1,ChannelRole::input,"SUM 1",ProcessingFormat::stereo),
+        add(2,ChannelRole::input,"SUM 2",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,create,physical,epoch,epoch,true);
+    assert(a.ok() && a.edit.createdIds.size()==4);
+    const auto one=a.edit.createdIds[0],two=a.edit.createdIds[1];
+    const auto three=a.edit.createdIds[2],main=a.edit.createdIds[3];
+    physical.sources={{one,0,-1,false}};
+    auto connect=[](ChannelId from,ChannelId to,float gain=1.f) {
+        WireChange w;w.kind=WireChange::Kind::connect;w.from=from;
+        w.to=to;w.gain=gain;return w;
+    };
+    auto routeOnly=[](ChannelId from,ChannelId to) {
+        WireChange w;w.kind=WireChange::Kind::routeOnly;
+        w.from=from;w.to=to;return w;
+    };
+    auto remove=[](ChannelId from,std::uint64_t id) {
+        WireChange w;w.kind=WireChange::Kind::remove;
+        w.from=from;w.edgeId=id;return w;
+    };
+    const std::array<WireChange,3> initial{
+        connect(one,main),connect(two,main),connect(three,main)
+    };
+    a=session.wireTransaction(1,1,initial,physical,epoch,epoch,true);
+    assert(a.ok()&&a.graphRevision==2&&a.edit.createdEdgeIds.size()==3);
+    const auto* graph=session.acceptedRouting(epoch,2);
+    assert(graph&&graph->edges.size()==3);
+    const auto findEdge=[&](ChannelId from,ChannelId to,
+                            std::uint64_t revision){
+        const auto* current=session.acceptedRouting(epoch,revision);
+        assert(current);
+        const auto it=std::find_if(current->edges.begin(),current->edges.end(),
+            [&](const auto& edge){return edge.from==from && edge.to==to;});
+        return it==current->edges.end()?std::uint64_t{0}:it->edgeId;
+    };
+    const auto originalMain=findEdge(one,main,2);
+    const auto otherMain=findEdge(three,main,2);
+    assert(originalMain!=0 && otherMain!=0 && originalMain!=otherMain);
+    std::array<float,64> impulse{},left{},right{};
+    impulse[11]=.3f;
+    const float* inputs[]{impulse.data()};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        return session.render(epoch,inputs,1,left.data(),right.data(),64,
+                              false,noFx);
+    };
+    assert(render() && near(left[11],.3f*center));
+    for(int i=0;i<64;++i)
+        if(i!=11)assert(near(left[i],0.f));
+
+    const std::array<WireChange,1> hop1{routeOnly(one,two)};
+    a=session.wireTransaction(2,2,hop1,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==3);
+    assert(!findEdge(one,main,3) && findEdge(one,two,3));
+    assert(render() && near(left[11],.3f*center));
+
+    const std::array<WireChange,1> hop2{routeOnly(two,three)};
+    a=session.wireTransaction(3,3,hop2,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==4);
+    const auto chainId=findEdge(one,two,4);
+    assert(chainId && !findEdge(two,main,4));
+    assert(findEdge(three,main,4)==otherMain);
+    assert(render() && near(left[11],.3f*center));
+    for(int i=0;i<64;++i)
+        if(i!=11)assert(near(left[i],0.f));
+
+    // A second real path doubles PCM only by explicit legal fan-out.
+    const std::array<WireChange,1> parallel{connect(one,main)};
+    a=session.wireTransaction(4,4,parallel,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==5);
+    const auto directId=findEdge(one,main,5);
+    assert(directId && directId!=originalMain);
+    assert(render() && near(left[11],2.f*.3f*center,1e-4f));
+    const std::array<WireChange,1> unplug{remove(one,directId)};
+    a=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==6);
+    assert(!findEdge(one,main,6) && findEdge(three,main,6)==otherMain);
+    assert(render() && near(left[11],.3f*center));
+
+    // Wrong edge identity cannot disconnect another source's MAIN.
+    const std::array<WireChange,1> wrongEdge{remove(one,otherMain)};
+    auto rejected=session.wireTransaction(6,6,wrongEdge,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    const std::array<WireChange,1> duplicate{connect(one,two)};
+    rejected=session.wireTransaction(6,6,duplicate,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(session.acceptedGraphRevision()==6);
+
+    // Mixed existing route cycle: whole native DAG compile must roll back.
+    const std::array<WireChange,1> feedback{connect(three,one)};
+    rejected=session.wireTransaction(6,6,feedback,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(session.acceptedGraphRevision()==6);
+    assert(render() && near(left[11],.3f*center));
+    rejected=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::staleRoster);
+    assert(session.acceptedGraphRevision()==6);
+    rejected=session.wireTransaction(6,6,unplug,physical,epoch+1,epoch,true);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    assert(render() && near(left[11],.3f*center));
+
+    // RETARGET keeps identity and gain, not a new/ghost wire.
+    WireChange retarget;
+    retarget.kind=WireChange::Kind::retarget;
+    retarget.from=one;retarget.to=main;retarget.edgeId=chainId;
+    const std::array<WireChange,1> reroute{retarget};
+    a=session.wireTransaction(6,6,reroute,physical,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==7);
+    assert(findEdge(one,main,7)==chainId && !findEdge(one,two,7));
+    assert(render() && near(left[11],.3f*center));
+    session.unpublish();
+    session.pollRetirement();
+}
+
 int main() {
+    verifyAtomicWireTransactionAndZeroSampleHops();
 
     // WIRE-first regression: PRE and POST to the SAME destination are
     // NOT two valid edges. Reject before accepting duplicate dry PCM.
