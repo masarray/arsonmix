@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {planM4OperatorIntent,assessM4Pdc,M4_OPERATOR_ABI} from
-  '../integration/m4-operator-routing.mjs';
+  '../integration/console-v6/m4-operator-routing.mjs';
 const require=createRequire(import.meta.url);
 const {normalizeSnapshot}=require('../web/approved-native-contract.js');
 const clone=x=>structuredClone(x);
