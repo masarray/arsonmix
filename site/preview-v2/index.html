@@ -690,13 +690,14 @@ function requestWireConnection(source,dest,anchor){
 function wireConnect(source,dest){
  if(!source||source.kind==='master'||!dest||dest.kind==='master'||source.id===dest.id)return false;
  const old=wireFor(source.id,dest.id);
- if(old){wireEdges=wireEdges.filter(e=>e.id!==old.id);if(old.kind==='primary'&&source.output===dest.name)source.output='SOURCE ONLY (No Main)';render();say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
+ if(old){const before=wireWsSnapshot();wireEdges=wireEdges.filter(e=>e.id!==old.id);if(old.kind==='primary'&&source.output===dest.name)source.output='SOURCE ONLY (No Main)';render();wireWsRecord(before);say('WIRE removed '+source.name+' → '+dest.name+' · GUI DEMO');return true;}
  if(hasLegacySendTo(source,dest)){
   say('WIRE not added: '+source.name+' already sends to '+dest.name+' via SEND slot · avoids doubled audio');return false;
  }
  if(wireIsCycle(source.id,dest.id)){say('WIRE REJECTED: feedback loop · existing signal graph preserved');return false;}
+ const before=wireWsSnapshot();
  wireEdges.push({id:nextWireId++,sourceId:source.id,destId:dest.id,mode:wireMode,levelDb:0,enabled:true});
- render();kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
+ render();wireWsRecord(before);kickWireSpring(source.id,dest.id);say('WIRE '+source.name+' → '+dest.name+' · '+(wireMode==='send'?'FOLLOW FADER SEND':'INDEPENDENT PRE FX')+(source.output==='Master'?' · MAIN direct ON':'')+' · GUI DEMO ONLY, no native PCM');
  return true;
 }
 
@@ -1310,9 +1311,11 @@ function wireWsSnapshot(){
 function wireWsSignature(state){return JSON.stringify(state);}
 function wireWsRecord(before){
  if(!before)return;
- const after=wireWsSnapshot();
- if(wireWsSignature(before)===wireWsSignature(after))return;
- wireWsHistory.push({before,afterSig:wireWsSignature(after)});
+ const after=wireWsSnapshot(),afterSig=wireWsSignature(after);
+ // The same action may arrive through a socket and the Matrix controller;
+ // capture its accepted graph ONCE, never create duplicate Undo steps.
+ if(wireWsSignature(before)===afterSig||wireWsHistory.at(-1)?.afterSig===afterSig)return;
+ wireWsHistory.push({before,afterSig});
  if(wireWsHistory.length>10)wireWsHistory.shift();
  const btn=document.getElementById('wireWsUndo');if(btn)btn.disabled=false;
 }
