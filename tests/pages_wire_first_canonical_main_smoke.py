@@ -95,6 +95,8 @@ def run():
             control=main_button(page,5)
             assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             assert control.get_attribute("aria-pressed")=="true"
+            if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+                page.locator('.section-rail [data-section="send"]').click()
             # One graph edge paints TWO measured local cubic cables, never a
             # cross-bank line. Geometry and edge identity survive all widths.
             source_stub=page.locator('#tracks .strip[data-id="5"] .wire-main-fragment')
