@@ -127,9 +127,11 @@ test("M2 code edits approved Pages *events* only, not a second native GUI/audio 
   assert.match(page,new RegExp("__ARMIX_NATIVE_M2__\\?\\."+key));
   assert.match(adapter,new RegExp(key+"\\("));
  }
+ const protocolSource=read("web/approved-native-contract.js");
  for(const name of ["arMixConsoleSubscribe","arMixConsoleSnapshot","arMixConsoleIntent","arMixConsoleAck"]) {
   assert.match(native,new RegExp(name));
-  assert.match(adapter,new RegExp(name));
+  assert.ok(adapter.includes(name)||protocolSource.includes(name),
+    "same transport operation must be sent or consumed by JS: "+name);
  }
  assert.match(header,/getActiveInputChannels/);
  assert.match(header,/getActiveOutputChannels/);
