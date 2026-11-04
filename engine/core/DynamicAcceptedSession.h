@@ -260,6 +260,7 @@ private:
             result.native.fault=DynamicNativeSessionPublisher::Fault::invalidCandidate;
             result.native.revision=publisher_.acceptedRevision();
             result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear();
             return result;
         }
         // A structural OUT/GROUP/Return edit does NOT implicitly change IN.
@@ -284,6 +285,7 @@ private:
                 result.native.graphError={DynamicGraphFault::invalidSource,source.id};
                 result.native.revision=publisher_.acceptedRevision();
                 result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear();
                 return result; // old audible SOURCE and VST3 leases unchanged
             }
         }
@@ -294,7 +296,8 @@ private:
                                        std::move(fx));
         if(!result.native.ok()) {
             result.fault=Fault::graphRejected;
-            result.edit.createdIds.clear(); // NEVER advertise phantom Bus
+            result.edit.createdIds.clear();
+            result.edit.createdEdgeIds.clear(); // NEVER advertise phantom Bus
             return result; // candidate destroyed; accepted state intact
         }
         static_assert(std::is_nothrow_move_assignable_v<DynamicChannelRoster>);
