@@ -302,6 +302,8 @@ jobs:
           path: |
             pages-wire-main-1680.png
             pages-wire-main-*.png
+            operator-console-v6-1366-768.png
+            operator-console-v6-1680-900.png
             pages-v51-portrait-meter-1680.png
             pages-fader-rollback-console-1680.png
             pages-fader-rollback-detail-1680.png
