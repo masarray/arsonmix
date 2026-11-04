@@ -80,7 +80,7 @@ if ($manifest.approvedGuiManifestSha256 -ne $approvedHash -or
     $manifest.approvedGuiPagesSha256 -ne $approved.approvedPagesHtmlSha256 -or
     $manifest.approvedGuiNativeHtmlSha256 -ne $approved.nativeHtmlSha256 -or
     $manifest.approvedGuiCanonicalSha256 -ne $approved.canonicalSourceSha256 -or
-    $manifest.approvedGuiAdapterStatus -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM" -or
+    $manifest.approvedGuiAdapterStatus -ne "M2_NATIVE_ACK_SNAPSHOT_GATED__PCM_NOT_CERTIFIED" -or
     $manifest.guiCalibration -ne "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY" -or
     $manifest.approvedGuiResourceCount -ne @($approved.files).Count) {
     throw "REJECT: native release provenance does not match the approved Pages GUI"
@@ -133,7 +133,7 @@ foreach ($item in $approved.files) {
     }
 }
 if ($embeddedText.IndexOf('APPROVED_PAGES_PREVIEW_BUTTONS', [StringComparison]::Ordinal) -lt 0 -or
-    $embeddedText.IndexOf('M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('M2_NATIVE_READBACK_ONLY', [StringComparison]::Ordinal) -lt 0 -or
     $embeddedText.IndexOf('WEBVIEW2_GUI_READY_TIMEOUT', [StringComparison]::Ordinal) -lt 0 -or
     $embeddedText.IndexOf('AUDIO_GLITCH_WINDOW', [StringComparison]::Ordinal) -lt 0) {
     throw "REJECT: approved GUI bridge or native device safety markers absent"
