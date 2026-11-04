@@ -43,4 +43,19 @@ const legacy=graph.migrateLegacy([{...channels[0],send:'CH2',sendOn:true,sendLev
  channels[1],channels[2]],9);
 assert.equal(legacy.ok,true);
 assert.equal(legacy.edges.filter(e=>e.sourceId===1&&e.destId===2).length,1);
-console.log('PASS WIRE canonical model: MAIN defaults, exact-edge unplug/replug, batch, DAG, duplicate, migration');
+// Safety contract: every entry point (including Scenes and untrusted imports)
+// must fail closed for unknown kinds/taps, never silently create a SEND.
+const unknownKind={...state.edges[0],kind:'phantom'};
+assert.equal(graph.validateCandidateGraph(channels,9,[unknownKind]).error,'INVALID_EDGE_KIND');
+for(const mode of ['pluginSidechain','preMaster','routeOnly']){
+ const bad={...state.edges[0],id:200,sourceId:1,destId:2,kind:'send',mode};
+ assert.equal(graph.validateCandidateGraph(channels,9,[bad]).error,'INVALID_EDGE_TAP');
+}
+assert.equal(graph.applyWireTransaction(state,[
+ {type:'CONNECT',sourceId:1,destId:2,mode:'silentUnsupportedTap'}
+]).error,'INVALID_EDGE_TAP');
+assert.equal(graph.applyWireTransaction({...state,edges:null},[
+ {type:'REMOVE',sourceId:1,edgeId:main1.id}
+]).error,'INVALID_GRAPH');
+assert.equal(JSON.stringify(state),unchanged,'rejected operations cannot mutate committed state');
+console.log('PASS WIRE canonical model: MAIN defaults, exact-edge unplug/replug, atomic DAG, strict kinds/taps, migration');
