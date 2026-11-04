@@ -267,6 +267,272 @@
     '</section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button class="btn-180" id="arPatchRevert">REVERT DRAFT</button><button class="btn-180" id="arRouteSaveDry" title="Save real native VST3 state, routing and AUX sends while OUTPUT is muted">SAVE SHOW</button><button class="btn-180" id="arRouteBrowseShows" title="Browse SHA-verified native Shows stored in Studio/Shows">BROWSE SHOWS</button><button class="btn-180" id="arRouteApply">APPLY ROUTING</button><button class="btn-180" id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native Show browser"><div class="arNativeShowLine"><strong>NATIVE SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native Show"><option value="">Choose a saved Show...</option></select><button class="btn-180" id="arNativeShowRecall" type="button" disabled>RECALL SELECTED</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
   document.body.appendChild(routeOverlay);
+  // E4: The EXISTING routing workspace controls the actual E3 ChannelId
+  // publisher. No simulated audio, no duplicate GUI graph, and no universal
+  // v8 promotion. This panel reads ONLY legacyM4.nativeBus accepted PCM.
+  const realBusPanel=document.createElement('section');
+  realBusPanel.id='arNativeBusOperator';
+  realBusPanel.setAttribute('aria-label','Accepted native Group and FX Return');
+  const nativeBusHeading=document.createElement('div');
+  nativeBusHeading.className='arPatchHeading';
+  const nativeBusTitle=document.createElement('strong');
+  nativeBusTitle.textContent='NATIVE GROUP / FX RETURN · ACTUAL PCM';
+  const nativeBusHelp=document.createElement('small');
+  nativeBusHelp.textContent='Select real ChannelIds. GROUP = serial routing; FX RETURN = parallel wet send. Output must be disarmed for topology edits.';
+  nativeBusHeading.append(nativeBusTitle,nativeBusHelp);
+  const nativeBusState=document.createElement('p');
+  nativeBusState.id='arNativeBusState';
+  nativeBusState.setAttribute('role','status');
+  nativeBusState.textContent='READING ACCEPTED NATIVE BUS GRAPH';
+  const nativeBusSources=document.createElement('div');
+  nativeBusSources.id='arNativeBusSources';
+  nativeBusSources.setAttribute('role','group');
+  nativeBusSources.setAttribute('aria-label','Real source channels for native BUS');
+  const nativeBusActions=document.createElement('div');
+  nativeBusActions.className='arBusActions';
+  const nativeBusName=document.createElement('input');
+  nativeBusName.type='text';nativeBusName.maxLength=64;
+  nativeBusName.placeholder='Bus name';nativeBusName.setAttribute('aria-label','Native BUS name');
+  const nativeBusGain=document.createElement('input');
+  nativeBusGain.type='number';nativeBusGain.min='0';nativeBusGain.max='4';
+  nativeBusGain.step='.05';nativeBusGain.value='.25';
+  nativeBusGain.setAttribute('aria-label','FX wet send gain (linear)');
+  const groupCreate=document.createElement('button');
+  groupCreate.type='button';groupCreate.className='btn-180';groupCreate.textContent='+ GROUP';
+  const fxReturnCreate=document.createElement('button');
+  fxReturnCreate.type='button';fxReturnCreate.className='btn-180';
+  fxReturnCreate.textContent='+ FX RETURN';
+  nativeBusActions.append(nativeBusName,nativeBusGain,groupCreate,fxReturnCreate);
+  const nativeBusRows=document.createElement('div');nativeBusRows.id='arNativeBusRows';
+  realBusPanel.append(nativeBusHeading,nativeBusState,nativeBusSources,
+                      nativeBusActions,nativeBusRows);
+  document.getElementById('arBusCapability')?.insertAdjacentElement('afterend',realBusPanel);
+
+  // Fast bounded uint64 validation: never BigInt-parse arbitrarily long
+  // untrusted WebView values before checking canonical length and format.
+  const busWireDecimal=s=>typeof s==='string'&&s.length<=20&&
+    /^[1-9][0-9]*$/.test(s)&&BigInt(s)<=18446744073709551615n?s:null;
+  const busSelection=new Set();
+  let busSnapshot=null,busPending=null,busSignature='',busSession='',busSequence=0;
+  let busSnapshotSerial=0;
+  const busInstance=(()=>{
+    const data=new Uint8Array(12);
+    try{window.crypto.getRandomValues(data);
+      return 'native-bus-'+Array.from(data,x=>x.toString(16).padStart(2,'0')).join('');
+    }catch{return 'native-bus-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);}
+  })();
+  const nativeBusAccepted=()=>{
+    const snap=busSnapshot,legacy=snap?.legacyM4,bus=legacy?.nativeBus;
+    if(!snap||snap.schemaVersion!==6||snap.productionCallbackLive!==false||
+       legacy?.controlPlane!=='LEGACY_M4_ORDINAL'||
+       legacy?.pcmRenderer!=='CHANNEL_ID_10CH4AUX'||
+       !bus||!Array.isArray(bus.channels)||
+       !Array.isArray(bus.supportedOps)||
+       busWireDecimal(snap.device?.epoch)===null||
+       busWireDecimal(legacy.routingRevision)===null||
+       busWireDecimal(bus.graphRevision)===null||
+       busWireDecimal(bus.rosterRevision)===null)return null;
+    const ids=new Set();
+    for(const c of bus.channels){
+      if(!c||busWireDecimal(c.id)===null||ids.has(c.id)||
+         !['INPUT','GROUP','FX_RETURN','MAIN','MONITOR'].includes(c.role))
+        return null;
+      ids.add(c.id);
+    }
+    if(!bus.channels.some(c=>c.role==='MAIN'))return null;
+    return {snap,legacy,bus};
+  };
+  const busMayEdit=(op,structural=false)=>{
+    const s=nativeBusAccepted();
+    return !!s&&!busPending&&s.bus.supportedOps.includes(op)&&
+      (!structural||(!s.snap.device.outputArmed&&!state.monitor&&
+                     !state.secondaryOutputArmed&&!patchPending&&!mixerDraftActive));
+  };
+  const busNotice=message=>{nativeBusState.textContent=message;};
+  const busRequest=()=>{
+    api.emitEvent('arMixConsoleSubscribe',{protocol:'v6',requester:busInstance});
+  };
+  function renderNativeBus(force=false){
+    const accepted=nativeBusAccepted(),bus=accepted?.bus;
+    const signature=accepted?JSON.stringify([
+      accepted.snap.device.epoch,accepted.legacy.routingRevision,
+      bus.graphRevision,bus.rosterRevision,bus.channels,
+      accepted.snap.device.outputArmed,state.monitor,state.secondaryOutputArmed,
+      !!busPending]):'UNREADY';
+    if(!force&&signature===busSignature)return;
+    busSignature=signature;
+    const ready=!!accepted,structural=busMayEdit('NATIVE_CREATE_GROUP_SELECTED',true);
+    // The old M4 caption said GROUP was not implemented. E3 can now own
+    // an actual GROUP/FX RETURN while universal v8/DCA/MATRIX remain gated.
+    // State the CURRENT PCM truth, not a permanent obsolete capability.
+    const legacyCaption=routeOverlay.querySelector('[data-bus-cap="missing"]');
+    if(legacyCaption)legacyCaption.textContent=ready
+      ?'CHANNELID GROUP / FX RETURN · NATIVE PCM ACTIVE · DCA / MATRIX / CUE NOT AVAILABLE'
+      :'GROUP / FX RETURN REQUIRES VERIFIED NATIVE PCM · DCA / MATRIX / CUE NOT AVAILABLE';
+    groupCreate.disabled=!structural;
+    fxReturnCreate.disabled=!busMayEdit('NATIVE_CREATE_FX_RETURN_SELECTED',true);
+    nativeBusName.disabled=!ready||!!busPending;
+    nativeBusGain.disabled=!ready||!!busPending;
+    const oldSelected=new Set(busSelection);
+    const sources=ready?bus.channels.filter(ch=>ch.role==='INPUT'):[];
+    busSelection.clear();nativeBusSources.replaceChildren();
+    for(const ch of sources){
+      const label=document.createElement('label');
+      const checkbox=document.createElement('input');
+      checkbox.type='checkbox';checkbox.value=ch.id;
+      checkbox.checked=oldSelected.has(ch.id);
+      checkbox.disabled=!!busPending;
+      if(checkbox.checked)busSelection.add(ch.id);
+      checkbox.addEventListener('change',()=>{
+        if(checkbox.checked)busSelection.add(ch.id);
+        else busSelection.delete(ch.id);
+        nativeBusState.textContent=busSelection.size+' SOURCE SELECTED · accepted ChannelIds only';
+      });
+      label.append(checkbox,document.createTextNode(' '+String(ch.name||ch.id)));
+      nativeBusSources.append(label);
+    }
+    nativeBusRows.replaceChildren();
+    // Native E3 owns only dynamically created BUS identities. Original
+    // AUX1–4 share FX_RETURN role but are controlled by the M4 strip/AUX
+    // panel. They must never expose REMOVE or a second fader writer here.
+    for(const ch of ready?bus.channels.filter(x=>
+      (x.role==='GROUP'||x.role==='FX_RETURN')&&x.nativeManaged===true):[]){
+      const line=document.createElement('div');
+      line.className='arBusActions';
+      const name=document.createElement('span');
+      name.textContent=ch.role.replace('_',' ')+' · '+String(ch.name||ch.id);
+      const gain=document.createElement('input');
+      gain.type='number';gain.min='0';gain.max='4';gain.step='.05';
+      gain.value=String(ch.fader);
+      gain.setAttribute('aria-label',String(ch.name||ch.id)+' native linear gain');
+      const pan=document.createElement('input');
+      pan.type='number';pan.min='-1';pan.max='1';pan.step='.05';
+      pan.value=String(ch.pan);
+      pan.setAttribute('aria-label',String(ch.name||ch.id)+' native pan');
+      const remove=document.createElement('button');
+      remove.type='button';remove.className='btn-180';remove.textContent='REMOVE';
+      const mixReady=busMayEdit('NATIVE_SET_BUS_MIX');
+      gain.disabled=!mixReady;pan.disabled=!mixReady;
+      remove.disabled=!busMayEdit('NATIVE_REMOVE_BUS',true);
+      const submitMix=()=>{
+        const g=Number(gain.value),p=Number(pan.value);
+        if(!Number.isFinite(g)||g<0||g>4||!Number.isFinite(p)||p< -1||p>1){
+          busNotice('REJECTED · Gain 0–4, pan -1–1');return;
+        }
+        sendNativeBus('NATIVE_SET_BUS_MIX',ch.id,{gain:g,pan:p});
+      };
+      gain.addEventListener('change',submitMix);
+      pan.addEventListener('change',submitMix);
+      remove.addEventListener('click',()=>{
+        sendNativeBus('NATIVE_REMOVE_BUS',ch.id,{});
+      });
+      line.append(name,gain,pan,remove);nativeBusRows.append(line);
+    }
+    if(!ready)busNotice('UNAVAILABLE · Native ChannelId PCM has not admitted a verified BUS graph');
+    else if(!busPending)busNotice(
+      'NATIVE PCM ACCEPTED · '+bus.graphRevision+
+      ' · '+(state.monitor||state.secondaryOutputArmed||accepted.snap.device.outputArmed
+        ?'DISARM OUTPUT TO EDIT STRUCTURE':'READY FOR STRUCTURAL EDIT'));
+  }
+  function sendNativeBus(operation,targetChannelId,payload){
+    const structural=operation!=='NATIVE_SET_BUS_MIX';
+    if(!busMayEdit(operation,structural)){busNotice('REJECTED · Native authority or output safety gate');return false;}
+    const admitted=nativeBusAccepted();
+    if(!admitted)return false;
+    const requestId=busInstance+':'+(++busSequence);
+    const command={
+      requestId,operation,
+      deviceEpoch:admitted.snap.device.epoch,
+      legacyRoutingRevision:admitted.legacy.routingRevision,
+      nativeGraphRevision:admitted.bus.graphRevision,
+      nativeRosterRevision:admitted.bus.rosterRevision,
+      targetChannelId:targetChannelId||null,payload
+    };
+    busPending={requestId,operation,epoch:command.deviceEpoch,
+      graphRevision:command.nativeGraphRevision,
+      rosterRevision:command.nativeRosterRevision,ack:null};
+    busNotice('PENDING · '+operation+' · awaiting native accepted ACK');
+    renderNativeBus(true);
+    api.emitEvent('arMixConsoleIntent',command);
+    return true;
+  }
+  function createNativeBus(kind){
+    if(!busMayEdit(kind,true))return;
+    const name=nativeBusName.value.trim(),ids=[...busSelection];
+    const gain=Number(nativeBusGain.value);
+    if(!name||name.length>64||!ids.length||ids.length>64||
+       !Number.isFinite(gain)||gain<0||gain>4){
+      busNotice('REJECTED · Select 1–64 actual input channels, a name and gain 0–4');return;
+    }
+    if(sendNativeBus(kind,null,{name,selectedChannelIds:ids,sendGain:gain}))
+      nativeBusName.value='';
+  }
+  groupCreate.addEventListener('click',()=>createNativeBus('NATIVE_CREATE_GROUP_SELECTED'));
+  fxReturnCreate.addEventListener('click',()=>createNativeBus('NATIVE_CREATE_FX_RETURN_SELECTED'));
+  api.addEventListener('arMixConsoleSnapshot',message=>{
+    const snap=message?.snapshot||message;
+    if(!snap||snap.schemaVersion!==6)return;
+    const nextEpoch=busWireDecimal(snap.device?.epoch);
+    if(nextEpoch===null)return;
+    // An old async snapshot must never roll UI authority back to an
+    // earlier device generation, even if its previous graph was accepted.
+    if(busSession&&BigInt(nextEpoch)<BigInt(busSession))return;
+    if(busSession&&busSession!==nextEpoch){
+      busPending=null;busSelection.clear();busSignature='';
+    }
+    // Ignore stale same-device native BUS snapshots. Revision is the real
+    // publisher revision, not the universal graph's intentionally gated 0.
+    const previous=nativeBusAccepted();
+    const incoming=snap?.legacyM4?.nativeBus;
+    if(previous&&busSession===nextEpoch&&incoming&&
+       busWireDecimal(incoming.graphRevision)!==null&&
+       BigInt(incoming.graphRevision)<BigInt(previous.bus.graphRevision))return;
+    busSession=nextEpoch;
+    busSnapshot=snap;
+    ++busSnapshotSerial;
+    if(busPending?.ack){
+      const info=nativeBusAccepted();
+      const ack=busPending.ack;
+      if(info&&busSnapshotSerial>busPending.ackSnapshotSerial&&
+         info.snap.device.epoch===busPending.epoch&&
+         BigInt(info.bus.graphRevision)>=BigInt(ack.nativeGraphRevision)&&
+         BigInt(info.bus.rosterRevision)>=BigInt(ack.nativeRosterRevision)){
+        const operation=busPending.operation||'NATIVE BUS';
+        busPending=null;busSignature='';
+        busNotice('ACCEPTED · '+operation+' · exact native graph + roster confirmed');
+      }
+    }
+    if(routeOverlay.classList.contains('open'))renderNativeBus();
+  });
+  api.addEventListener('arMixConsoleAck',message=>{
+    const ack=message?.ack||message;
+    if(!busPending||ack?.requestId!==busPending.requestId)return;
+    if(ack.deviceEpoch!==busPending.epoch||
+       !['ACCEPTED','REJECTED'].includes(ack.status)){
+      busPending=null;busSignature='';
+      renderNativeBus(true);
+      busNotice('INVALID NATIVE ACK · previous accepted route preserved');return;
+    }
+    if(ack.status==='REJECTED'){
+      busPending=null;busSignature='';
+      renderNativeBus(true);
+      busNotice('REJECTED · '+String(ack.errorCode||'Native BUS unchanged'));
+      busRequest();return;
+    }
+    if(busWireDecimal(ack.nativeGraphRevision)===null||
+       busWireDecimal(ack.nativeRosterRevision)===null||
+       BigInt(ack.nativeGraphRevision)<BigInt(busPending.graphRevision)||
+       BigInt(ack.nativeRosterRevision)<BigInt(busPending.rosterRevision)){
+      busPending=null;busSignature='';
+      renderNativeBus(true);
+      busNotice('INVALID NATIVE REVISION ACK · refresh before editing');return;
+    }
+    busPending.ack=ack;
+    busPending.ackSnapshotSerial=busSnapshotSerial;
+    busNotice('ACK RECEIVED · verifying accepted PCM snapshot');
+    busRequest();
+  });
+  realBusPanel.addEventListener('click',()=>{if(!busSnapshot)busRequest();});
   // Processing channel width is independent of the hardware source mode.
   // The native graph is still the sole audio source of truth; these are DRAFTS.
   const legacyFormat=mode=>mode==="STEREO"||mode==="BUS"?"STEREO":"MONO";
@@ -632,8 +898,12 @@
         .classList.toggle("arPatchHidden",section!==tab);
     }
     if(tab==="input")renderPatchMatrix();
-    else if(tab==="internal")drawRoutes();
-    else renderPatchOutput();
+    else if(tab==="internal"){
+      drawRoutes();
+      // Refresh authoritative native bus graph on every BUS tab visit;
+      // never infer one from a ten-strip draft or an unready fixture.
+      busRequest();renderNativeBus(true);
+    }else renderPatchOutput();
   }
   function patchFeedback(message){
     document.getElementById("arRouteFeedback").textContent=message;

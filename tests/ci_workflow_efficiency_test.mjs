@@ -6,7 +6,7 @@ const read=file=>readFileSync(file,'utf8');
 const windows=read('.github/workflows/p1-windows.yml');
 const ui=read('.github/workflows/ui-smoke.yml');
 const pages=read('.github/workflows/pages-publish.yml');
-test('only main and explicitly selected branch can produce a Windows FAT artifact',()=>{
+test('only an integrated product branch may upload a Windows mixer candidate',()=>{
  assert.match(windows,/branches: \[main\]/);
  assert.doesNotMatch(windows,/branches: \[ main, feature\//);
  assert.match(windows,/pull_request:\s+paths:/);
@@ -15,8 +15,10 @@ test('only main and explicitly selected branch can produce a Windows FAT artifac
  assert.match(windows,/'web\/\*\*'/);
  assert.match(windows,/workflow_dispatch:/);
  assert.match(windows,/cancel-in-progress: true/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
- assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+ assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
+ assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
+ assert.ok(!windows.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT'));
+ assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
  assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
            windows.indexOf('uses: actions/upload-artifact@v4'));
 });
@@ -45,6 +47,16 @@ test('retain current native audio and dearVR CTests during CI optimization',()=>
  }
  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
  assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.match(windows,/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.head_ref == 'milestone\/m4-unified-native-multichannel-fx-20261101' \}\}/);
- assert.match(windows,/ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64/);
+ assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
+ assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
+ assert.ok(!windows.includes('ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT'));
+});
+
+test('native FAT compiles the exact ENGINE PR HEAD and rejects transient merge refs',()=>{
+ const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+ assert.ok(windows.includes(shaRef));
+ assert.match(windows,/ENGINE_EXACT_SOURCE_SHA_VERIFIED/);
+ assert.match(windows,/git rev-parse HEAD/);
+ assert.ok(windows.indexOf('ENGINE_EXACT_SOURCE_SHA_VERIFIED')<
+           windows.indexOf('name: Build executable and native RT tests'));
 });

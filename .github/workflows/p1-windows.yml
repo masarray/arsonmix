@@ -57,11 +57,23 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # PR default is a transient refs/pull/*/merge. Test and package
+          # the precise approved ENGINE SHA, never a synthetic merge.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Attest exact source SHA before native compile or packaging
+        shell: pwsh
+        run: |
+          $expected = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($expected -notmatch '^[0-9a-f]{40}$' -or $actual -ne $expected) {
+            throw "ENGINE SOURCE SHA MISMATCH: expected=$expected checkout=$actual"
+          }
+          Write-Host "ENGINE_EXACT_SOURCE_SHA_VERIFIED: $actual"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
-        run: node scripts/check_console_puzzle.mjs
-      - name: Stop incomplete integrated product promotion before JUCE checkout
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
-        run: node scripts/check_console_puzzle.mjs --release
+        run: |
+          node --test tests/engine_runtime_reconciliation_test.mjs
+          node scripts/check_console_puzzle.mjs
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
         run: |
@@ -81,19 +93,15 @@ jobs:
         run: |
           # Do not hide earlier Node failures with the exit code of the LAST
           # command. One Node invocation also avoids repeated startup costs.
-          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js', 'web/mixer-io.js', 'web/mixer-layout.js')) {
+          foreach ($file in @('web/console-native.js')) {
             node --check $file
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+          # Product UI: verify the actual JUCE embedded M3 source and native
+          # intent/ACK tests; retired fixed-ten GUI remains archive-only.
           $contracts = @(
-            'tests/gui_workflow_contract_test.mjs'
-            'tests/native_ui_contract_test.mjs'
-            'tests/native_preset_contract_test.mjs'
-            'tests/fx_add_contract_test.mjs'
-            'tests/fx_drag_reorder_contract_test.mjs'
+            'tests/approved_native_console_contract_test.mjs'
             'tests/live_graph_contract_test.mjs'
-            'tests/reconciled_gui_engine_contract_test.mjs'
-            'tests/main_v08_native_integration_test.mjs'
             'tests/smart_audio_ard_contract_test.mjs'
             'tests/p0_diagnostic_contract_test.mjs'
             'tests/smart_audio_diagnostic_contract_test.mjs'
@@ -102,10 +110,6 @@ jobs:
             'tests/native_artifact_packaging_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
-            'tests/plugin_ui_contract_test.mjs'
-            'tests/live_routing_ui_contract_test.mjs'
-            'tests/mixer_io_operator_contract_test.mjs'
-            'tests/mixer_shell_contract_test.mjs'
             'tests/studio_backup_contract_test.mjs'
           )
           node --test $contracts
@@ -121,6 +125,11 @@ jobs:
         run: cmake --build build --config Release --target ARMixConsole ARMixFactoryFxRegistryTests ARMixFxOrderTests ARMixFxStructuralHandoffTests ARMixMixerRoutingTests ARMixChannelRoutingContractTests ARMixChannelSendTests ARMixPreparedMixerBlockTests ARMixLiveRoutingEpochTests ARMixJucePortMaskTests ARMixNativeMixerSessionTests ARMixNativeDrySendTests ARMixLiveChannelFxTests ARMixDedicatedAuxBusTests ARMixTenChannelLiveControlTests ARMixWorkspaceTests ARMixVaultTests ARMixBackupTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixOrbitMotionTests ARMixOrbitDistanceTests ARMixFxBypassEnvelopeTests ARMixDearVrPolarPolicyTests ARMixRTTests ARMixPresetTests ARMixShowSchemaTests ARMixShowStoreTests ARMixLiveShowCaptureTests ARMixNativeMasterLoudnessTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCaptureBoundaryTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
+      # Build/test the real product EXE before release qualification; failed
+      # universal capability still stops ZIP packaging/upload for user UAT.
+      - name: Stop incomplete integrated product before Windows packaging
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') }}
+        run: node scripts/check_console_puzzle.mjs --release
       - name: Package verified JUCE GUI for hardware FAT
         shell: pwsh
         run: |
@@ -136,13 +145,12 @@ jobs:
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # PRs compile/CTest/package but never silently publish a stable build.
-      # This single M4 FAT branch is explicitly allowed to upload an
-      # UNQUALIFIED experimental ZIP for real physical hardware testing.
+      # Stop-ship: ENGINE-only CI is still built with abandoned 10-strip GUI.
+      # Never upload it as a user-testable mixer. Only exact-SHA joined product
+      # integration may upload after mandatory approved-Console release gating.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         with:
-          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED-Windows-x64
           path: dist/
           if-no-files-found: error
-          retention-days: 14

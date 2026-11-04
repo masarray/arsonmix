@@ -1,0 +1,40 @@
+
+.console-body{flex:1;min-height:0;display:flex;overflow:hidden;}
+.section-rail{flex:0 0 33px;width:33px;display:flex;flex-direction:column;border-right:1px solid #060707;background:#262729;box-shadow:inset -1px 0 #343537;text-align:center}
+.rail-cell{position:relative;width:100%;min-width:0;border:0;background:transparent;cursor:default;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #111;color:#a0a3a5;flex:none;font-size:15px}
+.rail-cell small{font-size:9px;color:#8d9294}
+.rail-cell[data-section]{cursor:pointer}
+.rail-cell[data-section]:hover{color:#d7e9ee;background:#34383a}
+.rail-cell[data-section].collapsed{color:#75b8c9}
+
+
+
+
+.console-body.collapsed-route .route-section .route-select{display:none}
+
+
+.rail-cell.route{height:var(--route-h)}
+.rail-cell.fx{height:var(--fx-h);font-family:Georgia,serif;font-style:italic}
+.rail-cell.send{height:var(--send-h)}
+.rail-cell.eq{height:var(--eq-h)}
+.rail-cell.pan{height:var(--pan-h)}
+.rail-cell.trim{height:var(--trim-h)}
+.rail-cell.switch{height:var(--switch-h)}
+.rail-cell.fader{flex:1;min-height:80px;flex-direction:column;gap:7px;font-size:10px}
+.rail-cell.footer{height:var(--footer-h)}
+.tracks-viewport{flex:1;min-width:0;overflow:auto hidden;background:#1d1e1f;scrollbar-color:#585a5a #292a2b;scrollbar-width:thin}
+.tracks{display:flex;align-items:stretch;width:max-content;min-width:100%;height:100%}
+.strip{width:102px;flex:0 0 102px;min-width:102px;min-height:0;height:100%;display:flex;flex-direction:column;background:#232425;border-right:2px solid #111213;box-shadow:inset 1px 0 #37383a}
+.strip:nth-child(even){background:#252627}
+.strip.selected{background:#2d3032;box-shadow:inset 2px 0 #63acc1}
+.console-body.narrow{--fx-h:23px;--send-h:23px;--eq-h:23px}
+.console-body.narrow .strip:not(.master){width:78px;flex-basis:78px;min-width:78px}
+.console-body.narrow .route-select{font-size:9px}
+
+.console-body.narrow .switch{min-width:15px;padding:0}
+.console-body.narrow .switch-section{height:var(--switch-h);flex:0 0 var(--switch-h);display:flex;justify-content:center;align-items:flex-start;padding:3px 3px 0;gap:2px}
+.console-body.narrow .strip .footer-label .name{font-size:9px}
+#master{flex:0 0 111px;width:111px;min-width:111px;overflow:hidden}
+.strip.master{width:111px;flex:0 0 111px;background:#26282a;border-left:2px solid #111213;border-right:0;box-shadow:inset 1px 0 #44484b}
+.strip.bus{background:#2a292b}
+.strip.fx{background:#29252d}

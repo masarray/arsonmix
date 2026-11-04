@@ -59,7 +59,7 @@ if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
     throw "Cannot attest packaged source Git commit"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$exeName = "ArSonMix-GUI10CH-P012-Windows-x64.exe"
+$exeName = "ArSonMix-M3-NativeConsole-ENGINEERING-NOT-HARDWARE-QUALIFIED-Windows-x64.exe"
 $destination = Join-Path $OutputDir $exeName
 Copy-Item -LiteralPath $app -Destination $destination -Force
 $readme = "README.md"
@@ -74,12 +74,38 @@ Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FA
 "ARSONMIX_PORTABLE_WORKSPACE_V1" |
     Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding utf8
 
+# Hash the actual compiled resources ONLY; no abandoned fixed-ten app.js.
+# BinaryData must contain every one of these bytes and the native bridge.
+$guiResources = [ordered]@{}
+$cmake = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+# Only compiled JUCE BinaryData assets are authoritative. The repository
+# may retain historical images that are deliberately not part of the EXE.
+$compiledAssets = @([regex]::Matches($cmake, 'web/assets/[A-Za-z0-9_.-]+') |
+    ForEach-Object { $_.Value } | Select-Object -Unique)
+if ($compiledAssets.Count -ne 24) {
+    throw "Windows CMake BinaryData must embed exactly 24 approved M3 assets"
+}
+$guiFiles = @("web/index.html", "web/console-native.js") + $compiledAssets
+foreach ($guiFile in $guiFiles) {
+    $guiResources[$guiFile] = (Get-FileHash -LiteralPath $guiFile -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+if ($guiResources.Count -ne 26) {
+    throw "Approved Console resources incomplete: expected HTML + native JS + 24 visual assets, got $($guiResources.Count)"
+}
+$html = Get-Content -LiteralPath "web/index.html" -Raw -Encoding UTF8
+$native = Get-Content -LiteralPath "web/console-native.js" -Raw -Encoding UTF8
+$cmake = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+if ($html -notmatch 'id="nativeAuthority"' -or $html -notmatch 'src="console-native.js"' -or
+    $html -match 'data-view="FX RACK"' -or $cmake -match 'web/app\.js' -or
+    $native -notmatch 'arMixConsoleSnapshot' -or $native -notmatch 'arMixConsoleIntent') {
+    throw "WRONG GUI: native build does not own the approved M3 Console"
+}
 $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
     sourceCommit = $gitSha
-    gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
-    engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__HARDWARE_FAT_UNQUALIFIED"
-    nativeDSP = "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK"
+    gui = "APPROVED_M3_NATIVE_CONSOLE_V1__NATIVE_SNAPSHOT_ONLY"
+    engine = "M4_10CH4AUX_COMPAT_CHANNELID_CUTOVER_PENDING__NOT_PRODUCT_READY"
+    nativeDSP = "REAL_M4_10CH4AUX__UNIVERSAL_CH11_VST3_BUS_FX_NOT_READY"
     storageMode = "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE"
     guiExeBytes = $appBytes
     guiExeMinimumBytes = $minimumGuiExeBytes
@@ -93,15 +119,11 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-    indexHtmlSha256 = (Get-FileHash -LiteralPath "web/index.html" -Algorithm SHA256).Hash.ToLowerInvariant()
-    appJsSha256 = (Get-FileHash -LiteralPath "web/app.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    stylesCssSha256 = (Get-FileHash -LiteralPath "web/styles.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiCssSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    pluginUiJsSha256 = (Get-FileHash -LiteralPath "web/plugin-ui.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    bridgeJsSha256 = (Get-FileHash -LiteralPath "web/bridge.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    monitorJsSha256 = (Get-FileHash -LiteralPath "web/monitor.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    guiSource = "web/index.html + web/styles.css + web/plugin-ui.css + web/app.js + web/plugin-ui.js + web/bridge.js + web/monitor.js (JUCE BinaryData)"
-    guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
+    guiAuthority = "APPROVED_M3_NATIVE_CONSOLE_V1"
+    approvedVisualSource = "main@aba0e2879fbc6cbfe42be42197aa249accb08abf (M3/V21)"
+    guiResources = $guiResources
+    guiSource = "web/index.html + web/console-native.js + web/assets/* (JUCE BinaryData)"
+    guiCalibration = "APPROVED_M3_DENSE_FADER_METER_WIRE_NATIVE_V1"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }

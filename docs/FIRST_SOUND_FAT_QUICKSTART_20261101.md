@@ -1,5 +1,5 @@
 # ArSonMix — Windows First Sound / Hardware FAT
-Date: 1 November 2026. Current production: **10 input channels + 4 AUX**, one JUCE callback, MAIN/MONITOR and native VST3. The experimental dynamic CH11/Group engine has **not** replaced the production callback. The outstanding 0FX hardware crackle issue is #15. This is a FAT **candidate**, not hardware certified or guaranteed zero physical latency.
+Date: 1 November 2026. M1 hardware candidate addendum: 2 November 2026. Current production: **10 input channels + 4 AUX**, one JUCE callback, MAIN/MONITOR and native VST3. The experimental dynamic CH11/Group engine has **not** replaced the production callback. The outstanding 0FX hardware crackle issue is #15. This is a FAT **candidate**, not hardware certified or guaranteed zero physical latency.
 
 ## 1. Verify package
 Extract the complete Windows Actions ZIP to a writable folder. `BUILD_PROVENANCE.json` must show the same `sourceCommit` as the GitHub run; EXE SHA-256 must equal `exeSha256`. Keep `portable_mode.txt`, never delete an existing `Studio` workspace. The file is a Windows x64 JUCE GUI executable; Microsoft Edge WebView2 Runtime and the correct audio hardware driver are required.
@@ -28,3 +28,26 @@ Send: (a) screenshot of active driver/rate/buffer/pins, (b) accepted CH01 patch 
 **PASS is hardware-grounded:** correct MAIN source path, verified mute/fader control, no wrong-endpoint output, clean 0FX wired audio for >=30 minutes on the recorded device/rate/buffer, followed by real plugin testing. A green Windows CTest/Chromium CI is not a substitute.
 
 Historical full test matrix remains `docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md`. This packaged guide supersedes obsolete manual START AUDIO instructions.
+
+## 5. M1 candidate — structured physical acceptance (not an M5 universal graph)
+
+The **ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT-Windows-x64** artifact comes from the **single canonical ENGINE #266 branch** (not the retired M4 branch) and is uploaded only if the exact PR SHA completes Windows compile, all CTests, packaging and ZIP/embedded-GUI SHA256 verification. Get the ZIP from the successful ENGINE #266 GitHub Actions run's **Artifacts** section. Extract, then compare `BUILD_PROVENANCE.json` `sourceCommit` against the exact successful run's SHA and the EXE file hash against `exeSha256`. A mismatch means STOP. A PR artifact is not a public stable release. The EXE preserves the existing **native M4 10CH + 4AUX** callback, not a live CH11/group universal engine. DO NOT apply an unqualified artifact on a live public-performance show.
+
+One real device, one verified I/O clock, wired monitoring, LOW output gain and initially **0 VST3**. Start at a supported buffer of 256 samples, then 128 and 64 only after the earlier stage has passed; document actual negotiated values, don't assume the driver honored the request. For each supported buffer:
+
+| Native check | Operator action and expected physical result | Hard fail / retain evidence |
+|---|---|---|
+| Unpatched startup | Launch without input patch; MAIN stays silent and unarmed | Any unexpected output/audio or wrong endpoint |
+| Device isolation | Select real active ASIO or WASAPI endpoint; verify L/R physical pins, rate and epoch | Invalid pins, auto re-arm on hotplug, unexpected fallback |
+| Real 0FX | Patch CH01 mic/line input, explicitly ARM; record 30-minute continuous wired output | Pops/crackle: Mark Crackle and Copy Full Report |
+| Short-buffer gain | Move CH01 fader repeatedly and reverse while moving; listen for clicks, watch true meters | Zipper clicks, freezes, inconsistent physical gain |
+| AUX gain/edge | Connect a validated SEND to AUX; change send and AUX return levels with effects bypassed | Silence despite accepted change, stale/reverted controls, double direct signal |
+| Monitor isolation | If a separate hardware pair exists, enable MONITOR intentionally | MONITOR leaking to MAIN or shared hardware pair |
+| Vendor/plugin | Only after 0FX clean, insert real VST3 and toggle bypass/editor | Stuck UI, plugin recreation, audio gap, FX state loss |
+| Show lifecycle | Save and recall same route/plugin states, check output is never armed implicitly | Stale device epoch, missing FX, corrupt restoration |
+| Safe shutdown | Stop/restart and unplug/replug device, reselect/ARM deliberately | Audio on unexpected pins, leaked resource or crash |
+
+**Required evidence**: download artifact name and exact 40-character SHA from `BUILD_PROVENANCE.json`; SHA256 of installed EXE; physical device name/driver/rate/buffer and enabled port mapping; 0FX duration; crackle report if any; one short video or screenshots demonstrating CH01, AUX, MONITOR and Show. The test passes only for the exact device and configuration tested, and never proves every VST3 or absolute crash-proof operation.
+
+### SHA authority for native PR builds
+The Windows workflow explicitly checks out **`github.event.pull_request.head.sha`**, verifies it against `git rev-parse HEAD` **before** building, and packages the same `sourceCommit`. This avoids GitHub Actions' default transient PR merge commit being mislabelled as the ENGINE HEAD. If provenance SHA differs from the run's exact source SHA, **STOP**; do not start hardware FAT. The GUI and ENGINE on the *new integration branch* still require their own joined exact-SHA test before final UAT.
