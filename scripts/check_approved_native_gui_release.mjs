@@ -28,13 +28,13 @@ for(const name of ['mixer-control-keys.css','mixer-control-keys.js']){
   if(!exists(key)){fail('Missing approved PNG button asset '+key);continue;}
   const rev=digest(read(key)).slice(0,16);
   const token='assets/'+name;
-  const pattern=new RegExp(token.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')+'(?:\\?[^"\\s>]*)?','g');
+  const pattern=name.endsWith('.css') ? /assets\/mixer-control-keys\.css(?:\?[^"'\s>]*)?/g : /assets\/mixer-control-keys\.js(?:\?[^"'\s>]*)?/g;
   const matches=[...expected.matchAll(pattern)];
   if(matches.length!==1)fail('Expected exactly one PNG-button source reference '+name);
   expected=expected.replace(pattern,token+'?rev='+rev);
 }
 if(read(entry).toString('utf8')!==expected)fail('Native HTML does not match EXACT approved /preview/ assembly');
-const linked=[...new Set([...sourceHtml.matchAll(/(?:src|href)=["'](assets\\/[^"'?]+)(?:\\?[^"']*)?["']/g)].map(v=>v[1]))];
+const linked=[...new Set([...sourceHtml.matchAll(/(?:src|href)=["'](assets\/[^"'?]+)(?:\?[^"']*)?["']/g)].map(v=>v[1]))];
 for(const rel of linked){
   const name=rel.slice('assets/'.length);
   const sourceAsset=['mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'].includes(name)?buttons+name:'site/preview-v2/'+rel;
@@ -49,5 +49,5 @@ for(const name of ['mute-solo-pfl-56x37.png','mixer-wire-dots.css','knob-ICON.sv
 const cmake=read('CMakeLists.txt').toString('utf8'),host=read('src/Main.cpp').toString('utf8');
 if(!cmake.includes(entry)||!cmake.includes('web/approved-preview/assets/'))fail('CMake BinaryData not built from approved /preview/ GUI and assets');
 if(!/approved-preview|approvedPreview/i.test(host))fail('JUCE ResourceProvider not serving approved /preview/ GUI');
-if(/\\bweb\\/console-native\\.html\\b|\\bweb\\/index\\.html\\b/.test(cmake))fail('Compiled alternate native/legacy HTML renderer');
+if(cmake.includes('web/console-native.html')||cmake.includes('web/index.html'))fail('Compiled alternate native/legacy HTML renderer');
 if(!process.exitCode)console.log('APPROVED /preview/ static source/asset+JUCE contract PASS (actual Windows GUI/PCM FAT still required)');
