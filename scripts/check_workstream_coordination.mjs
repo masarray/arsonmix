@@ -32,7 +32,7 @@ export function ownerOf(path) {
       path === 'scripts/console_v6_fat_gate.mjs' ||
       path === 'scripts/verify_console_s0_native_fixture.mjs' ||
       path === 'scripts/run_console_native_s0.mjs' ||
-(/^(scripts\/(package_native_windows|verify_native_windows_artifact)\.ps1)$/.test(path) ||
+      /^(scripts\/(package_native_windows|verify_native_windows_artifact)\.ps1)$/.test(path) ||
       /^tests\/(hardware_fat|native_artifact|fat_|windows_fat)/.test(path))
     return 'FAT';
   if (path.startsWith('site/') || path.startsWith('web/') ||
