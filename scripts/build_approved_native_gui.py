@@ -19,7 +19,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-CANONICAL = ROOT / "site" / "preview-v2"
+CANONICAL = ROOT / "site" / "preview"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = '<script defer src="assets/approved-native-bridge.js"></script>'
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
