@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <cstdio>
 #include <vector>
 
 using namespace armix::mixer;
@@ -306,6 +307,13 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     // Mixed existing route cycle: whole native DAG compile must roll back.
     const std::array<WireChange,1> feedback{connect(three,one)};
     rejected=session.wireTransaction(6,6,feedback,physical,epoch,epoch,true);
+    if(rejected.fault!=DynamicAcceptedSession::Fault::graphRejected)
+        std::fprintf(stderr,"WIRE feedback rejection diagnostic: acceptedFault=%u rosterFault=%u nativeFault=%u graphFault=%u revision=%llu\\n",
+            static_cast<unsigned>(rejected.fault),
+            static_cast<unsigned>(rejected.edit.fault),
+            static_cast<unsigned>(rejected.native.fault),
+            static_cast<unsigned>(rejected.native.graphError.fault),
+            static_cast<unsigned long long>(rejected.graphRevision));
     assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
     assert(session.acceptedGraphRevision()==6);
     assert(render() && near(left[11],.3f*center));
