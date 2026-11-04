@@ -1,4 +1,4 @@
-> **2026-11-04 SOURCE LOCK:** This file's V59 WIRE semantics remain valid, but all GUI implementation instructions involving old PR #271's independent renderer are superseded. ONLY latest `main/site/preview-v2/**` (https://masarray.github.io/arsonmix/preview-v2/) is allowed as the Windows GUI. GUI-native stitch #389, ENGINE #266/#387, FAT #270. [Current handoff](HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md). Historical source SHA references cannot override latest approved GUI.
+> **FINAL OWNER DECISION 2026-11-04:** The only approved public/native GUI is **https://masarray.github.io/arsonmix/preview/** with its PNG hardware-button variant. Bare /preview-v2/ is rejected and public alternate preview routes must redirect. This file is historical only for V59 wire behavior/accepted graph, not a GUI source authority. [Native stitch #389](https://github.com/masarray/arsonmix/issues/389) + [handoff](HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md); ENGINE #266/#387, FAT #270.
 
 # WIRE GUI V59 → Native ENGINE handoff — reconciled main
 
