@@ -110,7 +110,9 @@ def geometry(page, density, label):
         for rig in out["rigs"]:
             compact=density=="compact"
             slim=density!="comfort"
-            close(rig["wellWidth"],25 if compact else (27 if slim else 29),.6)
+            # V56: 2px clearance between machined well and unchanged thumb
+            # applies to all densities; meter/gain dB scale stays untouched.
+            close(rig["wellWidth"],27 if compact else 29,.6)
             close(rig["capWidth"],25 if compact else 27,.6)
             close(rig["capHeight"],50 if compact else 54,.6)
             close(rig["laneWidth"],10,.6)
