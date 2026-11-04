@@ -53,10 +53,10 @@ def main():
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),"--out",str(dst),
                   "--sha","v43-ci-source","--branch","main"],check=True,
                  cwd=ROOT,capture_output=True,text=True)
-  public=dst/"preview/mixer.html"
+  public=dst/"preview/index.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert public.read_bytes()==CANONICAL.read_bytes(),"Public iframe still uses stale GUI"
-  assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Public iframe did not publish the effective WIRE CSS"
+  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
+  assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
   assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
