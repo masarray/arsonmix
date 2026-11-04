@@ -202,12 +202,22 @@
       }
       return true;
     }
+    function expirePending(requestId) {
+      if (!pending || pending.intent.requestId !== requestId) return false;
+      pending = null; candidate = null;
+      state = "NATIVE_ACK_TIMEOUT";
+      notify(state, requestId);
+      // Timeouts are NOT rejections from JUCE. Never presume that a native
+      // transaction failed OR succeeded: force a fresh snapshot before retry.
+      accepted = null;
+      return true;
+    }
     function disconnect() {
       accepted = null; pending = null; candidate = null;
       state = "NATIVE_DISCONNECTED"; notify(state);
     }
     return Object.freeze({status, snapshot, live, pendingRequest, receiveSnapshot,
-      receiveAck, request, disconnect});
+      receiveAck, request, expirePending, disconnect});
   }
   return Object.freeze({uint64, validateSnapshot, createController});
 });
