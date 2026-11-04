@@ -696,6 +696,71 @@ public:
                           rosterRev=response.rosterRevision;}
                 }
             }
+            else if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
+                using namespace armix::mixer;
+                const auto raw=payload.getProperty("changes",juce::var());
+                const auto* list=raw.getArray();
+                if(!list || list->isEmpty() || list->size()>256)
+                    error="INVALID_NATIVE_WIRE_BATCH";
+                else {
+                    std::vector<WireChange> changes;
+                    changes.reserve(static_cast<std::size_t>(list->size()));
+                    for(const auto& item:*list) {
+                        if(!item.isObject()) {
+                            error="INVALID_NATIVE_WIRE_CHANGE";break;
+                        }
+                        WireChange change;
+                        const auto action=item.getProperty("op","").toString();
+                        if(action=="CONNECT")change.kind=WireChange::Kind::connect;
+                        else if(action=="REMOVE")change.kind=WireChange::Kind::remove;
+                        else if(action=="RETARGET")change.kind=WireChange::Kind::retarget;
+                        else if(action=="ROUTE_ONLY")change.kind=WireChange::Kind::routeOnly;
+                        else {error="INVALID_NATIVE_WIRE_ACTION";break;}
+                        std::uint64_t source=0,dest=0,edge=0;
+                        if(!decodeDecimal(item.getProperty("from",{}),source) ||
+                           source==0) {
+                            error="INVALID_NATIVE_WIRE_SOURCE";break;
+                        }
+                        change.from={source};
+                        if(change.kind!=WireChange::Kind::remove) {
+                            if(!decodeDecimal(item.getProperty("to",{}),dest) ||
+                               dest==0) {
+                                error="INVALID_NATIVE_WIRE_DESTINATION";break;
+                            }
+                            change.to={dest};
+                        }
+                        if(change.kind==WireChange::Kind::remove ||
+                           change.kind==WireChange::Kind::retarget) {
+                            if(!decodeDecimal(item.getProperty("edgeId",{}),edge)||
+                               edge==0) {
+                                error="INVALID_NATIVE_WIRE_EDGE_ID";break;
+                            }
+                            change.edgeId=edge;
+                        } else {
+                            const auto tap=item.getProperty("tap","POST_FADER").toString();
+                            const auto gain=item.getProperty("gainLinear",juce::var(1.));
+                            if(tap!="POST_FADER" ||
+                               !(gain.isDouble()||gain.isInt()) ||
+                               !std::isfinite(static_cast<double>(gain)) ||
+                               static_cast<double>(gain)<0. ||
+                               static_cast<double>(gain)>4.) {
+                                error="INVALID_NATIVE_WIRE_GAIN_OR_TAP";break;
+                            }
+                            change.gain=static_cast<float>(static_cast<double>(gain));
+                        }
+                        changes.push_back(change);
+                    }
+                    if(error.isEmpty()) {
+                        const auto response=engine.applyNativeWireTransaction(
+                            requestedEpoch,nativeRev,rosterRev,
+                            std::span<const WireChange>(changes));
+                        applied=response.accepted;
+                        if(!applied)error=response.error;
+                        else {nativeRev=response.pcmRevision;
+                              rosterRev=response.rosterRevision;}
+                    }
+                }
+            }
             else if(operation=="NATIVE_SET_BUS_MIX") {
                 std::uint64_t target=0;
                 const auto rawGain=payload.getProperty("gain",juce::var());
