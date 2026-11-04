@@ -36,6 +36,8 @@
     return {ok:false,error:'INVALID_PRIMARY_TAP'};
    if(e.kind==='split'&&!['splitPre','splitPost'].includes(e.mode))
     return {ok:false,error:'INVALID_SPLIT_TAP'};
+   if(e.kind==='send'&&!['send','split'].includes(e.mode))
+    return {ok:false,error:'INVALID_SEND_TAP'};
    if(e.kind==='primary'){
     if(primarySources.has(e.sourceId))return {ok:false,error:'MULTIPLE_PRIMARY'};
     primarySources.add(e.sourceId);
@@ -84,12 +86,11 @@
       return {ok:false,error:'DUPLICATE_ROUTE'};
      const isMain=op.destId===mainId;
      const isSplit=op.mode==='splitPre'||op.mode==='splitPost';
+     const mode=isMain?'postFader':isSplit?op.mode:op.mode==='split'?'split':'send';
      edges.push({id:nextId++,sourceId,destId:op.destId,enabled:true,
-      kind:isMain?'primary':isSplit?'split':'send',
-      mode:isMain?'postFader':isSplit?op.mode:'send',
-      levelDb:0});
+      kind:isMain?'primary':isSplit?'split':'send',mode,levelDb:0});
     }
-   }else if(op.type==='REMOVE'||op.type==='RETARGET'||op.type==='GAIN'){
+   }else if(op.type==='REMOVE'||op.type==='RETARGET'||op.type==='GAIN'||op.type==='MODE'){
     index=edges.findIndex(e=>e.id===op.edgeId&&e.sourceId===sourceId);
     if(index<0)return {ok:false,error:'STALE_EDGE'};
     prior=edges[index];
@@ -108,6 +109,11 @@
     if(op.type==='GAIN'){
      if(prior.destId===mainId||!Number.isFinite(op.levelDb))return {ok:false,error:'INVALID_GAIN'};
      edges[index]={...prior,levelDb:Math.round(Math.max(-60,Math.min(6,op.levelDb))*10)/10};
+    }
+    if(op.type==='MODE'){
+     if(prior.kind!=='send'||!['send','split'].includes(op.mode))
+      return {ok:false,error:'INVALID_TAP_CHANGE'};
+     edges[index]={...prior,mode:op.mode};
     }
    }else return {ok:false,error:'UNKNOWN_OPERATION'};
   }
