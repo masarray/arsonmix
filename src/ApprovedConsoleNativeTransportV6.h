@@ -69,7 +69,7 @@ inline juce::var snapshot (const juce::var& live,
     dev->setProperty ("playbackDevice", live.getProperty ("outputDevice", juce::var ("")));
     juce::Array<juce::var> enabledInputs, enabledOutputs;
     juce::var inputs (juce::Array<juce::var>{}), outputs (juce::Array<juce::var>{});
-    const auto* active = manager.getCurrentAudioDevice();
+    auto* active = manager.getCurrentAudioDevice(); // JUCE AudioIODevice getters are not const-qualified
     const bool direct = ! static_cast<bool> (live.getProperty ("adaptiveClockActive", false));
     if (active != nullptr && active->isOpen())
     {
