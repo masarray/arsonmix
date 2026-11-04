@@ -44,7 +44,7 @@ def run():
             page.locator("#wireWsUndo").click()
             assert edge(page,5,"out")==initial,(width,"Undo changed identity")
             page.locator("#wireNavigatorToggle").click()
-            page.locator("#wireConfigClose").click()
+            # Navigator closes Wire Setup automatically; no hidden close click.
             # The accepted WIRE to another channel must preserve the MAIN route.
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                 page.locator('.section-rail [data-section="send"]').click()
@@ -75,7 +75,9 @@ def run():
         control.click()
         page.locator("#saveScene").click()
         control.click()
+        page.locator("#moreTools summary").click()
         page.locator("#sceneSafe").click()
+        page.locator("#moreTools summary").click()
         page.locator("#sceneSelect").select_option("1")
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"
