@@ -80,6 +80,8 @@ jobs:
           node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
+      - name: CSS V28 zero-regression source-order recovery (every GUI CI run)
+        run: python tests/css_v28_restore.py
       - name: Verify ONLY approved public GUI /preview/ with PNG hardware keys
         run: |
           python scripts/build_pages.py --out dist-pages --sha "${{ github.sha }}" --branch main
@@ -295,6 +297,9 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
+      - name: Verify V28 exact approved /preview/ source and interactive browser parity
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'css/v28-') || startsWith(github.head_ref, 'integration/product-'))) }}
+        run: python tests/pages_css_architecture_v28_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
         run: python tests/pages_inter_utility_v7_smoke.py
@@ -369,5 +374,6 @@ jobs:
             mixer-shell-*.png
             pages-v54-*.png
             pages-v55-*.png
+            pages-v28-physical-console-owner-v59-*.png
           if-no-files-found: ignore
           retention-days: 3
