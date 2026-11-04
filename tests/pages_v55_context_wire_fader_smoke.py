@@ -28,6 +28,8 @@ def main():
                 assert "17px" in shadow and shadow!="none",(w,density,shadow)
                 assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
                 if density=="comfort":
+                    if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+                        page.locator('.section-rail [data-section="send"]').click()
                     page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
                     page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
                     a=node(page,5,"out");b=node(page,3,"in")
