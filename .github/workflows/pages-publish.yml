@@ -26,17 +26,25 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'main' }}
           persist-credentials: false
+          fetch-depth: 2 # Compare the exact main commit to its first parent without full history.
       - name: Skip superseded Pages builds
         id: guard
         shell: bash
         run: |
           SOURCE_SHA="$(git rev-parse HEAD)"
           CURRENT_MAIN="$(git ls-remote origin refs/heads/main | cut -f1)"
-          if [ "$SOURCE_SHA" = "$CURRENT_MAIN" ]; then
-            echo "fresh=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$SOURCE_SHA" != "$CURRENT_MAIN" ]; then
             echo "fresh=false" >> "$GITHUB_OUTPUT"
             echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && git diff --quiet HEAD^ HEAD -- \
+            site/ web/ AR-MIX-Live-FX-Host-Standalone-v0.3.html \
+            scripts/build_pages.py scripts/build_ui_css.py; then
+            # A test-only / workflow-only main push needs verification, not a
+            # redundant Pages deployment. Manual dispatch always publishes.
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Pages: no published GUI/landing/assets changed in $SOURCE_SHA"
+          else
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-python@v5
         if: ${{ steps.guard.outputs.fresh == 'true' }}
