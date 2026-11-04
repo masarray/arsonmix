@@ -15,14 +15,17 @@ require('id="console"' not in html and 'preview-buttons/index.html' not in html,
 require('console-body' in html and 'mixer-control-keys.css' in html,'not the actual approved console')
 # The only DOM change from source is the two content-hashed approved PNG-button links.
 revisions=build.get('button_css_js_revisions',{})
-normalized=html
+expected=source
 for name in ('mixer-control-keys.css','mixer-control-keys.js'):
     require(name in revisions and re.fullmatch('[0-9a-f]{16}',revisions[name]) is not None,'missing versioned approved key')
-    normalized=normalized.replace('assets/'+name+'?rev='+revisions[name],'assets/'+name)
+    token='assets/'+name
+    pattern=re.compile(re.escape(token)+r'(?:\\?[^"\\s>]+)?')
+    require(len(pattern.findall(expected))==1,'approved key CSS/JS link missing or duplicated: '+name)
+    expected=pattern.sub(token+'?rev='+revisions[name],expected)
     approved=ROOT/'site/preview-buttons/assets'/name
     target=gui/'assets'/name
     require(target.read_bytes()==approved.read_bytes(),'wrong PNG-button CSS/JS: '+name)
-require(normalized==source,'rendered /preview/ DOM diverges from current source or has a fork')
+require(html==expected,'rendered /preview/ DOM differs from exact source + approved PNG-key revision assembly')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
 require((gui/'assets/mute-solo-pfl-56x37.png').read_bytes()==(ROOT/'site/preview-buttons/assets/mute-solo-pfl-56x37.png').read_bytes(),'approved PNG sprite mismatch')
