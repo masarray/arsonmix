@@ -675,13 +675,18 @@
       Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
   }
   function can(op,id){
-    if(!supported(op))return false;
+    const ch=id?byId.get(id):null;
+    // A native WIRE-capable ordinary channel cannot write a second legacy
+    // SET_PRIMARY_OUT state; the OUT control uses the same WIRE intent path.
+    const wireOut=op==='SET_PRIMARY_OUT'&&ch&&
+      !['MAIN','MONITOR'].includes(ch.role)&&supported('APPLY_WIRE_TRANSACTION');
+    const effective=wireOut?'APPLY_WIRE_TRANSACTION':op;
+    if(!supported(effective))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
     if(!id)return !pendingTargets.has('@selection');
-    const ch=byId.get(id);
     return !!ch && !pendingTargets.has(id) &&
-      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
+      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(effective));
   }
   function showFeedback(text){
     feedback=clean(text);message.textContent=feedback;
@@ -724,6 +729,54 @@
       edges:graph.edges.map(e=>({edgeId:e.edgeId,from:e.from,to:e.to,
         tap:e.tap,gainLinear:e.gainLinear,enabled:e.enabled,signalKind:e.signalKind}))
     };
+  }
+  function nativeGraphMode(id){
+    const ch=byId.get(id);
+    return !!ch&&!['MAIN','MONITOR'].includes(ch.role)&&
+      acceptedWireGraph()!==null;
+  }
+  function physicalMainEdge(sourceId){
+    const graph=acceptedWireGraph();
+    if(!graph||decimal(sourceId)===null||sourceId===graph.mainChannelId)return null;
+    return graph.edges.find(e=>e.enabled&&e.from===sourceId&&
+      e.to===graph.mainChannelId)||null;
+  }
+  function nativeRouteSelection(ch){
+    if(!nativeGraphMode(ch.id))return ch.primaryOutId||ch.primaryOut?.id||
+      (typeof ch.primaryOut==='string'?ch.primaryOut:'');
+    const graph=acceptedWireGraph();
+    const outgoing=graph.edges.filter(e=>e.enabled&&e.from===ch.id);
+    return outgoing.some(e=>e.to===graph.mainChannelId)?graph.mainChannelId:
+      outgoing.length===1?outgoing[0].to:'';
+  }
+  function unplugNativeMain(sourceId){
+    const edge=physicalMainEdge(sourceId);
+    return !!edge&&applyNativeWireTransaction(sourceId,'UNPLUG',[
+      {op:'REMOVE',edgeId:edge.edgeId}]);
+  }
+  function replugNativeMain(sourceId){
+    const graph=acceptedWireGraph();
+    if(!nativeGraphMode(sourceId)||physicalMainEdge(sourceId))return false;
+    return applyNativeWireTransaction(sourceId,'REPLUG',[
+      {op:'CONNECT',from:sourceId,to:graph.mainChannelId,
+       tap:'POST_FADER',gainLinear:1}]);
+  }
+  function routeOnlyNative(sourceId,targetId){
+    const graph=acceptedWireGraph();
+    if(!nativeGraphMode(sourceId)||decimal(targetId)===null||
+       !byId.has(targetId)||targetId===sourceId)return false;
+    const enabled=graph.edges.filter(e=>e.enabled&&e.from===sourceId);
+    const main=enabled.find(e=>e.to===graph.mainChannelId);
+    const target=enabled.find(e=>e.to===targetId);
+    if(target)return targetId===graph.mainChannelId||!main?
+      true:applyNativeWireTransaction(sourceId,'ROUTE_ONLY',[
+        {op:'REMOVE',edgeId:main.edgeId}]);
+    const changes=[];
+    if(main&&targetId!==graph.mainChannelId)
+      changes.push({op:'REMOVE',edgeId:main.edgeId});
+    changes.push({op:'CONNECT',from:sourceId,to:targetId,
+      tap:'POST_FADER',gainLinear:1});
+    return applyNativeWireTransaction(sourceId,'ROUTE_ONLY',changes);
   }
   function applyNativeWireTransaction(sourceId,reason,changes){
     const graph=acceptedWireGraph();
@@ -861,6 +914,22 @@
         if(edge.enabled)pairs.add(pair);
         wireIds.add(edge.edgeId);
       }
+      // A malformed accepted graph must not paint ghost routes. This is a
+      // readback validation only, never a second browser-owned audio graph.
+      const adjacency=new Map();
+      for(const edge of g.edges)if(edge.enabled){
+        if(!adjacency.has(edge.from))adjacency.set(edge.from,[]);
+        adjacency.get(edge.from).push(edge.to);
+      }
+      const state=new Map();
+      function visit(id){
+        if(state.get(id)===1)return false;
+        if(state.get(id)===2)return true;
+        state.set(id,1);
+        for(const to of adjacency.get(id)||[])if(!visit(to))return false;
+        state.set(id,2);return true;
+      }
+      for(const id of ids)if(!visit(id))return false;
     }
     for(const ch of g.channels){
       if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null){
@@ -1039,6 +1108,11 @@
     return select;
   }
   function legalOutputs(ch){
+    // In WIRE mode any non-terminal universal channel is a legal destination.
+    // Native Guardian ultimately decides whether the candidate is admissible.
+    if(nativeGraphMode(ch.id))return accepted.graph.channels
+      .filter(dst=>dst.id!==ch.id&&dst.role!=='MONITOR')
+      .map(dst=>({id:dst.id,name:dst.name}));
     const destinations=(accepted.graph.destinations||[]).filter(dst=>{
       const target=byId.get(dst.id);
       return target&&target.id!==ch.id&&['MAIN','GROUP'].includes(target.role)&&
@@ -1162,7 +1236,7 @@
     else routeSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
     const outs=legalOutputs(ch);
     routeSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
-      ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+      nativeRouteSelection(ch),'NO VERIFIED OUT'));
     const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
     routeSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
       ch.processingFormat||'','NATIVE FORMAT'));
@@ -1383,7 +1457,7 @@
       };
       choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
       choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
-      choose('SET_PRIMARY_OUT',ch.primaryOutId||ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('SET_PRIMARY_OUT',nativeRouteSelection(ch));
       choose('ADD_SEND','');
       const pan=strip.querySelector('[data-op="SET_PAN"]');
       if(pan){
@@ -1710,8 +1784,10 @@
       const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
       if(endpoint)sendIntent(op,id,{portId:endpoint.id});
     }else if(op==='SET_PRIMARY_OUT'&&n.value){
-      if(legalOutputs(ch).some(p=>p.id===n.value))
-        sendIntent(op,id,{destinationId:n.value});
+      if(legalOutputs(ch).some(p=>p.id===n.value)){
+        if(nativeGraphMode(id))routeOnlyNative(id,n.value);
+        else sendIntent(op,id,{destinationId:n.value});
+      }
     }
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
     else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
@@ -1760,6 +1836,10 @@
   // adapter; it has no independent graph, timer, audio route or mock PCM.
   window.__arMixNativeWire=Object.freeze({
     readAccepted:acceptedWireGraph,
+    focusedMainEdge:physicalMainEdge,
+    unplugFocusedMain:unplugNativeMain,
+    replugFocusedMain:replugNativeMain,
+    routeOnly:routeOnlyNative,
     applyTransaction:applyNativeWireTransaction
   });
   window.__arMixV6ReadOnly=()=>({
