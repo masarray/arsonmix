@@ -36,14 +36,9 @@ jobs:
           if [ "$SOURCE_SHA" != "$CURRENT_MAIN" ]; then
             echo "fresh=false" >> "$GITHUB_OUTPUT"
             echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
-          elif [ "${{ github.event_name }}" = "workflow_run" ] && git diff --quiet HEAD^ HEAD -- \
-            site/ web/ AR-MIX-Live-FX-Host-Standalone-v0.3.html \
-            scripts/build_pages.py scripts/build_ui_css.py; then
-            # A test-only / workflow-only main push needs verification, not a
-            # redundant Pages deployment. Manual dispatch always publishes.
-            echo "fresh=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping Pages: no published GUI/landing/assets changed in $SOURCE_SHA"
           else
+            # On the latest qualified main, always publish the assembled /preview/;
+            # a preceding GUI commit may have been followed by docs/CI commits.
             echo "fresh=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-python@v5
