@@ -87,8 +87,13 @@ inline juce::var build (const juce::var& installed,
              inputPorts,inputEndpoints);
     addPorts("enabledOutputs","outputNames","out",verifiedOutputs,
              outputPorts,outputEndpoints);
-    device->setProperty("enabledInputs",juce::var(inputPorts));
-    device->setProperty("enabledOutputs",juce::var(outputPorts));
+    // Physical masks are always the active JUCE device's truth, even when
+    // callback-registry proof has not yet arrived. Unverified pins simply
+    // have NO corresponding actionable endpoint until registry validation.
+    device->setProperty("enabledInputs",actualDevice.getProperty(
+        "enabledInputs",juce::var(juce::Array<juce::var>())));
+    device->setProperty("enabledOutputs",actualDevice.getProperty(
+        "enabledOutputs",juce::var(juce::Array<juce::var>())));
     device->setProperty("inputEndpoints",juce::var(inputEndpoints));
     device->setProperty("outputEndpoints",juce::var(outputEndpoints));
     result->setProperty("device",juce::var(device.release()));
