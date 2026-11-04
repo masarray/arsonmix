@@ -128,10 +128,12 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(pages, /git ls-remote origin refs\/heads\/main/);
   assert.match(pages, /fetch-depth: 2/);
-  assert.match(pages, /git diff --quiet HEAD\^ HEAD --/);
-  assert.match(pages, /site\/ web\/ AR-MIX-Live-FX-Host-Standalone-v0\.3\.html/);
-  assert.match(pages, /scripts\/build_pages\.py scripts\/build_ui_css\.py/);
-  assert.match(pages, /Skipping Pages: no published GUI\/landing\/assets changed/);
+  // The old first-parent only diff gate was unsafe: a docs/CI commit after
+  // the GUI commit could suppress the final qualified /preview/ deployment.
+  assert.doesNotMatch(pages, /git diff --quiet HEAD\^ HEAD --/);
+  assert.match(pages, /always publish the assembled \/preview\//);
+  assert.match(pages, /python tests\/single_preview_publication_contract_test.py dist-pages/);
+  assert.match(ui, /python tests\/single_preview_publication_contract_test.py dist-pages/);
   assert.match(pages, /needs\.build\.outputs\.fresh == 'true'/);
   assert.doesNotMatch(ui, /actions\/deploy-pages@/);
   assert.doesNotMatch(native, /actions\/deploy-pages@/);
