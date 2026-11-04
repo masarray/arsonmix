@@ -1,53 +1,84 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Native RELEASE gate: user-approved /preview/ is the ONLY allowable Windows GUI.
-// Necessary static provenance, NOT proof of rendered EXE screenshots or PCM FAT.
+// ONE approved /preview/ Windows WebView2 resource bundle, not an old
+// web/approved-preview staging fiction. Source proof != product PCM/hardware FAT.
 import {readFileSync, existsSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {resolve, join, sep} from 'node:path';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+
 const root=resolve('.');
-const abs=p=>resolve(root,p);
-const exists=p=>existsSync(abs(p));
-const read=p=>readFileSync(abs(p));
-const digest=b=>createHash('sha256').update(b).digest('hex');
-const fail=s=>{console.error('RELEASE BLOCKED — approved /preview/ GUI: '+s);process.exitCode=1;};
-const entry='web/approved-preview/index.html';
-const manifest='web/approved-preview/native-manifest.json';
-const source='site/preview-v2/index.html'; // INTERNAL HTML seed, NOT /preview-v2/ product
-const buttons='site/preview-buttons/assets/';
-if(!exists(entry)||!exists(manifest)){
-  fail('Windows approved GUI bundle missing. Generate the exact /preview/ assembled HTML, CSS/JS/PNG, then embed it into JUCE.');
-  process.exit(1);
+const argv=process.argv.slice(2);
+const value=flag=>{
+  const at=argv.indexOf(flag);
+  return at<0?null:argv[at+1] || null;
+};
+const sourceOnly=argv.includes('--source-only');
+const release=argv.includes('--release');
+const bundle=resolve(value('--bundle') || process.env.ARMIX_NATIVE_GUI_BUNDLE || 'build/approved_gui');
+const read=path=>readFileSync(path);
+const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+const block=reason=>{throw Error('APPROVED /preview/ native bundle BLOCKED: '+reason);};
+const requireFile=(path,why)=>{
+  if(!existsSync(path))block(why+': '+path);
+  return read(path);
+};
+try {
+  if(!sourceOnly&&!release)block('Pass --source-only or --release explicitly');
+  const manifestPath=join(bundle,'approved-gui-manifest.json');
+  const manifest=JSON.parse(requireFile(manifestPath,'Missing actual CMake-generated manifest').toString('utf8'));
+  if(manifest.schema!=='arsonmix.approved-native-pages-bundle.v2' ||
+     manifest.authoritativePagesRoute!=='/preview/' ||
+     manifest.authoritativePagesOutput!=='preview/index.html')
+    block('Wrong public GUI identity/manifest schema');
+  const html=requireFile(join(bundle,'index.html'),'Missing native Pages entry');
+  if(sha(html)!==manifest.nativeHtmlSha256)block('Approved native HTML hash mismatch');
+  if(!Array.isArray(manifest.files)||manifest.files.length<4)
+    block('Native BinaryData resource inventory incomplete');
+  const paths=new Set();
+  for(const item of manifest.files) {
+    if(typeof item.path!=='string' || !/^[a-zA-Z0-9_./-]+$/.test(item.path) ||
+       item.path.startsWith('/') || item.path.split('/').includes('..') ||
+       paths.has(item.path))
+      block('Unexpected, repeated, or unsafe resource path');
+    paths.add(item.path);
+    const resolved=resolve(bundle,item.path);
+    if(!resolved.startsWith(bundle+sep))block('Resource escapes approved bundle');
+    if(sha(requireFile(resolved,'Missing approved native resource'))!==item.sha256)
+      block('Native resource hash mismatch: '+item.path);
+  }
+  for(const name of ['index.html','assets/approved-native-contract.js',
+                      'assets/approved-native-bridge.js',
+                      'assets/mixer-control-keys.css',
+                      'assets/mixer-control-keys.js',
+                      'assets/mute-solo-pfl-56x37.png','assets/mixer-wire-dots.css'])
+    if(!paths.has(name))block('Mandatory approved GUI/V8 transport resource missing: '+name);
+  const cmake=requireFile(join(root,'CMakeLists.txt'),'Missing native CMake').toString('utf8');
+  const host=requireFile(join(root,'src/Main.cpp'),'Missing JUCE host').toString('utf8');
+  if(!cmake.includes('scripts/build_approved_native_gui.py') ||
+     !cmake.includes('ARMIX_APPROVED_GUI_DIR') ||
+     !cmake.includes('juce_add_binary_data(ARMixAssets SOURCES'))
+    block('JUCE BinaryData does not use approved Pages source generator');
+  if(!host.includes('resolveApprovedGuiResource') ||
+     !host.includes('withResourceProvider (assetFor)'))
+    block('JUCE WebView ResourceProvider does not serve approved Pages assets');
+  if(/juce_add_binary_data\(ARMixAssets SOURCES\s*web\//.test(cmake) ||
+     host.includes('BinaryData::consolenative_html'))
+    block('Forbidden alternative GUI compiled in Windows executable');
+  const py=process.env.PYTHON || 'python';
+  const result=spawnSync(py,['scripts/build_approved_native_gui.py',
+      '--out',bundle,'--verify'],{cwd:root,encoding:'utf8',timeout:60000});
+  if(result.error || result.status!==0)
+    block('Pages→native byte-for-byte regeneration failed: '+
+      String(result.error?.message||result.stderr||result.stdout).slice(0,700));
+  if(release &&
+     host.includes('native_console_m2::reject (args, accepted)') &&
+     !host.includes('consoleBridge_.processNativeBusIntent'))
+    block('G0 rejects all PCM/WIRE operations; ENGINE #266 + native FAT not yet installed');
+  // This gate proves the CMake bundle; it cannot replace the separate exact
+  // Windows executable screenshot, PCM/VST3, or ASIO/WASAPI hardware FAT gate.
+  console.log('PASS: exact /preview/ GUI CMake resources, native v8 bridge and SHA256 manifest');
+  console.log('NOT hardware/PCM FAT — product promotion still requires #270 and #15 evidence');
+} catch(error) {
+  console.error(error.message);
+  process.exitCode=1;
 }
-let m;try{m=JSON.parse(read(manifest).toString('utf8'));}catch(e){fail('Invalid manifest: '+e.message);process.exit(1);}
-if(m.canonicalUrl!=='https://masarray.github.io/arsonmix/preview/'||m.nativeEntrypoint!==entry)fail('Canonical GUI identity is NOT /preview/');
-if(m.entrySha256!==digest(read(entry)))fail('Native approved HTML digest mismatch');
-const sourceHtml=read(source).toString('utf8');
-let expected=sourceHtml;
-for(const name of ['mixer-control-keys.css','mixer-control-keys.js']){
-  const key=buttons+name;
-  if(!exists(key)){fail('Missing approved PNG button asset '+key);continue;}
-  const rev=digest(read(key)).slice(0,16);
-  const token='assets/'+name;
-  const pattern=name.endsWith('.css') ? /assets\/mixer-control-keys\.css(?:\?[^"'\s>]*)?/g : /assets\/mixer-control-keys\.js(?:\?[^"'\s>]*)?/g;
-  const matches=[...expected.matchAll(pattern)];
-  if(matches.length!==1)fail('Expected exactly one PNG-button source reference '+name);
-  expected=expected.replace(pattern,token+'?rev='+rev);
-}
-if(read(entry).toString('utf8')!==expected)fail('Native HTML does not match EXACT approved /preview/ assembly');
-const linked=[...new Set([...sourceHtml.matchAll(/(?:src|href)=["'](assets\/[^"'?]+)(?:\?[^"']*)?["']/g)].map(v=>v[1]))];
-for(const rel of linked){
-  const name=rel.slice('assets/'.length);
-  const sourceAsset=['mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'].includes(name)?buttons+name:'site/preview-v2/'+rel;
-  const nativeAsset='web/approved-preview/'+rel;
-  if(!exists(sourceAsset)||!exists(nativeAsset)||digest(read(sourceAsset))!==digest(read(nativeAsset)))fail('Native CSS/JS/art missing/changed: '+rel);
-}
-for(const name of ['mute-solo-pfl-56x37.png','mixer-wire-dots.css','knob-ICON.svg']){
-  const ref=name==='mute-solo-pfl-56x37.png'?buttons+name:'site/preview-v2/assets/'+name;
-  const native='web/approved-preview/assets/'+name;
-  if(!exists(native)||!exists(ref)||digest(read(native))!==digest(read(ref)))fail('Mandatory GUI art mismatch: '+name);
-}
-const cmake=read('CMakeLists.txt').toString('utf8'),host=read('src/Main.cpp').toString('utf8');
-if(!cmake.includes(entry)||!cmake.includes('web/approved-preview/assets/'))fail('CMake BinaryData not built from approved /preview/ GUI and assets');
-if(!/approved-preview|approvedPreview/i.test(host))fail('JUCE ResourceProvider not serving approved /preview/ GUI');
-if(cmake.includes('web/console-native.html')||cmake.includes('web/index.html'))fail('Compiled alternate native/legacy HTML renderer');
-if(!process.exitCode)console.log('APPROVED /preview/ static source/asset+JUCE contract PASS (actual Windows GUI/PCM FAT still required)');

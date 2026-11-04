@@ -21,7 +21,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
-ADAPTER_MARKER = '<script defer src="assets/approved-native-bridge.js"></script>'
+ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
+                  '<script defer src="assets/approved-native-bridge.js"></script>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
 
@@ -51,11 +52,57 @@ def accepted_pages_html() -> str:
         return (build_public_pages(Path(tmp) / "public") / "index.html").read_text("utf-8")
 
 
+# Native-only event seam: the original PUBLIC Pages HTML is byte-for-byte
+# unchanged. Insert five small control hooks ONLY into the generated WebView2
+# HTML at native build time. Every anchor must occur exactly once: no silent
+# breakage if Pages GUI source evolves. No extra layout or simulated PCM.
+NATIVE_EVENT_HOOKS = (
+    ("function wireGraphCommit(ops,{record=true}={}){\n",
+     "function wireGraphCommit(ops,{record=true}={}){\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops))return false;\n"),
+    ("function wireWsUndo(){\n",
+     "function wireWsUndo(){\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeUndo?.())return false;\n"),
+    ("function handleField(event){\n",
+     "function handleField(event){\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeField?.(event))return;\n"),
+    (" if(a==='wireExpand'){document.querySelector('.section-rail",
+     " if(window.__ARMIX_NATIVE_M2__?.consumeAction?.(t,a,btn))return;\n"
+     " if(a==='wireExpand'){document.querySelector('.section-rail"),
+    ("document.querySelector('.console-body').addEventListener('dblclick',e=>{\n"
+     " const t=findTrack(e.target);if(!t)return;\n",
+     "document.querySelector('.console-body').addEventListener('dblclick',e=>{\n"
+     " const t=findTrack(e.target);if(!t)return;\n"
+     " if(window.__ARMIX_NATIVE_M2__?.consumeDoubleClick?.(e,t))return;\n"),
+)
+
+
 def native_html(approved: str | None = None) -> str:
-    html = accepted_pages_html() if approved is None else approved
+    original = accepted_pages_html() if approved is None else approved
+    newline = "\r\n" if "\r\n" in original else "\n"
+    html = original.replace("\r\n", "\n")
     if html.count("</body>") != 1 or ADAPTER_MARKER in html:
         raise ValueError("Approved Pages must have exactly one body and no prior native injection")
-    return html.replace("</body>", ADAPTER_MARKER + "\n</body>")
+    for before, after in NATIVE_EVENT_HOOKS:
+        if html.count(before) != 1 or after in html:
+            raise ValueError("Native-only M2 control hook anchor drift: " + before[:55])
+        html = html.replace(before, after, 1)
+    html = html.replace("</body>", ADAPTER_MARKER + "\n</body>")
+    return html.replace("\n", newline)
+
+
+def public_from_native(native: str) -> str:
+    """Reconstruct original public Pages HTML byte-for-byte from the native source."""
+    newline = "\r\n" if "\r\n" in native else "\n"
+    html = native.replace("\r\n", "\n")
+    if html.count(ADAPTER_MARKER + "\n") != 1:
+        raise ValueError("Native adapter marker missing or duplicated")
+    html = html.replace(ADAPTER_MARKER + "\n", "", 1)
+    for before, after in reversed(NATIVE_EVENT_HOOKS):
+        if html.count(after) != 1:
+            raise ValueError("Native-only M2 control hook missing or duplicated")
+        html = html.replace(after, before, 1)
+    return html.replace("\n", newline)
 
 
 def safe_symbol(filename: str) -> str:
@@ -111,6 +158,8 @@ def stage(out: Path) -> dict:
         out.mkdir(parents=True)
         shutil.copytree(pages / "assets", out / "assets")
         shutil.copy2(NATIVE_ADAPTER, out / "assets" / "approved-native-bridge.js")
+        shutil.copy2(ROOT / "web" / "approved-native-contract.js",
+                     out / "assets" / "approved-native-contract.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
     files = [out / "index.html", *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]

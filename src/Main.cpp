@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
 #include "ApprovedGuiResources.h"
+#include "ApprovedConsoleNativeTransportV6.h"
 #include "LiveAudioEngine.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
@@ -193,6 +194,23 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
+              .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
+                  // G0 real-device native producer, NEVER a synthetic ChannelId callback.
+                  consoleSubscribed_ = true;
+                  emitApprovedNativeSnapshot();
+              })
+              .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
+                  // Until ENGINE #266 owns production ChannelId graph, ALL v6
+                  // control intents are native-rejected, never silently emulated
+                  // via the old ordinal-only M4 engine.
+                  const auto accepted = approvedNativeSnapshot();
+                  if (browser_.loaded)
+                  {
+                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleAck",
+                          armix::native_console_m2::reject (args, accepted));
+                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot", accepted);
+                  }
+              })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withResourceProvider (assetFor))
@@ -259,6 +277,7 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool consoleSubscribed_ = false; // WebView v6 G0 subscription, not PCM admission
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -675,6 +694,19 @@ private:
             " maxTimerGapMs=" + juce::String (result.maxGapMs, 1) +
             " | timer delay is NOT a hardware xrun");
         emitOrbitState (previousSlot);
+    }
+
+    juce::var approvedNativeSnapshot()
+    {
+        return armix::native_console_m2::snapshot (
+            engine_.status(), engine_.devices(), engine_.allOutputsDisarmed());
+    }
+
+    void emitApprovedNativeSnapshot()
+    {
+        if (consoleSubscribed_ && browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible (
+                "arMixConsoleSnapshot", approvedNativeSnapshot());
     }
 
     void onParameter (const juce::var& args)
@@ -2471,6 +2503,10 @@ private:
             auto health = engine_.status();
             crackleEvidence_.push (makeEvidenceSample(health));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
+            if (consoleSubscribed_ && browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot",
+                    armix::native_console_m2::snapshot (
+                        health, engine_.devices(), engine_.allOutputsDisarmed()));
         }
 
         if (deviceSettingsDirty_)
