@@ -919,7 +919,7 @@
 /* V55: physically painted WIRE endpoints require a displayed accepted edge.
    data-wire-connected remains independent graph truth for hidden/off-bank
    inspection. Hover, magnet and deliberate patch intent remain transient. */
-.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="idle"]:not(.is-source):not(.is-drag-origin):not(.is-near):not(:hover):not(:focus-visible) .wire-pin,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="idle"]:not([data-wire-connected="true"]):not(.is-source):not(.is-drag-origin):not(.is-near):not(:hover):not(:focus-visible) .wire-pin,
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-paint="idle"]:not(.is-snap-target):not(.is-replug-origin):not(:hover):not(:focus-visible) .wire-arrow{
  background:#4b535b!important;border-color:#657681!important;
  box-shadow:inset 0 1px 2px #061017!important;opacity:1!important;
@@ -936,33 +936,33 @@
  box-shadow:inset 0 1px 2px #07141c!important;
 }
 
-/* WIRE A2: MAIN-color cable stubs. Source and pinned MAIN consume the SAME
-   data-wire-main-edge identity. Scoped to the existing WIRE CSS owner.
-   No new layout box, no cross-bank SVG, no hit area or compositor animation. */
+/* V57: MAIN remains a canonical edge while physical fragments are revealed
+   only for ONE selected channel. MAIN wire docks at the INNER IN dot. */
 /* Position source stub on the actual 12px OUT PIN, not the wider
    caption-bearing button: accurate at every density and browser width. */
 .console-body.wire-routing-v15 .strip .wire-tray
  .wire-node-out[data-wire-main-edge] .wire-pin{position:relative;overflow:visible}
 .console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge] .wire-pin::after,
+ .wire-node-out[data-wire-main-edge][data-wire-display-focus="true"] .wire-pin::after,
 .console-body.wire-routing-v15 #master .wire-tray
- .wire-node-in[data-wire-main-edge]::before{
+ .wire-node-in[data-wire-main-edge] .wire-arrow::after{
  content:"";position:absolute;left:calc(50% - 1.25px);width:2.5px;
  height:12px;background:var(--main-wire-hue,#a04b65);
  border-radius:0 0 4px 4px;box-shadow:1px 0 #09121f,0 0 0 1px #111e29;
  pointer-events:none;z-index:1;
 }
 .console-body.wire-routing-v15 .strip .wire-tray
- .wire-node-out[data-wire-main-edge] .wire-pin::after{top:10px;transform:rotate(-8deg);transform-origin:top center}
+ .wire-node-out[data-wire-main-edge][data-wire-display-focus="true"] .wire-pin::after{top:10px;transform:rotate(-8deg);transform-origin:top center}
 .console-body.wire-routing-v15 #master .wire-tray
- .wire-node-in[data-wire-main-edge]::before{
- top:23px;transform:rotate(8deg);transform-origin:top center;
- border-radius:4px 4px 0 0;
+ .wire-node-in[data-wire-main-edge] .wire-arrow::after{
+ top:calc(50% + 2px);height:15px;
+ transform:rotate(8deg);transform-origin:top center;
+ border-radius:4px 4px 0 0;z-index:-1;
 }
 /* Folded 23px WIRE retains two discreet color fragments tied to exact graph IDs.
    The accepted V52 fader, V51 meter and V54 jack material remain unchanged. */
 .console-body.wire-routing-v15.collapsed-send .strip
- .wire-fold-summary[data-wire-main-edge]::after{
+ .wire-fold-summary[data-wire-main-edge][data-wire-display-focus="true"]::after{
  content:"";position:absolute;left:22%;bottom:1px;width:2px;height:8px;
  border-radius:2px;background:var(--main-wire-hue,#a04b65);
  transform:rotate(-9deg);pointer-events:none;opacity:.85;
