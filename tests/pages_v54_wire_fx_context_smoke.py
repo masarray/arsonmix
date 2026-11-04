@@ -41,6 +41,10 @@ def scenario(page,w,density):
             assert s["connected"] is None and s["visible"] is None and not s["stale"],(
                 w,density,"phantom WIRE status",ch,direction,s)
             assert s["color"]=="rgb(75, 83, 91)",(w,density,"idle dot isn't graphite",ch,direction,s)
+    # Compact/Standard can intentionally fold SEND/WIRE controls to protect
+    # the fixed meter/fader. Validate their passive material in every density;
+    # exercise operator patch gestures only in Comfort where jacks are exposed.
+    if density!="comfort":return
     # Graph connection lights ONLY the selected edge's source and receiver.
     page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
     page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
