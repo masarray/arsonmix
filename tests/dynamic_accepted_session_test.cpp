@@ -273,6 +273,14 @@ int main() {
         result=wire.wireTransaction(2,2,parallel,req,wireEpoch,wireEpoch,false); // real WIRE edit while output armed
         assert(result.ok() && wire.acceptedGraphRevision()==3);
         assert(wire.acceptedRoster().find(source)->sends.front().edgeId==edgeId);
+        // A second path to the same ordered pair is not an extra send.
+        WireChange duplicate;duplicate.kind=WireChange::Kind::connect;
+        duplicate.source=source;duplicate.destination=submix;
+        const std::array<WireChange,1> duplicatePair{duplicate};
+        const auto duplicateResult=wire.wireTransaction(
+            3,3,duplicatePair,req,wireEpoch,wireEpoch,false);
+        assert(duplicateResult.fault==DynamicAcceptedSession::Fault::editRejected);
+        assert(wire.acceptedGraphRevision()==3);
         DynamicGraphRequest changedHardware=req;
         changedHardware.maxFrames=128;
         WireChange newDraft;newDraft.kind=WireChange::Kind::remove;
