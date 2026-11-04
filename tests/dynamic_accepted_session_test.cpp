@@ -307,6 +307,8 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     const std::array<WireChange,1> feedback{connect(three,one)};
     rejected=session.wireTransaction(6,6,feedback,physical,epoch,epoch,true);
     assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
+    // An uncommitted edge is not a native/GUI identity: rollback clears it.
+    assert(rejected.edit.createdEdgeIds.empty());
     assert(session.acceptedGraphRevision()==6);
     assert(render() && near(left[11],.3f*center));
     rejected=session.wireTransaction(5,5,unplug,physical,epoch,epoch,true);
