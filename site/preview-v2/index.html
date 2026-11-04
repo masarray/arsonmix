@@ -1022,6 +1022,18 @@ function setDensity(mode){
  const anchor=visible[oldIndex];
  root.dataset.density=density;
  root.classList.toggle('narrow',compact);
+ // Narrow/Compact forbids expanding SEND; entering it from an expanded
+ // console must first fold WIRE, otherwise hidden MAIN cable DOM survives.
+ if(compact){
+  root.classList.add('collapsed-send');
+  const rail=document.querySelector('.section-rail [data-section="send"]');
+  if(rail){
+   rail.classList.add('collapsed');
+   rail.setAttribute('aria-expanded','false');
+   rail.setAttribute('aria-pressed','false');
+   rail.title='Expand WIRE section';
+  }
+ }
  document.getElementById('densitySelect').value=density;
  // Preserve the first visible channel when density changes page capacity.
  const anchorIndex=anchor?visible.findIndex(t=>t.id===anchor.id):0;
