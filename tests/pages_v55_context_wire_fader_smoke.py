@@ -27,7 +27,7 @@ def main():
                         assert v["color"]=="rgb(75, 83, 91)",(w,density,ch,direction,v)
                 cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap').first
                 shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
-                assert "17px" in shadow and shadow!="none",(w,density,shadow)
+                assert "5px 7px -3px" in shadow and shadow!="none",(w,density,shadow)
                 assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
                 if density=="comfort":
                     if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
