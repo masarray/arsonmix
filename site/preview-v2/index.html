@@ -1921,11 +1921,14 @@ function handleField(event){
  if(field==='wireGain'){
   const edge=wireEdges.find(x=>x.id===Number(el.dataset.wireId)&&x.destId===t.id);
   if(!edge){say('WIRE gain rejected: stale connection');return;}
-  edge.levelDb=wireGainValue(el.value);
-  if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');
-  if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(edge.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(edge.levelDb)*2.7).toFixed(1)+'deg');}
-  if(el.parentElement)el.parentElement.title=wireDbText(edge.levelDb);
-  if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(edge.levelDb)+' · GUI DEMO ONLY');
+  const previous=edge.levelDb;
+  if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,
+   levelDb:wireGainValue(el.value)}],{record:false})){el.value=previous;return;}
+  const accepted=wireFor(edge.sourceId,edge.destId);
+  if(el.style?.setProperty)el.style.setProperty('--wire-pct',wireGainPercent(accepted.levelDb)+'%');
+  if(el.parentElement?.style?.setProperty){el.parentElement.style.setProperty('--wire-pct',wireGainPercent(accepted.levelDb)+'%');el.parentElement.style.setProperty('--wire-deg',(-135+wireGainPercent(accepted.levelDb)*2.7).toFixed(1)+'deg');}
+  if(el.parentElement)el.parentElement.title=wireDbText(accepted.levelDb);
+  if(event.type==='change')say('WIRE '+tracks.find(x=>x.id===edge.sourceId)?.name+' → '+t.name+' · '+wireDbText(accepted.levelDb)+' · GUI DEMO ONLY');
   return;
  }
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
@@ -1973,23 +1976,41 @@ function handleField(event){
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
  else if(field==='output'){
-  if(wouldFeedback(t,el.value)){say('Routing rejected: this output would create a bus feedback loop.');refreshStrip(t);return;}
-  t.output=el.value;say(el.value==='SOURCE ONLY (No Main)'?t.name+' is SOURCE ONLY (no direct Main) · demo, no PCM':t.name+' output → '+el.value);
+  if(t.kind==='master'){t.output=el.value;say('Physical MAIN output → '+el.value+' · reference only');return;}
+  const current=wireEdges.find(edge=>edge.sourceId===t.id&&edge.kind==='primary');
+  const selected=el.value,dest=selected==='Master'?master:tracks.find(ch=>ch.name===selected);
+  const ops=[];
+  if(selected==='SOURCE ONLY (No Main)'){
+   if(current)ops.push({type:'REMOVE',sourceId:t.id,edgeId:current.id});
+  }else if(dest&&dest.kind==='master'){
+   if(current&&current.destId!==master.id)ops.push({type:'REMOVE',sourceId:t.id,edgeId:current.id});
+   if(!wireFor(t.id,master.id))ops.push({type:'CONNECT',sourceId:t.id,destId:master.id});
+  }else if(dest){
+   ops.push({type:'ROUTE_ONLY',sourceId:t.id,destId:dest.id});
+  }else{
+   say('Unsupported internal OUT: use physical I/O setup');
+   refreshStrip(t);return;
+  }
+  if(ops.length&&!wireGraphCommit(ops)){refreshStrip(t);return;}
+  render();say('OUT '+t.name+' → '+t.output+' · canonical graph reference');return;
  }
  else if(field==='input'){
   const split=parseSplitSource(el.value);
-  if(split&&splitWouldCycle(t,split.sourceId)){
-   say('SPLIT REJECTED: circular source dependency or missing channel · previous IN preserved');
-   refreshStrip(t);return;
-  }
-  t.input=el.value;
+  const ops=wireEdges.filter(e=>e.destId===t.id&&e.kind==='split').map(e=>
+   ({type:'REMOVE',sourceId:e.sourceId,edgeId:e.id}));
   if(split){
-   const source=tracks.find(x=>x.id===split.sourceId);
-   say(t.name+' ← '+source.name+' '+split.tap+'-FX split · GUI REFERENCE ONLY · native PCM not connected');
-  }else say(t.name+' input → '+el.value+' · demo binding only');
-  render();return;
+   if(!wireSourceTrack(split.sourceId)||split.sourceId===t.id){
+    say('SPLIT REJECTED: invalid source');refreshStrip(t);return;
+   }
+   ops.push({type:'CONNECT',sourceId:split.sourceId,destId:t.id,mode:
+    split.tap==='PRE'?'splitPre':'splitPost'});
+  }
+  if(ops.length&&!wireGraphCommit(ops)){refreshStrip(t);return;}
+  t.input=el.value;render();
+  say(split?'SPLIT accepted in reference graph · no native PCM':
+   t.name+' physical input → '+el.value+' · reference only');return;
  }
- else if(field==='send'){if(wouldFeedback(t,el.value)){say('Send rejected: this bus would feed back into itself.');refreshStrip(t);return;}t.send=el.value;say(t.name+' send → '+el.value);}
+ else if(field==='send'){say('Legacy SEND slot is display-only; patch via WIRE');refreshStrip(t);return;}
  else{t[field]=el.value;say(t.name+' '+field+' → '+el.value);}
  if(['send','sendLevel','sendPan'].includes(field))syncActiveSend(t);
  selectTrack(t);
@@ -2186,7 +2207,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn'){if(deferNativeFxIntent('FX chain bypass'))return;t.fxOn=!t.fxOn;}
  else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
- else if(a==='sendOn'){if(t.send==='None'){say('Select a send destination first.');return;}if(!t.sendOn&&wouldFeedback(t,t.send)){say('Send rejected: feedback path detected.');return;}t.sendOn=!t.sendOn;syncActiveSend(t);}
+ else if(a==='sendOn'){say('Legacy SEND disabled; patch via WIRE');return;}
  else if(['mute','solo','cue','mon','phase'].includes(a)){
   t[a]=!t[a];
   if(t.group&&(a==='mute'||a==='solo')){
