@@ -116,8 +116,7 @@ def main():
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for path,label in ((PAGE,"canonical"),
-                               (dst/"preview/mixer.html","published-mixer"),
-                               (dst/"preview-buttons/index.html","approved-png")):
+                               (dst/"preview/index.html","approved-png")):
                 page=browser.new_page(viewport={"width":1680,"height":900})
                 verify(page,label,path)
                 page.close()

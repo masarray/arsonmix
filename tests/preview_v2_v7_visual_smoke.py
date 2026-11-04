@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run headless real-Chromium physical geometry and workflow audit for Pages V7.
 
-This is an independent review of the published /preview-v2/ snapshot in main,
+This is an independent review of the approved /preview/ source in main,
 NOT a validation of native ASIO/VST3 audio. Screenshots are uploaded by UI smoke.
-No external web request; local site/preview-v2/index.html only.
+No external web request; local site/preview/index.html only.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -11,7 +11,7 @@ import subprocess, sys, re
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = (ROOT / "site/preview-v2/index.html").resolve()
+PAGE = (ROOT / "site/preview/index.html").resolve()
 PUBLIC = (ROOT / "_preview-public-qa/preview/index.html").resolve()
 SIZES = [(1366, 768), (1666, 888), (1711, 1005), (1920, 1080)]
 

@@ -113,20 +113,19 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
                         '--out',str(dist),'--sha','v6-ci','--branch','main'],
                        cwd=ROOT,check=True,capture_output=True,text=True)
-        for target in ('preview','preview-v2','preview-buttons'):
+        for target in ('preview',):
             assets=dist/target/'assets'
             assert (assets/OWNER).read_bytes()==(ROOT/'site/preview/assets'/OWNER).read_bytes(),target
             assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview/assets'/SCRIPT).read_bytes(),target
         png_src=ROOT/'site/preview/assets'
-        png_pub=dist/'preview-buttons/assets'
+        png_pub=dist/'preview/assets'
         for file in ('mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'):
             assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for file,label in (
                 (CANON,'canonical'),
-                (dist/'preview/mixer.html','public'),
-                (dist/'preview-buttons/index.html','png')
+                (dist/'preview/index.html','png')
             ):
                 check_page(browser,file,label)
             browser.close()
