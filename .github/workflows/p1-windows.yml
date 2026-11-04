@@ -9,13 +9,13 @@ on:
       - 'integration/console-v6/**'
       - 'src/**'
       - 'engine/**'
-      - 'web/**'
+      # Only the native WebView bridge can trigger Windows; pure GUI/CSS uses Chromium + Pages.
+      - 'web/bridge.js'
+      - 'web/monitor.js'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
-      - 'scripts/build_ui_css.py'
       - 'tests/*.cpp'
       # Native Windows gate executes this JS integration contract; source-only
       # contract corrections must not leave a stale failed release gate.
-      - 'tests/live_routing_ui_contract_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -30,11 +30,12 @@ on:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
       - 'src/**'
+      - 'web/bridge.js'
+      - 'web/monitor.js'
       - 'engine/**'
       - 'tests/*.cpp'
       - 'tests/*native*contract*.mjs'
       - 'tests/live_graph_contract_test.mjs'
-      - 'tests/ci_workflow_efficiency_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/factoryfx_release_bundle.py'
@@ -122,16 +123,19 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
