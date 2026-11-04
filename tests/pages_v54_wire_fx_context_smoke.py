@@ -43,7 +43,8 @@ def scenario(page,w,density):
         assert incoming["connected"] is None and incoming["arrival"] is None and not incoming["stale"],(
             w,density,"phantom incoming graph route",ch,incoming)
         assert incoming["color"]=="rgb(75, 83, 91)",(w,density,"idle IN dot isn't graphite",ch,incoming)
-        assert outgoing["connected"]=="true",(w,density,"default MAIN edge missing",ch,outgoing)
+        assert outgoing["connected"] is None,(w,density,"MAIN should not light custom OUT",ch,outgoing)
+        assert page.locator(f'#tracks .strip[data-id="{ch}"] .wire-node-out').get_attribute("data-wire-main-edge"),"Canonical MAIN edge lost"
         assert outgoing["stale"]=="",(w,density,"stale OUT paint",ch,outgoing)
     # Compact/Standard can intentionally fold SEND/WIRE controls to protect
     # the fixed meter/fader. Validate their passive material in every density;
@@ -55,12 +56,12 @@ def scenario(page,w,density):
     assert wire(page,5,"out")["connected"]=="true",(w,density,"missing OUT")
     assert wire(page,3,"in")["arrival"]=="true",(w,density,"missing IN")
     for ch in (1,2):
-        assert wire(page,ch,"out")["connected"]=="true",(w,density,"default MAIN disappeared",ch)
+        assert wire(page,ch,"out")["connected"] is None,(w,density,"MAIN should not light OUT",ch)
     page.locator("#wireNavigatorToggle").click()
     undo=page.locator("#wireWsUndo")
     assert undo.is_enabled(),(w,density,"undo not available")
     undo.click()
-    assert wire(page,5,"out")["connected"]=="true",(w,density,"Undo removed default MAIN")
+    assert wire(page,5,"out")["connected"] is None,(w,density,"Undo left ghost custom OUT")
     assert wire(page,3,"in")["arrival"] is None,(w,density,"ghost input after undo")
     page.locator("#wireNavigatorToggle").click()
     before=fx(page,1)
