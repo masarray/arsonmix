@@ -71,18 +71,13 @@ def audit_geometry(page, title):
         const wellRgb=(before.backgroundColor.match(/[0-9]+/g)||[]).slice(0,3).map(Number);
         const historicalFlat=before.backgroundImage==='none'&&wellRgb.length===3&&
            Math.max(...wellRgb)<=46&&Math.min(...wellRgb)>=4;
-        // V52 purposefully replaces V7's unshaded paint with an inset bevel.
-        // Keep a strict visual contract: BOTH central 29..71% stops are flat,
-        // sidewalls darker, the near-black center slot remains 5px, and
-        // the material is truly inset (not a bright raised border).
-        const gradient=before.backgroundImage;
-        const center='rgb(21, 35, 43)';
-        const v52Inset=gradient.startsWith('linear-gradient(90deg')&&
-           gradient.includes(center+' 29%')&&gradient.includes(center+' 71%')&&
-           before.boxShadow.includes('inset')&&
-           Math.abs(parseFloat(getComputedStyle(well,'::after').width)-5)<.7;
-        if(!historicalFlat&&!v52Inset)
-            problems.push('flat recessed graphite fader cavity absent');
+        // Owner-directed rollback: only the original V51 graphite cavity,
+        // exactly the surface accepted before V52/V54/V55. V52 bevel is
+        // explicitly disallowed; preserving old mechanics is intentional.
+        if(!historicalFlat || !before.boxShadow.includes('inset'))
+            problems.push('owner-restored flat graphite fader cavity missing');
+        if(Math.abs(parseFloat(getComputedStyle(well,'::after').width)-5)>.7)
+            problems.push('original 5px fader tail aperture missing');
         if(!getComputedStyle(strips[0]).boxShadow.includes('inset'))
             problems.push('missing metallic strip edge');
         for(const [name, selector] of Object.entries(cells)){

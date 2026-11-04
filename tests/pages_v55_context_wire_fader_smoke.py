@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V55 context-aware physical WIRE dot paint and lightweight thumb shadow."""
+"""V55 context-aware physical WIRE dot paint; preserve owner-restored V51 fader shadow."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
@@ -27,7 +27,7 @@ def main():
                         assert v["color"]=="rgb(75, 83, 91)",(w,density,ch,direction,v)
                 cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap').first
                 shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
-                assert "17px" in shadow and shadow!="none",(w,density,shadow)
+                assert "2px 3px -2px" in shadow and "4px 3px -4px" in shadow,(w,density,"approved V51 small static thumb shadow",shadow)
                 assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
                 if density=="comfort":
                     if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
@@ -50,5 +50,5 @@ def main():
                     assert node(page,3,"in")["paint"]=="idle"
                 page.close()
         browser.close()
-    print("PASS V55: dark idle nodes, accepted WIRE paint, undo and static fader shadow 3x3")
+    print("PASS V55: dark idle nodes, accepted WIRE paint and undo; V51 fader shadow rollback intact")
 if __name__=="__main__":main()
