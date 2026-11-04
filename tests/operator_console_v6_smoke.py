@@ -819,6 +819,55 @@ async def main():
           x=>x.event==='arMixConsoleIntent').at(-1).payload.requestId""")
         assert reconnected.startswith("gui-") and reconnected.endswith(":1")
         assert reconnected != first_id
+        # Packet C native WIRE consumer fixture: these are synthetic native
+        # envelopes, NOT evidence that ENGINE #266 has installed the op.
+        assert await page.evaluate("()=>window.__arMixNativeWire.readAccepted()") is None
+        assert not await page.evaluate("""() => window.__arMixNativeWire.applyTransaction(
+          '7','UNPLUG',[{op:'REMOVE',edgeId:'107'}])""")
+        wire_native = snapshot(revision=9,epoch=9)
+        wire_native["graph"]["mainChannelId"]="1000"
+        wire_native["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        wire_native["graph"]["edges"]=[
+          {"edgeId":str(100+i),"from":str(i),"to":"1000",
+           "tap":"POST_FADER","gainLinear":1.0,"enabled":True,"signalKind":"AUDIO"}
+          for i in range(1,11)]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",wire_native)
+        accepted_wire=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
+        assert accepted_wire["graphRevision"]=="9" and accepted_wire["mainChannelId"]=="1000"
+        assert len(accepted_wire["edges"])==10 and accepted_wire["edges"][6]["edgeId"]=="107"
+        assert await page.evaluate("""() => window.__arMixNativeWire.applyTransaction(
+          '7','UNPLUG',[{op:'REMOVE',edgeId:'107'}])""")
+        wire_command=await page.evaluate("""() => window.__v6Test.sent.filter(
+          x=>x.event==='arMixConsoleIntent').at(-1).payload""")
+        assert wire_command["operation"]=="APPLY_WIRE_TRANSACTION"
+        assert wire_command["deviceEpoch"]=="9" and wire_command["baseGraphRevision"]=="9"
+        assert wire_command["targetChannelId"]=="7"
+        assert wire_command["payload"]=={"reason":"UNPLUG",
+                                        "changes":[{"op":"REMOVE","edgeId":"107"}]}
+        # An ACK alone must NEVER optimistically erase an accepted physical cable.
+        await page.evaluate("""(x)=>window.__v6Test.publish('arMixConsoleAck',x)""",{
+            "requestId":wire_command["requestId"],"status":"ACCEPTED",
+            "deviceEpoch":"9","graphRevision":"10","rosterRevision":"10","errorCode":""})
+        still_old=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
+        assert any(e["edgeId"]=="107" for e in still_old["edges"])
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().pendingCount")==0
+        next_wire=snapshot(revision=10,epoch=9)
+        next_wire["graph"]["mainChannelId"]="1000"
+        next_wire["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        next_wire["graph"]["edges"]=[e for e in wire_native["graph"]["edges"]
+                                      if e["edgeId"]!="107"]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",next_wire)
+        accepted_wire=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
+        assert len(accepted_wire["edges"])==9
+        assert not any(e["edgeId"]=="107" for e in accepted_wire["edges"])
+        # A malformed graph must be denied without destroying the last accepted
+        # edge inventory, fader, device epoch or native source mapping.
+        broken_wire=snapshot(revision=11,epoch=9)
+        broken_wire["graph"]["mainChannelId"]="1000"
+        broken_wire["graph"]["capabilities"]["supportedOps"].append("APPLY_WIRE_TRANSACTION")
+        broken_wire["graph"]["edges"]=next_wire["graph"]["edges"]+[next_wire["graph"]["edges"][0]]
+        await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",broken_wire)
+        assert await page.evaluate("()=>window.__arMixNativeWire.readAccepted().graphRevision")=="10"
         # The actual legacy mixer from web/app.js retains original fader,
         # meters, button materials and bridge.js ownership. Test V5 UX in
         # browser preview, NOT as evidence of loaded native VST3.
