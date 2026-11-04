@@ -124,7 +124,8 @@ test("M2 code edits approved Pages *events* only, not a second native GUI/audio 
  const adapter=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
  for(const key of ["consumeField","consumeAction","consumeWire","consumeUndo","consumeDoubleClick"]) {
-  assert.match(page,new RegExp("__ARMIX_NATIVE_M2__\\?\\."+key));
+  assert.doesNotMatch(page,/__ARMIX_NATIVE_M2__/,"public Pages checkpoint stays untouched");
+  assert.match(read("scripts/build_approved_native_gui.py"),new RegExp("__ARMIX_NATIVE_M2__\\?\\."+key));
   assert.match(adapter,new RegExp(key+"\\("));
  }
  const protocolSource=read("web/approved-native-contract.js");
