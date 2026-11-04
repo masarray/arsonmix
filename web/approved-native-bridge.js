@@ -14,6 +14,13 @@
           "-" + Math.floor(Math.random() * 0x100000000).toString(36),
         notify: status => {
           document.documentElement.dataset.armixNativeStatus = status;
+          if (status === "NATIVE_REJECTED" ||
+              status === "DEVICE_CHANGED_INTENT_CANCELLED" ||
+              status === "NATIVE_ACK_TIMEOUT") {
+            if (typeof say === "function")
+              say("Native control " + status.toLowerCase().replaceAll("_", " ") +
+                  " · accepted audio state unchanged");
+          }
         }
       })
     : null;
@@ -27,7 +34,21 @@
     get acceptedSnapshot() { return controller?.snapshot() || null; },
     get pendingIntent() { return controller?.pendingRequest() || null; },
     request(operation, targetChannelId, payload) {
-      return controller?.request(operation, targetChannelId, payload) || null;
+      const token = controller?.request(operation, targetChannelId, payload);
+      if (token) {
+        // A missing native ACK must never leave the operator with indefinite
+        // PENDING or permit an unsafe retry against an unknown audio graph.
+        setTimeout(() => {
+          if (controller.pendingRequest()?.requestId === token) {
+            controller.expirePending(token);
+            backend.emitEvent("arMixConsoleSubscribe", {
+              protocol: "v6", schemaVersion: 6,
+              source: "APPROVED_PAGES_NATIVE_M2_TIMEOUT_RECOVERY"
+            });
+          }
+        }, 4000);
+      }
+      return token || null;
     }
   });
   Object.defineProperty(window, "__ARMIX_APPROVED_NATIVE_GUI__", {
@@ -55,6 +76,7 @@
     "level", "pan", "trim", "input", "output", "sendLevel", "sendPan",
     "mute", "solo", "format", "activeSend"
   ]);
+  let lastGuardNotice = 0;
   const guard = event => {
     const node = event.target?.closest?.(
       "[data-action],[data-field],.fader,.fx-grip,#preview"
@@ -67,6 +89,16 @@
     if (!audio) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    // Existing status strip, not a new widget or alternate GUI: be explicit
+    // that browser-only audio gestures are NOT native PCM transactions.
+    if (event.type === "click" || event.type === "pointerdown") {
+      const now = Date.now();
+      if (now - lastGuardNotice > 1600) {
+        lastGuardNotice = now;
+        if (typeof say === "function")
+          say("Native controls waiting for accepted ChannelId mapping · no PCM edit applied");
+      }
+    }
   };
   for (const type of ["click", "input", "change", "pointerdown", "wheel",
                       "keydown", "dragstart", "drop"])
