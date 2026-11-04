@@ -72,7 +72,7 @@ def inspect(page,width,height,density):
         assert abs(float(v["slotWidth"].replace("px",""))-5)<.6,(width,density,"dark slot drift",v)
         assert "rgb(1, 4, 7)" in v["slotBackground"],(
             width,density,"center aperture not near-black",v)
-        assert v["thumbShadow"]!="none" and "9px" in v["thumbShadow"] and "13px" in v["thumbShadow"],(
+        assert v["thumbShadow"]!="none" and "10px 13px -3px" in v["thumbShadow"] and "17px 17px -7px" in v["thumbShadow"],(
             width,density,"visible low-cost lower thumb shadow missing",v)
         assert v["thumbFilter"]=="none",(width,density,"GPU filter forbidden",v)
         assert v["thumbTransition"]=="0s",(width,density,"animated shadow forbidden",v)
