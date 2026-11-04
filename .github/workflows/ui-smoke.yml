@@ -17,6 +17,7 @@ on:
       - 'tests/*gui*contract*.mjs'
       - 'tests/native_ui_contract_test.mjs'
       - 'tests/wire_graph_canonical_model.test.cjs'
+      - 'tests/wire_main_native_handoff_contract.test.cjs'
       - 'tests/ci_workflow_efficiency_test.mjs'
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
@@ -36,6 +37,7 @@ on:
       - 'tests/native_orbit_ui_smoke.py'
       - 'tests/ci_workflow_efficiency_test.mjs'
       - 'tests/wire_graph_canonical_model.test.cjs'
+      - 'tests/wire_main_native_handoff_contract.test.cjs'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
   # Manual full suite (including immutable CSS migration tests) or release-integration PR.
