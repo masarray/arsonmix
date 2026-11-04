@@ -21,3 +21,6 @@
 - `node scripts/check_console_puzzle.mjs --release` must fail on any alternate GUI. No user UAT until a coherent native product; physical rig absent => FAT PENDING, not product ready.
 
 **Current execution:** [single handoff](docs/workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) is retained as filename for link compatibility but CONTENT MUST point to /preview/ alone. Older v5/v6/v7 and historical PR #278/#271 GUI paths never override this document; audio/safety requirements still apply. **No one may revive /preview-v2/ as a second GUI**.
+
+## Historical diagnostics retained (not GUI authority)
+The archival `docs/GUI_BASELINE_LOCK_2026-10-25.md` remains available only for regression forensics and former native asset compatibility. It NEVER outranks the user's approved **/preview/** assembled GUI or its PNG keys.
