@@ -734,26 +734,31 @@ function selectWireEdge(edge,inspect=false){
   ' selected · '+wireDbText(edge.levelDb)+' · GUI DEMO');
 }
 function wireTray(t){
- const source=armedWireSource();
- const isSource=!!source&&source.id===t.id,isMain=t.kind==='master';
- const incoming=isMain?[]:incomingWireEdges(t.id);
- const armedEdge=!isMain&&source?wireFor(source.id,t.id):null;
+ const isMain=t.kind==='master';
+ const focus=selection().filter(x=>x.kind!=='master');
+ const source=armedWireSource()||(isMain&&focus.length===1?focus[0]:null);
+ const isSource=!!source&&source.id===t.id;
+ const direct=isMain&&source?wireFor(source.id,master.id):null;
+ const incoming=isMain?(direct?[direct]:[]):incomingWireEdges(t.id);
+ const armedEdge=source?wireFor(source.id,t.id):null;
  const selected=incoming.find(e=>e.id===selectedWireEdgeId);
- const incomingCount=isMain?0:wireWsRoutes().filter(r=>r.destId===t.id).length;
+ const incomingCount=isMain?incomingWireEdges(master.id).length:incoming.length;
  const edge=selected||(incoming.length===1?incoming[0]:armedEdge)||null;
  const connected=incoming.length>0,hasAnyArrival=incomingCount>0;
- const legacy=!isMain&&source&&hasLegacySendTo(source,t);
- const linked=isMain?!!source&&source.output==='Master':connected;
+ const legacy=false;
+ const linked=isMain?!!direct:connected;
  const sourceLinked=!!armedEdge;
- const canWire=!!(source&&!isSource)||hasAnyArrival;
+ const canWire=!!(source&&!isSource)||(!isMain&&hasAnyArrival);
  const label=isMain?(linked?'MAIN ON':'MAIN OFF'):
   incomingCount>1?incomingCount+' incoming wires · inspect routes':
   hasAnyArrival&&!source?'IN connected · inspect route':
   !source?'NO SOURCE':isSource?'SOURCE':
   linked?'CONNECTED':'CONNECT';
  const sender=edge?wireSourceTrack(edge.sourceId):null;
- const modeLabel=edge?(edge.mode==='routeOnly'?'Route via Bus':
-  edge.mode==='send'?'Post-fader Send':'Pre FX Mult')+' · drag IN to replug / unplug':
+ const modeLabel=edge?(isMain?'Focused CH→MAIN · drag this exact plug to replug or unplug':
+  edge.mode==='routeOnly'?'Route Only · drag IN to replug / unplug':
+  edge.mode==='send'?'Post-fader Send · drag IN to replug / unplug':
+  'Pre FX Mult · drag IN to replug / unplug'):
   hasAnyArrival?'Select one incoming route to inspect':
   legacy?'Existing SEND slot · managed in legacy routing':
   'Choose OUT then click IN, or drag an OUT jack here';
@@ -1287,7 +1292,7 @@ function wireWsUndo(){
 }
 function wireWsId(id){return 'CH'+String(id).padStart(2,'0');}
 function wireWsLabel(id){
- const t=tracks.find(x=>x.id===id);return t?wireWsId(id)+' · '+t.name:wireWsId(id);
+ const t=tracks.concat(master).find(x=>x.id===id);return t?(t.kind==='master'?'MAIN':wireWsId(id))+' · '+t.name:wireWsId(id);
 }
 function wireWsBank(id){
  const filter=document.getElementById('viewFilter')?.value||'all';
@@ -1309,7 +1314,7 @@ function wireWsMatches(t){
 }
 function wireWsCanJoin(src,dst){
  const a=wireSourceTrack(src),b=wireSourceTrack(dst);
- return !!(a&&b&&a.id!==b.id&&!wireIsCycle(src,dst));
+ return !!(a&&b&&a.id!==b.id&&!wireFor(src,dst)&&!wireIsCycle(src,dst));
 }
 function wireWsChooseMode(mode){
  wireWsDestinationId=null; // Deliberate mode selection leaves the receiving socket inspector.
@@ -1503,35 +1508,17 @@ function renderWireWorkspace(){
 }
 
 function wireDisplayRoutes(){
- const routes=[],seen=new Set(),byName=new Map(tracks.map(t=>[t.name,t]));
- const add=(sourceId,destId,kind)=>{
-  if(!sourceId||!destId||sourceId===destId||
-     !wireSourceTrack(sourceId)||!tracks.some(t=>t.id===destId))return;
-  const key=sourceId+':'+destId;
-  if(seen.has(key))return; // one visual cable per physical channel pair
-  seen.add(key);routes.push({sourceId,destId,kind});
- };
- for(const edge of wireEdges)if(edge.enabled)add(edge.sourceId,edge.destId,'wire');
- for(const t of tracks){
-  const split=parseSplitSource(t.input);
-  if(split)add(split.sourceId,t.id,'split');
-  const primary=byName.get(t.output);
-  if(primary&&(primary.kind==='bus'||primary.kind==='fx'))add(t.id,primary.id,'primary');
-  for(let i=0;i<t.sendSlots.length;i++){
-   const slot=i===t.activeSend?t:t.sendSlots[i];
-   if(!slot?.sendOn||!slot.send||slot.send==='None')continue;
-   const dest=byName.get(slot.send);
-   if(dest)add(t.id,dest.id,'legacy');
-  }
- }
- return routes;
+ // Projection of ONE canonical graph. No independent output/SEND ghost paths.
+ return wireEdges.filter(e=>e.enabled).map(e=>({
+  id:e.id,sourceId:e.sourceId,destId:e.destId,kind:'wire'
+ }));
 }
 function wireLegendHtml(focus,routes){
  const inRoutes=routes.filter(e=>e.destId===focus.id);
  const outRoutes=routes.filter(e=>e.sourceId===focus.id);
- const fmtId=t=>'CH'+String(t.id).padStart(2,'0');
+ const fmtId=t=>t.kind==='master'?'MAIN':'CH'+String(t.id).padStart(2,'0');
  const badges=(list,incoming)=>{
-  const nodes=list.map(e=>tracks.find(t=>t.id===(incoming?e.sourceId:e.destId))).filter(Boolean);
+  const nodes=list.map(e=>tracks.concat(master).find(t=>t.id===(incoming?e.sourceId:e.destId))).filter(Boolean);
   const visible=nodes.slice(0,2).map(t=>{
    const icon=incoming?
     '<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="2" fill="currentColor"/></svg>':
