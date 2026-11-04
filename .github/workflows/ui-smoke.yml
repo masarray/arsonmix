@@ -19,6 +19,8 @@ on:
       - 'tests/wire_graph_canonical_model.test.cjs'
       - 'tests/wire_main_native_handoff_contract.test.cjs'
       - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'scripts/check_workstream_coordination.mjs'
+      - 'tests/workstream_coordination_contract.test.mjs'
       - 'tests/approved_native_m2_contract.test.cjs'
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
@@ -37,6 +39,8 @@ on:
       - 'tests/native_ui_contract_test.mjs'
       - 'tests/native_orbit_ui_smoke.py'
       - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'scripts/check_workstream_coordination.mjs'
+      - 'tests/workstream_coordination_contract.test.mjs'
       - 'tests/approved_native_m2_contract.test.cjs'
       - 'tests/wire_graph_canonical_model.test.cjs'
       - 'tests/wire_main_native_handoff_contract.test.cjs'
@@ -53,6 +57,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   frontend:
@@ -61,6 +66,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Cheap one-owner / overlapping-PR preflight (read-only)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -79,7 +89,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
-          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/workstream_coordination_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: CSS V28 zero-regression source-order recovery (every GUI CI run)
