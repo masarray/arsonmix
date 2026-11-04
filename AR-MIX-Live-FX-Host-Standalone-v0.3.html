@@ -7436,7 +7436,8 @@ scheduleDemoMeter();
     SET_FADER:'SET_FADER',SET_PAN:'SET_PAN',SET_MUTE:'SET_MUTE',
     SET_SOLO:'SET_SOLO',SET_TRIM:'SET_TRIM',SET_CUE:'SET_CUE',
     SET_LINK_GROUP:'SET_LINK_GROUP',ROUTE_SELECTED_TO_GROUP:'ROUTE_SELECTED_TO_GROUP',
-    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL'
+    RENAME_CHANNEL:'RENAME_CHANNEL',CREATE_CHANNEL:'CREATE_CHANNEL',
+    APPLY_WIRE_TRANSACTION:'APPLY_WIRE_TRANSACTION'
   };
   let accepted=null,acceptedNative=false,modeSend='',lastStructure='',requestSeq=0;
   let lastControlProjection='',lastHeaderProjection='';
@@ -7903,13 +7904,21 @@ scheduleDemoMeter();
       Array.isArray(caps.supportedOps) && caps.supportedOps.includes(operationCaps[op]);
   }
   function can(op,id){
-    if(!supported(op))return false;
+    const ch=id?byId.get(id):null;
+    // A native WIRE-capable ordinary channel cannot write a second legacy
+    // SET_PRIMARY_OUT state; the OUT control uses the same WIRE intent path.
+    const wireInstalled=supported('APPLY_WIRE_TRANSACTION');
+    if(wireInstalled&&['SET_SEND_LEVEL','SET_SEND_TAP'].includes(op))return false;
+    const wireOut=op==='SET_PRIMARY_OUT'&&ch&&
+      !['MAIN','MONITOR'].includes(ch.role)&&wireInstalled;
+    const effective=wireInstalled&&(wireOut||op==='ADD_SEND')?
+      'APPLY_WIRE_TRANSACTION':op;
+    if(!supported(effective))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
     if(!id)return !pendingTargets.has('@selection');
-    const ch=byId.get(id);
     return !!ch && !pendingTargets.has(id) &&
-      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(op));
+      (!Array.isArray(ch.allowedOps)||ch.allowedOps.includes(effective));
   }
   function showFeedback(text){
     feedback=clean(text);message.textContent=feedback;
@@ -7938,6 +7947,110 @@ scheduleDemoMeter();
     refreshDisabled();
     backend.emitEvent('arMixConsoleIntent',command);
     return true;
+  }
+  /* Packet C additive WIRE consumer. This is NOT a browser-owned audio
+     graph: every edge is read fresh from the accepted native snapshot.
+     A request never paints a cable as accepted until ACK + matching snapshot. */
+  function acceptedWireGraph(){
+    const graph=accepted?.graph;
+    if(!supported('APPLY_WIRE_TRANSACTION')||
+       !Array.isArray(graph?.edges)||decimal(graph.mainChannelId)===null)return null;
+    return {
+      deviceEpoch:accepted.device.epoch,graphRevision:graph.revision,
+      rosterRevision:graph.rosterRevision,mainChannelId:graph.mainChannelId,
+      edges:graph.edges.map(e=>({edgeId:e.edgeId,from:e.from,to:e.to,
+        tap:e.tap,gainLinear:e.gainLinear,enabled:e.enabled,signalKind:e.signalKind}))
+    };
+  }
+  function nativeGraphMode(id){
+    const ch=byId.get(id);
+    return !!ch&&!['MAIN','MONITOR'].includes(ch.role)&&
+      acceptedWireGraph()!==null;
+  }
+  function projectedChannelSends(ch){
+    const graph=acceptedWireGraph();
+    if(!graph)return Array.isArray(ch.sends)?ch.sends:[];
+    // A displayed SEND is only a read-only projection of an accepted AUDIO
+    // edge. The legacy ch.sends array cannot invent a second signal path.
+    return graph.edges.filter(e=>e.enabled&&e.from===ch.id&&
+      e.to!==graph.mainChannelId).map(e=>{
+      const target=byId.get(e.to),linear=e.gainLinear;
+      return {id:e.edgeId,targetId:e.to,name:target?.name||e.to,
+        tap:e.tap==='POST_FADER'?'POST':'PRE',
+        levelDb:linear>0?Math.max(-60,Math.min(12,20*Math.log10(linear))):-60,
+        wireNative:true};
+    });
+  }
+  function physicalMainEdge(sourceId){
+    const graph=acceptedWireGraph();
+    if(!graph||decimal(sourceId)===null||sourceId===graph.mainChannelId)return null;
+    return graph.edges.find(e=>e.enabled&&e.from===sourceId&&
+      e.to===graph.mainChannelId)||null;
+  }
+  function nativeRouteSelection(ch){
+    if(!nativeGraphMode(ch.id))return ch.primaryOutId||ch.primaryOut?.id||
+      (typeof ch.primaryOut==='string'?ch.primaryOut:'');
+    const graph=acceptedWireGraph();
+    const outgoing=graph.edges.filter(e=>e.enabled&&e.from===ch.id);
+    return outgoing.some(e=>e.to===graph.mainChannelId)?graph.mainChannelId:
+      outgoing.length===1?outgoing[0].to:'';
+  }
+  function unplugNativeMain(sourceId){
+    const edge=physicalMainEdge(sourceId);
+    return !!edge&&applyNativeWireTransaction(sourceId,'UNPLUG',[
+      {op:'REMOVE',edgeId:edge.edgeId}]);
+  }
+  function replugNativeMain(sourceId){
+    const graph=acceptedWireGraph();
+    if(!nativeGraphMode(sourceId)||physicalMainEdge(sourceId))return false;
+    return applyNativeWireTransaction(sourceId,'REPLUG',[
+      {op:'CONNECT',from:sourceId,to:graph.mainChannelId,
+       tap:'POST_FADER',gainLinear:1}]);
+  }
+  function routeOnlyNative(sourceId,targetId){
+    const graph=acceptedWireGraph();
+    if(!nativeGraphMode(sourceId)||decimal(targetId)===null||
+       !byId.has(targetId)||targetId===sourceId)return false;
+    const enabled=graph.edges.filter(e=>e.enabled&&e.from===sourceId);
+    const main=enabled.find(e=>e.to===graph.mainChannelId);
+    const target=enabled.find(e=>e.to===targetId);
+    if(target)return targetId===graph.mainChannelId||!main?
+      true:applyNativeWireTransaction(sourceId,'ROUTE_ONLY',[
+        {op:'REMOVE',edgeId:main.edgeId}]);
+    const changes=[];
+    if(main&&targetId!==graph.mainChannelId)
+      changes.push({op:'REMOVE',edgeId:main.edgeId});
+    changes.push({op:'CONNECT',from:sourceId,to:targetId,
+      tap:'POST_FADER',gainLinear:1});
+    return applyNativeWireTransaction(sourceId,'ROUTE_ONLY',changes);
+  }
+  function applyNativeWireTransaction(sourceId,reason,changes){
+    const graph=acceptedWireGraph();
+    if(!graph||decimal(sourceId)===null||sourceId==='0'||
+       !can('APPLY_WIRE_TRANSACTION',sourceId)||
+       !['CONNECT','UNPLUG','REPLUG','ROUTE_ONLY','MATRIX','NAVIGATOR'].includes(reason)||
+       !Array.isArray(changes)||!changes.length||changes.length>64){
+      showFeedback('WIRE UNAVAILABLE · native accepted graph/operation not installed');
+      return false;
+    }
+    const own=graph.edges.filter(e=>e.from===sourceId);
+    for(const change of changes){
+      if(!change||!['CONNECT','REMOVE','RETARGET'].includes(change.op))return false;
+      if(change.op==='CONNECT'){
+        if(change.from!==sourceId||decimal(change.to)===null||
+           change.to===sourceId||!byId.has(change.to)||
+           change.tap!=='POST_FADER'||!Number.isFinite(change.gainLinear)||
+           change.gainLinear<0)return false;
+      }else{
+        if(decimal(change.edgeId)===null||
+           !own.some(e=>e.edgeId===change.edgeId))return false;
+        if(change.op==='RETARGET'&&(decimal(change.to)===null||
+           !byId.has(change.to)||change.to===sourceId))return false;
+      }
+    }
+    // Reuse the SAME v8 requestId/epoch/revisions, existing pending locks,
+    // native ACK and accepted same-revision snapshot fencing.
+    return sendIntent('APPLY_WIRE_TRANSACTION',sourceId,{reason,changes});
   }
   function receiveAck(data){
     const a=data?.ack||data;
@@ -8020,6 +8133,49 @@ scheduleDemoMeter();
          !roles.includes(ch.role)||!['MONO','STEREO'].includes(ch.processingFormat)||
          typeof ch.name!=='string'||!Array.isArray(ch.inserts)||!Array.isArray(ch.sends))return false;
       ids.add(ch.id);
+    }
+    // The optional WIRE graph is authoritative only when the installed
+    // native callback explicitly advertises its additive v8 operation.
+    if(c.supportedOps.includes('APPLY_WIRE_TRANSACTION')){
+      if(!Array.isArray(g.edges)||decimal(g.mainChannelId)===null||
+         !ids.has(g.mainChannelId)||
+         !g.channels.some(ch=>ch.id===g.mainChannelId&&ch.role==='MAIN'))
+        return false;
+      const wireIds=new Set(),pairs=new Set();
+      for(const edge of g.edges){
+        if(!edge||decimal(edge.edgeId)===null||edge.edgeId==='0'||
+           decimal(edge.from)===null||decimal(edge.to)===null||
+           !ids.has(edge.from)||!ids.has(edge.to)||edge.from===g.mainChannelId||
+           edge.from===edge.to||wireIds.has(edge.edgeId)||
+           !['POST_FADER','PRE_FADER','PRE_FX'].includes(edge.tap)||
+           !Number.isFinite(edge.gainLinear)||edge.gainLinear<0||
+           typeof edge.enabled!=='boolean'||edge.signalKind!=='AUDIO')
+          return false;
+        if(edge.to===g.mainChannelId&&edge.enabled&&
+           (edge.tap!=='POST_FADER'||edge.gainLinear!==1))return false;
+        const pair=edge.from+':'+edge.to;
+        // The MVP forbids duplicate *enabled* audible pairs, but a native
+        // accepted inventory may retain a disabled edge for later recall.
+        if(edge.enabled&&pairs.has(pair))return false;
+        if(edge.enabled)pairs.add(pair);
+        wireIds.add(edge.edgeId);
+      }
+      // A malformed accepted graph must not paint ghost routes. This is a
+      // readback validation only, never a second browser-owned audio graph.
+      const adjacency=new Map();
+      for(const edge of g.edges)if(edge.enabled){
+        if(!adjacency.has(edge.from))adjacency.set(edge.from,[]);
+        adjacency.get(edge.from).push(edge.to);
+      }
+      const state=new Map();
+      function visit(id){
+        if(state.get(id)===1)return false;
+        if(state.get(id)===2)return true;
+        state.set(id,1);
+        for(const to of adjacency.get(id)||[])if(!visit(to))return false;
+        state.set(id,2);return true;
+      }
+      for(const id of ids)if(!visit(id))return false;
     }
     for(const ch of g.channels){
       if(ch.primaryOutId!==undefined&&ch.primaryOutId!==null){
@@ -8114,15 +8270,23 @@ scheduleDemoMeter();
     const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
-      ':'+s.graph.capabilities.supportedOps.join('|');
+      ':'+s.graph.capabilities.supportedOps.join('|')+
+      // A newly accepted topology changes SEND/OUT controls once. Telemetry
+      // frames with the same edge inventory never re-mount fader/meter DOM.
+      (s.graph.capabilities.supportedOps.includes('APPLY_WIRE_TRANSACTION')?
+        ':'+s.graph.edges.filter(e=>e.enabled).map(e=>
+          e.edgeId+':'+e.from+':'+e.to).join('|'):'');
     // Full snapshots remain authoritative; a telemetry-only message must
     // still pass the same epoch/graph/roster validation and ACK fences.
     const controlProjection=JSON.stringify([
-      s.graph.channels,s.graph.destinations,s.graph.capabilities,s.catalog||null]);
+      s.graph.channels,s.graph.destinations,s.graph.capabilities,
+      s.graph.mainChannelId||null,s.graph.edges||null,s.catalog||null]);
     const headerProjection=JSON.stringify([
       s.device.backend,s.device.sampleRate,s.device.bufferFrames,
       s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
     accepted=s;acceptedNative=!!fromNative;
+    if(s.graph.capabilities.supportedOps.includes('APPLY_WIRE_TRANSACTION'))
+      modeSend=''; // No native WIRE gain-plane operation is installed yet.
     snapshotSerial++;
     byId.clear();
     for(const c of s.graph.channels)byId.set(c.id,c);
@@ -8197,6 +8361,11 @@ scheduleDemoMeter();
     return select;
   }
   function legalOutputs(ch){
+    // In WIRE mode any non-terminal universal channel is a legal destination.
+    // Native Guardian ultimately decides whether the candidate is admissible.
+    if(nativeGraphMode(ch.id))return accepted.graph.channels
+      .filter(dst=>dst.id!==ch.id&&dst.role!=='MONITOR')
+      .map(dst=>({id:dst.id,name:dst.name}));
     const destinations=(accepted.graph.destinations||[]).filter(dst=>{
       const target=byId.get(dst.id);
       return target&&target.id!==ch.id&&['MAIN','GROUP'].includes(target.role)&&
@@ -8245,8 +8414,11 @@ scheduleDemoMeter();
   function sendSection(ch){
     const section=h('div','arV6Sends');
     section.append(h('span','arV6SectionTitle','SEND · NATIVE'));
-    const sends=Array.isArray(ch.sends)?ch.sends:[];
-    const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    const sends=projectedChannelSends(ch);
+    const targets=nativeGraphMode(ch.id)?accepted.graph.channels
+      .filter(dst=>dst.id!==ch.id&&dst.role!=='MAIN'&&dst.role!=='MONITOR')
+      .map(dst=>({id:dst.id,name:dst.name})):
+      (accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     // A silent dark knob has no keyboard/pointer action, cannot invent a route.
     if(!sends.length){
       const zero=h('div','arV6Send arV6SendEmpty');
@@ -8259,6 +8431,7 @@ scheduleDemoMeter();
       line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
       const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
         'data-id':ch.id,'data-send':clean(send.id)});
+      toggle.dataset.wireNative=String(!!send.wireNative);
       line.append(toggle);
       const gain=h('label','arV6SendGain');
       const db=typeof send.levelDb==='number'?send.levelDb:NaN;
@@ -8276,8 +8449,9 @@ scheduleDemoMeter();
       slider.dataset.op='SET_SEND_LEVEL';slider.dataset.id=ch.id;
       slider.dataset.send=clean(send.id);
       slider.dataset.hasAcceptedLevel=String(verified);
+      slider.dataset.wireNative=String(!!send.wireNative);
       slider.setAttribute('aria-label',(ch.name||ch.id)+' '+(send.name||send.targetId)+' native SEND gain dB');
-      slider.disabled=!can('SET_SEND_LEVEL',ch.id)||!verified;
+      slider.disabled=!!send.wireNative||!can('SET_SEND_LEVEL',ch.id)||!verified;
       knob.append(slider);
       const out=h('output','arV6SendDb',verified?db.toFixed(1)+' dB':'—');
       gain.append(knob,out);
@@ -8320,7 +8494,7 @@ scheduleDemoMeter();
     else routeSection.append(h('div','arV6Field arV6FixedField','IN   ·   '+role));
     const outs=legalOutputs(ch);
     routeSection.append(selectField('OUT','SET_PRIMARY_OUT',ch.id,outs,
-      ch.primaryOutId||ch.primaryOut?.id||ch.primaryOut||'','NO VERIFIED OUT'));
+      nativeRouteSelection(ch),'NO VERIFIED OUT'));
     const formats=['MONO','STEREO'].map(s=>({id:s,name:s}));
     routeSection.append(selectField('M/ST','SET_PROCESSING_FORMAT',ch.id,formats,
       ch.processingFormat||'','NATIVE FORMAT'));
@@ -8475,7 +8649,8 @@ scheduleDemoMeter();
     const destinations=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     options(sendMode,destinations,modeSend,'MAIN FADERS');
     const cap=accepted.graph.capabilities||{};
-    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
+    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders||
+      supported('APPLY_WIRE_TRANSACTION');
     add.disabled=!can('CREATE_CHANNEL');
     refreshDisabled();syncFaderMode();refreshMeters();applyPresentation();
   }
@@ -8484,6 +8659,7 @@ scheduleDemoMeter();
     for(const node of root.querySelectorAll('[data-op]')){
       const op=node.dataset.op,id=node.dataset.id||null;
       node.disabled=!can(op,id)||
+        (node.dataset.wireNative==='true')||
         (op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true')||
         ((op==='SET_TRIM'||op==='SET_CUE')&&node.dataset.acceptedKnown!=='true');
     }
@@ -8496,11 +8672,12 @@ scheduleDemoMeter();
         (option.value==='FX_RETURN'&&!caps.fxReturns)||
         (option.value==='MONITOR'&&!caps.monitor);
     }
-    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders;
+    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders||
+      supported('APPLY_WIRE_TRANSACTION');
     for(const n of root.querySelectorAll('.arV6Fader')){
       if(modeSend){
         const ch=byId.get(n.dataset.id);
-        const hasSend=(ch?.sends||[]).some(s=>s.targetId===modeSend);
+        const hasSend=ch&&projectedChannelSends(ch).some(s=>s.targetId===modeSend);
         n.disabled=!hasSend||!can('SET_SEND_LEVEL',n.dataset.id);
       }
     }
@@ -8541,7 +8718,7 @@ scheduleDemoMeter();
       };
       choose('SET_SOURCE',ch.source?.portId||ch.source?.id||'');
       choose('SET_PROCESSING_FORMAT',ch.processingFormat||'');
-      choose('SET_PRIMARY_OUT',ch.primaryOutId||ch.primaryOut?.id||(typeof ch.primaryOut==='string'?ch.primaryOut:''));
+      choose('SET_PRIMARY_OUT',nativeRouteSelection(ch));
       choose('ADD_SEND','');
       const pan=strip.querySelector('[data-op="SET_PAN"]');
       if(pan){
@@ -8575,7 +8752,7 @@ scheduleDemoMeter();
         }
       }
       for(const node of strip.querySelectorAll('.arV6Send')){
-        const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
+        const send=projectedChannelSends(ch).find(x=>String(x.id)===node.dataset.sendId);
         const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
         if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
         const gain=node.querySelector('.arV6SendLevel');
@@ -8602,7 +8779,8 @@ scheduleDemoMeter();
   function syncFaderMode(){
     for(const range of root.querySelectorAll('.arV6Fader')){
       const ch=byId.get(range.dataset.id);
-      const send=modeSend?(ch?.sends||[]).find(s=>s.targetId===modeSend):null;
+      const send=modeSend&&ch?projectedChannelSends(ch)
+        .find(s=>s.targetId===modeSend):null;
       const db=Number(modeSend?send?.levelDb:ch?.controls?.faderDb);
       range.value=String(Number.isFinite(db)?clamp(db,-60,12):0);
       const text=range.parentElement?.querySelector('.arV6Readout');
@@ -8868,11 +9046,20 @@ scheduleDemoMeter();
       const endpoint=(accepted.device.inputEndpoints||[]).find(e=>e.id===n.value&&e.available!==false&&e.active!==false);
       if(endpoint)sendIntent(op,id,{portId:endpoint.id});
     }else if(op==='SET_PRIMARY_OUT'&&n.value){
-      if(legalOutputs(ch).some(p=>p.id===n.value))
-        sendIntent(op,id,{destinationId:n.value});
+      if(legalOutputs(ch).some(p=>p.id===n.value)){
+        if(nativeGraphMode(id))routeOnlyNative(id,n.value);
+        else sendIntent(op,id,{destinationId:n.value});
+      }
     }
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
-    else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    else if(op==='ADD_SEND'&&n.value){
+      if(nativeGraphMode(id)){
+        const graph=acceptedWireGraph();
+        if(!graph.edges.some(e=>e.enabled&&e.from===id&&e.to===n.value))
+          applyNativeWireTransaction(id,'CONNECT',[{op:'CONNECT',from:id,to:n.value,
+            tap:'POST_FADER',gainLinear:1}]);
+      }else sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    }
     else if(op==='SET_PAN'){
       const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
       sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
@@ -8914,6 +9101,16 @@ scheduleDemoMeter();
   if(!native){
     window.addEventListener('arMixV6Fixture',e=>receiveSnapshot(e.detail?.snapshot||e.detail,false));
   }
+  // GUI #271 physical plugs/Matrix use this capability-gated native
+  // adapter; it has no independent graph, timer, audio route or mock PCM.
+  window.__arMixNativeWire=Object.freeze({
+    readAccepted:acceptedWireGraph,
+    focusedMainEdge:physicalMainEdge,
+    unplugFocusedMain:unplugNativeMain,
+    replugFocusedMain:replugNativeMain,
+    routeOnly:routeOnlyNative,
+    applyTransaction:applyNativeWireTransaction
+  });
   window.__arMixV6ReadOnly=()=>({
     nativePublisher:acceptedNative,revision:accepted?.graph?.revision??null,
     epoch:accepted?.device?.epoch??null,visibleChannelIds:[...byId.keys()],
