@@ -381,19 +381,22 @@ async def main():
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
         assert "PENDING" in await page.locator(".arV6Message").inner_text()
 
-        # Incomplete native ACK cannot unlock controls or change accepted SOURCE.
+        # Malformed native ACK must cancel pending safely, release the lock,
+        # and preserve the previously accepted SOURCE (no optimistic mutation).
         await page.evaluate("""(requestId) => window.__v6Test.publish(
           'arMixConsoleAck',{requestId,status:'ACCEPTED',newRevision:999})""",
           sent["requestId"])
         assert "INVALID NATIVE ACK" in await page.locator(".arV6Message").inner_text()
-        assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').is_disabled()
+        assert not await page.locator('[data-op="SET_SOURCE"][data-id="7"]').is_disabled()
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
+        assert await page.evaluate("()=>window.__arMixV6ReadOnly().pendingCount")==0
 
+        # A late duplicate/rejection for the cancelled request is ignored.
         # Failed intent leaves accepted route untouched, with no invented LIVE.
         await page.evaluate("""(requestId) => window.__v6Test.publish(
           'arMixConsoleAck',{requestId,status:'REJECTED',
           deviceEpoch:'7',graphRevision:'3',rosterRevision:'3',errorCode:'STALE_EPOCH'})""", sent["requestId"])
-        assert "REJECTED" in await page.locator(".arV6Message").inner_text()
+        assert "INVALID NATIVE ACK" in await page.locator(".arV6Message").inner_text()
         assert await page.locator('[data-op="SET_SOURCE"][data-id="2"]').input_value() == "in:1"
         assert await page.locator('[data-op="SET_SOURCE"][data-id="7"]').input_value() == ""
 
