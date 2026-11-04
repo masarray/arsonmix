@@ -678,9 +678,12 @@
     const ch=id?byId.get(id):null;
     // A native WIRE-capable ordinary channel cannot write a second legacy
     // SET_PRIMARY_OUT state; the OUT control uses the same WIRE intent path.
+    const wireInstalled=supported('APPLY_WIRE_TRANSACTION');
+    if(wireInstalled&&['SET_SEND_LEVEL','SET_SEND_TAP'].includes(op))return false;
     const wireOut=op==='SET_PRIMARY_OUT'&&ch&&
-      !['MAIN','MONITOR'].includes(ch.role)&&supported('APPLY_WIRE_TRANSACTION');
-    const effective=wireOut?'APPLY_WIRE_TRANSACTION':op;
+      !['MAIN','MONITOR'].includes(ch.role)&&wireInstalled;
+    const effective=wireInstalled&&(wireOut||op==='ADD_SEND')?
+      'APPLY_WIRE_TRANSACTION':op;
     if(!supported(effective))return false;
     if(op==='CREATE_CHANNEL')return !!accepted.graph.capabilities.dynamicChannels && !pendingTargets.has('@roster');
     if(op==='ADD_INSERT'&&!accepted?.catalog?.plugins?.length)return false;
@@ -734,6 +737,20 @@
     const ch=byId.get(id);
     return !!ch&&!['MAIN','MONITOR'].includes(ch.role)&&
       acceptedWireGraph()!==null;
+  }
+  function projectedChannelSends(ch){
+    const graph=acceptedWireGraph();
+    if(!graph)return Array.isArray(ch.sends)?ch.sends:[];
+    // A displayed SEND is only a read-only projection of an accepted AUDIO
+    // edge. The legacy ch.sends array cannot invent a second signal path.
+    return graph.edges.filter(e=>e.enabled&&e.from===ch.id&&
+      e.to!==graph.mainChannelId).map(e=>{
+      const target=byId.get(e.to),linear=e.gainLinear;
+      return {id:e.edgeId,targetId:e.to,name:target?.name||e.to,
+        tap:e.tap==='POST_FADER'?'POST':'PRE',
+        levelDb:linear>0?Math.max(-60,Math.min(12,20*Math.log10(linear))):-60,
+        wireNative:true};
+    });
   }
   function physicalMainEdge(sourceId){
     const graph=acceptedWireGraph();
@@ -1024,7 +1041,12 @@
     const structure=s.device.epoch+':'+s.graph.rosterRevision+':'+
       s.graph.channels.map(c=>[c.id,c.role,c.processingFormat,c.primaryOutId,
         (c.inserts||[]).map(f=>f.id).join(','),(c.sends||[]).map(x=>x.id).join(',')].join(':')).join('|')+
-      ':'+s.graph.capabilities.supportedOps.join('|');
+      ':'+s.graph.capabilities.supportedOps.join('|')+
+      // A newly accepted topology changes SEND/OUT controls once. Telemetry
+      // frames with the same edge inventory never re-mount fader/meter DOM.
+      (s.graph.capabilities.supportedOps.includes('APPLY_WIRE_TRANSACTION')?
+        ':'+s.graph.edges.filter(e=>e.enabled).map(e=>
+          e.edgeId+':'+e.from+':'+e.to).join('|'):'');
     // Full snapshots remain authoritative; a telemetry-only message must
     // still pass the same epoch/graph/roster validation and ACK fences.
     const controlProjection=JSON.stringify([
@@ -1034,6 +1056,8 @@
       s.device.backend,s.device.sampleRate,s.device.bufferFrames,
       s.device.outputArmed,s.device.epoch,s.graph.revision,s.productionCallbackLive,!!fromNative]);
     accepted=s;acceptedNative=!!fromNative;
+    if(s.graph.capabilities.supportedOps.includes('APPLY_WIRE_TRANSACTION'))
+      modeSend=''; // No native WIRE gain-plane operation is installed yet.
     snapshotSerial++;
     byId.clear();
     for(const c of s.graph.channels)byId.set(c.id,c);
@@ -1161,8 +1185,11 @@
   function sendSection(ch){
     const section=h('div','arV6Sends');
     section.append(h('span','arV6SectionTitle','SEND · NATIVE'));
-    const sends=Array.isArray(ch.sends)?ch.sends:[];
-    const targets=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
+    const sends=projectedChannelSends(ch);
+    const targets=nativeGraphMode(ch.id)?accepted.graph.channels
+      .filter(dst=>dst.id!==ch.id&&dst.role!=='MAIN'&&dst.role!=='MONITOR')
+      .map(dst=>({id:dst.id,name:dst.name})):
+      (accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     // A silent dark knob has no keyboard/pointer action, cannot invent a route.
     if(!sends.length){
       const zero=h('div','arV6Send arV6SendEmpty');
@@ -1175,6 +1202,7 @@
       line.append(h('span','arV6SendName',clean(send.name||send.targetId)));
       const toggle=button(send.tap==='PRE'?'PRE':'POST',{'data-op':'SET_SEND_TAP',
         'data-id':ch.id,'data-send':clean(send.id)});
+      toggle.dataset.wireNative=String(!!send.wireNative);
       line.append(toggle);
       const gain=h('label','arV6SendGain');
       const db=typeof send.levelDb==='number'?send.levelDb:NaN;
@@ -1192,8 +1220,9 @@
       slider.dataset.op='SET_SEND_LEVEL';slider.dataset.id=ch.id;
       slider.dataset.send=clean(send.id);
       slider.dataset.hasAcceptedLevel=String(verified);
+      slider.dataset.wireNative=String(!!send.wireNative);
       slider.setAttribute('aria-label',(ch.name||ch.id)+' '+(send.name||send.targetId)+' native SEND gain dB');
-      slider.disabled=!can('SET_SEND_LEVEL',ch.id)||!verified;
+      slider.disabled=!!send.wireNative||!can('SET_SEND_LEVEL',ch.id)||!verified;
       knob.append(slider);
       const out=h('output','arV6SendDb',verified?db.toFixed(1)+' dB':'—');
       gain.append(knob,out);
@@ -1391,7 +1420,8 @@
     const destinations=(accepted.graph.destinations||[]).filter(x=>x.acceptsSend===true);
     options(sendMode,destinations,modeSend,'MAIN FADERS');
     const cap=accepted.graph.capabilities||{};
-    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders;
+    sendMode.disabled=!acceptedNative||!cap.sendsOnFaders||
+      supported('APPLY_WIRE_TRANSACTION');
     add.disabled=!can('CREATE_CHANNEL');
     refreshDisabled();syncFaderMode();refreshMeters();applyPresentation();
   }
@@ -1400,6 +1430,7 @@
     for(const node of root.querySelectorAll('[data-op]')){
       const op=node.dataset.op,id=node.dataset.id||null;
       node.disabled=!can(op,id)||
+        (node.dataset.wireNative==='true')||
         (op==='SET_SEND_LEVEL'&&node.dataset.hasAcceptedLevel!=='true')||
         ((op==='SET_TRIM'||op==='SET_CUE')&&node.dataset.acceptedKnown!=='true');
     }
@@ -1412,11 +1443,12 @@
         (option.value==='FX_RETURN'&&!caps.fxReturns)||
         (option.value==='MONITOR'&&!caps.monitor);
     }
-    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders;
+    sendMode.disabled=!acceptedNative||!caps.sendsOnFaders||
+      supported('APPLY_WIRE_TRANSACTION');
     for(const n of root.querySelectorAll('.arV6Fader')){
       if(modeSend){
         const ch=byId.get(n.dataset.id);
-        const hasSend=(ch?.sends||[]).some(s=>s.targetId===modeSend);
+        const hasSend=ch&&projectedChannelSends(ch).some(s=>s.targetId===modeSend);
         n.disabled=!hasSend||!can('SET_SEND_LEVEL',n.dataset.id);
       }
     }
@@ -1491,7 +1523,7 @@
         }
       }
       for(const node of strip.querySelectorAll('.arV6Send')){
-        const send=(ch.sends||[]).find(x=>String(x.id)===node.dataset.sendId);
+        const send=projectedChannelSends(ch).find(x=>String(x.id)===node.dataset.sendId);
         const tap=node.querySelector('[data-op="SET_SEND_TAP"]');
         if(send&&tap)tap.textContent=send.tap==='PRE'?'PRE':'POST';
         const gain=node.querySelector('.arV6SendLevel');
@@ -1518,7 +1550,8 @@
   function syncFaderMode(){
     for(const range of root.querySelectorAll('.arV6Fader')){
       const ch=byId.get(range.dataset.id);
-      const send=modeSend?(ch?.sends||[]).find(s=>s.targetId===modeSend):null;
+      const send=modeSend&&ch?projectedChannelSends(ch)
+        .find(s=>s.targetId===modeSend):null;
       const db=Number(modeSend?send?.levelDb:ch?.controls?.faderDb);
       range.value=String(Number.isFinite(db)?clamp(db,-60,12):0);
       const text=range.parentElement?.querySelector('.arV6Readout');
@@ -1790,7 +1823,14 @@
       }
     }
     else if(op==='SET_PROCESSING_FORMAT')sendIntent(op,id,{format:n.value});
-    else if(op==='ADD_SEND'&&n.value)sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    else if(op==='ADD_SEND'&&n.value){
+      if(nativeGraphMode(id)){
+        const graph=acceptedWireGraph();
+        if(!graph.edges.some(e=>e.enabled&&e.from===id&&e.to===n.value))
+          applyNativeWireTransaction(id,'CONNECT',[{op:'CONNECT',from:id,to:n.value,
+            tap:'POST_FADER',gainLinear:1}]);
+      }else sendIntent(op,id,{targetId:n.value,tap:'POST',levelDb:0});
+    }
     else if(op==='SET_PAN'){
       const value=Number(n.value),snapped=Math.abs(value)<=4?0:value;
       sendIntent(op,id,{value:snapped}); // ACK/snapshot, no optimistic PAN.
