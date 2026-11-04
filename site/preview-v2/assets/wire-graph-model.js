@@ -19,7 +19,7 @@
    ids.add(ch.id);
   }
   const indegree=new Map([...ids].map(id=>[id,0])),adj=new Map([...ids].map(id=>[id,[]]));
-  const edgeIds=new Set();
+  const edgeIds=new Set(),primarySources=new Set(),splitTargets=new Set();
   for(const e of edges){
    if(!validId(e.id)||edgeIds.has(e.id)||!ids.has(e.sourceId)||!ids.has(e.destId)||
       e.sourceId===mainId||e.sourceId===e.destId||
@@ -34,6 +34,16 @@
     return {ok:false,error:'INVALID_MAIN_TAP'};
    if(e.kind==='primary'&&e.destId!==mainId&&e.mode!=='routeOnly')
     return {ok:false,error:'INVALID_PRIMARY_TAP'};
+   if(e.kind==='split'&&!['splitPre','splitPost'].includes(e.mode))
+    return {ok:false,error:'INVALID_SPLIT_TAP'};
+   if(e.kind==='primary'){
+    if(primarySources.has(e.sourceId))return {ok:false,error:'MULTIPLE_PRIMARY'};
+    primarySources.add(e.sourceId);
+   }
+   if(e.kind==='split'){
+    if(splitTargets.has(e.destId))return {ok:false,error:'MULTIPLE_INPUT_SPLIT'};
+    splitTargets.add(e.destId);
+   }
    adj.get(e.sourceId).push(e.destId);
    indegree.set(e.destId,indegree.get(e.destId)+1);
   }
@@ -73,9 +83,10 @@
      if(edges.some(e=>e.sourceId===sourceId&&e.destId===op.destId))
       return {ok:false,error:'DUPLICATE_ROUTE'};
      const isMain=op.destId===mainId;
+     const isSplit=op.mode==='splitPre'||op.mode==='splitPost';
      edges.push({id:nextId++,sourceId,destId:op.destId,enabled:true,
-      kind:isMain?'primary':'send',
-      mode:isMain?'postFader':op.mode==='split'?'splitPre':'send',
+      kind:isMain?'primary':isSplit?'split':'send',
+      mode:isMain?'postFader':isSplit?op.mode:'send',
       levelDb:0});
     }
    }else if(op.type==='REMOVE'||op.type==='RETARGET'||op.type==='GAIN'){
@@ -85,6 +96,8 @@
     if(op.type==='REMOVE')edges.splice(index,1);
     if(op.type==='RETARGET'){
      if(!validId(op.destId)||op.destId===sourceId)return {ok:false,error:'INVALID_DESTINATION'};
+     if(prior.kind==='split'&&op.destId===mainId)
+      return {ok:false,error:'INVALID_SPLIT_DESTINATION'};
      if(edges.some(e=>e.id!==prior.id&&e.sourceId===sourceId&&e.destId===op.destId))
       return {ok:false,error:'DUPLICATE_ROUTE'};
      const main=op.destId===mainId;
