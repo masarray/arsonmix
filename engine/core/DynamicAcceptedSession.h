@@ -83,9 +83,30 @@ public:
         if(!result.edit.ok()) {
             result.fault=Fault::editRejected;return result;
         }
+        // WIRE-only publication may remain armed ONLY when every accepted
+        // physical patch and device admission parameter remains unchanged.
+        // Reject stale/changed physical drafts rather than silently rebasing.
+        const bool samePhysical=
+            route.physicalInputs==acceptedRequest_.physicalInputs &&
+            route.maxFrames==acceptedRequest_.maxFrames &&
+            route.maxScratchBytes==acceptedRequest_.maxScratchBytes &&
+            route.mainMonoAfterFx==acceptedRequest_.mainMonoAfterFx &&
+            route.sources.size()==acceptedRequest_.sources.size() &&
+            std::equal(route.sources.begin(),route.sources.end(),
+                acceptedRequest_.sources.begin(),
+                [](const DynamicSourcePatch& a,const DynamicSourcePatch& b) {
+                    return a.id==b.id && a.inputL==b.inputL &&
+                           a.inputR==b.inputR && a.stereo==b.stereo;
+                });
+        if(!allOutputsDisarmed && !samePhysical) {
+            result.fault=Fault::graphRejected;
+            result.native.fault=DynamicNativeSessionPublisher::Fault::outputArmed;
+            result.native.revision=publisher_.acceptedRevision();
+            return result;
+        }
         return publish(std::move(candidate),route,expectedGraphRevision,
                        expectedDeviceEpoch,activeDeviceEpoch,allOutputsDisarmed,
-                       std::move(result),std::move(fx));
+                       std::move(result),std::move(fx),samePhysical);
     }
 
     // Studio Pro: one independent Bus ChannelId and automatic assignment of
@@ -244,7 +265,8 @@ private:
                    std::uint64_t previousGraphRevision,
                    std::uint64_t requestedEpoch,std::uint64_t currentEpoch,
                    bool outputsDisarmed,Result&& result,
-                   DynamicNativeSessionPublisher::FxPlan fx) {
+                   DynamicNativeSessionPublisher::FxPlan fx,
+                   bool verifiedWireOnly=false) {
         // Existing SOURCE targets belong to the accepted native session.
         // For already-patched ChannelIds with the same input format, ignore
         // stale physical pin ordinals supplied by an old GUI draft during
@@ -290,7 +312,7 @@ private:
         const bool nextHasFx=static_cast<bool>(fx.owner);
         result.native=publisher_.commit(candidate,effective,previousGraphRevision,
                                        requestedEpoch,currentEpoch,outputsDisarmed,
-                                       std::move(fx));
+                                       std::move(fx),verifiedWireOnly);
         if(!result.native.ok()) {
             result.fault=Fault::graphRejected;
             result.edit.createdIds.clear(); // NEVER advertise phantom Bus
