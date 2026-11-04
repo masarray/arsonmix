@@ -77,6 +77,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
         run: python tests/pages_wire_v49_direct_controls_smoke.py
+      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
+        run: python tests/pages_fx_rail_v53_smoke.py
       - name: Verify original metallic asset and standalone synchronization
         run: python tests/fader_asset_test.py
       - name: Validate recessed Button 180 + embedded Inter font contract
@@ -208,8 +210,32 @@ jobs:
             cp "$backup/$path" "$path"
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
+      # V27 is a byte-exact historical CSS migration proof; it must run
+      # against its original qualified GUI, never rebaseline a newer FX/rail.
+      - name: Mount pinned V27 GUI and CSS owners for immutable parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=01d84c30c2dd8026b0324045e0f130e84f534f78
+          backup="$RUNNER_TEMP/v53-current-sources"
+          git fetch --no-tags --depth=1 origin "$baseline"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
+            mkdir -p "$backup/$(dirname "$path")"
+            cp "$path" "$backup/$path"
+            git show "$baseline:$path" > "$path"
+          done
       - name: Verify V27 scoped material and 37 owned loser declarations with Chromium parity
         run: python tests/pages_css_architecture_v27_smoke.py
+      - name: Restore and verify exact V53 current sources after historical V27
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup="$RUNNER_TEMP/v53-current-sources"
+          for path in site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css; do
+            test -s "$backup/$path"
+            cp "$backup/$path" "$path"
+          done
+          git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       - name: Verify embedded Inter font and contextual V7 micro-controls
         run: python tests/pages_inter_utility_v7_smoke.py
       - name: Validate exact alpha micro hardware sprite states and WIRE coexistence
@@ -261,6 +287,10 @@ jobs:
           name: arsonmix-gui-baseline-smoke
           path: |
             pages-v51-portrait-meter-1680.png
+            pages-v53-fx-rail-1366.png
+            pages-v53-fx-rail-1378.png
+            pages-v53-fx-rail-1680.png
+            pages-v53-fx-rail-1920.png
             pages-v51-peak-hold-release-1680.png
             native-orbit-ui-review.png
             mixer-g1-g2-1366.png
