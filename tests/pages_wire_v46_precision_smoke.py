@@ -52,7 +52,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
-  assert "assets/mixer-wire-dots.css?v=v55-accepted-wire-paint" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v57-selected-main-dot-impact" in public.read_text("utf-8")
   assert (dist/"preview/assets/mixer-wire-out-align-v48.css").read_bytes()==(ROOT/"site/preview-v2/assets/mixer-wire-out-align-v48.css").read_bytes(), "V48 alignment stylesheet missing from /preview/"
   assert "assets/mixer-wire-out-align-v48.css?v=out-center-v48" in public.read_text("utf-8")
 
