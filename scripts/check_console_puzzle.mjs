@@ -48,7 +48,7 @@ export function inspectMilestoneA(s) {
   const socket=['arMixConsoleSubscribe','arMixConsoleIntent',
     'arMixConsoleSnapshot','arMixConsoleAck'];
   const nativeWire=socket.every(name=>(s.entry||'').includes(name));
-  const guiWire=socket.every(name=>(s.gui||'').includes(name));
+  const guiWire=socket.every(name=>((s.gui||'')+'\n'+(s.protocol||'')).includes(name));
   const oldEmbedded=/juce_add_binary_data\(ARMixAssets\s+SOURCES\s*web\//.test(s.cmake||'') ||
     /web\/console-native\.(?:html|css|js)/.test(s.cmake||'') ||
     /BinaryData::(?:consolenative_html|index_html)/.test(s.entry||'');
