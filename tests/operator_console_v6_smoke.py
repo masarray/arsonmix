@@ -894,7 +894,10 @@ async def main():
                                       if e["edgeId"]!="107"]
         await page.evaluate("(s)=>window.__v6Test.publish('arMixConsoleSnapshot',s)",next_wire)
         accepted_wire=await page.evaluate("()=>window.__arMixNativeWire.readAccepted()")
-        assert len(accepted_wire["edges"])==9
+        assert len(accepted_wire["edges"])==9, (
+            "accepted MAIN unplug snapshot",accepted_wire,
+            "published source length",len(next_wire["graph"]["edges"]),
+            await page.evaluate("()=>window.__arMixV6ReadOnly()"))
         assert not any(e["edgeId"]=="107" for e in accepted_wire["edges"])
         # A malformed graph must be denied without destroying the last accepted
         # edge inventory, fader, device epoch or native source mapping.
