@@ -1263,6 +1263,169 @@ static void verifyNativeConsoleWireRejectsUnsupportedM4AndPreservesEpoch() {
                .toString()==v8Reply.getProperty("graphRevision","").toString());
     assert(afterV8.getProperty("graph",{}).getProperty("rosterRevision","")
                .toString()==v8Reply.getProperty("rosterRevision","").toString());
+    // C2 native integration: public v8 ACK is exercised against the REAL
+    // accepted PCM graph, not the mock authorizing the bridge above.
+    // Direct + nested routes must change sample amplitudes on the SAME
+    // sample index after the focused MAIN cable is actually unplugged.
+    {
+        constexpr std::uint64_t pcmEpoch=9007199254740993ULL;
+        DynamicAcceptedSession pcm;
+        DynamicGraphRequest patch;
+        patch.physicalInputs=1;patch.maxFrames=64;
+        const auto createRow=[](std::size_t position,ChannelRole role,
+                                const char* name,ProcessingFormat width) {
+            ChannelEdit e;e.kind=ChannelEdit::Kind::add;
+            e.position=position;e.role=role;e.text=name;e.format=width;
+            return e;
+        };
+        const std::array<ChannelEdit,3> create{
+            createRow(0,ChannelRole::input,"PCM SOURCE",ProcessingFormat::mono),
+            createRow(1,ChannelRole::input,"PCM VIA",ProcessingFormat::stereo),
+            createRow(2,ChannelRole::main,"PCM MAIN",ProcessingFormat::stereo)
+        };
+        auto admission=pcm.edit(0,0,create,patch,pcmEpoch,pcmEpoch,true);
+        assert(admission.ok()&&admission.edit.createdIds.size()==3);
+        const auto src=admission.edit.createdIds[0];
+        const auto via=admission.edit.createdIds[1];
+        const auto sink=admission.edit.createdIds[2];
+        patch.sources={{src,0,-1,false}};
+        ChannelEdit direct;direct.kind=ChannelEdit::Kind::setPrimaryOutput;
+        direct.id=src;direct.target=sink;
+        ChannelEdit viaOut=direct;viaOut.id=via;
+        const std::array<ChannelEdit,2> mains{direct,viaOut};
+        admission=pcm.edit(1,1,mains,patch,pcmEpoch,pcmEpoch,true);
+        assert(admission.ok()&&pcm.acceptedGraphRevision()==2);
+        WireChange intermediate;intermediate.kind=WireChange::Kind::connect;
+        intermediate.from=src;intermediate.to=via;
+        const std::array<WireChange,1> toVia{intermediate};
+        const auto linked=pcm.wireTransaction(
+            2,2,toVia,patch,pcmEpoch,pcmEpoch,false);
+        assert(linked.ok()&&pcm.acceptedGraphRevision()==3);
+        const auto* acceptedPcm=pcm.acceptedRouting(pcmEpoch,3);
+        assert(acceptedPcm&&acceptedPcm->edges.size()==3);
+        std::uint64_t directId=0;
+        for(const auto& edge:acceptedPcm->edges)
+            if(edge.from==src&&edge.to==sink)directId=edge.edgeId;
+        assert(directId!=0);
+        std::array<float,64> impulse{},left{},right{};
+        impulse[11]=.3f;
+        const float* capture[]{impulse.data()};
+        const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+        const auto renderPcm=[&] {
+            return pcm.render(pcmEpoch,capture,1,left.data(),right.data(),
+                              64,false,noFx);
+        };
+        assert(renderPcm());
+        const float parallelValue=left[11];
+        assert(parallelValue>.1f);
+        assert(near(left[10],0.f)&&near(left[12],0.f));
+
+        // The existing Console nativeBus is only a *view*; reproject it
+        // from the actual tested accepted session and its stable IDs.
+        auto admittedBus=live.getProperty("dryRoutingLab",{})
+                             .getProperty("nativeBus",{});
+        auto* busObject=admittedBus.getDynamicObject();
+        assert(busObject);
+        const auto projectNativePcm=[&](std::uint64_t rev) {
+            const auto* accepted=pcm.acceptedRouting(pcmEpoch,rev);
+            assert(accepted);
+            juce::Array<juce::var> rows,edges;
+            for(const auto& row:accepted->channels) {
+                auto view=std::make_unique<juce::DynamicObject>();
+                view->setProperty("id",juce::String(std::to_string(row.id.value)));
+                view->setProperty("role",row.role==ChannelRole::main?"MAIN":"INPUT");
+                rows.add(juce::var(view.release()));
+            }
+            for(const auto& edge:accepted->edges) {
+                auto view=std::make_unique<juce::DynamicObject>();
+                view->setProperty("edgeId",juce::String(std::to_string(edge.edgeId)));
+                view->setProperty("from",juce::String(std::to_string(edge.from.value)));
+                view->setProperty("to",juce::String(std::to_string(edge.to.value)));
+                view->setProperty("tap",edge.preFader?"PRE_FADER":"POST_FADER");
+                view->setProperty("gainLinear",static_cast<double>(edge.gainLinear));
+                view->setProperty("primaryOutput",edge.primaryOutput);
+                edges.add(juce::var(view.release()));
+            }
+            busObject->setProperty("graphRevision",
+                                   juce::String(std::to_string(rev)));
+            busObject->setProperty("rosterRevision",
+                                   juce::String(std::to_string(
+                                       pcm.acceptedRosterRevision())));
+            busObject->setProperty("channels",juce::var(rows));
+            busObject->setProperty("edges",juce::var(edges));
+            return Bridge::snapshot(live);
+        };
+        const auto nativeBefore=projectNativePcm(3);
+        assert(nativeBefore.getProperty("graph",{}).getProperty("edges",{})
+                   .getArray()->size()==3);
+        // Derive from the real session rather than mocking the APPLY result.
+        struct ActualPcmControl final:BusControl {
+            DynamicAcceptedSession& session;
+            DynamicGraphRequest admitted;
+            ActualPcmControl(DynamicAcceptedSession& s,
+                             const DynamicGraphRequest& p)
+                :session(s),admitted(p){}
+            Report applyNativeWireTransaction(std::uint64_t ep,
+                std::uint64_t graphRev,std::uint64_t rosterRev,
+                std::span<const WireChange> edits) {
+                const auto result=session.wireTransaction(
+                    rosterRev,graphRev,edits,admitted,ep,ep,false);
+                return {result.ok(),{},session.acceptedGraphRevision(),
+                        session.acceptedRosterRevision(),
+                        result.ok()?"":"NATIVE_PCM_REJECTED"};
+            }
+        } nativePcmControl(pcm,patch);
+        auto userIntent=std::make_unique<juce::DynamicObject>();
+        userIntent->setProperty("requestId","v8:pcm:unplug:1");
+        userIntent->setProperty("deviceEpoch",juce::String(std::to_string(pcmEpoch)));
+        userIntent->setProperty("baseGraphRevision","3");
+        userIntent->setProperty("baseRosterRevision","3");
+        userIntent->setProperty("operation","APPLY_WIRE_TRANSACTION");
+        userIntent->setProperty("targetChannelId",
+                                juce::String(std::to_string(src.value)));
+        auto unplug=std::make_unique<juce::DynamicObject>();
+        unplug->setProperty("op","REMOVE");
+        unplug->setProperty("from",juce::String(std::to_string(src.value)));
+        unplug->setProperty("edgeId",juce::String(std::to_string(directId)));
+        juce::Array<juce::var> edits;edits.add(juce::var(unplug.release()));
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("changes",juce::var(edits));
+        userIntent->setProperty("payload",juce::var(payload.release()));
+        const auto change=juce::var(userIntent.release());
+        const auto response=bridge.processNativeBusIntent(
+            change,nativeBefore,nativePcmControl,false,
+            [](const juce::String&,ChannelId,const juce::var&,
+               std::uint64_t,std::uint64_t,std::uint64_t)
+               ->ActualPcmControl::Report {return {};});
+        assert(response.getProperty("status","").toString()=="ACCEPTED");
+        assert(response.getProperty("graphRevision","").toString()=="4");
+        assert(response.getProperty("rosterRevision","").toString()=="4");
+        assert(pcm.acceptedGraphRevision()==4);
+        assert(renderPcm());
+        assert(left[11]>.05f&&left[11]<parallelValue);
+        assert(near(left[10],0.f)&&near(left[12],0.f));
+        const auto nativeAfter=projectNativePcm(4);
+        const auto afterGraph=nativeAfter.getProperty("graph",{});
+        assert(afterGraph.getProperty("revision","").toString()==
+               response.getProperty("graphRevision","").toString());
+        assert(afterGraph.getProperty("rosterRevision","").toString()==
+               response.getProperty("rosterRevision","").toString());
+        assert(afterGraph.getProperty("edges",{}).getArray()->size()==2);
+        assert(nativeBefore.getProperty("graph",{})
+                   .getProperty("revision","").toString()=="3");
+        // Stale intent and exact edge replay must not remove any other MAIN.
+        auto staleChange=juce::JSON::parse(juce::JSON::toString(change,false));
+        staleChange.getDynamicObject()->setProperty("requestId","v8:pcm:stale");
+        const auto staleResponse=bridge.processNativeBusIntent(
+            staleChange,nativeAfter,nativePcmControl,false,
+            [](const juce::String&,ChannelId,const juce::var&,
+               std::uint64_t,std::uint64_t,std::uint64_t)
+               ->ActualPcmControl::Report {return {};});
+        assert(staleResponse.getProperty("status","").toString()=="REJECTED");
+        assert(pcm.acceptedGraphRevision()==4);
+        assert(renderPcm()&&left[11]<parallelValue);
+        pcm.unpublish();pcm.pollRetirement();
+    }
     // Fail-closed device fault: do not advertise a compatibility actuator
     // against a poisoned physical port topology or stale hardware session.
     auto liveRoute=live.getProperty("dryRoutingLab",{});
