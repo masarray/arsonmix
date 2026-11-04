@@ -112,7 +112,7 @@ export function inspectMilestoneA(s) {
 async function cli() {
   const release=process.argv.includes('--release');
   execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs',
-    'tests/milestone_a_source_gate.test.mjs'],{stdio:'inherit'});
+    'tests/milestone_a_native_contract_test.mjs'],{stdio:'inherit'});
   const report=inspectMilestoneA(collectSources());
   const selected=release?[...report.baseline,...report.integration]:report.baseline;
   for(const x of selected)
