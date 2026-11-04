@@ -63,7 +63,7 @@ if 'assets/knob-ICON.svg' in html:
         raise SystemExit('WIRE knob mask copy mismatch in generated Pages preview')
 # Control material has ONE owner shared by /preview-v2/ and the public
 # /preview/mixer.html alias; never leave the alias with stale or missing assets.
-for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-utility-controls.css','inter-embedded.css','mixer-fx-rack.css','mixer-plugin-browser.css','mixer-pan-controls.css','mixer-fader-assembly.css','mixer-meter-display.css','mixer-wire-dots.css','mixer-wire-out-align-v48.css','mixer-console-foundation.css','mixer-channel-grid.css','mixer-hardware-artwork.css','mixer-section-controls.css','mixer-section-layout.css','mixer-v3-layout-contract.css','mixer-chrome-material.css','mixer-contextual-buttons.css','mixer-contextual-buttons.js'):
+for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','wire-graph-model.js','mixer-utility-controls.css','inter-embedded.css','mixer-fx-rack.css','mixer-plugin-browser.css','mixer-pan-controls.css','mixer-fader-assembly.css','mixer-meter-display.css','mixer-wire-dots.css','mixer-wire-out-align-v48.css','mixer-console-foundation.css','mixer-channel-grid.css','mixer-hardware-artwork.css','mixer-section-controls.css','mixer-section-layout.css','mixer-v3-layout-contract.css','mixer-chrome-material.css','mixer-contextual-buttons.css','mixer-contextual-buttons.js'):
     if 'assets/'+control_asset in html:
         src=source.parent/'assets'/control_asset
         if not src.is_file(): raise SystemExit(f'Missing shared mixer key asset: {src}')
