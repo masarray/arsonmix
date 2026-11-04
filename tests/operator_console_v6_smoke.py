@@ -320,7 +320,14 @@ async def main():
         await page.locator('[data-channel-id="9"] .arV6StripHead').click(modifiers=["Shift"])
         assert await page.evaluate("()=>window.__arMixV6ReadOnly().selectedChannelIds")==["7","8","9"]
         assert await page.locator('#arV6Main .arV6Master').get_attribute("aria-selected")=="false"
-        assert await page.locator('.arV6SelectionCount').inner_text()=="3 SEL"
+        displayed_count=await page.locator('.arV6SelectionCount').inner_text()
+        assert displayed_count=="3 SEL", (
+            "selected counter",repr(displayed_count),
+            await page.evaluate("""() => ({
+              text:document.querySelector('.arV6SelectionCount')?.textContent,
+              selected:window.__arMixV6ReadOnly().selectedChannelIds,
+              outer:document.querySelector('.arV6SelectionCount')?.outerHTML.slice(0,400)
+            })"""))
         assert await page.evaluate("""()=>window.__v6Test.sent.filter(
           x=>x.event==='arMixConsoleIntent').length""")==count_start
 
