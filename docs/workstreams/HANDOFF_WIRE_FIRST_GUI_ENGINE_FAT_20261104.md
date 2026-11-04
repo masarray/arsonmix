@@ -1,3 +1,5 @@
+> **FAST TRACK FOR NEW CODING THREADS:** [START_HERE_WIRE_FIRST_20261104.md](START_HERE_WIRE_FIRST_20261104.md) is the concrete four-packet execution sequence, source function shortlist and exact acceptance. Read it first; this longer handoff is background only. Baseline updated 2026-11-04: GUI V52 #360, V53 #367, V54 #368 merged on main; do not repeat their styling or act on outdated 'in flight' statements below.
+
 # EXECUTION HANDOFF — WIRE-FIRST RELEASE / ONE REAL MIXER (2026-11-04)
 
 **READ FIRST, DO WORK.** Product [PRD](../PRD_WIRE_FIRST_LIVE_ROUTING_20261104.md) / Architecture [ARD](../ARD_WIRE_FIRST_ZERO_ADDED_LATENCY_20261104.md) / native [v8 console contract](../../contracts/console-puzzle-v8.json) / root [AGENTS.md](../../AGENTS.md). This packet is a **prioritized execution handoff**, not claim of working engine, tested sound, published screenshot or passed CI. **Do not open another roadmap issue/clone engine; use current owners.**
