@@ -74,6 +74,8 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
   for (const filename of [
     'web/approved-native-bridge.js',
+    'web/approved-native-m2-state.js',
+    'tests/approved_native_m2_contract_test.cjs',
     'scripts/build_approved_native_gui.py',
     'tests/approved_native_gui_bundle_test.py'
   ]) {
