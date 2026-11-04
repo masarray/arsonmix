@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,6 +19,12 @@ struct ConsoleSendView final {
     ChannelId destination{};
     float gain=1.f,pan=0.f;
     bool preFader=false;
+};
+struct ConsoleWireView final {
+    std::uint64_t edgeId=0;
+    ChannelId source{},destination{};
+    float gain=1.f;
+    bool preFader=false,primaryOutput=false;
 };
 struct ConsoleChannelView final {
     ChannelId id{};
@@ -40,6 +47,7 @@ class DynamicConsoleRoutingView final {
 public:
     std::uint64_t rosterRevision=0;
     std::vector<ConsoleChannelView> channels;
+    std::vector<ConsoleWireView> edges; // same accepted graph, not GUI-owned routes
     ChannelId main{},monitor{};
     const ConsoleChannelView* find(ChannelId id) const noexcept {
         const auto it=std::find_if(channels.begin(),channels.end(),
@@ -55,6 +63,7 @@ public:
         const auto& rows=roster.channels();
         next.channels.reserve(rows.size());
         std::unordered_map<std::uint64_t,std::size_t> index;
+        std::unordered_set<std::uint64_t> edgeIds;
         index.reserve(rows.size());
         for(const auto& row:rows) {
             if(!row.id.value || !index.emplace(row.id.value,next.channels.size()).second)
@@ -76,6 +85,10 @@ public:
         for(std::size_t i=0;i<rows.size();++i) {
             auto& sender=next.channels[i];
             for(const auto& link:rows[i].sends) {
+                if(!link.edgeId || !edgeIds.insert(link.edgeId).second)
+                    return false; // an ambiguous physical plug is never LIVE
+                next.edges.push_back({link.edgeId,sender.id,link.destination,
+                                      link.gain,link.preFader,link.primaryOutput});
                 const auto it=index.find(link.destination.value);
                 if(it==index.end())return false;
                 auto& destination=next.channels[it->second];
