@@ -29,8 +29,9 @@
       preview = false; // original Pages animation sees false and stops itself
       demo?.setAttribute("aria-pressed","false");
     }
-    document.documentElement.dataset.armixNativeAuthority = flags.productionCallbackLive ?
-      "accepted" : "not-admitted";
+    document.documentElement.dataset.armixNativeAuthority =
+      flags.productionCallbackLive ? "product-live" :
+      flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const intent = (operation,t,payload) => {
@@ -68,7 +69,8 @@
       t.name=ch.name;t.kind=kind;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
-      t.pan=ch.controls.pan;
+      // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
+      t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
       t.solo=ch.controls.solo;
       t.selected=previous.get(t.id)?.selected || false;
@@ -117,11 +119,40 @@
     syncWireOutputProjection();render();
     return true;
   }
+  // Native telemetry owns the physical meter. When no measured per-channel
+  // samples are published, leave the meter dark; never use Pages sine demo.
+  function paintNativeMeters(next) {
+    if (typeof displayMeterDbfs!=="function")return;
+    const data=next.telemetry?.channelMeterRmsPeak;
+    if (!data || typeof data!=="object")return;
+    const ts=performance.now();
+    for (const ch of next.graph.channels) {
+      const ui=uiByNativeId.get(ch.id);
+      if (ui===undefined)continue;
+      const root=document.querySelector('.strip[data-id="'+ui+'"]');
+      if (!root)continue;
+      const entry=data[ch.id];
+      const one=typeof entry==="number"&&Number.isFinite(entry)&&entry>=0?entry:null;
+      const l=typeof entry?.peakL==="number"&&Number.isFinite(entry.peakL)&&entry.peakL>=0?
+        entry.peakL:one;
+      const right=typeof entry?.peakR==="number"&&Number.isFinite(entry.peakR)&&entry.peakR>=0?
+        entry.peakR:ch.processingFormat==="MONO"?l:null;
+      const paint=(side,peak)=>{
+        const fill=root.querySelector('.meter-fill.'+side);
+        if(!fill)return;
+        const db=peak===null || peak===0?-90:20*Math.log10(peak);
+        displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),ts,ui+':'+(side==="left"?"L":"R"));
+      };
+      paint("left",l);
+      paint("right",right);
+    }
+  }
   function onNativeReadback(next) {
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
+      lastPaintedSignature="";
       stopDemo();
       status("NATIVE G0 · perangkat aktual terbaca; ChannelId PCM/WIRE belum diterima. Edit audio diblokir.");
       return;
@@ -130,15 +161,20 @@
     // Compare the actual accepted controls/edges, never skip native fader updates.
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
-    if (signature===lastPaintedSignature)return;
+    if (signature===lastPaintedSignature) {
+      // Telemetry often advances without a structural graph revision.
+      paintNativeMeters(next);
+      return;
+    }
     if (!projection(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
-    flags.productionCallbackLive=true;flags.acceptedGraphConnected=true;
-    lastPaintedSignature=signature;stopDemo();
-    status("NATIVE ACCEPTED · device "+next.device.epoch+
+    flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
+      " · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
   }
   if (connected) {
@@ -233,7 +269,7 @@
     nativeTransport:connected,
     get acceptedGraphConnected(){return flags.acceptedGraphConnected;},
     get productionCallbackLive(){return flags.productionCallbackLive;},
-    status:fallback,
+    get status(){return lastNativeError||fallback;},
     m2:nativeHooks
   });
   Object.defineProperty(window,"__ARMIX_APPROVED_NATIVE_GUI__",{
