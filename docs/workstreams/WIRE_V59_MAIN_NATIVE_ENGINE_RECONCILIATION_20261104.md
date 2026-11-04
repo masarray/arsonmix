@@ -1,3 +1,5 @@
+> **2026-11-04 SOURCE LOCK:** This file's V59 WIRE semantics remain valid, but all GUI implementation instructions involving old PR #271's independent renderer are superseded. ONLY latest `main/site/preview-v2/**` (https://masarray.github.io/arsonmix/preview-v2/) is allowed as the Windows GUI. GUI-native stitch #389, ENGINE #266/#387, FAT #270. [Current handoff](HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md). Historical source SHA references cannot override latest approved GUI.
+
 # WIRE GUI V59 → Native ENGINE handoff — reconciled main
 
 **2026-11-04 · owner synchronization / integration contract · NOT native-audio release proof**
@@ -42,7 +44,7 @@ Contract alignment required at **native producer #384 and GUI consumer #271** be
 
 - **Packet A (merged GUI reference):** #376 + #383; source, 1366/1680/1920 × density/drag/Undo/Scene/safety tests on main are qualified as **simulation** only.
 - **Packet B (native owner):** #266 + #379, C1 #384 stacked; qualify PCM sample-exact direct and multi-hop fan-in/out, stable EdgeId, transaction rollback, one callback, real VST3 and no RT allocations/locks on exact Windows CTest SHA. **Do not force-merge #266 now**.
-- **Packet C (native GUI #271):** consume the normalized v8 native producer snapshot and same-revision ACK; selected-only visible cables and MAIN custom OUT logic must use accepted `graph.edges[]`; no browser route mutation as authority. Add a **native-produced** successful WIRE snapshot/ACK + stale/REJECTED replay test; never handcraft a purported native fixture.
+- **Packet C (native native GUI #389):** consume the normalized v8 native producer snapshot and same-revision ACK; selected-only visible cables and MAIN custom OUT logic must use accepted `graph.edges[]`; no browser route mutation as authority. Add a **native-produced** successful WIRE snapshot/ACK + stale/REJECTED replay test; never handcraft a purported native fixture.
 - **Packet D (#270):** build one exact joined Windows SHA, test original M4 10CH+4AUX/CH1 editor/VST leases/Show and new WIRE, verify hardware #15. Only then consider `productionCallbackLive=true` and product-ready status.
 
 No new CI workflow or duplicated audio engine is justified by this handoff. Use the existing fast contract test + owner-specific Windows/Chromium jobs, then one joined FAT gate. The next engine/GUI agent should start from **this exact current-main handoff**, not reopen stale GUI draft PRs.
