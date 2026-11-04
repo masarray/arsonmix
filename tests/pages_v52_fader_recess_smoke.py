@@ -30,6 +30,7 @@ def audit_checkpoint():
     assert "#263944" in css
     assert "1px 8px 9px -3px" in css and "0 13px 12px -7px" in css
     assert "linear-gradient(90deg," in css
+    assert "top:10px!important;bottom:10px!important" in css, "Pocket top/bottom must be inset"\n    assert "#247eaa" in css, "Soft cyan tail light must be preserved"
 
 def inspect(page,width,height,density):
     page.locator("#densitySelect").select_option(density)
@@ -59,7 +60,7 @@ def inspect(page,width,height,density):
       });
     }""")
     assert len(vals)==2,(width,density,'missing channel/master')
-    targetBox,targetCap={"comfort":(29,27),"standard":(27,27),"compact":(25,25)}[density]
+    targetBox,targetCap={"comfort":(29,27),"standard":(29,27),"compact":(27,25)}[density]
     for v in vals:
         assert abs(v["boxWidth"]-targetBox)<.75,(width,density,"pocket width",v)
         assert abs(v["capWidth"]-targetCap)<.75,(width,density,"PNG cap width",v)
