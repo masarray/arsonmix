@@ -200,6 +200,44 @@ export function requiresUiSmoke(paths) {
     ].includes(path));
 }
 
+
+// Native qualification is intentionally narrower than "integration/**":
+// C++ headers/translation units require a real MSVC+JUCE build, whereas
+// isolated policy/docs/JS can finish without a paid Windows runner.
+// This is the single PR file-scope authority for the reusable native job.
+export function requiresNativeQualification(paths) {
+  return paths.some(path =>
+    path === 'CMakeLists.txt' ||
+    path.startsWith('src/') ||
+    path.startsWith('engine/') ||
+    path.startsWith('integration/console-v6/') ||
+    /^integration\/.*\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx)$/i.test(path) ||
+    path === '.github/workflows/p1-windows.yml' ||
+    ['web/approved-native-bridge.js', 'web/approved-native-contract.js',
+      'web/bridge.js', 'web/monitor.js',
+      'tests/approved_native_m2_contract.test.cjs',
+      'tests/approved_native_gui_bundle_test.py',
+      'scripts/build_approved_native_gui.py',
+      'scripts/package_native_windows.ps1',
+      'scripts/verify_native_windows_artifact.ps1',
+      'scripts/collect_hardware_fat_windows.ps1',
+      'scripts/console_v6_fat_gate.mjs',
+      'scripts/verify_console_s0_native_fixture.mjs',
+      'scripts/run_console_native_s0.mjs',
+      'scripts/check_console_puzzle.mjs',
+      'scripts/check_approved_native_gui_release.mjs',
+      'scripts/check_pr278_console_authority.mjs',
+      'scripts/factoryfx_release_bundle.py',
+      'scripts/m3e_fat_evidence_gate.mjs',
+      'config/factoryfx-approved-releases.json',
+      'tests/live_graph_contract_test.mjs'].includes(path) ||
+    path.startsWith('config/factoryfx-notices/') ||
+    /^tests\/[^/]+\.cpp$/i.test(path) ||
+    /^tests\/[^/]*native[^/]*contract[^/]*\.mjs$/i.test(path) ||
+    /^tests\/(?:m3e_fat_evidence_gate|console_v6_fat_gate)\.test\.mjs$/.test(path) ||
+    path === 'scripts/tests/test_factoryfx_release_bundle.py');
+}
+
 export async function auditGitHub({repo,number,token}) {
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo))
     throw Error('Invalid repository selector');
@@ -223,7 +261,9 @@ export async function auditGitHub({repo,number,token}) {
   }
   const result = audit({pr,files:files.map(f=>f.filename),others,filesByPR,
     fileStatuses:Object.fromEntries(files.map(f=>[f.filename,f.status]))});
-  return {...result, runUi: requiresUiSmoke(files.map(f=>f.filename))};
+  const changedPaths = files.map(f=>f.filename);
+  return {...result, runUi: requiresUiSmoke(changedPaths),
+    runNative: requiresNativeQualification(changedPaths)};
 }
 async function main() {
   const args=process.argv.slice(2);
@@ -238,8 +278,11 @@ async function main() {
     number,token:process.env.GH_TOKEN || ''
   });
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, 'run_ui='+(result.runUi?'true':'false')+'\n');
+    appendFileSync(process.env.GITHUB_OUTPUT, 'run_ui='+(result.runUi?'true':'false')+'\n'+
+      'run_native='+(result.runNative?'true':'false')+'\n');
   }
+  console.log('Qualification scope: ui='+(result.runUi?'yes':'no')+
+    ' native='+(result.runNative?'yes':'no'));
   console.log('ArSonMix coordination: lane='+(result.lane||'UNDECLARED')+
     ' files='+result.changedFiles+' legacy='+result.legacy+
     ' authorized='+result.ok+' collision(s)='+result.activeCollisions);
