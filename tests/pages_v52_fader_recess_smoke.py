@@ -118,10 +118,10 @@ def main():
                 inspect(page,width,height,density)
             page.locator("#densitySelect").select_option("comfort")
             pointer_drag(page)
-            if width==1680:
-                page.screenshot(path="pages-v52-fader-well-console-1680.png")
+            if width in (1366,1680):
+                page.screenshot(path=f"pages-v56-fader-console-{width}.png")
                 page.locator('#tracks .strip[data-id="1"] .fader-workspace').screenshot(
-                    path="pages-v52-fader-well-detail-1680.png")
+                    path=f"pages-v56-fader-detail-{width}.png")
             assert not errors,(width,height,errors)
             page.close()
         browser.close()
