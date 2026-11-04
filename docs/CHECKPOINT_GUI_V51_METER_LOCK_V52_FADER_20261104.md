@@ -6,7 +6,8 @@ Approved by owner in the ArSonMix design-review chat, 2026-11-04: **"OKE METERS 
 
 - Main checkpoint commit: `885e7e8175c0f0cab288760d3cd60c0e77e04812` (merged GUI V51)
 - Pinned Git ref: `checkpoint/gui-v51-meter-approved-20261104`
-- Frozen metering component: `site/preview-v2/assets/mixer-meter-display.css` Git blob `cea7a411afea90b26557f317ba93c563dd35379c`
+- Original approved V51 meter CSS Git blob: `cea7a411afea90b26557f317ba93c563dd35379c` (historical checkpoint).
+- **Current frozen V27 meter CSS owner blob**: `e168fe3fde3b176ce46f2c637a17db65bc510944`. V27 is a source-only ownership/cascade cleanup, and its pixel/geometry behavior is checked against the prior approved UI. V52 must match this exact current blob, not the retired source hash.
 - Frozen V51 JS: existing stepped dBFS quantization, independent L/R per-channel peak hold, release, clip latch and demo preview adapter in `site/preview-v2/index.html`. **Do not revise** in this milestone.
 - `tests/pages_v51_portrait_led_peak_hold_smoke.py` is mandatory for future GUI work.
 - Preserve approved 70px meter housing, 10px lane, 6x12px portrait optical LED / 14px pitch, gradient and position-color-matched peak hold.
