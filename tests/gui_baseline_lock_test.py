@@ -13,7 +13,10 @@ lock=(root/'docs/GUI_BASELINE_LOCK_2026-10-25.md').read_text(encoding='utf8')
 assert '343692fc9b702661a8455cca30f0ffd108907324' in lock
 assert 'checkpoint/gui-v0.8-approved-20261025' in lock
 assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in readme
-assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in agents
+# Current binding owner instruction supersedes old visual re-creation targets.
+assert 'site/preview-v2/index.html' in agents
+assert 'ONE GUI, ONE NATIVE AUDIO ENGINE' in agents
+assert '../preview-buttons/index.html' in (root/'site/preview/index.html').read_text(encoding='utf8')
 assert "ref: fix/fader-thumb-symmetry-polish" not in page
 assert "branches: [main]" in page and "head_sha" in page
 assert "branches: [main]" in ui and "pull_request:" in ui
