@@ -22,7 +22,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             approved = (source / "index.html").read_text("utf-8")
             native = (out / "index.html").read_text("utf-8")
             self.assertEqual(native.replace(bundle.ADAPTER_MARKER + "\n", ""), approved)
-            self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256(approved.encode("utf-8")))
+            self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)
             self.assertIn("arMixGuiReady", (out / "assets/approved-native-bridge.js").read_text("utf-8"))
