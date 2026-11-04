@@ -229,6 +229,81 @@ int main() {
         assert(block.channelCount()==2); // previous prepared PCM untouched
     }
 
+    // WIRE B2: one atomic native graph publication, stable edge identity,
+    // direct/indirect same-block PCM, invalid-cycle and stale rollback.
+    {
+        DynamicAcceptedSession wire;
+        constexpr std::uint64_t wireEpoch=4201;
+        DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+        const std::array<ChannelEdit,3> creates{
+            add(0,ChannelRole::input,"SOURCE"),
+            add(1,ChannelRole::input,"SUBMIX",ProcessingFormat::stereo),
+            add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+        };
+        auto result=wire.edit(0,0,creates,req,wireEpoch,wireEpoch,true);
+        assert(result.ok());
+        const auto source=result.edit.createdIds[0];
+        const auto submix=result.edit.createdIds[1];
+        const auto main=result.edit.createdIds[2];
+        const std::array<ChannelEdit,1> primary{output(source,main)};
+        req.sources={{source,0,-1,false}};
+        result=wire.edit(1,1,primary,req,wireEpoch,wireEpoch,true);
+        assert(result.ok());
+        const auto edgeId=wire.acceptedRoster().find(source)->sends.front().edgeId;
+        assert(edgeId!=0);
+        std::array<float,64> impulse{},left{},right{};
+        impulse[7]=.5f;
+        const float* pins[]{impulse.data()};
+        const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx));
+        const float direct=left[7];
+        assert(direct>.1f);
+        assert(left[6]==0.f && left[8]==0.f);
+        std::array<WireChange,2> parallel{};
+        parallel[0].kind=WireChange::Kind::connect;
+        parallel[0].source=source;parallel[0].destination=submix;
+        parallel[1].kind=WireChange::Kind::connect;
+        parallel[1].source=submix;parallel[1].destination=main;
+        result=wire.wireTransaction(2,2,parallel,req,wireEpoch,wireEpoch,true);
+        assert(result.ok() && wire.acceptedGraphRevision()==3);
+        assert(wire.acceptedRoster().find(source)->sends.front().edgeId==edgeId);
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx));
+        assert(near(left[7],direct*2.f));
+        assert(left[6]==0.f && left[8]==0.f);
+        // Disconnect only the exact original direct MAIN edge.
+        WireChange remove;remove.kind=WireChange::Kind::remove;
+        remove.edgeId=edgeId;
+        const std::array<WireChange,1> removeOne{remove};
+        result=wire.wireTransaction(3,3,removeOne,req,wireEpoch,wireEpoch,true);
+        assert(result.ok());
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx));
+        assert(near(left[7],direct)); // same index, no extra routing sample
+        const auto beforeCycle=wire.acceptedGraphRevision();
+        WireChange cycle;cycle.kind=WireChange::Kind::connect;
+        cycle.source=submix;cycle.destination=source;
+        const std::array<WireChange,1> invalid{cycle};
+        result=wire.wireTransaction(4,4,invalid,req,wireEpoch,wireEpoch,true);
+        assert(!result.ok() && wire.acceptedGraphRevision()==beforeCycle);
+        assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
+                           64,false,noFx) && near(left[7],direct));
+        // Stale graph epoch/revision must leave the accepted PCM unchanged.
+        result=wire.wireTransaction(4,3,removeOne,req,wireEpoch,wireEpoch,true);
+        assert(result.fault==DynamicAcceptedSession::Fault::staleGraph);
+        assert(wire.acceptedGraphRevision()==beforeCycle);
+        // RETARGET keeps source identity. Here reconnect direct MAIN using
+        // ROUTE_ONLY, atomically removing its former intermediate MAIN route.
+        WireChange only;only.kind=WireChange::Kind::routeOnly;
+        only.source=source;only.destination=main;
+        const std::array<WireChange,1> routeOnly{only};
+        result=wire.wireTransaction(4,4,routeOnly,req,wireEpoch,wireEpoch,true);
+        assert(!result.ok()); // routeOnly to MAIN is intentionally unsupported
+        assert(wire.acceptedGraphRevision()==beforeCycle);
+        wire.unpublish();wire.pollRetirement();
+    }
+
     verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     constexpr std::uint64_t epoch=77;
