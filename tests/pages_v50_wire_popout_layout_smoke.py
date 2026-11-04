@@ -37,9 +37,9 @@ def inspect(page,width,height):
     cfg=page.locator("#wireConfigWindow")
     assert cfg.locator("#wireMode,#wireMaster,#wireView").count()==3
     cfg.locator("#wireMode").select_option("split")
-    cfg.locator("#wireView").select_option("all")
+    cfg.locator("#wireView").select_option("out")
     assert cfg.locator("#wireMode").input_value()=="split"
-    assert cfg.locator("#wireView").input_value()=="all"
+    assert cfg.locator("#wireView").input_value()=="out"
     page.keyboard.press("Escape")
     assert cfg.is_hidden(),"Escape did not dismiss WIRE configuration"
 
@@ -68,7 +68,7 @@ def inspect(page,width,height):
         width,height,"committed WIRE missing from route inspector")
     workspace.locator("#wireWsClose").click()
     launch(page,"config")
-    assert cfg.locator("#wireView").input_value()=="all"
+    assert cfg.locator("#wireView").input_value()=="out"
     assert cfg.locator("#wireMode").input_value()=="split"
     cfg.locator("#wireConfigClose").click()
     assert abs(title.bounding_box()["height"]-27)<=1.5

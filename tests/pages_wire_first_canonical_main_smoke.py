@@ -96,12 +96,14 @@ def audit_visual_matrix(browser):
             if density=="compact":
                 assert "collapsed-send" in (body.get_attribute("class") or "")
                 initial=edge(page,1,"out")
-                assert initial and page.locator(
+                assert initial, "folded view must retain the canonical MAIN graph edge"
+                assert page.locator(
                     '#tracks .strip[data-id="1"] .wire-fold-summary'
-                ).get_attribute("data-wire-main-edge")==initial
+                ).get_attribute("data-wire-main-edge") is None
                 assert page.locator(
                     '#master .wire-fold-summary'
-                ).get_attribute("data-wire-main-edge")==initial
+                ).get_attribute("data-wire-main-edge") is None
+                assert page.locator('#tracks .strip[data-id="1"] .wire-fold-summary .has-out').count()==0
                 assert page.locator(".wire-main-fragment").count()==0
                 page.screenshot(path=str(PAGE.parents[2]/
                     f"pages-wire-main-{width}x{height}-{density}.png"))
@@ -138,14 +140,16 @@ def audit_visual_matrix(browser):
             }""")
             assert pair["source"] and pair["source"]==pair["main"]==pair["connected"],(
                 width,height,density,"MAIN fragments do not share exact graph edge",pair)
-            assert pair["sources"]==pair["painted"],(
-                width,height,density,"one physical MAIN fragment per connected source",pair)
+            assert pair["sources"]>=1 and pair["painted"]==1,(
+                width,height,density,"only selected channel may paint MAIN fragment",pair)
             for side in ("sourceGeometry","mainGeometry"):
                 geom=pair[side]
                 assert geom and geom["bounded"] and geom["cubic"] and geom["error"]<=1.1,(
                     width,height,density,side,"misaligned or clipped MAIN plug",geom)
-            # Selecting CH5 changes the MAIN plug edgeId, not other connections.
+            # Selection moves the SINGLE physical source fragment, never graph edges.
             page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+            assert page.locator('#tracks .strip[data-id="1"] .wire-main-fragment').count()==0
+            assert page.locator('#tracks .wire-main-fragment').count()==1
             focused=page.locator('#master .wire-main-fragment').get_attribute("data-edge-id")
             assert focused==edge(page,5,"out") and focused!=pair["source"],(
                 width,height,density,"focused MAIN edge selection")
@@ -175,10 +179,12 @@ def run():
             assert not edge(page,5,"out")==edge(page,6,"out"),(width,"nonunique edge IDs")
             # MAIN is pinned; its second stub follows the uniquely focused CH5.
             control=main_button(page,5)
-            assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             assert control.get_attribute("aria-pressed")=="true"
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+                # Folded view suppresses physical MAIN fragments; graph remains.
+                assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge") is None
                 page.locator('.section-rail [data-section="send"]').click()
+            assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge")==initial
             # One graph edge paints TWO measured local cubic cables, never a
             # cross-bank line. Geometry and edge identity survive all widths.
             source_stub=page.locator('#tracks .strip[data-id="5"] .wire-main-fragment')
@@ -189,7 +195,7 @@ def run():
             assert main_stub.get_attribute("data-edge-id")==initial
             assert " C" in source_stub.locator(".wire-main-jacket").get_attribute("d")
             assert " C" in main_stub.locator(".wire-main-jacket").get_attribute("d")
-            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==1
+            assert page.locator('#tracks .strip[data-id="6"] .wire-main-fragment').count()==0
 
             # Distinct disconnect is reversible and only affects this channel.
             control.click()
