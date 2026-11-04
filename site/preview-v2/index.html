@@ -345,6 +345,7 @@ function syncWireOutputProjection(){
  }
 }
 function wireGraphCommit(ops,{record=true}={}){
+ if(window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops))return false;
  const before=record?wireWsSnapshot():null;
  const result=ArSonWireGraph.applyWireTransaction({
   channels:tracks,mainId:master.id,edges:wireEdges,nextId:nextWireId
@@ -1005,6 +1006,7 @@ function wireWsRecord(before){
  const btn=document.getElementById('wireWsUndo');if(btn)btn.disabled=false;
 }
 function wireWsUndo(){
+ if(window.__ARMIX_NATIVE_M2__?.consumeUndo?.())return false;
  const entry=wireWsHistory[wireWsHistory.length-1];
  if(!entry){say('WIRE: no routing change to undo');return false;}
  if(wireWsSignature(wireWsSnapshot())!==entry.afterSig){
@@ -1708,6 +1710,7 @@ function ungroupSelected(){
  render();say(groups.size?'Removed '+groups.size+' channel group(s)':'Select a grouped channel to ungroup');
 }
 function handleField(event){
+ if(window.__ARMIX_NATIVE_M2__?.consumeField?.(event))return;
  const el=event.target,field=el.dataset.field;if(!field)return;
  const t=findTrack(el);if(!t)return;
  if(field==='wireGain'){
@@ -1963,6 +1966,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  const btn=e.target.closest('[data-action]');if(!btn)return;
  const t=findTrack(btn);if(!t)return;
  const a=btn.dataset.action;
+ if(window.__ARMIX_NATIVE_M2__?.consumeAction?.(t,a,btn))return;
  if(a==='wireExpand'){document.querySelector('.section-rail [data-section="send"]')?.click();return;}
  if(a==='resetClip'){
   t.clip=false;btn.classList.remove('clipping');
@@ -2015,6 +2019,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
 });
 document.querySelector('.console-body').addEventListener('dblclick',e=>{
  const t=findTrack(e.target);if(!t)return;
+ if(window.__ARMIX_NATIVE_M2__?.consumeDoubleClick?.(e,t))return;
  if(e.target.closest?.('.wire-gain,.wire-pot')){
   const el=e.target.closest('.wire-pot')?.querySelector('.wire-gain')||e.target.closest('.wire-gain');el.value='0';handleField({target:el,type:'change'});return;
  }
