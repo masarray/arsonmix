@@ -69,6 +69,7 @@ struct ChannelEdit final {
     bool enabled=false;      // mute/solo value (or future enable operation)
     bool preFader=false;     // send tap at construction, no hidden POST default
     bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
+    bool connectMainOnCreate=false; // WIRE-first native creation; legacy imports unchanged
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
     std::string text;
 };
@@ -147,6 +148,7 @@ public:
         }
         auto candidate=channels_; // one copy per BATCH, never in audio callback
         auto next=nextId_;
+        std::vector<ChannelId> defaultMainOnCreate;
         const auto seek=[&candidate](ChannelId id){
             return std::find_if(candidate.begin(),candidate.end(),
                 [id](const auto& c){return c.id==id;});
@@ -179,6 +181,10 @@ public:
                 if(!validName(row.name)) {result.fault=ChannelEditFault::invalidValue;break;}
                 candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(op.position),std::move(row));
                 result.createdIds.push_back(candidate[op.position].id);
+                if(op.connectMainOnCreate &&
+                   candidate[op.position].role!=ChannelRole::main &&
+                   candidate[op.position].role!=ChannelRole::monitor)
+                    defaultMainOnCreate.push_back(candidate[op.position].id);
             } else {
                 auto it=seek(op.id);
                 if(op.id.value==0 || it==candidate.end()) {
@@ -280,6 +286,30 @@ public:
             // runs ONCE per batch, not O(N^2) for 1000-channel sessions.
             if(candidate.size()>budget_.definitionBytes/sizeof(ChannelStripDefinition)) {
                 result.fault=ChannelEditFault::budgetExceeded;break;
+            }
+        }
+        // WIRE-first channel creation must connect MAIN exactly ONCE in the
+        // SAME batch/revision, even when MAIN was created later in this batch.
+        // Existing restored/disconnected channels are never auto-rewired.
+        if(result.ok() && !defaultMainOnCreate.empty()) {
+            const auto main=std::find_if(candidate.begin(),candidate.end(),
+                [](const auto& row){return row.role==ChannelRole::main;});
+            if(main==candidate.end() ||
+               std::count_if(candidate.begin(),candidate.end(),
+                   [](const auto& row){return row.role==ChannelRole::main;})!=1) {
+                result.fault=ChannelEditFault::invalidValue;
+            } else {
+                const auto mainId=main->id;
+                for(const auto id:defaultMainOnCreate){
+                    auto row=seek(id);
+                    if(row==candidate.end() ||
+                       row->sends.size()>=budget_.maximumSendsPerChannel){
+                        result.fault=ChannelEditFault::budgetExceeded;break;
+                    }
+                    const bool exists=std::any_of(row->sends.begin(),row->sends.end(),
+                        [&](const auto& send){return send.destination==mainId;});
+                    if(!exists)row->sends.push_back({mainId,1.f,false,0.f,true,0});
+                }
             }
         }
         if(result.ok() && !withinBudget(candidate))result.fault=ChannelEditFault::budgetExceeded;
