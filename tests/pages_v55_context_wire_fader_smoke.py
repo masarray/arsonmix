@@ -36,6 +36,12 @@ def main():
                     assert a["connected"]=="true" and a["paint"]=="connected",(w,a)
                     assert b["connected"]=="true" and b["paint"]=="connected",(w,b)
                     assert node(page,1,"out")["paint"]=="idle"
+                    page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+                    hidden=node(page,3,"in")
+                    assert hidden["connected"]=="true" and hidden["paint"]=="idle",(w,density,hidden)
+                    assert hidden["color"]=="rgb(75, 83, 91)",(w,density,hidden)
+                    page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
+                    assert node(page,3,"in")["paint"]=="connected"
                     page.locator("#wireNavigatorToggle").click()
                     page.locator("#wireWsUndo").click()
                     assert node(page,5,"out")["paint"]=="idle"

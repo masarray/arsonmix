@@ -927,3 +927,11 @@
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="connected"]:not(:hover) .wire-pin{
  background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity,1)!important;
 }
+
+/* The receiving bezel itself must agree with its inner dot. A stored edge
+   hidden by WIRE focus is still connected in graph state but visually dark. */
+.console-body.wire-routing-v15 .strip .wire-tray
+ .wire-node-in[data-wire-paint="idle"]:not(:hover):not(.is-snap-target):not(.is-replug-origin){
+ border-color:#394a55!important;background:#1b2b35!important;
+ box-shadow:inset 0 1px 2px #07141c!important;
+}

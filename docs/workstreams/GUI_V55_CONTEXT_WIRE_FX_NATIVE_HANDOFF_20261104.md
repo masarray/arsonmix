@@ -4,7 +4,7 @@
 
 ## Implemented GUI
 - `data-wire-paint=idle|connected` is projected from **visible accepted** `wireEdges`. This is a rendering state, not an audio route. `data-wire-connected` remains true for a committed but hidden/off-bank wire; only a visible physical wire illuminates its endpoint. No legacy SEND or selected-channel state can pretend a committed wire. Hover/drag/magnetic snap are explicitly transient.
-- CH1/CH2 idle WIRE IN/OUT remains graphite; replug/Undo refresh the paint without additional per-frame rendering.
+- CH1/CH2 idle WIRE IN/OUT remains graphite; focus-hidden routes retain connected semantics with a graphite ring AND graphite dot; replug/focus/Undo refresh the paint without additional per-frame rendering.
 - Silver/rose PNG fader cap retains existing dimensions/travel; larger three-layer **static CSS** shadow, no filter, canvas or animation.
 - V54 already implements header `fxOn` for whole-channel FX chain, and each `slotBypass[index]` for only its insert. Turning the header OFF must preserve all slot bypass flags and stable `fxInsertIds`. Never introduce duplicate bypass state owners.
 

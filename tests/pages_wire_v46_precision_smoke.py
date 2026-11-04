@@ -137,8 +137,11 @@ def main():
     # enabled route: socket remains connected while graph is unchanged.
     page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
     idle=incoming_colors(dest)
-    assert idle["connected"] and idle["ring"]!="rgb(57, 74, 85)",(width,"committed socket was falsely unlit by focus",idle)
-    assert idle["center"]==idle["ring"],(width,"committed receiving dot must track the ring",idle)
+    assert idle["connected"],(width,"focus must not remove accepted graph edge",idle)
+    assert idle["ring"]=="rgb(57, 74, 85)" and idle["center"]=="rgb(75, 83, 91)",(width,"hidden cable must leave both ring and center graphite",idle)
+    page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
+    lit=incoming_colors(dest)
+    assert lit["connected"] and lit["center"]==lit["ring"] and lit["center"]!="rgb(75, 83, 91)",(width,"focus return must restore accepted visible endpoint",lit)
     if width==1366:
      page.locator('#densitySelect').select_option(label="Compact")
      exact(center(dest_pin),center(dest),width,"compact socket no longer concentric",.32)
