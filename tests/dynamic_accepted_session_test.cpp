@@ -270,9 +270,20 @@ int main() {
         parallel[0].source=source;parallel[0].destination=submix;
         parallel[1].kind=WireChange::Kind::connect;
         parallel[1].source=submix;parallel[1].destination=main;
-        result=wire.wireTransaction(2,2,parallel,req,wireEpoch,wireEpoch,true);
+        result=wire.wireTransaction(2,2,parallel,req,wireEpoch,wireEpoch,false); // real WIRE edit while output armed
         assert(result.ok() && wire.acceptedGraphRevision()==3);
         assert(wire.acceptedRoster().find(source)->sends.front().edgeId==edgeId);
+        DynamicGraphRequest changedHardware=req;
+        changedHardware.maxFrames=128;
+        WireChange newDraft;newDraft.kind=WireChange::Kind::remove;
+        newDraft.edgeId=edgeId;
+        const std::array<WireChange,1> wrongHardware{newDraft};
+        const auto rejectedArmed=wire.wireTransaction(
+            3,3,wrongHardware,changedHardware,wireEpoch,wireEpoch,false);
+        assert(!rejectedArmed.ok() &&
+               rejectedArmed.native.fault==
+                   DynamicNativeSessionPublisher::Fault::outputArmed &&
+               wire.acceptedGraphRevision()==3);
         assert(wire.render(wireEpoch,pins,1,left.data(),right.data(),
                            64,false,noFx));
         assert(near(left[7],direct*2.f));
