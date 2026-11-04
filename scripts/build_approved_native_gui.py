@@ -21,8 +21,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
-ADAPTER_MARKER = '<script defer src="assets/approved-native-bridge.js"></script>'
-SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
+M2_STATE = ROOT / "web" / "approved-native-m2-state.js"
+ADAPTER_MARKER = '<script defer src="assets/approved-native-m2-state.js"></script>\n<script defer src="assets/approved-native-bridge.js"></script>'
+SCHEMA = "arsonmix.approved-native-pages-bundle.v3"
 
 
 def sha256(data: bytes) -> str:
@@ -110,6 +111,7 @@ def stage(out: Path) -> dict:
             shutil.rmtree(out)
         out.mkdir(parents=True)
         shutil.copytree(pages / "assets", out / "assets")
+        shutil.copy2(M2_STATE, out / "assets" / "approved-native-m2-state.js")
         shutil.copy2(NATIVE_ADAPTER, out / "assets" / "approved-native-bridge.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
@@ -128,7 +130,7 @@ def stage(out: Path) -> dict:
         "approvedPagesHtmlSha256": sha256(approved),
         "nativeHtmlSha256": sha256(native),
         "adapter": "web/approved-native-bridge.js",
-        "adapterState": "SCAFFOLD_ONLY__NOT_LIVE_PCM",
+        "adapterState": "M2_NATIVE_ACK_SNAPSHOT_GATED__PCM_NOT_CERTIFIED",
         "files": [{"path":p.relative_to(out).as_posix(), "sha256":sha256(p.read_bytes())} for p in files],
     }
     (out / "approved-gui-manifest.json").write_text(
