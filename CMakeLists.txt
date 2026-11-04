@@ -26,6 +26,7 @@ file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-buttons/assets/*")
 list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-m2-state.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARMIX_APPROVED_GUI_SOURCE_INPUTS})
 execute_process(
