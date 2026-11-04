@@ -409,7 +409,9 @@
     return [...selectedIds].filter(id=>byId.has(id)&&byId.get(id).role!=='MAIN');
   }
   function refreshSelectionActions(){
-    selectionCount.textContent=selectedIds.size+' SEL';
+    const legend=selectedIds.size+' SEL';
+    if(!window.ArSonMixHardwareKeys?.setLegend?.(selectionCount,legend)&&
+       selectionCount.textContent!==legend)selectionCount.textContent=legend;
     if(selectionPanel.hidden)return;
     const ids=selectedNativeIds(),channels=ids.map(id=>byId.get(id));
     const names=channels.map(c=>c.name).join(' · ');
