@@ -67,7 +67,7 @@ $approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json
 $approvedGui = Get-Content -LiteralPath $approvedGuiManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($approvedGui.authoritativePagesRoute -ne "/preview/" -or
     $approvedGui.authoritativePagesOutput -ne "preview/index.html" -or
-    $approvedGui.adapterState -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM") {
+    $approvedGui.adapterState -ne "M2_NATIVE_ACK_SNAPSHOT_GATED__PCM_NOT_CERTIFIED") {
     throw "Native GUI bundle does not match approved Pages renderer and truthful M1 status"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -114,7 +114,7 @@ $manifest = [ordered]@{
     approvedGuiManifestSha256 = (Get-FileHash -LiteralPath $approvedGuiManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     approvedGuiResourceCount = @($approvedGui.files).Count
     approvedGuiSource = "site/preview-v2 DOM + site/preview-buttons approved PNG skin (deterministic JUCE BinaryData)"
-    approvedGuiAdapterStatus = "SCAFFOLD_ONLY__NOT_LIVE_PCM"
+    approvedGuiAdapterStatus = "M2_NATIVE_ACK_SNAPSHOT_GATED__PCM_NOT_CERTIFIED"
     guiCalibration = "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
