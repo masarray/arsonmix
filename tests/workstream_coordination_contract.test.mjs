@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {POLICY_EPOCH_PR, ownerOf, metadata, audit, requiresUiSmoke} from '../scripts/check_workstream_coordination.mjs';
+import {POLICY_EPOCH_PR, ownerOf, metadata, audit, requiresUiSmoke, requiresNativeQualification} from '../scripts/check_workstream_coordination.mjs';
 
 const body=(lane,issue=397,parked=false)=>
   '<!-- arsonmix-workstream: '+lane+' -->\n'+
@@ -195,14 +195,17 @@ test('existing #396/#398 remain advisory, first strict PR is #400',()=>{
 });
 
 test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>{
-  const native=readFileSync('.github/workflows/p1-windows.yml','utf8');
-  const ui=readFileSync('.github/workflows/ui-smoke.yml','utf8');
-  for(const text of [native,ui]){
-    assert.match(text,/scripts\/check_workstream_coordination\.mjs --pr/);
-    assert.match(text,/pull-requests: read/);
-    assert.match(text,/ready_for_review/);
-    assert.match(text,/GH_TOKEN: \$\{\{ github\.token \}\}/);
+  const native=readFileSync('.github/workflows/p1-windows.yml','utf8').replace(/\r\n/g,'\n');
+  const ui=readFileSync('.github/workflows/ui-smoke.yml','utf8').replace(/\r\n/g,'\n');
+  for(const workflow of [native,ui]) {
+    assert.match(workflow,/scripts\/check_workstream_coordination\.mjs --pr/);
+    assert.match(workflow,/pull-requests: read/);
+    assert.match(workflow,/GH_TOKEN: \$\{\{ github\.token \}\}/);
   }
+  assert.match(native,/workflow_call:/);
+  assert.doesNotMatch(native,/^  pull_request:/m);
+  assert.match(ui,/ready_for_review/);
+  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
   const guide=readFileSync('AGENTS.md','utf8');
   assert.match(guide,/MULTI_AGENT_COORDINATION\.md/);
   assert.match(guide,/#397/);
@@ -221,11 +224,59 @@ test('M2.6 always-on PR admission scopes Chromium to UI changes',()=>{
     '.github/workflows/ui-smoke.yml'
   ]) assert.equal(requiresUiSmoke([path]),true,path);
   assert.equal(requiresUiSmoke(['README.md','src/Main.cpp','site/preview/index.html']),true);
-  const workflow=readFileSync('.github/workflows/ui-smoke.yml','utf8');
+  const workflow=readFileSync('.github/workflows/ui-smoke.yml','utf8').replace(/\r\n/g,'\n');
   const prBlock=workflow.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
   assert.ok(prBlock,'missing PR event');
   assert.doesNotMatch(prBlock,/^\s+paths:/m,'PR entrypoint must not filter docs or PCM PRs');
   assert.match(workflow,/name: PR coordination admission/);
   assert.match(workflow,/needs: coordination/);
   assert.match(workflow,/needs\.coordination\.outputs\.run_ui/);
+});
+
+test('P0 native qualification is precise: native ABI/release scripts yes, docs/GUI no',()=>{
+  for(const path of [
+    'src/LiveAudioEngine.h','engine/core/PreparedMixerBlock.h',
+    'integration/ApprovedNativeRuntimeSnapshot.h',
+    'integration/ApprovedNativeControlIntent.h',
+    'integration/Deep/NativeBridge.cpp',
+    'integration/console-v6/m4-operator-routing.mjs',
+    'scripts/check_console_puzzle.mjs',
+    'scripts/check_approved_native_gui_release.mjs',
+    'scripts/package_native_windows.ps1',
+    'tests/approved_native_v8_projection_test.cpp',
+    '.github/workflows/p1-windows.yml'
+  ]) assert.equal(requiresNativeQualification([path]),true,path);
+  for(const path of [
+    'README.md','docs/QUALITY.md','site/preview/index.html',
+    'web/mixer-layout.js','tests/pages_wire_first_canonical_main_smoke.py',
+    'tests/ci_workflow_efficiency_test.mjs',
+    'integration/m4_operator_status.md',
+    'integration/other_frontend.mjs'
+  ]) assert.equal(requiresNativeQualification([path]),false,path);
+  assert.equal(requiresNativeQualification(['README.md','integration/ApprovedNativeV8Projection.h']),true);
+});
+
+test('P0 product verdict is a fail-closed fan-in with no duplicate PR Windows build',()=>{
+  const ui=readFileSync('.github/workflows/ui-smoke.yml','utf8').replace(/\r\n/g,'\n');
+  const windows=readFileSync('.github/workflows/p1-windows.yml','utf8').replace(/\r\n/g,'\n');
+  assert.match(ui,/name: Product Qualification/);
+  assert.match(ui,/needs: \[coordination, frontend, native\]/);
+  assert.match(ui,/always\(\) && github\.event_name == 'pull_request'/);
+  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
+  assert.match(ui,/needs\.coordination\.outputs\.run_native == 'true'/);
+  assert.match(ui,/NATIVE_RESULT.*needs\.native\.result/);
+  assert.match(ui,/UI_RESULT.*needs\.frontend\.result/);
+  assert.match(ui,/RUN_NATIVE.*needs\.coordination\.outputs\.run_native/);
+  assert.match(ui,/\$RUN_NATIVE.*true.*\$NATIVE_RESULT.*success/);
+  assert.match(windows,/^  workflow_call:/m);
+  assert.doesNotMatch(windows,/^  pull_request:/m);
+  assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
+});
+
+test('P0 Windows checkout CRLF cannot suppress the PR event in coordination test',()=>{
+  const workflow=readFileSync('.github/workflows/ui-smoke.yml','utf8').replace(/\r\n/g,'\n');
+  const windowsCheckout=workflow.replace(/\n/g,'\r\n');
+  const normalized=windowsCheckout.replace(/\r\n/g,'\n');
+  const prBlock=normalized.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0];
+  assert.ok(prBlock, 'CRLF normalization must keep real pull_request trigger');
 });

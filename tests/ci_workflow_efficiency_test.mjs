@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {requiresUiSmoke} from '../scripts/check_workstream_coordination.mjs';
+import {requiresUiSmoke, requiresNativeQualification} from '../scripts/check_workstream_coordination.mjs';
 
-const read = path => readFileSync(path, 'utf8');
+const read = path => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const native = read('.github/workflows/p1-windows.yml');
 const ui = read('.github/workflows/ui-smoke.yml');
 const pages = read('.github/workflows/pages-publish.yml');
@@ -36,8 +36,9 @@ function globMatches(pattern, filename) {
   return new RegExp(regex + '$').test(filename);
 }
 
-const windowsPush = pathsFor(native, 'push', 'pull_request');
-const windowsPR = pathsFor(native, 'pull_request', 'workflow_dispatch');
+const windowsPush = pathsFor(native, 'push', 'workflow_call');
+// Pull requests are always admitted; this exact classifier decides whether to call reusable MSVC.
+const nativePrSelected = filename => requiresNativeQualification([filename]);
 const uiPush = pathsFor(ui, 'push', 'pull_request');
 // Unfiltered PR entry runs cheap admission; only UI-relevant paths run browser.
 const uiPRSelected = filename => requiresUiSmoke([filename]);
@@ -51,7 +52,7 @@ test('visual GUI changes never consume Windows native runner on a PR or on main'
   ]) {
     assert.ok(uiPRSelected(filename), filename + ' must run frontend PR checks');
     assert.ok(selected(uiPush, filename), filename + ' must qualify Pages');
-    assert.equal(selected(windowsPR, filename), false, filename + ' wrongly triggers native PR');
+    assert.equal(nativePrSelected(filename), false, filename + ' wrongly triggers native PR');
     assert.equal(selected(windowsPush, filename), false, filename + ' wrongly triggers native main');
   }
 });
@@ -61,7 +62,7 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
     'src/LiveAudioEngine.h', 'engine/core/DynamicPreparedMixerBlock.h',
     'tests/channel_routing_contract_test.cpp'
   ]) {
-    assert.ok(selected(windowsPR, filename), filename + ' must qualify native PR');
+    assert.ok(nativePrSelected(filename), filename + ' must qualify native PR');
     assert.ok(selected(windowsPush, filename), filename + ' must qualify native main');
     assert.equal(uiPRSelected(filename), false, filename + ' wrongly triggers browser PR');
     assert.equal(selected(uiPush, filename), false, filename + ' wrongly triggers browser main');
@@ -81,7 +82,7 @@ test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS
     'scripts/build_approved_native_gui.py',
     'tests/approved_native_gui_bundle_test.py'
   ]) {
-    assert.ok(selected(windowsPR,filename), filename+' must run native build on PR');
+    assert.ok(nativePrSelected(filename), filename+' must run native build on PR');
     assert.ok(selected(windowsPush,filename), filename+' must rebuild native main bundle');
   }
   assert.match(native,/Check approved Pages GUI provenance before costly JUCE checkout/);
@@ -91,20 +92,22 @@ test('native WebView bridge and integration genuinely require both owners', () =
   for (const filename of [
     'web/bridge.js', 'web/monitor.js', 'integration/console-v6/contract.json'
   ]) {
-    for (const paths of [windowsPush, windowsPR, uiPush]) {
+    for (const paths of [windowsPush, uiPush]) {
       assert.ok(selected(paths, filename), filename + ' needs native+GUI checks');
     }
     assert.ok(uiPRSelected(filename),filename+' needs PR Chromium tests');
+    assert.ok(nativePrSelected(filename),filename+' needs PR native tests');
   }
 });
 
 test('docs and isolated CI tests do not fan out into unrelated builds', () => {
-  const paths = [windowsPR, windowsPush, uiPush];
+  const paths = [windowsPush, uiPush];
   for (const filename of [
     'README.md', 'docs/workstreams/START_HERE_WIRE_FIRST_20261104.md'
   ]) {
     assert.ok(paths.every(p => !selected(p, filename)), 'Doc triggered CI: ' + filename);
     assert.equal(uiPRSelected(filename),false,'Doc only needs lightweight PR admission: '+filename);
+    assert.equal(nativePrSelected(filename),false,'Doc must not compile native: '+filename);
   }
   for (const filename of [
     'tests/pages_wire_first_canonical_main_smoke.py',
@@ -112,7 +115,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
     'tests/wire_main_native_handoff_contract.test.cjs',
     'tests/ci_workflow_efficiency_test.mjs'
   ]) {
-    assert.equal(selected(windowsPR, filename), false);
+    assert.equal(nativePrSelected(filename), false);
     assert.equal(selected(windowsPush, filename), false);
     assert.equal(uiPRSelected(filename), true);
     assert.equal(selected(uiPush, filename), true);
@@ -169,4 +172,25 @@ test('M2.6 always-on coordination job has a stable name and skips unrelated Chro
   assert.match(ui,/needs: coordination/);
   assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
   assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
+});
+
+test('P0 single product qualification fans in exact scoped native and UI jobs',()=>{
+  assert.match(native,/^  workflow_call:/m);
+  assert.doesNotMatch(native,/^  pull_request:/m);
+  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
+  assert.match(ui,/name: Product Qualification/);
+  assert.match(ui,/needs: \[coordination, frontend, native\]/);
+  assert.match(ui,/NATIVE_RESULT.*needs\.native\.result/);
+  assert.match(ui,/UI_RESULT.*needs\.frontend\.result/);
+  assert.match(ui,/if: \$\{\{ always\(\) && github\.event_name == 'pull_request' \}\}/);
+  for(const path of [
+    'integration/ApprovedNativeRuntimeSnapshot.h',
+    'integration/ApprovedNativeV8Projection.h',
+    'integration/ApprovedNativeControlIntent.h',
+    'scripts/check_console_puzzle.mjs',
+    'scripts/check_approved_native_gui_release.mjs'
+  ]) assert.ok(nativePrSelected(path),path+' bypassed native build');
+  for(const path of ['docs/workstreams/MULTI_AGENT_COORDINATION.md',
+    'site/preview/assets/mixer-fader-assembly.css'])
+    assert.equal(nativePrSelected(path),false,path+' wrongly launches Windows');
 });
