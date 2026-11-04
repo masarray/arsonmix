@@ -28,7 +28,7 @@ def audit_checkpoint():
     assert "filter:none!important" in css
     assert ".console-body .strip .fader-workspace" in css
     assert "#263944" in css
-    assert "1px 8px 9px -3px" in css and "0 13px 12px -7px" in css
+    assert "0 4px 6px -1px #000f" in css and "2px 10px 13px -3px #000e" in css and "0 17px 17px -7px #000b" in css, "V55 stronger three-layer cap depth must retain original static PNG and zero GPU filters"
     assert "linear-gradient(90deg," in css
 
 def inspect(page,width,height,density):
