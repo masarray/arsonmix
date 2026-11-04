@@ -228,7 +228,44 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     deny.getProperty("dryRoutingLab",{}).getDynamicObject()
         ->setProperty("nativeBus",juce::var());
     fail(deny);
+    assert(synchronizeApprovedRouteDeviceEpoch(snap,live));
     assert(projectInstalledNativeChannelIdGraph(snap,live));
+    // Real restart: lab routing epoch counts STOP+START, unlike M2
+    // deviceStartCount. This G0-to-native authority switch must advance.
+    auto disconnected=canonicalSnapshot();
+    // Simulate the SAME actual driver pin masks after reconnect. A default
+    // G0 no-device fixture would otherwise correctly refuse native admit.
+    auto disconnectedDevice=disconnected.getProperty("device",{}).getDynamicObject();
+    disconnectedDevice->setProperty("sampleRate",48000.0);
+    disconnectedDevice->setProperty("bufferFrames",256);
+    disconnectedDevice->setProperty("enabledInputs",juce::var(inputs));
+    disconnectedDevice->setProperty("enabledOutputs",juce::var(outputs));
+    auto dead=juce::JSON::parse(juce::JSON::toString(live,false));
+    dead.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeChannelIdPcmActive",false);
+    dead.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("epoch",93);
+    assert(synchronizeApprovedRouteDeviceEpoch(disconnected,dead));
+    assert(disconnected.getProperty("device",{})
+               .getProperty("epoch","").toString()=="93");
+    assert(!projectInstalledNativeChannelIdGraph(disconnected,dead));
+    const auto ghost=disconnected.getProperty("graph",{});
+    assert(!static_cast<bool>(ghost.getProperty("capabilities",{})
+                            .getProperty("callbackOwnsChannelIds",false)));
+    auto restarted=juce::JSON::parse(juce::JSON::toString(live,false));
+    restarted.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("epoch",93);
+    assert(synchronizeApprovedRouteDeviceEpoch(disconnected,restarted));
+    assert(projectInstalledNativeChannelIdGraph(disconnected,restarted));
+    assert(disconnected.getProperty("graph",{})
+                .getProperty("revision","").toString()=="25");
+    // Never roll back to an older route generation after device reconnect.
+    auto stale=juce::JSON::parse(juce::JSON::toString(restarted,false));
+    stale.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("epoch",90);
+    assert(!synchronizeApprovedRouteDeviceEpoch(disconnected,stale));
+    assert(disconnected.getProperty("device",{})
+               .getProperty("epoch","").toString()=="93");
     const auto graph=snap.getProperty("graph",{});
     assert(static_cast<bool>(graph.getProperty("capabilities",{})
                                  .getProperty("callbackOwnsChannelIds",false)));

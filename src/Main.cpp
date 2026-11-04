@@ -701,6 +701,10 @@ private:
     {
         auto accepted=armix::native_console_m2::snapshot (
             live, engine_.devices(), engine_.allOutputsDisarmed());
+        // Native routing's generation advances on STOP as well as START.
+        // Keep even disconnected G0 snapshots monotonic to invalidate UI.
+        (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
+            accepted, live);
         (void) armix::console::projectInstalledNativeChannelIdGraph (
             accepted, live);
         return accepted;

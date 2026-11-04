@@ -10,6 +10,32 @@
 // its installed realtime callback owns the accepted publisher/epoch.
 // G0/M4 and any forged nativeBus without that predicate MUST stay unadmitted.
 namespace armix::console {
+// Legacy M2 counted only device START callbacks; the actual routing epoch
+// also advances on STOP. After ASIO/WASAPI re-open they can differ (e.g.,
+// G0 start=2 while accepted routing epoch=3). Always use the installed
+// LiveDryRoutingLab epoch for both G0 and native accepted snapshots so a
+// disconnected physical device cannot leave a stale accepted GUI LIVE.
+// This remains a CONTROL-only metadata correction; never creates a graph.
+inline bool synchronizeApprovedRouteDeviceEpoch(
+    juce::var& snapshot,const juce::var& live)
+{
+    if (!snapshot.isObject() || !live.isObject()) return false;
+    const auto device=snapshot.getProperty("device",{});
+    const auto route=live.getProperty("dryRoutingLab",{});
+    if (!device.isObject() || !route.isObject()) return false;
+    const auto generation=device.getProperty("epoch",{});
+    const auto epoch=route.getProperty("epoch",{});
+    if (!generation.isString() ||
+        !(generation.toString()=="0" || nativeV8Decimal(generation)) ||
+        !(epoch.isInt() || epoch.isInt64())) return false;
+    const auto actual=static_cast<juce::int64>(epoch);
+    if(actual<0 || actual<generation.toString().getLargeIntValue())
+        return false;
+    if(auto* d=device.getDynamicObject())
+        d->setProperty("epoch",juce::String(actual));
+    return true;
+}
+
 inline bool projectInstalledNativeChannelIdGraph(
     juce::var& snapshot, const juce::var& live)
 {
@@ -21,7 +47,7 @@ inline bool projectInstalledNativeChannelIdGraph(
         const auto value=source.getProperty(key,{});
         return value.isBool() && static_cast<bool>(value);
     };
-    const actualFalse=[&](const juce::var& source,const char* key) {
+    const auto actualFalse=[&](const juce::var& source,const char* key) {
         const auto value=source.getProperty(key,{});
         return value.isBool() && !static_cast<bool>(value);
     };
