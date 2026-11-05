@@ -317,7 +317,14 @@
         }
       }
     });
-    backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
+    backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
+      // Stage A: do not add time-sampling overhead unless explicitly armed.
+      const profiler=window.ArSonMixPerf;
+      if(!profiler?.active){controller.onSnapshot(snapshot);return;}
+      const started=performance.now();
+      try{controller.onSnapshot(snapshot);}
+      finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
+    });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
