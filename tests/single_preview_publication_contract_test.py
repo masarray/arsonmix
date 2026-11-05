@@ -1,7 +1,8 @@
 """Fail closed: GitHub Pages must expose ONE approved ArSonMix GUI at /preview/."""
 from pathlib import Path
 import json, re, sys, hashlib
-from scripts.compile_approved_css import LINK, optimize_css
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from compile_approved_css import LINK, optimize_css
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
