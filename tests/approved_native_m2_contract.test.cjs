@@ -227,8 +227,10 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
  assert.doesNotMatch(bridge,/rackSavedBypass/);
- assert.match(bridge,/FX HEADER NOT ADMITTED/);
- assert.match(bridge,/individual VST3 states preserved/);
+ assert.match(bridge,/requestM4RackPower\(t\)/);
+ assert.match(bridge,/requestAdmittedFxPower\(t,action,btn\)/);
+ assert.match(bridge,/FX rack unchanged/);
+ assert.match(bridge,/pendingM4RackPowers/);
  assert.match(bridge,/action:"routingFxEditor"/);
  assert.match(bridge,/action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
@@ -296,7 +298,7 @@ test("P0 native-only WIRE cables reflect actual M4 MAIN readback, not demo ghost
  const bridge=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
  assert.match(bridge,/if\(session\.authority==="M4" && m4Verified\(\)\)/);
- assert.match(bridge,/scope\?\.syncVerifiedM4Wires\?\.\(legacy\(\)\?\.channels,m4TrackIds\)/);
+ assert.match(bridge,/scope\?\.syncVerifiedM4Wires\?\.\(session\.channels\.map\(ch=>ch\.source\),m4TrackIds\)/);
  assert.match(bundle,/syncVerifiedM4Wires\(rows,ids\)/);
  assert.match(bundle,/typeof r\.main!=='boolean'/);
  assert.match(bundle,/if\(rows\[i\]\.main\)/);
