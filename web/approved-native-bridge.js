@@ -145,67 +145,38 @@
     }
   }
 
-  // Native-only operator controls in the EXISTING approved More menu:
-  // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
-  // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
-  let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
-  const safeNativeCounter=x=>{
-    if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
-    const number=Number(x);
-    return Number.isSafeInteger(number)&&number>0?number:null;
-  };
+  // Existing approved /preview/ mixer owns input-selection presentation.
+  // web/mixer-io.js owns ten physical channel selectors and the SINGLE
+  // custom WebView2 Audio I/O dialog. Do not add a competing CH1 wizard or
+  // invoke the generic JUCE selector for routine live performance.
+  let hardware=null,hardwareNote=null,muteBtn=null;
   const legacy=()=>hardware?.raw?.legacyM4;
-  const deviceReady=()=>!!(hardware?.device?.backend &&
-    hardware.device.sampleRate>0 &&
-    hardware.device.enabledInputs.length>0 &&
-    hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
   function updateHardwarePanel(next) {
-    hardware=next || null;
+    hardware=next||null;
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     const label=document.getElementById("transport");
-    if(label)label.textContent=!deviceOpen?"Device not ready":
-      d.outputArmed?"Output armed":"Output muted";
-    const warning=document.querySelector?.(".status-bar .warning");
-    if(warning)warning.textContent=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
-      d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
-        "MAIN ARMED · PCM NOT YET ADMITTED"):
-      legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
-      "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
-    if(!inputSelect)return;
-    const pins=deviceOpen?d.inputEndpoints.filter(p=>
-      p.active===true && d.enabledInputs.includes(p.port)):[];
-    const key=pins.map(p=>p.id+"|"+p.label).join(";");
-    if(inputSelect.dataset.pins!==key) {
-      const before=inputSelect.value;
-      inputSelect.dataset.pins=key;
-      inputSelect.replaceChildren();
-      const option=document.createElement("option");
-      option.value="";option.textContent="Physical input for CH1";
-      inputSelect.appendChild(option);
-      for(const pin of pins){
-        const item=document.createElement("option");
-        item.value=String(pin.port);
-        item.textContent=pin.label+" · IN "+(pin.port+1);
-        inputSelect.appendChild(item);
-      }
-      if(pins.some(p=>String(p.port)===before))inputSelect.value=before;
+    if(label){
+      const nextText=!deviceOpen?"Device not ready":
+        d.outputArmed?"Output enabled":"Output muted";
+      if(label.textContent!==nextText)label.textContent=nextText;
     }
-    inputSelect.disabled=!deviceReady();
-    if(routeBtn)routeBtn.disabled=!deviceReady() ||
-      inputSelect.value==="" || pendingSourceId!==0;
-    if(armBtn)armBtn.disabled=!deviceReady() ||
-      legacy()?.routeAccepted!==true || d.outputArmed;
-    if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
-    if(hardwareNote) {
-      const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
-      // Human-readable PCM stages from the ORIGINAL native callback only.
-      // These values are NOT evidence that the DAC or speaker is audible.
-      hardwareNote.textContent=evidence?
-        evidence.readout+" · "+evidence.nextAction:
-        "No verified hardware PCM readback available.";
+    const warning=document.querySelector?.(".status-bar .warning");
+    if(warning){
+      const nextText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
+        d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
+          "OUTPUT ENABLED · VERIFY AUDIO"):
+        legacy()?.routeAccepted?"INPUT ROUTED · OUTPUT MUTED":
+        "SELECT HARDWARE INPUT ON ANY CHANNEL";
+      if(warning.textContent!==nextText)warning.textContent=nextText;
+    }
+    if(muteBtn)muteBtn.disabled=!deviceOpen||!d.outputArmed;
+    if(hardwareNote){
+      const evidence=protocol.diagnoseFirstSound?.(next);
+      const text=evidence?evidence.readout+" · "+
+        evidence.nextAction:"Awaiting verified hardware readback";
+      if(hardwareNote.textContent!==text)hardwareNote.textContent=text;
     }
   }
   function installFirstSoundMenu() {
@@ -217,53 +188,23 @@
       if(tag==="button")el.type="button";
       return el;
     };
-    const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
-    const setup=item("button","tool","Audio Setup");
+    const caption=item("span","more-tools-caption","HARDWARE AUDIO · ADVANCED");
+    const setup=item("button","tool","Audio I/O settings");
+    // Same custom device dialog as the toolbar's Audio Setup button.
+    // No additional native AudioDeviceSelectorComponent window.
     setup.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"audioSetup"});
-      status("NATIVE: select actual ASIO/WASAPI input + output in Audio Setup.");
-    });
-    inputSelect=item("select","toolbar-select","");
-    inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
-    inputSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
-    routeBtn=item("button","tool","Patch CH1");
-    routeBtn.addEventListener("click",()=>{
-      const d=hardware?.device,l=legacy();
-      const epoch=safeNativeCounter(d?.epoch);
-      const revision=safeNativeCounter(l?.routingRevision);
-      const pin=Number(inputSelect?.value);
-      if(!deviceReady()||inputSelect.value==="" ||
-         epoch===null||revision===null||
-         !Number.isInteger(pin)||!d.enabledInputs.includes(pin)){
-        status("NATIVE: invalid input pin, epoch or route revision.");return;
-      }
-      pendingSourceId=++sourceSerial;
-      routeBtn.disabled=true;
-      backend.emitEvent("arMixAction",{
-        action:"routingSourceSwitch",requestId:pendingSourceId,
-        channel:0,mode:"MONO",left:pin,right:-1,
-        deviceEpoch:epoch,revision
-      });
-      status("NATIVE: CH1 physical input patch pending real ACK.");
-    });
-    armBtn=item("button","tool","Arm output");
-    armBtn.addEventListener("click",()=>{
-      if(!deviceReady()||legacy()?.routeAccepted!==true)return;
-      const epoch=safeNativeCounter(hardware.device.epoch);
-      const revision=safeNativeCounter(legacy().routingRevision);
-      if(epoch===null||revision===null)return;
-      backend.emitEvent("arMixAction",{action:"monitor",value:true,
-        expectedEpoch:epoch,expectedRevision:revision});
-      status("NATIVE: output ARM requested; awaiting JUCE ACK.");
+      if(typeof window.__arMixOpenAudioIO==="function")
+        window.__arMixOpenAudioIO("device");
+      else status("AUDIO I/O panel unavailable; hardware unchanged");
     });
     muteBtn=item("button","tool","Mute output");
     muteBtn.addEventListener("click",()=>{
       backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
+      status("Native output MUTE requested; awaiting engine ACK");
     });
-    hardwareNote=item("span","more-tools-caption","Device not initialized");
+    hardwareNote=item("span","more-tools-caption","Select IN on any channel strip");
     hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    menu.append(caption,setup,muteBtn,hardwareNote);
     updateHardwarePanel(hardware);
   }
 
@@ -275,7 +216,7 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      status("NATIVE G0 · pilih hardware IN langsung pada CH1–CH10; fader/WIRE ChannelId tetap menunggu accepted PCM.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -319,15 +260,6 @@
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
-    backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
-      pendingSourceId=0;
-      if(ack.ok===true) {
-        status("NATIVE: CH1 PATCH accepted by JUCE; validating later readback.");
-        controller.subscribe();
-      }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
-      updateHardwarePanel(hardware);
-    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
