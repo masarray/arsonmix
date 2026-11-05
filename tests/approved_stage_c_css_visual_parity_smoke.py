@@ -12,6 +12,7 @@ import shutil
 import tempfile
 
 from playwright.async_api import async_playwright
+from approved_css_original_bundle_fixture import reconstructed_original_css_html
 
 ROOT=Path(__file__).resolve().parents[1]
 COMPILED=ROOT/"dist-pages/preview"
@@ -73,6 +74,8 @@ async def main():
     with tempfile.TemporaryDirectory(prefix="armix-stage-c-original-") as tmp:
         baseline=Path(tmp)/"preview"
         shutil.copytree(COMPILED,baseline)
+        original_html=reconstructed_original_css_html((baseline/'index.html').read_text(encoding='utf-8'))
+        (baseline/'index.html').write_text(original_html,encoding='utf-8')
         cssnames=[p.name for p in (COMPILED/"assets").glob("*.css")]
         for name in cssnames:
             source=(ROOT/("site/preview-buttons/assets"
