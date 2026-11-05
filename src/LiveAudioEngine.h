@@ -277,6 +277,13 @@ public:
             return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before secondary device setup";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "Direct capture/output hardware is not available";
+        // STREAM is an additional render-only copy. A capture endpoint
+        // paired with its own VB-Cable playback can feed itself indefinitely.
+        // Reject that known loop independently of WebView safety guards.
+        juce::AudioDeviceManager::AudioDeviceSetup directSetup;
+        deviceManager_.getAudioDeviceSetup(directSetup);
+        if(knownVirtualCableFeedbackPair(directSetup.inputDeviceName,selected))
+            return "STREAM OFF: same VB-Cable input/output feedback loop";
         return secondaryOutput_.open(selected,device->getName(),
                                   device->getCurrentSampleRate(),
                                   device->getCurrentBufferSizeSamples());

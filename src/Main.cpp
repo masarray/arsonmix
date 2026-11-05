@@ -2129,8 +2129,18 @@ private:
         if(action=="secondaryOutputConnect" ||
            action=="secondaryOutputArm" || action=="secondaryOutputStop") {
             juce::String error;
-            if(studioBackupBusy_ || nativeShowBusy_)
-                error="Complete active Show/backup operation before editing secondary output";
+            const auto requestId=args.getProperty("requestId",juce::var());
+            const auto expectedEpoch=args.getProperty("expectedDeviceEpoch",juce::var());
+            const auto actualEpoch=static_cast<juce::int64>(engine_.dryRoutingLabEpoch());
+            const bool epochValid=(expectedEpoch.isInt()||expectedEpoch.isInt64()||
+                                    expectedEpoch.isDouble()) &&
+                static_cast<juce::int64>(expectedEpoch)==actualEpoch && actualEpoch>0;
+            // Explicit STOP is the safety escape hatch, even after a hotplug.
+            // CONNECT/ARM must belong to the exact current DIRECT device.
+            if(action!="secondaryOutputStop" && !epochValid)
+                error="STREAM: device changed; reselect an output";
+            else if(action!="secondaryOutputStop" && (studioBackupBusy_ || nativeShowBusy_))
+                error="Complete active Show/backup before connecting STREAM";
             else if(action=="secondaryOutputConnect") {
                 if(!value.isString() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
@@ -2140,9 +2150,12 @@ private:
                 else error=engine_.armSecondaryOutput(bool(value));
             } else engine_.disconnectSecondaryOutput();
             auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId.isString()?requestId:juce::var(""));
+            ack->setProperty("deviceEpoch",juce::String(actualEpoch));
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             const auto latest=engine_.status();
+            ack->setProperty("fault",latest.getProperty("secondaryOutputFault",false));
             ack->setProperty("ready",latest.getProperty("secondaryOutputReady",false));
             ack->setProperty("armed",latest.getProperty("secondaryOutputArmed",false));
             ack->setProperty("endpoint",latest.getProperty("secondaryOutputName",""));
