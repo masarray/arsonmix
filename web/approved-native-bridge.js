@@ -219,10 +219,11 @@
     };
     const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
     const setup=item("button","tool","Audio Setup");
-    setup.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"audioSetup"});
-      status("NATIVE: select actual ASIO/WASAPI input + output in Audio Setup.");
-    });
+    // Reuse the ALREADY implemented compact Audio I/O panel from mixer-io.
+    // Its window-capture setup handler owns driver inventory and APPLY/ACK.
+    // The stock JUCE device popup remains available only via Advanced.
+    setup.dataset.nativeAction="audioSetup";
+    setup.title="Configure real input and output devices in the mixer";
     inputSelect=item("select","toolbar-select","");
     inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
     inputSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
@@ -344,6 +345,19 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      // DAW-style per-track IN is routing, not ChannelId G0 control.
+      // Every native input is committed through the existing M4 ten-channel
+      // ACK controller. NEVER let Pages' demo field change actual audio.
+      if(field==="input"){
+        if(event.type==="change"){
+          const strip=el.closest?.(".strip[data-strip]");
+          const channel=Number(strip?.dataset.strip);
+          const outcome=window.__arMixChooseChannelHardwareInput?.(channel,el.value);
+          if(!outcome?.ok)status("INPUT REJECTED · "+(outcome?.error||"native mixer unavailable"));
+          else status("CH "+(channel+1)+" INPUT · native ACK pending");
+        }
+        return true;
+      }
       if (!flags.acceptedGraphConnected) {
         if (field==="level")el.value=String(t.level);
         else if (field==="pan")el.value=String(t.pan);
