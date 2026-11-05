@@ -263,6 +263,61 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
     return compiled, stats
 
 
+# Stage D: one runtime CSSOM owner; the 18 historical sources and their
+# original cascade order remain independently maintainable.
+RUNTIME_CSS = "arsonmix-approved-runtime.css"
+
+
+def compile_runtime_bundle(stylesheets: list[tuple[str, str]]) -> str:
+    """Concatenate source-ordered *compiled* CSS, without changing selector scope.
+
+    Every owner lives in /assets/: url(...) resolution is unchanged. Fail
+    closed on top-level CSS at-rules whose semantics depend on file location.
+    Do not minify/rewrite original selectors or reorder @media/@font-face.
+    """
+    if not stylesheets or len({name for name, _ in stylesheets}) != len(stylesheets):
+        raise ValueError("Runtime CSS requires unique, ordered approved owners")
+    if any(name == RUNTIME_CSS for name, _ in stylesheets):
+        raise ValueError("Runtime CSS output must not be an authored owner")
+    parts = ["/* ArSonMix approved runtime CSS: generated; edit source owners only. */\n"]
+    for name, css in stylesheets:
+        # Remove only comments for detecting forbidden at-rules, not for output.
+        plain = re.sub(r"/\*[\s\S]*?\*/", "", css)
+        if re.search(r"@(?:charset|import|namespace)\b", plain, re.I):
+            raise ValueError("CSS owner cannot be bundled with @import/charset/namespace: " + name)
+        if not re.fullmatch(r"[a-zA-Z0-9._-]+\.css", name):
+            raise ValueError("Unsafe runtime CSS owner: " + name)
+        # Separators prevent neighboring tokens merging; comments document
+        # provenance but are NOT a second override/cascade layer.
+        parts.append("\n/* BEGIN approved owner " + name + " */\n")
+        parts.append(css)
+        parts.append("\n/* END approved owner " + name + " */\n")
+    return "".join(parts)
+
+
+def link_runtime_bundle(html: str, css_sha: str) -> str:
+    """Replace exactly the approved CSS owner links with ONE runtime link."""
+    if not re.fullmatch(r"[a-f0-9]{16}", css_sha):
+        raise ValueError("Invalid generated runtime CSS digest")
+    original = list(LINK.finditer(html))
+    if len(original) != 18 or len({m.group(2) for m in original}) != 18:
+        raise ValueError("Approved GUI must list its 18 unique CSS owners")
+    if RUNTIME_CSS in (m.group(2) for m in original):
+        raise ValueError("Runtime CSS would recursively import itself")
+    count = 0
+    def rewrite(match):
+        nonlocal count
+        count += 1
+        if count == 1:
+            return ('<link rel="stylesheet" href="assets/' + RUNTIME_CSS +
+                    '?sha=' + css_sha + '">')
+        return ""
+    rewritten = LINK.sub(rewrite, html)
+    if count != len(original) or rewritten.count('href="assets/' + RUNTIME_CSS) != 1:
+        raise ValueError("CSS runtime bundling failed closed")
+    return rewritten
+
+
 def optimize_assets(html: str, assets: Path):
     """Change only copied CSS asset bytes and add content-addressing to URLs."""
     names = [match.group(2) for match in LINK.finditer(html)]
@@ -290,5 +345,18 @@ def optimize_assets(html: str, assets: Path):
         return prefix + name + base + delim + "armixc=" + revisions[name] + trailing
 
     rendered = LINK.sub(link, html)
+    # Keep all per-owner compiled CSS copies as inspectable provenance.
+    # The browser/native WebView2 now *request just one* generated CSS file.
+    # Packaging may discard redundant unreferenced owner copies separately
+    # after the established exact-approved-PNG and WIRE provenance checks.
+    bundled = compile_runtime_bundle([(name, optimized[name]) for name, _ in files])
+    digest = hashlib.sha256(bundled.encode("utf-8")).hexdigest()[:16]
+    (assets / RUNTIME_CSS).write_text(bundled, encoding="utf-8", newline="")
+    rendered = link_runtime_bundle(rendered, digest)
     stats["shaByCssOwner"] = revisions
+    stats["runtimeStylesheetCount"] = 1
+    stats["removedStylesheetRequests"] = len(files) - 1
+    stats["runtimeBundleCssSHA256"] = digest
+    stats["runtimeBundleBytes"] = len(bundled.encode("utf-8"))
+    stats["compiledOwnerBytes"] = sum(len(optimized[name].encode("utf-8")) for name, _ in files)
     return rendered, stats
