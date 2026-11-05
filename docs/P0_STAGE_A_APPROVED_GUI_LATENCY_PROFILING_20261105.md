@@ -11,6 +11,7 @@
 3. Sweep the pointer over blank mixer space, labels, FX controls, PAN, faders, WIRE sockets and top chrome without clicking; repeat 3 times for each hardware/audio condition.
 4. Read **GUI_PERF_JS** and independent **GUI_PERF_NATIVE** entries in the existing settings/diagnostics/audio-diagnostics.log. Native results also appear in browser-console messages if DevTools is available. Browser console exposes ArSonMixPerf.last, ArSonMixPerf.exportJSON(), and ArSonMixPerf.download() for controlled export.
 5. For Pages testing only, use /preview/?armixperf=1. Do not use /preview-v2/ or a second UI renderer.
+6. Optional concurrent Windows process sampling: run PowerShell scripts/collect_gui_perf_windows.ps1 -Seconds 20 -ExePath <path-to-ARMixConsole.exe> from a terminal. It saves local environment.json and process-timeline.csv for ARMixConsole and msedgewebview2. This measures process CPU/memory only; GPU rendering still needs a separate ETW/DevTools trace.
 
 ## What the measurements mean
 
