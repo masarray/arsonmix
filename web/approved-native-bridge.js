@@ -169,10 +169,7 @@
     const label=document.getElementById("transport");
     if(label)label.textContent=!deviceOpen?"Choose audio device":
       d.outputArmed?"MAIN monitoring on":"MAIN monitoring off";
-    if(ioMonitorButton){
-      ioMonitorButton.textContent=d?.outputArmed?"Monitor on":"Monitor off";
-      ioMonitorButton.dataset.on=String(!!d?.outputArmed);
-    }
+
     const warning=document.querySelector?.(".status-bar .warning");
     if(warning)warning.textContent=!deviceOpen?"CHOOSE AUDIO OUTPUT":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
@@ -214,8 +211,7 @@
   // No AudioDeviceSelectorComponent popup or additional device callback in the
   // normal workflow; the stock JUCE selector remains Advanced recovery.
   let ioRoot=null,ioDraft=null,ioInventory=null,ioBusy=false,
-    ioMutePending=false,ioRequest="",ioCounter=0,ioMessage="",
-    ioMonitorButton=null;
+    ioMutePending=false,ioRequest="",ioCounter=0,ioMessage="";
   const ioElement=(tag,cls,label)=>{
     const n=document.createElement(tag);
     if(cls)n.className=cls;if(label!==undefined)n.textContent=label;
@@ -367,30 +363,6 @@
     body.append(note);panel.append(body);ioRoot.append(panel);
     ioRoot.addEventListener("click",e=>{if(e.target===ioRoot)ioRoot.hidden=true;});
     document.body.appendChild(ioRoot);
-    const bar=document.querySelector(".command-bar");
-    const before=document.getElementById("pluginsButton");
-    if(bar&&before){
-      const b=ioElement("button","tool ar-native-io-open","Audio I/O");
-      b.id="arNativeIoOpen";b.addEventListener("click",openNativeAudioIO);
-      before.insertAdjacentElement("afterend",b);
-      ioMonitorButton=ioElement("button","tool ar-native-monitor","Monitor off");
-      ioMonitorButton.id="arNativeMonitor";
-      ioMonitorButton.addEventListener("click",()=>{
-        const armed=hardware?.device?.outputArmed===true;
-        if(!armed&&!verifiedM4()){
-          status("Choose a verified input on any mixer channel first.");return;
-        }
-        if(!armed&&ioFeedbackLoop(hardware?.device?.captureDevice,hardware?.device?.playbackDevice)){
-          status("MAIN monitor refused: VB-Cable input and output are the same feedback loop.");return;
-        }
-        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
-          ...(armed?{}:{
-            expectedEpoch:Number(lastDryReadback.epoch),
-            expectedRevision:Number(lastDryReadback.revision)
-          })});
-      });
-      b.insertAdjacentElement("afterend",ioMonitorButton);
-    }
   }
   function openNativeAudioIO(){
     installNativeIoPanel();
@@ -479,6 +451,12 @@
       signalSourceResult("CH "+(channel+1)+" routed; MAIN monitoring stays OFF: input and output loop back through the same VB-Cable. Choose a physical output in Audio I/O.");
       return;
     }
+    if(!p.wasMonitoring){
+      const channel=p.channel;
+      nativeSourcePending=null;
+      signalSourceResult("CH "+(channel+1)+" → MAIN · input connected, output remains MUTED. Use the existing MAIN MUTE button to monitor.");
+      return;
+    }
     p.phase="monitor";p.revision=Number(d.revision);
     backend.emitEvent("arMixAction",{action:"monitor",value:true,
       expectedEpoch:p.epoch,expectedRevision:p.revision});
@@ -506,8 +484,7 @@
     }
     const before=routeRow(channel);
     const unchanged=routeValue(before)===value;
-    if(unchanged&&hardware.device.outputArmed || unchanged&&mode==="NONE")
-      return true;
+    if(unchanged)return true; // never change monitoring consent on no-op
     const epoch=Number(d.epoch),revision=Number(d.revision);
     if(!Number.isSafeInteger(epoch)||epoch<=0||!Number.isSafeInteger(revision)||revision<1){
       signalSourceResult("Native route revision is not ready.");return true;
@@ -583,6 +560,13 @@
     const d=live?.dryRoutingLab||{};
     lastDryReadback=d;
     let changed=false;
+    // MAIN's approved MUTE is a real hardware output gate in native G0.
+    // Boot muted means MUTE lit; deliberately clicking it enables monitor.
+    const main=scope.master;
+    if(main&&typeof hardware?.device?.outputArmed==="boolean"){
+      const mute=!hardware.device.outputArmed || live.masterMute===true;
+      if(main.mute!==mute){main.mute=mute;changed=true;}
+    }
     // Source identity must follow native accepted/prepared routes after ANY
     // hotplug, restart or external patch: never leave old demo input names.
     const rows=d.acceptedRoute?.channels||d.preparedM4Route?.channels||[];
@@ -842,10 +826,27 @@
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
         if(!flags.acceptedGraphConnected) {
-          if(t===scope?.master&&action==="mute")
-            backend.emitEvent("arMixParameter",{parameter:"masterMute",value:!t.mute,channel:-1});
-          else m4Parameter(t,action,!t[action]);
-          return true;
+          if(t===scope?.master&&action==="mute"){
+            const armed=hardware?.device?.outputArmed===true;
+            if(!armed&&!verifiedM4()){
+              status("Connect a verified IN on any channel before enabling MAIN.");
+              return true;
+            }
+            if(!armed&&ioFeedbackLoop(hardware?.device?.captureDevice,
+                 hardware?.device?.playbackDevice)){
+              status("MAIN monitoring refused: VB-Cable capture/playback form a feedback loop.");
+              return true;
+            }
+            // MAIN mute is the EXISTING visible physical monitor gate.
+            // One operator gesture, no new ARM/START UI or hidden auto-arm.
+            backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
+              ...(armed?{}:{
+                expectedEpoch:Number(lastDryReadback.epoch),
+                expectedRevision:Number(lastDryReadback.revision)
+              })});
+            return true;
+          }
+          m4Parameter(t,action,!t[action]);return true;
         }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
