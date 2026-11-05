@@ -446,9 +446,12 @@
   let nativeSourcePending=null,nativeSourceSerial=1500000;
   const signalSourceResult=message=>{status(message);};
   const stopSource=error=>{
+    const p=nativeSourcePending;
     nativeSourcePending=null;
-    signalSourceResult("INPUT NOT CHANGED · "+error+
-      ". Review hardware I/O; previous audio route preserved.");
+    const alreadyPatched=!!p?.accepted;
+    signalSourceResult((alreadyPatched?"INPUT CONNECTED · MONITOR OFF · ":"INPUT NEEDS VERIFICATION · ")+
+      error+". Inspect Audio I/O and native readback before trying again.");
+    controller?.subscribe(); // lost ACK or hotplug: never trust optimistic UI
   };
   const submitSource=()=>{
     const p=nativeSourcePending,d=lastDryReadback||{};
@@ -511,6 +514,13 @@
     }
     nativeSourcePending={id:++nativeSourceSerial,channel,mode,left,right,
       epoch,revision,phase:"source",wasMonitoring:hardware.device.outputArmed===true};
+    const ticket=nativeSourcePending.id;
+    // One bounded operator-request timeout, never a realtime callback timer.
+    // Driver/ACK can be lost: force a new authoritative snapshot and unblock IN.
+    window.setTimeout(()=>{
+      if(nativeSourcePending?.id===ticket)
+        stopSource("native source/monitor ACK did not arrive");
+    },8000);
     // Native M4 applies SAME-FORMAT source changes in 64-sample crossfade.
     // Structural changes while monitored mute on the existing control thread
     // before preparing the immutable graph, then resume only after real ACK.
@@ -628,6 +638,8 @@
     const oldPortSignature=hardware?.device?
       JSON.stringify([hardware.device.epoch,hardware.device.inputEndpoints,hardware.device.playbackDevice]):"";
     updateHardwarePanel(next);
+    if(nativeSourcePending && next?.device?.epoch!==String(nativeSourcePending.epoch))
+      stopSource("audio interface changed during selection");
     const newPortSignature=next?.device?
       JSON.stringify([next.device.epoch,next.device.inputEndpoints,next.device.playbackDevice]):"";
     // Only re-render the full mixer when real hardware inventory changes,
