@@ -1008,7 +1008,31 @@
       backend.emitEvent("arMixAction",{action:"audioSetup"});
     });
     advanced.append(summary,driver);
-    menu.append(caption,setup,muteBtn,hardwareNote,advanced);
+    // First Sound P0: these are REAL JUCE diagnostic actions, not demo
+    // toggles. The marker snapshots the 5-second PRE-event counters and
+    // Windows RAM/process paging context from the existing 1 Hz control
+    // timer. No sampling or file I/O happens in the ASIO callback.
+    const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
+    const mark=item("button","tool","Mark Crackle");
+    mark.title="Capture 5s before an audible crackle, including Windows memory";
+    mark.addEventListener("click",()=>{
+      backend.emitEvent("arMixAction",{action:"diagnosticMark"});
+      nativeToast("Audio glitch marked · pre-event counters and RAM saved");
+      status("Crackle marker sent to JUCE diagnostics");
+    });
+    const report=item("button","tool","Copy Audio Report");
+    report.title="Copy real JUCE timing / driver / memory evidence to clipboard";
+    report.addEventListener("click",()=>{
+      backend.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
+      status("Preparing JUCE audio diagnostic report on control thread");
+    });
+    backend.addEventListener("arMixDiagnosticReportCopied",ack=>{
+      const bytes=Number(ack?.bytes);
+      if(Number.isFinite(bytes)&&bytes>0)
+        nativeToast("Audio report copied · paste into engineering chat");
+    });
+    menu.append(caption,setup,muteBtn,hardwareNote,
+      healthTitle,mark,report,advanced);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");
