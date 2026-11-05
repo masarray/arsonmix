@@ -1,6 +1,7 @@
 """Fail closed: GitHub Pages must expose ONE approved ArSonMix GUI at /preview/."""
 from pathlib import Path
 import json, re, sys, hashlib
+from scripts.compile_approved_css import LINK, optimize_css
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -34,6 +35,35 @@ require(html.count(probe)==1,'profiler missing or duplicated')
 require((gui/'assets/gui-perf-probe.js').read_bytes()==
         (ROOT/'site/preview-v2/assets/gui-perf-probe.js').read_bytes(),
         'opt-in performance probe was not copied byte-for-byte')
+# Stage C: the source HTML remains byte-exact, but the 18 deployed CSS files
+# contain only proven cascade winners. Verify every *generated* byte and query
+# hash; never approve an extra stylesheet, different owner or PNG mutation.
+linked=[match.group(2) for match in LINK.finditer(expected)]
+require(len(linked)==18 and len(set(linked))==18,'approved CSS owners changed')
+source_css=[(name,(ROOT / ("site/preview-buttons/assets"
+                               if name=="mixer-control-keys.css"
+                               else "site/preview-v2/assets") / name)
+                        .read_text(encoding="utf-8")) for name in linked]
+compiled,counts=optimize_css(source_css)
+record=build.get('css_compilation') or {}
+require(counts['removedDeclarations']>0,'Stage C did not reduce actual runtime CSS')
+for stat in ('sourceDeclarations','removedDeclarations',
+             'removedCrossFileDeclarations','lockedCandidateDeclarations'):
+    require(record.get(stat)==counts[stat],'CSS compiler accounting mismatch: '+stat)
+require(record.get('sourceStylesheetCount')==18 and
+        record.get('generatedStylesheetCount')==18 and
+        record.get('addedOverrideStylesheets')==0,'CSS compiler created an override')
+for name in linked:
+    data=(gui/'assets'/name).read_bytes()
+    require(data==compiled[name].encode('utf-8'),
+            'Runtime CSS differs from source-derived winning declarations: '+name)
+    digest=hashlib.sha256(data).hexdigest()[:16]
+    require(record.get('shaByCssOwner',{}).get(name)==digest,
+            'Runtime CSS digest mismatch: '+name)
+def css_rewrite(match):
+    prefix,name,query,end=match.groups()
+    return prefix+name+(query or '')+('&' if query else '?')+'armixc='+record['shaByCssOwner'][name]+end
+expected=LINK.sub(css_rewrite,expected)
 require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + nonvisual profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
