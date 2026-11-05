@@ -909,13 +909,15 @@
     value:descriptor,configurable:false,writable:false
   });
   if (!connected)return;
-  // Disable physical control gestures while G0 has no accepted ChannelId graph.
-  // Presentation-only bank/selection remains available.
+  // Guard only when NEITHER the admitted ChannelId graph NOR the actual
+  // M4 ten-channel native callback can accept the control. Previously this
+  // blanket pointerdown interception silently disabled every physical fader
+  // even though setDryRoutingLabParameter already existed and was realtime.
   document.addEventListener("pointerdown",event=>{
-    if (flags.acceptedGraphConnected) return;
+    if (flags.acceptedGraphConnected || verifiedM4ControlLane()) return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
     event.preventDefault();event.stopImmediatePropagation();
-    status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
+    status("Select an active hardware device before moving native controls");
   },true);
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
