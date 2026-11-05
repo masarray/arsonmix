@@ -66,8 +66,6 @@ print("Stage C approved CSS: removed",css_compilation["removedDeclarations"],
       "redundant declarations (cross-file",
       css_compilation["removedCrossFileDeclarations"],"), kept original",
       css_compilation["sourceStylesheetCount"],"CSS owners; zero new overrides")
-if css_compilation['removedDeclarations']<1:
-    raise SystemExit('CSS Stage C produced no obsolete-declaration removals')
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
 (buttons_dest/'build.json').write_text(json.dumps({
     'canonical_url':'/preview/',

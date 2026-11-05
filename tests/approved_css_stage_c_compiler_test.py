@@ -82,6 +82,15 @@ class StageCCssCompiler(unittest.TestCase):
         self.assertEqual(stats["lockedCandidateDeclarations"],1)
         self.assertEqual(stats["removedDeclarations"],1)
 
+    def test_custom_property_case_and_quoted_attribute_spaces_are_distinct(self):
+        authored=('.x{--Ch:red;--ch:blue}'
+                  '.x[title="a  b"]{opacity:.5}'
+                  '.x[title="a b"]{opacity:.7}')
+        built,stats=css.optimize_css([("a.css",authored)])
+        self.assertEqual(stats["removedDeclarations"],0,
+                         "CSS custom properties are case-sensitive and quoted selector whitespace matters")
+        self.assertEqual(built["a.css"],authored)
+
     def test_idempotent_and_no_new_link_or_authority(self):
         with tempfile.TemporaryDirectory() as root:
             assets=Path(root)

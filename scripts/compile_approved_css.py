@@ -88,7 +88,59 @@ def _close_brace(source: str, open_pos: int, end: int):
 
 
 def _visible(text: str):
-    return re.sub(r"/\*.*?\*/", "", text, flags=re.S).strip()
+    """Strip CSS comments, never quoted strings or CSS escapes."""
+    result = []
+    quote = ""
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if c == "\\" and i + 1 < len(text):
+                result.extend((c, text[i + 1]))
+                i += 2
+                continue
+            result.append(c)
+            if c == quote:
+                quote = ""
+        elif text.startswith("/*", i):
+            stop = text.find("*/", i + 2)
+            if stop < 0:
+                raise ValueError("unterminated CSS comment")
+            i = stop + 2
+            continue
+        else:
+            result.append(c)
+            if c in "'\"":
+                quote = c
+        i += 1
+    return "".join(result).strip()
+
+
+def _normalize_header(text: str):
+    """Normalize whitespace only OUTSIDE quoted selector/at-rule strings."""
+    parts = []
+    quote = ""
+    escaped = False
+    pending_space = False
+    for c in text:
+        if quote:
+            parts.append(c)
+            if escaped:
+                escaped = False
+            elif c == "\\":
+                escaped = True
+            elif c == quote:
+                quote = ""
+        elif c.isspace():
+            pending_space = True
+        else:
+            if pending_space and parts:
+                parts.append(" ")
+            pending_space = False
+            parts.append(c)
+            if c in "'\"":
+                quote = c
+    return "".join(parts).strip()
 
 
 def _declarations(source: str, filename: str):
@@ -108,7 +160,7 @@ def _declarations(source: str, filename: str):
             if close < 0:
                 raise ValueError(f"{filename}: unmatched CSS brace near {at}")
             if header.startswith("@"):
-                normalized = " ".join(header.split())
+                normalized = _normalize_header(header)
                 if CONTAINER.match(normalized):
                     walk(at + 1, close, context + (normalized,))
                 cursor = close + 1
@@ -116,14 +168,17 @@ def _declarations(source: str, filename: str):
             if header and not _seek(source, at + 1, close, "{}")[1]:
                 # Never optimize nested-rule bodies (e.g. modern nesting).
                 p = at + 1
-                selector = " ".join(header.split())
+                selector = _normalize_header(header)
                 while p < close:
                     stop, divider = _seek(source, p, close, ";")
                     piece = source[p:stop]
                     visible = _visible(piece)
                     match = PROPERTY.match(visible)
                     if match and visible[match.end():].strip():
-                        prop = match.group(1).lower()
+                        raw_property = match.group(1)
+                        # Custom property names are CASE SENSITIVE in CSS.
+                        prop = (raw_property if raw_property.startswith("--")
+                                else raw_property.lower())
                         important = bool(IMPORTANT.search(visible))
                         result.append(Declaration(filename, context, selector, prop,
                                                   important, p, stop + int(divider == ";")))
