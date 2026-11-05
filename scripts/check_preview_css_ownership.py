@@ -63,6 +63,31 @@ def inspect() -> tuple[list[str], dict[str, list[str]]]:
     return names, dict(sorted(overlap.items()))
 
 
+def count_same_file_repeated_declarations(names: list[str]) -> dict[str, int]:
+    """Conservative same-file stacking counter; CSS context still needs QA.
+
+    An identical normalized selector + property repeated later in the same
+    owner is debt even if the current cascade intentionally uses it. New debt
+    is not permitted, but removing existing duplicate declarations is.
+    """
+    totals: dict[str, int] = {}
+    for name in names:
+        css = COMMENT.sub("", source_path(name).read_text(encoding="utf-8"))
+        seen: set[str] = set()
+        repeated = 0
+        for match in LEAF.finditer(css):
+            selector = " ".join(match.group(1).split())
+            if not selector or selector.startswith("@"):
+                continue
+            for prop in PROP.finditer(match.group(2)):
+                key = selector + "||" + prop.group(1)
+                if key in seen:
+                    repeated += 1
+                seen.add(key)
+        totals[name] = repeated
+    return totals
+
+
 def verify() -> dict:
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
     names, conflicts = inspect()
@@ -76,12 +101,27 @@ def verify() -> dict:
     if newly_stacked:
         sample = list(newly_stacked.items())[:8]
         raise ValueError("NEW CROSS-OWNER CSS STACKING FORBIDDEN: " + repr(sample))
+    # Stage B: forbid growing same-owner selector/property layering too.
+    # V28 historical source byte checks remain valid; no stylesheet changed.
+    same_file = count_same_file_repeated_declarations(names)
+    caps = baseline["sameFileRepeatedDeclarationCaps"]
+    if set(caps) != set(names):
+        raise ValueError("Missing/stale same-file CSS ownership baseline")
+    new_stacking = {
+        name: (count, caps[name])
+        for name, count in same_file.items() if count > caps[name]
+    }
+    if new_stacking:
+        raise ValueError("NEW SAME-OWNER CSS STACKING FORBIDDEN: " + repr(new_stacking))
     return {
         "stylesheets": len(names),
         "crossOwnerBaseline": len(allowed),
         "crossOwnerCurrent": len(conflicts),
         "eliminated": len(allowed) - len(conflicts),
         "newCrossOwnerConflicts": 0,
+        "sameOwnerRepeatedBaseline": sum(caps.values()),
+        "sameOwnerRepeatedCurrent": sum(same_file.values()),
+        "newSameOwnerStacking": 0,
     }
 
 
