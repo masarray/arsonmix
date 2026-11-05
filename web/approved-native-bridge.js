@@ -276,6 +276,72 @@
     updateHardwarePanel(hardware);
   }
 
+  // The installed M4 renderer already has ten real native strip setters.
+  // Before ChannelId migration, show its ACCEPTED readback rather than
+  // disabling fader/PAN/MUTE/SOLO or inventing an optimistic demo state.
+  function m4Verified(){
+    const m=legacy(),d=hardware?.device;
+    return m?.active===true&&m.routeAccepted===true &&
+      Array.isArray(m.channelControls)&&m.channelControls.length===10 &&
+      safeNativeCounter(d?.epoch)!==null &&
+      safeNativeCounter(m.routingRevision)!==null;
+  }
+  function m4StripIndex(el){
+    const root=el?.closest?.('.strip[data-strip]');
+    if(!root)return -1;
+    const n=Number(root.dataset.strip);
+    return Number.isInteger(n)&&n>=0&&n<10?n:-1;
+  }
+  function m4Send(parameter,channel,value){
+    if(!m4Verified()||channel<0||channel>=10)return false;
+    if(typeof value!=="boolean"&&!(Number.isFinite(value)))return false;
+    backend.emitEvent("arMixParameter",{
+      parameter,channel:channel+1,value,
+      routeEpoch:safeNativeCounter(hardware.device.epoch),
+      routeRevision:safeNativeCounter(legacy().routingRevision)
+    });
+    // 12Hz native snapshots are authoritative; never update Pages model here.
+    return true;
+  }
+  function paintM4Readback(next) {
+    const m=next?.raw?.legacyM4,controls=m?.channelControls;
+    if(!m?.active||!m.routeAccepted||!Array.isArray(controls)||
+       controls.length!==10||!scope?.render||!Array.isArray(scope?.tracks))return;
+    let change=false;
+    for(let i=0;i<10;i++){
+      const ctl=controls[i],track=scope.tracks[i];
+      if(!ctl||!track||track.kind!=="audio"||
+         !Number.isFinite(ctl.db)||!Number.isFinite(ctl.pan)||
+         typeof ctl.mute!=="boolean"||typeof ctl.solo!=="boolean")return;
+      if(Math.abs(track.level-ctl.db)>.015){track.level=ctl.db;change=true;}
+      if(Math.abs(track.pan-ctl.pan)>.015){track.pan=ctl.pan;change=true;}
+      if(track.mute!==ctl.mute){track.mute=ctl.mute;change=true;}
+      if(track.solo!==ctl.solo){track.solo=ctl.solo;change=true;}
+    }
+    if(scope.master && Number.isFinite(m.masterDb) &&
+       Math.abs(scope.master.level-m.masterDb)>.015){
+      scope.master.level=m.masterDb;change=true;
+    }
+    if(scope.master && typeof m.masterMute==="boolean" &&
+       scope.master.mute!==m.masterMute){
+      scope.master.mute=m.masterMute;change=true;
+    }
+    if(change)scope.render();
+    const l=m.channelPeaksL,r=m.channelPeaksR;
+    if(!Array.isArray(l)||!Array.isArray(r)||!scope.displayMeterDbfs)return;
+    const now=performance.now();
+    for(let i=0;i<10;i++){
+      const root=document.querySelector('.strip[data-strip="'+i+'"]');
+      if(!root)continue;
+      for(const [side,v] of [["left",l[i]],["right",r[i]]]){
+        if(!Number.isFinite(v)||v<0)continue;
+        const fill=root.querySelector('.meter-fill.'+side);
+        if(fill)scope.displayMeterDbfs(fill,v===0?-90:
+          Math.max(-90,Math.min(6,20*Math.log10(v))),now,
+          "m4:"+i+":"+side);
+      }
+    }
+  }
   function onNativeReadback(next) {
     updateHardwarePanel(next);
     const caps=next?.graph?.capabilities;
@@ -284,7 +350,10 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      paintM4Readback(next);
+      status(m4Verified()?
+        "LIVE 10CH MIXER · INPUT/FADER/PAN/MUTE native · ChannelId migration pending":
+        "NATIVE DEVICE · select real IN on channel; output remains safe until native route");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -367,9 +436,21 @@
         return true;
       }
       if (!flags.acceptedGraphConnected) {
-        if (field==="level")el.value=String(t.level);
-        else if (field==="pan")el.value=String(t.pan);
-        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        const n=m4StripIndex(el);
+        if(m4Verified()&&n>=0&&(field==="level"||field==="pan")){
+          if(event.type!=="change")return true; // cap preview, native control on commit
+          const numeric=Number(el.value);
+          const value=field==="pan"?
+            (!el.dataset.panKeyboard&&!el.dataset.panAltPointer&&Math.abs(numeric)<=12?0:numeric):
+            numeric;
+          const parameter=field==="level"?"faderDb":"pan";
+          if(!m4Send(parameter,n,value))
+            status("NATIVE M4: control rejected; waiting real readback");
+          return true;
+        }
+        if(field==="level")el.value=String(t.level);
+        else if(field==="pan")el.value=String(t.pan);
+        status("NATIVE: route not yet accepted; control unchanged");
         return true;
       }
       // During a native pointer drag move the approved fader *cap* only.
@@ -409,6 +490,14 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected && m4Verified()){
+          const n=m4StripIndex(btn);
+          if(n>=0) {
+            if(!m4Send(action,n,!t[action]))
+              status("Native M4 control rejected; waiting readback");
+            return true;
+          }
+        }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
@@ -486,6 +575,7 @@
   // Presentation-only bank/selection remains available.
   document.addEventListener("pointerdown",event=>{
     if (flags.acceptedGraphConnected) return;
+    if (m4Verified()&&m4StripIndex(event.target)>=0) return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
