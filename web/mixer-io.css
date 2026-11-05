@@ -632,6 +632,13 @@
  font:500 9px/1 "Segoe UI",Arial,sans-serif;
  text-overflow:ellipsis;cursor:pointer;z-index:1
 }
+#app #mixer .route-field .arChannelNativeOutput{
+ display:block;width:100%;min-width:0;overflow:hidden;
+ text-overflow:ellipsis;white-space:nowrap;
+ padding:2px 3px;color:#a9d6de;
+ font:500 9px/1.2 "Segoe UI",Arial,sans-serif;
+ cursor:default
+}
 #app #mixer .arChannelQuickInput:disabled{color:#78949f;cursor:default}
 #app #mixer .arChannelQuickInput:focus-visible{outline:1px solid #7ad2e9;outline-offset:0}
 #app #mixer .arFormatBadge{top:0;height:15px;line-height:13px}
