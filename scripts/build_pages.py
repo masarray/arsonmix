@@ -48,6 +48,16 @@ for name in special:
     revisions[name]=digest
     match=matches[0]
     canonical_html=canonical_html[:match.start()]+token+'?rev='+digest+canonical_html[match.end():]
+# Add the opt-in, CSS-free performance probe in the ONE canonical assembler.
+# Do not rewrite historical source HTML: CSS V28 exact-source checkpoints remain
+# valid, and the generated /preview/ plus JUCE WebView2 bundle stay identical.
+probe='gui-perf-probe.js'
+if not (buttons_dest/'assets'/probe).is_file():
+    raise SystemExit('Approved GUI performance probe asset missing')
+probe_tag='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script>'
+if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
+    raise SystemExit('Approved Pages profiler injection must have exactly one body')
+canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
 (buttons_dest/'build.json').write_text(json.dumps({
     'canonical_url':'/preview/',
