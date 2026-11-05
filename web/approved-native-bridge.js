@@ -20,6 +20,7 @@
   // B-stage: attached-node-only meter caches; a structural render invalidates
   // them atomically. Never retain detached WebView2 strips or stale channel IDs.
   const meterElements = new Map();
+  let nativeFxPowerSerial=0, pendingNativeFxPower=null;
   let controller = null;
   const status = message => {
     lastNativeError = message;
@@ -97,6 +98,7 @@
           (out?.name||"SOURCE ONLY (No Main)");
       }
       t.selected=previous.get(t.id)?.selected || false;
+      if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
         t.fx=Array.from({length:8},(_,i)=>ch.inserts[i]?.name||"None");
         t.slotBypass=Array.from({length:8},(_,i)=>Boolean(ch.inserts[i]?.bypassed));
@@ -761,7 +763,7 @@
     // Control readback may change at the SAME structural graph revision.
     // Compare the actual accepted controls/edges, never skip native fader updates.
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
     if (signature===lastPaintedSignature) {
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -774,6 +776,12 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    if(pendingNativeFxPower?.acked){
+      const p=pendingNativeFxPower,ch=next.graph.channels.find(c=>c.id===p.channelId);
+      const actual=p.kind==="rack"?ch?.fxRackBypassed:
+        ch?.inserts?.find(i=>i.id===p.insertId)?.bypassed;
+      if(actual===p.bypassed){pendingNativeFxPower=null;status("NATIVE FX power verified from PCM readback");}
+    }
     status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
       " · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
@@ -806,6 +814,16 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixNativeFxPowerAck", ack=>{
+      if(!pendingNativeFxPower||ack?.requestId!==pendingNativeFxPower.requestId)return;
+      if(ack?.ok!==true){
+        pendingNativeFxPower=null;
+        status("NATIVE FX REJECTED: "+(ack?.error||"stale engine authority"));
+        controller.subscribe();return;
+      }
+      pendingNativeFxPower.acked=true;
+      controller.subscribe(); // a later PCM-producer snapshot is required
+    });
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       if(nativeUiSourcePending &&
          ack?.requestId===nativeUiSourcePending.requestId) {
@@ -1052,6 +1070,36 @@
         }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
+      }
+      if(action==="fxOn" || action==="slotPower") {
+        const current=controller?.state()?.current,id=nativeIdFor(t);
+        const ch=current?.graph?.channels?.find(x=>x.id===id);
+        if(!current?.admitted||!id||!ch||pendingNativeFxPower){
+          status("NATIVE FX: wait for accepted graph/readback or pending ACK");return true;
+        }
+        const rack=action==="fxOn",slot=Number(btn?.dataset?.slot);
+        const insert=!rack&&Number.isInteger(slot)&&slot>=0&&slot<8?ch.inserts?.[slot]:null;
+        if((rack&&typeof ch.fxRackBypassed!=="boolean")||
+          (!rack&&(!insert||typeof insert.bypassed!=="boolean"||typeof insert.id!=="string"||!insert.id))){
+          status("NATIVE FX: insert or rack not admitted");return true;
+        }
+        const requestId="fx-"+(++nativeFxPowerSerial)+"-"+Date.now().toString(36);
+        const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
+        pendingNativeFxPower={requestId,channelId:id,kind:rack?"rack":"insert",
+          insertId:insert?.id,bypassed,acked:false};
+        backend.emitEvent("arMixAction",{
+          action:rack?"routingNativeFxRackBypass":"routingNativeFxInsertBypass",
+          requestId,channelId:id,deviceEpoch:current.device.epoch,
+          revision:current.graph.revision,value:bypassed,
+          ...(rack?{}:{slot,insertId:insert.id})
+        });
+        status("NATIVE FX "+(rack?"RACK":"INSERT")+" pending ACK and PCM readback");
+        window.setTimeout(()=>{
+          if(pendingNativeFxPower?.requestId===requestId){
+            pendingNativeFxPower=null;controller?.subscribe();
+            status("NATIVE FX ACK/readback timeout; restoring verified state");
+          }
+        },8000);return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
