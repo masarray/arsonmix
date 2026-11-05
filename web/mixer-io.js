@@ -777,15 +777,22 @@
   }
   function decorate(){
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
-      // Every physical channel gets its own source selector. The native
-      // routing controller is unchanged and owns every hardware APPLY.
-      const head=strip.querySelector('.ch-id');
-      if(isNative()&&head&&!head.querySelector('.arChannelQuickInput')){
-        const picker=node('select','arChannelQuickInput');
-        picker.setAttribute('aria-label','CH '+(Number(strip.dataset.strip)+1)+' physical input');
-        picker.title='Verified hardware source · native ACK required';
-        head.appendChild(picker);
+      // DAW input workflow: the user's EXISTING visible IN row is the
+      // physical hardware selector, not a second tiny control in CH header.
+      // Replace ONLY the native WebView demo select; the Pages /preview/
+      // source and render semantics remain byte-for-byte unchanged.
+      // Every CH01–CH10 uses its OWN physical source and accepted native ACK.
+      const demoInput=strip.querySelector('select.route-select[data-field="input"]');
+      if(isNative()&&demoInput){
+        const picker=node('select','route-select arChannelQuickInput');
+        picker.dataset.channel=strip.dataset.strip;
+        picker.setAttribute('aria-label','CH '+(Number(strip.dataset.strip)+1)+' hardware input');
+        picker.title='Choose input · native route updates on selection';
+        demoInput.replaceWith(picker);
       }
+      // Retire the obsolete second selector from the tiny CH header.
+      if(isNative()&&strip.querySelector('.route-field .arChannelQuickInput'))
+        strip.querySelector('.ch-id .arChannelQuickInput')?.remove();
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
       bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
@@ -863,8 +870,16 @@
   function refresh(){
     decorate();const s=route();
     const info=el('arMixerBankInfo');
+    const actualPlayback=deviceInventory?.active?.open?
+      String(deviceInventory.active.playbackDevice||''):String(lastStatus.outputDevice||'');
+    // Never call VB-Cable's virtual receiving endpoint a physical speaker.
+    const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(actualPlayback);
+    const outputTruth=actualPlayback?
+      'OUT '+actualPlayback+(virtualOut?' · VIRTUAL / NO SPEAKERS':''):
+      'NO VERIFIED PLAYBACK';
     const caption=isNative()?
-      (s.ready?'E'+s.epoch+' / R'+(s.revision||0)+' · '+portList(s).length+' IN · '+(s.outputPorts?.length||0)+' OUT · '+(s.monitor?'OUTPUT ARMED':'OUTPUT MUTED'):'NO VERIFIED DEVICE · OUTPUT MUTED'):
+      (s.ready?outputTruth+' · '+(s.monitor?'MONITOR ON':'MONITOR OFF')+
+        ' · '+portList(s).length+' INPUTS':'NO VERIFIED DEVICE · MONITOR OFF'):
       'WEB PREVIEW · NO LIVE AUDIO';
     if(info.textContent!==caption)info.textContent=caption;
     toolbar.querySelector('[data-mix-apply]').disabled=!isNative()||!s.ready||!!s.pending||(!overlay.hidden&&matrixDraft.size>0);
