@@ -305,7 +305,7 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  for(const tr of tracks){
    const sel={dataset:{},value:"None",disabled:false,options:[],
      replaceChildren(...opts){this.options=opts;this.value=opts[0]?.value??"";},
-     closest(){return this;}};
+     closest(selector){return selector.includes('field="input"')?this:null;}};
    selects.set(String(tr.id),sel);
  }
  const info={textContent:""},preview={disabled:false,title:""};
@@ -313,7 +313,7 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
    getElementById:id=>id==="info"?info:id==="preview"?preview:null,
    querySelector:selector=>{
      const id=/^\\.strip\\[data-id="(\\d+)"\\]$/.exec(selector)?.[1];
-     return id?{querySelector:()=>selects.get(id)}:null;
+     return id?{querySelector:q=>q.includes('field="input"')?selects.get(id):null}:null;
    },
    createElement:tag=>({value:"",textContent:"",dataset:{},tag}),
    addEventListener:(type,listener)=>handlers.set(type,listener)
