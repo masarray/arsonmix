@@ -87,6 +87,31 @@ NATIVE_EVENT_HOOKS = (
      " const g=faderGesture;faderGesture=null;\n"
      " g.box.releasePointerCapture?.(ev.pointerId);\n"
      " if(window.__ARMIX_NATIVE_M2__?.consumeField?.({target:g.input,type:'change'}))return;\n"),
+    # Stage B: retain the approved exact V51 portrait meter gradient/peak hold
+    # and dBFS calibration. Only elide redundant WebView2 style mutations:
+    # these are authoritative native telemetry writes, NOT simulated signal.
+    # The ORIGINAL Pages model and CSS are untouched; native_html is exactly
+    # reversible by public_from_native, and no new stylesheet is loaded.
+    ("const meterPeakHolds=new Map();\n",
+     "const meterPeakHolds=new Map();\n"
+     "const nativeMeterPainted=new WeakMap(); // native only, freed with detached fills\n"),
+    (" const litPx=Math.min(geometry.height,steps*METER_STEP_PX);\n"
+     " fill.style.setProperty('--lit',(100*litPx/geometry.height)+'%');\n",
+     " const litPx=Math.min(geometry.height,steps*METER_STEP_PX);\n"
+     " let painted=nativeMeterPainted.get(fill);\n"
+     " if(!painted){painted={marker:lane.querySelector('.meter-peak-hold')};nativeMeterPainted.set(fill,painted);}\n"
+     " const lit=(100*litPx/geometry.height)+'%';\n"
+     " if(painted.lit!==lit){fill.style.setProperty('--lit',lit);painted.lit=lit;}\n"),
+    (" const marker=lane.querySelector('.meter-peak-hold');\n"
+     " if(marker){\n"
+     "  marker.style.opacity=peak.steps>0?'1':'0';\n",
+     " const marker=painted.marker;\n"
+     " if(marker){\n"
+     "  const opacity=peak.steps>0?'1':'0';\n"
+     "  if(painted.opacity!==opacity){marker.style.opacity=opacity;painted.opacity=opacity;}\n"),
+    ("  marker.style.setProperty('--peak-extent',extent+'px');\n",
+     "  const peakExtent=extent+'px';\n"
+     "  if(painted.peakExtent!==peakExtent){marker.style.setProperty('--peak-extent',peakExtent);painted.peakExtent=peakExtent;}\n"),
     # Native WebView2 only: expose the original Pages IIFE model to the thin
     # bridge. No second renderer/state reducer, no change to public /preview/.
     ("restorePluginPreferences();init();\n})();",
