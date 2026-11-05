@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from playwright.async_api import async_playwright
+from approved_css_original_bundle_fixture import reconstructed_original_css_html
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION = ROOT / "dist-pages" / "preview"
@@ -102,6 +103,8 @@ async def main():
     with tempfile.TemporaryDirectory(prefix="armix-css-c-baseline-") as tmp:
         before = Path(tmp) / "approved-original-css"
         shutil.copytree(PRODUCTION, before)
+        original_html=reconstructed_original_css_html((before/'index.html').read_text(encoding='utf-8'))
+        (before/'index.html').write_text(original_html,encoding='utf-8')
         for name in SHEETS:
             source = (ROOT / ("site/preview-buttons/assets"
                               if name == "mixer-control-keys.css"
