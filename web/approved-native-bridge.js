@@ -150,7 +150,7 @@
   // Use actual arMixStatus control readback, never the Pages demo state, to
   // drive fader/pan/mute/solo. All DSP mutations remain JUCE message-thread
   // calls through the existing arMixParameter -> setDryRoutingLabParameter.
-  let m4Status=null, m4ControlStamp="";
+  let m4Status=null, m4LiveStatus=null, m4ControlStamp="";
   const validM4Integer=x=>Number.isSafeInteger(x)&&x>0;
   function verifiedM4ControlLane() {
     const d=m4Status;
@@ -180,6 +180,16 @@
     });
     return true;
   }
+  function emitVerifiedMasterParam(name,value) {
+    if(!verifiedM4ControlLane())return false;
+    if(name==='masterGain'&&
+       !(typeof value==='number'&&Number.isFinite(value)&&value>=-60&&value<=10))
+      return false;
+    if(name==='masterMute'&&typeof value!=='boolean')return false;
+    if(name!=='masterGain'&&name!=='masterMute')return false;
+    backend.emitEvent('arMixParameter',{channel:0,parameter:name,value});
+    return true;
+  }
   function projectVerifiedM4ControlReadback() {
     const d=verifiedM4ControlLane();
     if(!d||!scope?.findTrack||!scope?.render)return;
@@ -195,8 +205,11 @@
       changes.push({model,c});
     }
     if(changes.length!==10)return;
+    const live=m4LiveStatus;
+    const prepared=d.acceptedRoute?.channels||d.preparedM4Route?.channels;
     const stamp=Number(d.epoch)+'/'+Number(d.revision)+'/'+
-      JSON.stringify(controls.map(c=>[c.db,c.pan,c.mute,c.solo]));
+      JSON.stringify(controls.map(c=>[c.db,c.pan,c.mute,c.solo]))+'/' +
+      JSON.stringify([prepared?.map(c=>c.main),live?.masterDb,live?.masterMute]);
     if(stamp===m4ControlStamp)return;
     m4ControlStamp=stamp;
     let dirty=false;
@@ -204,6 +217,27 @@
       if(Math.abs(model.level-c.db)>0.005||Math.abs(model.pan-c.pan)>0.005||
          model.mute!==c.mute||model.solo!==c.solo) {
         model.level=c.db;model.pan=c.pan;model.mute=c.mute;model.solo=c.solo;
+        dirty=true;
+      }
+    }
+    // Reflect the native MAIN assignment, not the Pages preview's
+    // SOURCE ONLY placeholder. The physical route remains the authority.
+    if(Array.isArray(prepared)&&prepared.length===10)
+      for(let lane=0;lane<10;++lane) {
+        const main=prepared[lane]?.main;
+        if(typeof main!=='boolean')continue;
+        const target=main?'Master':'SOURCE ONLY (No Main)';
+        if(changes[lane].model.output!==target) {
+          changes[lane].model.output=target;dirty=true;
+        }
+      }
+    if(scope.master&&Number.isFinite(live?.masterDb) &&
+       live.masterDb>=-60&&live.masterDb<=10 &&
+       typeof live?.masterMute==='boolean') {
+      if(Math.abs(scope.master.level-live.masterDb)>0.005||
+         scope.master.mute!==live.masterMute) {
+        scope.master.level=live.masterDb;
+        scope.master.mute=live.masterMute;
         dirty=true;
       }
     }
@@ -278,6 +312,7 @@
       }
     });
     backend.addEventListener("arMixStatus", state=>{
+      m4LiveStatus=state||null;
       m4Status=state?.dryRoutingLab||null;
       projectVerifiedM4ControlReadback();
     });
@@ -303,7 +338,14 @@
         // Genuine M4 live ten-strip controls work BEFORE ChannelId cutover.
         // Every edit still needs the native epoch/revision fence, and no
         // local fader/mute/model changes until the next verified readback.
-        if(event.type==="change" && (field==="level"||field==="pan")) {
+        if(event.type==="change" && t.kind==='master'&&field==="level") {
+          const numeric=Number(el.value);
+          if(!emitVerifiedMasterParam('masterGain',numeric))
+            el.value=String(t.level);
+          return true;
+        }
+        if(event.type==="change" && t.kind!=='master'&&
+           (field==="level"||field==="pan")) {
           const numeric=Number(el.value);
           const value=field==="pan"&&Number.isFinite(numeric)&&
             el.dataset.panKeyboard!=="true"&&
@@ -353,6 +395,11 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected && t?.kind==='master') {
+          if(action==='mute'&&typeof m4LiveStatus?.masterMute==='boolean')
+            emitVerifiedMasterParam('masterMute',!m4LiveStatus.masterMute);
+          return true;
+        }
         if(!flags.acceptedGraphConnected) {
           const lane=nativePhysicalStrip(btn),d=verifiedM4ControlLane();
           const now=lane>=0?d?.channelControls?.[lane]?.[action]:undefined;
