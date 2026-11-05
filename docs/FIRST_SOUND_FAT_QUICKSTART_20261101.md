@@ -28,3 +28,9 @@ Send: (a) screenshot of active driver/rate/buffer/pins, (b) accepted CH01 patch 
 **PASS is hardware-grounded:** correct MAIN source path, verified mute/fader control, no wrong-endpoint output, clean 0FX wired audio for >=30 minutes on the recorded device/rate/buffer, followed by real plugin testing. A green Windows CTest/Chromium CI is not a substitute.
 
 Historical full test matrix remains `docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md`. This packaged guide supersedes obsolete manual START AUDIO instructions.
+
+## M3-E matched 44.1/48 kHz exact-SHA evidence tools
+
+The verified FAT ZIP now contains two source+manifest SHA256-bound files: collect_hardware_fat_windows.ps1 and m3e_fat_evidence_gate.mjs. Both are **independent field QA**, not audio engines. Use the collector with -Action Verify, Start, Stop and Summary beside BUILD_PROVENANCE.json and the original EXE. Run four modes (OUTPUT_ONLY_TONE, CAPTURE_ONLY, DRY_THROUGH_0FX, LIVE_THROUGH_1FX) for **each** supported 44100/48000 Hz profile; both matched wired 0FX/1FX sessions need >= 30 minutes, same actual backend/buffer/physical pins and copied complete report, with human witness. A genuine active VST3 is required for the 1FX comparison. Do not invent unsupported hardware rates.
+
+With Node 20+ available, run: node ./m3e_fat_evidence_gate.mjs . to verify source/EXE/tools integrity and independent report SHA256/mode matching. **EVIDENCE_READY_FOR_HUMAN_REVIEW is not a PASS.** M3C #402's readback projection has merged but it is NOT proof of a joined ENGINE #266 PCM callback and M3F accepted mutating ACK/snapshot; physical hardware #15 remains STOP-SHIP. The checker always leaves native PCM and final release readiness PENDING until separate true evidence exists. Full guidance: docs/M3E_FAT_RELEASE_ADMISSION_20261105.md in repository. Review raw logs for device information before sharing; these tools upload nothing.
