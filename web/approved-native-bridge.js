@@ -986,7 +986,12 @@
           // cap and every input value; no optimistic GUI state survives.
           if (!state.pending && flags.acceptedGraphConnected &&
               scope.activeFaderId<0){
-            controller.subscribe(); // restore from native, never redraw active selects
+            // A rejected edit MUST restore the visual model immediately,
+            // but never unmount an open hardware selector. This also keeps
+            // existing native transaction rollback semantics testable.
+            if(!document.activeElement?.matches?.(".strip select"))
+              scope.render?.();
+            controller.subscribe();
             if(state.current)paintNativeMeters(state.current);
           }
         }
