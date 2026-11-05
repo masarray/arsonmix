@@ -627,6 +627,18 @@
       }
     }
     const master=hardware?.raw?.legacyM4?.masterControls;
+    // Paint actual MAIN L/R independently, not duplicated browser demo
+    // motion, and force silence when native output telemetry is unavailable.
+    const mainStrip=document.querySelector(".strip.master");
+    const m4=hardware?.raw?.legacyM4;
+    for(const [side,peak] of [["left",m4?.mainPeakL],["right",m4?.mainPeakR]]){
+      const fill=mainStrip?.querySelector(".meter-fill."+side);
+      if(!fill||!scope?.displayMeterDbfs)continue;
+      const measured=typeof peak==="number"&&Number.isFinite(peak)&&peak>=0;
+      const db=measured&&peak>0?20*Math.log10(peak):-90;
+      scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),
+        performance.now(),"MAIN:"+side);
+    }
     const masterTrack=scope?.master;
     if(master&&masterTrack){
       if(masterPending?.acked && String(hardware?.device?.epoch)===
