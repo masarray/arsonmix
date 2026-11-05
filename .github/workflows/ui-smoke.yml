@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   coordination:
-    name: PR coordination admission
+    name: PR qualification scope (single product owner)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -49,12 +49,12 @@ jobs:
       run_native: ${{ steps.pr_scope.outputs.run_native }}
     steps:
       - uses: actions/checkout@v4
-      - name: Audit PR metadata, file ownership and runtime collisions
+      - name: Select exact changed-file validation; no cross-agent file lock
         id: pr_scope
         if: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
+        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }} --scope
       - name: Main push retains Chromium verification
         id: push_scope
         if: ${{ github.event_name != 'pull_request' }}
