@@ -143,7 +143,19 @@ int main(){
     assert(typed.getProperty("channels",{}).getArray()->getReference(0)
         .getProperty("sourceKind",{}).toString()=="PHYSICAL");
     NativeDryRouteCommand disconnectedPlan;
-    assert(NativeDryRouteCommand::decode(sourceCleared,disconnectedPlan,error));
+    // CH1 still owns two PRE/POST sends to BUS channels. Clearing its
+    // hardware source while those sends remain must be rejected, not
+    // silently create a dangling audio path.
+    assert(!NativeDryRouteCommand::decode(sourceCleared,disconnectedPlan,error));
+    assert(error.containsIgnoreCase("Enable a sender"));
+    // After the operator explicitly disconnects those sends, the very
+    // same accepted NONE source must compile to physical silence.
+    auto disconnectedNoSends=juce::JSON::parse(
+        juce::JSON::toString(sourceCleared,false));
+    disconnectedNoSends.getDynamicObject()->setProperty("sends",
+        juce::var(juce::Array<juce::var>{}));
+    assert(NativeDryRouteCommand::decode(disconnectedNoSends,
+                                          disconnectedPlan,error));
     assert(disconnectedPlan.channels.stripsAndMaster.strips[0].source
         ==SourceMode::disconnected);
     assert(!NativeVerifiedSourcePatch::prepare(
