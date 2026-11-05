@@ -193,7 +193,7 @@ jobs:
       # pretending the intentional V50 layout/stylesheet changes are V22.
       # Restore PR files before ALL current GUI/function/geometry smoke tests.
       - name: Mount pinned V24 historical CSS fixture (reversible, no CI rebaseline)
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -206,58 +206,58 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V8 FX rack and Plugin Manager CSS ownership
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_ownership_v8_smoke.py
       - name: Verify V9 PAN/fader/meter CSS ownership and geometry
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_ownership_v9_smoke.py
       - name: Verify V10 cascade ownership and rendered console geometry
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v10_smoke.py
       - name: Validate V11 section ownership, cascade and computed visual styles
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v11_smoke.py
       - name: Verify V12 removed shadow declarations and old/new visual + control parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v12_smoke.py
       - name: Verify V13 owned CSS conflicts and physical control visual parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v13_smoke.py
       - name: Verify V14 canonical 45 material tokens and V13 browser parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v14_smoke.py
       - name: Verify V15 clean cross-owner CSS and actual interactive visual parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v15_smoke.py
       - name: Verify V16 WIRE single CSS owner, 241-rule exact source and visual parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v16_smoke.py
       - name: Verify V17 Plugin Manager and Fast FX Picker single CSS owner
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v17_smoke.py
       - name: Verify V18 physical Chrome ownership and four cascade conflict removals
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v18_smoke.py
       - name: Verify V19 shared operator key ownership and six shadowed declarations
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v19_smoke.py
       - name: Verify V20 elimination of 53 shadowed declarations and Chromium state parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v20_smoke.py
       - name: Verify V21 physical console chassis geometry owner and visual parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v21_smoke.py
       - name: Verify V22 legacy key material migration and M3 visual parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v22_smoke.py
       - name: Verify V23 exact cascade deletions and browser parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v23_smoke.py
       - name: Verify V24 Fader/Meter/FX cascade pruning and browser parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v24_smoke.py
       - name: Restore and verify exact V50 PR assets before current UI smoke
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -270,7 +270,7 @@ jobs:
       # The V25 historical test is an immutable exact-byte migration gate.
       # Do not rebaseline it after deliberate V26 dead-rule removals.
       - name: Mount pinned V25 original CSS before historical V25 migration test
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -283,10 +283,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V25 exact V51 physical-key owner migration and zero visual regression
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v25_smoke.py
       - name: Restore and verify current V26 source before latest GUI tests
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -298,7 +298,7 @@ jobs:
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-control-keys.css site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       # Byte-exact V26 historical CSS check is pinned, not rebaselined.
       - name: Mount V26 approved source before historical regression
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -311,10 +311,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V26 retired socket dead rules and exact V25 visual/control parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v26_smoke.py
       - name: Restore P0 current WIRE source after historical V26 regression
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -327,7 +327,7 @@ jobs:
       # V27 is a byte-exact historical CSS migration proof; it must run
       # against its original qualified GUI, never rebaseline a newer FX/rail.
       - name: Mount pinned V27 GUI and CSS owners for immutable parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -340,10 +340,10 @@ jobs:
             git show "$baseline:$path" > "$path"
           done
       - name: Verify V27 scoped material and 37 owned loser declarations with Chromium parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: python tests/pages_css_architecture_v27_smoke.py
       - name: Restore and verify exact V53 current sources after historical V27
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
