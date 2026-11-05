@@ -1561,6 +1561,132 @@
       error:ok?"":String(ack?.error||"Source changed or native ACK mismatch")
     }}));
   });
+  // Audition/FL-style primary workflow: IN on ANY of the ten mixer strips
+  // is the operator's single deliberate audio-routing gesture. No draft
+  // wizard, guessed CH1/CH2 mapping, separate START or exposed ARM step.
+  // Internal mute/ACK/repatch/monitor transitions stay in the existing
+  // native controller; no second engine or device callback is created.
+  let auditionInputPending=null,auditionInputSerial=1000000;
+  const auditionResult=(ok,message,channel)=>{
+    const detail={ok,error:ok?"":message,channel,message};
+    window.dispatchEvent(new CustomEvent("arMixMixerSourceResult",{detail}));
+    fastAudioNotify(message);
+  };
+  const auditionAbort=(reason)=>{
+    const p=auditionInputPending;auditionInputPending=null;
+    if(p)auditionResult(false,reason,p.channel);
+  };
+  const auditionSubmit=()=>{
+    const p=auditionInputPending,d=state.dryRoutingLab||{};
+    if(!p || (p.phase!=="mute"&&p.phase!=="source") ||
+       !d.ready||!d.active||Number(d.epoch)!==p.epoch ||
+       patchPending||nativeShowBusy) {
+      auditionAbort("INPUT NOT CHANGED · device or route changed; monitoring remains safe.");
+      return;
+    }
+    p.phase="source";p.revision=Number(d.revision);
+    api.emitEvent("arMixAction",{
+      action:"routingSourceSwitch",requestId:p.id,
+      channel:p.channel,mode:p.mode,left:p.left,right:p.right,
+      deviceEpoch:p.epoch,revision:p.revision
+    });
+    fastAudioNotify("CH "+(p.channel+1)+" · verifying selected hardware input");
+  };
+  const auditionMonitor=()=>{
+    const p=auditionInputPending,d=state.dryRoutingLab||{};
+    if(!p||Number(d.epoch)!==p.epoch||!d.ready||
+       d.topologyFault||!d.hasAcceptedRoute) {
+      auditionAbort("INPUT ROUTED BUT MONITOR OFF · device changed; check Audio I/O.");
+      return;
+    }
+    p.phase="monitor";p.revision=Number(d.revision);
+    api.emitEvent("arMixAction",{action:"monitor",value:true,
+      expectedEpoch:p.epoch,expectedRevision:p.revision});
+    fastAudioNotify("CH "+(p.channel+1)+" · enabling verified MAIN monitoring");
+  };
+  window.__arMixChooseChannelInput=(channel,mode,left,right)=>{
+    const d=state.dryRoutingLab||{},epoch=Number(d.epoch);
+    const r=d.acceptedRoute?.channels?.[channel];
+    if(!Number.isInteger(channel)||channel<0||channel>=10 ||
+       !["NONE","MONO","STEREO"].includes(mode))
+      return {ok:false,error:"Choose a valid mixer channel and hardware input."};
+    if(!state.connected||!state.directRouteAuthorized||!d.ready||!d.active||
+       !Number.isSafeInteger(epoch)||epoch<=0||d.topologyFault||
+       draftEpoch!==epoch)
+      return {ok:false,error:"Select a verified audio device in Audio I/O first."};
+    const active=new Set(patchPorts().map(p=>p.port));
+    if(mode==="MONO"&&!active.has(left) ||
+       mode==="STEREO"&&(!active.has(left)||!active.has(right)||left===right))
+      return {ok:false,error:"This input is not among the enabled hardware ports."};
+    if(auditionInputPending||fastAudioPending||liveSourcePending||patchPending||
+       nativeShowBusy||mixerDraftActive||rackFxDraft||liveSendPending.size||
+       state.secondaryOutputArmed)
+      return {ok:false,error:"A route, effect, Show or stream change is pending. Finish it first."};
+    const targetRight=mode==="STEREO"?right:-1;
+    const same=!!r&&r.mode===mode&&
+      (mode==="NONE"||r.left===left&&r.right===targetRight);
+    if(same && (state.monitor||mode==="NONE"))
+      return {ok:true,unchanged:true,message:"Channel input already connected."};
+    const id=++auditionInputSerial;
+    auditionInputPending={id,channel,mode,left:mode==="NONE"?-1:left,
+      right:targetRight,epoch,revision:Number(d.revision),
+      phase:"source",wasMonitoring:!!state.monitor};
+    // A same-format physical pin move already has a 64-sample ramp in RT
+    // and must NEVER interrupt live monitoring or rebuild VST3 instances.
+    // A structural change while monitoring safely mutes first, then restores
+    // monitoring only after native patch ACK and current-epoch readback.
+    if(state.monitor&&!same&&(!r||r.mode!==mode)){
+      auditionInputPending.phase="mute";
+      api.emitEvent("arMixAction",{action:"monitor",value:false,
+        expectedEpoch:epoch,expectedRevision:Number(d.revision)});
+    }else if(same)auditionMonitor();
+    else auditionSubmit();
+    return {ok:true,pending:true,live:!!state.monitor,epoch,
+      message:"CH "+(channel+1)+" input requested; native readback pending."};
+  };
+  api.addEventListener("arMixAudioArmAck",ack=>{
+    const p=auditionInputPending;
+    if(!p||!(p.phase==="mute"||p.phase==="monitor"))return;
+    if(Number(ack?.deviceEpoch)!==p.epoch||ack?.ok!==true ||
+       (p.phase==="mute"&&ack.armed!==false) ||
+       (p.phase==="monitor"&&ack.armed!==true)){
+      auditionAbort("MONITOR REJECTED · "+String(ack?.error||"Native output not ready"));
+      return;
+    }
+    state.monitor=!!ack.armed;
+    if(p.phase==="mute")auditionSubmit();
+    else {
+      auditionInputPending=null;
+      auditionResult(true,"CH "+(p.channel+1)+" · audio routed to MAIN (physical listening unverified)",p.channel);
+    }
+  });
+  api.addEventListener("arMixSourceSwitchAck",ack=>{
+    const p=auditionInputPending;
+    if(!p||p.phase!=="source"||Number(ack?.requestId)!==p.id||
+       Number(ack?.channel)!==p.channel)return;
+    const next=ack?.state||{},row=next.acceptedRoute?.channels?.[p.channel];
+    const verified=ack.ok===true && Number(next.epoch)===p.epoch &&
+      Number(state.dryRoutingLab?.epoch)===p.epoch &&
+      next.ready===true && !next.topologyFault &&
+      row?.mode===p.mode && (p.mode==="NONE"||
+      row.left===p.left&&row.right===p.right);
+    if(!verified){
+      auditionAbort("INPUT REJECTED · "+String(ack?.error||"Native route readback mismatch"));
+      return;
+    }
+    state.dryRoutingLab=next;
+    hydrateAcceptedRoute();renderPatchMatrix();updateRouteLabIdentity();
+    window.dispatchEvent(new Event("arMixRoutingDraftChanged"));
+    const anyInput=(next.acceptedRoute?.channels||[])
+      .some(x=>x.mode==="MONO"||x.mode==="STEREO");
+    if(p.mode==="NONE"&&!anyInput){
+      auditionInputPending=null;
+      auditionResult(true,"Last input disconnected · MAIN monitoring off",p.channel);
+    }else if(p.wasMonitoring && state.monitor){
+      auditionInputPending=null;
+      auditionResult(true,"CH "+(p.channel+1)+" · native input switched live",p.channel);
+    }else auditionMonitor();
+  });
   window.__arMixOpenChannelPatch=(channel,tab="input")=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
     openRoutingLab();
@@ -1755,28 +1881,9 @@
       fastAudioArm(d);
       return {ok:true,pending:true,phase:"arm"};
     }
-    // First boot only. Leave existing custom sources and BUS routing alone.
-    if(!Array.isArray(draftRoutes)||draftRoutes.length<2 ||
-       draftRoutes[0].mode!=="NONE"||draftRoutes[1].mode!=="NONE")
-      return {ok:false,error:"Custom input patch already exists. APPLY or REVERT it first."};
-    const pins=ports.slice(0,2).map(p=>p.port);
-    for(let i=0;i<pins.length;i++){
-      const staged=window.__arMixStageChannelInput(i,"MONO",pins[i],-1);
-      if(!staged?.ok){
-        window.__arMixRevertMixerDraft?.();
-        return {ok:false,error:staged?.error||"Cannot stage default input mapping."};
-      }
-    }
-    fastAudioPending={phase:"patch",epoch:Number(d.epoch),
-      revision:Number(d.revision),pins};
-    const submitted=window.__arMixApplyMixerDraft();
-    if(!submitted?.ok){
-      fastAudioPending=null;
-      window.__arMixRevertMixerDraft?.();
-      return {ok:false,error:submitted?.error||"Native routing APPLY failed."};
-    }
-    fastAudioNotify("CH01"+(pins.length>1?"/CH02":"")+" → MAIN · WAITING FOR NATIVE PATCH ACK");
-    return {ok:true,pending:true,phase:"patch"};
+    // Never guess CH1/CH2 hardware sources. In an Audition-style mixer
+    // the operator chooses IN on the strip they actually intend to use.
+    return {ok:false,error:"Choose IN on any mixer channel first; no automatic CH1/CH2 patch."};
   };
   // One explicit APPLY owns patch ACK -> physical ARM, no second START.
   const submitFastCustomPatch=()=>{
@@ -2030,6 +2137,9 @@
   api.addEventListener("arMixStatus",d=>{
     if(fastAudioPending&&Number(d?.dryRoutingLab?.epoch)!==fastAudioPending.epoch)
       fastAudioAbort("START CANCELLED · audio device generation changed; output remains MUTED.");
+    if(auditionInputPending &&
+       Number(d?.dryRoutingLab?.epoch)!==auditionInputPending.epoch)
+      auditionAbort("INPUT CANCELLED · audio interface changed; monitoring remains muted.");
     state=d;
     // Single controller owns epoch hydration even if the full PATCH workspace
     // is closed. The status projection used by MIX is deliberately read-only.
