@@ -59,6 +59,61 @@ test("native G0 preserves verified first-sound M4 route without claiming Channel
   assert.match(read("src/ApprovedConsoleNativeTransportV6.h"),
     /"outputArmed", primaryOutputArmed/);
 });
+test("First Sound evidence maps sparse physical pins to actual callback ordinals and diagnoses silence",()=>{
+  const g0=clone(fixtures.g0);
+  g0.legacyM4={active:true,routeAccepted:true,routingRevision:"9"};
+  g0.device.enabledInputs=[0,2];
+  g0.device.inputEndpoints.push({
+    id:"in:2",port:2,callback:1,label:"Mic 3",active:true
+  });
+  g0.device.outputArmed=true;
+  g0.telemetry={
+    captureObserved:true,rawCapturePresent:true,rawCapturePeak:0.38,
+    captureCallbackPeaks:[0,0.38],mainPcmObserved:true,
+    mainPcmPresent:true,mainPcmPeak:0.17,monitorPcmPresent:false
+  };
+  const snapshot=protocol.normalizeSnapshot(g0);
+  assert.ok(snapshot);assert.equal(snapshot.admitted,false);
+  const first=protocol.diagnoseFirstSound(snapshot,0);
+  assert.equal(first.selectedPin,0);
+  assert.equal(first.rawPeak,0);
+  assert.match(first.nextAction,/Selected input is silent/);
+  const second=protocol.diagnoseFirstSound(snapshot,2);
+  assert.equal(second.selectedPin,2);
+  assert.equal(second.rawPeak,0.38);
+  assert.equal(second.mainPeak,0.17);
+  assert.match(second.nextAction,/physically/);
+  assert.match(second.readout,/IN 3/);
+  const all=protocol.diagnoseFirstSound(snapshot,"");
+  assert.equal(all.rawPeak,0.38);
+  // A mistaken output claim never becomes a loudspeaker certification.
+  g0.device.outputArmed=false;
+  const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
+  assert.match(muted.nextAction,/ARM output/);
+  g0.device.outputArmed=true;
+  g0.legacyM4.routeAccepted=false;
+  const unpatched=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
+  assert.match(unpatched.nextAction,/PATCH CH1/);
+  g0.legacyM4.routeAccepted=true;
+  g0.telemetry.mainPcmPeak=0;g0.telemetry.mainPcmPresent=false;
+  assert.match(protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2).nextAction,/MAIN PCM silent/);
+  g0.telemetry.captureObserved=false;
+  const unknown=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
+  assert.equal(unknown.rawPeak,null);
+  assert.match(unknown.nextAction,/No current-epoch capture callback/);
+});
+test("native signal evidence is produced from measured engine fields, never JS simulated PCM",()=>{
+  const header=read("integration/FirstSoundSignalEvidence.h");
+  const transport=read("src/ApprovedConsoleNativeTransportV6.h");
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(header,/captureObservationBlocks/);
+  assert.match(header,/callbackInputChannels/);
+  assert.match(header,/captureCallbackPeaks/);
+  assert.match(header,/directRouteAuthorized/);
+  assert.match(transport,/projectFirstSoundSignalEvidence/);
+  assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
+  assert.match(bridge,/protocol\.diagnoseFirstSound/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
