@@ -20,12 +20,22 @@ try {
 } catch {
     Write-Warning "GPU model/driver unavailable without CIM access; continue with process metrics."
 }
+# The JUCE target is ARMixConsole, but PRODUCT_NAME makes the installed
+# process "AR MIX Studio". The portable EXE is packaged under a separate name.
+# Use process names from the actual build and, when supplied, the EXE name.
+$hostNames = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($name in @("AR MIX Studio", "ArSonMix-GUI10CH-P012-Windows-x64", "ARMixConsole")) {
+    [void]$hostNames.Add($name)
+}
 $sha = $null
 if ($ExePath) {
     if (-not (Test-Path -LiteralPath $ExePath -PathType Leaf)) {
         throw "EXE path was supplied but does not exist."
     }
-    $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $ExePath).Hash
+    $resolvedExe = (Resolve-Path -LiteralPath $ExePath).Path
+    $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolvedExe).Hash
+    [void]$hostNames.Add([System.IO.Path]::GetFileNameWithoutExtension($resolvedExe))
 }
 $environment = [ordered]@{
     schema = "arsonmix.windows-gui-process-sampling.v1"
@@ -42,12 +52,15 @@ $environment = [ordered]@{
 $environment | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $OutputDirectory "environment.json") -Encoding UTF8
 $previous = @{}
 $rows = [System.Collections.Generic.List[object]]::new()
+$hostSampleCount = 0
 $steps = [math]::Ceiling($Seconds * 1000.0 / $IntervalMs)
 for ($i = 0; $i -lt $steps; $i++) {
     $now = Get-Date
     $processes = @(Get-Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.ProcessName -match "^(ARMixConsole|msedgewebview2)$" })
+        Where-Object { $hostNames.Contains($_.ProcessName) -or
+                       $_.ProcessName -eq "msedgewebview2" })
     foreach ($p in $processes) {
+        if ($hostNames.Contains($p.ProcessName)) { $hostSampleCount++ }
         $id = [string]$p.Id
         $cpu = [double]$p.CPU
         $delta = $null
@@ -76,4 +89,9 @@ for ($i = 0; $i -lt $steps; $i++) {
 $out = Join-Path $OutputDirectory "process-timeline.csv"
 $rows | Export-Csv -Path $out -NoTypeInformation -Encoding UTF8
 Write-Host "ArSonMix P0 process capture: $($rows.Count) samples -> $out"
+if ($hostSampleCount -eq 0) {
+    Write-Warning "NO_NATIVE_GUI_HOST_SAMPLES: launch AR MIX Studio / packaged EXE before profiling; WebView2-only data cannot measure JUCE host CPU."
+} else {
+    Write-Host "Native JUCE host samples: $hostSampleCount (AR MIX Studio or packaged EXE)."
+}
 Write-Host "Pair with GUI_PERF_JS + GUI_PERF_NATIVE logs and WebView2 GPU trace for Issue #56."
