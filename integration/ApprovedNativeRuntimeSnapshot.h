@@ -82,7 +82,30 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
-    // Do not write the route to the graph or change native capability flags.
+    // Native Windows WebView2 needs accepted physical inputs for EACH source
+    // strip, not the Pages demo "IN None". These are message-thread copies of
+    // REAL M4 accepted readback, never invented ChannelIds, FX or PCM.
+    juce::Array<juce::var> channels;
+    const auto selection=route.getProperty(
+        boolIs(route,"hasAcceptedRoute",true)?"acceptedRoute":"preparedM4Route",{});
+    const auto sourceRows=selection.getProperty("channels",{});
+    if(physicalReady && sourceRows.isArray() &&
+       sourceRows.getArray()->size()==10) {
+        for(const auto& source:*sourceRows.getArray()) {
+            if(!source.isObject()) { channels.clear(); break; }
+            const auto mode=source.getProperty("mode",{}).toString();
+            if(mode!="NONE" && mode!="MONO" && mode!="STEREO" &&
+               mode!="BUS") {channels.clear();break;}
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("mode",mode);
+            item->setProperty("left",source.getProperty("left",-1));
+            item->setProperty("right",source.getProperty("right",-1));
+            item->setProperty("main",source.getProperty("main",true));
+            channels.add(juce::var(item.release()));
+        }
+    }
+    firstSound->setProperty("channels",juce::var(channels));
+    // Do not write the route to the ChannelId graph or change capabilities.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;
 }
