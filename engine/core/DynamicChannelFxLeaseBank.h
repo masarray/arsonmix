@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <atomic>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
@@ -33,6 +35,9 @@ public:
         ChannelId id{};
         ProcessingFormat format=ProcessingFormat::stereo;
         std::vector<Lease> inserts; // CONTROL only; no creation on callback
+        // Reused over revision changes. This flag overrides the effective
+        // output without changing the individual FxInstance bypass flags.
+        std::shared_ptr<std::atomic<bool>> rackBypassed;
     };
 
     // Occupied CH1 vendor/Orbit owner remains alive with accepted PCM.
@@ -101,6 +106,8 @@ public:
             if(b.format!=ProcessingFormat::mono &&
                b.format!=ProcessingFormat::stereo)return Fault::invalidBusLayout;
             Row row;row.id=b.id;row.format=b.format;
+            row.rackBypassed=b.rackBypassed?b.rackBypassed:
+                std::make_shared<std::atomic<bool>>(false); // CONTROL allocation
             row.count=static_cast<std::uint8_t>(b.inserts.size());
             for(std::size_t i=0;i<b.inserts.size();++i) {
                 const auto& owner=b.inserts[i];
@@ -174,6 +181,21 @@ public:
         (*owner)->bypassRequested.store(bypass,std::memory_order_release);
         return true;
     }
+    bool setRackBypass(std::uint64_t expectedEpoch,
+                       std::uint64_t expectedRevision,ChannelId id,
+                       bool bypass) const noexcept {
+        if(expectedEpoch!=epoch_||expectedRevision!=revision_||!id.value)
+            return false;
+        const auto* row=find(id);
+        if(!row||!row->rackBypassed)return false;
+        row->rackBypassed->store(bypass,std::memory_order_release);
+        return true;
+    }
+    bool rackBypassed(ChannelId id) const noexcept {
+        const auto* row=find(id);
+        return row&&row->rackBypassed &&
+            row->rackBypassed->load(std::memory_order_acquire);
+    }
     // The actual prepared vendor instance is also the native editor owner;
     // never synthesize a WebView editor or use a catalog name as identity.
     Lease leaseEditor(std::uint64_t expectedEpoch,
@@ -199,7 +221,7 @@ public:
         retained.reserve(prior.rows_.size());
         for(const auto& row:prior.rows_) {
             Assignment item;
-            item.id=row.id;item.format=row.format;
+            item.id=row.id;item.format=row.format;item.rackBypassed=row.rackBypassed;
             item.inserts.reserve(row.count);
             for(std::size_t slot=0;slot<row.count;++slot)
                 item.inserts.push_back(row.owners[slot]);
@@ -253,8 +275,10 @@ public:
             external_.render(external_.context,left,right,frames);
             return; // occupied CH1 is processed exactly once
         }
+        const bool rackOff=row->rackBypassed &&
+            row->rackBypassed->load(std::memory_order_acquire);
         for(std::size_t i=0;i<row->count;++i)
-            row->raw[i]->render(left,right,frames);
+            row->raw[i]->render(left,right,frames,rackOff);
     }
 
 private:
@@ -262,6 +286,7 @@ private:
         ChannelId id{};
         ProcessingFormat format=ProcessingFormat::stereo;
         std::uint8_t count=0;
+        std::shared_ptr<std::atomic<bool>> rackBypassed; // persists across revisions
         std::array<Lease,maxInserts> owners{};
         std::array<FxGraph::FxInstance*,maxInserts> raw{};
     };
