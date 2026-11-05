@@ -413,6 +413,139 @@
       if(hardwareNote.textContent!==note)hardwareNote.textContent=note;
     }
   }
+  // One compact WebView2 device panel using the ALREADY installed JUCE
+  // AudioDeviceManager inventory / transactional Apply. No second audio
+  // device manager, no third frontend, no driver scanning on every click.
+  let nativeDeviceInventory=null,nativeDeviceDialog=null;
+  let nativeDeviceBusy=false,nativeDeviceRequest="",nativeDeviceSerial=0;
+  let nativeDeviceAwaitingMute=null;
+  const selectOptions=(select,items,want)=>{
+    select.replaceChildren(...items.map(([value,label])=>{
+      const option=document.createElement("option");
+      option.value=value;option.textContent=label;return option;
+    }));
+    if(items.some(([value])=>value===want))select.value=want;
+  };
+  function renderNativeDeviceDialog() {
+    if(!nativeDeviceDialog||!nativeDeviceInventory)return;
+    const q=sel=>nativeDeviceDialog.querySelector(sel);
+    const list=nativeDeviceInventory.types||[],active=nativeDeviceInventory.active||{};
+    const backend=q('[data-device-backend]');
+    const currentBackend=backend.value||active.backend||"";
+    selectOptions(backend,list.map(t=>[t.name,t.name]),currentBackend);
+    const selected=list.find(t=>t.name===backend.value);
+    if(!selected)return;
+    const input=q('[data-device-input]'),output=q('[data-device-output]');
+    const capture=input.value||active.captureDevice||"",playback=output.value||active.playbackDevice||"";
+    selectOptions(output,(selected.outputs||[]).map(x=>[x,x]),playback);
+    selectOptions(input,(selected.inputs||[]).map(x=>[x,x]),
+      selected.separate?capture:output.value);
+    input.disabled=!selected.separate || nativeDeviceBusy;
+    backend.disabled=nativeDeviceBusy;output.disabled=nativeDeviceBusy;
+    q('[data-device-apply]').disabled=nativeDeviceBusy ||
+      !backend.value || !output.value || !input.value;
+    const virtual=/VB-Audio Virtual Cable|CABLE Input/i.test(output.value);
+    q('[data-device-warning]').textContent=virtual?
+      "VB-Cable is a virtual playback endpoint, NOT your speakers/headphones.":"";
+    q('[data-device-actual]').textContent=active.open?
+      "ACTIVE · "+active.backend+" · "+active.captureDevice+
+      " → "+active.playbackDevice+" · "+active.rate+" Hz / "+active.buffer+" samples":
+      "NO VERIFIED AUDIO DEVICE";
+  }
+  function openNativeAudioSettings() {
+    if(!nativeDeviceDialog){
+      nativeDeviceDialog=document.createElement("dialog");
+      nativeDeviceDialog.className="arNativeDeviceDialog";
+      nativeDeviceDialog.setAttribute("aria-label","Audio hardware setup");
+      nativeDeviceDialog.innerHTML=
+        '<header><strong>Audio I/O</strong><button type="button" data-device-close aria-label="Close">×</button></header>'+
+        '<p data-device-actual role="status">Reading real audio devices…</p>'+
+        '<label>DRIVER<select data-device-backend></select></label>'+
+        '<label>PLAYBACK OUTPUT<select data-device-output></select></label>'+
+        '<label>CAPTURE INPUT<select data-device-input></select></label>'+
+        '<small data-device-warning></small>'+
+        '<details><summary>Advanced audio buffer</summary>'+
+        '<label>Sample rate · 0 = driver default<input data-device-rate type="number" min="0" max="384000" value="0"></label>'+
+        '<label>Buffer samples · 0 = driver default<input data-device-buffer type="number" min="0" max="8192" value="0"></label></details>'+
+        '<footer><span data-device-feedback role="status">Choose a device, then Apply once.</span>'+
+        '<button type="button" data-device-apply>Apply Device</button></footer>';
+      const style=document.createElement("style");
+      style.textContent=
+        '.arNativeDeviceDialog{position:fixed;inset:0;margin:auto;width:min(430px,calc(100vw - 32px));'+
+        'max-height:calc(100vh - 32px);overflow:auto;padding:15px 18px;border:1px solid #548092;'+
+        'border-radius:7px;background:#14252e;color:#d1e5eb;font:12px/1.5 "Segoe UI",sans-serif;'+
+        'box-shadow:0 18px 55px #000a}.arNativeDeviceDialog::backdrop{background:#0009}'+
+        '.arNativeDeviceDialog header,.arNativeDeviceDialog footer{display:flex;align-items:center;'+
+        'gap:10px;justify-content:space-between}.arNativeDeviceDialog header strong{font-size:16px;font-weight:600}'+
+        '.arNativeDeviceDialog label{display:grid;gap:3px;margin:10px 0;font-size:11px}'+
+        '.arNativeDeviceDialog select,.arNativeDeviceDialog input,.arNativeDeviceDialog button{'+
+        'min-height:29px;padding:4px 7px;border:1px solid #56798a;border-radius:3px;'+
+        'background:#0b2029;color:#d3eaf0;font:12px "Segoe UI",sans-serif}'+
+        '.arNativeDeviceDialog button{cursor:pointer}.arNativeDeviceDialog button:disabled{opacity:.5}'+
+        '.arNativeDeviceDialog small{display:block;color:#f4d095}'+
+        '.arNativeDeviceDialog footer{align-items:flex-end;margin-top:14px}'+
+        '.arNativeDeviceDialog footer span{flex:1;font-size:11px}';
+      document.head.appendChild(style);
+      document.body.appendChild(nativeDeviceDialog);
+      const q=sel=>nativeDeviceDialog.querySelector(sel);
+      q('[data-device-close]').addEventListener("click",()=>nativeDeviceDialog.close());
+      q('[data-device-backend]').addEventListener("change",()=>{
+        // Explicitly reselect a valid duplex device when changing drivers,
+        // never apply a mismatched ASIO capture/playback pair.
+        const type=(nativeDeviceInventory?.types||[]).find(t=>
+          t.name===q('[data-device-backend]').value);
+        if(!type)return;
+        q('[data-device-input]').value="";
+        q('[data-device-output]').value="";
+        selectOptions(q('[data-device-output]'),(type.outputs||[]).map(n=>[n,n]),
+          type.outputs?.[0]||"");
+        selectOptions(q('[data-device-input]'),(type.inputs||[]).map(n=>[n,n]),
+          type.separate?type.inputs?.[0]||"":q('[data-device-output]').value);
+        renderNativeDeviceDialog();
+      });
+      q('[data-device-output]').addEventListener("change",()=>{
+        const type=(nativeDeviceInventory?.types||[]).find(t=>
+          t.name===q('[data-device-backend]').value);
+        if(type&&!type.separate)q('[data-device-input]').value=q('[data-device-output]').value;
+        renderNativeDeviceDialog();
+      });
+      q('[data-device-input]').addEventListener("change",renderNativeDeviceDialog);
+      q('[data-device-apply]').addEventListener("click",()=>{
+        if(nativeDeviceBusy||!nativeDeviceInventory)return;
+        const active=nativeDeviceInventory.active||{};
+        const backendName=q('[data-device-backend]').value;
+        const type=(nativeDeviceInventory.types||[]).find(t=>t.name===backendName);
+        const config={backend:backendName,
+          playbackDevice:q('[data-device-output]').value,
+          captureDevice:q('[data-device-input]').value,
+          sampleRate:Number(q('[data-device-rate]').value)||0,
+          bufferSize:Number(q('[data-device-buffer]').value)||0};
+        if(!type||!(type.inputs||[]).includes(config.captureDevice)||
+           !(type.outputs||[]).includes(config.playbackDevice)||
+           (!type.separate&&config.captureDevice!==config.playbackDevice)){
+          q('[data-device-feedback]').textContent="Choose a valid driver input/output pair";return;
+        }
+        nativeDeviceBusy=true;
+        nativeDeviceAwaitingMute={config,generation:Number(active.deviceGeneration)||0};
+        q('[data-device-feedback]').textContent="Checking output safety…";
+        if(hardware?.device?.outputArmed)
+          backend.emitEvent("arMixAction",{action:"monitor",value:false});
+        else sendNativeDeviceApply();
+        renderNativeDeviceDialog();
+      });
+    }
+    if(!nativeDeviceDialog.open)nativeDeviceDialog.showModal();
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function sendNativeDeviceApply(){
+    const pending=nativeDeviceAwaitingMute;
+    if(!pending)return;
+    nativeDeviceRequest="native-device-"+(++nativeDeviceSerial);
+    backend.emitEvent("arMixAction",{action:"audioDeviceApply",
+      requestId:nativeDeviceRequest,expectedDeviceGeneration:pending.generation,
+      config:pending.config});
+    nativeDeviceAwaitingMute=null;
+  }
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
     if(!menu || typeof document.createElement!=="function")return;
@@ -430,14 +563,7 @@
     advanced.appendChild(summary);
     const caption=item("span","more-tools-caption","HARDWARE RECOVERY ONLY");
     const setup=item("button","tool","Audio I/O");
-    setup.addEventListener("click",()=>{
-      // The pre-existing WebView I/O pane already supports native device
-      // inventory + one audited Apply transaction. Do not open a duplicate
-      // huge JUCE AudioDeviceSelectorComponent for routine setup.
-      if(typeof window.__arMixOpenAudioIO==="function")
-        window.__arMixOpenAudioIO("device");
-      else status("AUDIO I/O unavailable; use the mixer AUDIO I/O button.");
-    });
+    setup.addEventListener("click",openNativeAudioSettings);
     const driver=item("button","tool","Advanced JUCE driver settings");
     driver.addEventListener("click",()=>{
       backend.emitEvent("arMixAction",{action:"audioSetup"});
@@ -570,7 +696,32 @@
       }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
       updateHardwarePanel(hardware);
     });
+    backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
+      nativeDeviceInventory=inventory;
+      if(nativeDeviceDialog?.open)renderNativeDeviceDialog();
+    });
+    backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
+      if(!nativeDeviceBusy || ack?.requestId!==nativeDeviceRequest)return;
+      nativeDeviceBusy=false;nativeDeviceRequest="";
+      if(nativeDeviceInventory && ack.active)nativeDeviceInventory.active=ack.active;
+      const feedback=nativeDeviceDialog?.querySelector('[data-device-feedback]');
+      if(feedback)feedback.textContent=ack?.ok?
+        "Driver applied · select IN on any channel to hear it":
+        "Device unchanged · "+String(ack?.error||"driver rejected");
+      renderNativeDeviceDialog();
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
+      if(nativeDeviceBusy && nativeDeviceAwaitingMute){
+        if(ack?.ok===true && ack.armed===false)sendNativeDeviceApply();
+        else{
+          nativeDeviceBusy=false;nativeDeviceAwaitingMute=null;
+          nativeDeviceDialog?.querySelector('[data-device-feedback]').textContent=
+            "Cannot safely mute output · device unchanged";
+          renderNativeDeviceDialog();
+        }
+        return;
+      }
       const p=selectedSourcePending;
       if(p?.phase==="muting"){
         if(ack?.ok===true && ack.armed===false &&
