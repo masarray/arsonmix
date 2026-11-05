@@ -56,7 +56,13 @@ test('P0 crackle marker records a bounded pre-event source-labeled evidence wind
   assert.match(host,/timerTicks_ % 12 == 0 && !browser_\.loaded/);
   assert.match(host,/crackleEvidence_\.push \(makeEvidenceSample \(health\)\)/);
   assert.doesNotMatch(host,/approvedNativeSnapshot \(health\)/);
-  assert.match(host,/crackleEvidence_\.mark \(makeEvidenceSample\(status\)\)/);
+  assert.match(host,/crackleEvidence_\\.mark\\s*\\(\\s*makeEvidenceSample\\(status\\)\\s*\\)/);
+  assert.match(host,/AUDIO_GLITCH_MEMORY/);
+  assert.match(host,/compactMemoryWindowReport/);
+  assert.match(host,/GlobalMemoryStatusEx/);
+  assert.match(host,/GetProcessMemoryInfo/);
+  assert.match(evidence,/struct MemoryPressure/);
+  assert.match(evidence,/peakLoadPercent/);
   assert.match(host,/if \(timerTicks_ % 12 == 0\)/);
   assert.match(build,/P0PreMarkerFiveSecondEvidenceWindow/);
   assert.doesNotMatch(engine,/CrackleEvidenceWindow/);
