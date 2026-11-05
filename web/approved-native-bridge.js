@@ -550,10 +550,24 @@
     if(flags.acceptedGraphConnected||!scope?.tracks)return;
     const d=live?.dryRoutingLab||{};
     lastDryReadback=d;
-    if(!verifiedM4())return;
+    let changed=false;
+    // Source identity must follow native accepted/prepared routes after ANY
+    // hotplug, restart or external patch: never leave old demo input names.
+    const rows=d.acceptedRoute?.channels||d.preparedM4Route?.channels||[];
+    if(d.ready && Array.isArray(rows)&&rows.length>=10)for(let i=0;i<10;++i){
+      const t=scope.tracks[i],r=rows[i];
+      if(!t||!r)continue;
+      const source=routeValue(r);
+      const output=r.main?"Master":"SOURCE ONLY (No Main)";
+      if(t.input!==source){t.input=source;changed=true;}
+      if(t.output!==output){t.output=output;changed=true;}
+    }
+    if(!verifiedM4()){
+      if(changed)scope.render?.();
+      return;
+    }
     const controls=d.channelControls,peaksL=d.channelPeaksL,peaksR=d.channelPeaksR;
     if(!Array.isArray(controls)||controls.length!==10)return;
-    let changed=false;
     for(let i=0;i<10;++i){
       const t=scope.tracks[i],c=controls[i];
       if(!t||!c)continue;
