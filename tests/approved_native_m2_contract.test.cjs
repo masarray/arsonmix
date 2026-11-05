@@ -232,6 +232,19 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(main,/action == "routingFxEditor"/);
  assert.match(main,/action == "routingFxBypass"/);
 });
+test("P0 VST3 preparation runs with old live PCM; monitor closes only at publication",()=>{
+ const lab=read("src/LiveDryRoutingLab.h");
+ const engine=read("src/LiveAudioEngine.h");
+ assert.match(lab,/#include <functional>/);
+ assert.match(lab,/if\(beforePublish\)beforePublish\(\)/);
+ assert.match(lab,/const auto epochAtPublish=deviceEpoch_\.load/);
+ assert.match(lab,/next,formats,sampleRate,deviceFrames,true,nullptr,\s*beforePublish/);
+ assert.match(engine,/bool enteredPublication=false/);
+ assert.match(engine,/enteredPublication=true;\s*if\(wasMonitoring\)setOutputMuted\(true\)/);
+ assert.match(engine,/if\(!enteredPublication\)return error/);
+ assert.match(engine,/return finishGuardedDryTopology\(/);
+ assert.match(engine,/The previous audio path keeps sounding while JUCE examines/);
+});
 test("P0 FX command preflight never mutes monitoring for deterministic rejection",()=>{
  const lab=read("src/LiveDryRoutingLab.h");
  const engine=read("src/LiveAudioEngine.h");

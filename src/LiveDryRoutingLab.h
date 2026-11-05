@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -175,7 +176,8 @@ public:
                         const FxSelections& selections,
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames,bool explicitSelection=true,
-                        const FxRestores* restores=nullptr) {
+                        const FxRestores* restores=nullptr,
+                        const std::function<void()>& beforePublish={}) {
         // E5: the M4 compiler cannot encode an admitted native GROUP/FX RETURN.
         // An M4 APPLY, Show recall or structural SOURCE/AUX edit must not
         // erase native BUS PCM while its ChannelId graph owns the callback.
@@ -419,8 +421,14 @@ public:
         if(!registryValid_.load(std::memory_order_acquire) ||
            epochAtPublish!=currentEpoch)
             return "Audio device changed before routing publication";
+        // The old accepted graph continues to render while a new vendor
+        // instance is scanned, constructed and prepared on CONTROL. Only
+        // after ALL fallible preparation and the last device-epoch check
+        // may the caller briefly close the physical output at commit.
+        // Never call the gate on a failed plugin admission.
+        if(beforePublish)beforePublish();
         // New M4 routing must not render against an older ChannelId graph.
-        // Output must remain disarmed throughout structural native APPLY.
+        // The output must be disarmed by the caller at the publication edge.
         const auto previousPcmEpoch=channelIdPcmEpoch_.exchange(
             0,std::memory_order_acq_rel);
         const auto result=publisher_.publish(std::move(next),expectedRevision,epochAtPublish);
@@ -510,7 +518,8 @@ public:
             const FxSelection& chosen,bool directPermitted,
             bool independentClock,int occupiedCh1Fx,
             juce::AudioPluginFormatManager& formats,double sampleRate,
-            int deviceFrames) {
+            int deviceFrames,
+            const std::function<void()>& beforePublish={}) {
         const auto preflight=fxInsertPreflight(
             lane,slot,expectedEpoch,expectedRevision,chosen);
         if(preflight.isNotEmpty())return preflight;
@@ -521,7 +530,8 @@ public:
         auto next=acceptedFxSelections_;
         next[lane][slot]=chosen;
         return apply(command,directPermitted,independentClock,occupiedCh1Fx,
-                     next,formats,sampleRate,deviceFrames,true);
+                     next,formats,sampleRate,deviceFrames,true,nullptr,
+                     beforePublish);
     }
 
     // M1 direct-source parameter: only same-format physical→physical

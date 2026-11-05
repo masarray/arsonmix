@@ -1137,14 +1137,17 @@ public:
             error="NATIVE TOPOLOGY: preparation failed: "+juce::String(ex.what());
         }
         catch(...) { error="NATIVE TOPOLOGY: preparation failed"; }
-        // This is a physical renderer admission, not an extra browser mixer,
-        // new DSP graph or auto-arm. It must complete before output resumes.
+        return finishGuardedDryTopology(
+            expectedEpoch,frames,wasMonitoring,std::move(error));
+    }
+    // One post-publication authority handoff/restoration policy for all
+    // structural controls. Never confuse muted hardware with detached DSP.
+    juce::String finishGuardedDryTopology(std::uint64_t expectedEpoch,
+                    int frames,bool wasMonitoring,juce::String error) {
         if(error.isEmpty() && expectedEpoch==dryRoutingLab_.epoch() &&
            dryRoutingLab_.hasExplicitRoute())
             (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
                 graphOwned_->count,frames,true,currentOriginalCh1Lease());
-        // A failed edit may restore the PREVIOUS valid audible route; device
-        // or graph faults, an unpatched last source, or STREAM never auto-arm.
         const bool sameEpoch=expectedEpoch==dryRoutingLab_.epoch();
         if(wasMonitoring && sameEpoch &&
            armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
@@ -1241,12 +1244,33 @@ public:
            !pluginFormat->fileMightContainThisPluginType(chosen.path))
             return "FX INSERT: VST3 bundle unavailable or invalid; rescan catalog";
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        return applyGuardedDryTopology(epoch,frames,[&] {
-            return dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
+        // The previous audio path keeps sounding while JUCE examines the
+        // VST3 bundle, instantiates the new effect and prepares its buffers.
+        // A rejected/missing/latent plugin must NOT briefly mute a singer.
+        // The pre-publish hook is CONTROL-only; it runs AFTER successful
+        // fallible preparation and BEFORE switching graph authority.
+        const bool wasMonitoring=isMonitorEnabled();
+        bool enteredPublication=false;
+        juce::String error;
+        try {
+            error=dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
                 chosen,directFence_.permitted(),independent_.active(),
                 graphOwned_->count,formats_,device->getCurrentSampleRate(),
-                frames);
-        });
+                frames,[&] {
+                    enteredPublication=true;
+                    if(wasMonitoring)setOutputMuted(true);
+                });
+        } catch(const std::exception& ex) {
+            error="FX INSERT: prepare failed; previous audio preserved: "+
+                juce::String(ex.what());
+        } catch(...) {
+            error="FX INSERT: prepare failed; previous audio preserved";
+        }
+        // No graph publication, no change of output state and no
+        // unnecessary ChannelId re-admission on any preparation failure.
+        if(!enteredPublication)return error;
+        return finishGuardedDryTopology(
+            epoch,frames,wasMonitoring,std::move(error));
     }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
