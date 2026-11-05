@@ -344,6 +344,8 @@
     hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
   function updateHardwarePanel(next) {
     hardware=next || null;
+    nativeStream=next?.raw?.secondaryOutput || null;
+    renderStreamPanel();
     refreshRealM4Inputs(next);
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
@@ -418,6 +420,7 @@
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
       deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="";
+  let nativeStream=null,streamChoice="",streamBusyId="",streamSeq=0,pendingStreamMute=null,streamNotice="";
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -428,7 +431,10 @@
         .armix-audio-dialog{background:#142631;border:1px solid #467083;border-radius:8px;
           box-shadow:0 16px 56px #0009;color:#e3eff4;width:min(480px,94vw);
           padding:17px;display:grid;gap:11px;font:12px system-ui,sans-serif}
+        .armix-audio-dialog{max-height:90dvh;overflow-y:auto}
         .armix-audio-dialog h2{font-size:16px;font-weight:600;margin:0}
+        .armix-stream-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+        .armix-stream-status{font-size:11px;color:#b4d5e0;line-height:1.5;margin-top:5px}
         .armix-audio-dialog label{display:grid;gap:5px;color:#a9c5d2}
         .armix-audio-dialog select{background:#09202c;border:1px solid #476778;
           border-radius:4px;color:#edf9ff;min-height:30px;width:100%;padding:3px 7px}
@@ -455,6 +461,19 @@
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
         <div class="armix-device-note">The output device above is the real destination.
           A virtual cable does not automatically play through headphones.</div>
+        <details data-stream-panel>
+          <summary>STREAM · optional output for OBS / TikTok</summary>
+          <label>WASAPI playback destination<select data-stream-endpoint aria-label="Additional virtual playback output"></select></label>
+          <div class="armix-stream-status" data-stream-status>STREAM OFF · no separate endpoint connected</div>
+          <div class="armix-stream-actions">
+            <button type="button" data-stream-action="connect">Connect</button>
+            <button type="button" data-stream-action="live">Go Live</button>
+            <button type="button" data-stream-action="stop">Stop / Disconnect</button>
+          </div>
+          <div class="armix-device-note">STREAM sends one post-FX MAIN copy to a separate render endpoint,
+            never replacing the physical monitor. Selecting CABLE Input does not
+            confirm OBS/TikTok is receiving sound. An independent clock adds buffering.</div>
+        </details>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer<select data-audio-field="buffer"></select></label>
@@ -504,8 +523,60 @@
         else if(field==="buffer")deviceChoice.buffer=Number(e.target.value)||0;
         renderDevicePanel();
       });
+      devicePanel.addEventListener("change",e=>{
+        if(e.target?.matches?.("[data-stream-endpoint]")){
+          streamChoice=e.target.value;streamNotice="";renderStreamPanel();
+        }
+      });
+      devicePanel.addEventListener("click",e=>{
+        const action=e.target?.dataset?.streamAction;
+        if(!action)return;
+        if(action==="stop"){
+          pendingStreamMute=null;
+          sendStreamAction("secondaryOutputStop",null);return;
+        }
+        if(action==="live"){
+          if(nativeStream?.ready!==true||nativeStream?.fault===true||
+             !nativeStream?.endpoint||streamBusyId){
+            streamNotice="Connect a healthy output before going live";renderStreamPanel();return;
+          }
+          sendStreamAction("secondaryOutputArm",true);return;
+        }
+        if(action!=="connect"||streamBusyId||pendingStreamMute)return;
+        const target=streamChoice,outputs=streamPlaybackChoices();
+        const capture=String(hardware?.device?.captureDevice||"").toLowerCase();
+        const lower=target.toLowerCase();
+        const sameCable=capture.includes("cable output") && lower.includes("cable input") &&
+          (capture.includes("vb-audio")||lower.includes("vb-audio"));
+        if(!outputs.includes(target)||target===hardware?.device?.playbackDevice||
+           sameCable||legacy()?.routeAccepted!==true||!deviceReady()){
+          streamNotice=sameCable?"STREAM blocked: VB-Cable input/output feedback loop":
+            "Select a separate endpoint after routing real hardware input";
+          renderStreamPanel();return;
+        }
+        if(hardware?.device?.outputArmed){
+          const epoch=safeNativeCounter(hardware?.device?.epoch);
+          if(epoch===null)return;
+          const requestId="stream-mute-"+(++streamSeq);
+          pendingStreamMute={requestId,epoch:String(epoch),target};
+          streamNotice="Muting physical MAIN before connecting STREAM…";
+          backend.emitEvent("arMixAction",{action:"monitor",value:false,requestId});
+          window.setTimeout(()=>{
+            if(pendingStreamMute?.requestId!==requestId)return;
+            pendingStreamMute=null;
+            streamNotice="STREAM cancelled: physical MUTE was not acknowledged";
+            renderStreamPanel();
+          },8000);
+          renderStreamPanel();return;
+        }
+        sendStreamAction("secondaryOutputConnect",target);
+      });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
         if(deviceBusy||pendingDeviceMute||!deviceChoice||!deviceInventory?.active)return;
+        if(nativeStream?.armed){
+          deviceResult="Stop STREAM before changing the primary device";
+          renderDevicePanel();return;
+        }
         const draft=deviceChoice,active=deviceInventory.active;
         if(!draft.backend||!draft.capture||!draft.playback)return;
         if(hardware?.device?.outputArmed){
@@ -607,7 +678,67 @@
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
-      !deviceChoice.playback;
+      !deviceChoice.playback||nativeStream?.armed===true;
+    renderStreamPanel();
+  }
+  function streamPlaybackChoices(){
+    const type=deviceInventory?.types?.find(t=>t.name==="Windows Audio");
+    return Array.isArray(type?.outputs)?type.outputs.filter(
+      x=>typeof x==="string"&&x.length>0):[];
+  }
+  // All displayed STREAM states come from the real native WASAPI consumer
+  // snapshot. An ACK only triggers a later readback, not an optimistic ON.
+  function renderStreamPanel(){
+    const select=devicePanel?.querySelector("[data-stream-endpoint]");
+    if(!select)return;
+    const options=streamPlaybackChoices();
+    if(!options.includes(streamChoice))
+      streamChoice=options.includes(nativeStream?.endpoint)?nativeStream.endpoint:(options[0]||"");
+    const signature=options.join("\\0");
+    if(select.dataset.inventory!==signature){
+      select.dataset.inventory=signature;
+      select.replaceChildren(...options.map(name=>{
+        const item=document.createElement("option");item.value=name;
+        item.textContent=name;return item;
+      }));
+    }
+    if(select.value!==streamChoice)select.value=streamChoice;
+    const ready=nativeStream?.ready===true&&nativeStream?.fault!==true;
+    const live=ready&&nativeStream?.armed===true;
+    const endpoint=String(nativeStream?.endpoint||"");
+    const indicator=devicePanel.querySelector("[data-stream-status]");
+    if(indicator)indicator.textContent=streamNotice||
+      (nativeStream?.fault?"STREAM FAULT · Stop / Disconnect and reconnect":
+       live?"STREAM ON · "+endpoint+" · WASAPI render (receiver unverified)":
+       ready?"STREAM CONNECTED / OFF · "+endpoint:
+       "STREAM OFF · choose a separate output endpoint");
+    const connect=devicePanel.querySelector('[data-stream-action="connect"]');
+    const go=devicePanel.querySelector('[data-stream-action="live"]');
+    const stop=devicePanel.querySelector('[data-stream-action="stop"]');
+    if(connect)connect.disabled=!!streamBusyId||!!pendingStreamMute||
+      !deviceReady()||legacy()?.routeAccepted!==true||!streamChoice||
+      streamChoice===hardware?.device?.playbackDevice;
+    if(go)go.disabled=!!streamBusyId||!!pendingStreamMute||!ready||live;
+    if(stop)stop.disabled=!streamBusyId&&!pendingStreamMute&&!ready&&!nativeStream?.armed;
+    select.disabled=!!streamBusyId||!!pendingStreamMute;
+  }
+  function sendStreamAction(action,value){
+    if(streamBusyId&&action!=="secondaryOutputStop")return;
+    const epoch=safeNativeCounter(hardware?.device?.epoch);
+    if(action!=="secondaryOutputStop"&&epoch===null)return;
+    const requestId="stream-"+(++streamSeq);
+    streamBusyId=requestId;
+    streamNotice=action==="secondaryOutputStop"?"Stopping STREAM…":
+      action==="secondaryOutputConnect"?"Connecting WASAPI output…":
+      "Enabling STREAM; awaiting real consumer readback…";
+    backend.emitEvent("arMixAction",{action,requestId,value,
+      ...(epoch===null?{}:{expectedDeviceEpoch:epoch})});
+    window.setTimeout(()=>{
+      if(streamBusyId!==requestId)return;
+      streamBusyId="";streamNotice="STREAM response timed out; refreshing actual state";
+      controller?.subscribe();renderStreamPanel();
+    },8000);
+    renderStreamPanel();
   }
   function sendDeviceApply(){
     if(!deviceChoice||!deviceInventory?.active)return;
@@ -633,6 +764,13 @@
       deviceInventory=inventory;
       if(!deviceBusy)deviceChoice=null;
       renderDevicePanel();
+    });
+    backend.addEventListener("arMixSecondaryOutputAck",ack=>{
+      if(!streamBusyId||ack?.requestId!==streamBusyId)return;
+      streamBusyId="";
+      streamNotice=ack.ok===true&&ack.deviceEpoch===String(hardware?.device?.epoch||"")?
+        "":("STREAM REJECTED · "+(ack?.error||"device changed; refresh"));
+      controller?.subscribe();renderStreamPanel();
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
       if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
@@ -889,6 +1027,17 @@
       controller.subscribe();
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
+      if(pendingStreamMute){
+        if(ack?.requestId!==pendingStreamMute.requestId)return;
+        const pending=pendingStreamMute;pendingStreamMute=null;
+        if(ack.ok===true&&ack.armed===false&&String(ack.deviceEpoch)===pending.epoch){
+          sendStreamAction("secondaryOutputConnect",pending.target);
+        }else{
+          streamNotice="STREAM cancelled: physical MUTE not verified";
+          renderStreamPanel();
+        }
+        return;
+      }
       if(pendingDeviceMute){
         // Reject any stale/unrelated ACK and any device epoch change.
         if(ack?.requestId!==pendingDeviceMute.requestId)return;
