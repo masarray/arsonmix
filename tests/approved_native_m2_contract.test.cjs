@@ -433,7 +433,8 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/REAL AUDIO · FIRST SOUND/);
- assert.match(js,/action:"audioSetup"/);
+ assert.match(js,/setup\.dataset\.nativeAction="audioSetup"/);
+ assert.doesNotMatch(js,/backend\.emitEvent\("arMixAction",\{action:"audioSetup"\}\)/);
  assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
  assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
