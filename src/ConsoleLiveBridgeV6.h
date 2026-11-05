@@ -8,6 +8,7 @@
 #include <deque>
 #include <cmath>
 #include <string_view>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -20,6 +21,33 @@
 // fixed strip indexes to fictitious ChannelIds. The production ChannelId
 // migration must replace this deliberately fail-closed G0 capability gate.
 // It never owns PCM, clones VST3, or calls the audio device from the browser.
+// Legacy G0 fixture compatibility is confined to the TEST-only bridge.
+// The shipping WebView2 uses integration/ApprovedNative* instead. These two
+// pure validation functions retain the old fixture's strict uint64/replay
+// contract without importing the obsolete integration/ConsoleNativeContractV6
+// into the production control boundary.
+namespace armix::integration {
+inline bool validConsoleRequestId(std::string_view id) noexcept {
+    if(id.empty() || id.size()>128)return false;
+    return std::all_of(id.begin(),id.end(),[](unsigned char ch) noexcept {
+        return ch>=0x21 && ch<=0x7e;
+    });
+}
+inline bool parseNativeChannelId(std::string_view token,ChannelId& out) noexcept {
+    if(token.empty() || (token.size()>1 && token.front()=='0'))return false;
+    std::uint64_t value=0;
+    for(const char ch:token) {
+        if(ch<'0'||ch>'9')return false;
+        const auto digit=static_cast<std::uint64_t>(ch-'0');
+        if(value>(std::numeric_limits<std::uint64_t>::max()-digit)/10u)
+            return false;
+        value=value*10u+digit;
+    }
+    if(value==0)return false; // Zero is the explicit unconnected OUT sentinel.
+    out=ChannelId{value};return true;
+}
+} // namespace armix::integration
+
 namespace armix::console {
 class LiveConsoleBridgeV6 final {
 public:
