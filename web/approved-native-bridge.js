@@ -1259,6 +1259,12 @@
           !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")) {
         status("NATIVE: WIRE transaction not admitted; graph unchanged");return true;
       }
+      // Structural PCM topology edits require BOTH physical and virtual
+      // outputs disarmed. Never auto-mute a live show.
+      if(hardware?.device?.outputArmed===true || nativeStream?.armed===true){
+        status("WIRE requires MONITOR OFF and STREAM stopped; route unchanged");
+        return true;
+      }
       const changes=[];
       for (const op of ops) {
         const sourceId=nativeByUiId.get(op.sourceId);
