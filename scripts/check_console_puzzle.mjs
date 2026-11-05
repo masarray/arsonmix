@@ -103,7 +103,7 @@ export function inspectMilestoneA(s) {
     has('engine',/dryRoutingLab_\.process\(/) &&
     has('nativeMixer',/nativePublisher_\.render\(/) &&
     has('nativeMixer',/channelIdPcmEpoch_/) &&
-    has('installedProjection',/callbackOwnsChannelIds/) &&
+    has('installedProjection',/actualFlag\(route,"nativeChannelIdPcmActive"\)/) &&
     has('installedProjection',/projectApprovedNativeV8\(/);
   const integration=[
     yes('real-v8-producer-installed',producerJoined,
