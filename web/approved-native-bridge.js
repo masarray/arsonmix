@@ -332,6 +332,14 @@
     }
     const requestId=++outputSerial;
     pendingOutputPatch={requestId,channel,target,epoch:ep,operation:"SET_PRIMARY_OUT"};
+    const menu=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="output"]');
+    // A draft visibly stays selected while pending, but t.output and
+    // audio graph remain exclusively the native accepted readback.
+    if(menu){
+      menu.value=target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
+      menu.setAttribute("aria-busy","true");
+      menu.title="Routing pending · awaiting native ACK and PCM readback";
+    }
     backend.emitEvent("arMixAction",{action:"routingChannelPatch",
       requestId,channel,target,deviceEpoch:ep,revision:rev});
     window.setTimeout(()=>{
@@ -578,6 +586,8 @@
         const root=document.querySelector('.strip[data-id="'+t.id+'"]');
         for(const field of ["input","output"]){
           const element=root?.querySelector('select[data-field="'+field+'"]');
+          if(field==="output"&&pendingOutputPatch?.channel===i &&
+             pendingOutputPatch?.operation==="SET_PRIMARY_OUT")continue;
           if(element && document.activeElement!==element &&
              element.value!==t[field])element.value=t[field];
         }
@@ -1183,16 +1193,26 @@
       if(!pendingOutputPatch||ack?.requestId!==pendingOutputPatch.requestId)return;
       const p=pendingOutputPatch;
       pendingOutputPatch=null;
+      const t=scope?.tracks?.find(x=>m4Index(x)===p.channel);
+      const el=t?document.querySelector(
+        '.strip[data-id="'+t.id+'"] select[data-field="output"]'):null;
+      if(el){
+        el.removeAttribute("aria-busy");
+        el.title="Primary output · verified native routing";
+      }
       const row=ack?.state?.acceptedRoute?.channels?.[p.channel];
       const accepted=ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
         (p.operation==="SET_PROCESSING_FORMAT"?
           row?.channelFormat===p.target:
           row?.main===(p.target==="MAIN"));
-      if(accepted)
+      if(accepted) {
+        if(el&&p.operation==="SET_PRIMARY_OUT")
+          el.value=p.target==="MAIN"?"Master":"SOURCE ONLY (No Main)";
         status("CH "+(p.channel+1)+" "+
           (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+p.target+
           " accepted · verifying native PCM");
-      else {
+      } else {
+        if(el)el.value=t?.output||"Master";
         status("CH "+(p.channel+1)+" "+
           (p.operation==="SET_PROCESSING_FORMAT"?"M/ST":"OUT")+
           " rejected · "+(ack?.error||"stale route"));
@@ -1339,9 +1359,11 @@
           el.value==="SOURCE ONLY (No Main)"?"NONE":null;
         // No optimistic GUI state. Both this menu and the WIRE jack use
         // the same ID/epoch-guarded, acknowledged native route transaction.
-        if(el.value!==t.output && !requestPrimaryOut(t,target))
+        if(el.value!==t.output && !requestPrimaryOut(t,target)){
+          el.value=t.output;
           status("OUT unavailable · verify device, MAIN route and pending edit");
-        el.value=t.output;
+        }
+        // No instantaneous snap-back on a valid pending native transaction.
         return true;
       }
       // ONE realtime PCM control for original ten channels and MAIN,

@@ -208,6 +208,8 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
 test("P0 MAIN WIRE unplug uses UI-to-native EdgeId and no fake graph",()=>{
  const adapter=read("web/approved-native-bridge.js");
  assert.match(adapter,/const edgeId=wireByUiId\.get\(op\.edgeId\)/);
+ assert.match(adapter,/menu\.setAttribute\("aria-busy","true"\)/);
+ assert.match(adapter,/el\.removeAttribute\("aria-busy"\)/);
  assert.doesNotMatch(adapter,/const edgeId=uiByWireId\.get\(op\.edgeId\)/);
  assert.match(adapter,/current\.graph\.edges\.some/);
  assert.match(adapter,/WIRE BUS\/FX return is not admitted/);
