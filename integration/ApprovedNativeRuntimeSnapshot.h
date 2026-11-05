@@ -84,16 +84,30 @@ inline bool projectInstalledNativeChannelIdGraph(
     // comes from the verified installed ENGINE status above, not the caller.
     if (!projectApprovedNativeV8(snapshot,bus,true))
         return false;
-    // Reading a PCM graph is not a mutating operation: Main.cpp still has a
-    // G0 reject handler. Until ENGINE/INTEGRATOR jointly install a real
-    // dispatcher and matching readback, advertise ZERO supported controls.
-    // In particular, projectApprovedNativeV8's generic WIRE structure alone
-    // must not enable WIRE intent before native transaction dispatch exists.
+    // Advertise only controls provided by the currently installed and
+    // positively admitted native callback (never inferred from a JSON shape
+    // or the browser). Both the native and public capability are required by
+    // the stateless control translator. WIRE remains explicitly disabled
+    // until the native structural dispatcher is independently admitted.
+    juce::Array<juce::var> available;
+    const auto nativeOps=bus.getProperty("supportedOps",{});
+    const auto* actual=nativeOps.getArray();
+    const auto has=[&](const char* op) {
+        return actual && actual->contains(juce::String(op));
+    };
+    if(has("NATIVE_SET_CHANNEL_MIX")) {
+        available.add(juce::String("SET_FADER"));
+        available.add(juce::String("SET_PAN"));
+    }
+    if(has("NATIVE_SET_CHANNEL_MUTE_SOLO")) {
+        available.add(juce::String("SET_MUTE"));
+        available.add(juce::String("SET_SOLO"));
+    }
     const auto graph=snapshot.getProperty("graph",{});
     const auto caps=graph.getProperty("capabilities",{});
     if (auto* props=caps.getDynamicObject())
-        props->setProperty("supportedOps",juce::var(juce::Array<juce::var>{}));
-    // Full vendor/Show/physical FAT not done. Never promote product LIVE.
+        props->setProperty("supportedOps",juce::var(available));
+    // Product LIVE stays false until independent vendor/Show/hardware FAT.
     return true;
 }
 } // namespace armix::console

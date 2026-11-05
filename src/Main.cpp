@@ -7,6 +7,7 @@
 #include "ApprovedGuiResources.h"
 #include "ApprovedConsoleNativeTransportV6.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
+#include "../integration/ApprovedNativeControlIntent.h"
 #include "LiveAudioEngine.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
@@ -32,6 +33,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <juce_core/juce_core.h>
 
 namespace
 {
@@ -201,16 +203,9 @@ public:
                   emitApprovedNativeSnapshot();
               })
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
-                  // Until ENGINE #266 owns production ChannelId graph, ALL v6
-                  // control intents are native-rejected, never silently emulated
-                  // via the old ordinal-only M4 engine.
-                  const auto accepted = approvedNativeSnapshot();
-                  if (browser_.loaded)
-                  {
-                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleAck",
-                          armix::native_console_m2::reject (args, accepted));
-                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot", accepted);
-                  }
+                  // The native control thread owns ONLY accepted mutations.
+                  // No GUI-side PCM, no legacy ordinal fallback and no fake ACK.
+                  handleApprovedNativeControl(args);
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
@@ -278,7 +273,8 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
-    bool consoleSubscribed_ = false; // WebView v6 G0 subscription, not PCM admission
+    bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
+    juce::StringArray acceptedControlRequests_; // bounded request replay fence
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -720,6 +716,58 @@ private:
         if (consoleSubscribed_ && browser_.loaded)
             browser_.emitEventIfBrowserIsVisible (
                 "arMixConsoleSnapshot", approvedNativeSnapshot());
+    }
+
+    // One native dispatcher; the source of truth is the already installed
+    // ENGINE callback. This code executes on the JUCE message thread, not RT.
+    void handleApprovedNativeControl(const juce::var& request)
+    {
+        const auto beforeLive=engine_.status();
+        const auto before=approvedNativeSnapshot(beforeLive);
+        const auto route=beforeLive.getProperty("dryRoutingLab",{});
+        const auto installedBus=route.getProperty("nativeBus",{});
+        const auto idValue=request.getProperty("requestId",{});
+        const auto id=idValue.isString()?idValue.toString():juce::String{};
+        const bool replay=id.isNotEmpty()&&acceptedControlRequests_.contains(id);
+        // All well-formed IDs are consumed once, including failed mutations.
+        // Bounded storage avoids unbounded memory growth in a long session.
+        if(id.isNotEmpty()&&id.length()<=128&&!replay) {
+            acceptedControlRequests_.add(id);
+            if(acceptedControlRequests_.size()>512)
+                acceptedControlRequests_.remove(0);
+        }
+        const auto translated=armix::console::translateApprovedNativeControl(
+            request,before,installedBus);
+        const bool applied=!replay&&translated.ok()&&
+            armix::console::executeApprovedNativeControl(engine_,translated.translated);
+        // An engine setter ACK is not independent PCM evidence. Re-read the
+        // same physical callback authority after mutation before claiming it
+        // was accepted; browser then explicitly requests LATER readback.
+        const auto after=applied?approvedNativeSnapshot():before;
+        const auto device=after.getProperty("device",{});
+        const auto graph=after.getProperty("graph",{});
+        const auto caps=graph.getProperty("capabilities",{});
+        const bool nativeStillAdmitted=applied&&caps.isObject()&&
+            static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))&&
+            device.getProperty("epoch","0").toString()==
+                request.getProperty("deviceEpoch","").toString();
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",id);
+        ack->setProperty("status",nativeStillAdmitted?"ACCEPTED":"REJECTED");
+        ack->setProperty("errorCode",nativeStillAdmitted?"NONE":
+            replay?"DUPLICATE_REQUEST_ID":
+            translated.error.isNotEmpty()?translated.error:
+            applied?"NATIVE_CALLBACK_LOST":"NATIVE_PCM_MUTATION_REJECTED");
+        ack->setProperty("deviceEpoch",device.getProperty("epoch","0"));
+        ack->setProperty("graphRevision",graph.getProperty("revision","0"));
+        ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
+        ack->setProperty("productionCallbackLive",false);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",
+                                               juce::var(ack.release()));
+        // NEVER emit a same-handler optimistic snapshot. The approved browser
+        // sends arMixConsoleSubscribe AFTER ACK and verifies a later producer
+        // readback before moving fader/route UI from its accepted state.
     }
 
     void onParameter (const juce::var& args)
