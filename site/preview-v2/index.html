@@ -228,7 +228,7 @@ const MATERIAL_PATH=Object.freeze({
  visibility:'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'
 });
 const materialIcon=(name)=>'<svg class="mi-svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" focusable="false" aria-hidden="true"><path d="'+MATERIAL_PATH[name]+'"/></svg>';
-const option=(values,selected)=>values.map(x=>'<option value="'+escapeHtml(x)+'"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');
+const option=(values,selected)=>values.map(x=>{const value=Array.isArray(x)?x[0]:x,label=Array.isArray(x)?x[1]:x;return '<option value="'+escapeHtml(value)+'"'+(value===selected?' selected':'')+'>'+escapeHtml(label)+'</option>';}).join('');
 // DEMO mult is a source binding, not a Group sum or copied JS audio engine.
 // Production must supply stable native ChannelId/TapPoint admission + ACK.
 const splitSourceLabel=(id,tap)=>'CH'+String(id).padStart(2,'0')+' '+tap+'-FX SPLIT';
@@ -254,6 +254,14 @@ function splitFanout(t){
  return tracks.filter(x=>x.id!==t.id&&parseSplitSource(x.input)?.sourceId===t.id).length;
 }
 const channelOptions=(t,type)=>{
+ // JUCE native only: the hardware I/O list comes from the verified active
+ // driver. The public /preview/ remains an unchanged visual reference.
+ if(window.__JUCE__?.backend){
+  const native=window.__ARMIX_NATIVE_M2__?.channelOptions?.(t,type);
+  if(native)return native;
+  return type==='input'?[['None','Choose audio device…']]:
+    type==='output'?[[t.output||'Master','MAIN']]:['None'];
+ }
  if(type==='input')return t.kind==='audio'
   ?['None','Input 1 (Mono)','Input 2 (Mono)','Input 1 + 2 (Stereo)','CABLE Output L','CABLE Output R','CABLE Output L/R (Stereo)',
      ...tracks.filter(x=>x.kind==='audio'&&x.id!==t.id).flatMap(x=>
