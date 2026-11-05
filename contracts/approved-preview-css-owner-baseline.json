@@ -1,0 +1,505 @@
+{
+  "schema": "arsonmix.approved-css-owner-debt-baseline.v2",
+  "sourceMainHead": "e477b3ebb8b2a1ab71fd7226b3f03a81868b70ab",
+  "linkedStylesheets": [
+    "mixer-console-foundation.css",
+    "mixer-channel-grid.css",
+    "mixer-section-controls.css",
+    "mixer-section-layout.css",
+    "mixer-hardware-artwork.css",
+    "mixer-v3-layout-contract.css",
+    "mixer-chrome-material.css",
+    "mixer-control-keys.css",
+    "mixer-fx-rack.css",
+    "mixer-plugin-browser.css",
+    "mixer-pan-controls.css",
+    "mixer-fader-assembly.css",
+    "mixer-meter-display.css",
+    "mixer-utility-controls.css",
+    "inter-embedded.css",
+    "mixer-wire-dots.css",
+    "mixer-wire-out-align-v48.css",
+    "mixer-contextual-buttons.css"
+  ],
+  "crossOwners": {
+    ".bank-arrow||font-size": [
+      "mixer-section-controls.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".bank-arrow||min-width": [
+      "mixer-section-controls.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".command-bar .sep||margin": [
+      "mixer-chrome-material.css",
+      "mixer-section-controls.css"
+    ],
+    ".command-bar .toolbar-label||display": [
+      "mixer-chrome-material.css",
+      "mixer-section-controls.css"
+    ],
+    ".command-bar||background": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".command-bar||border-bottom": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".command-bar||display": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".command-bar||flex": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".command-bar||gap": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css",
+      "mixer-section-controls.css",
+      "mixer-section-layout.css"
+    ],
+    ".command-bar||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".command-bar||padding": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css",
+      "mixer-section-controls.css"
+    ],
+    ".command-bar||z-index": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".console-body .ari-horizontal::-webkit-slider-thumb||margin-top": [
+      "mixer-chrome-material.css",
+      "mixer-pan-controls.css"
+    ],
+    ".console-body .bottom-section||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .eq-line||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .eq-line||border": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label .color-strip||height": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label .name||font-size": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label .name||font-weight": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label||border": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .footer-label||border-radius": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .route-caption||font-size": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-field||align-items": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-field||display": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-field||gap": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-field||grid-template-columns": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-field||min-height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-section||flex": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-section||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-section||padding": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||border": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||color": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||display": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||font-size": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||min-width": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .route-select||padding": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||text-overflow": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||white-space": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-select||width": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-top||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .route-top||min-height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .section||border-bottom": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .section||box-shadow": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .strip.master .footer-label||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .strip.selected||box-shadow": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .strip||background": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .strip||border-right": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .strip||box-shadow": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch-section||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch-section||display": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch-section||flex": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch-section||gap": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch-section||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch-section||padding": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .switch.on.mute||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch.on.mute||color": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch.on.solo||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch.on.solo||color": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch||background": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch||border": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .switch||box-shadow": [
+      "mixer-section-layout.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .tracks||grid-template-columns": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body .trim-section||flex": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .trim-section||gap": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body .trim-section||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body #master||flex": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body #master||min-width": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body #master||width": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body.collapsed-fx||--fx-h": [
+      "mixer-chrome-material.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body.plugin-open #viewport||margin-right": [
+      "mixer-plugin-browser.css",
+      "mixer-v3-layout-contract.css"
+    ],
+    ".console-body.wire-routing-v15 .strip .wire-tray .wire-node-out||padding": [
+      "mixer-wire-dots.css",
+      "mixer-wire-out-align-v48.css"
+    ],
+    ".console-body.wire-routing-v15 .wire-node-out, .console-body.wire-routing-v15 .wire-node-in||min-width": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".console-body.wire-routing-v15 .wire-node-out, .console-body.wire-routing-v15 .wire-node-in||width": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".console-body.wire-routing-v15 .wire-tray||gap": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".console-body.wire-routing-v15.collapsed-send||--send-h": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".console-body.wire-routing-v15[data-density=\"compact\"] .strip .wire-tray .wire-node-out||padding": [
+      "mixer-wire-dots.css",
+      "mixer-wire-out-align-v48.css"
+    ],
+    ".console-body||--eq-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--footer-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--fx-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--pan-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--route-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--send-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--switch-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--trim-h": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".console-body||--v13-fader-h": [
+      "mixer-chrome-material.css",
+      "mixer-fx-rack.css"
+    ],
+    ".eq-header||height": [
+      "mixer-section-controls.css",
+      "mixer-section-layout.css"
+    ],
+    ".eq-header||min-height": [
+      "mixer-section-controls.css",
+      "mixer-section-layout.css"
+    ],
+    ".mixer-title .accent||background": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title .right||color": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title .right||margin-left": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||align-items": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||background": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".mixer-title||border-bottom": [
+      "mixer-chrome-material.css",
+      "mixer-section-layout.css"
+    ],
+    ".mixer-title||display": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||flex": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||gap": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||height": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".mixer-title||padding": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".status-bar||flex": [
+      "mixer-chrome-material.css",
+      "mixer-section-controls.css"
+    ],
+    ".status-bar||height": [
+      "mixer-chrome-material.css",
+      "mixer-section-controls.css"
+    ],
+    ".strip||width": [
+      "mixer-channel-grid.css",
+      "mixer-section-controls.css"
+    ],
+    ".window-title .file-name||color": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".window-title .study||color": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".window-title||background": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".window-title||border-bottom": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".window-title||flex": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".window-title||height": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    ".wire-master||min-width": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".wire-master||padding": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    ".wire-mode-select||max-width": [
+      "mixer-chrome-material.css",
+      "mixer-wire-dots.css"
+    ],
+    "html,body||background": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ],
+    "html,body||color": [
+      "mixer-chrome-material.css",
+      "mixer-console-foundation.css"
+    ]
+  },
+  "sameFileRepeatedDeclarationCaps": {
+    "mixer-console-foundation.css": 4,
+    "mixer-channel-grid.css": 0,
+    "mixer-section-controls.css": 4,
+    "mixer-section-layout.css": 14,
+    "mixer-hardware-artwork.css": 0,
+    "mixer-v3-layout-contract.css": 0,
+    "mixer-chrome-material.css": 36,
+    "mixer-control-keys.css": 1,
+    "mixer-fx-rack.css": 8,
+    "mixer-plugin-browser.css": 13,
+    "mixer-pan-controls.css": 18,
+    "mixer-fader-assembly.css": 99,
+    "mixer-meter-display.css": 18,
+    "mixer-utility-controls.css": 1,
+    "inter-embedded.css": 0,
+    "mixer-wire-dots.css": 36,
+    "mixer-wire-out-align-v48.css": 0,
+    "mixer-contextual-buttons.css": 0
+  }
+}

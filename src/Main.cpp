@@ -207,6 +207,13 @@ public:
                   // No GUI-side PCM, no legacy ordinal fallback and no fake ACK.
                   handleApprovedNativeControl(args);
               })
+              .withEventListener ("arMixPerfControl", [this] (juce::var args) { onGuiPerfControl(args); })
+              .withEventListener ("arMixPerfTrace", [this] (juce::var args) {
+                  if (args.getProperty("schema",{}).toString() != "arsonmix.gui-perf-stage-a.v1") return;
+                  auto evidence = juce::JSON::toString(args, false);
+                  if (evidence.length() > 3500) evidence = evidence.substring(0, 3500) + " [TRUNCATED]";
+                  diagnostics_.record("GUI_PERF_JS", evidence);
+              })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withResourceProvider (assetFor))
@@ -282,6 +289,51 @@ private:
     bool audioEngineStarted_ = false;
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
+    // Opt-in and bounded: message-thread timing only, NEVER the audio callback.
+    struct GuiPerfStats
+    {
+        bool active = false;
+        unsigned int ticks = 0, statusReads = 0, snapshotEmits = 0, duplicateSnapshots = 0;
+        double prevTickMs = 0.0, maxTickGapMs = 0.0;
+        double totalTickMs = 0.0, maxTickMs = 0.0;
+        double totalStatusMs = 0.0, maxStatusMs = 0.0;
+        double totalSnapshotMs = 0.0, maxSnapshotMs = 0.0;
+    } guiPerf_;
+
+    void onGuiPerfControl(const juce::var& args)
+    {
+        const auto action = args.getProperty("action", {}).toString();
+        if (action == "start")
+        {
+            guiPerf_ = {};
+            guiPerf_.active = true;
+            diagnostics_.record("GUI_PERF_CONTROL", "start");
+        }
+        else if (action == "stop" && guiPerf_.active)
+        {
+            guiPerf_.active = false;
+            const auto average = [](double total, unsigned int count)
+            {
+                return count ? total / static_cast<double>(count) : 0.0;
+            };
+            auto object = std::make_unique<juce::DynamicObject>();
+            object->setProperty("schema", "arsonmix.native-message-thread.v1");
+            object->setProperty("timerTicks", static_cast<int>(guiPerf_.ticks));
+            object->setProperty("timerMeanMs", average(guiPerf_.totalTickMs, guiPerf_.ticks));
+            object->setProperty("timerMaxMs", guiPerf_.maxTickMs);
+            object->setProperty("timerMaxGapMs", guiPerf_.maxTickGapMs);
+            object->setProperty("statusReads", static_cast<int>(guiPerf_.statusReads));
+            object->setProperty("statusMeanMs", average(guiPerf_.totalStatusMs, guiPerf_.statusReads));
+            object->setProperty("statusMaxMs", guiPerf_.maxStatusMs);
+            object->setProperty("snapshotEmits", static_cast<int>(guiPerf_.snapshotEmits));
+            object->setProperty("snapshotMeanMs", average(guiPerf_.totalSnapshotMs, guiPerf_.snapshotEmits));
+            object->setProperty("snapshotMaxMs", guiPerf_.maxSnapshotMs);
+            object->setProperty("duplicateSnapshots", static_cast<int>(guiPerf_.duplicateSnapshots));
+            const juce::var result(object.release());
+            diagnostics_.record("GUI_PERF_NATIVE", juce::JSON::toString(result, false));
+            browser_.emitEventIfBrowserIsVisible("arMixPerfNativeResult", result);
+        }
+    }
     bool deviceSettingsDirty_ = false;
     bool unexpectedRouteNoticeSent_ = false;
     armix::device::DirectRestoreBackoff directRestore_;
@@ -2466,6 +2518,16 @@ private:
 
     void timerCallback() override
     {
+        // Always disabled unless the user explicitly starts a bounded trace.
+        const bool timing = guiPerf_.active;
+        const double tickStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
+        if (timing)
+        {
+            if (guiPerf_.prevTickMs > 0.0)
+                guiPerf_.maxTickGapMs = std::max(guiPerf_.maxTickGapMs,
+                                                 tickStart - guiPerf_.prevTickMs);
+            guiPerf_.prevTickMs = tickStart;
+        }
         ++timerTicks_;
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
@@ -2565,14 +2627,14 @@ private:
             pendingPresetUI_ = juce::var();
             pendingPresetName_.clear();
         }
-        if (timerTicks_ % 12 == 0)
+        // A disconnected WebView still needs the 1 Hz safety/health trace.
+        // Once the browser is ready, reuse the exact status read below:
+        // no duplicate engine_.status() and NO second 1 Hz GUI snapshot.
+        if (timerTicks_ % 12 == 0 && !browser_.loaded)
         {
-            auto health = engine_.status();
-            crackleEvidence_.push (makeEvidenceSample(health));
+            const auto health = engine_.status();
+            crackleEvidence_.push (makeEvidenceSample (health));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
-            if (consoleSubscribed_ && browser_.loaded)
-                browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot",
-                    approvedNativeSnapshot (health));
         }
 
         if (deviceSettingsDirty_)
@@ -2616,7 +2678,22 @@ private:
         }
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
+        const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
+        if (timing)
+        {
+            const double elapsed = juce::Time::getMillisecondCounterHiRes() - statusStart;
+            ++guiPerf_.statusReads;
+            guiPerf_.totalStatusMs += elapsed;
+            guiPerf_.maxStatusMs = std::max(guiPerf_.maxStatusMs, elapsed);
+        }
+        // Share the 12 Hz control-thread status with the 1 Hz health log.
+        // Preserve real device/hotplug/First Sound evidence and the async writer.
+        if (timerTicks_ % 12 == 0)
+        {
+            crackleEvidence_.push (makeEvidenceSample (state));
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
+        }
         if(routedEditorOwner_) {
             // Unplug/reopen may bypass normal GUI actions. Never keep a
             // vendor editor on an invalid device epoch or removed instance.
@@ -2644,15 +2721,30 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
-        // The WebView subscribes BEFORE audio startup. A one-shot G0 snapshot
-        // can therefore precede JUCE initialise() and leave PATCH CH1 grayed
-        // out forever. Publish the SAME real engine status at the existing
-        // 12 Hz control-thread cadence: physical pins, accepted ChannelIds and
-        // PCM meters update after startup, source patch, ARM and hotplug.
-        // No additional DSP callback, allocation or work on realtime thread.
+        // One authoritative 12 Hz console snapshot, NOT a second 1 Hz burst.
+        // Keep continuous real meters, safe native ACK/readback, PATCH/ARM,
+        // hot-plug recovery and future subscribed channels observable.
+        // All work stays on JUCE's message thread; RT PCM remains untouched.
         if (consoleSubscribed_)
+        {
+            const double snapshotStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
             browser_.emitEventIfBrowserIsVisible (
                 "arMixConsoleSnapshot", approvedNativeSnapshot(state));
+            if (timing)
+            {
+                const double elapsed = juce::Time::getMillisecondCounterHiRes() - snapshotStart;
+                ++guiPerf_.snapshotEmits;
+                guiPerf_.totalSnapshotMs += elapsed;
+                guiPerf_.maxSnapshotMs = std::max(guiPerf_.maxSnapshotMs, elapsed);
+            }
+        }
+        if (timing)
+        {
+            const double elapsed = juce::Time::getMillisecondCounterHiRes() - tickStart;
+            ++guiPerf_.ticks;
+            guiPerf_.totalTickMs += elapsed;
+            guiPerf_.maxTickMs = std::max(guiPerf_.maxTickMs, elapsed);
+        }
     }
 };
 

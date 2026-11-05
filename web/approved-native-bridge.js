@@ -17,21 +17,29 @@
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
   let lastPaintedSignature = "", lastNativeError = "NATIVE_NOT_SUBSCRIBED";
+  // B-stage: attached-node-only meter caches; a structural render invalidates
+  // them atomically. Never retain detached WebView2 strips or stale channel IDs.
+  const meterElements = new Map();
   let controller = null;
   const status = message => {
     lastNativeError = message;
     const info = document.getElementById("info");
-    if (info) info.textContent = message;
+    if (info && info.textContent !== message) info.textContent = message;
   };
   const stopDemo = () => {
     // The public Pages demo remains unchanged. In native, DEMO meters and
     // reference-only physical operations are never passed off as live audio.
     const demo = document.getElementById("preview");
-    if (demo) {demo.disabled = true;demo.title = "Demo meters disabled in native Windows application";}
+    if (demo) {
+      if (!demo.disabled) demo.disabled = true;
+      const title = "Demo meters disabled in native Windows application";
+      if (demo.title !== title) demo.title = title;
+    }
     scope?.stopDemo?.();
-    document.documentElement.dataset.armixNativeAuthority =
-      flags.productionCallbackLive ? "product-live" :
+    const authority = flags.productionCallbackLive ? "product-live" :
       flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
+    if (document.documentElement.dataset.armixNativeAuthority !== authority)
+      document.documentElement.dataset.armixNativeAuthority = authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const intent = (operation,t,payload) => {
@@ -113,6 +121,7 @@
     nativeByUiId.clear();for(const [ui,id] of nextNativeByUi)nativeByUiId.set(ui,id);
     wireByUiId.clear();for(const [ui,id] of newWireByUi)wireByUiId.set(ui,id);
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
+    meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     scope.installGraph(nextTracks,nextMaster,edges);
     return true;
   }
@@ -126,8 +135,16 @@
     for (const ch of next.graph.channels) {
       const ui=uiByNativeId.get(ch.id);
       if (ui===undefined)continue;
-      const root=document.querySelector('.strip[data-id="'+ui+'"]');
-      if (!root)continue;
+      let elements=meterElements.get(ui);
+      if (!elements?.root?.isConnected ||
+          elements.root.dataset.id!==String(ui)) {
+        const root=document.querySelector('.strip[data-id="'+ui+'"]');
+        if (!root) {meterElements.delete(ui);continue;}
+        elements={root,
+          left:root.querySelector('.meter-fill.left'),
+          right:root.querySelector('.meter-fill.right')};
+        meterElements.set(ui,elements);
+      }
       const entry=data[ch.id];
       const one=typeof entry==="number"&&Number.isFinite(entry)&&entry>=0?entry:null;
       const l=typeof entry?.peakL==="number"&&Number.isFinite(entry.peakL)&&entry.peakL>=0?
@@ -135,7 +152,7 @@
       const right=typeof entry?.peakR==="number"&&Number.isFinite(entry.peakR)&&entry.peakR>=0?
         entry.peakR:ch.processingFormat==="MONO"?l:null;
       const paint=(side,peak)=>{
-        const fill=root.querySelector('.meter-fill.'+side);
+        const fill=elements[side];
         if(!fill)return;
         const db=peak===null || peak===0?-90:20*Math.log10(peak);
         scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),ts,ui+':'+(side==="left"?"L":"R"));
@@ -166,14 +183,16 @@
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     const label=document.getElementById("transport");
-    if(label)label.textContent=!deviceOpen?"Device not ready":
+    const transport=!deviceOpen?"Device not ready":
       d.outputArmed?"Output armed":"Output muted";
+    if(label && label.textContent!==transport)label.textContent=transport;
     const warning=document.querySelector?.(".status-bar .warning");
-    if(warning)warning.textContent=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
+    const warningText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN ARMED · PCM NOT YET ADMITTED"):
       legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
       "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
+    if(warning && warning.textContent!==warningText)warning.textContent=warningText;
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
       p.active===true && d.enabledInputs.includes(p.port)):[];
@@ -193,19 +212,23 @@
       }
       if(pins.some(p=>String(p.port)===before))inputSelect.value=before;
     }
-    inputSelect.disabled=!deviceReady();
-    if(routeBtn)routeBtn.disabled=!deviceReady() ||
-      inputSelect.value==="" || pendingSourceId!==0;
-    if(armBtn)armBtn.disabled=!deviceReady() ||
-      legacy()?.routeAccepted!==true || d.outputArmed;
-    if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
+    const ready=deviceReady();
+    const selectDisabled=!ready;
+    if(inputSelect.disabled!==selectDisabled)inputSelect.disabled=selectDisabled;
+    const routeDisabled=!ready || inputSelect.value==="" || pendingSourceId!==0;
+    if(routeBtn && routeBtn.disabled!==routeDisabled)routeBtn.disabled=routeDisabled;
+    const armDisabled=!ready || legacy()?.routeAccepted!==true || d.outputArmed;
+    if(armBtn && armBtn.disabled!==armDisabled)armBtn.disabled=armDisabled;
+    const muteDisabled=!deviceOpen || !d.outputArmed;
+    if(muteBtn && muteBtn.disabled!==muteDisabled)muteBtn.disabled=muteDisabled;
     if(hardwareNote) {
       const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
       // Human-readable PCM stages from the ORIGINAL native callback only.
       // These values are NOT evidence that the DAC or speaker is audible.
-      hardwareNote.textContent=evidence?
+      const note=evidence?
         evidence.readout+" · "+evidence.nextAction:
         "No verified hardware PCM readback available.";
+      if(hardwareNote.textContent!==note)hardwareNote.textContent=note;
     }
   }
   function installFirstSoundMenu() {
@@ -317,7 +340,14 @@
         }
       }
     });
-    backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
+    backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
+      // Stage A: do not add time-sampling overhead unless explicitly armed.
+      const profiler=window.ArSonMixPerf;
+      if(!profiler?.active){controller.onSnapshot(snapshot);return;}
+      const started=performance.now();
+      try{controller.onSnapshot(snapshot);}
+      finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
+    });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;

@@ -28,6 +28,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             # no visual duplication; it must be stripped in public_from_native.
             self.assertIn("window.__ARMIX_NATIVE_SCOPE__=Object.freeze({", native)
             self.assertNotIn("__ARMIX_NATIVE_SCOPE__", approved)
+            self.assertIn("nativeMeterPainted", native)
+            self.assertNotIn("nativeMeterPainted", approved)
+            self.assertIn("nativeWireBounds", native)
+            self.assertNotIn("nativeWireBounds", approved)
+            # No new CSS override or second mixer: native HTML differs only
+            # through exactly reversible data/events/DOM-write optimizations.
             self.assertIn("make,render,findTrack,displayMeterDbfs", native)
             self.assertIn("installGraph(channels,main,edges)", native)
             self.assertIn("if(window.__JUCE__?.backend)return true;", native)
@@ -42,7 +48,11 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             for name in ("mixer-control-keys.css", "mixer-control-keys.js", "mute-solo-pfl-56x37.png"):
                 button = (ROOT / "site/preview-buttons/assets" / name).read_bytes()
                 self.assertEqual((out / "assets" / name).read_bytes(), button)
-            self.assertIn("assets/mixer-control-keys.css?rev=", native)
+            # Stage D uses ONE compiled CSSOM for both Pages and WebView2.
+            self.assertEqual(native.count('<link rel="stylesheet"'), 1)
+            self.assertIn('assets/arsonmix-approved-runtime.css?sha=', native)
+            self.assertNotIn('href="assets/mixer-control-keys.css', native)
+            self.assertNotIn('href="assets/mixer-wire-dots.css', native)
             self.assertNotIn("console-native.html", native)
 
     def test_manifest_reproducibility_and_byte_map(self):
@@ -55,6 +65,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             header = (a / "ApprovedGuiResources.h").read_text("utf-8")
             self.assertIn("BinaryData::index_html", header)
             self.assertIn("BinaryData::mixercontrolkeys_css", header)
+            self.assertIn("BinaryData::arsonmixapprovedruntime_css", header)
             self.assertIn("BinaryData::mixercontrolkeys_js", header)
             self.assertIn('"/assets/mute-solo-pfl-56x37.png"', header)
             for entry in first["files"]:

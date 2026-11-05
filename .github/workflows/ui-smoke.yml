@@ -125,11 +125,18 @@ jobs:
         run: node scripts/check_console_puzzle.mjs --release
       - name: Verify CSS ownership build and offline/WebView2 parity
         run: python scripts/build_ui_css.py --check
+      - name: Stage C deterministic CSS compiler priority and safety regression
+        run: python -m unittest discover -s tests -p approved_css_stage_c_compiler_test.py -v
+      - name: Prevent any NEW CSS stacking across approved /preview/ owners
+        run: |
+          python scripts/check_preview_css_ownership.py
+          python -m unittest discover -s tests -p approved_preview_css_owner_nonregression_test.py -v
       - name: Verify immutable approved Brushed Metal CSS and non-destructive preview
         run: python tests/theme_reference_fixture_test.py
       - name: Validate JavaScript syntax
         run: |
           node --check web/app.js
+          node --check site/preview-v2/assets/gui-perf-probe.js
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
@@ -153,6 +160,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: Verify opt-in actual /preview/ GUI profiling, default OFF
+        run: python tests/approved_gui_perf_stage_a_smoke.py
+      - name: Validate Stage B native meter dirty-write / authoritative Pages parity
+        run: python tests/approved_native_meter_dirty_stage_b_smoke.py
+      - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
+        run: python tests/approved_stage_c_css_visual_parity_smoke.py
+      - name: Stage D one runtime CSSOM and actual stylesheet network count
+        run: python tests/approved_css_stage_d_single_bundle_smoke.py
+      - name: Stage C rendered CSS parity (original vs compiled, three viewports + hover)
+        run: python tests/approved_css_stage_c_computed_parity_smoke.py
       - name: WIRE A main edge and safe graph integration in real Chromium DOM
         run: python tests/pages_wire_first_canonical_main_smoke.py
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo

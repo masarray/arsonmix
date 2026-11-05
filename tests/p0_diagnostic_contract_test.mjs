@@ -50,7 +50,12 @@ test('P0 crackle marker records a bounded pre-event source-labeled evidence wind
   assert.match(host,/AUDIO_GLITCH_WINDOW/);
   assert.match(host,/PRE_MARK_EVIDENCE_5S/);
   assert.match(host,/RENDER_HARDWARE_XRUN=UNAVAILABLE_THROUGH_JUCE/);
-  assert.match(host,/crackleEvidence_\.push \(makeEvidenceSample\(health\)\)/);
+  // Stage B: connected WebView reuses the 12 Hz status sample for
+  // health logging; an unready WebView still retains safety evidence at 1 Hz.
+  assert.match(host,/crackleEvidence_\.push \(makeEvidenceSample \(state\)\)/);
+  assert.match(host,/timerTicks_ % 12 == 0 && !browser_\.loaded/);
+  assert.match(host,/crackleEvidence_\.push \(makeEvidenceSample \(health\)\)/);
+  assert.doesNotMatch(host,/approvedNativeSnapshot \(health\)/);
   assert.match(host,/crackleEvidence_\.mark \(makeEvidenceSample\(status\)\)/);
   assert.match(host,/if \(timerTicks_ % 12 == 0\)/);
   assert.match(build,/P0PreMarkerFiveSecondEvidenceWindow/);
