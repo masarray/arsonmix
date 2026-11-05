@@ -1,6 +1,7 @@
 """Build public Pages landing and interactive console from canonical standalone HTML."""
 from pathlib import Path
 import argparse,os,json,shutil,subprocess,sys
+from compile_approved_css import optimize_assets
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -57,7 +58,12 @@ if not (buttons_dest/'assets'/probe).is_file():
 probe_tag='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script>'
 if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
     raise SystemExit('Approved Pages profiler injection must have exactly one body')
-canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
+canonical_html=canonical_html.replace('</body>',probe_tag+'\\n</body>',1)
+# Stage C: compile only DEPLOYED copies, never modify locked V28 source
+# owners or approved PNG artwork. No new CSS/override or second renderer.
+canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets')
+if css_compilation['removedDeclarations']<1:
+    raise SystemExit('CSS Stage C produced no obsolete-declaration removals')
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
 (buttons_dest/'build.json').write_text(json.dumps({
     'canonical_url':'/preview/',
@@ -66,7 +72,8 @@ canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
     'wire_source':'site/preview-v2/index.html',
     'wire_source_sha256':hashlib.sha256((canonical/'index.html').read_bytes()).hexdigest(),
     'button_asset_source':'site/preview-buttons/assets/',
-    'button_css_js_revisions':revisions
+    'button_css_js_revisions':revisions,
+    'css_compilation':css_compilation
 },indent=2),encoding='utf-8')
 # Fail closed if routing has no identical source files in the variant.
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
