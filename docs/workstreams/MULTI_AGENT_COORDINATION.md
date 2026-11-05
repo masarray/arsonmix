@@ -1,3 +1,9 @@
+> **SUPERSEDED — 2026-11-05.** Historical parallel-agent policy only.
+> Current product execution is single integration owner under [AGENTS.md](../../AGENTS.md).
+> No lane approval, stale PR collision or per-owner source-file barrier may
+> delay integrated production changes. Retain quality, regression, exact-SHA,
+> signed release/ZIP integrity and physical FAT safety gates.
+
 # ArSonMix — Parallel Agent Coordination (binding for new work)
 
 **Control tower:** [issue #397](https://github.com/masarray/arsonmix/issues/397).
