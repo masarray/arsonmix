@@ -2,7 +2,7 @@
 from pathlib import Path
 import json, re, sys, hashlib
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from compile_approved_css import LINK, optimize_css
+from compile_approved_css import LINK, optimize_css, compile_runtime_bundle, link_runtime_bundle, RUNTIME_CSS
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -14,7 +14,7 @@ build=json.loads((gui/'build.json').read_text(encoding='utf-8'))
 require(build.get('kind')=='APPROVED_SINGLE_GUI' and build.get('canonical_url')=='/preview/','wrong public GUI identity')
 require(build.get('live_audio') is False,'browser must not claim PCM')
 require('id="console"' not in html and 'preview-buttons/index.html' not in html,'old iframe variant still published')
-require('console-body' in html and 'mixer-control-keys.css' in html,'not the actual approved console')
+require('console-body' in html and RUNTIME_CSS in html and 'mixer-control-keys.js' in html,'not the actual approved console')
 # The only compiled DOM changes are two hashed approved PNG links and the dormant profiling script.
 revisions=build.get('button_css_js_revisions',{})
 expected=source
@@ -48,7 +48,8 @@ source_css=[(name,(ROOT / ("site/preview-buttons/assets"
 compiled,counts=optimize_css(source_css)
 record=build.get('css_compilation') or {}
 for stat in ('sourceDeclarations','removedDeclarations',
-             'removedCrossFileDeclarations','lockedCandidateDeclarations'):
+             'removedCrossFileDeclarations','lockedCandidateDeclarations',
+             'preservedFallbackDeclarations'):
     require(record.get(stat)==counts[stat],'CSS compiler accounting mismatch: '+stat)
 require(record.get('sourceStylesheetCount')==18 and
         record.get('generatedStylesheetCount')==18 and
@@ -64,7 +65,24 @@ def css_rewrite(match):
     prefix,name,query,end=match.groups()
     return prefix+name+(query or '')+('&' if query else '?')+'armixc='+record['shaByCssOwner'][name]+end
 expected=LINK.sub(css_rewrite,expected)
-require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + nonvisual profiler')
+# Stage D: exactly ONE CSS link used by the Pages/Windows WebView2 runtime,
+# while 18 source owners remain ordered and inspectable (not 18 CSSOM sheets).
+runtime=compile_runtime_bundle([(name,compiled[name]) for name in linked])
+digest=hashlib.sha256(runtime.encode('utf-8')).hexdigest()[:16]
+require((gui/'assets'/RUNTIME_CSS).read_bytes()==runtime.encode('utf-8'),
+        'actual runtime stylesheet differs from source-owned winner sequence')
+require(record.get('runtimeBundleCssSHA256')==digest and
+        record.get('runtimeBundleBytes')==len(runtime.encode('utf-8')),
+        'runtime stylesheet integrity/provenance mismatch')
+require(record.get('runtimeStylesheetCount')==1 and
+        record.get('removedStylesheetRequests')==17 and
+        record.get('addedOverrideStylesheets')==0,
+        'Stage D loaded an extra CSS layer or a second renderer')
+expected=link_runtime_bundle(expected,digest)
+shipped=list(LINK.finditer(html))
+require(len(shipped)==1 and shipped[0].group(2)==RUNTIME_CSS,
+        'Only the single compiled runtime CSS is allowed to load')
+require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + one runtime CSS + nonvisual profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
 require((gui/'assets/mute-solo-pfl-56x37.png').read_bytes()==(ROOT/'site/preview-buttons/assets/mute-solo-pfl-56x37.png').read_bytes(),'approved PNG sprite mismatch')
