@@ -2,6 +2,7 @@
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../src/NativeVerifiedSourcePatch.h"
+#include "../src/NativeTopologyEditSafety.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -11,6 +12,22 @@
 using namespace armix::mixer;
 static bool near(float a,float b){return std::abs(a-b)<0.00001f;}
 int main(){
+    // P0 First Sound: live same-format pin moves must remain atomic even
+    // during MAIN/STREAM, but a structural change cannot publish while
+    // STREAM is consuming the old graph. Physical re-arm is never implicit
+    // after a device epoch change or unsafe / unpatched output.
+    using Guard=NativeTopologyEditSafety;
+    static_assert(!Guard::structuralSource(true,true));
+    static_assert( Guard::structuralSource(true,false));
+    static_assert( Guard::structuralSource(false,true));
+    assert(Guard::mayEdit(false,true));
+    assert(Guard::mayEdit(true,false));
+    assert(!Guard::mayEdit(true,true));
+    assert(Guard::mayRestoreMonitor(true,true,true,false));
+    assert(!Guard::mayRestoreMonitor(true,false,true,false));
+    assert(!Guard::mayRestoreMonitor(true,true,false,false));
+    assert(!Guard::mayRestoreMonitor(true,true,true,true));
+    assert(!Guard::mayRestoreMonitor(false,true,true,false));
     juce::String json=R"({"channels":[)";
     for(int i=0;i<stripCount;++i) {
         if(i)json<<",";

@@ -8,6 +8,7 @@
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "NativeVerifiedSourcePatch.h"
+#include "NativeTopologyEditSafety.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
@@ -420,8 +421,16 @@ public:
             return "Audio device changed before routing publication";
         // New M4 routing must not render against an older ChannelId graph.
         // Output must remain disarmed throughout structural native APPLY.
-        channelIdPcmEpoch_.store(0,std::memory_order_release);
+        const auto previousPcmEpoch=channelIdPcmEpoch_.exchange(
+            0,std::memory_order_acq_rel);
         const auto result=publisher_.publish(std::move(next),expectedRevision,epochAtPublish);
+        // A rejected publication did NOT replace the callback graph. Keep
+        // the previous admitted native PCM authority rather than silently
+        // falling back to potentially stale M4 controls on this device.
+        if(result!=Publisher::Result::applied &&
+           previousPcmEpoch==epochAtPublish &&
+           deviceEpoch_.load(std::memory_order_acquire)==epochAtPublish)
+            channelIdPcmEpoch_.store(previousPcmEpoch,std::memory_order_release);
         switch(result) {
             case Publisher::Result::applied:
                 publishedEpoch_.store(currentEpoch,std::memory_order_release);
@@ -511,8 +520,10 @@ public:
             if(!nativePublisher_.setPhysicalSource(
                 expectedEpoch,nativeAccepted_.pcmRevision,id,
                 callbackLeft,mode=="STEREO"?callbackRight:-1,
-                mode=="STEREO"))rejectedNativeMirror();
-            else {
+                mode=="STEREO")) {
+                rejectedNativeMirror();
+                return "SOURCE SWITCH: native PCM rejected mirror; refresh/recover routing";
+            } else {
                 // Physical SOURCE changes are LIVE atomic controls. Persist
                 // the actual callback ordinals for the NEXT Group/FX Return
                 // structural compile rather than reusing stale APPLY pins.
@@ -530,6 +541,17 @@ public:
             object->setProperty("right",mode=="STEREO"?physicalRight:-1);
         }
         return {};
+    }
+
+    // CONTROL-only classification for the operator's direct IN dropdown.
+    // Fail conservatively to the guarded path for an absent/invalid template.
+    bool sourceNeedsPreparedGraph(int strip,const juce::String& mode) const {
+        if(!sourceTemplate_.isObject() || !hasExplicitRoute())return true;
+        const auto channels=sourceTemplate_.getProperty("channels",juce::var());
+        const auto* rows=channels.getArray();
+        if(!rows||rows->size()!=count||strip<0||strip>=count)return true;
+        return armix::mixer::NativeTopologyEditSafety::structuralSource(
+            true,rows->getReference(strip).getProperty("mode",{}).toString()==mode);
     }
 
     // A source changing from NONE to MONO/STEREO needs a new prepared

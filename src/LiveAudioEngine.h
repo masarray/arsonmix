@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "LiveDryRoutingLab.h"
+#include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
@@ -1116,6 +1117,39 @@ public:
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
         dryRoutingLab_.disable();
     }
+    // Structural source/OUT changes recompile ONE existing native PCM
+    // publisher. Suspend physical monitoring internally (never ask the user
+    // to click MUTE/ARM), perform the edit, then re-admit the ChannelId graph
+    // while disarmed. If admission rejects, the accepted M4 renderer remains
+    // the only safe fallback in this SAME JUCE callback.
+    // All control-thread only. A running STREAM forbids structural edits;
+    // it must never consume a half-switched main graph.
+    template<class Edit>
+    juce::String applyGuardedDryTopology(std::uint64_t expectedEpoch,
+                                        int frames,Edit&& edit) {
+        if(secondaryOutput_.armed())
+            return "STOP STREAM before a structural INPUT/OUT change";
+        const bool wasMonitoring=isMonitorEnabled();
+        if(wasMonitoring)setOutputMuted(true);
+        juce::String error;
+        try { error=edit(); }
+        catch(const std::exception& ex) {
+            error="NATIVE TOPOLOGY: preparation failed: "+juce::String(ex.what());
+        }
+        catch(...) { error="NATIVE TOPOLOGY: preparation failed"; }
+        // This is a physical renderer admission, not an extra browser mixer,
+        // new DSP graph or auto-arm. It must complete before output resumes.
+        if(error.isEmpty() && expectedEpoch==dryRoutingLab_.epoch() &&
+           dryRoutingLab_.hasExplicitRoute())
+            (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                graphOwned_->count,frames,true,currentOriginalCh1Lease());
+        // A failed edit may restore the PREVIOUS valid audible route; device
+        // or graph faults, an unpatched last source, or STREAM never auto-arm.
+        if(wasMonitoring && expectedEpoch==dryRoutingLab_.epoch() &&
+           !secondaryOutput_.armed() && liveOutputArmFault().isEmpty())
+            setMonitorEnabled(true);
+        return error;
+    }
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& mode,
             int left,int right) {
@@ -1127,24 +1161,22 @@ public:
             return "SOURCE SWITCH: live DIRECT device or graph unavailable";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "SOURCE: active DIRECT audio device unavailable";
-        // True first-input SOURCE selection is a control-prepared native graph
-        // transaction, not a browser-side APPLY or alternate callback. A
-        // single verified mono capture pin is a supported source.
         try {
             const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-            const auto oldRevision=dryRoutingLab_.revision();
-            const auto changed=dryRoutingLab_.repatchPhysicalSource(
-                strip,epoch,revision,mode,left,right,
-                directFence_.permitted(),independent_.active(),
-                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
-            // Same-format SOURCE is an atomic live parameter on BOTH kernels:
-            // do not rebuild VST3/PCM or interrupt the 64-sample crossfade.
-            if(changed.isEmpty() && allOutputsDisarmed() &&
-               oldRevision!=dryRoutingLab_.revision())
-                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                    graphOwned_->count,frames,true,
-                    currentOriginalCh1Lease());
-            return changed;
+            const bool structural=dryRoutingLab_.sourceNeedsPreparedGraph(strip,mode);
+            if(!armix::mixer::NativeTopologyEditSafety::mayEdit(
+                   structural,secondaryOutput_.armed()))
+                return "SOURCE: STOP STREAM before changing source format";
+            const auto edit=[&]{
+                return dryRoutingLab_.repatchPhysicalSource(
+                    strip,epoch,revision,mode,left,right,
+                    directFence_.permitted(),independent_.active(),
+                    graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            };
+            // Existing same-format physical pin changes remain live, atomic
+            // and 64-sample crossfaded; no unnecessary mute or recompile.
+            if(!structural)return edit();
+            return applyGuardedDryTopology(epoch,frames,edit);
         } catch(const std::exception& ex) {
             return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
         } catch(...) {
@@ -1168,15 +1200,12 @@ public:
         if(!device)return "CHANNEL PATCH: no active native audio interface";
         try {
             const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-            const auto changed=dryRoutingLab_.repatchChannelStructure(
-                strip,epoch,revision,operation,value,
-                directFence_.permitted(),independent_.active(),
-                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
-            if(changed.isEmpty() && allOutputsDisarmed())
-                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
-                    graphOwned_->count,frames,true,
-                    currentOriginalCh1Lease());
-            return changed;
+            return applyGuardedDryTopology(epoch,frames,[&] {
+                return dryRoutingLab_.repatchChannelStructure(
+                    strip,epoch,revision,operation,value,
+                    directFence_.permitted(),independent_.active(),
+                    graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            });
         } catch(...) {
             return "CHANNEL PATCH: native preparation failed; previous mix preserved";
         }
