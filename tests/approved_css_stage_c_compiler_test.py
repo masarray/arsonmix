@@ -134,5 +134,39 @@ class StageCCssCompiler(unittest.TestCase):
             self.assertEqual(again["removedDeclarations"],0)
 
 
+    def test_stage_d_single_cssom_preserves_owner_order_and_relative_assets(self):
+        owners=[("owner-%02d.css"%n,
+                 '.x{background-image:url("artwork.png");color:#%03d}'%n)
+                for n in range(18)]
+        bundled=css.compile_runtime_bundle(owners)
+        self.assertEqual(bundled.count("BEGIN approved owner"),18)
+        self.assertLess(bundled.index("owner-00.css"),bundled.index("owner-17.css"))
+        self.assertIn('url("artwork.png")',bundled)
+        markup="".join('<link rel="stylesheet" href="assets/'+name+'?v=1">\n'
+                       for name,_ in owners)
+        one=css.link_runtime_bundle(markup,"0123456789abcdef")
+        self.assertEqual(one.count('rel="stylesheet"'),1)
+        self.assertIn('assets/arsonmix-approved-runtime.css?sha=0123456789abcdef',one)
+        self.assertNotIn('owner-00.css',one)
+        with self.assertRaisesRegex(ValueError,"18 unique"):
+            css.link_runtime_bundle('<link rel="stylesheet" href="assets/a.css">',"0123456789abcdef")
+        with self.assertRaisesRegex(ValueError,"@import"):
+            css.compile_runtime_bundle([("a.css",'@import url("other.css");.x{opacity:1}')])
+
+    def test_stage_d_retains_fallbacks_for_older_webview2_and_missing_vars(self):
+        original='.control{color:#fff;color:var(--preferred-color)}'
+        optimized,stats=css.optimize_css([("a.css",original)])
+        self.assertEqual(optimized["a.css"],original)
+        self.assertEqual(stats["preservedFallbackDeclarations"],1)
+        self.assertEqual(stats["removedDeclarations"],0)
+        modern=[("a.css",".control{background:#202c34}"),
+                ("b.css",".control{background:color-mix(in srgb,red,blue)}")]
+        optimized,stats=css.optimize_css(modern)
+        self.assertEqual(dict(modern),optimized)
+        self.assertEqual(stats["preservedFallbackDeclarations"],1)
+        self.assertEqual(stats["removedDeclarations"],0)
+
+
+
 if __name__=="__main__":
     unittest.main()
