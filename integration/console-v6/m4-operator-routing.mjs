@@ -49,7 +49,8 @@ function admittedView(accepted){
     if(!object(e)||!id(e.edgeId)||edgeIds.has(e.edgeId)||
        !id(e.from)||!id(e.to)||!channels.has(e.from)||!channels.has(e.to)||
        e.from===e.to||e.from===main||e.signalKind!=='AUDIO'||
-       e.enabled!==true||typeof e.primaryOutput!=='boolean'||
+       e.enabled!==true||
+       (e.primaryOutput!==undefined&&typeof e.primaryOutput!=='boolean')||
        !safeGain(e.gainLinear))
       return fail('INVALID_NATIVE_AUDIO_EDGE');
     edgeIds.add(e.edgeId);edges.push(e);arcs.get(e.from).push(e.to);
@@ -65,10 +66,30 @@ function admittedView(accepted){
     }
     return false;
   };
+  // v8 canonical primary OUT belongs to the CHANNEL (primaryOutId).
+  // An edge.primaryOutput flag is permitted but not required by the public
+  // ABI. Resolve its identity exactly once, and reject contradictions or
+  // ambiguous duplicate edges instead of guessing where the dry path goes.
+  const primaryEdges=new Set();
+  for(const ch of channels.values()){
+    const explicit=edges.filter(e=>e.from===ch.id&&e.primaryOutput===true);
+    if(explicit.length>1)return fail('MULTIPLE_ACCEPTED_PRIMARY_OUTPUTS');
+    if(ch.primaryOutId===undefined){
+      if(explicit.length)return fail('PRIMARY_OUT_ID_MISSING');
+      continue;
+    }
+    if(!id(ch.primaryOutId)||!channels.has(ch.primaryOutId)||
+       ch.primaryOutId===ch.id)return fail('INVALID_ACCEPTED_PRIMARY_OUT');
+    const matching=edges.filter(e=>e.from===ch.id&&e.to===ch.primaryOutId);
+    if(matching.length!==1||matching[0].primaryOutput===false||
+       (explicit.length&&explicit[0].edgeId!==matching[0].edgeId))
+      return fail('AMBIGUOUS_ACCEPTED_PRIMARY_OUT');
+    primaryEdges.add(matching[0].edgeId);
+  }
   // Do not use a rejected/feedback graph as a source of proposed changes.
   for(const [src,targets] of arcs.entries())
     if(targets.some(to=>path(to,src)))return fail('ACCEPTED_GRAPH_CYCLE');
-  return {ok:true,channels,main,edges,arcs,path,accepted};
+  return {ok:true,channels,main,edges,primaryEdges,arcs,path,accepted};
 }
 function sendsToMain(view,source,candidate){
   const next=new Map([...view.channels.keys()].map(x=>[x,[]]));
@@ -91,6 +112,15 @@ function sendsToMain(view,source,candidate){
   };
   return count(source,new Set());
 }
+// Validate the proposed audible DAG for EVERY upstream input, not just the
+// bus receiving the gesture. Otherwise INPUT -> MAIN and INPUT -> GROUP ->
+// MAIN can silently double the dry signal after routing the GROUP.
+function upstreamDryHasDuplicates(view,candidate){
+  for(const ch of view.channels.values())
+    if(ch.role==='INPUT'&&sendsToMain(view,ch.id,candidate)>1)
+      return true;
+  return false;
+}
 function planWire(view,request){
   const {kind,sourceId,destinationId}=request;
   if(!id(sourceId)||!view.channels.has(sourceId)||
@@ -104,7 +134,8 @@ function planWire(view,request){
   if(view.path(destinationId,sourceId))return fail('ROUTING_FEEDBACK_CYCLE');
   if(destination.role==='INPUT')return fail('INPUT_NOT_A_ROUTING_DESTINATION');
   const same=view.edges.filter(e=>e.from===sourceId&&e.to===destinationId);
-  const currentPrimary=view.edges.filter(e=>e.from===sourceId&&e.primaryOutput);
+  const currentPrimary=view.edges.filter(e=>
+    e.from===sourceId&&view.primaryEdges.has(e.edgeId));
   if(currentPrimary.length>1)return fail('MULTIPLE_ACCEPTED_PRIMARY_OUTPUTS');
   if(kind==='ROUTE_ONLY'){
     if(destination.role!=='GROUP'&&destination.role!=='MAIN')
@@ -113,11 +144,14 @@ function planWire(view,request){
       return fail('PRIMARY_ALREADY_AT_DESTINATION');
     if(same.length)return fail('DUPLICATE_NATIVE_ROUTE');
     const simulated=view.edges.filter(e=>
-      !(e.from===sourceId&&e.primaryOutput));
+      !(e.from===sourceId&&view.primaryEdges.has(e.edgeId)));
     simulated.push({from:sourceId,to:destinationId,primaryOutput:true});
     if(sendsToMain(view,sourceId,simulated)>1)
       return fail('EXCLUSIVE_ROUTE_RETAINS_PARALLEL_DRY_PATH',
         'Native Route Only changes the primary OUT; existing parallel sends remain.');
+    if(upstreamDryHasDuplicates(view,simulated))
+      return fail('UPSTREAM_DOUBLE_DRY_TO_MAIN',
+        'An upstream input would reach MAIN twice through a new GROUP route.');
     return {ok:true,intent:{operation:M4_OPERATOR_ABI.nativeWireOperation,
       targetChannelId:sourceId,payload:{changes:[{
         op:'ROUTE_ONLY',from:sourceId,to:destinationId,
@@ -136,7 +170,9 @@ function planWire(view,request){
   if(request.gainDb!==undefined&&request.gainDb!==0)
     return fail('SEND_GAIN_ACK_READBACK_NOT_AVAILABLE');
   const simulated=[...view.edges,{from:sourceId,to:destinationId,primaryOutput:false}];
-  if(destination.role!=='FX_RETURN'&&sendsToMain(view,sourceId,simulated)>1)
+  if(destination.role!=='FX_RETURN'&&
+     (sendsToMain(view,sourceId,simulated)>1||
+      upstreamDryHasDuplicates(view,simulated)))
     return fail('DOUBLE_DRY_TO_MAIN',
       'Choose Route Only for subgroup instead of mixing direct MAIN twice.');
   return {ok:true,intent:{operation:M4_OPERATOR_ABI.nativeWireOperation,

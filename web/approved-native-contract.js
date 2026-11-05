@@ -144,15 +144,29 @@
                !Number.isFinite(e.gainLinear) ||
                Math.abs(edit.gainLinear-e.gainLinear)>0.0001))
             return false;
-          return edit.op!=="ROUTE_ONLY" || e.primaryOutput===true;
+          // v8 makes channel.primaryOutId authoritative; primaryOutput on
+          // an edge is optional, but an explicitly false flag cannot be
+          // interpreted as a physical primary cable.
+          return edit.op!=="ROUTE_ONLY" ||
+            (ch.primaryOutId===edit.to&&e.primaryOutput!==false);
         });
         if (!effect) return false;
         if (edit.op==="ROUTE_ONLY") {
-          // Route Only must REMOVE the previous primary dry path. An ACK
-          // with both new BUS and original MAIN remains double-dry even
-          // when the graph revision advanced.
-          if (ch.primaryOutId!==edit.to) return false;
-          if (edges.some(e=>e.from===edit.from&&e.primaryOutput===true&&e.to!==edit.to))
+          // A unique primary cable must match both the channel-level
+          // identity and requested destination. Do not accept a second
+          // matching SEND cable as proof of exclusive output.
+          if (ch.primaryOutId!==edit.to||matching.length!==1||
+              matching[0].primaryOutput===false) return false;
+          if (edges.some(e=>e.from===edit.from&&
+              e.primaryOutput===true&&e.to!==edit.to))
+            return false;
+          // Preserve the original primary destination in the pending
+          // control transaction so even an old GROUP cable without an edge
+          // primaryOutput flag cannot survive Route Only unnoticed.
+          if (pending.originalPrimaryOutId &&
+              pending.originalPrimaryOutId!==edit.to &&
+              edges.some(e=>e.from===edit.from&&
+                e.to===pending.originalPrimaryOutId))
             return false;
           if (edit.to!==next.graph.mainChannelId &&
               edges.some(e=>e.from===edit.from&&e.to===next.graph.mainChannelId))
@@ -245,6 +259,8 @@
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
       pending={requestId,operation,targetChannelId,payload,
+        originalPrimaryOutId:current.graph.channels.find(
+          ch=>ch.id===targetChannelId)?.primaryOutId||null,
         deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,
         baseRosterRevision:msg.baseRosterRevision,ack:null};
       lastError="PENDING_NATIVE_ACK";

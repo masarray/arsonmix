@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 #include "ApprovedGuiResources.h"
 #include "ApprovedConsoleNativeTransportV6.h"
+#include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "LiveAudioEngine.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
@@ -696,10 +697,22 @@ private:
         emitOrbitState (previousSlot);
     }
 
+    juce::var approvedNativeSnapshot (const juce::var& live)
+    {
+        auto accepted=armix::native_console_m2::snapshot (
+            live, engine_.devices(), engine_.allOutputsDisarmed());
+        // Native routing's generation advances on STOP as well as START.
+        // Keep even disconnected G0 snapshots monotonic to invalidate UI.
+        (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
+            accepted, live);
+        (void) armix::console::projectInstalledNativeChannelIdGraph (
+            accepted, live);
+        return accepted;
+    }
+
     juce::var approvedNativeSnapshot()
     {
-        return armix::native_console_m2::snapshot (
-            engine_.status(), engine_.devices(), engine_.allOutputsDisarmed());
+        return approvedNativeSnapshot (engine_.status());
     }
 
     void emitApprovedNativeSnapshot()
@@ -2505,8 +2518,7 @@ private:
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
             if (consoleSubscribed_ && browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot",
-                    armix::native_console_m2::snapshot (
-                        health, engine_.devices(), engine_.allOutputsDisarmed()));
+                    approvedNativeSnapshot (health));
         }
 
         if (deviceSettingsDirty_)

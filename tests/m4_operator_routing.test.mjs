@@ -261,3 +261,90 @@ test('POST send ACK requires actual accepted gain and tap, not cable existence',
   assert.equal(check(1,'PRE_FADER').pass,false);
   assert.equal(check(1,'POST_FADER').pass,true);
 });
+
+
+test('accepted v8 primaryOutId works when edge primaryOutput flags are absent',()=>{
+  const raw=base();
+  for(const edge of raw.graph.edges)delete edge.primaryOutput;
+  const current=accepted(raw);
+  const plan=planM4OperatorIntent(current,{kind:'ROUTE_ONLY',
+    sourceId:ids.v,destinationId:ids.group});
+  assert.equal(plan.ok,true,'public v8 does not require an edge primary flag');
+  const c=createController({emit:()=>{}});
+  assert.equal(c.onSnapshot(raw),true);
+  const issued=c.intent(plan.intent.operation,plan.intent.targetChannelId,
+    plan.intent.payload);
+  assert.equal(issued.ok,true);
+  c.onAck({requestId:issued.requestId,status:'ACCEPTED',errorCode:'NONE',
+    deviceEpoch:'69',graphRevision:'4',rosterRevision:'2'});
+  const applied=clone(raw);applied.graph.revision='4';
+  applied.graph.channels[0].primaryOutId=ids.group;
+  applied.graph.edges[0].to=ids.group;
+  assert.equal(c.onSnapshot(applied),true,
+    'ACK+later accepted snapshot with channel.primaryOutId must be sufficient');
+  const inconsistent=base();
+  inconsistent.graph.edges[0].primaryOutput=false;
+  assert.equal(planM4OperatorIntent(accepted(inconsistent),{
+    kind:'ROUTE_ONLY',sourceId:ids.v,destinationId:ids.group}).error,
+    'AMBIGUOUS_ACCEPTED_PRIMARY_OUT');
+});
+test('Route Only rejects old unflagged GROUP output after a valid ACK',()=>{
+  const original=base();
+  // Start with the primary path via an existing GROUP instead of MAIN.
+  original.graph.channels[0].primaryOutId=ids.group;
+  original.graph.edges[0].to=ids.group;
+  for(const edge of original.graph.edges)delete edge.primaryOutput;
+  const destination='102';
+  original.graph.channels.push({id:destination,role:'GROUP',name:'BUS 2',
+    processingFormat:'STEREO',primaryOutId:ids.main,
+    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]});
+  original.graph.destinations.push({id:destination});
+  original.graph.edges.push({edgeId:'90',from:destination,to:ids.main,
+    tap:'POST_FADER',gainLinear:1,enabled:true,signalKind:'AUDIO'});
+  const plan=planM4OperatorIntent(accepted(original),{
+    kind:'ROUTE_ONLY',sourceId:ids.v,destinationId:destination});
+  assert.equal(plan.ok,true);
+  const controller=createController({emit:()=>{}});
+  controller.onSnapshot(original);
+  const req=controller.intent(plan.intent.operation,plan.intent.targetChannelId,
+    plan.intent.payload);
+  controller.onAck({requestId:req.requestId,status:'ACCEPTED',errorCode:'NONE',
+    deviceEpoch:'69',graphRevision:'4',rosterRevision:'2'});
+  const lied=clone(original);lied.graph.revision='4';
+  lied.graph.channels[0].primaryOutId=destination;
+  lied.graph.edges.push({edgeId:'91',from:ids.v,to:destination,
+    tap:'POST_FADER',gainLinear:1,enabled:true,signalKind:'AUDIO'});
+  assert.equal(controller.onSnapshot(lied),false,
+    'stale GROUP dry path must not survive exclusive Route Only');
+  const valid=clone(original);valid.graph.revision='4';
+  valid.graph.channels[0].primaryOutId=destination;
+  valid.graph.edges[0].to=destination;
+  assert.equal(controller.onSnapshot(valid),true);
+});
+test('upstream INPUT double-dry is rejected for GROUP Route Only and POST send',()=>{
+  const raw=base(),group=raw.graph.channels[2];
+  delete group.primaryOutId;
+  raw.graph.edges=raw.graph.edges.filter(e=>e.from!==ids.group);
+  raw.graph.edges.push({edgeId:'80',from:ids.v,to:ids.group,
+    tap:'POST_FADER',gainLinear:1,primaryOutput:false,
+    enabled:true,signalKind:'AUDIO'});
+  const current=accepted(raw);
+  const p=planM4OperatorIntent(current,{kind:'ROUTE_ONLY',
+    sourceId:ids.group,destinationId:ids.main});
+  assert.equal(p.ok,false);
+  assert.equal(p.error,'UPSTREAM_DOUBLE_DRY_TO_MAIN');
+  // Adding a GROUP-to-GROUP post send is equally dangerous when the
+  // upstream input already has a direct independent MAIN route.
+  const second='102';
+  raw.graph.channels.push({id:second,role:'GROUP',name:'BUS 2',
+    processingFormat:'STEREO',primaryOutId:ids.main,
+    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]});
+  raw.graph.destinations.push({id:second});
+  raw.graph.edges.push({edgeId:'81',from:second,to:ids.main,
+    tap:'POST_FADER',gainLinear:1,primaryOutput:true,
+    enabled:true,signalKind:'AUDIO'});
+  const q=planM4OperatorIntent(accepted(raw),{kind:'SEND_POST',
+    sourceId:ids.group,destinationId:second});
+  assert.equal(q.ok,false);
+  assert.equal(q.error,'DOUBLE_DRY_TO_MAIN');
+});
