@@ -61,7 +61,7 @@ if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
 canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
-canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets')
+canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets',runtime_bundle=True)
 print("Stage C approved CSS: removed",css_compilation["removedDeclarations"],
       "redundant declarations (cross-file",
       css_compilation["removedCrossFileDeclarations"],"), kept original",
