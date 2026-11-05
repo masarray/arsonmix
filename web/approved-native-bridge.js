@@ -398,11 +398,22 @@
   }
   function sendDeviceApply(){
     if(!devicePending||!deviceInventory?.active)return;
+    const active=deviceInventory.active;
+    const same=active.backend===deviceDraft.backend &&
+      active.captureDevice===deviceDraft.captureDevice &&
+      active.playbackDevice===deviceDraft.playbackDevice;
+    const config={...deviceDraft};
+    if(same && Array.isArray(active.enabledInputs) &&
+       Array.isArray(active.enabledOutputs)){
+      config.enabledInputs=active.enabledInputs.slice();
+      config.enabledOutputs=active.enabledOutputs.slice();
+    }
+    // For NEW devices, physical pin names are not yet verified; native JUCE
+    // opens safe defaults before the next authoritative inventory.
     backend.emitEvent("arMixAction",{
       action:"audioDeviceApply",
       requestId:devicePending.requestId,
-      expectedDeviceGeneration:devicePending.generation,
-      config:{...deviceDraft,enabledInputs:[],enabledOutputs:[]}
+      expectedDeviceGeneration:devicePending.generation,config
     });
     getStatus("Opening selected hardware · verifying actual driver readback…");
   }
