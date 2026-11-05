@@ -13,7 +13,7 @@ require(build.get('kind')=='APPROVED_SINGLE_GUI' and build.get('canonical_url')=
 require(build.get('live_audio') is False,'browser must not claim PCM')
 require('id="console"' not in html and 'preview-buttons/index.html' not in html,'old iframe variant still published')
 require('console-body' in html and 'mixer-control-keys.css' in html,'not the actual approved console')
-# The only DOM change from source is the two content-hashed approved PNG-button links.
+# The only compiled DOM changes are two hashed approved PNG links and the dormant profiling script.
 revisions=build.get('button_css_js_revisions',{})
 expected=source
 for name in ('mixer-control-keys.css','mixer-control-keys.js'):
@@ -25,7 +25,16 @@ for name in ('mixer-control-keys.css','mixer-control-keys.js'):
     approved=ROOT/'site/preview-buttons/assets'/name
     target=gui/'assets'/name
     require(target.read_bytes()==approved.read_bytes(),'wrong PNG-button CSS/JS: '+name)
-require(html==expected,'rendered /preview/ DOM differs from exact source + approved PNG-key revision assembly')
+# The dormant Stage A profiler is added by that SAME deterministic assembler,
+# without modifying the V28 source-HTML checkpoint or creating another UI.
+probe='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script>'
+require(expected.count('</body>')==1,'approved source has multiple bodies')
+expected=expected.replace('</body>',probe+'\n</body>',1)
+require(html.count(probe)==1,'profiler missing or duplicated')
+require((gui/'assets/gui-perf-probe.js').read_bytes()==
+        (ROOT/'site/preview-v2/assets/gui-perf-probe.js').read_bytes(),
+        'opt-in performance probe was not copied byte-for-byte')
+require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + nonvisual profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
 require((gui/'assets/mute-solo-pfl-56x37.png').read_bytes()==(ROOT/'site/preview-buttons/assets/mute-solo-pfl-56x37.png').read_bytes(),'approved PNG sprite mismatch')
