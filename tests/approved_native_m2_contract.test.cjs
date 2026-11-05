@@ -230,6 +230,15 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(main,/action == "routingFxEditor"/);
  assert.match(main,/action == "routingFxBypass"/);
 });
+test("P0 FX command preflight never mutes monitoring for deterministic rejection",()=>{
+ const lab=read("src/LiveDryRoutingLab.h");
+ const engine=read("src/LiveAudioEngine.h");
+ assert.match(lab,/juce::String fxInsertPreflight\(int lane,int slot/);
+ assert.match(lab,/const auto preflight=fxInsertPreflight\(/);
+ assert.match(engine,/dryRoutingLab_\.fxInsertPreflight\(/);
+ assert.match(engine,/pluginFormat->fileMightContainThisPluginType\(chosen\.path\)/);
+ assert.match(engine,/FX INSERT: VST3 bundle unavailable or invalid/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");

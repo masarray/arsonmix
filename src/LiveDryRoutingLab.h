@@ -480,6 +480,28 @@ public:
     }
 
 
+    // Realtime audio must not briefly MUTE for an FX command guaranteed
+    // to reject (stale epoch, invalid lane/slot, unsupported native BUS,
+    // non-contiguous inserts). Validate BEFORE the guarded graph edit.
+    // CONTROL-only, bounded and read-only: no vendor scan/heap/RT effects.
+    juce::String fxInsertPreflight(int lane,int slot,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            const FxSelection& chosen) const {
+        if(lane<0||lane>=fxSlots||slot<0||slot>=maxFxPerLane||
+           chosen.id.isEmpty()||chosen.path.isEmpty()||chosen.name.isEmpty()||
+           !ready()||!hasExplicitRoute()||nativeStructureLive_||
+           topologyFault_.load(std::memory_order_acquire)||
+           !registryValid_.load(std::memory_order_acquire)||
+           expectedEpoch!=epoch()||expectedRevision!=revision()||
+           !sourceTemplate_.isObject())
+            return "FX INSERT: stale routing/ChannelId authority or invalid catalog slot";
+        if(acceptedFxSelections_[lane][slot].id.isNotEmpty())
+            return "FX INSERT: this slot already has a native VST3";
+        if(slot>0&&acceptedFxSelections_[lane][slot-1].id.isEmpty())
+            return "FX INSERT: choose the first empty insert position";
+        return {};
+    }
+
     // Native /preview/ FX picker: append one catalog-verified stereo VST3 to
     // the SAME accepted ten-channel/4AUX renderer. This is a prepared graph
     // transaction on JUCE CONTROL, never a JS plugin or RT instantiation.
@@ -489,18 +511,9 @@ public:
             bool independentClock,int occupiedCh1Fx,
             juce::AudioPluginFormatManager& formats,double sampleRate,
             int deviceFrames) {
-        if(lane<0||lane>=fxSlots||slot<0||slot>=maxFxPerLane||
-           chosen.id.isEmpty()||chosen.path.isEmpty()||chosen.name.isEmpty()||
-           !ready()||!hasExplicitRoute()||nativeStructureLive_||
-           topologyFault_.load(std::memory_order_acquire)||
-           !registryValid_.load(std::memory_order_acquire)||
-           expectedEpoch!=epoch()||expectedRevision!=revision()||
-           !sourceTemplate_.isObject())
-            return "FX INSERT: stale routing/ChannelId authority or unsupported lane";
-        if(acceptedFxSelections_[lane][slot].id.isNotEmpty())
-            return "FX INSERT: this slot already has a native VST3";
-        if(slot>0&&acceptedFxSelections_[lane][slot-1].id.isEmpty())
-            return "FX INSERT: use the first empty insert position";
+        const auto preflight=fxInsertPreflight(
+            lane,slot,expectedEpoch,expectedRevision,chosen);
+        if(preflight.isNotEmpty())return preflight;
         auto command=juce::JSON::parse(
             juce::JSON::toString(sourceTemplate_,false));
         if(!command.isObject())

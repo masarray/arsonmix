@@ -1233,6 +1233,13 @@ public:
                 return "FX INSERT: CH1 latent VST3 needs PDC before routed inserts";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device)return "FX INSERT: select an actual audio device";
+        const auto preflight=dryRoutingLab_.fxInsertPreflight(
+            lane,slot,epoch,revision,chosen);
+        if(preflight.isNotEmpty())return preflight;
+        auto* pluginFormat=formats_.getFormat(0);
+        if(!pluginFormat ||
+           !pluginFormat->fileMightContainThisPluginType(chosen.path))
+            return "FX INSERT: VST3 bundle unavailable or invalid; rescan catalog";
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         return applyGuardedDryTopology(epoch,frames,[&] {
             return dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
