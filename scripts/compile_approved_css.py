@@ -22,6 +22,9 @@ LINK = re.compile(r'(<link\s+rel="stylesheet"\s+href="assets/)([^"?]+\.css)(\?[^
 PROPERTY = re.compile(r"^\s*(--[A-Za-z0-9_-]+|[-A-Za-z_][-A-Za-z0-9_]*)\s*:", re.S)
 IMPORTANT = re.compile(r"!\s*important\s*$", re.I)
 CONTAINER = re.compile(r"^@(media|supports|container|layer|scope)(?=\s|\()", re.I)
+# Keep older declarations as browser/undefined-variable fallbacks when the
+# chosen modern value may be unsupported. P0 WebView2 runtime versions vary.
+FALLBACK_SENSITIVE = re.compile(r"\b(?:var|env|color-mix|image-set|paint|oklch|oklab|lab|lch|light-dark|color)\s*\(|-webkit-|-moz-", re.I)
 # Explicit byte parity with the owner-approved PNG buttons and VIRE historical
 # socket source: these 2 assets participate as winners but never change bytes.
 LOCKED_ASSETS = frozenset({"mixer-control-keys.css", "mixer-wire-dots.css"})
@@ -198,6 +201,7 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
     retain duplicate declarations; no winner is deleted without a later
     equivalent-context winner and an explicit scoped proof.
     """
+    source_by_owner = dict(stylesheets)
     entries = []
     for filename, css in stylesheets:
         for record in _declarations(css, filename):
@@ -215,8 +219,17 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
         potential += len(declarations) - 1
         important = [d for d in declarations if d.important]
         winner = important[-1] if important else declarations[-1]
+        # A later var()/color-mix()/vendor declaration may be invalid in an
+        # older WebView2 or when a custom property is unset. Its earlier
+        # declaration is a genuine CSS fallback, not dead CSS.
+        winner_text = _visible(
+            source_by_owner[winner.filename][winner.start:winner.end])
+        preserve_fallbacks = bool(FALLBACK_SENSITIVE.search(winner_text))
         for item in declarations:
             if item is winner:
+                continue
+            if preserve_fallbacks:
+                locked += 1
                 continue
             if item.filename in LOCKED_ASSETS:
                 locked += 1
