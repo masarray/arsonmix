@@ -82,6 +82,115 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // Direct physical-source readback for EVERY existing 10-channel M4 strip.
+    // Never infer source routes from demo UI, or mark stale controls accepted.
+    juce::Array<juce::var> sources;
+    if(physicalReady) {
+        const bool patched=boolIs(route,"hasAcceptedRoute",true);
+        const auto accepted=route.getProperty(
+            patched?"acceptedRoute":"preparedM4Route",{});
+        const auto rows=accepted.getProperty("channels",{});
+        const auto* list=rows.getArray();
+        if(list && list->size()==10) {
+            for(const auto& row:*list) {
+                const auto mode=row.getProperty("mode",{}).toString();
+                const auto left=row.getProperty("left",{});
+                const auto right=row.getProperty("right",{});
+                const bool mono=mode=="MONO", stereo=mode=="STEREO";
+                const bool valid=mode=="NONE" ||
+                    ((mono||stereo) && (left.isInt()||left.isInt64()) &&
+                     (right.isInt()||right.isInt64()) &&
+                     inputs.getArray()->contains(left) &&
+                     (!stereo || (inputs.getArray()->contains(right) && left!=right)));
+                if(!valid) {sources.clear();break;}
+                auto src=std::make_unique<juce::DynamicObject>();
+                src->setProperty("mode",mode);
+                src->setProperty("left",mono||stereo?left:juce::var(-1));
+                src->setProperty("right",stereo?right:juce::var(-1));
+                const auto main=row.getProperty("main",{});
+                src->setProperty("main",main.isBool()&&static_cast<bool>(main));
+                sources.add(juce::var(src.release()));
+            }
+        }
+    }
+    firstSound->setProperty("channelSources",juce::var(sources));
+    // Native ten-strip faders/pan/mute/solo already drive the SINGLE M4
+    // callback through LiveDryRoutingLab::setChannelParameter(). Expose the
+    // actual acknowledged CONTROL-thread state, never public Pages defaults.
+    juce::var verifiedControls(juce::Array<juce::var>{});
+    if(physicalReady) {
+        const auto controls=route.getProperty("channelControls",{});
+        const auto* list=controls.getArray();
+        if(list && list->size()==10) {
+            bool valid=true;
+            for(const auto& entry:*list) {
+                double db=0.,pan=0.;
+                if(!entry.isObject() ||
+                   !nativeV8Number(entry.getProperty("db",{}),db) ||
+                   !nativeV8Number(entry.getProperty("pan",{}),pan) ||
+                   !std::isfinite(db) || db< -60.01 || db>10.01 ||
+                   !std::isfinite(pan) || pan< -100.01 || pan>100.01 ||
+                   !entry.getProperty("mute",{}).isBool() ||
+                   !entry.getProperty("solo",{}).isBool()) {
+                    valid=false;break;
+                }
+            }
+            if(valid)verifiedControls=controls;
+        }
+    }
+    firstSound->setProperty("channelControls",verifiedControls);
+    // MAIN gain and panic MUTE are JUCE atomics on the SAME callback.
+    juce::var master;
+    if(physicalReady) {
+        double db=0.;
+        const auto muted=live.getProperty("masterMute",{});
+        if(nativeV8Number(live.getProperty("masterDb",{}),db) &&
+           std::isfinite(db)&&db>=-60.01&&db<=10.01&&muted.isBool()) {
+            auto verified=std::make_unique<juce::DynamicObject>();
+            verified->setProperty("db",db);
+            verified->setProperty("mute",muted);
+            master=juce::var(verified.release());
+        }
+    }
+    firstSound->setProperty("masterControls",master);
+    // These peaks are REAL atomics from the installed M4 render callback,
+    // not UI-generated meters. Zero is silence, not proof of loudspeakers.
+    juce::Array<juce::var> peakL,peakR;
+    const auto telemetry=snapshot.getProperty("telemetry",{});
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       boolIs(telemetry,"captureObserved",true)) {
+        const auto left=route.getProperty("channelPeaksL",{}),
+                   right=route.getProperty("channelPeaksR",{});
+        const auto* l=left.getArray();const auto* r=right.getArray();
+        if(l&&r&&l->size()==10&&r->size()==10) {
+            bool valid=true;
+            for(int i=0;i<10;++i) {
+                double p=0.,q=0.;
+                if(!nativeV8Number(l->getReference(i),p) ||
+                   !nativeV8Number(r->getReference(i),q) ||
+                   !std::isfinite(p)||!std::isfinite(q)||
+                   p<0.||q<0.||p>16.||q>16.) {valid=false;break;}
+            }
+            if(valid) {peakL=*l;peakR=*r;}
+        }
+    }
+    firstSound->setProperty("channelPeaksL",juce::var(peakL));
+    firstSound->setProperty("channelPeaksR",juce::var(peakR));
+    // MAIN L/R callback peaks must remain dark until the monitor/output gate
+    // reports measured native PCM. Never paint the Pages demo oscillator.
+    juce::var mainL,mainR;
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       boolIs(telemetry,"mainPcmObserved",true)) {
+        double l=0.,r=0.;
+        if(nativeV8Number(route.getProperty("peakL",{}),l) &&
+           nativeV8Number(route.getProperty("peakR",{}),r) &&
+           std::isfinite(l)&&std::isfinite(r)&&l>=0.&&r>=0.&&
+           l<=16.&&r<=16.) {
+            mainL=l;mainR=r;
+        }
+    }
+    firstSound->setProperty("mainPeakL",mainL);
+    firstSound->setProperty("mainPeakR",mainR);
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;

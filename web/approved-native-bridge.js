@@ -21,7 +21,7 @@
   const status = message => {
     lastNativeError = message;
     const info = document.getElementById("info");
-    if (info) info.textContent = message;
+    if (info && info.textContent !== message) info.textContent = message;
   };
   const stopDemo = () => {
     // The public Pages demo remains unchanged. In native, DEMO meters and
@@ -29,9 +29,10 @@
     const demo = document.getElementById("preview");
     if (demo) {demo.disabled = true;demo.title = "Demo meters disabled in native Windows application";}
     scope?.stopDemo?.();
-    document.documentElement.dataset.armixNativeAuthority =
-      flags.productionCallbackLive ? "product-live" :
-      flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
+    const authority=flags.productionCallbackLive?"product-live":
+      flags.acceptedGraphConnected?"pcm-accepted":"not-admitted";
+    if(document.documentElement.dataset.armixNativeAuthority!==authority)
+      document.documentElement.dataset.armixNativeAuthority=authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const intent = (operation,t,payload) => {
@@ -145,67 +146,564 @@
     }
   }
 
-  // Native-only operator controls in the EXISTING approved More menu:
-  // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
-  // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
-  let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
-  const safeNativeCounter=x=>{
-    if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
-    const number=Number(x);
-    return Number.isSafeInteger(number)&&number>0?number:null;
-  };
+  // Existing approved /preview/ mixer owns input-selection presentation.
+  // web/mixer-io.js owns ten physical channel selectors and the SINGLE
+  // custom WebView2 Audio I/O dialog. Do not add a competing CH1 wizard or
+  // invoke the generic JUCE selector for routine live performance.
+  let hardware=null,hardwareNote=null,muteBtn=null;
   const legacy=()=>hardware?.raw?.legacyM4;
-  const deviceReady=()=>!!(hardware?.device?.backend &&
-    hardware.device.sampleRate>0 &&
-    hardware.device.enabledInputs.length>0 &&
-    hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
+
+  // Adobe Audition / FL Studio operator pattern:
+  // one hardware setup, physical IN selector on EACH channel, master monitor.
+  // G0 is still the real existing ten-channel M4 source kernel, not fake
+  // ChannelId admission. Physical route mutation always needs JUCE ACK.
+  const physicalUiIds=(scope?.tracks||[]).filter(t=>t.kind==="audio")
+    .slice(0,10).map(t=>String(t.id));
+  let sourceRequest=10000, sourcePending=null, deviceInventory=null;
+  let deviceDialog=null, deviceDraft=null, devicePending=null, deviceMutePending=false;
+  const actualPorts=()=>Array.isArray(hardware?.device?.inputEndpoints)?
+    hardware.device.inputEndpoints.filter(p=>p?.active===true &&
+      hardware.device.enabledInputs.includes(p.port)):[];
+  const routeValue=r=>r?.mode==="MONO"?"MONO:"+r.left:
+    r?.mode==="STEREO"?"STEREO:"+r.left+":"+r.right:"NONE";
+  const firstSoundReady=()=>hardware?.raw?.legacyM4?.active===true;
+  function portOptions(){
+    const ports=actualPorts(),opts=[["NONE","None"]];
+    const pins=new Set(ports.map(p=>p.port));
+    for(const p of ports)opts.push(["MONO:"+p.port,"Mono · "+p.label]);
+    for(const p of ports)if(pins.has(p.port+1))
+      opts.push(["STEREO:"+p.port+":"+(p.port+1),
+        "Stereo · IN "+(p.port+1)+"/"+(p.port+2)]);
+    return opts;
+  }
+  function syncDawNativeInputs(){
+    const options=portOptions();
+    const sources=hardware?.raw?.legacyM4?.channelSources;
+    // ACK is not final presentation authority. Keep the source disabled
+    // until the following CURRENT-EPOCH snapshot proves the accepted route.
+    if(sourcePending?.acked && Array.isArray(sources) &&
+       sources.length===10 &&
+       String(hardware?.device?.epoch)===String(sourcePending.epoch) &&
+       routeValue(sources[sourcePending.channel])===
+         routeValue(sourcePending)){
+      sourcePending=null;
+    }
+    if(sourcePending &&
+       String(hardware?.device?.epoch)!==String(sourcePending.epoch))
+      sourcePending=null; // hotplug/driver change cancels stale source UI
+    const signature=JSON.stringify(options);
+    for(let i=0;i<physicalUiIds.length;i++){
+      const strip=document.querySelector('.strip[data-id="'+physicalUiIds[i]+'"]');
+      const select=strip?.querySelector('.route-select[data-field="input"]');
+      if(!select)continue;
+      select.dataset.nativeChannel=String(i);
+      if(select.dataset.nativePins!==signature){
+        const nodes=options.map(([value,label])=>{
+          const o=document.createElement("option");o.value=value;o.textContent=label;return o;
+        });
+        select.replaceChildren(...nodes);
+        select.dataset.nativePins=signature;
+      }
+      const accepted=Array.isArray(sources)&&sources.length===10?
+        routeValue(sources[i]):"NONE";
+      const pending=sourcePending?.channel===i;
+      if(!pending && select.value!==accepted)select.value=accepted;
+      select.disabled=!firstSoundReady()||!!sourcePending||!Array.isArray(sources)||
+        sources.length!==10;
+      select.title="CH "+(i+1)+" · verified physical input · native ACK";
+      const out=strip.querySelector('.route-select[data-field="output"]');
+      if(out){
+        const src=Array.isArray(sources)&&sources.length===10?sources[i]:null;
+        const label=src?.main===true?"MAIN":"SOURCE ONLY";
+        if(out.dataset.nativeOutput!==label){
+          out.replaceChildren(Object.assign(document.createElement("option"),{
+            value:label,textContent:label
+          }));
+          out.dataset.nativeOutput=label;
+        }
+        out.value=label;
+        // Per-channel OUT patching requires its own accepted MAIN/AUX
+        // transaction; never expose synthetic demo hardware destinations.
+        out.disabled=true;
+        out.title="Accepted native routing · advanced OUTPUT matrix required to change";
+      }
+    }
+    const master=document.querySelector(".strip.master .route-top");
+    if(master){
+      const output=master.closest(".strip")?.querySelector(
+        '.route-select[data-field="output"]');
+      if(output){
+        const device=hardware?.device?.playbackDevice||"No output";
+        if(output.dataset.nativeDevice!==device){
+          const selected=document.createElement("option");
+          selected.value=device;selected.textContent=device;
+          const settings=document.createElement("option");
+          settings.value="__SETUP__";settings.textContent="Change output…";
+          output.replaceChildren(selected,settings);
+          output.dataset.nativeDevice=device;
+        }
+        if(output.value!==device)output.value=device;
+        output.disabled=false;
+        output.title="Current JUCE playback device · change in Audio I/O";
+      }
+      let monitor=master.querySelector("[data-native-monitor]");
+      if(!monitor){
+        monitor=document.createElement("button");
+        monitor.type="button";monitor.className="mx-util-key";
+        monitor.dataset.nativeMonitor="1";
+        monitor.setAttribute("aria-label","Enable or mute MAIN output monitoring");
+        monitor.addEventListener("click",event=>{
+          event.preventDefault();event.stopPropagation();
+          const armed=hardware?.device?.outputArmed===true;
+          if(!armed && (!firstSoundReady()||
+              hardware?.raw?.legacyM4?.routeAccepted!==true)){
+            status("Select a physical input on a channel before monitoring MAIN");
+            return;
+          }
+          const epoch=Number(hardware?.device?.epoch);
+          const rev=Number(hardware?.raw?.legacyM4?.routingRevision);
+          if(!armed && (!Number.isSafeInteger(epoch)||!Number.isSafeInteger(rev)||
+                       epoch<=0||rev<=0))return;
+          backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
+            ...(!armed?{expectedEpoch:epoch,expectedRevision:rev}:{})});
+          status(!armed?"MAIN monitor requested · awaiting hardware ACK":
+            "MAIN mute requested");
+        });
+        master.appendChild(monitor);
+      }
+      const armed=hardware?.device?.outputArmed===true;
+      monitor.textContent=armed?"I ON":"I OFF";
+      monitor.title=armed?"MAIN output monitoring ON · click to MUTE":
+        "MAIN input monitoring OFF · click to listen";
+      monitor.setAttribute("aria-pressed",String(armed));
+      monitor.disabled=!armed && (!firstSoundReady()||
+        hardware?.raw?.legacyM4?.routeAccepted!==true);
+    }
+  }
+  function changeNativeInput(event){
+    if(!connected)return;
+    const output=event.target?.closest?.('.route-select[data-field="output"]');
+    if(output){
+      // The actual driver/playback destination is selected in ONE Audio I/O
+      // dialog. Never write the Pages demonstration output to the real graph.
+      event.preventDefault();event.stopImmediatePropagation();
+      if(output.closest(".strip.master"))openNativeAudioSetup();
+      syncDawNativeInputs();
+      return;
+    }
+    const select=event.target?.closest?.('.route-select[data-field="input"]');
+    if(!select)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const index=Number(select.dataset.nativeChannel);
+    const parts=String(select.value).split(":");
+    const mode=parts[0],left=mode==="NONE"?-1:Number(parts[1]);
+    const right=mode==="STEREO"?Number(parts[2]):-1;
+    const allowed=portOptions().some(pair=>pair[0]===select.value);
+    const epoch=Number(hardware?.device?.epoch);
+    const revision=Number(hardware?.raw?.legacyM4?.routingRevision);
+    if(!firstSoundReady()||!!sourcePending||!allowed||
+       !Number.isInteger(index)||index<0||index>=10||
+       !Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0){
+      status("INPUT REJECTED · verify hardware, native graph and actual ports");
+      syncDawNativeInputs();return;
+    }
+    sourcePending={id:++sourceRequest,channel:index,mode,left,right,
+      epoch,revision};
+    const requestId=sourcePending.id;
+    window.setTimeout(()=>{
+      if(sourcePending?.id!==requestId)return;
+      sourcePending=null;
+      status("INPUT timeout · native ACK/readback missing; refresh actual hardware");
+      controller?.subscribe();
+      syncDawNativeInputs();
+    },8000);
+    backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
+      requestId:sourcePending.id,channel:index,mode,left,right,
+      deviceEpoch:epoch,revision});
+    status("CH "+(index+1)+" INPUT · applying hardware source · native ACK pending");
+    syncDawNativeInputs();
+  }
+  function createAudioDeviceDialog(){
+    if(deviceDialog)return deviceDialog;
+    const style=document.createElement("style");
+    style.id="armix-native-device-style";
+    style.textContent=`
+      #armixNativeDevice{width:min(560px,94vw);max-height:85vh;overflow:auto;
+        background:#13232d;color:#d9e7ee;border:1px solid #476373;
+        border-radius:9px;box-shadow:0 18px 65px #0009;padding:17px 19px;
+        font:12px Inter,Segoe UI,sans-serif}
+      #armixNativeDevice::backdrop{background:#0009}
+      #armixNativeDevice .io-top{display:flex;justify-content:space-between;
+        align-items:center;gap:12px;margin-bottom:15px}
+      #armixNativeDevice h3{font-size:15px;font-weight:550;margin:0}
+      #armixNativeDevice .io-fields{display:grid;grid-template-columns:124px 1fr;
+        align-items:center;gap:11px}
+      #armixNativeDevice label{color:#abbdc8}
+      #armixNativeDevice select{width:100%;min-width:0;padding:7px;background:#1d3441;
+        color:#e9f3fa;border:1px solid #536f7b;border-radius:5px;font:inherit}
+      #armixNativeDevice button{background:#284454;color:#f0f7fa;
+        border:1px solid #607b89;border-radius:5px;padding:7px 13px;
+        font:inherit;cursor:pointer}
+      #armixNativeDevice button:disabled{opacity:.44;cursor:default}
+      #armixNativeDevice .io-actions{display:flex;justify-content:flex-end;gap:8px;
+        margin-top:16px}
+      #armixNativeDevice [data-io-status]{display:block;margin-top:14px;min-height:2em;
+        color:#bcd3df;line-height:1.5}
+      #armixNativeDevice .io-advanced{margin-top:14px}
+      #armixNativeDevice .io-advanced summary{cursor:pointer;color:#b3c8d3}
+    `;
+    document.head.appendChild(style);
+    deviceDialog=document.createElement("dialog");deviceDialog.id="armixNativeDevice";
+    deviceDialog.innerHTML=`
+      <div class="io-top"><h3>Audio I/O · Hardware</h3>
+        <button type="button" data-io-close aria-label="Close">Close</button></div>
+      <div class="io-fields">
+        <label for="armixDriver">Driver</label><select id="armixDriver"></select>
+        <label for="armixCapture">Input device</label><select id="armixCapture"></select>
+        <label for="armixPlayback">Output device</label><select id="armixPlayback"></select>
+      </div>
+      <details class="io-advanced"><summary>Advanced · Sample rate / Buffer</summary>
+        <div class="io-fields" style="margin-top:11px">
+          <label for="armixRate">Sample rate</label>
+          <select id="armixRate"><option value="0">Auto / driver default</option>
+          <option value="44100">44,100 Hz</option><option value="48000">48,000 Hz</option></select>
+          <label for="armixBuffer">Buffer</label><select id="armixBuffer">
+            <option value="0">Auto / driver default</option><option value="128">128 samples</option>
+            <option value="256">256 samples</option><option value="480">480 samples</option>
+            <option value="512">512 samples</option></select>
+        </div>
+      </details>
+      <small data-io-status role="status">Reading actual JUCE devices…</small>
+      <div class="io-actions"><button type="button" data-io-refresh>Refresh</button>
+        <button type="button" data-io-apply>Apply device</button></div>`;
+    document.body.appendChild(deviceDialog);
+    const get=id=>deviceDialog.querySelector("#"+id);
+    deviceDialog.querySelector("[data-io-close]").addEventListener("click",
+      ()=>deviceDialog.close());
+    deviceDialog.querySelector("[data-io-refresh]").addEventListener("click",
+      ()=>backend.emitEvent("arMixAction",{action:"audioDeviceInventory"}));
+    get("armixDriver").addEventListener("change",()=>{
+      const type=deviceInventory?.types?.find(x=>x.name===get("armixDriver").value);
+      deviceDraft={backend:type?.name||"",captureDevice:type?.inputs?.[0]||"",
+        playbackDevice:type?.outputs?.[0]||"",sampleRate:0,bufferSize:0};
+      refreshAudioDeviceDialog();
+    });
+    get("armixCapture").addEventListener("change",()=>{
+      if(deviceDraft)deviceDraft.captureDevice=get("armixCapture").value;
+    });
+    get("armixPlayback").addEventListener("change",()=>{
+      if(deviceDraft)deviceDraft.playbackDevice=get("armixPlayback").value;
+      refreshAudioDeviceHint();
+    });
+    deviceDialog.querySelector("[data-io-apply]").addEventListener("click",()=>{
+      if(!deviceInventory?.active||!deviceDraft||devicePending)return;
+      deviceDraft.sampleRate=Number(get("armixRate").value);
+      deviceDraft.bufferSize=Number(get("armixBuffer").value);
+      const type=deviceInventory.types.find(x=>x.name===deviceDraft.backend);
+      if(!type?.inputs?.includes(deviceDraft.captureDevice)||
+         !type?.outputs?.includes(deviceDraft.playbackDevice)||
+         (!type.separate&&deviceDraft.captureDevice!==deviceDraft.playbackDevice)){
+        getStatus("Invalid driver/input/output selection");return;
+      }
+      devicePending={requestId:"io-"+(++sourceRequest),
+        generation:Number(deviceInventory.active.deviceGeneration)};
+      if(hardware?.device?.outputArmed===true){
+        deviceMutePending=true;
+        backend.emitEvent("arMixAction",{action:"monitor",value:false});
+        getStatus("Muting MAIN safely before switching device…");
+      }else sendDeviceApply();
+    });
+    return deviceDialog;
+  }
+  function getStatus(message){
+    const el=deviceDialog?.querySelector("[data-io-status]");
+    if(el)el.textContent=message;
+  }
+  function fillSelect(el,items,current){
+    el.replaceChildren(...items.map(([v,label])=>{
+      const o=document.createElement("option");o.value=String(v);o.textContent=label;
+      return o;
+    }));
+    if(items.some(x=>String(x[0])===String(current)))el.value=String(current);
+  }
+  function refreshAudioDeviceHint(){
+    const output=String(deviceDraft?.playbackDevice||"");
+    const virtual=/virtual|cable input|vb-audio|voicemeeter/i.test(output);
+    getStatus(virtual?"Virtual playback output · NOT automatically audible on headphones":
+      "Selected playback: "+(output||"none")+" · output stays muted during setup");
+  }
+  function refreshAudioDeviceDialog(){
+    if(!deviceDialog?.open||!deviceInventory)return;
+    const d=deviceDialog,types=Array.isArray(deviceInventory.types)?
+      deviceInventory.types:[];
+    const active=deviceInventory.active||{};
+    if(!deviceDraft){
+      deviceDraft={backend:active.backend||types[0]?.name||"",
+        captureDevice:active.captureDevice||"",playbackDevice:active.playbackDevice||"",
+        sampleRate:0,bufferSize:0};
+    }
+    const type=types.find(x=>x.name===deviceDraft.backend);
+    fillSelect(d.querySelector("#armixDriver"),types.map(t=>[t.name,t.name]),deviceDraft.backend);
+    fillSelect(d.querySelector("#armixCapture"),
+      (type?.inputs||[]).map(x=>[x,x]),deviceDraft.captureDevice);
+    fillSelect(d.querySelector("#armixPlayback"),
+      (type?.outputs||[]).map(x=>[x,x]),deviceDraft.playbackDevice);
+    const apply=d.querySelector("[data-io-apply]");
+    apply.disabled=!!devicePending||!type||!type.inputs?.includes(deviceDraft.captureDevice)||
+      !type.outputs?.includes(deviceDraft.playbackDevice);
+    refreshAudioDeviceHint();
+  }
+  function openNativeAudioSetup(){
+    const dialog=createAudioDeviceDialog();
+    if(!dialog.open)dialog.showModal();
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function sendDeviceApply(){
+    if(!devicePending||!deviceInventory?.active)return;
+    const active=deviceInventory.active;
+    const same=active.backend===deviceDraft.backend &&
+      active.captureDevice===deviceDraft.captureDevice &&
+      active.playbackDevice===deviceDraft.playbackDevice;
+    const config={...deviceDraft};
+    if(same && Array.isArray(active.enabledInputs) &&
+       Array.isArray(active.enabledOutputs)){
+      config.enabledInputs=active.enabledInputs.slice();
+      config.enabledOutputs=active.enabledOutputs.slice();
+    }
+    // For NEW devices, physical pin names are not yet verified; native JUCE
+    // opens safe defaults before the next authoritative inventory.
+    backend.emitEvent("arMixAction",{
+      action:"audioDeviceApply",
+      requestId:devicePending.requestId,
+      expectedDeviceGeneration:devicePending.generation,config
+    });
+    getStatus("Opening selected hardware · verifying actual driver readback…");
+  }
+
+  // Real ten-strip M4 fader/solo/mute control path. The installed native DSP
+  // already applies these atomically. Request-id ACK + later current-epoch
+  // snapshot is the only presentation commit, never a Pages demo mutation.
+  const m4Pending=new Map();
+  let m4Request=30000;
+  const m4Key=(ch,name)=>ch+":"+name;
+  const m4Index=t=>physicalUiIds.indexOf(String(t?.id));
+  const m4Controls=()=>hardware?.raw?.legacyM4?.channelControls;
+  const m4Expected=(actual,p)=>{
+    if(!actual)return false;
+    const value=p.value;
+    if(p.parameter==="faderDb")return Number.isFinite(actual.db)&&
+      Math.abs(actual.db-value)<0.12;
+    if(p.parameter==="pan")return Number.isFinite(actual.pan)&&
+      Math.abs(actual.pan-value)<0.12;
+    if(p.parameter==="mute"||p.parameter==="solo")
+      return actual[p.parameter]===value;
+    return false;
+  };
+  function submitM4Control(t,parameter,value){
+    const channel=m4Index(t);
+    const controls=m4Controls();
+    const key=m4Key(channel,parameter);
+    const epoch=Number(hardware?.device?.epoch);
+    const revision=Number(hardware?.raw?.legacyM4?.routingRevision);
+    if(channel<0 || channel>=10 || !firstSoundReady() ||
+       !Array.isArray(controls)||controls.length!==10 ||
+       m4Pending.has(key)||!Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0) {
+      status("CONTROL unavailable · verify native strip readback");
+      return false;
+    }
+    const flag=parameter==="mute"||parameter==="solo";
+    if(flag?typeof value!=="boolean":
+       !Number.isFinite(value)||
+       (parameter==="faderDb"&&(value< -60||value>10))||
+       (parameter==="pan"&&(value< -100||value>100)))return false;
+    const pending={id:++m4Request,channel,parameter,value,epoch,revision,
+      acked:false};
+    m4Pending.set(key,pending);
+    backend.emitEvent("arMixAction",{action:"routingM4ChannelControl",
+      requestId:pending.id,channel,parameter,value,
+      deviceEpoch:epoch,revision});
+    window.setTimeout(()=>{
+      if(m4Pending.get(key)?.id!==pending.id)return;
+      m4Pending.delete(key);
+      controller?.subscribe();
+      syncDawM4Controls();
+      status("CH "+(channel+1)+" "+parameter+" timed out · native state restored");
+    },8000);
+    return true;
+  }
+  let masterPending=null,masterSequence=40000;
+  function submitNativeMaster(parameter,value){
+    const epoch=Number(hardware?.device?.epoch);
+    const revision=Number(hardware?.raw?.legacyM4?.routingRevision);
+    const controls=hardware?.raw?.legacyM4?.masterControls;
+    if(!firstSoundReady()||!controls||masterPending||
+       !Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0 ||
+       (parameter==="mute"?typeof value!=="boolean":
+         parameter!=="faderDb"||!Number.isFinite(value)||
+         value< -60||value>10)){
+      status("MAIN control requires verified active routing");
+      return false;
+    }
+    const pending={id:++masterSequence,parameter,value,epoch,revision,acked:false};
+    masterPending=pending;
+    backend.emitEvent("arMixAction",{action:"routingM4MasterControl",
+      requestId:pending.id,parameter,value,deviceEpoch:epoch,revision});
+    window.setTimeout(()=>{
+      if(masterPending?.id!==pending.id)return;
+      masterPending=null;
+      controller?.subscribe();syncDawM4Controls();
+      status("MAIN control timed out · restored last native readback");
+    },8000);
+    return true;
+  }
+  function syncDawM4Controls(){
+    if(hardware?.admitted===true)return;
+    const controls=m4Controls(),ready=firstSoundReady() &&
+      Array.isArray(controls)&&controls.length===10;
+    for(let i=0;i<physicalUiIds.length;i++){
+      const strip=document.querySelector('.strip[data-id="'+physicalUiIds[i]+'"]');
+      const c=ready?controls[i]:null;
+      if(!strip)continue;
+      // Clear all demo-only metering unless real callback peaks are present.
+      const peaks=hardware?.raw?.legacyM4;
+      const actual=Array.isArray(peaks?.channelPeaksL)&&
+        Array.isArray(peaks?.channelPeaksR)&&
+        peaks.channelPeaksL.length===10&&peaks.channelPeaksR.length===10;
+      const paint=(side,value)=>{
+        const fill=strip.querySelector(".meter-fill."+side);
+        if(!fill||!scope?.displayMeterDbfs)return;
+        const peak=Number(value);
+        const db=actual&&Number.isFinite(peak)&&peak>0?
+          20*Math.log10(peak):-90;
+        scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),
+          performance.now(),physicalUiIds[i]+":"+side);
+      };
+      paint("left",peaks?.channelPeaksL?.[i]);
+      paint("right",peaks?.channelPeaksR?.[i]);
+      if(!c)continue;
+      const t=(scope?.tracks||[]).find(item=>String(item.id)===physicalUiIds[i]);
+      if(!t)continue;
+      for(const name of ["faderDb","pan","mute","solo"]){
+        const key=m4Key(i,name),pending=m4Pending.get(key);
+        if(pending && String(hardware?.device?.epoch)!==String(pending.epoch))
+          m4Pending.delete(key);
+        else if(pending?.acked && m4Expected(c,pending))
+          m4Pending.delete(key);
+      }
+      const level=Number(c.db),pan=Number(c.pan);
+      if(Number.isFinite(level)&&!m4Pending.has(m4Key(i,"faderDb"))){
+        t.level=level;
+        const slider=strip.querySelector('.fader[data-field="level"]');
+        if(slider && Number(slider.value)!==level){
+          slider.value=String(level);
+          const min=Number(slider.min),max=Number(slider.max);
+          const p=(level-min)/(max-min);
+          const box=strip.querySelector(".fader-box");
+          if(box&&Number.isFinite(p)&&max>min){
+            const frac=Math.max(0,Math.min(1,p));
+            box.style.setProperty("--fader-fill",(frac*100)+"%");
+            box.style.setProperty("--fader-lit",String(frac));
+            box.style.setProperty("--fader-y",((1-frac)*100)+"%");
+            box.style.setProperty("--fader-frac",String(frac));
+          }
+        }
+        const display=strip.querySelector(".db-value");
+        const label=level.toFixed(1)+" dB";
+        if(display&&display.textContent!==label)display.textContent=label;
+      }
+      if(Number.isFinite(pan)&&!m4Pending.has(m4Key(i,"pan"))){
+        t.pan=pan;
+        const slider=strip.querySelector('.center-pan[data-field="pan"]');
+        if(slider&&Number(slider.value)!==pan)slider.value=String(pan);
+      }
+      for(const name of ["mute","solo"]){
+        if(typeof c[name]!=="boolean"||m4Pending.has(m4Key(i,name)))continue;
+        t[name]=c[name];
+        const button=strip.querySelector('[data-action="'+name+'"]');
+        if(button)button.setAttribute("aria-pressed",String(c[name]));
+      }
+    }
+    const master=hardware?.raw?.legacyM4?.masterControls;
+    // Paint actual MAIN L/R independently, not duplicated browser demo
+    // motion, and force silence when native output telemetry is unavailable.
+    const mainStrip=document.querySelector(".strip.master");
+    const m4=hardware?.raw?.legacyM4;
+    for(const [side,peak] of [["left",m4?.mainPeakL],["right",m4?.mainPeakR]]){
+      const fill=mainStrip?.querySelector(".meter-fill."+side);
+      if(!fill||!scope?.displayMeterDbfs)continue;
+      const measured=typeof peak==="number"&&Number.isFinite(peak)&&peak>=0;
+      const db=measured&&peak>0?20*Math.log10(peak):-90;
+      scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),
+        performance.now(),"MAIN:"+side);
+    }
+    const masterTrack=scope?.master;
+    if(master&&masterTrack){
+      if(masterPending?.acked && String(hardware?.device?.epoch)===
+           String(masterPending.epoch) &&
+         (masterPending.parameter==="mute"?
+            master.mute===masterPending.value:
+            Math.abs(Number(master.db)-masterPending.value)<0.12))
+        masterPending=null;
+      else if(masterPending && String(hardware?.device?.epoch)!==
+         String(masterPending.epoch))masterPending=null;
+      if(!masterPending){
+        const strip=document.querySelector(".strip.master");
+        if(Number.isFinite(Number(master.db))){
+          masterTrack.level=Number(master.db);
+          const slider=strip?.querySelector('.fader[data-field="level"]');
+          if(slider&&Number(slider.value)!==Number(master.db)){
+            slider.value=String(master.db);
+            const min=Number(slider.min),max=Number(slider.max);
+            const frac=max>min?Math.max(0,Math.min(1,(Number(master.db)-min)/(max-min))):0;
+            const box=strip.querySelector(".fader-box");
+            box?.style?.setProperty("--fader-fill",(100*frac)+"%");
+            box?.style?.setProperty("--fader-lit",String(frac));
+            box?.style?.setProperty("--fader-y",(100*(1-frac))+"%");
+            box?.style?.setProperty("--fader-frac",String(frac));
+          }
+          const db=strip?.querySelector(".db-value");
+          const label=Number(master.db).toFixed(1)+" dB";
+          if(db&&db.textContent!==label)db.textContent=label;
+        }
+        if(typeof master.mute==="boolean"){
+          masterTrack.mute=master.mute;
+          strip?.querySelector('[data-action="mute"]')?.setAttribute(
+            "aria-pressed",String(master.mute));
+        }
+      }
+    }
+  }
   function updateHardwarePanel(next) {
-    hardware=next || null;
+    hardware=next||null;
+    syncDawNativeInputs();
+    syncDawM4Controls();
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     const label=document.getElementById("transport");
-    if(label)label.textContent=!deviceOpen?"Device not ready":
-      d.outputArmed?"Output armed":"Output muted";
-    const warning=document.querySelector?.(".status-bar .warning");
-    if(warning)warning.textContent=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
-      d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
-        "MAIN ARMED · PCM NOT YET ADMITTED"):
-      legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
-      "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
-    if(!inputSelect)return;
-    const pins=deviceOpen?d.inputEndpoints.filter(p=>
-      p.active===true && d.enabledInputs.includes(p.port)):[];
-    const key=pins.map(p=>p.id+"|"+p.label).join(";");
-    if(inputSelect.dataset.pins!==key) {
-      const before=inputSelect.value;
-      inputSelect.dataset.pins=key;
-      inputSelect.replaceChildren();
-      const option=document.createElement("option");
-      option.value="";option.textContent="Physical input for CH1";
-      inputSelect.appendChild(option);
-      for(const pin of pins){
-        const item=document.createElement("option");
-        item.value=String(pin.port);
-        item.textContent=pin.label+" · IN "+(pin.port+1);
-        inputSelect.appendChild(item);
-      }
-      if(pins.some(p=>String(p.port)===before))inputSelect.value=before;
+    if(label){
+      const nextText=!deviceOpen?"Device not ready":
+        d.outputArmed?"Output enabled":"Output muted";
+      if(label.textContent!==nextText)label.textContent=nextText;
     }
-    inputSelect.disabled=!deviceReady();
-    if(routeBtn)routeBtn.disabled=!deviceReady() ||
-      inputSelect.value==="" || pendingSourceId!==0;
-    if(armBtn)armBtn.disabled=!deviceReady() ||
-      legacy()?.routeAccepted!==true || d.outputArmed;
-    if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
-    if(hardwareNote) {
-      const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
-      // Human-readable PCM stages from the ORIGINAL native callback only.
-      // These values are NOT evidence that the DAC or speaker is audible.
-      hardwareNote.textContent=evidence?
-        evidence.readout+" · "+evidence.nextAction:
-        "No verified hardware PCM readback available.";
+    const warning=document.querySelector?.(".status-bar .warning");
+    if(warning){
+      const nextText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
+        d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
+          "OUTPUT ENABLED · VERIFY AUDIO"):
+        legacy()?.routeAccepted?"INPUT ROUTED · OUTPUT MUTED":
+        "SELECT HARDWARE INPUT ON ANY CHANNEL";
+      if(warning.textContent!==nextText)warning.textContent=nextText;
+    }
+    if(muteBtn)muteBtn.disabled=!deviceOpen||!d.outputArmed;
+    if(hardwareNote){
+      const evidence=protocol.diagnoseFirstSound?.(next);
+      const text=evidence?evidence.readout+" · "+
+        evidence.nextAction:"Awaiting verified hardware readback";
+      if(hardwareNote.textContent!==text)hardwareNote.textContent=text;
     }
   }
   function installFirstSoundMenu() {
@@ -217,53 +715,21 @@
       if(tag==="button")el.type="button";
       return el;
     };
-    const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
-    const setup=item("button","tool","Audio Setup");
+    const caption=item("span","more-tools-caption","HARDWARE AUDIO · ADVANCED");
+    const setup=item("button","tool","Audio I/O settings");
+    // Same custom device dialog as the toolbar's Audio Setup button.
+    // No additional native AudioDeviceSelectorComponent window.
     setup.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"audioSetup"});
-      status("NATIVE: select actual ASIO/WASAPI input + output in Audio Setup.");
-    });
-    inputSelect=item("select","toolbar-select","");
-    inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
-    inputSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
-    routeBtn=item("button","tool","Patch CH1");
-    routeBtn.addEventListener("click",()=>{
-      const d=hardware?.device,l=legacy();
-      const epoch=safeNativeCounter(d?.epoch);
-      const revision=safeNativeCounter(l?.routingRevision);
-      const pin=Number(inputSelect?.value);
-      if(!deviceReady()||inputSelect.value==="" ||
-         epoch===null||revision===null||
-         !Number.isInteger(pin)||!d.enabledInputs.includes(pin)){
-        status("NATIVE: invalid input pin, epoch or route revision.");return;
-      }
-      pendingSourceId=++sourceSerial;
-      routeBtn.disabled=true;
-      backend.emitEvent("arMixAction",{
-        action:"routingSourceSwitch",requestId:pendingSourceId,
-        channel:0,mode:"MONO",left:pin,right:-1,
-        deviceEpoch:epoch,revision
-      });
-      status("NATIVE: CH1 physical input patch pending real ACK.");
-    });
-    armBtn=item("button","tool","Arm output");
-    armBtn.addEventListener("click",()=>{
-      if(!deviceReady()||legacy()?.routeAccepted!==true)return;
-      const epoch=safeNativeCounter(hardware.device.epoch);
-      const revision=safeNativeCounter(legacy().routingRevision);
-      if(epoch===null||revision===null)return;
-      backend.emitEvent("arMixAction",{action:"monitor",value:true,
-        expectedEpoch:epoch,expectedRevision:revision});
-      status("NATIVE: output ARM requested; awaiting JUCE ACK.");
+      openNativeAudioSetup();
     });
     muteBtn=item("button","tool","Mute output");
     muteBtn.addEventListener("click",()=>{
       backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
+      status("Native output MUTE requested; awaiting engine ACK");
     });
-    hardwareNote=item("span","more-tools-caption","Device not initialized");
+    hardwareNote=item("span","more-tools-caption","Select IN on any channel strip");
     hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    menu.append(caption,setup,muteBtn,hardwareNote);
     updateHardwarePanel(hardware);
   }
 
@@ -273,9 +739,13 @@
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
-      lastPaintedSignature="";
+      // Repeated 12Hz snapshots must never repaint a fixed status label or
+      // erase the operator's pending input/fader ACK feedback on each tick.
+      if(lastPaintedSignature!=="G0"){
+        lastPaintedSignature="G0";
+        status("NATIVE M4 · IN/fader/pan/mute/solo available on all ten strips; WIRE pending.");
+      }
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -319,16 +789,80 @@
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
-    backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
-      pendingSourceId=0;
-      if(ack.ok===true) {
-        status("NATIVE: CH1 PATCH accepted by JUCE; validating later readback.");
-        controller.subscribe();
-      }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
-      updateHardwarePanel(hardware);
+    // Accepted native M4 source-switch ACK, verified against actual route
+    // readback; neither UI option nor ACK alone invents PCM or monitoring.
+    backend.addEventListener("arMixSourceSwitchAck",ack=>{
+      const p=sourcePending;
+      if(!p||ack?.requestId!==p.id||ack?.channel!==p.channel)return;
+      const route=ack?.state?.acceptedRoute?.channels?.[p.channel];
+      const valid=ack.ok===true&&Number(ack?.state?.epoch)===p.epoch&&
+        route?.mode===p.mode&&
+        (p.mode==="NONE" || (route?.left===p.left&&route?.right===p.right));
+      if(valid)sourcePending.acked=true;
+      else sourcePending=null;
+      status(valid?"CH "+(p.channel+1)+" source ACK accepted · verifying next readback":
+        "CH "+(p.channel+1)+" input rejected · "+String(ack?.error||"readback mismatch"));
+      controller?.subscribe();
+      syncDawNativeInputs();
+    });
+    backend.addEventListener("arMixAudioDeviceInventory",list=>{
+      if(!list || !Array.isArray(list.types))return;
+      deviceInventory=list;
+      refreshAudioDeviceDialog();
+    });
+    backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
+      if(!devicePending||ack?.requestId!==devicePending.requestId)return;
+      devicePending=null;
+      deviceDraft=null;
+      getStatus(ack.ok===true?
+        "Device accepted · "+ack.active?.backend+" · "+ack.active?.rate+
+        " Hz · "+ack.active?.playbackDevice+" · select IN on channel":
+        "Device rejected · "+String(ack.error||ack.state||"unavailable"));
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      controller?.subscribe();
+    });
+
+    backend.addEventListener("arMixM4MasterAck",ack=>{
+      const pending=masterPending;
+      if(!pending||pending.id!==ack?.requestId)return;
+      const verified=ack.ok===true&&ack.parameter===pending.parameter &&
+        Number(ack.deviceEpoch)===pending.epoch &&
+        Number(ack.revision)===pending.revision &&
+        (pending.parameter==="mute"?ack.value===pending.value:
+          Math.abs(Number(ack.value)-pending.value)<0.12);
+      if(verified)pending.acked=true;
+      else{
+        masterPending=null;
+        status("MAIN "+pending.parameter+" rejected · native state unchanged");
+      }
+      controller?.subscribe();syncDawM4Controls();
+    });
+    backend.addEventListener("arMixM4ControlAck",ack=>{
+      if(!Number.isInteger(ack?.channel))return;
+      const key=m4Key(ack.channel,ack.parameter);
+      const pending=m4Pending.get(key);
+      if(!pending||pending.id!==ack.requestId)return;
+      const controls=ack?.state?.channelControls;
+      const verified=ack.ok===true &&
+        Number(ack?.state?.epoch)===pending.epoch &&
+        Number(ack?.state?.revision)===pending.revision &&
+        Array.isArray(controls)&&controls.length===10 &&
+        m4Expected(controls[pending.channel],pending);
+      if(verified)pending.acked=true;
+      else {
+        m4Pending.delete(key);
+        status("CH "+(pending.channel+1)+" "+pending.parameter+
+          " rejected · "+String(ack.error||"native readback mismatch"));
+      }
+      controller?.subscribe();
+      syncDawM4Controls();
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
+      if(deviceMutePending){
+        deviceMutePending=false;
+        if(ack?.ok===true&&ack.armed===false)sendDeviceApply();
+        else {devicePending=null;getStatus("Cannot safely mute output; device unchanged");}
+      }
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
           "NATIVE: output muted.");
@@ -345,9 +879,35 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if (!flags.acceptedGraphConnected) {
+        if(field==="level" && t===scope?.master && firstSoundReady() &&
+           event.type==="change"){
+          if(!submitNativeMaster("faderDb",Number(el.value)))
+            el.value=String(t.level);
+          return true;
+        }
+        if((field==="level"||field==="pan")&&
+           event.type==="change"&&firstSoundReady()){
+          const value=Number(el.value);
+          const name=field==="level"?"faderDb":"pan";
+          if(!submitM4Control(t,name,value))el.value=
+            String(field==="level"?t.level:t.pan);
+          return true;
+        }
+        if(event.type!=="change"&&field==="level"&&firstSoundReady()){
+          const n=Number(el.value),min=Number(el.min),max=Number(el.max);
+          if([n,min,max].every(Number.isFinite)&&max>min){
+            const frac=Math.max(0,Math.min(1,(n-min)/(max-min)));
+            const box=el.closest?.(".fader-box");
+            box?.style?.setProperty("--fader-fill",(100*frac)+"%");
+            box?.style?.setProperty("--fader-lit",String(frac));
+            box?.style?.setProperty("--fader-y",(100*(1-frac))+"%");
+            box?.style?.setProperty("--fader-frac",String(frac));
+          }
+          return true;
+        }
         if (field==="level")el.value=String(t.level);
         else if (field==="pan")el.value=String(t.pan);
-        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        status("NATIVE: control unavailable until verified DSP readback");
         return true;
       }
       // During a native pointer drag move the approved fader *cap* only.
@@ -387,6 +947,15 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected){
+          if(t===scope?.master && action==="mute" && firstSoundReady()){
+            submitNativeMaster("mute",!Boolean(t.mute));
+            return true;
+          }
+          if(firstSoundReady())submitM4Control(t,action,!Boolean(t[action]));
+          else status("NATIVE: device not ready for "+action);
+          return true;
+        }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
@@ -481,6 +1050,9 @@
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     installFirstSoundMenu();
+    // Capture source selection BEFORE the public Pages demo reducer. It
+    // remains the same visible IN dropdown, never a separate floating patch.
+    document.addEventListener("change",changeNativeInput,true);
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
