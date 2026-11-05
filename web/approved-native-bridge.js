@@ -240,11 +240,25 @@
       if(tag==="button")el.type="button";
       return el;
     };
-    const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
-    const setup=item("button","tool","Audio Setup");
+    // The approved per-strip IN selector is the everyday workflow.
+    // Keep old CH1 patch/ARM as collapsed diagnostics only, not a wizard.
+    const advanced=document.createElement("details");
+    advanced.className="arNativeAdvancedRecovery";
+    const summary=item("summary","more-tools-caption","ADVANCED · DRIVER / FIRST SOUND DIAGNOSTICS");
+    advanced.appendChild(summary);
+    const caption=item("span","more-tools-caption","HARDWARE RECOVERY ONLY");
+    const setup=item("button","tool","Audio I/O");
     setup.addEventListener("click",()=>{
+      // The pre-existing WebView I/O pane already supports native device
+      // inventory + one audited Apply transaction. Do not open a duplicate
+      // huge JUCE AudioDeviceSelectorComponent for routine setup.
+      if(typeof window.__arMixOpenAudioIO==="function")
+        window.__arMixOpenAudioIO("device");
+      else status("AUDIO I/O unavailable; use the mixer AUDIO I/O button.");
+    });
+    const driver=item("button","tool","Advanced JUCE driver settings");
+    driver.addEventListener("click",()=>{
       backend.emitEvent("arMixAction",{action:"audioSetup"});
-      status("NATIVE: select actual ASIO/WASAPI input + output in Audio Setup.");
     });
     inputSelect=item("select","toolbar-select","");
     inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
@@ -286,7 +300,8 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    advanced.append(caption,setup,driver,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    menu.appendChild(advanced);
     updateHardwarePanel(hardware);
   }
 
