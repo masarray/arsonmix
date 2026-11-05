@@ -80,7 +80,7 @@ NATIVE_EVENT_HOOKS = (
      " }return 10;\n"
      "}\n"),
     ("scaleTopPct(v,-60,gainMax)",
-     "(100-faderPercent(v,isSend))"),
+     "(100.0-faderPercent(v,isSend))"),
     (" const gain=Math.round((max-(max-min)*frac)*10)/10;\n",
      " const gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;\n"),
     # Only the compiled Windows WebView gets verified native driver inputs.
