@@ -11,7 +11,9 @@ $expected = @(
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
-    "portable_mode.txt"
+    "portable_mode.txt",
+    "collect_hardware_fat_windows.ps1",
+    "m3e_fat_evidence_gate.mjs"
 )
 foreach ($name in $expected) {
     if (-not (Test-Path -LiteralPath (Join-Path $OutputDir $name) -PathType Leaf)) {
@@ -33,6 +35,29 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+# FAT tools match source bytes, distributed bytes AND the current SHA manifest.
+$fatTools = @{
+    "collect_hardware_fat_windows.ps1" = [string]$manifest.fatCollectorSha256
+    "m3e_fat_evidence_gate.mjs" = [string]$manifest.fatGateSha256
+}
+foreach ($filename in $fatTools.Keys) {
+    if ($fatTools[$filename] -notmatch '^[0-9a-f]{64}$') {
+        throw "M3-E evidence tool hash missing: $filename"
+    }
+    $sourceFile = Join-Path "scripts" $filename
+    $packageFile = Join-Path $OutputDir $filename
+    if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
+        throw "Current exact SHA checkout lacks FAT tool: $filename"
+    }
+    $sourceHash = (Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    $distHash = (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($sourceHash -ne $fatTools[$filename] -or $distHash -ne $fatTools[$filename]) {
+        throw "FAT tool differs from exact source / manifest: $filename"
+    }
+}
+& node scripts/m3e_fat_evidence_gate.mjs $OutputDir
+if ($LASTEXITCODE -ne 0) { throw "Independent M3-E FAT bundle verifier failed" }
+# No physical FAT journal in a build artifact is PENDING, never a false PASS.
 # App-only ZIP does not ship an untracked dynamic WebView2Loader.dll.
 if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
@@ -53,7 +78,11 @@ $exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }
 if ($bytes.Length -ne $manifest.guiExeBytes) { throw "Mismatch: actual EXE size and recorded size" }
+if ([Text.Encoding]::ASCII.GetString($bytes,0,2) -ne "MZ") { throw "Invalid EXE MZ signature" }
 $pe = [BitConverter]::ToInt32($bytes,0x3c)
+if ([Text.Encoding]::ASCII.GetString($bytes,$pe,4) -ne ("PE" + [char]0 + [char]0)) {
+    throw "Invalid EXE PE signature"
+}
 if ($pe -lt 64 -or $pe -ge $bytes.Length - 128) { throw "Invalid PE header offset" }
 if ([BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x8664 -or
     [BitConverter]::ToUInt16($bytes,$pe+24) -ne 0x020b -or
@@ -186,6 +215,22 @@ try {
             $stream.Dispose()
         }
         if ($inZipHash -ne $appHash) { throw "ZIP entry hash mismatch" }
+        foreach ($filename in $fatTools.Keys) {
+            $toolEntry = $zip.GetEntry($filename)
+            if ($null -eq $toolEntry) { throw "FAT tool missing in verified ZIP: $filename" }
+            $toolStream = $toolEntry.Open()
+            $toolHasher = [Security.Cryptography.SHA256]::Create()
+            try {
+                $inZipToolHash = [BitConverter]::ToString($toolHasher.ComputeHash($toolStream)).Replace("-","").ToLowerInvariant()
+            } finally {
+                $toolStream.Dispose()
+                $toolHasher.Dispose()
+            }
+            if ($inZipToolHash -ne $fatTools[$filename]) {
+                throw "FAT tool ZIP payload digest differs: $filename"
+            }
+        }
+
         foreach ($rel in $factoryZipFiles) {
             $item = $zip.GetEntry($rel)
             if ($null -eq $item) { throw "FactoryFX file missing in ZIP: $rel" }
