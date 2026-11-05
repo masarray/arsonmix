@@ -621,23 +621,16 @@
 @media(max-width:950px){.arIOAudioPath{grid-template-columns:repeat(4,minmax(0,1fr))}.arIOAudioPath>button{grid-column:span 2}.arIOAudioPath>small{grid-column:1/-1}}
 @media(max-width:650px){.arIOAudioPath{grid-template-columns:repeat(2,minmax(0,1fr))}.arIOAudioPath>button{grid-column:span 1}}
 
-/* Audition-style native IN: replace the DEMO select in the existing
-   visible input row. No duplicate CH-header selector or another mixer UI. */
-#app #mixer .route-field .arChannelQuickInput{
- position:static;inset:auto;left:auto;right:auto;bottom:auto;
- display:block;width:100%;max-width:100%;min-width:0;
- height:100%;min-height:0;margin:0;padding:0 14px 0 3px;
- border:1px solid #426271;border-radius:2px;
- background:#0c2530;color:#c8e6ee;
+/* FAT native: directly map each channel from the actual enabled driver pins.
+   No new panels, blur, timers, second DSP graph or heavyweight hover. */
+#app #mixer .strip[data-strip] > .ch-id{position:relative}
+#app #mixer .arChannelQuickInput{
+ position:absolute;left:3px;right:3px;bottom:1px;width:calc(100% - 6px);
+ min-width:0;max-width:calc(100% - 6px);height:19px;min-height:19px;
+ margin:0;padding:0 12px 0 3px;border-radius:2px;
+ border:1px solid #426271;background:#0c2530;color:#c8e6ee;
  font:500 9px/1 "Segoe UI",Arial,sans-serif;
- text-overflow:ellipsis;cursor:pointer;z-index:1
-}
-#app #mixer .route-field .arChannelNativeOutput{
- display:block;width:100%;min-width:0;overflow:hidden;
- text-overflow:ellipsis;white-space:nowrap;
- padding:2px 3px;color:#a9d6de;
- font:500 9px/1.2 "Segoe UI",Arial,sans-serif;
- cursor:default
+ text-overflow:ellipsis;cursor:pointer;z-index:2
 }
 #app #mixer .arChannelQuickInput:disabled{color:#78949f;cursor:default}
 #app #mixer .arChannelQuickInput:focus-visible{outline:1px solid #7ad2e9;outline-offset:0}
