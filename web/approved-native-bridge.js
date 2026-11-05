@@ -201,6 +201,69 @@
     menu.append(caption,setup,hardwareNote);
     updateHardwarePanel(hardware);
   }
+  // M4 is already the TRUE ten-channel realtime PCM owner before the
+  // universal ChannelId ABI is fully admitted. Its proven native parameter
+  // setter must not be hidden behind an unrelated G0 ChannelId gate.
+  const m4Parameter=(track,parameter,value)=>{
+    if(!verifiedM4()){
+      status("Select IN on a verified channel before adjusting the live mix.");
+      return false;
+    }
+    const channel=scope?.tracks?.indexOf(track)??-1;
+    if(channel<0||channel>=10){
+      status("No native ten-channel identity for this control.");
+      return false;
+    }
+    const epoch=Number(lastDryReadback.epoch),revision=Number(lastDryReadback.revision);
+    if(!Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0)return false;
+    backend.emitEvent("arMixParameter",{
+      parameter,channel:channel+1,value,routeEpoch:epoch,routeRevision:revision
+    });
+    return true; // request sent; not ACK or altered GUI model
+  };
+  const renderMeasuredM4=(live)=>{
+    if(flags.acceptedGraphConnected||!scope?.tracks)return;
+    const d=live?.dryRoutingLab||{};
+    lastDryReadback=d;
+    if(!verifiedM4())return;
+    const controls=d.channelControls,peaksL=d.channelPeaksL,peaksR=d.channelPeaksR;
+    if(!Array.isArray(controls)||controls.length!==10)return;
+    let changed=false;
+    for(let i=0;i<10;++i){
+      const t=scope.tracks[i],c=controls[i];
+      if(!t||!c)continue;
+      const f=Number(c.db),p=Number(c.pan);
+      if(Number.isFinite(f)&&Math.abs(t.level-f)>0.02){t.level=f;changed=true;}
+      if(Number.isFinite(p)&&Math.abs(t.pan-p)>0.02){t.pan=p;changed=true;}
+      if(typeof c.mute==="boolean"&&t.mute!==c.mute){t.mute=c.mute;changed=true;}
+      if(typeof c.solo==="boolean"&&t.solo!==c.solo){t.solo=c.solo;changed=true;}
+    }
+    const master=scope.master;
+    const masterDb=Number(live?.masterDb);
+    if(master&&Number.isFinite(masterDb)&&masterDb>=-90&&masterDb<=12&&
+       Math.abs(master.level-masterDb)>0.02){master.level=masterDb;changed=true;}
+    if(master&&typeof live?.masterMute==="boolean"&&
+       master.mute!==live.masterMute){master.mute=live.masterMute;changed=true;}
+    // Render only on ACCEPTED control state changes, never at 12Hz. The
+    // WebView compositor is not a part of the realtime audio callback.
+    if(changed)scope.render?.();
+    const timestamp=performance.now();
+    const paint=(track,left,right)=>{
+      const root=document.querySelector('.strip[data-id="'+track?.id+'"]');
+      if(!root)return;
+      for(const [side,peak] of [["left",left],["right",right]]){
+        const fill=root.querySelector('.meter-fill.'+side);
+        if(!fill||!Number.isFinite(peak)||peak<0)continue;
+        const db=peak===0?-90:20*Math.log10(peak);
+        scope.displayMeterDbfs?.(fill,Math.max(-90,Math.min(6,db)),timestamp,
+          "m4:"+track.id+":"+side);
+      }
+    };
+    if(Array.isArray(peaksL)&&Array.isArray(peaksR)&&peaksL.length===10&&peaksR.length===10)
+      for(let i=0;i<10;++i)paint(scope.tracks[i],Number(peaksL[i]),Number(peaksR[i]));
+    paint(master,Number(d.peakL),Number(d.peakR));
+  };
   function onNativeReadback(next) {
     updateHardwarePanel(next);
     const caps=next?.graph?.capabilities;
@@ -209,7 +272,7 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      status("NATIVE MIXER · pilih IN pada channel mana saja; level/pan/mute/solo menggunakan engine audio.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -253,6 +316,11 @@
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixStatus",live=>renderMeasuredM4(live));
+    backend.addEventListener("arMixM4ControlAck",ack=>{
+      if(ack?.ok!==true)
+        status("Control rejected: hardware/route changed; original mix retained.");
+    });
   }
   const nativeHooks=Object.freeze({
     enabled:connected,
@@ -263,9 +331,23 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if (!flags.acceptedGraphConnected) {
-        if (field==="level")el.value=String(t.level);
-        else if (field==="pan")el.value=String(t.pan);
-        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        // Drag may move only the physical fader thumb. On release, send one
+        // real native M4 parameter with exact epoch/revision; the next real
+        // engine readback owns the displayed value.
+        const numeric=Number(el.value);
+        const pan=el.dataset.panKeyboard==="true"||el.dataset.panAltPointer==="true"||
+          Math.abs(numeric)>12?numeric:0;
+        if(event.type==="change"&&t===scope.master){
+          if(field==="level"&&Number.isFinite(numeric))
+            backend.emitEvent("arMixParameter",{parameter:"masterGain",value:numeric,channel:-1});
+        }else if(event.type==="change"&&field==="level"&&Number.isFinite(numeric))
+          m4Parameter(t,"faderDb",numeric);
+        else if(event.type==="change"&&field==="pan"&&Number.isFinite(pan))
+          m4Parameter(t,"pan",pan);
+        if(!verifiedM4()&&t!==scope.master){
+          if(field==="level")el.value=String(t.level);
+          else if(field==="pan")el.value=String(t.pan);
+        }
         return true;
       }
       // During a native pointer drag move the approved fader *cap* only.
@@ -305,6 +387,12 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected) {
+          if(t===scope?.master&&action==="mute")
+            backend.emitEvent("arMixParameter",{parameter:"masterMute",value:!t.mute,channel:-1});
+          else m4Parameter(t,action,!t[action]);
+          return true;
+        }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
@@ -357,8 +445,15 @@
     consumeUndo() {if (!connected)return false;status("NATIVE: WIRE undo requires accepted native transaction");return true;},
     consumeDoubleClick(event,t) {
       if (!connected)return false;
-      if (event.target.classList.contains("fader"))intent("SET_FADER",t,{valueDb:0});
-      else if(event.target.classList.contains("center-pan"))intent("SET_PAN",t,{value:0});
+      if (event.target.classList.contains("fader")) {
+        if(flags.acceptedGraphConnected)intent("SET_FADER",t,{valueDb:0});
+        else if(t===scope?.master)
+          backend.emitEvent("arMixParameter",{parameter:"masterGain",value:0,channel:-1});
+        else m4Parameter(t,"faderDb",0);
+      } else if(event.target.classList.contains("center-pan")) {
+        if(flags.acceptedGraphConnected)intent("SET_PAN",t,{value:0});
+        else m4Parameter(t,"pan",0);
+      }
       else status("NATIVE: identity editor unavailable until native ACK contract");
       return true;
     },
@@ -378,13 +473,13 @@
     value:descriptor,configurable:false,writable:false
   });
   if (!connected)return;
-  // Disable physical control gestures while G0 has no accepted ChannelId graph.
-  // Presentation-only bank/selection remains available.
+  // G0 with a VERIFIED M4 native route is a real mixer: never block its
+  // fader just because universal ChannelId migration is not yet admitted.
   document.addEventListener("pointerdown",event=>{
-    if (flags.acceptedGraphConnected) return;
-    if (!event.target.closest?.(".fader-box,.center-pan")) return;
+    if(flags.acceptedGraphConnected||verifiedM4())return;
+    if(!event.target.closest?.(".fader-box,.center-pan"))return;
     event.preventDefault();event.stopImmediatePropagation();
-    status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
+    status("Choose a verified hardware IN before adjusting the mixer.");
   },true);
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
