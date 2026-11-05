@@ -9,7 +9,7 @@ The ONE public `/preview/` GUI and the matching JUCE WebView2 resource use a **d
 
 The compiler inspects the approved 18 ordered CSS owners. For matching *exact selector, property, priority and at-rule context*, it retains the effective cascade winner and omits earlier redundant declarations **from the deployed copies**. It does not add a late stylesheet, move CSS between owners, edit the accepted buttons' PNG assets or replace the UI renderer. URLs are content-addressed for browser-cache safety.
 
-On the checked Stage C implementation, build logs report **242 declarations removed, of which 89 were cross-file**. The authored CSS source still contains its historical debt; source hashes are deliberately preserved because legacy V28 source restoration tests rely on those bytes.
+The first Stage C build removed **242 declarations (89 cross-file)**. After the additional WebView2 compatibility safeguard, the final number must be read from the exact-head `css_compilation` build manifest; do not reuse the earlier count as a final result. The compiler now retains older declarations when the winning value uses `var()`, `color-mix()`, or other support-sensitive syntax, so browser-version and unset-variable fallbacks remain intact. The authored CSS source still contains its historical debt; source hashes are deliberately preserved because legacy V28 source restoration tests rely on those bytes.
 
 Two especially sensitive assets — `mixer-control-keys.css` (approved physical PNG buttons) and `mixer-wire-dots.css` — remain byte-identical even in the built output. No new `!important` overrides are introduced.
 
