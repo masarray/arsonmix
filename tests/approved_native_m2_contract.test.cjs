@@ -205,6 +205,14 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(bridge,/backend\.addEventListener\("arMixNotice"/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 MAIN WIRE unplug uses UI-to-native EdgeId and no fake graph",()=>{
+ const adapter=read("web/approved-native-bridge.js");
+ assert.match(adapter,/const edgeId=wireByUiId\.get\(op\.edgeId\)/);
+ assert.doesNotMatch(adapter,/const edgeId=uiByWireId\.get\(op\.edgeId\)/);
+ assert.match(adapter,/current\.graph\.edges\.some/);
+ assert.match(adapter,/WIRE BUS\/FX return is not admitted/);
+ assert.match(adapter,/requestPrimaryOut\(t,target\)/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");

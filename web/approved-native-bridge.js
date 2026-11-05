@@ -1398,7 +1398,10 @@
         const sourceId=t?nativeByUiId.get(t.id):null;
         const isMainConnect=(op.type==="CONNECT"||op.type==="ROUTE_ONLY") &&
           op.destId===scope?.master?.id;
-        const edgeId=uiByWireId.get(op.edgeId);
+        // WIRE gesture carries a UI edge id. wireByUiId is UI→native;
+        // uiByWireId is the inverse. The old inverse lookup always returned
+        // undefined, so unplugging an existing MAIN wire was impossible.
+        const edgeId=wireByUiId.get(op.edgeId);
         const isMainRemove=op.type==="REMOVE" && sourceId &&
           current?.admitted===true &&
           current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
@@ -1408,14 +1411,17 @@
           if(requestPrimaryOut(t,target))
             status("CH "+(m4Index(t)+1)+" WIRE → "+
               (target==="MAIN"?"MAIN":"SOURCE ONLY")+
-              " · awaiting actual native ACK");
-          else status("WIRE MAIN unavailable · routing unchanged");
+              " · native ACK/readback required");
+          else nativeToast("WIRE MAIN unavailable · verify channel and routing state");
           return true; // original Pages reducer never simulates native PCM
         }
       }
       if (!flags.acceptedGraphConnected || !current?.admitted ||
           !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")) {
-        status("NATIVE: WIRE transaction not admitted; graph unchanged");return true;
+        const reason="WIRE BUS/FX return is not admitted by the installed PCM graph";
+        status("NATIVE: "+reason+" · no audio reroute");
+        nativeToast(reason);
+        return true;
       }
       const changes=[];
       for (const op of ops) {
