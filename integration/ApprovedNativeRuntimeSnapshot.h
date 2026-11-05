@@ -139,6 +139,20 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         }
     }
     firstSound->setProperty("channelControls",verifiedControls);
+    // MAIN gain and panic MUTE are JUCE atomics on the SAME callback.
+    juce::var master;
+    if(physicalReady) {
+        double db=0.;
+        const auto muted=live.getProperty("masterMute",{});
+        if(nativeV8Number(live.getProperty("masterDb",{}),db) &&
+           std::isfinite(db)&&db>=-60.01&&db<=10.01&&muted.isBool()) {
+            auto verified=std::make_unique<juce::DynamicObject>();
+            verified->setProperty("db",db);
+            verified->setProperty("mute",muted);
+            master=juce::var(verified.release());
+        }
+    }
+    firstSound->setProperty("masterControls",master);
     // These peaks are REAL atomics from the installed M4 render callback,
     // not UI-generated meters. Zero is silence, not proof of loudspeakers.
     juce::Array<juce::var> peakL,peakR;
