@@ -148,8 +148,8 @@
   // Native-only operator controls in the EXISTING approved More menu:
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
-  let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
+  let hardware=null, inputSelect=null, routeBtn=null, mainSelect=null, mainBtn=null, armBtn=null, muteBtn=null;
+  let hardwareNote=null, pendingSourceId=0, pendingMainId=0, sourceSerial=100;
   const safeNativeCounter=x=>{
     if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
     const number=Number(x);
@@ -191,16 +191,49 @@
       }
       if(pins.some(p=>String(p.port)===before))inputSelect.value=before;
     }
+    // MAIN is patched using real enabled JUCE physical port IDs. Display
+    // ordinary stereo pairs in verified callback order, never assume 0/1.
+    if(mainSelect) {
+      const outputs=deviceOpen?d.outputEndpoints.filter(p=>
+        p.active===true && d.enabledOutputs.includes(p.port)):[];
+      const pairs=[];
+      for(let n=0;n+1<outputs.length;n+=2)
+        pairs.push({left:outputs[n],right:outputs[n+1]});
+      const pairKey=pairs.map(p=>p.left.id+"|"+p.right.id).join(";");
+      if(mainSelect.dataset.pins!==pairKey){
+        const selected=mainSelect.value;
+        mainSelect.dataset.pins=pairKey;
+        mainSelect.replaceChildren();
+        const option=document.createElement("option");
+        option.value="";option.textContent="Select MAIN hardware output";
+        mainSelect.appendChild(option);
+        for(const pair of pairs){
+          const item=document.createElement("option");
+          item.value=pair.left.port+","+pair.right.port;
+          item.textContent=pair.left.label+" / "+pair.right.label+
+            " · OUT "+(pair.left.port+1)+"/"+(pair.right.port+1);
+          mainSelect.appendChild(item);
+        }
+        if(pairs.some(p=>p.left.port+","+p.right.port===selected))
+          mainSelect.value=selected;
+      }
+      mainSelect.disabled=!deviceReady() || legacy()?.routeAccepted!==true ||
+        d.outputArmed || pendingMainId!==0;
+    }
+    if(mainBtn)mainBtn.disabled=!deviceReady() ||
+      legacy()?.routeAccepted!==true || d.outputArmed ||
+      !mainSelect?.value || pendingMainId!==0 || pendingSourceId!==0;
     inputSelect.disabled=!deviceReady();
     if(routeBtn)routeBtn.disabled=!deviceReady() ||
       inputSelect.value==="" || pendingSourceId!==0;
     if(armBtn)armBtn.disabled=!deviceReady() ||
-      legacy()?.routeAccepted!==true || d.outputArmed;
+      legacy()?.routeAccepted!==true || d.outputArmed ||
+      pendingSourceId!==0 || pendingMainId!==0;
     if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
     if(hardwareNote)hardwareNote.textContent=!deviceOpen?
       "Open Audio Setup: select a real input and output.":
       !deviceReady()?"Verify ASIO/WASAPI input/output masks.":
-      !legacy()?.routeAccepted?"Select input, PATCH CH1, then ARM output.":
+      !legacy()?.routeAccepted?"Select input, PATCH CH1, choose MAIN output, then ARM.":
       !d.outputArmed?"Input patch accepted. Reduce speaker volume before ARM.":
       "User-armed output · check physical sound and native meter.";
   }
@@ -242,6 +275,31 @@
       });
       status("NATIVE: CH1 physical input patch pending real ACK.");
     });
+    mainSelect=item("select","toolbar-select","");
+    mainSelect.setAttribute("aria-label","Verified physical MAIN L/R hardware outputs");
+    mainSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
+    mainBtn=item("button","tool","Patch MAIN L/R");
+    mainBtn.addEventListener("click",()=>{
+      const d=hardware?.device, l=legacy();
+      const epoch=safeNativeCounter(d?.epoch);
+      const revision=safeNativeCounter(l?.routingRevision);
+      const selected=mainSelect?.value?.split(",")||[];
+      const left=Number(selected[0]),right=Number(selected[1]);
+      if(!deviceReady() || l?.routeAccepted!==true || d.outputArmed ||
+         selected.length!==2 || epoch===null || revision===null ||
+         pendingMainId!==0 || !Number.isInteger(left) || !Number.isInteger(right) ||
+         left===right || !d.enabledOutputs.includes(left) ||
+         !d.enabledOutputs.includes(right)){
+        status("NATIVE: mute output and select verified physical MAIN L/R.");return;
+      }
+      pendingMainId=++sourceSerial;
+      mainBtn.disabled=true;
+      backend.emitEvent("arMixAction",{
+        action:"routingMainOutput",requestId:pendingMainId,
+        deviceEpoch:epoch,revision,left,right
+      });
+      status("NATIVE: MAIN hardware pair patch awaiting JUCE ACK.");
+    });
     armBtn=item("button","tool","Arm output");
     armBtn.addEventListener("click",()=>{
       if(!deviceReady()||legacy()?.routeAccepted!==true)return;
@@ -259,7 +317,7 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    menu.append(caption,setup,inputSelect,routeBtn,mainSelect,mainBtn,armBtn,muteBtn,hardwareNote);
     updateHardwarePanel(hardware);
   }
 
@@ -322,6 +380,15 @@
         status("NATIVE: CH1 PATCH accepted by JUCE; validating later readback.");
         controller.subscribe();
       }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
+      updateHardwarePanel(hardware);
+    });
+    backend.addEventListener("arMixMainOutputAck", ack=>{
+      if(!pendingMainId || ack?.requestId!==pendingMainId)return;
+      pendingMainId=0;
+      if(ack.ok===true){
+        status("NATIVE: MAIN hardware pair patched; verifying actual output routing.");
+        controller.subscribe();
+      }else status("NATIVE MAIN REJECTED: "+(ack?.error||"stale physical output"));
       updateHardwarePanel(hardware);
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
