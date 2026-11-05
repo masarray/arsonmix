@@ -264,7 +264,15 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    // Do not expose a second patch/ARM wizard as the normal mixer workflow.
+    // Retain hardware FAT and panic diagnostics in a collapsed expert-only
+    // section, while existing strip IN selects and routes audio in one action.
+    const advanced=document.createElement("details");
+    advanced.className="arNativeFirstSoundAdvanced";
+    const summary=document.createElement("summary");
+    summary.textContent="Advanced · hardware diagnostics";
+    advanced.append(summary,caption,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    menu.append(setup,advanced);
     updateHardwarePanel(hardware);
   }
 
