@@ -1567,18 +1567,22 @@ private:
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));
             const auto target=args.getProperty("target",juce::var()).toString();
+            const auto operation=args.getProperty("operation","SET_PRIMARY_OUT").toString();
             const auto ep=args.getProperty("deviceEpoch",juce::var());
             const auto rv=args.getProperty("revision",juce::var());
-            juce::String error="OUT: stale identity, unsupported destination or busy Show";
+            juce::String error="CHANNEL PATCH: stale identity, unsupported format/output or busy Show";
+            const bool allowed=(operation=="SET_PRIMARY_OUT" &&
+                                (target=="MAIN"||target=="NONE")) ||
+                               (operation=="SET_PROCESSING_FORMAT" &&
+                                (target=="MONO"||target=="STEREO"));
             if(requestId>0 && channel>=0 && channel<LiveDryRoutingLab::count &&
-               (target=="MAIN"||target=="NONE") &&
-               (ep.isInt()||ep.isInt64()) &&
+               allowed && (ep.isInt()||ep.isInt64()) &&
                (rv.isInt()||rv.isInt64()) &&
                !nativeShowBusy_ && !studioBackupBusy_)
                 error=engine_.repatchDryRoutingLabChannel(channel,
                     static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
                     static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
-                    "SET_PRIMARY_OUT",target);
+                    operation,target);
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("channel",channel);

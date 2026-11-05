@@ -124,6 +124,9 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
                 verified->setProperty("left",l);
                 verified->setProperty("right",r);
                 verified->setProperty("main",main);
+                const auto format=item.getProperty("channelFormat",{}).toString();
+                if(format=="MONO"||format=="STEREO")
+                    verified->setProperty("channelFormat",format);
                 verifiedChannels.add(juce::var(verified.release()));
             }
             if(!valid)verifiedChannels.clear();

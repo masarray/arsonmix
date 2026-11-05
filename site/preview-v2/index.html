@@ -601,7 +601,29 @@ function panStyle(n){const left=Math.min(50,50+n/2),right=Math.max(50,50+n/2);re
 const METER_DBFS_MIN=-60, METER_DBFS_MAX=0;
 function rangePct(v,min,max){return Math.max(0,Math.min(100,100*(Number(v)-min)/(max-min)));}
 function scaleTopPct(db,min,max){return 100-rangePct(db,min,max);}
-function faderPercent(value,isSend){return rangePct(value,-60,isSend?6:10);}
+// Console DAW taper: 0 dB at 77% travel, finer control near unity.
+// Pure display geometry only; DSP still receives exact gain in dB.
+const FADER_TAPER=Object.freeze([
+ [-60,0],[-48,15],[-36,27],[-24,39],[-12,54],[-6,65],[0,77],[6,92],[10,100]
+]);
+function faderPercent(value,isSend){
+ if(isSend)return rangePct(value,-60,6);
+ const db=Math.max(-60,Math.min(10,Number(value)));
+ for(let i=1;i<FADER_TAPER.length;i++){
+  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];
+  if(db<=hiDb)return loPct+(db-loDb)*(hiPct-loPct)/(hiDb-loDb);
+ }
+ return 100;
+}
+function faderDbFromTravelPercent(percent,isSend){
+ const p=Math.max(0,Math.min(100,Number(percent)));
+ if(isSend)return -60+66*p/100;
+ for(let i=1;i<FADER_TAPER.length;i++){
+  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];
+  if(p<=hiPct)return loDb+(p-loPct)*(hiDb-loDb)/(hiPct-loPct);
+ }
+ return 10;
+}
 function meterDbfsPercent(dbfs){return rangePct(dbfs,METER_DBFS_MIN,METER_DBFS_MAX);}
 function demoMeterDbfs(faderDb,modulation){
  // Simulated acoustic envelope in dBFS, NOT the signal-processing engine.
@@ -659,7 +681,7 @@ function displayMeterDbfs(fill,dbfs,ts,key){
 /* Safe read-only calibration probe: exposes pure scale math and a tiny demo
    snapshot for browser QA, never mutable audio state or DSP controls. */
 window.ArSonMixMeterCalibration=Object.freeze({
- scaleTopPct,faderPercent,meterDbfsPercent,demoMeterDbfs,
+ scaleTopPct,faderPercent,faderDbFromTravelPercent,meterDbfsPercent,demoMeterDbfs,
  readDemo:()=>({frame:meterFrame,gain:tracks[0]?.level??0,running:preview})
 });
 function sectionFader(t){
@@ -673,7 +695,7 @@ function sectionFader(t){
  }).join('');
  const gainScale=gainTicks.map(v=>{
   const major=v!==-6;
-  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+scaleTopPct(v,-60,gainMax)+'%"><span>'+(major?(v>0?'+'+v:v):'')+'</span></span>';
+  return '<span class="gain-tick '+(major?'major':'minor')+(v===0?' unity':'')+'" style="top:'+(100-faderPercent(v,isSend))+'%"><span>'+(major?(v>0?'+'+v:v):'')+'</span></span>';
  }).join('');
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><button type="button" class="clip-indicator '+(t.clip?'clipping':'')+'" data-action="resetClip" aria-label="Reset '+escapeHtml(t.name)+' clip latch" title="Reset latched peak indication (demo)">CLIP</button></div>'
  +'<div class="fader-workspace">'
@@ -1818,7 +1840,7 @@ function setFaderFromPointer(ev,gesture){
  if(!travel||travel.height<=0)return;
  const max=Number(input.max)||10,min=Number(input.min)||-60;
  const frac=Math.max(0,Math.min(1,(ev.clientY-travel.top)/travel.height));
- const gain=Math.round((max-(max-min)*frac)*10)/10;
+ const gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;
  input.value=String(gain);
  handleField({target:input,type:'input',altKey:!!ev.altKey});
 }
