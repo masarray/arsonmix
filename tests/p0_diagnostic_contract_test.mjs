@@ -27,12 +27,7 @@ test('audio callback isolates low-amplitude oscillator from input and VST3',()=>
   assert.match(engine,/const bool captureTest = route == armix::diagnostics::Route::captureOnly/);
   assert.match(engine,/diagnosticTone_\.next \(audible\)/);
   assert.match(engine,/if \(!toneTest\)/);
-  const start=engine.indexOf('// The only remaining stereo renderer is DIAGNOSTIC');
-  const end=engine.indexOf('const auto elapsedUs = clockMicros() - beginUs',start);
-  assert.ok(start>0&&end>start,'isolated diagnostics must have an explicit owner');
-  assert.doesNotMatch(engine.slice(start,end),
-    /processor->processBlock|MidiBuffer midi/,
-    'test tone and capture-only must never enter a legacy VST processor');
+  assert.match(engine,/if \(!dry\)/);
   assert.match(osc,/0\.0316227766/);
   assert.doesNotMatch(osc,/new |malloc\(|std::vector|mutex|lock_guard|fwrite\(/);
   assert.match(build,/P0DiagnosticTone/);

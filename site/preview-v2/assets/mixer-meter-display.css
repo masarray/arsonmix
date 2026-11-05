@@ -94,11 +94,11 @@
   border-radius:2px!important;
 }
 .console-body .strip .meter-box .meter-lane::after{
-  content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+  content:"";position:absolute;inset:0;
   background:linear-gradient(90deg,#eaffff28 0%,transparent 30%,transparent 73%,#0009 100%);
 }
 .console-body .strip .meter-box .vu-scale{color:#bfd4df!important;text-shadow:0 1px #000}
-.console-body .strip .meter-box .vu-tick span{font:9px/11px Consolas,monospace!important}
+
 .console-body .strip .meter-box .peak{
   background:linear-gradient(#381417,#12090b)!important;border:1px solid #754040!important;
   box-shadow:inset 0 1px #bd515044!important;border-radius:2px!important;
@@ -124,50 +124,37 @@
    Uses existing --lit variable for clipped signal fill, no JS or 40+ nodes. */
 .console-body .strip .meter-box .vu-bars{
  justify-content:center!important;
- gap:3px!important;
+ 
  background:#06121a!important;
  box-shadow:inset 1px 0 0 #142b35,inset -1px 0 0 #010508!important;
 }
 .console-body .strip .meter-box .meter-lane,
 .console-body .strip .meter-box.mono .meter-lane{
  box-sizing:border-box!important;
- width:6px!important;min-width:6px!important;max-width:6px!important;
- flex:0 0 6px!important;
- border:0!important;border-radius:0!important;
- background:#07141a!important;
+
+ border:0!important;
+ 
  box-shadow:inset 1px 0 0 #20303a,inset -1px 0 0 #000!important;
 }
 .console-body .strip .meter-box .meter-fill{
- left:0!important;right:0!important;
- background:linear-gradient(to top,
-   #0e9f43 0%,#3bd849 24%,#7bef40 43%,
-   #c5e936 56%,#f6d42e 69%,#ffae27 80%,
-   #ff761e 91%,#ee3028 100%)!important;
+ 
+ 
  box-shadow:none!important;filter:none!important;
  transition:none!important;
 }
 /* Individual LED's own top-face/shadow shading has 9px portrait lit area,
    2px non-emitting separator; no per-cell colored blocks. */
 .console-body .strip .meter-box .meter-lane::before{
- content:""!important;
- background:repeating-linear-gradient(to top,
-   transparent 0px,transparent 9px,#020a0f 9px,#020a0f 11px)!important;
+ 
+ 
  box-shadow:none!important;
 }
 .console-body .strip .meter-box .meter-lane::after{
- content:""!important;
- background:
-   repeating-linear-gradient(to top,
-     rgba(255,255,255,.13) 0px,rgba(255,255,255,.05) 1px,
-     transparent 3px,transparent 6px,rgba(0,0,0,.28) 9px,
-     transparent 9px,transparent 11px),
-   linear-gradient(90deg,rgba(255,255,255,.13),transparent 55%,rgba(0,0,0,.28))!important;
+ 
+ 
  box-shadow:none!important;
 }
-.console-body .strip .meter-box .peak,
-.console-body .strip .meter-box .peak.clipping{
- box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;
-}
+
 
 
 /* M1 calibrated dBFS scale: the 12px/13px ruler inset is IDENTICAL to
@@ -183,12 +170,115 @@
   width:5px;background:#cdebf3;opacity:1;
 }
 .console-body .strip .meter-box .vu-tick span{
-  left:4px;top:-5.5px;
+  /* Keep all dBFS values on one right-hand numeral baseline. */
+  left:7px;right:9px;top:-5.5px;text-align:right;
   font:500 8.5px/11px Inter,"Segoe UI",sans-serif!important;
-  font-variant-numeric:tabular-nums;letter-spacing:-.035em;
+  font-variant-numeric:lining-nums tabular-nums!important;letter-spacing:-.14em;
   white-space:nowrap;color:#bdd0d9!important;text-shadow:none!important;
 }
 .console-body .strip .meter-box .vu-tick.zero span{
   color:#f0fbff!important;font-weight:600!important;
 }
 .console-body .strip .meter-box .vu-tick.minor span{display:none!important}
+
+/* M1.1: 3-character dBFS values need ~16px of ink; the legacy 19px ruler
+   left only 15px after its tick gutter. Reallocate 2px INSIDE the original
+   51px instrument housing (30/19 → 28/21); retain LED lane widths, 0/−60
+   vertical calibration, label right edge and full meter-module footprint. */
+.console-body .strip .meter-box .vu-bars{
+  flex-basis:28px;width:28px;min-width:28px;max-width:28px;
+}
+.console-body .strip .meter-box .vu-scale{
+  flex-basis:21px;width:21px;min-width:21px;max-width:21px;
+}
+
+/* M2: keep the historic meter CSS prefix byte-identical; adjust only the
+   active owner suffix. Wider portrait LEDs read as real hardware from a
+   normal operating distance, without altering 51px housing or dBFS travel. */
+.console-body .strip .meter-box .vu-bars{gap:2px!important}
+
+
+/* M3: 70px physical LED/ruler housing, shared by Comfort, Standard,
+   Compact and Master. The 38px optical well and 30px numeral rail prevent
+   -60 dBFS clipping without moving the vertical dBFS calibration. */
+.console-body .strip .meter-box,
+.console-body[data-density="compact"] .strip .meter-box{
+ box-sizing:border-box!important;width:70px!important;min-width:70px!important;max-width:70px!important;
+ gap:2px!important;overflow:visible!important;
+}
+.console-body .strip .meter-box .vu-bars,
+.console-body[data-density="compact"] .strip .meter-box .vu-bars{
+ width:38px!important;min-width:38px!important;max-width:38px!important;flex:0 0 38px!important;
+ gap:3px!important;justify-content:center!important;
+}
+.console-body .strip .meter-box .vu-scale{
+ width:30px!important;min-width:30px!important;max-width:30px!important;flex:0 0 30px!important;
+}
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ width:10px!important;min-width:10px!important;max-width:10px!important;flex:0 0 10px!important;
+}
+/* A pair of real-looking latched red peak lamps, centered over each stereo
+   LED column. Purely presentational: no extra metering/audio work. */
+.console-body .strip .meter-box .peak,
+.console-body .strip .meter-box .peak.clipping{
+ position:absolute!important;left:0!important;top:2px!important;
+ width:38px!important;height:8px!important;right:auto!important;
+ display:flex!important;align-items:center;justify-content:center;gap:3px;
+ border:0!important;border-radius:0!important;background:none!important;
+ box-shadow:none!important;pointer-events:none!important;
+}
+.console-body .strip .meter-box .peak-led{
+ box-sizing:border-box;display:block;flex:0 0 10px;width:10px;height:7px;
+ border:1px solid #58332f;border-radius:1px;
+ background:linear-gradient(#441b1b,#1d1113);box-shadow:inset 0 1px #7b403644;
+}
+.console-body .strip .meter-box .peak.clipping .peak-led{
+ background:linear-gradient(#ff9c8a,#f2372f 55%,#a71019)!important;
+ border-color:#ff8575;box-shadow:inset 0 1px #ffd1c4!important;
+}
+
+
+/* V51 portrait segmented meter — approved external mixer photo:
+   hardware 10px lane remains exactly M3 geometry, while each optical cell
+   is 6px wide x 12px high with a 2px black separator (14px pitch).
+   All lit and held markers share one full-height dBFS gradient; no per-cell
+   DOM, no filters, no continuous CSS animation, no fake PCM. */
+.console-body .strip .meter-box .meter-lane,
+.console-body .strip .meter-box.mono .meter-lane{
+ --meter-led-ramp:linear-gradient(to top,
+   #139b3d 0%,#37d443 24%,#68ed35 43%,#cce732 62%,
+   #f1d82d 74%,#ffab22 85%,#f87824 94%,#e83e2e 100%);
+ --meter-pitch:14px;
+ background:#030b11!important;
+ border-radius:0!important;
+}
+.console-body .strip .meter-box .meter-fill{
+ left:2px!important;right:2px!important;z-index:1;
+ background:var(--meter-led-ramp)!important;
+ /* --lit is a JS-quantized fraction of whole 14px steps; never a half LED. */
+ clip-path:inset(calc(100% - var(--lit,0%)) 0 0)!important;
+}
+.console-body .strip .meter-box .meter-lane::before{
+ content:""!important;inset:0 2px!important;z-index:0;
+ background:repeating-linear-gradient(to top,
+   #26343b 0 12px,#02080d 12px 14px)!important;
+ pointer-events:none;
+}
+.console-body .strip .meter-box .meter-lane::after{
+ content:""!important;inset:0 2px!important;z-index:3;
+ background:
+   repeating-linear-gradient(to top,
+     transparent 0 12px,#02070b 12px 14px),
+   linear-gradient(90deg,#ffffff16,transparent 44%,#0008)!important;
+ pointer-events:none;
+}
+.console-body .strip .meter-box .meter-peak-hold{
+ position:absolute;inset:0 2px;z-index:4;pointer-events:none;
+ background:var(--meter-led-ramp);opacity:0;
+ clip-path:inset(calc(100% - var(--peak-extent,0px)) 0
+   calc(var(--peak-extent,0px) - 12px) 0);
+ transition:none;
+}
+/* M3 independent hardware CLIP lamps remain distinct from a moving
+   three-pixel, frequency-color-matched PEAK HOLD line inside each lane. */

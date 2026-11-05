@@ -46,7 +46,7 @@ test("GUI exposes only truthful dry device routes and acknowledged commit",()=>{
 });
 
 test("STOP-race is fail closed: all outputs are written to silence without CH1 fallback",()=>{
-  const enter=engine.indexOf("if (renderOwner ==",engine.indexOf("callbackCount_.fetch_add"));
+  const enter=engine.indexOf("if (dryRoutingLab_.active())",engine.indexOf("callbackCount_.fetch_add"));
   // Bound the entire routed branch by the first statement of the legacy
   // fallback, not by an informational comment that can change at each R0B slice.
   const end=engine.indexOf("const bool enabled = monitor_",enter);

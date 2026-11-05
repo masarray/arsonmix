@@ -23,7 +23,7 @@ def main():
   public=dst/"preview/mixer.html"
   assert public.read_bytes()==SRC.read_bytes(),"published /preview/ differs from canonical GUI"
   assert (dst/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"published WIRE style missing"
-  assert 'assets/mixer-wire-dots.css?v=v47-css-v16' in public.read_text("utf-8")
+  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
@@ -38,6 +38,13 @@ def main():
     assert abs(collapsed["height"]-27)<1.5,(width,"fold row",collapsed)
     assert abs(rail["height"]-collapsed["height"])<1.5,(width,"rail alignment",rail,collapsed)
     page.locator('.section-rail [data-section="send"]').click()
+    # WIRE-first default CH→MAIN is real. Disconnect this particular OUT
+    # using the operator UI so legacy neutral-pin physics remain testable.
+    page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+    page.locator("#wireConfigToggle").click()
+    assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+    page.locator("#wireMaster").click()
+    page.locator("#wireConfigClose").click()
     src=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
     pin=src.locator('.wire-pin')
     dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in')

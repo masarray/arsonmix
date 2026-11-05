@@ -52,7 +52,7 @@ def main():
   public=dist/"preview/mixer.html"
   assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
-  assert "assets/mixer-wire-dots.css?v=v47-css-v16" in public.read_text("utf-8")
+  assert "assets/mixer-wire-dots.css?v=v59-selected-wire-quiet" in public.read_text("utf-8")
   assert (dist/"preview/assets/mixer-wire-out-align-v48.css").read_bytes()==(ROOT/"site/preview-v2/assets/mixer-wire-out-align-v48.css").read_bytes(), "V48 alignment stylesheet missing from /preview/"
   assert "assets/mixer-wire-out-align-v48.css?v=out-center-v48" in public.read_text("utf-8")
 
@@ -133,12 +133,15 @@ def main():
     exact(points(incoming)[1],local_point(dest_pin,origin),width,"incoming socket dot mismatch")
     exact(center(dest_pin),center(dest),width,"socket dot shifted on incoming display",.32)
 
-    # A focus change to an unrelated channel removes the visible wire and
-    # returns both ring and inner dot to graphite.
+    # A focus change may hide the cable but never lies about a committed
+    # enabled route: socket remains connected while graph is unchanged.
     page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
     idle=incoming_colors(dest)
-    assert not idle["connected"] and idle["ring"]=="rgb(57, 74, 85)",(width,"idle socket not graphite",idle)
-    assert idle["center"]=="rgb(75, 83, 91)",(width,"idle socket dot not graphite",idle)
+    assert idle["connected"],(width,"focus must not remove accepted graph edge",idle)
+    assert idle["ring"]=="rgb(57, 74, 85)" and idle["center"]=="rgb(75, 83, 91)",(width,"hidden cable must leave both ring and center graphite",idle)
+    page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
+    lit=incoming_colors(dest)
+    assert lit["connected"] and lit["center"]==lit["ring"] and lit["center"]!="rgb(75, 83, 91)",(width,"focus return must restore accepted visible endpoint",lit)
     if width==1366:
      page.locator('#densitySelect').select_option(label="Compact")
      exact(center(dest_pin),center(dest),width,"compact socket no longer concentric",.32)

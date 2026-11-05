@@ -58,13 +58,13 @@ def main():
             w:getComputedStyle(el).width,h:getComputedStyle(el).height,
             filter:getComputedStyle(el).filter
         })""")
-        assert_true(capStyle['w']=='23px' and capStyle['h']=='48px' and
-                    capStyle['filter']=='none','Fader thumb is not compact/crisp')
+        assert_true(capStyle['w']=='27px' and capStyle['h']=='54px' and
+                    capStyle['filter']=='none','M2 cap must remain crisp and correctly scaled')
         track=page.locator('#tracks .strip[data-id="1"] .fader-travel')
         travel=track.evaluate("""el=>({
             top:getComputedStyle(el).top,bottom:getComputedStyle(el).bottom
         })""")
-        assert_true(travel['top']=='24px' and travel['bottom']=='24px',
+        assert_true(travel['top']=='27px' and travel['bottom']=='27px',
                     'Fader slot not expanded consistently')
         assert_true(not errors,'V22 browser errors: '+str(errors))
         # CSS MUTE follows the owner reference. SOLO/PFL keep SVG cutout keys.
@@ -94,10 +94,13 @@ def main():
         meter=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
         led=meter.evaluate("""el=>({
           width:getComputedStyle(el).width,
-          cells:getComputedStyle(el,'::before').backgroundImage
+          litWidth:getComputedStyle(el.querySelector('.meter-fill')).width,
+          cells:getComputedStyle(el,'::before').backgroundImage,
+          peak:!!el.querySelector('.meter-peak-hold')
         })""")
-        assert_true(led['width']=='6px' and '9px' in led['cells'] and '11px' in led['cells'],
-                    'LED must be portrait (6x9px with 2px spacing)')
+        assert_true(led['width']=='10px' and led['litWidth']=='6px'
+                    and '12px' in led['cells'] and '14px' in led['cells'] and led['peak'],
+                    'V51 LED must be 6x12px portrait optics with 2px gap and independent peak hold')
         # Independent state: reference MUTE cap + original SOLO/PFL lamps.
         key.click();solo.click();cue.click()
         mute_on=key.evaluate("""el=>({
@@ -230,8 +233,10 @@ def main():
         page.mouse.up()
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-node-in.is-linked').count()==1,
                     "CH8 → CH3 leftward drop failed to create link")
+        # CH08 starts with a real CH→MAIN edge; the new CH08→CH03 SEND
+        # adds a SECOND accepted outgoing edge, not a ghost or replacement.
         assert_true('⇢1' in page.locator('#tracks .strip[data-id="8"]').inner_text(),
-                    "Source count did not update after leftward drag")
+                    "Custom OUT count must exclude default MAIN")
         assert_true(page.locator('#tracks .strip[data-id="3"] .wire-gain').count()==1,
                     "Receiver wire gain control missing")
         active=page.locator('#tracks .strip[data-id="3"] .wire-pot.is-active')

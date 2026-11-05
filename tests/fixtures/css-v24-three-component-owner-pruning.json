@@ -1,0 +1,545 @@
+{
+  "milestone": "V24",
+  "baseCommit": "4a2005825bc57ef586aa452f1b29523a9be0295f",
+  "guard": "Identical entire normalized selector + enclosing at-rule + property + importance and a later exact owner winner; preserve all winning declarations, file order, no new CSS owners",
+  "ownerOrder": [
+    "mixer-fader-assembly.css",
+    "mixer-meter-display.css",
+    "mixer-fx-rack.css"
+  ],
+  "linkChanges": [
+    {
+      "old": "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70",
+      "now": "assets/mixer-fader-assembly.css?v=css-owner-v9-ruler-m3-left-70-v24-pruned"
+    },
+    {
+      "old": "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70",
+      "now": "assets/mixer-meter-display.css?v=css-owner-v9-ruler-m3-left-70-v24-pruned"
+    },
+    {
+      "old": "assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts",
+      "now": "assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v24-pruned"
+    }
+  ],
+  "htmlOld": {
+    "length": 193764,
+    "fnv": "04daa2f8"
+  },
+  "htmlCurrent": {
+    "length": 193797,
+    "fnv": "33bbfc46"
+  },
+  "owners": {
+    "mixer-fader-assembly.css": {
+      "old": {
+        "length": 22885,
+        "fnv": "1f237550",
+        "important": 214
+      },
+      "current": {
+        "length": 22213,
+        "fnv": "f3c87ac3",
+        "important": 203
+      },
+      "edits": [
+        {
+          "offset": 13415,
+          "text": "background:var(--ari-silver) center/29px 62px no-repeat!important;",
+          "kind": "declaration",
+          "selector": ".console-body .fader-travel .cap",
+          "property": "background"
+        },
+        {
+          "offset": 13524,
+          "text": ".console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/29px 62px no-repeat!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "properties": [
+            "background"
+          ]
+        },
+        {
+          "offset": 15051,
+          "text": ".console-body .strip.master .fader-travel .cap{background:var(--ari-rose) center/26px 55px no-repeat!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "properties": [
+            "background"
+          ]
+        },
+        {
+          "offset": 16359,
+          "text": "background:#050e15!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .fader-box::after",
+          "property": "background"
+        },
+        {
+          "offset": 17004,
+          "text": "width:23px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .fader-travel .cap",
+          "property": "width"
+        },
+        {
+          "offset": 17025,
+          "text": "height:48px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .fader-travel .cap",
+          "property": "height"
+        },
+        {
+          "offset": 17049,
+          "text": "background:var(--ari-silver) center/23px 48px no-repeat!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .fader-travel .cap",
+          "property": "background"
+        },
+        {
+          "offset": 17179,
+          "text": ".console-body .strip.master .fader-travel .cap{\n background:var(--ari-rose) center/23px 48px no-repeat!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "properties": [
+            "background"
+          ]
+        },
+        {
+          "offset": 17295,
+          "text": ".console-body .strip .fader-box .fader{\n top:24px!important;bottom:24px!important;\n height:calc(100% - 48px)!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip .fader-box .fader",
+          "properties": [
+            "top",
+            "bottom",
+            "height"
+          ]
+        },
+        {
+          "offset": 18188,
+          "text": "width:7px;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .gain-tick.unity::before",
+          "property": "width"
+        }
+      ],
+      "evidence": [
+        {
+          "selector": ".console-body .fader-travel .cap",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "var(--ari-silver) center/29px 62px no-repeat!important",
+          "winningValue": "var(--ari-silver) center/26px 55px no-repeat!important",
+          "losingOffset": 13415,
+          "winningOffset": 14899
+        },
+        {
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "var(--ari-rose) center/29px 62px no-repeat!important",
+          "winningValue": "var(--ari-rose) center/26px 55px no-repeat!important",
+          "losingOffset": 13571,
+          "winningOffset": 15098
+        },
+        {
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "var(--ari-rose) center/26px 55px no-repeat!important",
+          "winningValue": "var(--ari-rose) center/23px 48px no-repeat!important",
+          "losingOffset": 15098,
+          "winningOffset": 17228
+        },
+        {
+          "selector": ".console-body .strip .fader-travel .cap",
+          "mediaContext": "",
+          "property": "width",
+          "important": true,
+          "losingValue": "23px!important",
+          "winningValue": "27px!important",
+          "losingOffset": 17004,
+          "winningOffset": 19745
+        },
+        {
+          "selector": ".console-body .strip .fader-travel .cap",
+          "mediaContext": "",
+          "property": "height",
+          "important": true,
+          "losingValue": "48px!important",
+          "winningValue": "54px!important",
+          "losingOffset": 17025,
+          "winningOffset": 19766
+        },
+        {
+          "selector": ".console-body .strip .fader-travel .cap",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "var(--ari-silver) center/23px 48px no-repeat!important",
+          "winningValue": "var(--ari-silver) center/27px 54px no-repeat!important",
+          "losingOffset": 17049,
+          "winningOffset": 19790
+        },
+        {
+          "selector": ".console-body .strip.master .fader-travel .cap",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "var(--ari-rose) center/23px 48px no-repeat!important",
+          "winningValue": "var(--ari-rose) center/27px 54px no-repeat!important",
+          "losingOffset": 17228,
+          "winningOffset": 19946
+        },
+        {
+          "selector": ".console-body .strip .fader-box .fader",
+          "mediaContext": "",
+          "property": "top",
+          "important": true,
+          "losingValue": "24px!important",
+          "winningValue": "27px!important",
+          "losingOffset": 17336,
+          "winningOffset": 20092
+        },
+        {
+          "selector": ".console-body .strip .fader-box .fader",
+          "mediaContext": "",
+          "property": "bottom",
+          "important": true,
+          "losingValue": "24px!important",
+          "winningValue": "27px!important",
+          "losingOffset": 17355,
+          "winningOffset": 20111
+        },
+        {
+          "selector": ".console-body .strip .fader-box .fader",
+          "mediaContext": "",
+          "property": "height",
+          "important": true,
+          "losingValue": "calc(100% - 48px)!important",
+          "winningValue": "calc(100% - 54px)!important",
+          "losingOffset": 17379,
+          "winningOffset": 20133
+        },
+        {
+          "selector": ".console-body .strip .fader-box::after",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "#050e15!important",
+          "winningValue": "linear-gradient(to bottom,\n   #030a10 0%,#030a10 var(--fader-y,50%),\n   color-mix(in srgb,var(--track-color,#6fb4c6) 56%,#164959) calc(var(--fader-y,50%) + 1px),\n   #174354 85%,#0a222e 100%)!important",
+          "losingOffset": 16359,
+          "winningOffset": 20397
+        },
+        {
+          "selector": ".console-body .strip .gain-tick.unity::before",
+          "mediaContext": "",
+          "property": "width",
+          "important": false,
+          "losingValue": "7px",
+          "winningValue": "9px",
+          "losingOffset": 18188,
+          "winningOffset": 20658
+        }
+      ],
+      "metrics": {
+        "declarations": 12,
+        "important": 11,
+        "wholeRules": 4,
+        "partialDeclarations": 6,
+        "removedChars": 672,
+        "patches": 10
+      }
+    },
+    "mixer-meter-display.css": {
+      "old": {
+        "length": 13164,
+        "fnv": "2cd1cb78",
+        "important": 116
+      },
+      "current": {
+        "length": 12628,
+        "fnv": "3902963d",
+        "important": 105
+      },
+      "edits": [
+        {
+          "offset": 5896,
+          "text": ".console-body .strip .meter-box .vu-tick span{font:9px/11px Consolas,monospace!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip .meter-box .vu-tick span",
+          "properties": [
+            "font"
+          ]
+        },
+        {
+          "offset": 7288,
+          "text": "gap:3px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .meter-box .vu-bars",
+          "property": "gap"
+        },
+        {
+          "offset": 7538,
+          "text": "width:6px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "property": "width"
+        },
+        {
+          "offset": 7558,
+          "text": "min-width:6px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "property": "min-width"
+        },
+        {
+          "offset": 7582,
+          "text": "max-width:6px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "property": "max-width"
+        },
+        {
+          "offset": 7608,
+          "text": "flex:0 0 6px!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "property": "flex"
+        },
+        {
+          "offset": 8857,
+          "text": ".console-body .strip .meter-box .peak,\n.console-body .strip .meter-box .peak.clipping{\n box-shadow:inset 0 1px 0 rgba(255,255,255,.16)!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip .meter-box .peak, .console-body .strip .meter-box .peak.clipping",
+          "properties": [
+            "box-shadow"
+          ]
+        },
+        {
+          "offset": 10909,
+          "text": ".console-body .strip .meter-box .meter-lane,\n.console-body .strip .meter-box.mono .meter-lane{\n width:8px!important;min-width:8px!important;max-width:8px!important;\n flex:0 0 8px!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "properties": [
+            "width",
+            "min-width",
+            "max-width",
+            "flex"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "selector": ".console-body .strip .meter-box .vu-tick span",
+          "mediaContext": "",
+          "property": "font",
+          "important": true,
+          "losingValue": "9px/11px Consolas,monospace!important",
+          "winningValue": "500 8.5px/11px Inter,\"Segoe UI\",sans-serif!important",
+          "losingOffset": 5942,
+          "winningOffset": 9711
+        },
+        {
+          "selector": ".console-body .strip .meter-box .vu-bars",
+          "mediaContext": "",
+          "property": "gap",
+          "important": true,
+          "losingValue": "3px!important",
+          "winningValue": "2px!important",
+          "losingOffset": 7288,
+          "winningOffset": 10890
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "width",
+          "important": true,
+          "losingValue": "6px!important",
+          "winningValue": "8px!important",
+          "losingOffset": 7538,
+          "winningOffset": 11005
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "min-width",
+          "important": true,
+          "losingValue": "6px!important",
+          "winningValue": "8px!important",
+          "losingOffset": 7558,
+          "winningOffset": 11025
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "max-width",
+          "important": true,
+          "losingValue": "6px!important",
+          "winningValue": "8px!important",
+          "losingOffset": 7582,
+          "winningOffset": 11049
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "flex",
+          "important": true,
+          "losingValue": "0 0 6px!important",
+          "winningValue": "0 0 8px!important",
+          "losingOffset": 7608,
+          "winningOffset": 11075
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "width",
+          "important": true,
+          "losingValue": "8px!important",
+          "winningValue": "10px!important",
+          "losingOffset": 11005,
+          "winningOffset": 12058
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "min-width",
+          "important": true,
+          "losingValue": "8px!important",
+          "winningValue": "10px!important",
+          "losingOffset": 11025,
+          "winningOffset": 12079
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "max-width",
+          "important": true,
+          "losingValue": "8px!important",
+          "winningValue": "10px!important",
+          "losingOffset": 11049,
+          "winningOffset": 12104
+        },
+        {
+          "selector": ".console-body .strip .meter-box .meter-lane, .console-body .strip .meter-box.mono .meter-lane",
+          "mediaContext": "",
+          "property": "flex",
+          "important": true,
+          "losingValue": "0 0 8px!important",
+          "winningValue": "0 0 10px!important",
+          "losingOffset": 11075,
+          "winningOffset": 12129
+        },
+        {
+          "selector": ".console-body .strip .meter-box .peak, .console-body .strip .meter-box .peak.clipping",
+          "mediaContext": "",
+          "property": "box-shadow",
+          "important": true,
+          "losingValue": "inset 0 1px 0 rgba(255,255,255,.16)!important",
+          "winningValue": "none!important",
+          "losingOffset": 8945,
+          "winningOffset": 12669
+        }
+      ],
+      "metrics": {
+        "declarations": 11,
+        "important": 11,
+        "wholeRules": 3,
+        "partialDeclarations": 5,
+        "removedChars": 536,
+        "patches": 8
+      }
+    },
+    "mixer-fx-rack.css": {
+      "old": {
+        "length": 6635,
+        "fnv": "f7e9e469",
+        "important": 65
+      },
+      "current": {
+        "length": 6398,
+        "fnv": "8349a2c4",
+        "important": 62
+      },
+      "edits": [
+        {
+          "offset": 2870,
+          "text": ".console-body .strip .fx-section{background:#11222c!important}",
+          "kind": "rule",
+          "selector": ".console-body .strip .fx-section",
+          "properties": [
+            "background"
+          ]
+        },
+        {
+          "offset": 2968,
+          "text": "background:linear-gradient(#1f303a,#22333c)!important;",
+          "kind": "declaration",
+          "selector": ".console-body .strip .fx-section",
+          "property": "background"
+        },
+        {
+          "offset": 4466,
+          "text": ".console-body .strip .fx-section{\n  background:linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important;\n}",
+          "kind": "rule",
+          "selector": ".console-body .strip .fx-section",
+          "properties": [
+            "background"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "selector": ".console-body .strip .fx-section",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "#11222c!important",
+          "winningValue": "linear-gradient(#1f303a,#22333c)!important",
+          "losingOffset": 2903,
+          "winningOffset": 2968
+        },
+        {
+          "selector": ".console-body .strip .fx-section",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "linear-gradient(#1f303a,#22333c)!important",
+          "winningValue": "linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important",
+          "losingOffset": 2968,
+          "winningOffset": 4502
+        },
+        {
+          "selector": ".console-body .strip .fx-section",
+          "mediaContext": "",
+          "property": "background",
+          "important": true,
+          "losingValue": "linear-gradient(90deg,#172a35,#253943 9%,#243741 82%,#162a35)!important",
+          "winningValue": "var(--v13-insert)!important",
+          "losingOffset": 4502,
+          "winningOffset": 5368
+        }
+      ],
+      "metrics": {
+        "declarations": 3,
+        "important": 3,
+        "wholeRules": 2,
+        "partialDeclarations": 1,
+        "removedChars": 237,
+        "patches": 3
+      }
+    }
+  },
+  "totals": {
+    "removedCssChars": 1445,
+    "removedDeclarations": 26,
+    "removedImportant": 25,
+    "removedWholeRules": 9,
+    "newStylesheets": 0,
+    "modifiedJsFiles": 0,
+    "changedEngineFiles": 0
+  }
+}

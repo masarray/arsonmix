@@ -58,8 +58,20 @@ $gitSha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
     throw "Cannot attest packaged source Git commit"
 }
+# Refuse a valid PE/CTest artifact which embeds the WRONG browser renderer.
+# This is the source/asset attestation for the exact approved Pages GUI.
+$approvedGuiDir = Join-Path $BuildDir "approved_gui"
+& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+if ($LASTEXITCODE -ne 0) { throw "APPROVED GUI PROVENANCE MISMATCH: generated bundle differs from Pages" }
+$approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
+$approvedGui = Get-Content -LiteralPath $approvedGuiManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($approvedGui.authoritativePagesRoute -ne "/preview/" -or
+    $approvedGui.authoritativePagesOutput -ne "preview/index.html" -or
+    $approvedGui.adapterState -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM") {
+    throw "Native GUI bundle does not match approved Pages renderer and truthful M1 status"
+}
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$exeName = "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe"
+$exeName = "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $destination = Join-Path $OutputDir $exeName
 Copy-Item -LiteralPath $app -Destination $destination -Force
 $readme = "README.md"
@@ -77,9 +89,9 @@ Copy-Item -LiteralPath $fatGuide -Destination (Join-Path $OutputDir "HARDWARE_FA
 $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
     sourceCommit = $gitSha
-    gui = "APPROVED SINGLE LIVE CONSOLE · NATIVE SNAPSHOT ONLY · UNIVERSAL FEATURES GATED"
-    engine = "CHANNELID_CH11_NATIVE_PCM__LEGACY_10CH4AUX_COMPAT__HARDWARE_FAT_UNQUALIFIED"
-    nativeDSP = "NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL"
+    gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
+    engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__HARDWARE_FAT_UNQUALIFIED"
+    nativeDSP = "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK"
     storageMode = "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE"
     guiExeBytes = $appBytes
     guiExeMinimumBytes = $minimumGuiExeBytes
@@ -93,15 +105,17 @@ $manifest = [ordered]@{
     peFormat = "PE32+"
     peSubsystem = "WINDOWS_GUI (2)"
     exeSha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-    # Production runtime is the approved Console; legacy index is no longer the WebView2 root.
-    consoleNativeHtmlSha256 = (Get-FileHash -LiteralPath "web/console-native.html" -Algorithm SHA256).Hash.ToLowerInvariant()
-    consoleNativeCssSha256 = (Get-FileHash -LiteralPath "web/console-native.css" -Algorithm SHA256).Hash.ToLowerInvariant()
-    consoleNativeJsSha256 = (Get-FileHash -LiteralPath "web/console-native.js" -Algorithm SHA256).Hash.ToLowerInvariant()
-    activeGuiEntrypoint = "web/console-native.html__JUCE_BINARYDATA_ROOT"
-    guiSource = "web/console-native.html + web/console-native.css + web/console-native.js (JUCE BinaryData)"
-    nativeConsoleOnly = $true
-    retiredUiEmbedded = $false
-    guiCalibration = "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS"
+    approvedGuiRoute = $approvedGui.authoritativePagesRoute
+    approvedGuiOutput = $approvedGui.authoritativePagesOutput
+    approvedGuiCanonicalSource = $approvedGui.canonicalSource
+    approvedGuiCanonicalSha256 = $approvedGui.canonicalSourceSha256
+    approvedGuiPagesSha256 = $approvedGui.approvedPagesHtmlSha256
+    approvedGuiNativeHtmlSha256 = $approvedGui.nativeHtmlSha256
+    approvedGuiManifestSha256 = (Get-FileHash -LiteralPath $approvedGuiManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    approvedGuiResourceCount = @($approvedGui.files).Count
+    approvedGuiSource = "site/preview-v2 DOM + site/preview-buttons approved PNG skin (deterministic JUCE BinaryData)"
+    approvedGuiAdapterStatus = "SCAFFOLD_ONLY__NOT_LIVE_PCM"
+    guiCalibration = "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY"
     fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }

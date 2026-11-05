@@ -19,7 +19,8 @@ MANIFEST=ROOT/"tests/fixtures/css-v12-removed-declarations.json"
 def source_baseline():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["version"]=="v12"
-    current=HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    current,_=restore_v16_source()
     previous, original_chrome=reconstruct_previous()
     matches=list(re.finditer(r"<style>(.*?)</style>",previous,re.S))
     assert len(matches)==3
@@ -55,7 +56,8 @@ def source_baseline():
     # temporary baseline so Chromium cannot accidentally load the newer V14 asset.
     chrome_link='<link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-owner-v11">'
     assert old.count(chrome_link)==1
-    old=old.replace(chrome_link,"<style>"+original_chrome+"</style>")
+    from gui_m3_compat import suffix
+    old=old.replace(chrome_link,"<style>"+original_chrome+suffix("chrome")[1]+"</style>")
     other_owners={name:css for name,css in restore_previous_owners().items()
                   if name!="mixer-chrome-material.css"}
     old=restore_as_inline(old,other_owners)

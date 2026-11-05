@@ -15,14 +15,17 @@ from pages_css_architecture_v11_smoke import HTML, check, PROPS
 
 ROOT=Path(__file__).resolve().parents[1]
 MANIFEST=ROOT/"tests/fixtures/css-v13-owner-removals.json"
-# Independently fingerprint the approved current owner tails (V18 + M1).
+# Independently fingerprint the approved current owner tails (GUI M1 + CSS V17).
 # The historic V13 prefix, declaration-removal ledger and baseline parity
 # remain exact; changing the fader/meter ruler deliberately re-approves ONLY
 # the owned suffix fingerprints, not the historical owner source.
 V18_OWNER_TAILS={
+    "mixer-section-controls.css":(1017,"f950adfc"), # V19 exact toolbar tail
     "mixer-pan-controls.css":(294,"01ccf01a"),
-    "mixer-fader-assembly.css":(971,"67b71c22"),
-    "mixer-meter-display.css":(993,"2fec79b8"),
+    "mixer-fader-assembly.css":(5239,"cb988af4"),
+    "mixer-meter-display.css":(4159,"94c0c481"),
+    "mixer-plugin-browser.css":(4285,"1ce2ede9"), # V17 exact appended owner suffix
+    "mixer-fx-rack.css":(1068,"a5d72d84"), # M3 inert + Add FX row
 }
 def tail_fingerprint(text):
     h=2166136261
@@ -67,6 +70,10 @@ def restore_baseline():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert manifest["milestone"]=="V13"
     html=HTML.read_text(encoding="utf-8")
+    # V13 suffix witnesses are immutable; recover the exact V23 CSS owners
+    # before V24 removed their provably shadowed declarations.
+    from css_v24_restore import reconstruct as restore_pre_v24
+    _,v23_owners=restore_pre_v24()
     temporary=[]
     saved=0
     removed_imp=0
@@ -74,7 +81,10 @@ def restore_baseline():
         for name,record in manifest["files"].items():
             assert "/" not in name and name.endswith(".css")
             path=HTML.parent/"assets"/name
-            current=path.read_text(encoding="utf-8")
+            from css_v18_restore import reconstruct as restore_previous_chrome,manifest as v18_manifest
+            current=(restore_previous_chrome()[1] if name=="mixer-chrome-material.css"
+                     else v23_owners[name] if name in v23_owners
+                     else path.read_text(encoding="utf-8"))
             original=current[:record["afterSize"]]
             tail=current[record["afterSize"]:]
             expected_tail=V18_OWNER_TAILS.get(name,(0,"811c9dc5"))
@@ -95,7 +105,20 @@ def restore_baseline():
             with tf:
                 # The current owner suffix must exist on BOTH compared pages. Only the
                 # original V13 removal history differs in these reconstructions.
-                tf.write(restored+tail)
+                # Keep V18 moved material before historical V13 Chrome source.
+                prefix=(v18_manifest()["prefix"] if name=="mixer-chrome-material.css" else "")
+                from css_v19_restore import manifest as v19_manifest
+                v19_suffix=(v19_manifest()["movedChromeSuffix"] if name=="mixer-chrome-material.css" else "")
+                from css_v21_restore import manifest as v21_manifest
+                v21_suffix=(v21_manifest()["sourceInlinePrefix"] if name=="mixer-chrome-material.css" else "")
+                from gui_m3_compat import suffix
+                m3_tail=(suffix("chrome")[1] if name=="mixer-chrome-material.css" else "")
+                # Retain exact relocated V22 material in BOTH comparison pages.
+                from css_v22_restore import manifest as v22_manifest
+                v22=v22_manifest() if name=="mixer-chrome-material.css" else None
+                v22_material=(v22["sourceInlineSlice"].replace(v22["deadEmptyRule"],"",1)
+                              if v22 is not None else "")
+                tf.write(prefix+restored+tail+v19_suffix+v21_suffix+v22_material+m3_tail)
             temporary.append(Path(tf.name))
             search=f"assets/{name}?v="
             assert html.count(search)==1,name

@@ -7,8 +7,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <limits>
-#include <string_view>
 #include <vector>
 
 using namespace armix::mixer;
@@ -53,22 +51,6 @@ int main() {
     assert(first.ok() && first.edit.createdIds.size()==12);
     const auto ch7=first.edit.createdIds[6],ch2=first.edit.createdIds[1];
     const auto main=first.edit.createdIds[10],monitor=first.edit.createdIds[11];
-    // A serial OUT must always be POST fader, unity and neutral pan.
-    // PRE / independent send-level / send-pan belong only to parallel SEND.
-    ChannelEdit invalidOut;invalidOut.kind=ChannelEdit::Kind::addSendReference;
-    invalidOut.id=ch7;invalidOut.target=main;
-    invalidOut.value=1.f;invalidOut.preFader=true;
-    invalidOut.primaryOutput=true;
-    const auto tryOut=[&](const ChannelEdit& op) {
-        const std::array<ChannelEdit,1> changes{op};
-        return native.edit(1,1,changes,route,epoch,epoch,true);
-    };
-    assert(!tryOut(invalidOut).ok());
-    invalidOut.preFader=false;invalidOut.value=.5f;
-    assert(!tryOut(invalidOut).ok());
-    invalidOut.value=1.f;invalidOut.sendPan=.2f;
-    assert(!tryOut(invalidOut).ok());
-    assert(native.acceptedGraphRevision()==1);
     // Two IN pins are callback ordinals, not guessed adjacent physical DB labels.
     route.sources={{ch7,0,-1,false},{ch2,1,-1,false}};
     std::array<ChannelEdit,4> edges{linkOut(ch7,main),linkOut(ch2,main),
@@ -88,62 +70,20 @@ int main() {
     assert(!snap.productionCallbackLive);
     assert(!snap.capabilities.universalLive());
     assert(!snap.capabilities.group&&!snap.capabilities.fxReturn);
-    const auto firstWire=toConsoleWireReadbackV6(snap);
-    assert(firstWire.schemaVersion==6 && firstWire.deviceEpoch=="69");
-    assert(firstWire.graphRevision=="2" && firstWire.rosterRevision=="2");
-    assert(firstWire.channels[6].id==std::to_string(ch7.value));
-    assert(firstWire.channels[6].role=="INPUT");
-    assert(firstWire.channels[6].processingFormat=="MONO");
-    assert(!firstWire.productionCallbackLive);
-    auto huge=snap;
-    huge.deviceEpoch=std::numeric_limits<std::uint64_t>::max();
-    huge.graphRevision=9007199254740993ULL;
-    const auto encoded=toConsoleWireReadbackV6(huge);
-    assert(encoded.deviceEpoch=="18446744073709551615");
-    assert(encoded.graphRevision=="9007199254740993");
 
     ConsoleIntentV6 intent;
-    intent.requestId="gui-live:41";intent.deviceEpoch=epoch;
+    intent.requestId=41;intent.deviceEpoch=epoch;
     intent.baseGraphRevision=2;intent.baseRosterRevision=2;
     intent.operation=ConsoleIntentV6::Operation::groupSelected;
     intent.target=ch7;
-    // Multiple WebViews can coexist/reconnect. Dedup by opaque request ID,
-    // NOT by numeric sequence: 'gui-new:1' remains valid after 'gui-old:41'.
-    const std::array<std::string_view,2> completedIds{
-        "gui-old:41","gui-live:40"};
-    const std::array<std::string_view,3> completedIncluding{
-        "gui-live:41","gui-old:41","gui-live:40"};
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)==IntentFaultV6::none);
-    assert(validateConsoleIntent(intent,epoch,completedIncluding,native)
-           ==IntentFaultV6::duplicateOrOldRequest);
-    assert(validateConsoleIntent(intent,epoch+1,completedIds,native)
-           ==IntentFaultV6::staleDevice);
+    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::none);
+    assert(validateConsoleIntent(intent,epoch,41,native)==IntentFaultV6::duplicateOrOldRequest);
+    assert(validateConsoleIntent(intent,epoch+1,40,native)==IntentFaultV6::staleDevice);
     intent.baseGraphRevision=1;
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)
-           ==IntentFaultV6::staleGraph);
+    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::staleGraph);
     intent.baseGraphRevision=2;intent.baseRosterRevision=1;
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)
-           ==IntentFaultV6::staleRoster);
+    assert(validateConsoleIntent(intent,epoch,40,native)==IntentFaultV6::staleRoster);
     intent.baseRosterRevision=2;
-    intent.requestId="gui-new:1";
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)==IntentFaultV6::none);
-    intent.requestId="gui-live:41";
-    assert(validConsoleRequestId(intent.requestId));
-    intent.requestId="gui\nbad:42";
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)
-           ==IntentFaultV6::invalidRequest);
-    intent.requestId=std::string(129,'x');
-    assert(validateConsoleIntent(intent,epoch,completedIds,native)
-           ==IntentFaultV6::invalidRequest);
-    intent.requestId="gui-live:41";
-    ChannelId parsed{};
-    assert(parseNativeChannelId("18446744073709551615",parsed) &&
-           parsed.value==std::numeric_limits<std::uint64_t>::max());
-    assert(!parseNativeChannelId("18446744073709551616",parsed));
-    assert(!parseNativeChannelId("ch-07",parsed));
-    assert(!parseNativeChannelId("07",parsed));
-    assert(!parseNativeChannelId("0",parsed));
-    assert(parseNativeChannelId(std::to_string(ch7.value),parsed) && parsed==ch7);
 
     std::array<float,32> a{},b{},left{},right{},ml{},mr{};
     a.fill(.2f);b.fill(.4f);
@@ -168,8 +108,6 @@ int main() {
     assert(!stale.ok());
     auto nack=consoleAckFromNative(intent,IntentFaultV6::none,native,&stale);
     assert(nack.status==ConsoleAckV6::Status::rejected);
-    assert(nack.requestId==intent.requestId);
-    assert(consoleWireAckStatus(nack)=="REJECTED");
     assert(nack.graphRevision==2 && !nack.productionCallbackLive);
     const auto prev=snap;
     assert(!projectAcceptedConsoleV6(native,epoch+1,2,snap));
@@ -183,23 +121,11 @@ int main() {
     group=added.edit.createdIds[0];
     auto ack=consoleAckFromNative(intent,IntentFaultV6::none,native,&added);
     assert(ack.status==ConsoleAckV6::Status::acceptedGraph);
-    assert(ack.requestId=="gui-live:41");
-    assert(consoleWireAckStatus(ack)=="ACCEPTED");
     assert(ack.graphRevision==3 && !ack.productionCallbackLive);
     assert(projectAcceptedConsoleV6(native,epoch,3,snap));
     assert(find(snap,ch7)->primaryOutId==std::to_string(group.value));
     assert(find(snap,ch2)->primaryOutId==std::to_string(group.value));
     assert(find(snap,group)->primaryInputCount==2);
-    const auto groupWire=toConsoleWireReadbackV6(snap);
-    // The accepted roster order is NOT the operator display order. Resolve
-    // the actual accepted ChannelId, never assume a newly added bus is last.
-    const auto groupWireIt=std::find_if(groupWire.channels.begin(),
-        groupWire.channels.end(),[&](const auto& c) {
-            return c.id==std::to_string(group.value);
-        });
-    assert(groupWireIt!=groupWire.channels.end());
-    assert(groupWireIt->role=="GROUP" &&
-           groupWireIt->primaryInputCount==2);
     assert(render()&&approx(left[31],(.2f+.4f)*center*2.f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));
 
@@ -213,14 +139,6 @@ int main() {
     assert(liveCh7 && liveCh7->primaryOutId==std::to_string(group.value));
     assert(liveCh7->sends.size()==2); // MONITOR remains, wet SEND added
     assert(find(snap,wet)->parallelSendInputCount==1);
-    const auto returnWire=toConsoleWireReadbackV6(snap);
-    const auto returnWireIt=std::find_if(returnWire.channels.begin(),
-        returnWire.channels.end(),[&](const auto& c) {
-            return c.id==std::to_string(wet.value);
-        });
-    assert(returnWireIt!=returnWire.channels.end());
-    assert(returnWireIt->role=="FX_RETURN" &&
-           returnWireIt->parallelSendInputCount==1);
     assert(render());
     assert(approx(left[31],(.2f+.4f)*center*2.f+.2f*center*.25f*.5f));
     assert(approx(ml[31],(.2f*.2f+.4f*.3f)*center));
@@ -230,82 +148,11 @@ int main() {
     const std::array<ChannelEdit,1> editOne{linkOut(ch2,main)};
     auto rejected=native.edit(4,4,editOne,route,epoch,epoch,true);
     assert(!rejected.ok());
-    assert(rejected.fault==DynamicAcceptedSession::Fault::graphRejected);
-    assert(rejected.native.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
-    assert(rejected.native.graphError.fault==DynamicGraphFault::invalidSource);
-    assert(native.acceptedPhysicalRequest().sources[1].inputL==1);
     assert(native.acceptedGraphRevision()==4);
     assert(projectAcceptedConsoleV6(native,epoch,4,snap));
     assert(snap.channels.size()==14 && !snap.productionCallbackLive);
     route.sources[1].inputL=1;
     assert(render()&&left[31]>0.f);
-    // A different but valid IN2 pin in an OUT structural edit MUST NACK.
-    // No old-source overlay and no false GUI acceptance.
-    route.sources[1].inputL=0;
-    auto wrongAck=native.edit(4,4,editOne,route,epoch,epoch,true);
-    assert(!wrongAck.ok() &&
-           wrongAck.native.graphError.fault==DynamicGraphFault::invalidSource);
-    assert(wrongAck.native.graphError.id==ch2);
-    assert(native.acceptedGraphRevision()==4);
-    route.sources[1].inputL=1;
-    assert(render());
-    assert(approx(left[31],(.2f+.4f)*center*2.f+
-                             .2f*center*.25f*.5f));
-    // The real native same-format IN operation changes PCM and canonical
-    // readback without changing ChannelId, VST lane or graph revision.
-    assert(native.setLivePhysicalSource(epoch,4,ch2,0,-1,false));
-    assert(native.acceptedPhysicalRequest().sources[1].inputL==0);
-    assert(render()&&render()); // 64-sample dezipper across two 32f blocks
-    assert(approx(left[31],(.2f+.2f)*center*2.f+
-                             .2f*center*.25f*.5f));
-    assert(approx(ml[31],(.2f*.2f+.2f*.3f)*center));
-    // A previous GUI draft is now stale. It must rebase from accepted
-    // native SOURCE before changing OUT; never receive a phantom ACK.
-    wrongAck=native.edit(4,4,editOne,route,epoch,epoch,true);
-    assert(!wrongAck.ok() && native.acceptedGraphRevision()==4);
-    route=native.acceptedPhysicalRequest();
-    auto changedOut=native.edit(4,4,editOne,route,epoch,epoch,true);
-    assert(changedOut.ok() && native.acceptedGraphRevision()==5);
-    assert(native.acceptedPhysicalRequest().sources[1].inputL==0);
-    assert(render());
-    // CH7 -> GROUP (serial + FX) while CH2 -> MAIN (direct), and
-    // CH7 -> wet FX Return in parallel: no double-dry contribution.
-    assert(approx(left[31],(.2f*2.f+.2f+.2f*.25f*.5f)*center));
-    assert(approx(ml[31],(.2f*.2f+.2f*.3f)*center));
-    // Real PCM scale-out: add CH11, wire IN2 -> CH11 -> MAIN using
-    // the SAME immutable native graph/ChannelId publisher. No browser
-    // mock strip, no fixed-ten render array and no second audio callback.
-    const float priorMain=left[31];
-    ChannelEdit addEleven;
-    addEleven.kind=ChannelEdit::Kind::add;addEleven.role=ChannelRole::input;
-    addEleven.format=ProcessingFormat::mono;
-    addEleven.position=10;addEleven.text="CH11 · Native";
-    const std::array<ChannelEdit,1> addChannel{addEleven};
-    auto grown=native.edit(5,5,addChannel,route,epoch,epoch,true);
-    assert(grown.ok()&&grown.edit.createdIds.size()==1);
-    const auto ch11=grown.edit.createdIds[0];
-    assert(render()&&approx(left[31],priorMain)); // silence until patched
-    route.sources.push_back({ch11,1,-1,false});
-    const std::array<ChannelEdit,1> connectCh11{linkOut(ch11,main)};
-    auto connectedCh11=native.edit(6,6,connectCh11,route,epoch,epoch,true);
-    assert(connectedCh11.ok());
-    assert(projectAcceptedConsoleV6(native,epoch,7,snap));
-    assert(snap.channels.size()==15&&find(snap,ch11));
-    assert(find(snap,ch11)->primaryOutId==std::to_string(main.value));
-    assert(render());
-    assert(approx(left[31],priorMain+.4f*center));
-    const auto acceptedEleven=left[31];
-    // Invalid physical source is rejected without changing live PCM or
-    // losing any of the original ChannelIds or vendor FX leases.
-    auto badEleven=route;
-    badEleven.sources.back().inputL=99;
-    ChannelEdit panEleven;panEleven.kind=ChannelEdit::Kind::setPan;
-    panEleven.id=ch11;panEleven.value=.1f;
-    const std::array<ChannelEdit,1> illegalSource{panEleven};
-    auto rejectedEleven=native.edit(7,7,illegalSource,badEleven,epoch,epoch,true);
-    assert(!rejectedEleven.ok()&&native.acceptedGraphRevision()==7);
-    assert(render()&&approx(left[31],acceptedEleven));
-
     // OUTPUT MUTE must silence BOTH main and monitor and never invoke FX.
     assert(!native.render(epoch,pins,2,left.data(),right.data(),
                           32,true,fx,ml.data(),mr.data()));

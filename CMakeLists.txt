@@ -16,10 +16,37 @@ juce_add_gui_app(ARMixConsole
     NEEDS_WEBVIEW2 TRUE
     NEEDS_CURL FALSE)
 
+# The approved operator GUI is generated from the EXACT Pages sources at
+# configure time. Never compile legacy web/index.html or console-native.html.
+# User-approved /preview/ iframe uses preview-v2 DOM + PNG-button variant.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(ARMIX_APPROVED_GUI_DIR "${CMAKE_CURRENT_BINARY_DIR}/approved_gui")
+file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-v2/*"
+    "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-buttons/assets/*")
+list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARMIX_APPROVED_GUI_SOURCE_INPUTS})
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
+            --out "${ARMIX_APPROVED_GUI_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE ARMIX_GUI_BUNDLE_STATUS
+    OUTPUT_VARIABLE ARMIX_GUI_BUNDLE_LOG
+    ERROR_VARIABLE ARMIX_GUI_BUNDLE_ERROR)
+if (NOT ARMIX_GUI_BUNDLE_STATUS EQUAL 0)
+    message(FATAL_ERROR "Approved Pages GUI native bundle failed: ${ARMIX_GUI_BUNDLE_ERROR}")
+endif()
+message(STATUS "${ARMIX_GUI_BUNDLE_LOG}")
+file(GLOB_RECURSE ARMIX_APPROVED_GUI_BINARIES CONFIGURE_DEPENDS
+    "${ARMIX_APPROVED_GUI_DIR}/assets/*")
+list(SORT ARMIX_APPROVED_GUI_BINARIES)
 juce_add_binary_data(ARMixAssets SOURCES
-    web/console-native.html web/console-native.css web/console-native.js)
+    "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES})
+target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/core/NativeRenderAuthority.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -77,6 +104,14 @@ if(BUILD_TESTING)
   add_test(NAME ConsoleV6NativeAcceptedSnapshotAndGoldenPCM COMMAND ARMixConsoleBridgeV6Tests)
   # Existing Windows build target pulls in this test without a second workflow.
   add_dependencies(ARMixMixerRoutingTests ARMixConsoleBridgeV6Tests)
+  # M3-B INTEGRATOR-only readback serialization of real ChannelId PCM.
+  # Never installs a second callback, renderer or fake live source.
+  juce_add_console_app(ARMixNativeV8ProjectionTests PRODUCT_NAME "ArSonMix Native V8 Readback Projection Tests")
+  target_sources(ARMixNativeV8ProjectionTests PRIVATE tests/approved_native_v8_projection_test.cpp integration/ApprovedNativeV8Projection.h integration/ApprovedNativeControlIntent.h integration/ApprovedNativeRuntimeSnapshot.h)
+  target_link_libraries(ARMixNativeV8ProjectionTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
+  add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)

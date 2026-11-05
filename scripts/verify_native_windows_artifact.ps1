@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $expected = @(
-    "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe",
+    "ArSonMix-GUI10CH-P012-Windows-x64.exe",
     "BUILD_PROVENANCE.json",
     "HARDWARE_FAT_GUIDE.md",
     "README.md",
@@ -33,26 +33,13 @@ if (@(Compare-Object -ReferenceObject $expected -DifferenceObject $actual).Count
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-# The first truly approved Console runtime must be proven INSIDE the shipped EXE,
-# not merely shipped alongside an old demo or hidden in unused assets.
-if ($manifest.activeGuiEntrypoint -ne "web/console-native.html__JUCE_BINARYDATA_ROOT" -or
-    $manifest.nativeConsoleOnly -ne $true -or $manifest.retiredUiEmbedded -ne $false) {
-    throw "STALE PRODUCT GUI: active WebView2 entrypoint not approved"
-}
-$nativeSource = [System.IO.File]::ReadAllText(
-    (Resolve-Path -LiteralPath "src/Main.cpp").Path,[Text.Encoding]::UTF8)
-if ($nativeSource -notmatch 'data = BinaryData::consolenative_html' -or
-    $nativeSource -match 'data = BinaryData::index_html') {
-    throw "STALE PRODUCT GUI: native / entrypoint still serves retired HTML"
-}
-
 # App-only ZIP does not ship an untracked dynamic WebView2Loader.dll.
 if ($manifest.webView2LoaderMode -ne "JUCE_WEBVIEW2_LOADER_STATIC_LINKED_V1" -or
     $manifest.guiStartupVerification -ne "WEBVIEW2_PREFLIGHT_AND_AR_MIX_GUI_READY_HANDSHAKE") {
     throw "Missing Windows WebView2 startup / static loader provenance"
 }
-if ($manifest.nativeDSP -ne "NATIVE_CHANNELID_CH11_DYNAMIC_INPUT__10CH4AUX_COMPAT_FALLBACK__NOT_FULL_UNIVERSAL") {
-    throw "Native mixer routing provenance is not the admitted ChannelId/compatibility graph"
+if ($manifest.nativeDSP -ne "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK") {
+    throw "Native mixer routing provenance is not the current 10CH/4AUX production graph"
 }
 if ($manifest.storageMode -ne "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE") {
     throw "Public ZIP missing portable workspace mode provenance"
@@ -62,7 +49,7 @@ if ($portableMarker -ne "ARSONMIX_PORTABLE_WORKSPACE_V1") { throw "Invalid porta
 if (Test-Path -LiteralPath (Join-Path $OutputDir "Studio")) {
     throw "Public artifact MUST NOT bundle user-specific plugins, presets or sessions"
 }
-$exePath = Join-Path $OutputDir "ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe"
+$exePath = Join-Path $OutputDir "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $exePath).Path)
 if ($bytes.Length -lt 4MB) { throw "REJECT: suspiciously small executable ($($bytes.Length) bytes)" }
 if ($bytes.Length -ne $manifest.guiExeBytes) { throw "Mismatch: actual EXE size and recorded size" }
@@ -79,65 +66,80 @@ $sha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
     throw "Distribution manifest Git sourceCommit does not match checkout"
 }
-# Verify the exact full resource text shipped by JUCE BinaryData, not merely
-# hashes recorded next to an unrelated executable. This catches packaging an
-# older GUI with the latest source files and avoids brittle marker-only checks.
-$resources = @(
-    @{Path="web/console-native.html"; Hash=$manifest.consoleNativeHtmlSha256},
-    @{Path="web/console-native.css"; Hash=$manifest.consoleNativeCssSha256},
-    @{Path="web/console-native.js"; Hash=$manifest.consoleNativeJsSha256}
-)
+# Release gate must verify the EXACT GUI shown by /preview/, not a
+# self-consistent but WRONG legacy web/index.html or console-native renderer.
+$approvedGuiDir = Join-Path "build" "approved_gui"
+& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+if ($LASTEXITCODE -ne 0) { throw "REJECT: native GUI is not built from current approved Pages" }
+$approvedPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
+$approved = Get-Content -LiteralPath $approvedPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$approvedHash = (Get-FileHash -LiteralPath $approvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($manifest.approvedGuiManifestSha256 -ne $approvedHash -or
+    $manifest.approvedGuiRoute -ne "/preview/" -or
+    $manifest.approvedGuiOutput -ne "preview/index.html" -or
+    $manifest.approvedGuiPagesSha256 -ne $approved.approvedPagesHtmlSha256 -or
+    $manifest.approvedGuiNativeHtmlSha256 -ne $approved.nativeHtmlSha256 -or
+    $manifest.approvedGuiCanonicalSha256 -ne $approved.canonicalSourceSha256 -or
+    $manifest.approvedGuiAdapterStatus -ne "SCAFFOLD_ONLY__NOT_LIVE_PCM" -or
+    $manifest.guiCalibration -ne "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY" -or
+    $manifest.approvedGuiResourceCount -ne @($approved.files).Count) {
+    throw "REJECT: native release provenance does not match the approved Pages GUI"
+}
+$cmakeSource = Get-Content -LiteralPath "CMakeLists.txt" -Raw -Encoding UTF8
+$nativeSource = Get-Content -LiteralPath "src/Main.cpp" -Raw -Encoding UTF8
+if (-not $cmakeSource.Contains('juce_add_binary_data(ARMixAssets SOURCES') -or
+    -not $cmakeSource.Contains('ARMIX_APPROVED_GUI_DIR') -or
+    -not $nativeSource.Contains('resolveApprovedGuiResource (path, data, size, mime)') -or
+    $nativeSource.Contains('BinaryData::consolenative_html') -or
+    $nativeSource.Contains('BinaryData::index_html')) {
+    throw "REJECT: competing legacy GUI renderer is compiled or served"
+}
+# PNG artwork is binary; CSS/JS/SVG/HTML are compared as exact UTF8 text,
+# rather than mere marker matches. Each staged resource is also SHA-attested.
+function Test-EmbeddedBytes([byte[]]$haystack, [byte[]]$needle) {
+    if ($needle.Length -eq 0 -or $needle.Length -gt $haystack.Length) { return $false }
+    $last = $haystack.Length - $needle.Length
+    for ($i = 0; $i -le $last; $i++) {
+        if ($haystack[$i] -ne $needle[0]) { continue }
+        $found = $true
+        for ($j = 1; $j -lt $needle.Length; $j++) {
+            if ($haystack[$i + $j] -ne $needle[$j]) { $found = $false; break }
+        }
+        if ($found) { return $true }
+    }
+    return $false
+}
 $embeddedText = [Text.Encoding]::UTF8.GetString($bytes)
-foreach ($item in $resources) {
-    $real = (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($real -ne $item.Hash) {
-        throw "GUI provenance SHA256 mismatch: $($item.Path)"
+foreach ($item in $approved.files) {
+    $rel = [string]$item.path
+    $resourcePath = Join-Path $approvedGuiDir $rel
+    if (-not (Test-Path -LiteralPath $resourcePath -PathType Leaf)) {
+        throw "REJECT: compiled GUI missing staged asset $rel"
     }
-    $sourceText = [System.IO.File]::ReadAllText(
-        (Resolve-Path -LiteralPath $item.Path).Path, [Text.Encoding]::UTF8)
-    if ($sourceText.Length -eq 0 -or
-        $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -lt 0) {
-        throw "STALE NATIVE GUI: exact JUCE BinaryData resource absent from EXE: $($item.Path)"
+    $real = (Get-FileHash -LiteralPath $resourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($real -ne $item.sha256) {
+        throw "REJECT: approved GUI staged resource digest differs: $rel"
     }
-}
-# Require the source-owned native Console transport and approved layout,
-# not a perfect legacy-source hash match promoted as the wrong product.
-foreach ($marker in @(
-    "ArSonMix — Native Live Console",
-    'class="console-body',
-    "arMixConsoleSubscribe",
-    "arMixConsoleIntent",
-    "arMixConsoleAck",
-    "channelPeaksL",
-    "NATIVE JUCE BACKEND REQUIRED"
-)) {
-    if ($embeddedText.IndexOf($marker,[StringComparison]::Ordinal) -lt 0) {
-        throw "STALE PRODUCT GUI: native Console runtime marker absent from EXE: $marker"
+    $resourceBytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $resourcePath).Path)
+    $present = if ($rel.EndsWith(".png", [StringComparison]::OrdinalIgnoreCase)) {
+        Test-EmbeddedBytes $bytes $resourceBytes
+    } else {
+        $sourceText = [Text.Encoding]::UTF8.GetString($resourceBytes)
+        $sourceText.Length -gt 0 -and
+            $embeddedText.IndexOf($sourceText, [StringComparison]::Ordinal) -ge 0
+    }
+    if (-not $present) {
+        throw "REJECT: APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE: $rel"
     }
 }
-# Assert current approved calibration is present inside the actual shipped binary.
-if ($manifest.guiCalibration -ne "GAIN_10_TO_MINUS60_BLACK_DETENT_AT_38PX__VU_DBFS_INDEPENDENT_TICKS") {
-    throw "GUI calibration release contract is missing"
+if ($embeddedText.IndexOf('APPROVED_PAGES_PREVIEW_BUTTONS', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('WEBVIEW2_GUI_READY_TIMEOUT', [StringComparison]::Ordinal) -lt 0 -or
+    $embeddedText.IndexOf('AUDIO_GLITCH_WINDOW', [StringComparison]::Ordinal) -lt 0) {
+    throw "REJECT: approved GUI bridge or native device safety markers absent"
 }
-# Check only the ACTIVE Console and native audio/ACK controls. Old UI
-# marker strings MUST NOT be required or reintroduced as bundled resources.
-foreach ($marker in @(
-    "arMixGuiReady",
-    "arMixConsoleSubscribe",
-    "arMixConsoleIntent",
-    "arMixConsoleSnapshot",
-    "arMixConsoleAck",
-    "nativeAddAudio",
-    "NATIVE_PATCH_CHANNEL",
-    "NATIVE_SET_CHANNEL_MIX",
-    "NATIVE_SET_CHANNEL_MUTE_SOLO",
-    "WEBVIEW2_GUI_READY_TIMEOUT",
-    "AUDIO_GLITCH_WINDOW"
-)) {
-    if ($embeddedText.IndexOf($marker,[StringComparison]::Ordinal) -lt 0) {
-        throw "NATIVE CONSOLE CONTRACT missing from shipped EXE: $marker"
-    }
-}
+Write-Host "APPROVED_GUI_EMBEDDED: /preview/ exact PNG skin and renderer resource hashes verified"
+Write-Host "NOT_PRODUCT_READY: native accepted PCM/ACK + hardware/FAT remain separate release blockers"
 
 # Probe a fresh compressed archive outside dist/ using the SAME dist folder
 # that actions/upload-artifact will upload; reject the original 648KB class
@@ -171,7 +173,7 @@ try {
         if (@(Compare-Object -ReferenceObject $expectedZipFiles -DifferenceObject $names).Count -ne 0) {
             throw "ZIP does not contain exactly the verified distribution files"
         }
-        $entry = $zip.GetEntry("ArSonMix-NativeConsole-CH11-EXPERIMENTAL-Windows-x64.exe")
+        $entry = $zip.GetEntry("ArSonMix-GUI10CH-P012-Windows-x64.exe")
         if ($null -eq $entry -or $entry.Length -ne $bytes.Length) {
             throw "Wrong/truncated GUI executable inside ZIP"
         }
@@ -203,7 +205,7 @@ try {
     }
     Write-Host "FAT_RELEASE_ACCEPTED: source=$sha GUI_WIN64_PE32+=2"
     Write-Host "FAT_RELEASE_ACCEPTED: exeBytes=$($bytes.Length) testZipBytes=$archiveBytes sha256=$appHash"
-    Write-Host "FAT_RELEASE_ACCEPTED: only Console HTML/CSS/JS embedded; legacy GUI excluded"
+    Write-Host "FAT_RESOURCE_ACCEPTED: approved Pages GUI HTML/CSS/JS/SVG/PNG are embedded exact bytes; native controls NOT YET QUALIFIED"
     Write-Host "FAT_RELEASE_ACCEPTED: P0-12 and static WebView2 startup contract verified"
 } finally {
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }

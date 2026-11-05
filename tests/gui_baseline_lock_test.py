@@ -14,6 +14,13 @@ assert '343692fc9b702661a8455cca30f0ffd108907324' in lock
 assert 'checkpoint/gui-v0.8-approved-20261025' in lock
 assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in readme
 assert 'docs/GUI_BASELINE_LOCK_2026-10-25.md' in agents
+assert 'ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md' in agents
+assert 'SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md' in agents
+# The historical 2025 baseline is archive-only. User-approved product GUI is /preview/.
+assert 'https://masarray.github.io/arsonmix/preview/' in agents
+assert 'https://masarray.github.io/arsonmix/preview/' in readme
+assert 'single_preview_publication_contract_test.py' in page
+assert 'preview-v2' in agents and 'REJECTED' in agents
 assert "ref: fix/fader-thumb-symmetry-polish" not in page
 assert "branches: [main]" in page and "head_sha" in page
 assert "branches: [main]" in ui and "pull_request:" in ui

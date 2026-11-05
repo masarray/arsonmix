@@ -18,7 +18,14 @@ def restore_previous_owners():
     count=rules=saved=imp=0
     for name,entry in data["owners"].items():
         assert "/" not in name and name.endswith(".css")
-        current=(ASSETS/name).read_text(encoding="utf-8")
+        if name=="mixer-chrome-material.css":
+            from css_v18_restore import reconstruct as v18_previous
+            current=v18_previous()[1]
+        elif name=="mixer-section-controls.css":
+            from css_v19_restore import reconstruct as pre_v19
+            current=pre_v19()[1]
+        else:
+            current=(ASSETS/name).read_text(encoding="utf-8")
         assert len(current)==entry["currentSize"],name
         old=current
         for edit in sorted(entry["insertions"],key=lambda e:e["offset"]):
@@ -50,6 +57,9 @@ def original_assets_as_baseline(html,owners=None):
     owners=restore_previous_owners() if owners is None else owners
     temp=[]
     try:
+        from css_v17_restore import mount_owner
+        html,old_plugin=mount_owner(html)
+        temp.extend(old_plugin)
         if manifest_v16()["sourceWireUrl"] in html:
             previous_wire=reconstruct()[1]
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
@@ -63,7 +73,8 @@ def original_assets_as_baseline(html,owners=None):
             assert html.count(key)==1,name
             f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
                 prefix=".v15-old-owner-",dir=ASSETS,delete=False)
-            with f:f.write(css)
+            from gui_m3_compat import suffix
+            with f:f.write(css+(suffix("chrome")[1] if name=="mixer-chrome-material.css" else ""))
             temp.append(Path(f.name))
             html=html.replace(key,f'assets/{Path(f.name).name}?v=',1)
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".html",

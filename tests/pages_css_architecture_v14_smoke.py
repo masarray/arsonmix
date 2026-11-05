@@ -31,6 +31,14 @@ def combined_css(document, chrome_override=None, owner_override=None):
         if name=="mixer-chrome-material.css" and chrome_override is not None:
             return chrome_override
         if owner_override and name in owner_override:return owner_override[name]
+        if name=="mixer-section-controls.css":
+            # V19 relocated the V18 first inline block into this adjacent owner.
+            from css_v19_restore import reconstruct as pre_v19_source
+            return pre_v19_source()[1]
+        if name=="mixer-chrome-material.css":
+            # Historical V10–V17 byte comparisons must not read the V18 relocated prefix.
+            from css_v18_restore import reconstruct as pre_v18_source
+            return pre_v18_source()[1]
         return (HTML.parent/"assets"/name).read_text(encoding="utf-8")
     return "".join(lookup(name,inline) for name,inline in css_order)
 

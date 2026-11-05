@@ -28,6 +28,27 @@ def geometry(page, density, label):
       const v=strip.querySelector('.vu-scale-travel');
       const travel=strip.querySelector('.fader-travel');
       const cap=strip.querySelector('.fader-travel .cap');
+      const box=strip.querySelector('.fader-box');
+      const gainRuler=strip.querySelector('.fader-scale');
+      const faderRigs=[...document.querySelectorAll('#tracks .strip[data-id="1"], #master .strip')].map(root=>{
+        const c=root.querySelector('.fader-travel .cap').getBoundingClientRect();
+        const b=root.querySelector('.fader-box').getBoundingClientRect();
+        const g=root.querySelector('.gain-scale-travel').getBoundingClientRect();
+        const meter=root.querySelector('.meter-box').getBoundingClientRect();
+        const lane=root.querySelector('.meter-lane').getBoundingClientRect();
+        const gainRuler=root.querySelector('.fader-scale').getBoundingClientRect();
+        const work=root.querySelector('.fader-workspace').getBoundingClientRect();
+        const head=root.querySelector('.fader-head').getBoundingClientRect();
+        const tick=root.querySelector(".vu-tick.major span");
+        const tickCss=getComputedStyle(tick);
+        return {tickLeft:tickCss.left,tickRight:tickCss.right,
+          gap:g.left-c.right,wellWidth:b.width,wellRight:b.right,rulerLeft:g.left,
+          capWidth:c.width,capHeight:c.height,laneWidth:lane.width,
+          meterWidth:meter.width,meterLeft:meter.left,headLeft:head.left,
+          meterGap:b.left-meter.right,
+          groupCenterDelta:(meter.left+gainRuler.right)/2-(work.left+work.width/2),
+          meterInside:meter.left>=work.left-1,scaleInside:gainRuler.right<=work.right+1};
+      });
       const bars=strip.querySelector('.vu-bars');
       const meterLane=strip.querySelector('.meter-lane');
       const rect=e=>{const b=e.getBoundingClientRect();return {y:b.top,h:b.height,x:b.left,w:b.width};};
@@ -39,7 +60,22 @@ def geometry(page, density, label):
         font:parseFloat(getComputedStyle(el.querySelector('span')).fontSize),
         rect:rect(el.querySelector('span'))
       }));
-      return {g:rect(g),v:rect(v),travel:rect(travel),cap:rect(cap),
+      // Measure actual rendered TEXT ink, not just the equal-sized span boxes.
+      // Every major numeric label must terminate on one optical right edge.
+      const column=(parent,selector)=>[...parent.querySelectorAll(selector)]
+        .filter(el=>el.textContent?.trim()&&getComputedStyle(el).display!=='none')
+        .map(el=>{
+          const range=document.createRange();range.selectNodeContents(el);
+          const ink=range.getBoundingClientRect(),box=el.getBoundingClientRect();
+          const cs=getComputedStyle(el);
+          return {text:el.textContent.trim(),inkLeft:ink.left,inkRight:ink.right,
+                  boxLeft:box.left,boxRight:box.right,align:cs.textAlign,
+                  numeric:cs.fontVariantNumeric};
+        });
+      return {columns:{gain:column(g,'.gain-tick.major span'),
+                       vu:column(v,'.vu-tick.major span')},
+       rigs:faderRigs,well:rect(box),ruler:rect(gainRuler),
+       g:rect(g),v:rect(v),travel:rect(travel),cap:rect(cap),
        bar:rect(bars),lane:rect(meterLane),gain:ticks(g,'.gain-tick'),
        vu:ticks(v,'.vu-tick'),
        gainFont:parseFloat(getComputedStyle(g.querySelector('.gain-tick.major span')).fontSize),
@@ -64,6 +100,41 @@ def geometry(page, density, label):
         close(item["y"],out["lane"]["y"]+out["lane"]["h"]*expected/100,1.1)
     close(out["gain"][1]["y"],out["cap"]["y"]+out["cap"]["h"]/2,1.05)
     assert out["gain"][1]["text"]=="0" and out["vu"][0]["text"]=="0"
+    if label != "png":
+        assert out["gain"][-1]["text"]=="-60",(
+            label,density,"finite -60dB minimum mislabeled as mute/infinity")
+    if label != "png":  # frozen independent V45 PNG reference is not live M1.2
+        # M3: 70px meter aligned with LCD and adjacent physical fader/ruler.
+        # Both gain ruler and dBFS ruler retain independent vertical references.
+        assert len(out["rigs"])==2,(label,density,"missing fader rigs",out["rigs"])
+        for rig in out["rigs"]:
+            compact=density=="compact"
+            slim=density!="comfort"
+            close(rig["wellWidth"],25 if compact else (27 if slim else 32),.6)
+            close(rig["capWidth"],25 if compact else 27,.6)
+            close(rig["capHeight"],50 if compact else 54,.6)
+            close(rig["laneWidth"],10,.6)
+            close(rig["meterWidth"],70,.7)
+            assert (rig["tickLeft"],rig["tickRight"])==("7px","9px"),(label,density,"meter numeral insets",rig)
+            close(rig["meterLeft"],rig["headLeft"],1.3)
+            assert 1<=rig["meterGap"]<=4,(label,density,"meter detached from fader",rig)
+            assert 1<=rig["gap"]<=8,(label,density,"gain ruler detached from cap",rig)
+            close(rig["wellRight"],rig["rulerLeft"]-(1 if compact else (2 if slim else 3)),.75)
+            assert rig["meterInside"] and rig["scaleInside"],(
+                label,density,"instrument clipped by channel",rig)
+        assert out["ruler"]["x"]>=out["well"]["x"]+out["well"]["w"]-.2,(
+            label,density,"ruler overlapping machined fader well",out)
+
+        for key in ("gain","vu"):
+            column=out["columns"][key]
+            assert len(column)>=6,(label,density,key,"missing major labels",column)
+            assert all(v["align"]=="right" and "tabular-nums" in v["numeric"]
+                       for v in column),(label,density,key,"inconsistent numeral style",column)
+            rights=[v["inkRight"] for v in column]
+            assert max(rights)-min(rights)<.85,(
+                label,density,key,"actual numeral glyphs are not vertically aligned",column)
+            assert all(v["inkLeft"]>=v["boxLeft"]-1.5 for v in column),(
+                label,density,key,"overflowing digit rail",column)
     for key in ("gain","vu"):
         rects=[t["rect"] for t in out[key] if t["major"]]
         for earlier,later in zip(rects,rects[1:]):
@@ -105,9 +176,13 @@ def math_and_preview(page,label):
       const {meterDbfsPercent,demoMeterDbfs,readDemo}=window.ArSonMixMeterCalibration;
       const {gain,frame,running}=readDemo();
       const modulation=.46+.23*Math.sin(frame*.13)+.17*Math.sin(frame*.31);
-      const expected=meterDbfsPercent(demoMeterDbfs(gain,modulation));
+      const expectedRaw=meterDbfsPercent(demoMeterDbfs(gain,modulation));
       const fill=document.querySelector('#tracks .strip[data-id="1"] .meter-fill.left');
-      return {expected,actual:parseFloat(fill.style.getPropertyValue('--lit')),
+      const lane=fill.parentElement, height=lane.clientHeight;
+      const rows=Math.max(1,Math.floor(height/14));
+      const steps=Math.max(0,Math.min(rows,Math.round(expectedRaw*rows/100)));
+      const expected=100*Math.min(height,steps*14)/height;
+      return {expected,expectedRaw,rows,steps,actual:parseFloat(fill.style.getPropertyValue('--lit')),
               text:document.getElementById('transport').textContent,
               preview:running,frame};
     }""")
@@ -126,9 +201,13 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         published=dist/"preview/mixer.html"
         assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
-        for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            key=f"assets/{name}?v=css-owner-v9-ruler-m1"
-            assert key in published.read_text("utf-8"),("stale ruler cache URL",name)
+        expected_ruler_keys={
+            "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
+            "mixer-meter-display.css":"css-owner-v27-meter-pruned",
+        }
+        for name,key in expected_ruler_keys.items():
+            assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(
+                "stale ruler cache URL",name,key)
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
             assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
         with sync_playwright() as pw:

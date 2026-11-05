@@ -4,8 +4,10 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <BinaryData.h>
+#include "ApprovedGuiResources.h"
+#include "ApprovedConsoleNativeTransportV6.h"
+#include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "LiveAudioEngine.h"
-#include "ConsoleLiveBridgeV6.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -48,14 +50,10 @@ std::optional<juce::WebBrowserComponent::Resource> assetFor (const juce::String&
     const char* data = nullptr;
     int size = 0;
     juce::String mime;
-    if (path == "/" || path == "/index.html")
-        { data = BinaryData::consolenative_html; size = BinaryData::consolenative_htmlSize; mime = "text/html"; }
-    else if (path == "/console-native.css")
-        { data = BinaryData::consolenative_css; size = BinaryData::consolenative_cssSize; mime = "text/css"; }
-    else if (path == "/console-native.js")
-        { data = BinaryData::consolenative_js; size = BinaryData::consolenative_jsSize; mime = "text/javascript"; }
-    // No archived ten-strip UI resource can be served by the production WebView2.
-    else return std::nullopt;
+    // Auto-generated from the SAME approved Pages GUI and PNG-button skin.
+    // Legacy web/index.html and web/console-native.html cannot be served here.
+    if (! resolveApprovedGuiResource (path, data, size, mime))
+        return std::nullopt;
 
     juce::WebBrowserComponent::Resource resource;
     resource.data.resize (static_cast<size_t> (size));
@@ -197,136 +195,25 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
-              .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
-              .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
-              .withEventListener ("arMixConsoleSubscribe", [this] (juce::var args) {
-                  // G0: a real M4 device/callback snapshot, never synthetic
-                  // ChannelId LIVE status before the M5 production cutover.
-                  if (args.getProperty("protocol","").toString()!="v6") return;
-                  consoleSubscribed_=true;
-                  if (browser_.loaded) {
-                      emitNativeConsoleSnapshot(engine_.status());
-                      emitCatalog(); // native scanned catalog, never demo JSON
-                  }
+              .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
+                  // G0 real-device native producer, NEVER a synthetic ChannelId callback.
+                  consoleSubscribed_ = true;
+                  emitApprovedNativeSnapshot();
               })
               .withEventListener ("arMixConsoleIntent", [this] (juce::var args) {
-                  // S1: actual installed JUCE production path, never a
-                  // dry-only C++ model or WebAudio replica. Only admitted
-                  // fixed-M4 SOURCE and RT controls can mutate sound; CH11,
-                  // GROUP/FX_RETURN remain rejected until one ChannelId
-                  // callback really owns them.
-                  const auto snapshot=armix::console::LiveConsoleBridgeV6::snapshot(engine_.status());
-                  const auto op=args.getProperty("operation","").toString();
-                  juce::var ack;
-                  if(op.startsWith("NATIVE_") || op=="APPLY_WIRE_TRANSACTION")
-                      ack=consoleBridge_.processNativeBusIntent(
-                          args,snapshot,engine_,
-                          nativeShowBusy_||studioBackupBusy_,
-                          [this](const juce::String& operation,
-                                  armix::mixer::ChannelId channel,
-                                  const juce::var& payload,std::uint64_t epoch,
-                                  std::uint64_t pcmRev,std::uint64_t rosterRev)
-                                  ->LiveDryRoutingLab::NativeBusResult {
-                              LiveDryRoutingLab::NativeBusResult reply{};
-                              reply.pcmRevision=pcmRev;
-                              reply.rosterRevision=rosterRev;
-                              if(nativeShowBusy_||studioBackupBusy_||
-                                 engine_.isGraphSwitchPending()) {
-                                  reply.error="NATIVE_VST3_CONTROL_BUSY";return reply;
-                              }
-                              if(operation=="NATIVE_LOAD_INSERT"){
-                                  const auto catalogId=payload.getProperty(
-                                      "catalogId",{}).toString();
-                                  const auto* entry=catalog_.find(catalogId);
-                                  if(!entry || entry->key()!=catalogId) {
-                                      reply.error="NATIVE_VST3_NOT_SCANNED";return reply;
-                                  }
-                                  closePluginEditor();
-                                  return engine_.installNativeVst3(
-                                      epoch,pcmRev,rosterRev,channel,
-                                      entry->path,entry->uid,entry->key());
-                              }
-                              const auto slot=payload.getProperty("slot",juce::var());
-                              const auto token=payload.getProperty("instanceId",
-                                                                     juce::var());
-                              if(!slot.isInt()||static_cast<int>(slot)<0||
-                                 static_cast<int>(slot)>=LiveDryRoutingLab::maxFxPerLane||
-                                 !token.isString()||token.toString().isEmpty()) {
-                                  reply.error="NATIVE_VST3_SLOT_OR_TOKEN_INVALID";
-                                  return reply;
-                              }
-                              const auto index=static_cast<std::size_t>(
-                                  static_cast<int>(slot));
-                              if(operation=="NATIVE_SET_INSERT_BYPASS"){
-                                  const auto value=payload.getProperty(
-                                      "bypassed",juce::var());
-                                  if(!value.isBool()){
-                                      reply.error="NATIVE_VST3_BYPASS_INVALID";
-                                      return reply;
-                                  }
-                                  reply.accepted=engine_.bypassNativeVst3(
-                                      epoch,pcmRev,channel,index,
-                                      token.toString(),static_cast<bool>(value));
-                                  reply.error=reply.accepted?"":"NATIVE_VST3_STALE_BYPASS";
-                                  return reply;
-                              }
-                              if(operation=="NATIVE_OPEN_INSERT_EDITOR"){
-                                  const auto lease=engine_.leaseNativeVst3Editor(
-                                      epoch,pcmRev,channel,index,token.toString());
-                                  if(!lease||!lease->processor){
-                                      reply.error="NATIVE_VST3_STALE_EDITOR";return reply;
-                                  }
-                                  try {
-                                      auto* vendor=lease->processor->createEditorIfNeeded();
-                                      if(!vendor){
-                                          reply.error="NATIVE_VST3_NO_EDITOR";return reply;
-                                      }
-                                      closePluginEditor();
-                                      routedEditorOwner_=lease;
-                                      routedEditorEpoch_=static_cast<juce::int64>(epoch);
-                                      editorWindow_=std::make_unique<PluginEditorWindow>(
-                                          lease->processor->getName(),vendor);
-                                      reply.accepted=true;reply.error="";
-                                      return reply;
-                                  }catch(...){
-                                      closePluginEditor();
-                                      reply.error="NATIVE_VST3_EDITOR_FAILED";return reply;
-                                  }
-                              }
-                              reply.error="UNSUPPORTED_NATIVE_VST3_ACTION";
-                              return reply;
-                          });
-                  else ack=consoleBridge_.processProductionIntent(
-                      args,snapshot,engine_,
-                      [this](int lane,int slot,std::uint64_t epoch,
-                             std::uint64_t revision,const juce::String& token)
-                            ->juce::String {
-                          if(nativeShowBusy_||studioBackupBusy_||
-                             engine_.isGraphSwitchPending())
-                              return "NATIVE_EDITOR_BUSY";
-                          const auto owner=engine_.leaseRoutedFxForEditor(
-                              lane,slot,epoch,revision,token);
-                          if(!owner || !owner->processor)
-                              return "NATIVE_EDITOR_STALE_INSTANCE";
-                          try {
-                              auto* editor=owner->processor->createEditorIfNeeded();
-                              if(!editor)return "NATIVE_PLUGIN_HAS_NO_EDITOR";
-                              closePluginEditor();
-                              routedEditorOwner_=owner; // original JUCE instance
-                              routedEditorEpoch_=static_cast<juce::int64>(epoch);
-                              editorWindow_=std::make_unique<PluginEditorWindow>(
-                                  owner->processor->getName(),editor);
-                              return {};
-                          } catch(...) {
-                              closePluginEditor();
-                              return "NATIVE_VENDOR_EDITOR_FAILED";
-                          }
-                      });
-                  if (browser_.loaded) {
-                      browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",ack);
-                      emitNativeConsoleSnapshot(engine_.status());
+                  // Until ENGINE #266 owns production ChannelId graph, ALL v6
+                  // control intents are native-rejected, never silently emulated
+                  // via the old ordinal-only M4 engine.
+                  const auto accepted = approvedNativeSnapshot();
+                  if (browser_.loaded)
+                  {
+                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleAck",
+                          armix::native_console_m2::reject (args, accepted));
+                      browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot", accepted);
                   }
               })
+              .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
+              .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
@@ -370,8 +257,6 @@ public:
 
 private:
     LiveAudioEngine engine_;
-    armix::console::LiveConsoleBridgeV6 consoleBridge_;
-    bool consoleSubscribed_=false;
     VstOrbitController orbit_;
     juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
@@ -393,6 +278,7 @@ private:
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
+    bool consoleSubscribed_ = false; // WebView v6 G0 subscription, not PCM admission
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -610,13 +496,6 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixNotice", juce::var (o.release()));
     }
 
-    void emitNativeConsoleSnapshot(const juce::var& engineStatus)
-    {
-        if(browser_.loaded && consoleSubscribed_)
-            browser_.emitEventIfBrowserIsVisible("arMixConsoleSnapshot",
-                armix::console::LiveConsoleBridgeV6::snapshot(engineStatus));
-    }
-
     void emitCatalog()
     {
         if (browser_.loaded)
@@ -816,6 +695,31 @@ private:
             " maxTimerGapMs=" + juce::String (result.maxGapMs, 1) +
             " | timer delay is NOT a hardware xrun");
         emitOrbitState (previousSlot);
+    }
+
+    juce::var approvedNativeSnapshot (const juce::var& live)
+    {
+        auto accepted=armix::native_console_m2::snapshot (
+            live, engine_.devices(), engine_.allOutputsDisarmed());
+        // Native routing's generation advances on STOP as well as START.
+        // Keep even disconnected G0 snapshots monotonic to invalidate UI.
+        (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
+            accepted, live);
+        (void) armix::console::projectInstalledNativeChannelIdGraph (
+            accepted, live);
+        return accepted;
+    }
+
+    juce::var approvedNativeSnapshot()
+    {
+        return approvedNativeSnapshot (engine_.status());
+    }
+
+    void emitApprovedNativeSnapshot()
+    {
+        if (consoleSubscribed_ && browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible (
+                "arMixConsoleSnapshot", approvedNativeSnapshot());
     }
 
     void onParameter (const juce::var& args)
@@ -1470,39 +1374,6 @@ private:
             if(error.isNotEmpty())emitNotice(error,true);
             return;
         }
-        // Operator-first native CHAN OUT / DSP FORMAT. This is the same
-        // installed M4 callback/FX publisher as routingSourceSwitch, not a
-        // synthetic universal ChannelId operation. GUI owner may wire a
-        // compact selector without navigating the large APPLY wizard.
-        if(action=="routingChannelStructure") {
-            const int requestId=static_cast<int>(args.getProperty("requestId",0));
-            const int channel=static_cast<int>(args.getProperty("channel",-1));
-            const auto operation=args.getProperty("operation","").toString();
-            const auto selected=args.getProperty("selected","").toString();
-            const auto ep=args.getProperty("deviceEpoch",juce::var());
-            const auto rv=args.getProperty("revision",juce::var());
-            const bool safe=requestId>0&&channel>=0&&channel<LiveDryRoutingLab::count&&
-                (ep.isInt()||ep.isInt64())&&
-                (rv.isInt()||rv.isInt64())&&!nativeShowBusy_&&
-                !studioBackupBusy_&&!engine_.isGraphSwitchPending();
-            const juce::String error=safe?
-                engine_.repatchDryRoutingLabChannel(channel,
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
-                    operation,selected):
-                juce::String("CHANNEL PATCH: stale device or Show/FX edit busy");
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("requestId",requestId);
-            ack->setProperty("channel",channel);
-            ack->setProperty("operation",operation);
-            ack->setProperty("ok",error.isEmpty());
-            ack->setProperty("error",error);
-            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixChannelStructureAck",juce::var(ack.release()));
-            if(error.isNotEmpty())emitNotice(error,true);
-            return;
-        }
         if (action == "routingDryApply")
         {
             LiveDryRoutingLab::FxSelections selected{};
@@ -1608,15 +1479,9 @@ private:
                 "arMixAuxBusGainAck",juce::var(ack.release()));
             return;
         }
-        // Existing PRE and POST sends are realtime parameters, including a
-        // live vocal SEND → AUX FX Return. Tap selection and NEW send edges
-        // remain separate structural transactions; this changes LEVEL only.
+        // M1 operator realtime PARAM: existing AUX POST gain changes while
+        // audio is running. Structural sends remain guarded MUTE/APPLY.
         if(action=="routingAuxSendGain") {
-            const auto tapName=args.getProperty("tap","POST").toString();
-            const bool validTap=tapName=="PRE"||tapName=="POST";
-            const auto tap=tapName=="PRE"
-                ?armix::mixer::SendTap::preFader
-                :armix::mixer::SendTap::postFader;
             const int source=static_cast<int>(args.getProperty("from",-1));
             const int bus=static_cast<int>(args.getProperty("bus",-1));
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
@@ -1625,87 +1490,22 @@ private:
             const bool number=value.isDouble()||value.isInt();
             const float gain=number?static_cast<float>(static_cast<double>(value)):-1.f;
             const bool ok=!nativeShowBusy_&&!studioBackupBusy_&&!ep.isVoid()&&!rv.isVoid() &&
-                number && validTap && requestId>0 &&
+                number && requestId>0 &&
                 engine_.setDryRoutingLabAuxSendGain(source,bus,
                     static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain,tap);
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("ok",ok);
-            ack->setProperty("requestId",requestId);
-            ack->setProperty("from",source);
-            ack->setProperty("bus",bus);
-            ack->setProperty("tap",tapName);
-            ack->setProperty("gain",static_cast<double>(gain));
-            ack->setProperty("error",ok?juce::String():
-                "Live AUX gain rejected: stale route, invalid tap or missing PRE/POST send");
-            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixAuxSendGainAck",juce::var(ack.release()));
-            if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
-            return;
-        }
-        // One-click SEND -> existing real AUX VST3 RETURN. The structural
-        // graph transaction prepares/validates and retains the same processor
-        // owner; no unfiltered empty AUX can duplicate dry MAIN.
-        if(action=="routingAuxConnect") {
-            const int from=static_cast<int>(args.getProperty("from",-1));
-            const int bus=static_cast<int>(args.getProperty("bus",-1));
-            const int requestId=static_cast<int>(args.getProperty("requestId",0));
-            const auto ep=args.getProperty("deviceEpoch",juce::var());
-            const auto rv=args.getProperty("revision",juce::var());
-            const auto kind=args.getProperty("tap","POST").toString();
-            const auto rawGain=args.getProperty("gain",juce::var());
-            const auto rawPan=args.getProperty("pan",juce::var(0.0));
-            const bool valid=requestId>0&&!nativeShowBusy_&&!studioBackupBusy_&&
-                (ep.isInt()||ep.isInt64())&&(rv.isInt()||rv.isInt64())&&
-                (rawGain.isInt()||rawGain.isDouble())&&
-                (rawPan.isInt()||rawPan.isDouble())&&
-                (kind=="PRE"||kind=="POST");
-            const juce::String error=valid?engine_.connectDryRoutingLabAuxSend(
-                from,bus,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
-                kind=="PRE"?armix::mixer::SendTap::preFader:
-                            armix::mixer::SendTap::postFader,
-                static_cast<float>(static_cast<double>(rawGain)),
-                static_cast<float>(static_cast<double>(rawPan))):
-                juce::String("AUX CONNECT: invalid or stale request");
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("ok",error.isEmpty());
-            ack->setProperty("requestId",requestId);
-            ack->setProperty("from",from);
-            ack->setProperty("bus",bus);
-            ack->setProperty("tap",kind);
-            ack->setProperty("error",error);
-            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixAuxConnectAck",juce::var(ack.release()));
-            return;
-        }
-        // Same installed M4 callback owns independent MONITOR output pins.
-        // Move input or AUX return's own MONITOR SEND at audio rate without
-        // touching MAIN/FX or changing the physical port map.
-        if(action=="routingMonitorSendGain") {
-            const int source=static_cast<int>(args.getProperty("from",-1));
-            const int requestId=static_cast<int>(args.getProperty("requestId",0));
-            const auto ep=args.getProperty("deviceEpoch",juce::var());
-            const auto rv=args.getProperty("revision",juce::var());
-            const bool numeric=value.isInt()||value.isDouble();
-            const float gain=numeric?static_cast<float>(static_cast<double>(value)):-1.f;
-            const bool ok=requestId>0&&!nativeShowBusy_&&!studioBackupBusy_&&
-                (ep.isInt()||ep.isInt64())&&(rv.isInt()||rv.isInt64())&&numeric&&
-                engine_.setDryRoutingLabMonitorSendGain(
-                    source,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
                     static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),gain);
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",ok);
             ack->setProperty("requestId",requestId);
             ack->setProperty("from",source);
+            ack->setProperty("bus",bus);
             ack->setProperty("gain",static_cast<double>(gain));
             ack->setProperty("error",ok?juce::String():
-                "MONITOR send rejected: no independent MONITOR bus, stale route or invalid gain");
+                "Live AUX gain rejected: route revision/device changed or POST send missing");
             ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixMonitorSendGainAck",juce::var(ack.release()));
+                "arMixAuxSendGainAck",juce::var(ack.release()));
+            if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
             return;
         }
         // G5C native per-instance BYPASS never recompiles the graph and
@@ -2716,6 +2516,9 @@ private:
             auto health = engine_.status();
             crackleEvidence_.push (makeEvidenceSample(health));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
+            if (consoleSubscribed_ && browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot",
+                    approvedNativeSnapshot (health));
         }
 
         if (deviceSettingsDirty_)
@@ -2787,10 +2590,6 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
-        // Four status readbacks/second on the control thread. No JUCE
-        // callback mutation, graph pointer lease or extra signal engine.
-        if(consoleSubscribed_ && timerTicks_%3==0)
-            emitNativeConsoleSnapshot(state);
     }
 };
 

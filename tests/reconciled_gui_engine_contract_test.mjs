@@ -45,27 +45,31 @@ test('full engine capabilities preserved',()=>{
   assert.match(bridge,/arMixNativePresetLoaded/);
 });
 
-test('JUCE executable embeds ONLY the approved native Console while archived preview assets remain source-tested',()=>{
- const cmake=read('CMakeLists.txt'),cpp=read('src/Main.cpp');
- const nativeHtml=read('web/console-native.html'),nativeJs=read('web/console-native.js');
- const sourceCss=read('web/styles-src/42-mixer-premium.css');
- const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
- const assetList=cmake.match(/juce_add_binary_data\(ARMixAssets SOURCES\s+([^)]+)\)/)?.[1];
- assert.ok(assetList,'native resource list missing');
- const listed=assetList.trim().split(/\s+/);
- assert.deepEqual(listed,['web/console-native.html','web/console-native.css','web/console-native.js']);
- assert.match(cpp,/path == "\/" \|\| path == "\/index\.html"/);
- assert.match(cpp,/data = BinaryData::consolenative_html/);
- assert.match(cpp,/BinaryData::consolenative_css/);
- assert.match(cpp,/BinaryData::consolenative_js/);
- assert.doesNotMatch(cpp,/BinaryData::index_html|BinaryData::app_js|BinaryData::monitor_js/);
- assert.match(nativeHtml,/ArSonMix — Native Live Console/);
- assert.match(nativeJs,/arMixConsoleSubscribe/);
- assert.match(nativeJs,/arMixConsoleAck/);
- assert.match(nativeJs,/channelPeaksL/);
- assert.ok(css.endsWith(sourceCss),'archived visual CSS source integrity lost');
- assert.ok(standalone.includes('<style>'+css+'</style>'),'Pages standalone CSS drift');
- assert.ok(standalone.includes('<script>'+app+'</script>'),'Pages standalone script drift');
- for(const cls of ['gain-scale-travel','vu-scale-travel','meter-signal-area','fader-travel'])
-  assert.ok(app.includes(cls)||sourceCss.includes(cls),'historical calibration lost '+cls);
+test('JUCE native resources use EXACT assembled Pages /preview/, not archived web renderer', () => {
+  const cmake=read('CMakeLists.txt');
+  const cpp=read('src/Main.cpp');
+  const generator=read('scripts/build_approved_native_gui.py');
+  const pagesBuilder=read('scripts/build_pages.py');
+  const nativeAdapter=read('web/approved-native-bridge.js');
+  const oldSourceCss=read('web/styles-src/42-mixer-premium.css');
+  const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
+  assert.match(cmake,/build_approved_native_gui\.py/);
+  assert.match(cmake,/ARMIX_APPROVED_GUI_BINARIES/);
+  assert.match(cmake,/ARMIX_APPROVED_GUI_DIR/);
+  assert.match(cpp,/ApprovedGuiResources\.h/);
+  assert.match(cpp,/resolveApprovedGuiResource/);
+  assert.doesNotMatch(cpp,/BinaryData::consolenative_html|BinaryData::index_html/);
+  assert.doesNotMatch(cmake,/^\s+web\/index\.html web\/styles\.css/m);
+  assert.match(generator,/scripts" \/ "build_pages\.py"/);
+  assert.match(pagesBuilder,/APPROVED_SINGLE_GUI/);
+  assert.match(pagesBuilder,/buttons_dest=dst\/'preview'/);
+  assert.match(generator,/approvedPagesHtmlSha256/);
+  assert.match(generator,/SCAFFOLD_ONLY__NOT_LIVE_PCM/);
+  assert.match(nativeAdapter,/acceptedGraphConnected:false/);
+  assert.match(nativeAdapter,/productionCallbackLive:false/);
+  // Historical web app still verifies its archival CSS/standalone consistency.
+  // It is NEVER the native compiled mixer or a second GUI product.
+  assert.ok(css.endsWith(oldSourceCss),'archival CSS byte relationship drift');
+  assert.ok(standalone.includes('<style>'+css+'</style>'),'archival standalone CSS drift');
+  assert.ok(standalone.includes('<script>'+app+'</script>'),'archival standalone JS drift');
 });

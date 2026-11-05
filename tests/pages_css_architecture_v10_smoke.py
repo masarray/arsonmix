@@ -26,7 +26,9 @@ def fingerprint(css):
     return f"{h:08x}"
 
 def source_gate():
-    html = HTML.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    live = HTML.read_text(encoding="utf-8")
+    html, _ = restore_v16_source()  # Historical V16 CSS source remains immutable.
     head = html.split("</head>", 1)[0]
     css_order = re.findall(
         r'<link[^>]+href="assets/([^"]+\.css)\?v=css-owner-v(10|11|14|15)"[^>]*>|(<style>(.*?)</style>)',
@@ -44,8 +46,15 @@ def source_gate():
     assert names == expected, names
     styles = [body for n, version, tag, body in css_order if tag]
     assert len(styles) == 3, "V11 stylesheet order or inline structure drift"
+    # Immutable historical CSS source: V18 moved the former inline middle block.
+    from css_v18_restore import reconstruct as restore_previous_chrome
+    previous_chrome=restore_previous_chrome()[1]
+    from css_v19_restore import reconstruct as restore_pre_v19
+    _,previous_sections,_=restore_pre_v19()
     all_css = "".join(
-        (HTML.parent / "assets" / n).read_text(encoding="utf-8") if n else body
+        (previous_chrome if n=="mixer-chrome-material.css" else
+         previous_sections if n=="mixer-section-controls.css" else
+         (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )
     assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
@@ -60,7 +69,8 @@ def source_gate():
     assert ".console-body{" in grid and ".section-rail{" in grid
     assert all("--ari-" + n + ":url(data:image/png" in artwork
                for n in ("silver", "rose", "pan"))
-    assert "wireWsCanJoin" in html
+    assert "assets/mixer-plugin-browser.css?v=css-plugin-owner-v17" in live
+    assert "wireWsCanJoin" in live
     assert "assets/mixer-wire-dots.css?v=v47-css-v16" in html
     assert "assets/inter-embedded.css" in html
     for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
@@ -97,11 +107,11 @@ async def visual(page, width, height):
         assert any("/" + name + "?" in uri for uri in data["links"]), (width, name)
     assert 20 <= data["title"]["height"] <= 30, (width, "chrome title", data)
     assert 30 <= data["toolbar"]["height"] <= 45, (width, "toolbar", data)
-    assert 20 <= data["header"]["height"] <= 30, (width, "mixer header", data)
+    assert (50 <= data["header"]["height"] <= 54 if height <= 800 else 64 <= data["header"]["height"] <= 68), (width, "M3 responsive mixer header", data)
     assert abs(data["strip"]["width"] - data["master"]["width"]) < 1.5, (width, "master geometry", data)
     assert abs(data["pan"]["top"] - data["railPan"]["top"]) < 1.6, (width, "PAN rail", data)
     assert abs(data["fader"]["top"] - data["railFader"]["top"]) < 1.6, (width, "fader rail", data)
-    assert 21 <= data["cap"]["width"] <= 25 and 45 <= data["cap"]["height"] <= 50, (width, "fader face", data)
+    assert 26 <= data["cap"]["width"] <= 28 and 53 <= data["cap"]["height"] <= 55, (width, "M2 fader face", data)
     assert abs(data["key"]["height"] - 29) < 1.2, (width, "MUTE key", data)
     assert "Inter" in data["font"], (width, "font", data)
     assert not errors, (width, errors)

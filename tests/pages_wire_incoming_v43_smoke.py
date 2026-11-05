@@ -28,17 +28,36 @@ def impact_peak(path,baseline):
   if dist>max_point[1]:max_point=(t,dist)
  return max_point
 
+def impact_motion(path,baseline):
+ # Distributed squared-deformation centroid: unlike the single highest
+ # oscillation crest, this follows the entire slow traveling wave packet.
+ values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
+ base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
+ assert " L " in path and len(values)==114,(len(values),path[:90])
+ assert " C " in baseline and len(base)==8,(len(base),baseline)
+ x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
+ energy=0.
+ weighted_position=0.
+ for i in range(1,57):
+  t=i/56.;u=1-t
+  x=u*u*u*x0+3*u*u*t*c0x+3*u*t*t*c1x+t*t*t*x1
+  y=u*u*u*y0+3*u*u*t*c0y+3*u*t*t*c1y+t*t*t*y1
+  weight=(values[i*2]-x)**2+(values[i*2+1]-y)**2
+  energy+=weight
+  weighted_position+=t*weight
+ return weighted_position/max(energy,1e-12),math.sqrt(energy)
+
 def main():
  with tempfile.TemporaryDirectory(prefix="arsonmix-v43-") as dirname:
   dst=Path(dirname)/"dist"
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),"--out",str(dst),
                   "--sha","v43-ci-source","--branch","main"],check=True,
                  cwd=ROOT,capture_output=True,text=True)
-  public=dst/"preview/mixer.html"
+  public=dst/"preview/index.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert public.read_bytes()==CANONICAL.read_bytes(),"Public iframe still uses stale GUI"
-  assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Public iframe did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v47-css-v16' in public.read_text("utf-8")
+  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
+  assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
+  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
@@ -49,6 +68,13 @@ def main():
     body=page.locator(".console-body")
     if "collapsed-send" in (body.get_attribute("class") or ""):
      page.locator('.section-rail [data-section="send"]').click()
+    # WIRE-first default CH→MAIN is real. Disconnect this particular OUT
+    # using the operator UI so legacy neutral-pin physics remain testable.
+    page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
+    page.locator("#wireConfigToggle").click()
+    assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+    page.locator("#wireMaster").click()
+    page.locator("#wireConfigClose").click()
     src=page.locator('#tracks .strip[data-id="5"] .wire-node-out')
     pin=src.locator(".wire-pin")
     receiver=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
@@ -64,14 +90,17 @@ def main():
     # no test access to implementation-private JS variables is required.
     page.evaluate("""()=>{
       window.__v43Wave=[];
+      window.__v43Frames=[];
       const layer=document.getElementById('wireLayer');
       new MutationObserver(records=>{
         for(const r of records){
           const path=r.target;
           if(r.type!=='attributes'||!path.matches?.('path.wire-outgoing-line[data-cable-key="5-3"]'))continue;
           const d=path.getAttribute('d');
-          if(d?.includes(' L ')&&window.__v43Wave.at(-1)!==d)
+          if(d?.includes(' L ')&&window.__v43Wave.at(-1)!==d){
             window.__v43Wave.push(d);
+            window.__v43Frames.push({d,ms:performance.now()});
+          }
         }
       }).observe(layer,{attributes:true,attributeFilter:['d'],childList:true,subtree:true});
     }""")
@@ -92,16 +121,31 @@ def main():
     # A successful drop reconstructs the SVG once. The impact animation must
     # reacquire the NEW live path and update it rather than a detached path.
     page.wait_for_function("()=>window.__v43Wave.length>=16",timeout=4000)
-    page.wait_for_timeout(500)
-    trace=page.evaluate("()=>window.__v43Wave")
-    assert len(set(trace))>=16,("no visible traveling wave on accepted cable",len(trace))
     live=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')
-    page.wait_for_function("""()=>{const p=document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]');return p&&p.getAttribute('d')?.includes(' C ')}""",timeout=4000)
+    # Wait for the accepted cable to settle into its original cubic (not
+    # frame-count-based indexing; actual temporal damping is ~1600ms).
+    page.wait_for_function("""()=>{
+      const p=document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]');
+      return p&&p.getAttribute('d')?.includes(' C ')&&window.__v43Frames.length>=16;
+    }""",timeout=4500)
     baseline=live.get_attribute("d")
-    early=impact_peak(trace[max(2,int(len(trace)*.16))],baseline)
-    late=impact_peak(trace[min(len(trace)-2,int(len(trace)*.69))],baseline)
-    assert early[1]>.8 and late[1]>.25,(early,late)
-    assert early[0]>late[0]+.28,("impact did not travel IN to OUT",early,late)
+    frames=page.evaluate("()=>window.__v43Frames")
+    trace=[f["d"] for f in frames]
+    assert len(set(trace))>=16,("no visible traveling wave on accepted cable",len(trace))
+    t0=frames[0]["ms"]
+    # Use elapsed time and packet energy, not the highest sine crest; that
+    # crest changes phase while the flexible cable visibly settles.
+    def window_motion(lo,hi):
+     subset=[impact_motion(f["d"],baseline) for f in frames
+             if lo <= f["ms"]-t0 <= hi]
+     assert len(subset)>=3,("not enough timed animation samples",lo,hi,len(subset))
+     return (sum(x[0] for x in subset)/len(subset),
+             sum(x[1] for x in subset)/len(subset))
+    early=window_motion(150,400)
+    late=window_motion(950,1250)
+    assert early[1]>2.0 and late[1]>.35,(early,late)
+    assert early[0]-late[0]>.20,("energy packet did not travel IN to OUT",early,late)
+    assert late[1]<early[1]*.65,("cable motion did not damp",early,late)
     # Unarming WIRE must not delete the already committed incoming cable.
     page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     assert "wire-intent" not in (body.get_attribute("class") or "")
@@ -114,8 +158,11 @@ def main():
     bus=page.locator('#tracks .strip[data-id="11"] .wire-node-out')
     assert bus.is_visible(),"Bus A source must be on next bank"
     bus.click()
-    picker=page.locator('#wireLegend [data-wire-destination]')
+    # V50: same real cross-bank selector, now inside Config.
+    page.locator('#wireConfigToggle').click()
+    picker=page.locator('#wireConfigWindow #wireLegend [data-wire-destination]')
     picker.select_option("3")
+    page.locator('#wireConfigClose').click()
     page.locator("#bankPrev").click()
     page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     off=page.locator('#wireLayer path.wire-incoming-line[data-from="11"][data-to="3"]')

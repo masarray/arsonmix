@@ -1,3 +1,5 @@
+> **FINAL 2026-11-04 GUI REPLACEMENT:** All GUI authority in this historical document is superseded by **https://masarray.github.io/arsonmix/preview/** (the only approved GUI, including its approved PNG button variant). Bare `/preview-v2/` is rejected. Only one public preview (redirect old URLs), one JUCE GUI, one native PCM graph. Read [single handoff](workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) and root AGENTS.md. Older native DSP/safety/ABI/Show/FAT constraints remain valid. GUI work #389, engine #266/#387, FAT #270.
+
 # ArSonMix PRD v5.2 — Operator-First Live Mixer Console
 Date: 2026-11-01 | Updated: 2026-11-01, user-approved PR #278 one-console design lock (v5.2) | Status: **NORMATIVE PRODUCT TARGET, NOT SHIPPED FEATURE ATTESTATION** | Supersedes the workflow and priorities in PRD v4.1. Companion: [ARD v5.2](ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md).
 
@@ -134,7 +136,7 @@ All features below must coexist in one app and one verified integrated SHA:
 - Performance on standard Windows hardware, coherent native WebView assets, and physical 0FX/full-FX acoustic verification are release conditions; issue #15 remains a blocker until evidence exists.
 
 ### P8.3 Three puzzle owners, measurable delivery
-**ENGINE #266** supplies one native callback + accepted ChannelId graph + real source/output pin/PCM/FX/Show authority. **GUI #271** consumes that exact graph and sends intents, never invents DSP/ports or its own accepted state. **INTEGRATION #270** owns the single cross-layer fixture/test, combined CI and packaging. PR #279 contains the executable socket preflight; it is a *contract check*, not sound certification.
+**ENGINE #266** supplies one native callback + accepted ChannelId graph + real source/output pin/PCM/FX/Show authority. **native GUI #389** consumes that exact graph and sends intents, never invents DSP/ports or its own accepted state. **INTEGRATION #270** owns the single cross-layer fixture/test, combined CI and packaging. PR #279 contains the executable socket preflight; it is a *contract check*, not sound certification.
 
 Each owner must produce a **Puzzle Handoff** on [epic #192](https://github.com/masarray/arsonmix/issues/192): source SHA and changed files, one shared fixture version/hash, real operation supported by the installed callback or explicit NOT CONNECTED, tests at that SHA, cross-owner blocker and its corrective code change. A standalone green CI, offline Group or browser screenshot is not accepted as milestone completion.
 
@@ -179,4 +181,4 @@ User flow MUST be: launch → select real audio interface/device ONCE → choose
 6. Verify all controls in actual packaged Windows WebView2 build (not just the #278 HTML demo), 1024×600, 1366×768, 1680×900 and standard iGPU; no heavy blur, glow, hover-triggered full DOM rerender, jitter or excessive large fonts/cards.
 7. FAT validates one exact combined engine+GUI+test SHA and independent hardware evidence when available; if not, mark acoustic QA PENDING without passing certification. User UAT only after feature-complete integrated candidate.
 
-**Priority enforcement:** When UX conflicts arise, this user-approved #278 workflow wins for operator interaction. ARD RT/thread safety, physical truth, plugin lease ownership, ChannelId semantics, accepted native ACK, and sound integrity remain inviolable. ENGINE #266 serves the controls; GUI #271 implements the production screen in \`web/**\`; INTEGRATION #270 tests the operator journey. No parallel standalone UI as another release product.
+**Priority enforcement:** When UX conflicts arise, this user-approved #278 workflow wins for operator interaction. ARD RT/thread safety, physical truth, plugin lease ownership, ChannelId semantics, accepted native ACK, and sound integrity remain inviolable. ENGINE #266 serves the controls; native GUI #389 implements the production screen in \`web/**\`; INTEGRATION #270 tests the operator journey. No parallel standalone UI as another release product.

@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 WIRE_STYLE=PAGE.with_name("assets")/"mixer-wire-dots.css"
-assert 'assets/mixer-wire-dots.css?v=v47-css-v16' in PAGE.read_text(encoding="utf-8")
+assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in PAGE.read_text(encoding="utf-8")
 assert 'wire-node-out .wire-pin' in WIRE_STYLE.read_text(encoding="utf-8")
 def check(ok,msg): assert ok,msg
 def styles(loc):
@@ -21,6 +21,14 @@ def main():
    body=p.locator(".console-body")
    if "collapsed-send" in (body.get_attribute("class") or ""):
     p.locator('.section-rail [data-section="send"]').click()
+   # First-class MAIN is plugged by default. Explicitly disconnect the
+   # source and the later idle-control channel to verify TRUE dark graphite.
+   for channel in (5,6):
+    p.locator(f'#tracks .strip[data-id="{channel}"] .strip-identity-top').click()
+    p.locator("#wireConfigToggle").click()
+    assert p.locator("#wireMaster").get_attribute("aria-pressed")=="true"
+    p.locator("#wireMaster").click()
+    p.locator("#wireConfigClose").click()
    src=p.locator('#tracks .strip[data-id="5"] .wire-node-out')
    pin=src.locator(".wire-pin")
    dest=p.locator('#tracks .strip[data-id="3"] .wire-node-in')
@@ -73,11 +81,17 @@ def main():
    check(plug.count()==1,"floating dot must reappear after unsnapping")
    p.mouse.move(x1,y1,steps=4);p.mouse.up()
    check(p.locator("#wireLayer circle.wire-floating-plug").count()==0,"floating dot left behind after release")
-   # OUT still has a live routing context until click-away.
+   # Click-away releases patch intent, but the committed connection must stay visible as connected.
    p.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
    check("wire-intent" not in (body.get_attribute("class") or ""),"routing focus failed to release")
-   check(styles(src.locator(".wire-pin"))["bg"]==initial["bg"],"OUT failed to return graphite")
-   check(styles(dest.locator(".wire-arrow"))["bg"]==socket_idle,"inactive IN failed to return graphite")
+   check(src.get_attribute("data-wire-connected")=="true","OUT disconnected merely by click-away")
+   check(dest.get_attribute("data-wire-connected")=="true","IN disconnected merely by click-away")
+   # True neutral styling belongs only to channels with no committed routes.
+   idle_out=p.locator('#tracks .strip[data-id="6"] .wire-node-out')
+   check(idle_out.get_attribute("data-wire-connected") is None,
+         "unpatched OUT gained a phantom connection")
+   check(styles(idle_out.locator(".wire-pin"))["bg"]==initial["bg"],
+         "unpatched OUT must remain graphite")
    check(not errors,errors)
    p.close()
   b.close()

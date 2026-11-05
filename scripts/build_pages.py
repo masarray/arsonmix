@@ -10,88 +10,19 @@ args=p.parse_args()
 dst=Path(args.out).resolve()
 if dst==ROOT or dst==ROOT/'site': raise SystemExit('unsafe output path')
 dst.mkdir(parents=True,exist_ok=True)
-shutil.copytree(ROOT/'site',dst,dirs_exist_ok=True)
-# Pinned PR GUI candidate at public /preview/mixer.html, without merging
-# incomplete native ENGINE work. Never substitute this for a Windows release.
-source=ROOT/'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+# Publish only the landing and ONE approved /preview/ GUI. Internal GUI seed
+# folders remain in repo for design tests, never as separate public screens.
+shutil.copy2(ROOT/'site/index.html',dst/'index.html')
 subprocess.run([sys.executable,str(ROOT/'scripts/build_ui_css.py'),'--check'],check=True)
-candidate_manifest=ROOT/'site/preview/candidate.json'
-metadata={'sha':args.sha,'branch':args.branch,'source':source.name,'kind':'MAIN_SOURCE'}
-if candidate_manifest.is_file():
-    candidate=json.loads(candidate_manifest.read_text(encoding='utf-8'))
-    assert candidate['kind'] in ('DRAFT_GUI_QA_ONLY','REFERENCE_WORKFLOW_QA_ONLY')
-    assert len(candidate['source_sha'])==40 and candidate['ci_conclusion']=='success'
-    if candidate['kind']=='DRAFT_GUI_QA_ONLY':
-        assert candidate['source_pr']==271
-        assert candidate['source_branch']=='work/operator-console-v6'
-    else:
-        # User-approved PR278 workflow is the PUBLIC design authority.
-        # No ASIO/VST3/native capability can be inferred from this HTML.
-        assert candidate['source_pr']==278
-        assert candidate['source_branch']=='main/site/preview-v2'
-    if candidate['kind']=='REFERENCE_WORKFLOW_QA_ONLY':
-        # Copy directly from the *same* tested main commit as /preview-v2/.
-        # Prevent independent snapshot drift when other GUI threads update V8+.
-        source=ROOT/'site/preview-v2/index.html'
-    else:
-        source=ROOT/'site/preview/mixer.html'
-    assert source.is_file()
-    metadata={'sha':args.sha if candidate['source_pr']==278 else candidate['source_sha'],
-              'branch':candidate['source_branch'],
-              'source':('PR #285 Smart WIRE (PR #278 baseline) · SIMULATED / NO REAL AUDIO'
-                        if candidate.get('feature_pr')==285 else
-                        'PR #278 active operator workflow · SIMULATED / NO REAL AUDIO'
-                        if candidate['source_pr']==278 else 'PR #271 draft GUI snapshot'),
-              'kind':candidate['kind'],'live_audio':False,
-              'publisher_main_sha':args.sha,
-              'reference_baseline_sha':candidate['source_sha']}
-html=source.read_text(encoding='utf-8')
-assert '<style>' in html and '<script>' in html and ('data-fader' in html or 'data-field="level"' in html)
-(dst/'preview').mkdir(exist_ok=True)
-(dst/'preview'/'mixer.html').write_text(html,encoding='utf-8')
-# The same WIRE knob-ICON.svg is referenced by CSS relative to mixer.html.
-# /preview-v2/ has assets/ beside index.html; the generated /preview/ must
-# receive the matching asset beside mixer.html (no rewrite or second knob).
-if 'assets/knob-ICON.svg' in html:
-    source_knob=source.parent/'assets'/'knob-ICON.svg'
-    if not source_knob.is_file():
-        raise SystemExit(f'WIRE knob mask missing beside source HTML: {source_knob}')
-    preview_knob=dst/'preview'/'assets'/'knob-ICON.svg'
-    preview_knob.parent.mkdir(parents=True,exist_ok=True)
-    shutil.copy2(source_knob,preview_knob)
-    if preview_knob.read_bytes()!=source_knob.read_bytes():
-        raise SystemExit('WIRE knob mask copy mismatch in generated Pages preview')
-# Control material has ONE owner shared by /preview-v2/ and the public
-# /preview/mixer.html alias; never leave the alias with stale or missing assets.
-for control_asset in ('mixer-control-keys.css','mixer-control-keys.js','mixer-utility-controls.css','inter-embedded.css','mixer-fx-rack.css','mixer-plugin-browser.css','mixer-pan-controls.css','mixer-fader-assembly.css','mixer-meter-display.css','mixer-wire-dots.css','mixer-wire-out-align-v48.css','mixer-console-foundation.css','mixer-channel-grid.css','mixer-hardware-artwork.css','mixer-section-controls.css','mixer-section-layout.css','mixer-v3-layout-contract.css','mixer-chrome-material.css','mixer-contextual-buttons.css','mixer-contextual-buttons.js'):
-    if 'assets/'+control_asset in html:
-        src=source.parent/'assets'/control_asset
-        if not src.is_file(): raise SystemExit(f'Missing shared mixer key asset: {src}')
-        target=dst/'preview'/'assets'/control_asset
-        target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(src,target)
-        if src.read_bytes()!=target.read_bytes():
-            raise SystemExit(f'Published asset differs from preview source: {control_asset}')
 
-# Exact native 17×17 and 25×15 RGBA cap assets are dependencies of the
-# utility owner stylesheet, not direct HTML <img> tags. Always publish them
-# beside the public /preview/mixer.html stylesheet, without using stale WIRE.
-for keycap_asset in ('micro-hardware-17x17-2x4.png','format-hardware-25x15-2x1.png'):
-    src=ROOT/'site/preview-v2/assets'/keycap_asset
-    if not src.is_file(): raise SystemExit('Missing physical keycap: '+str(src))
-    dest=dst/'preview/assets'/keycap_asset
-    dest.parent.mkdir(parents=True,exist_ok=True)
-    shutil.copy2(src,dest)
-    if dest.read_bytes()!=src.read_bytes(): raise SystemExit('Micro keycap copy drift: '+keycap_asset)
-(dst/'preview'/'build.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
-
-# Approved PNG review follows the SAME current operator/WIRE source as /preview-v2/.
-# Generate it at publish time. Only button CSS/JS diverges; no copied HTML,
-# independent routing model, frozen WIRE styles or stale preview snapshot.
+# Build the ONLY owner-approved GUI at /preview/: internal base source plus
+# exactly the approved PNG control material. No second public renderer.
 buttons_source=ROOT/'site/preview-buttons/assets'
 canonical=ROOT/'site/preview-v2'
-buttons_dest=dst/'preview-buttons'
+buttons_dest=dst/'preview'
 if buttons_dest.exists(): shutil.rmtree(buttons_dest)
+# Public /preview/ is the only compiled GUI. Canonical base and PNG overrides
+# are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
@@ -119,8 +50,9 @@ for name in special:
     canonical_html=canonical_html[:match.start()]+token+'?rev='+digest+canonical_html[match.end():]
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
 (buttons_dest/'build.json').write_text(json.dumps({
+    'canonical_url':'/preview/',
     'sha':args.sha,'branch':args.branch,
-    'kind':'APPROVED_PNG_VISUAL_REVIEW_ONLY','live_audio':False,
+    'kind':'APPROVED_SINGLE_GUI','live_audio':False,
     'wire_source':'site/preview-v2/index.html',
     'wire_source_sha256':hashlib.sha256((canonical/'index.html').read_bytes()).hexdigest(),
     'button_asset_source':'site/preview-buttons/assets/',
@@ -130,6 +62,29 @@ for name in special:
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     if (buttons_dest/'assets'/name).read_bytes()!=(canonical/'assets'/name).read_bytes():
         raise SystemExit('PNG preview WIRE dependency drift: '+name)
+# The source directories /preview-v2/ and /preview-buttons/ MUST NOT ship
+# alternative mixer pages. Preserve old bookmarks with redirect-only shells;
+# all redirects lead to exactly the SAME approved /preview/ GUI.
+legacy_paths=('preview-v2','preview-buttons','preview-v33','preview-v34')
+redirect_html=('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+               '<meta http-equiv="refresh" content="0;url=../preview/">'
+               '<link rel="canonical" href="../preview/">'
+               '<title>ArSonMix — Official Preview</title></head>'
+               '<body><a href="../preview/">Open the only approved ArSonMix preview</a></body></html>')
+for legacy in legacy_paths:
+    target=dst/legacy
+    if target.exists(): shutil.rmtree(target)
+    target.mkdir(parents=True)
+    (target/'index.html').write_text(redirect_html,encoding='utf-8')
+# Retire the old competing /preview/mixer.html body and its candidate metadata;
+# they are never an alternate product skin.
+(dst/'preview'/'mixer.html').write_text(
+    '<!doctype html><meta http-equiv="refresh" content="0;url=./">'
+    '<link rel="canonical" href="./">',encoding='utf-8')
+for obsolete in ('candidate.json',):
+    (dst/'preview'/obsolete).unlink(missing_ok=True)
 (dst/'.nojekyll').touch()
 assert (dst/'index.html').exists() and (dst/'preview'/'index.html').exists()
-print('Built GitHub Pages:',dst,'preview source:',source,'revision:',args.sha)
+assert 'APPROVED_SINGLE_GUI' in (dst/'preview'/'build.json').read_text(encoding='utf-8')
+print('Built ONE approved public GUI at /preview/:',dst/'preview',
+      'from internal HTML + approved button assets', 'revision:',args.sha)

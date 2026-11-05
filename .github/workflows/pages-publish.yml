@@ -26,17 +26,20 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'main' }}
           persist-credentials: false
+          fetch-depth: 2 # Compare the exact main commit to its first parent without full history.
       - name: Skip superseded Pages builds
         id: guard
         shell: bash
         run: |
           SOURCE_SHA="$(git rev-parse HEAD)"
           CURRENT_MAIN="$(git ls-remote origin refs/heads/main | cut -f1)"
-          if [ "$SOURCE_SHA" = "$CURRENT_MAIN" ]; then
-            echo "fresh=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$SOURCE_SHA" != "$CURRENT_MAIN" ]; then
             echo "fresh=false" >> "$GITHUB_OUTPUT"
             echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
+          else
+            # On the latest qualified main, always publish the assembled /preview/;
+            # a preceding GUI commit may have been followed by docs/CI commits.
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/setup-python@v5
         if: ${{ steps.guard.outputs.fresh == 'true' }}
@@ -49,24 +52,9 @@ jobs:
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
-          if grep -q '"REFERENCE_WORKFLOW_QA_ONLY"' site/preview/candidate.json 2>/dev/null; then
-            cmp site/preview-v2/index.html dist-pages/preview/mixer.html
-          elif [ -f site/preview/candidate.json ]; then
-            cmp site/preview/mixer.html dist-pages/preview/mixer.html
-          else
-            cmp AR-MIX-Live-FX-Host-Standalone-v0.3.html dist-pages/preview/mixer.html
-          fi
-          # Fail publication if the reference's CSS mask file does not resolve
-          # from the generated /preview/mixer.html URL.
-          if grep -Fq 'assets/knob-ICON.svg' dist-pages/preview/mixer.html; then
-            test -s dist-pages/preview/assets/knob-ICON.svg
-            cmp site/preview-v2/assets/knob-ICON.svg dist-pages/preview/assets/knob-ICON.svg
-          fi
-          # CSS/JS must resolve in BOTH URLs: /preview-v2/ and /preview/.
-          for asset in mixer-control-keys.css mixer-control-keys.js mixer-utility-controls.css inter-embedded.css mixer-fx-rack.css mixer-plugin-browser.css mixer-pan-controls.css mixer-fader-assembly.css mixer-meter-display.css mixer-wire-dots.css mixer-wire-out-align-v48.css mixer-console-foundation.css mixer-channel-grid.css mixer-hardware-artwork.css mixer-section-controls.css mixer-section-layout.css mixer-v3-layout-contract.css mixer-chrome-material.css; do
-            test -s "dist-pages/preview/assets/$asset"
-            cmp "site/preview-v2/assets/$asset" "dist-pages/preview/assets/$asset"
-          done
+          # The ONLY public mixer is /preview/, generated with the approved
+          # PNG controls. Old links redirect to it; they never show other GUI.
+          python tests/single_preview_publication_contract_test.py dist-pages
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py

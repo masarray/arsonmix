@@ -7,12 +7,12 @@ No external web request; local site/preview-v2/index.html only.
 """
 from __future__ import annotations
 from pathlib import Path
-import subprocess, sys
+import subprocess, sys, re
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
-PUBLIC = (ROOT / "_preview-public-qa/preview/mixer.html").resolve()
+PUBLIC = (ROOT / "_preview-public-qa/preview/index.html").resolve()
 SIZES = [(1366, 768), (1666, 888), (1711, 1005), (1920, 1080)]
 
 
@@ -51,8 +51,10 @@ def audit_geometry(page, title):
                     problems.push('29px physical key height regression '+tag);
             }
             const cap=t.querySelector('.fader-travel .cap');
-            if(!cap||Math.abs(r(cap).width-23)>1.5||Math.abs(r(cap).height-48)>1.5)
-                problems.push('scaled 23x48 fader cap missing '+tag);
+            const density=document.querySelector('.console-body')?.dataset.density;
+            const [cw,ch]=density==='compact'?[25,50]:[27,54];
+            if(!cap||Math.abs(r(cap).width-cw)>.75||Math.abs(r(cap).height-ch)>.75)
+                problems.push('M2 '+cw+'x'+ch+' physical fader cap missing '+tag);
             const route=t.querySelector('.route-section');
             if(route&&route.scrollHeight>route.clientHeight+3)
                 problems.push('IN/OUT clipped '+tag);
@@ -64,11 +66,18 @@ def audit_geometry(page, title):
             problems.push('horizontal scrollbar overflow');
         const fx=r(strips[0].querySelector('.fx-section')).height;
         if(fx<60||fx>620)problems.push('FX rack not compact: '+fx);
-        const before=getComputedStyle(strips[0].querySelector('.fader-box'),'::before');
+        const well=strips[0].querySelector('.fader-box');
+        const before=getComputedStyle(well,'::before');
         const wellRgb=(before.backgroundColor.match(/[0-9]+/g)||[]).slice(0,3).map(Number);
-        if(before.backgroundImage!=='none'||wellRgb.length!==3||
-           Math.max(...wellRgb)>46||Math.min(...wellRgb)<4)
-            problems.push('deep solid graphite fader cavity absent');
+        const historicalFlat=before.backgroundImage==='none'&&wellRgb.length===3&&
+           Math.max(...wellRgb)<=46&&Math.min(...wellRgb)>=4;
+        // Owner-directed rollback: only the original V51 graphite cavity,
+        // exactly the surface accepted before V52/V54/V55. V52 bevel is
+        // explicitly disallowed; preserving old mechanics is intentional.
+        if(!historicalFlat || !before.boxShadow.includes('inset'))
+            problems.push('owner-restored flat graphite fader cavity missing');
+        if(Math.abs(parseFloat(getComputedStyle(well,'::after').width)-5)>.7)
+            problems.push('original 5px fader tail aperture missing');
         if(!getComputedStyle(strips[0]).boxShadow.includes('inset'))
             problems.push('missing metallic strip edge');
         for(const [name, selector] of Object.entries(cells)){
@@ -132,7 +141,7 @@ def audit_p0_collapse(page, label):
     states=result['states']
     assert len(states)==8,(label,'missing collapse permutations',list(states))
     baseline=states['000']
-    expected=max(160,min(530,page.viewport_size['height']-584))
+    expected=max(160,min(530,page.viewport_size['height']-(598 if page.viewport_size['height']>=801 else 584)))
     first=baseline['items'][0]
     assert first['fx']['list']>=88,(label,'four FX rows not visible with all upper panels open',first)
     assert abs(first['fader']['h']-expected)<=2,(label,'fader height not viewport-proportional',expected,first)
@@ -156,7 +165,7 @@ def audit_p0_collapse(page, label):
                     assert abs(item[k]['h']-ref['h'])<=1.2,(
                         label,state,i,k,'lower height changed',ref,item[k])
                 assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
-                    label,state,i,k,'rail lower not aligned')
+                    label,state,i,k,'rail lower not aligned',item[k],frame['rail'][k])
             for k in ('route','fx','send'):
                 assert abs(item[k]['top']-frame['rail'][k]['top'])<=1.2,(
                     label,state,i,k,'upper rail mismatch')
@@ -287,7 +296,16 @@ def main():
                     "--out", str(ROOT / "_preview-public-qa"), "--sha", "qa"],
                    check=True)
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
-    assert PUBLIC.read_bytes()==PAGE.read_bytes(), "Public /preview/mixer.html must be the PR278 reference, not old M4"
+    assembled=PUBLIC.read_text(encoding="utf-8")
+    raw=PAGE.read_text(encoding="utf-8")
+    for asset in ("mixer-control-keys.css","mixer-control-keys.js"):
+        token="assets/"+asset
+        source_link=re.search(re.escape(token)+r'(?:\?[^"\s>]+)?',raw)
+        assert source_link,(asset,"source link missing")
+        assembled=re.sub(re.escape(token)+r'\?rev=[0-9a-f]{16}',
+                         lambda _: source_link.group(0),assembled)
+    assert assembled==raw, "Public /preview/ must preserve every GUI interaction and differ only in approved PNG key URLs"
+    assert 'http-equiv="refresh"' in (PUBLIC.parent/"mixer.html").read_text(encoding="utf-8")
     count = 0
     with sync_playwright() as playwright:
         browser=playwright.chromium.launch(headless=True)
@@ -349,14 +367,14 @@ def main():
                 audit_channel_rearrange(page,f"{width}x{height} arrangement");count+=1
                 assert not errors, f"{width}x{height}: JavaScript runtime errors {errors}"
                 page.close()
-            # The URL explicitly requested by the owner is an independent
-            # acceptance surface. Verify its behavior, not just /preview-v2/.
+            # The user-approved /preview/ is the sole public acceptance surface.
+            # Verify its real behavior as well as the internal source.
             for width,height in SIZES:
                 page=browser.new_page(viewport={"width":width,"height":height},device_scale_factor=1)
                 errors=[]
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.goto(PUBLIC.as_uri())
-                audit_geometry(page,f"PUBLIC /preview/mixer.html {width}x{height}");count+=1
+                audit_geometry(page,f"PUBLIC /preview/ {width}x{height}");count+=1
                 audit_p0_collapse(page,f"PUBLIC {width}x{height} P0");count+=1
                 audit_p0_pan_center(page,f"PUBLIC {width}x{height} PAN");count+=1
                 page.screenshot(path=str(ROOT / f"preview-operator-{width}.png"))

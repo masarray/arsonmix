@@ -52,7 +52,7 @@ async def inspect(page, width, height):
         assert any('/'+name+'?' in link for link in metrics['links']), (width, name)
     for m in metrics['out']:
         assert m['pan']['h'] >= 20 and m['fader']['h'] >= 80, (width, 'geometry', m)
-        assert 21 <= m['cap']['w'] <= 25 and 45 <= m['cap']['h'] <= 50, (width, 'fader cap', m)
+        assert 26 <= m['cap']['w'] <= 28 and 53 <= m['cap']['h'] <= 55, (width, 'fader cap', m)
         assert m['meter']['h'] > 70 and m['vu'] != 'none', (width, 'meter', m)
         assert abs(m['pan']['y']-m['railPan']['y']) < 1.6, (width, 'PAN rail', m)
         assert abs(m['fader']['y']-m['railFader']['y']) < 1.6, (width, 'fader rail', m)

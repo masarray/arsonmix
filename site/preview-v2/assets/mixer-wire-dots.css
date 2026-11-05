@@ -263,11 +263,11 @@
  padding:3px 2px!important;box-sizing:border-box!important;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out{
- width:24px!important;min-width:24px!important;flex:0 0 24px!important;height:28px!important;
+ height:28px!important;
  border:0!important;background:transparent!important;box-shadow:none!important;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out .wire-pin{
- display:block;width:12px;height:12px;border:1px solid #9db6c2;border-radius:50%;
+ display:block;border:1px solid #9db6c2;
  background:linear-gradient(145deg,#d7e6eb,#718e9c);box-shadow:inset 0 1px #ffffff69,0 1px 2px #0009;
 }
 .console-body.wire-routing-v15 .strip .wire-tray .wire-node-out.is-source .wire-pin{
@@ -372,7 +372,7 @@
 .console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section{
  display:flex!important;flex-direction:column!important;align-items:stretch!important;
  justify-content:center!important;
- height:23px!important;min-height:23px!important;max-height:23px!important;
+
  padding:0!important;overflow:hidden!important;
 }
 .console-body.wire-routing-v15.collapsed-send .strip .send-section.wire-section .wire-deck,
@@ -385,7 +385,7 @@
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
  display:flex!important;align-items:center!important;justify-content:center!important;
  position:relative;z-index:1;
- flex:0 0 22px!important;height:22px!important;min-height:22px!important;max-height:22px!important;
+
  width:100%;padding:0!important;margin:0!important;
  color:var(--ch,#8babb5);background:transparent!important;border:0!important;
  font-size:0!important;line-height:0!important;overflow:hidden!important;
@@ -437,10 +437,7 @@
  fill:currentColor;opacity:1;
 }
 /* Three actual physical controls, no useless fourth slot for removed X. */
-.console-body.wire-routing-v15 .strip .wire-tray,
-.console-body.wire-routing-v15 .strip .wire-tray.linked{
- grid-template-columns:24px 28px 22px!important;gap:4px!important;
-}
+
 
 
 /* V26 Focus Signal Flow — compact inspectable two-way routing ledger.
@@ -820,3 +817,155 @@
 .console-body.wire-routing-v15.collapsed-send .strip .wire-fold-summary{
  flex:0 0 26px!important;height:26px!important;min-height:26px!important;max-height:26px!important;
 }
+
+/* V49 premium WIRE interaction: logical edge ↔ one precise transparent hit
+   curve. 6% dead ends on either side protect physical IN/OUT jack hitboxes. */
+#wireLayer path.wire-interaction-hit{
+ pointer-events:stroke!important;fill:none!important;stroke:transparent!important;
+ stroke-width:12px!important;stroke-linecap:butt!important;cursor:pointer;
+}
+#wireLayer path.wire-interaction-hit.is-wire-selected{
+ stroke:rgba(136,217,241,.19)!important;
+}
+#wireLayer path.wire-incoming-line.is-wire-selected,
+#wireLayer path.wire-outgoing-line.is-wire-selected,
+#wireLayer path.wire-context-line.is-wire-selected{
+ stroke-width:3px!important;opacity:1!important;
+}
+/* Source selection is temporary intent, while cable connection derives only
+   from the committed route model. No phantom lit output without an edge. */
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)
+ .strip .wire-tray .wire-node-out:not([data-wire-connected="true"]):not(.is-near):not(.is-source):not(:hover) .wire-pin{
+ background:#4b535b!important;border-color:#627681!important;
+ box-shadow:inset 0 1px 2px #061017!important;
+}
+.console-body.wire-routing-v15:not(.wire-intent):not(.wire-dragging)
+ .strip .wire-tray .wire-node-out[data-wire-connected="true"]:not([data-wire-visible="true"]) .wire-pin{
+ background:var(--ch,#9fc9d4)!important;border-color:#a8ced8!important;
+ box-shadow:inset 0 1px #ffffff38!important;
+}
+
+/* V50 WIRE CONFIGURATION — the same modeless physical tool family as
+   Navigator/Matrix, without stealing any fader/FX/meter workspace height. */
+.wire-config-window[hidden]{display:none!important}
+.wire-config-window{
+ position:absolute;z-index:29;top:29px;right:8px;
+ box-sizing:border-box;width:min(390px,calc(100% - 20px));
+ max-height:min(70vh,540px);overflow:auto;overscroll-behavior:contain;
+ border:1px solid #597887;border-radius:5px;background:#1b2d38;
+ color:#d2e4e9;font:11px/1.4 'Segoe UI',Arial,sans-serif;
+ box-shadow:0 12px 32px #000b,inset 0 1px #ffffff18;
+}
+.wire-config-head{
+ display:flex;align-items:center;justify-content:space-between;gap:7px;
+ padding:7px 9px;background:#223a47;border-bottom:1px solid #425c68;
+}
+.wire-config-head strong{font-size:11px;font-weight:650;color:#e1edf1}
+.wire-config-head button{
+ padding:1px 7px;background:#243c49;border:1px solid #4e6d7d;
+ border-radius:3px;color:#d6e7ec;cursor:pointer;
+}
+.wire-config-source{padding:9px 10px;color:#a8cad8;border-bottom:1px solid #314955;font-size:10px}
+.wire-config-row{
+ display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center;
+ column-gap:9px;min-height:38px;padding:5px 10px;border-bottom:1px solid #2b424e;
+}
+.wire-config-row>label{font:600 9px/1.2 'Segoe UI',Arial,sans-serif;letter-spacing:.035em;color:#a9c4cf}
+.wire-config-row .wire-mode-select,.wire-config-row .wire-view-select{
+ box-sizing:border-box;width:100%!important;max-width:none!important;min-width:0!important;
+ height:26px!important;border:1px solid #4f707e;border-radius:3px;
+ background:#102935;color:#e2eff3;padding:2px 7px;font-size:10px!important;
+}
+.wire-config-row .wire-master{
+ box-sizing:border-box;width:96px;max-width:100%;height:26px!important;
+ border-radius:3px;border:1px solid #557786;
+ background:linear-gradient(180deg,#466472,#1c3948);
+ color:#d7ecf0;padding:0 8px;font-size:10px;cursor:pointer;
+}
+.wire-config-row .wire-master[aria-pressed="true"]{
+ color:#baf8df;border-color:#5a9b7f;
+ background:linear-gradient(180deg,#3a8067,#164c39);
+}
+.wire-config-context{padding:8px 10px 10px;min-width:0}
+.wire-config-caption{display:block;margin-bottom:6px;color:#9dbdc7;font:600 9px/1.2 'Segoe UI',Arial,sans-serif;letter-spacing:.04em}
+.wire-config-context .wire-legend{
+ box-sizing:border-box;display:flex!important;flex-wrap:wrap;align-items:center;gap:6px;
+ min-width:0!important;max-width:none!important;width:100%;
+ white-space:normal;margin:0;padding:4px 0;
+}
+.wire-config-context .wire-legend button,.wire-config-context .wire-legend select{
+ max-width:100%;min-width:0;flex:0 1 auto;
+}
+.wire-config-context .wire-dest-picker{max-width:235px!important}
+.wire-config-foot{border-top:1px solid #324b57;padding:7px 10px;color:#91afba;font-size:9px}
+.wire-config-window button:focus-visible,.wire-config-window select:focus-visible{
+ outline:2px solid #a5dfe5;outline-offset:2px;
+}
+
+/* V54 context-aware WIRE sockets. Legacy SEND/OUT/split metadata lives in
+   Navigator, but cannot illuminate an unplugged actual WIRE jack. Applied
+   only to idle controls; magnet, hover and patch intent retain their cues. */
+.console-body.wire-routing-v15 .strip .wire-tray
+ .wire-node-out:not([data-wire-connected="true"]):not(.is-near):not(.is-source):not(.is-drag-origin):not(:hover):not(:focus-visible) .wire-pin{
+ background:#4b535b!important;border-color:#657681!important;
+ box-shadow:inset 0 1px 2px #061017!important;opacity:1!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray
+ .wire-node-in:not([data-wire-arrival="true"]):not(.is-snap-target):not(.is-replug-origin):not(:hover):not(:focus-visible) .wire-arrow{
+ background:#4b535b!important;border-color:#657681!important;
+ box-shadow:inset 0 1px 2px #061017!important;opacity:1!important;
+}
+
+/* V55: physically painted WIRE endpoints require a displayed accepted edge.
+   data-wire-connected remains independent graph truth for hidden/off-bank
+   inspection. Hover, magnet and deliberate patch intent remain transient. */
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="idle"]:not(.is-source):not(.is-drag-origin):not(.is-near):not(:hover):not(:focus-visible) .wire-pin,
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-in[data-wire-paint="idle"]:not(.is-snap-target):not(.is-replug-origin):not(:hover):not(:focus-visible) .wire-arrow{
+ background:#4b535b!important;border-color:#657681!important;
+ box-shadow:inset 0 1px 2px #061017!important;opacity:1!important;
+}
+.console-body.wire-routing-v15 .strip .wire-tray .wire-node-out[data-wire-paint="connected"]:not(:hover) .wire-pin{
+ background:var(--wire-edge-color)!important;opacity:var(--wire-edge-opacity,1)!important;
+}
+
+/* The receiving bezel itself must agree with its inner dot. A stored edge
+   hidden by WIRE focus is still connected in graph state but visually dark. */
+.console-body.wire-routing-v15 .strip .wire-tray
+ .wire-node-in[data-wire-paint="idle"]:not(:hover):not(.is-snap-target):not(.is-replug-origin){
+ border-color:#394a55!important;background:#1b2b35!important;
+ box-shadow:inset 0 1px 2px #07141c!important;
+}
+
+/* WIRE A2: two measured, local SVG fragments of one accepted MAIN edge.
+   Existing WIRE component owns material; jack hitboxes and console geometry
+   stay untouched. A tiny cubic sag replaces the former straight pseudo-stub. */
+.console-body.wire-routing-v15 .strip .send-section.wire-section{
+ position:relative;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment{
+ position:absolute;inset:0;width:100%;height:100%;
+ display:block;overflow:hidden;z-index:2;pointer-events:none;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-shadow,
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-jacket,
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-sheen{
+ fill:none;stroke-linecap:round;stroke-linejoin:round;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-shadow{
+ stroke:#061019;stroke-width:5.4;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-jacket{
+ stroke:var(--main-wire-hue,#a04b65);stroke-width:3.4;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-sheen{
+ stroke:#ffffff45;stroke-width:.8;opacity:.7;
+}
+.console-body.wire-routing-v15 .strip .wire-main-fragment .wire-main-plug{
+ fill:#9eabb2;stroke:#152530;stroke-width:1.3;
+}
+.console-body.wire-routing-v15.collapsed-send .strip .wire-main-fragment{
+ display:none;
+}
+/* V59: Folded WIRE shows only the flat IN/OUT contacts.
+   Physical MAIN cables (including ::after tails) are completely absent.
+   MAIN remains a canonical graph edge and does not light the OUT contact. */

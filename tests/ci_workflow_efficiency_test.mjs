@@ -1,62 +1,196 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// CI cost policy: file-change -> relevant check. No new workflow or duplicate audio engine.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-const read=file=>readFileSync(file,'utf8');
-const windows=read('.github/workflows/p1-windows.yml');
-const ui=read('.github/workflows/ui-smoke.yml');
-const pages=read('.github/workflows/pages-publish.yml');
-test('only an integrated product branch may upload a Windows mixer candidate',()=>{
- assert.match(windows,/branches: \[main\]/);
- assert.doesNotMatch(windows,/branches: \[ main, feature\//);
- assert.match(windows,/pull_request:\s+paths:/);
- assert.match(windows,/'src\/\*\*'/);
- assert.match(windows,/'engine\/\*\*'/);
- assert.match(windows,/'web\/\*\*'/);
- assert.match(windows,/workflow_dispatch:/);
- assert.match(windows,/cancel-in-progress: true/);
- assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
- assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
- assert.doesNotMatch(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT/);
- assert.ok(!windows.includes("github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101'"));
- assert.ok(windows.indexOf('scripts/verify_native_windows_artifact.ps1') <
-           windows.indexOf('uses: actions/upload-artifact@v4'));
-});
-test('UI PRs have one cancellable Chromium gate; heavy Firefox is main/manual only',()=>{
- assert.match(ui,/concurrency:\s+group: ui-smoke-/);
- assert.match(ui,/cancel-in-progress: true/);
- assert.match(ui,/pull_request:\s+paths:/);
- assert.match(ui,/'web\/\*\*'/);
- const tail=ui.split('name: Install Firefox for compositor functional regression')[1];
- assert.ok(tail && tail.includes("if: ${{ github.event_name != 'pull_request' }}"));
- assert.match(ui,/retention-days: 3/);
-});
-test('exactly one guarded downstream Pages publisher; never a second automated publisher',()=>{
- assert.match(pages,/workflows: \["UI smoke \(Chromium\)"\]/);
- assert.match(pages,/github\.event\.workflow_run\.event == 'push'/);
- assert.match(pages,/git ls-remote origin refs\/heads\/main/);
- assert.match(pages,/if: \$\{\{ needs\.build\.outputs\.fresh == 'true' \}\}/);
- assert.doesNotMatch(ui,/actions\/deploy-pages@/);
+import {requiresUiSmoke, requiresNativeQualification} from '../scripts/check_workstream_coordination.mjs';
+
+const read = path => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+const native = read('.github/workflows/p1-windows.yml');
+const ui = read('.github/workflows/ui-smoke.yml');
+const pages = read('.github/workflows/pages-publish.yml');
+const factory = read('.github/workflows/factoryfx-release-watch.yml');
+
+// Restrict extraction to GitHub Actions path blocks, not arbitrary matching strings.
+function pathsFor(yaml, event, nextEvent) {
+  const start = yaml.indexOf('\n  ' + event + ':\n');
+  const end = yaml.indexOf('\n  ' + nextEvent + ':\n', start + 1);
+  assert.ok(start >= 0 && end > start, 'Missing trigger block: ' + event);
+  const section = yaml.slice(start, end);
+  const paths = [...section.matchAll(/^      - '([^']+)'$/gm)].map(match => match[1]);
+  assert.ok(paths.length > 0, 'Missing path filters for ' + event);
+  return paths;
+}
+
+function globMatches(pattern, filename) {
+  let regex = '^';
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === '*' && pattern[i + 1] === '*') {
+      regex += '.*';
+      i++;
+    } else if (char === '*') regex += '[^/]*';
+    else if ('\\.+?^$()[]{}|'.includes(char)) regex += '\\' + char;
+    else regex += char;
+  }
+  return new RegExp(regex + '$').test(filename);
+}
+
+const windowsPush = pathsFor(native, 'push', 'workflow_call');
+// Pull requests are always admitted; this exact classifier decides whether to call reusable MSVC.
+const nativePrSelected = filename => requiresNativeQualification([filename]);
+const uiPush = pathsFor(ui, 'push', 'pull_request');
+// Unfiltered PR entry runs cheap admission; only UI-relevant paths run browser.
+const uiPRSelected = filename => requiresUiSmoke([filename]);
+const selected = (paths, file) => paths.some(p => globMatches(p, file));
+
+test('visual GUI changes never consume Windows native runner on a PR or on main', () => {
+  for (const filename of [
+    'site/preview-v2/index.html', 'site/preview-v2/assets/mixer-fader-assembly.css',
+    'web/mixer-layout.js', 'web/mixer-io.js',
+    'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+  ]) {
+    assert.ok(uiPRSelected(filename), filename + ' must run frontend PR checks');
+    assert.ok(selected(uiPush, filename), filename + ' must qualify Pages');
+    assert.equal(nativePrSelected(filename), false, filename + ' wrongly triggers native PR');
+    assert.equal(selected(windowsPush, filename), false, filename + ' wrongly triggers native main');
+  }
 });
 
-test('retain current native audio and dearVR CTests during CI optimization',()=>{
- const targets=windows.split('name: Build executable and native RT tests')[1]?.split('\n')[1]||'';
- for(const name of ['ARMixFxBypassEnvelopeTests','ARMixDearVrPolarPolicyTests',
-   'ARMixOrbitDistanceTests','ARMixOrbitMotionTests','ARMixRTTests']){
-   assert.ok(targets.includes(name),'Missing mandatory native regression '+name);
- }
- assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
- assert.match(windows,/'scripts\/build_ui_css\.py'/);
- assert.ok(windows.includes("github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')"));
- assert.ok(windows.includes('ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED'));
- assert.doesNotMatch(windows,/ArSonMix-ENGINE-10CH4AUX-EXPERIMENTAL-Hardware-FAT/);
+test('native PCM and device changes always use Windows/CTest, never Chromium by accident', () => {
+  for (const filename of [
+    'src/LiveAudioEngine.h', 'engine/core/DynamicPreparedMixerBlock.h',
+    'tests/channel_routing_contract_test.cpp'
+  ]) {
+    assert.ok(nativePrSelected(filename), filename + ' must qualify native PR');
+    assert.ok(selected(windowsPush, filename), filename + ' must qualify native main');
+    assert.equal(uiPRSelected(filename), false, filename + ' wrongly triggers browser PR');
+    assert.equal(selected(uiPush, filename), false, filename + ' wrongly triggers browser main');
+  }
+  assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
+  for (const target of [
+    'ARMixPreparedMixerBlockTests', 'ARMixNativeMixerSessionTests',
+    'ARMixLiveRoutingEpochTests', 'ARMixRTTests', 'ARMixLiveChannelFxTests'
+  ]) assert.ok(native.includes(target), 'Missing vital audio test ' + target);
 });
 
-test('native FAT compiles the exact ENGINE PR HEAD and rejects transient merge refs',()=>{
- const shaRef="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
- assert.ok(windows.includes(shaRef));
- assert.match(windows,/ENGINE_EXACT_SOURCE_SHA_VERIFIED/);
- assert.match(windows,/git rev-parse HEAD/);
- assert.ok(windows.indexOf('ENGINE_EXACT_SOURCE_SHA_VERIFIED')<
-           windows.indexOf('name: Build executable and native RT tests'));
+test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
+  for (const filename of [
+    'web/approved-native-bridge.js',
+    'web/approved-native-contract.js',
+    'tests/approved_native_m2_contract.test.cjs',
+    'scripts/build_approved_native_gui.py',
+    'tests/approved_native_gui_bundle_test.py'
+  ]) {
+    assert.ok(nativePrSelected(filename), filename+' must run native build on PR');
+    assert.ok(selected(windowsPush,filename), filename+' must rebuild native main bundle');
+  }
+  assert.match(native,/Check approved Pages GUI provenance before costly JUCE checkout/);
+});
+
+test('native WebView bridge and integration genuinely require both owners', () => {
+  for (const filename of [
+    'web/bridge.js', 'web/monitor.js', 'integration/console-v6/contract.json'
+  ]) {
+    for (const paths of [windowsPush, uiPush]) {
+      assert.ok(selected(paths, filename), filename + ' needs native+GUI checks');
+    }
+    assert.ok(uiPRSelected(filename),filename+' needs PR Chromium tests');
+    assert.ok(nativePrSelected(filename),filename+' needs PR native tests');
+  }
+});
+
+test('docs and isolated CI tests do not fan out into unrelated builds', () => {
+  const paths = [windowsPush, uiPush];
+  for (const filename of [
+    'README.md', 'docs/workstreams/START_HERE_WIRE_FIRST_20261104.md'
+  ]) {
+    assert.ok(paths.every(p => !selected(p, filename)), 'Doc triggered CI: ' + filename);
+    assert.equal(uiPRSelected(filename),false,'Doc only needs lightweight PR admission: '+filename);
+    assert.equal(nativePrSelected(filename),false,'Doc must not compile native: '+filename);
+  }
+  for (const filename of [
+    'tests/pages_wire_first_canonical_main_smoke.py',
+    'tests/wire_graph_canonical_model.test.cjs',
+    'tests/wire_main_native_handoff_contract.test.cjs',
+    'tests/ci_workflow_efficiency_test.mjs'
+  ]) {
+    assert.equal(nativePrSelected(filename), false);
+    assert.equal(selected(windowsPush, filename), false);
+    assert.equal(uiPRSelected(filename), true);
+    assert.equal(selected(uiPush, filename), true);
+  }
+});
+
+test('ordinary GUI PR and main use current targeted checks; full history is explicit', () => {
+  assert.match(ui, /concurrency:\s+group: ui-smoke-/);
+  assert.match(ui, /cancel-in-progress: true/);
+  assert.match(ui, /python tests\/pages_wire_first_canonical_main_smoke.py/);
+  assert.match(ui, /python tests\/pages_v55_context_wire_fader_smoke.py/);
+  assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
+  assert.match(ui, /python tests\/pages_v51_portrait_led_peak_hold_smoke.py/);
+  const fullOnly = [...ui.matchAll(/^\s{8}if: .*workflow_dispatch.*integration\/product-/gm)].length;
+  assert.ok(fullOnly >= 35, 'Historical/extended GUI steps must be opt-in, found ' + fullOnly);
+  assert.match(ui, /python tests\/pages_css_architecture_v27_smoke.py/);
+  assert.match(ui, /retention-days: 3/);
+});
+
+test('Windows runs native realtime CTest; packaging is for main, manual and release branches only', () => {
+  assert.match(native, /branches: \[main\]/);
+  assert.match(native, /workflow_dispatch:/);
+  assert.match(native, /cancel-in-progress: true/);
+  const packageGates = [...native.matchAll(/^\s{8}if: .*integration\/product-.*milestone\/m4-/gm)].length;
+  assert.equal(packageGates, 3, 'All 3 packaging/staging/ZIP steps must be gated');
+  assert.match(native, /scripts\/verify_native_windows_artifact.ps1/);
+  assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <
+            native.indexOf('uses: actions/upload-artifact@v4'));
+});
+
+test('Pages is single guarded downstream publisher, never triggered by PR completion', () => {
+  assert.match(pages, /workflows: \["UI smoke \(Chromium\)"\]/);
+  assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(pages, /git ls-remote origin refs\/heads\/main/);
+  assert.match(pages, /fetch-depth: 2/);
+  // The old first-parent only diff gate was unsafe: a docs/CI commit after
+  // the GUI commit could suppress the final qualified /preview/ deployment.
+  assert.doesNotMatch(pages, /git diff --quiet HEAD\^ HEAD --/);
+  assert.match(pages, /always publish the assembled \/preview\//);
+  assert.match(pages, /python tests\/single_preview_publication_contract_test.py dist-pages/);
+  assert.match(ui, /python tests\/single_preview_publication_contract_test.py dist-pages/);
+  assert.match(pages, /needs\.build\.outputs\.fresh == 'true'/);
+  assert.doesNotMatch(ui, /actions\/deploy-pages@/);
+  assert.doesNotMatch(native, /actions\/deploy-pages@/);
+  assert.match(factory, /schedule:/);
+  assert.doesNotMatch(factory, /^\s{2}push:/m);
+});
+
+test('M2.6 always-on coordination job has a stable name and skips unrelated Chromium', () => {
+  const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
+  assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
+  assert.doesNotMatch(prBlock,/^\s+paths:/m);
+  assert.match(ui,/name: PR coordination admission/);
+  assert.match(ui,/needs: coordination/);
+  assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
+  assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
+});
+
+test('P0 single product qualification fans in exact scoped native and UI jobs',()=>{
+  assert.match(native,/^  workflow_call:/m);
+  assert.doesNotMatch(native,/^  pull_request:/m);
+  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
+  assert.match(ui,/name: Product Qualification/);
+  assert.match(ui,/needs: \[coordination, frontend, native\]/);
+  assert.match(ui,/NATIVE_RESULT.*needs\.native\.result/);
+  assert.match(ui,/UI_RESULT.*needs\.frontend\.result/);
+  assert.match(ui,/if: \$\{\{ always\(\) && github\.event_name == 'pull_request' \}\}/);
+  for(const path of [
+    'integration/ApprovedNativeRuntimeSnapshot.h',
+    'integration/ApprovedNativeV8Projection.h',
+    'integration/ApprovedNativeControlIntent.h',
+    'scripts/check_console_puzzle.mjs',
+    'scripts/check_approved_native_gui_release.mjs'
+  ]) assert.ok(nativePrSelected(path),path+' bypassed native build');
+  for(const path of ['docs/workstreams/MULTI_AGENT_COORDINATION.md',
+    'site/preview/assets/mixer-fader-assembly.css'])
+    assert.equal(nativePrSelected(path),false,path+' wrongly launches Windows');
 });

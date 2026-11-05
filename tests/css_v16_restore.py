@@ -20,8 +20,10 @@ def manifest():
 
 def reconstruct():
     data=manifest()
-    current=HTML.read_text(encoding="utf-8")
-    now_wire=WIRE.read_text(encoding="utf-8")
+    from css_v17_restore import reconstruct as restore_v16_source
+    current,_=restore_v16_source()
+    from css_v23_restore import original_owner
+    now_wire=original_owner("mixer-wire-dots.css")
     assert len(now_wire)==data["afterWireSize"],"WIRE owner changed"
     prefix=data["movedPrefix"]
     assert now_wire.startswith(prefix),"WIRE original moved rule prefix changed"
@@ -52,6 +54,15 @@ def mount_original(html,wire=None):
     assert html.count(original)==1
     temporary=[]
     try:
+        from css_v17_restore import mount_owner
+        html,old_plugin=mount_owner(html)
+        temporary.extend(old_plugin)
+        from css_v18_restore import mount_owner as mount_chrome
+        html,old_chrome=mount_chrome(html)
+        temporary.extend(old_chrome)
+        from css_v19_restore import mount_owners as mount_pre_v19
+        html,old_controls=mount_pre_v19(html,include_chrome=False)
+        temporary.extend(old_controls)
         f=tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",suffix=".css",
             prefix=".v16-previous-wire-",dir=WIRE.parent,delete=False)
         with f:f.write(wire)

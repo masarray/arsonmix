@@ -1,0 +1,160 @@
+{
+  "milestone": "V26",
+  "baseCommit": "2f01022370c589205d738366242d2d2aeb77b10d",
+  "scope": "CSS rules with all selector branches requiring retired .hw-switch-socket, plus one strictly empty rule. Preserve :is branches and other selectors because specificity may change.",
+  "owners": [
+    "inline",
+    "mixer-control-keys.css"
+  ],
+  "oldLink": "assets/mixer-control-keys.css?v=css-v25-physical-key-owner",
+  "currentLink": "assets/mixer-control-keys.css?v=css-v26-retired-socket-pruned",
+  "htmlOld": {
+    "length": 190164,
+    "fnv": "7b9d1482",
+    "important": 152
+  },
+  "htmlCurrent": {
+    "length": 188698,
+    "fnv": "6ac3babb",
+    "important": 115
+  },
+  "sources": {
+    "inline": {
+      "old": {
+        "length": 14394,
+        "fnv": "65d0b904",
+        "important": 152
+      },
+      "current": {
+        "length": 12925,
+        "fnv": "d2b6c591",
+        "important": 115
+      },
+      "edits": [
+        {
+          "offset": 7983,
+          "text": ".console-body .strip .switch-section .hw-switch-socket {\n position:relative!important;\n display:flex!important;\n align-items:stretch!important;\n justify-content:stretch!important;\n flex:1 1 0!important;\n min-width:0!important;\n height:calc(var(--switch-h) - 7px)!important;\n max-height:34px!important;\n min-height:24px!important;\n padding:2px!important;\n box-sizing:border-box!important;\n isolation:isolate!important;\n overflow:hidden!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket",
+          "important": 13,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 8431,
+          "text": ".console-body .strip .switch-section .hw-switch-socket::before {\n content:\"\"!important;\n position:absolute!important;inset:1px!important;pointer-events:none!important;\n border-radius:2px!important;\n box-shadow:inset 0 1px 0 #000,inset 0 -1px 0 #2a404c!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket::before",
+          "important": 6,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 8696,
+          "text": ".console-body .strip .switch-section .hw-switch-socket::after {\n content:\"\"!important;\n position:absolute!important;inset:0!important;\n border:1px solid #0a131a!important;\n background:transparent!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket::after",
+          "important": 5,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 8905,
+          "text": ".console-body .strip .switch-section .hw-switch-socket>.switch {\n position:relative!important;z-index:2!important;\n flex:1 1 auto!important;\n min-width:0!important;width:100%!important;\n height:100%!important;min-height:0!important;max-height:none!important;\n padding:0 1px!important;\n border-radius:2px!important;\n transform:translateY(0)!important;\n overflow:hidden!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket>.switch",
+          "important": 12,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 9286,
+          "text": ".console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled) {\n transform:translateY(1px)!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket>.switch:active:not(:disabled)",
+          "important": 1,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 9881,
+          "text": ".console-body .strip .gain-scale-travel {\n\n}",
+          "selector": ".console-body .strip .gain-scale-travel",
+          "important": 0,
+          "kind": "empty"
+        }
+      ],
+      "metrics": {
+        "rules": 6,
+        "deadRules": 5,
+        "emptyRules": 1,
+        "chars": 1469,
+        "important": 37
+      }
+    },
+    "mixer-control-keys.css": {
+      "old": {
+        "length": 16743,
+        "fnv": "caadb134",
+        "important": 109
+      },
+      "current": {
+        "length": 15650,
+        "fnv": "68d276a0",
+        "important": 95
+      },
+      "edits": [
+        {
+          "offset": 1102,
+          "text": ".console-body .strip .switch-section .hw-switch-socket{\n background:#061118!important;\n border:1px solid #050b0f!important;\n border-radius:3px!important;\n box-shadow:inset 0 1px 0 #000,inset 1px 0 0 #000,\n            inset -1px 0 0 #425965,inset 0 -1px 0 #435a64!important;\n transform:none!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket",
+          "important": 5,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 1405,
+          "text": ".console-body .strip .switch-section .hw-switch-socket::before{\n background:linear-gradient(180deg,#030a10,#142630)!important;\n z-index:0!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket::before",
+          "important": 2,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 1556,
+          "text": ".console-body .strip .switch-section .hw-switch-socket::after{\n z-index:4!important;\n pointer-events:none!important;\n border-radius:3px!important;\n box-shadow:inset 0 1px 0 #b1cdd43b,inset 1px 0 0 #9cb9c32f,\n            inset -1px 0 0 #000e,inset 0 -1px 0 #050b10!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket::after",
+          "important": 4,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 7034,
+          "text": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.mute{\n --am-key30-led:#ef6376;color:#ffe9ed!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.mute",
+          "important": 1,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 7157,
+          "text": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.solo{\n --am-key30-led:#f6d16b;color:#fff0c0!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.solo",
+          "important": 1,
+          "kind": "dead legacy wrapper"
+        },
+        {
+          "offset": 7280,
+          "text": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.cue{\n --am-key30-led:#78d3e9;color:#dffaff!important;\n}",
+          "selector": ".console-body .strip .switch-section .hw-switch-socket>.switch.on.cue",
+          "important": 1,
+          "kind": "dead legacy wrapper"
+        }
+      ],
+      "metrics": {
+        "rules": 6,
+        "deadRules": 6,
+        "emptyRules": 0,
+        "chars": 1093,
+        "important": 14
+      }
+    }
+  },
+  "totals": {
+    "deadRules": 11,
+    "emptyRules": 1,
+    "removedChars": 2562,
+    "removedImportant": 51,
+    "newRules": 0,
+    "newImportant": 0,
+    "newStylesheets": 0,
+    "modifiedJs": 0,
+    "modifiedEngine": 0
+  }
+}

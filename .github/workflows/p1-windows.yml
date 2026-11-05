@@ -7,41 +7,43 @@ on:
     paths:
       - 'CMakeLists.txt'
       - 'integration/console-v6/**'
+      # Native headers may live outside console-v6 (M3 readback/ABI).
+      - 'integration/*.h'
+      - 'integration/*.hpp'
+      - 'integration/*.cpp'
+      - 'integration/**/*.h'
+      - 'integration/**/*.hpp'
+      - 'integration/**/*.cpp'
       - 'src/**'
+      - 'web/approved-native-bridge.js'
+      - 'web/approved-native-contract.js'
+      - 'tests/approved_native_m2_contract.test.cjs'
+      - 'scripts/build_approved_native_gui.py'
+      - 'tests/approved_native_gui_bundle_test.py'
       - 'engine/**'
-      - 'web/**'
-      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
-      - 'scripts/build_ui_css.py'
+      # Only the native WebView bridge can trigger Windows; pure GUI/CSS uses Chromium + Pages.
+      - 'web/bridge.js'
+      - 'web/monitor.js'
       - 'tests/*.cpp'
-      # Native Windows gate executes this JS integration contract; source-only
-      # contract corrections must not leave a stale failed release gate.
-      - 'tests/live_routing_ui_contract_test.mjs'
       - 'scripts/package_native_windows.ps1'
       - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/collect_hardware_fat_windows.ps1'
+      - 'scripts/console_v6_fat_gate.mjs'
+      - 'scripts/verify_console_s0_native_fixture.mjs'
+      - 'scripts/run_console_native_s0.mjs'
+      - 'scripts/check_console_puzzle.mjs'
+      - 'scripts/check_approved_native_gui_release.mjs'
+      - 'scripts/check_pr278_console_authority.mjs'
+      - 'scripts/m3e_fat_evidence_gate.mjs'
       - 'scripts/factoryfx_release_bundle.py'
       - 'config/factoryfx-approved-releases.json'
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
-  # GUI-only PRs receive browser checks; they need not compile JUCE on every edit.
-  # A merged GUI change is still packaged once on main, or manually for FAT.
-  pull_request:
-    paths:
-      - 'CMakeLists.txt'
-      - 'integration/console-v6/**'
-      - 'src/**'
-      - 'engine/**'
-      - 'tests/*.cpp'
-      - 'tests/*native*contract*.mjs'
-      - 'tests/live_graph_contract_test.mjs'
-      - 'tests/ci_workflow_efficiency_test.mjs'
-      - 'scripts/package_native_windows.ps1'
-      - 'scripts/verify_native_windows_artifact.ps1'
-      - 'scripts/factoryfx_release_bundle.py'
-      - 'config/factoryfx-approved-releases.json'
-      - 'config/factoryfx-notices/**'
-      - 'scripts/tests/test_factoryfx_release_bundle.py'
-      - '.github/workflows/p1-windows.yml'
+  # PR native compile is called ONLY by UI smoke's Product Qualification fan-in.
+  # GUI/docs-only PRs skip Windows entirely; main and manual release stay here.
+  # Called by the all-PR quality workflow. No duplicate Windows PR run.
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +52,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   windows-build:
@@ -57,30 +60,25 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-        with:
-          # PR default is a transient refs/pull/*/merge. Test and package
-          # the precise approved ENGINE SHA, never a synthetic merge.
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      - name: Attest exact source SHA before native compile or packaging
-        shell: pwsh
-        run: |
-          $expected = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
-          $actual = (& git rev-parse HEAD).Trim()
-          if ($expected -notmatch '^[0-9a-f]{40}$' -or $actual -ne $expected) {
-            throw "ENGINE SOURCE SHA MISMATCH: expected=$expected checkout=$actual"
-          }
-          Write-Host "ENGINE_EXACT_SOURCE_SHA_VERIFIED: $actual"
+      - name: Cheap one-owner / overlapping-PR preflight (read-only)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
-        run: |
-          node --test tests/engine_runtime_reconciliation_test.mjs
-          node scripts/check_console_puzzle.mjs
+        run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') }}
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
       - name: Fast offline FactoryFX release and integrity contract tests
         shell: pwsh
         run: |
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check approved Pages GUI provenance before costly JUCE checkout
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Checkout JUCE 8 pinned
         uses: actions/checkout@v4
@@ -96,12 +94,14 @@ jobs:
         run: |
           # Do not hide earlier Node failures with the exit code of the LAST
           # command. One Node invocation also avoids repeated startup costs.
-          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js', 'web/mixer-io.js', 'web/mixer-layout.js')) {
+          foreach ($file in @('web/bridge.js', 'web/plugin-ui.js', 'web/monitor.js', 'web/app.js', 'web/mixer-io.js', 'web/mixer-layout.js', 'web/approved-native-contract.js', 'web/approved-native-bridge.js')) {
             node --check $file
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           $contracts = @(
+            'tests/workstream_coordination_contract.test.mjs'
             'tests/gui_workflow_contract_test.mjs'
+            'tests/approved_native_m2_contract.test.cjs'
             'tests/native_ui_contract_test.mjs'
             'tests/native_preset_contract_test.mjs'
             'tests/fx_add_contract_test.mjs'
@@ -115,8 +115,6 @@ jobs:
             'tests/independent_clock_adapter_contract_test.mjs'
             'tests/direct_restore_recovery_contract_test.mjs'
             'tests/native_artifact_packaging_contract_test.mjs'
-            'tests/console_native_stereo_operator_test.mjs'
-            'tests/console_native_vst3_host_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
             'tests/plugin_ui_contract_test.mjs'
@@ -134,31 +132,38 @@ jobs:
           -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
           -DBUILD_TESTING=ON
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+      - name: Verify exact ONE approved /preview/ GUI CMake bundle
+        run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
       - name: Build executable and native RT tests
         run: cmake --build build --config Release --target ARMixConsole ARMixFactoryFxRegistryTests ARMixFxOrderTests ARMixFxStructuralHandoffTests ARMixMixerRoutingTests ARMixChannelRoutingContractTests ARMixChannelSendTests ARMixPreparedMixerBlockTests ARMixLiveRoutingEpochTests ARMixJucePortMaskTests ARMixNativeMixerSessionTests ARMixNativeDrySendTests ARMixLiveChannelFxTests ARMixDedicatedAuxBusTests ARMixTenChannelLiveControlTests ARMixWorkspaceTests ARMixVaultTests ARMixBackupTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixOrbitMotionTests ARMixOrbitDistanceTests ARMixFxBypassEnvelopeTests ARMixDearVrPolarPolicyTests ARMixRTTests ARMixPresetTests ARMixShowSchemaTests ARMixShowStoreTests ARMixLiveShowCaptureTests ARMixNativeMasterLoudnessTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCaptureBoundaryTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # Stop-ship: ENGINE-only CI is still built with abandoned 10-strip GUI.
-      # Never upload it as a user-testable mixer. Only exact-SHA joined product
-      # integration may upload after mandatory approved-Console release gating.
+      # Ordinary engine PRs compile/CTest without wasting package/ZIP work.
+      # Release-integration PRs and main/manual runs package and verify, but never silently publish a stable release.
+      # This single M4 FAT branch is explicitly allowed to upload an
+      # UNQUALIFIED experimental ZIP for real physical hardware testing.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-') }}
+        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' }}
         with:
-          name: ArSonMix-INTEGRATED-UNIVERSAL-CONSOLE-EXPERIMENTAL-NOT-HARDWARE-QUALIFIED-Windows-x64
+          name: ${{ github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
           path: dist/
           if-no-files-found: error
+          retention-days: 14
