@@ -334,6 +334,69 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 }
 
+// A prepared physical M4 mixer must allow the user to PATCH CH1 even when
+// universal ChannelId PCM has not yet been admitted. This is device truth,
+// not a test-only callback or optimistic GUI state.
+static void firstSoundRouteAdmissionRegression() {
+    auto snapshot=canonicalSnapshot();
+    const auto device=snapshot.getProperty("device",{});
+    auto* d=device.getDynamicObject();
+    juce::Array<juce::var> inputs,outputs;
+    inputs.add(0);outputs.add(0);outputs.add(1);
+    d->setProperty("epoch","7");
+    d->setProperty("sampleRate",48000.0);
+    d->setProperty("bufferFrames",128);
+    d->setProperty("enabledInputs",juce::var(inputs));
+    d->setProperty("enabledOutputs",juce::var(outputs));
+    const auto live=parse(R"JSON({
+      "connected":true,"directRouteAuthorized":true,"adaptiveClockActive":false,
+      "dryRoutingLab":{"active":true,"ready":true,"topologyFault":false,
+        "hasAcceptedRoute":false,"epoch":7,"revision":12}
+    })JSON");
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    auto m4=snapshot.getProperty("legacyM4",{});
+    assert(static_cast<bool>(m4.getProperty("active",false)));
+    assert(!static_cast<bool>(m4.getProperty("routeAccepted",true)));
+    assert(m4.getProperty("routingRevision","").toString()=="12");
+    assert(!static_cast<bool>(snapshot.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("callbackOwnsChannelIds",false)));
+    // After an actual source patch, ARM is enabled by existing JUCE native
+    // preflight; no ChannelId capability or product LIVE is fabricated.
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("hasAcceptedRoute",true);
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    m4=snapshot.getProperty("legacyM4",{});
+    assert(static_cast<bool>(m4.getProperty("routeAccepted",false)));
+    auto reject=[&](const juce::var& degraded) {
+        auto fresh=juce::JSON::parse(juce::JSON::toString(snapshot,false));
+        assert(!publishVerifiedFirstSoundState(fresh,degraded));
+        const auto disabled=fresh.getProperty("legacyM4",{});
+        assert(disabled.isObject());
+        assert(!static_cast<bool>(disabled.getProperty("active",true)));
+        assert(!static_cast<bool>(disabled.getProperty("routeAccepted",true)));
+        assert(disabled.getProperty("routingRevision","").toString()=="0");
+    };
+    auto bad=juce::JSON::parse(juce::JSON::toString(live,false));
+    bad.getProperty("dryRoutingLab",{}).getDynamicObject()->setProperty("epoch",8);
+    reject(bad); // ASIO re-opened, old physical pins must not be patchable
+    bad=juce::JSON::parse(juce::JSON::toString(live,false));
+    bad.getDynamicObject()->setProperty("directRouteAuthorized",false);
+    reject(bad);
+    bad=juce::JSON::parse(juce::JSON::toString(live,false));
+    bad.getProperty("dryRoutingLab",{}).getDynamicObject()->setProperty("topologyFault",true);
+    reject(bad);
+    bad=juce::JSON::parse(juce::JSON::toString(live,false));
+    bad.getProperty("dryRoutingLab",{}).getDynamicObject()->setProperty("revision",0);
+    reject(bad);
+    bad=juce::JSON::parse(juce::JSON::toString(live,false));
+    bad.getDynamicObject()->setProperty("adaptiveClockActive",true);
+    reject(bad);
+    auto withoutInput=juce::JSON::parse(juce::JSON::toString(snapshot,false));
+    withoutInput.getProperty("device",{}).getDynamicObject()
+        ->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
+    assert(!publishVerifiedFirstSoundState(withoutInput,live));
+}
+
 int main() {
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
@@ -366,6 +429,7 @@ int main() {
 
     controlIntentTranslationCases(snap,bus);
     installedCallbackAdmissionRegression(bus);
+    firstSoundRouteAdmissionRegression();
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()
