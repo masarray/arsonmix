@@ -696,7 +696,7 @@ private:
     juce::var approvedNativeSnapshot (const juce::var& live)
     {
         auto accepted=armix::native_console_m2::snapshot (
-            live, engine_.devices(), engine_.allOutputsDisarmed());
+            live, engine_.devices(), engine_.isMonitorEnabled());
         // Native routing's generation advances on STOP as well as START.
         // Keep even disconnected G0 snapshots monotonic to invalidate UI.
         (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
