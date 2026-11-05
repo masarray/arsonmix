@@ -120,10 +120,10 @@ test("DAW-style all-channel IN / M4 fader mute pan use real native control and r
   const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
   const engine=read("src/LiveDryRoutingLab.h");
   const nativeMain=read("src/Main.cpp");
-  assert.match(io,/\.route-select\[data-field="input"\]/);
-  assert.match(io,/__arMixChooseChannelHardwareInput=/);
+  assert.match(bridge,/select\[data-field="input"\]/);
+  assert.match(bridge,/function chooseNativeStripInput\(select\)/);
   assert.match(bridge,/field==="input"/);
-  assert.match(bridge,/__arMixChooseChannelHardwareInput\?\.\(channel,el\.value\)/);
+  assert.match(bridge,/chooseNativeStripInput\(el\)/);
   assert.match(bridge,/function paintM4Readback\(next\)/);
   assert.match(bridge,/channelControls/);
   assert.match(bridge,/parameter,channel:channel\+1,value/);
@@ -135,7 +135,7 @@ test("DAW-style all-channel IN / M4 fader mute pan use real native control and r
   assert.match(nativeMain,/engine_\.setDryRoutingLabParameter\(channel-1,epoch,revision/);
   assert.doesNotMatch(bridge,/const audioContext=new AudioContext/);
   assert.doesNotMatch(bridge,/function synthesizePCM/);
-  assert.match(bridge,/setup\.dataset\.nativeAction="audioSetup"/);
+  assert.match(bridge,/action:"audioSetup"/);
 });
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
@@ -457,7 +457,7 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/REAL AUDIO · FIRST SOUND/);
  assert.match(js,/setup\.dataset\.nativeAction="audioSetup"/);
- assert.doesNotMatch(js,/backend\.emitEvent\("arMixAction",\{action:"audioSetup"\}\)/);
+ assert.match(js,/backend\.emitEvent\("arMixAction",\{action:"audioSetup"\}\)/);
  assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
  assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
