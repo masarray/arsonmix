@@ -258,6 +258,13 @@
       a.captureDevice===d.captureDevice&&a.playbackDevice===d.playbackDevice);
   };
   const ioVirtualOutput=name=>/virtual|vb-audio|cable input|loopback|obs/i.test(name||"");
+  // A single VB-Cable's capture endpoint fed to its own playback endpoint
+  // is a self-loop, not a speaker monitor. Do not auto-arm this configuration.
+  const ioFeedbackLoop=(capture,playback)=>
+    /^cable output\b/i.test(capture||"") &&
+    /^cable input\b/i.test(playback||"") &&
+    /vb-audio virtual cable/i.test(capture||"") &&
+    /vb-audio virtual cable/i.test(playback||"");
   function renderNativeIo(){
     if(!ioRoot)return;
     const a=actualIo(),d=ioDraft||{},types=ioInventory?.types||[],type=ioType();
@@ -291,7 +298,9 @@
       (a.outputMuted?" · MAIN muted":" · MAIN monitoring"):
       "NO VERIFIED AUDIO DEVICE · choose driver, input and output";
     const virtual=ioRoot.querySelector("#arNativeIoVirtual");
-    virtual.textContent=ioVirtualOutput(d.playbackDevice)?
+    virtual.textContent=ioFeedbackLoop(d.captureDevice,d.playbackDevice)?
+      "LOOPBACK RISK: VB-Cable CABLE Output capture → CABLE Input playback returns to the SAME virtual cable. Select a different monitoring output before listening.":
+      ioVirtualOutput(d.playbackDevice)?
       "Virtual playback endpoint: this may feed another app, not your headphones. Choose a physical speaker/headphone output to listen directly.":"";
     const note=ioRoot.querySelector("#arNativeIoNote");
     note.textContent=ioMessage||"Apply hardware once. Then select IN on any mixer channel.";
@@ -370,6 +379,9 @@
         const armed=hardware?.device?.outputArmed===true;
         if(!armed&&!verifiedM4()){
           status("Choose a verified input on any mixer channel first.");return;
+        }
+        if(!armed&&ioFeedbackLoop(hardware?.device?.captureDevice,hardware?.device?.playbackDevice)){
+          status("MAIN monitor refused: VB-Cable input and output are the same feedback loop.");return;
         }
         backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
           ...(armed?{}:{
@@ -457,6 +469,12 @@
     if(!p||!d?.ready||!d.hasAcceptedRoute||d.topologyFault||
        String(d.epoch)!==String(p.epoch)){
       stopSource("output cannot be monitored until route is verified");return;
+    }
+    if(ioFeedbackLoop(hardware?.device?.captureDevice,hardware?.device?.playbackDevice)){
+      const channel=p.channel;
+      nativeSourcePending=null;
+      signalSourceResult("CH "+(channel+1)+" routed; MAIN monitoring stays OFF: input and output loop back through the same VB-Cable. Choose a physical output in Audio I/O.");
+      return;
     }
     p.phase="monitor";p.revision=Number(d.revision);
     backend.emitEvent("arMixAction",{action:"monitor",value:true,
