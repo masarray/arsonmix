@@ -417,6 +417,43 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  });
  listeners.get("arMixConsoleSnapshot")(muted);
  assert.equal(tracks[7].mute,true);
+ // MAIN uses the same user gesture but its own verified master gain/mute
+ // JUCE atomics, not a fabricated channel 11 M4 routing control.
+ const nativeMaster={id:11,kind:"master",level:0,mute:false};
+ scope.master=nativeMaster;
+ const masterSource=clone(muted);
+ masterSource.legacyM4.masterControls={db:0,mute:false};
+ listeners.get("arMixConsoleSnapshot")(masterSource);
+ scope.findTrack=()=>nativeMaster;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeField({
+   target:{dataset:{field:"level"},value:"-9"},type:"change"
+ }),true);
+ const mainRequest=sent.findLast(x=>x.name==="arMixAction").payload;
+ assert.equal(mainRequest.action,"routingM4MasterControl");
+ assert.equal(mainRequest.parameter,"faderDb");
+ assert.equal(mainRequest.value,-9);
+ assert.equal(nativeMaster.level,0);
+ listeners.get("arMixM4MasterAck")({
+   requestId:mainRequest.requestId,parameter:"faderDb",ok:true,
+   deviceEpoch:10,revision:8,value:-9
+ });
+ assert.equal(nativeMaster.level,0,"master ACK alone is not GUI acceptance");
+ const mainUpdated=clone(masterSource);
+ mainUpdated.legacyM4.masterControls.db=-9;
+ listeners.get("arMixConsoleSnapshot")(mainUpdated);
+ assert.equal(nativeMaster.level,-9);
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeAction(nativeMaster,"mute",{}),true);
+ const mainMute=sent.findLast(x=>x.name==="arMixAction").payload;
+ assert.equal(mainMute.parameter,"mute");
+ assert.equal(mainMute.value,true);
+ listeners.get("arMixM4MasterAck")({
+   requestId:mainMute.requestId,parameter:"mute",ok:true,
+   deviceEpoch:10,revision:8,value:true
+ });
+ const mainMuted=clone(mainUpdated);
+ mainMuted.legacyM4.masterControls.mute=true;
+ listeners.get("arMixConsoleSnapshot")(mainMuted);
+ assert.equal(nativeMaster.mute,true);
 });
 test("M2 code edits approved Pages *events* only, not a second native GUI/audio engine",()=>{
  const page=read("site/preview-v2/index.html");
