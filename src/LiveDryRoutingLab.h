@@ -1207,6 +1207,11 @@ public:
         return nativeAccepted_.setFxBypass(nativePublisher_,epochAtEdit,
             pcmRevision,target,slot,token,bypass);
     }
+    bool nativeChannelIsOriginalCh1(armix::mixer::ChannelId target) const noexcept {
+        return nativeAccepted_.fxOwners &&
+               nativeAccepted_.fxOwners->externalChannel()==target &&
+               target==nativeAccepted_.graph.ids.inputs[0];
+    }
     bool bypassNativeRack(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
                           armix::mixer::ChannelId target,bool bypass) noexcept {
         return nativeAccepted_.setFxRackBypass(nativePublisher_,epochAtEdit,
