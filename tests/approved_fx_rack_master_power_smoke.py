@@ -51,7 +51,13 @@ def main():
                 individual=snapshot(page)
                 assert individual["slots"][0]["individual"]=="false",individual
                 assert individual["slots"][1]["individual"]=="true",individual
+                # On phones the official console banks one channel at a
+                # time; inspect CH2 via its real bank selector, not a hidden DOM.
+                if width < 500:
+                    page.locator("#bankSelect").select_option("1")
                 other=snapshot(page,2)
+                if width < 500:
+                    page.locator("#bankSelect").select_option("0")
                 root.locator('[data-action="fxOn"]').click()
                 off=snapshot(page)
                 assert off["header"]==off["rack"]=="false",off
@@ -60,7 +66,11 @@ def main():
                            for row in off["slots"]),off
                 assert [r["individual"] for r in off["slots"]]==["false","true"],off
                 assert [r["id"] for r in off["slots"]]==[r["id"] for r in individual["slots"]],off
+                if width < 500:
+                    page.locator("#bankSelect").select_option("1")
                 assert snapshot(page,2)==other,"Rack power leaked into other channel"
+                if width < 500:
+                    page.locator("#bankSelect").select_option("0")
                 root.locator('[data-action="fxOn"]').click()
                 restored=snapshot(page)
                 assert restored["header"]==restored["rack"]=="true",restored
