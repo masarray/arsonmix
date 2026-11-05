@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse,os,json,shutil,subprocess,sys
 from compile_approved_css import optimize_assets
+from approved_fx_rack_power import apply_authoritative_fx_power
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -59,6 +60,7 @@ probe_tag='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script
 if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
     raise SystemExit('Approved Pages profiler injection must have exactly one body')
 canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
+canonical_html=apply_authoritative_fx_power(canonical_html)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets',runtime_bundle=True)
