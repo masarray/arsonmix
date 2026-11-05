@@ -294,7 +294,7 @@
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,pendingDeviceMute=false,deviceChoice=null;
+      deviceRequest=0,pendingDeviceMute=false,deviceChoice=null,deviceResult="";
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -349,6 +349,7 @@
       });
       devicePanel.addEventListener("change",e=>{
         if(!deviceChoice)return;
+        deviceResult="";
         const pinSide=e.target.dataset.audioPin;
         if(pinSide==="input"||pinSide==="output"){
           const index=Number(e.target.dataset.pinIndex);
@@ -395,6 +396,7 @@
     }
     devicePanel.hidden=false;
     const active=devicePanel.querySelector("[data-audio-active]");
+    deviceResult="";
     if(active)active.textContent="Reading verified audio devices…";
     backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
@@ -466,10 +468,10 @@
       }else pins.textContent="Apply this device first to inspect its real enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
-    if(activeText && !deviceBusy)activeText.textContent=active.open?
+    if(activeText && !deviceBusy)activeText.textContent=deviceResult||(active.open?
       "ACTIVE · "+active.backend+" · "+active.captureDevice+
         " → "+active.playbackDevice+" · "+active.rate+" Hz / "+active.buffer+" samples":
-      "No verified audio device. Select a supported input and output.";
+      "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !deviceChoice.backend||!deviceChoice.capture||!deviceChoice.playback;
   }
@@ -502,8 +504,7 @@
       if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
       if(ack.active)deviceInventory.active=ack.active;
-      const note=devicePanel.querySelector("[data-audio-active]");
-      if(note)note.textContent=ack.ok?
+      deviceResult=ack.ok?
         "Device verified · choose a hardware input on any mixer channel.":
         "Device rejected · "+(ack.error||"driver readback failed");
       deviceChoice=null;
@@ -686,9 +687,10 @@
       if(pendingDeviceMute){
         pendingDeviceMute=false;
         if(ack?.ok===true && ack?.armed===false)sendDeviceApply();
-        else if(devicePanel)
-          devicePanel.querySelector("[data-audio-active]").textContent=
-            "Device change rejected: existing output could not be muted.";
+        else if(devicePanel){
+          deviceResult="Device change rejected: existing output could not be muted.";
+          devicePanel.querySelector("[data-audio-active]").textContent=deviceResult;
+        }
         return;
       }
       if(ack?.ok===true){
