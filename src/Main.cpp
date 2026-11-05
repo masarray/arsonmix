@@ -701,6 +701,9 @@ private:
         // Keep even disconnected G0 snapshots monotonic to invalidate UI.
         (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
             accepted, live);
+        // Actual prepared M4 epoch/revision enables the native First Sound
+        // hardware PATCH/ARM workflow before full ChannelId admission.
+        (void) armix::console::publishVerifiedFirstSoundState (accepted, live);
         (void) armix::console::projectInstalledNativeChannelIdGraph (
             accepted, live);
         return accepted;
