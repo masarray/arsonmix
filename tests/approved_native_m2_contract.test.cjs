@@ -55,7 +55,8 @@ test("native G0 preserves verified first-sound M4 route without claiming Channel
   const nativeMain=read("src/Main.cpp");
   assert.match(nativeMain,/if \(consoleSubscribed_\)[\s\S]*?"arMixConsoleSnapshot", approvedNativeSnapshot\(state\)/);
   const nativeBridge=read("web/approved-native-bridge.js");
-  assert.match(nativeBridge,/const legacy=\(\)=>hardware\?\.raw\?\.legacyM4/);
+  assert.doesNotMatch(nativeBridge,/routeBtn=item\("button","tool","Patch CH1"\)/);
+  assert.match(read("web/mixer-io.js"),/face\.dataset\.nativeHardwareInput='1'/);
   assert.match(read("src/ApprovedConsoleNativeTransportV6.h"),
     /"outputArmed", primaryOutputArmed/);
 });
@@ -112,7 +113,8 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.match(header,/directRouteAuthorized/);
   assert.match(transport,/projectFirstSoundSignalEvidence/);
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
-  assert.match(bridge,/protocol\.diagnoseFirstSound/);
+  assert.match(read("web/approved-native-contract.js"),/function diagnoseFirstSound/);
+  assert.doesNotMatch(bridge,/rawCapturePeak.*Math\.random/);
 });
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
