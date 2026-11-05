@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_gui_extra/juce_gui_extra.h>
+#include "../integration/FirstSoundSignalEvidence.h"
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -107,12 +108,15 @@ inline juce::var snapshot (const juce::var& live,
     graph->setProperty ("capabilities", juce::var (caps.release()));
     root->setProperty ("graph", juce::var (graph.release()));
 
-    auto telemetry = std::make_unique<juce::DynamicObject>();
-    telemetry->setProperty ("rawCapturePresent", false);
-    telemetry->setProperty ("rawCapturePeak", 0.0);
-    telemetry->setProperty ("mainPcmPresent", false);
-    telemetry->setProperty ("monitorPcmPresent", false);
-    root->setProperty ("telemetry", juce::var (telemetry.release()));
+    // The original G0 snapshot published fixed FALSE/0 for raw capture,
+    // hiding actual driver PCM even while a verified unpatched callback ran.
+    // Read the existing engine atomics via the same JUCE message-thread
+    // snapshot. Keep UNKNOWN when callbacks/ports are stale or unavailable.
+    root->setProperty ("telemetry",armix::console::projectFirstSoundSignalEvidence (
+        live, active != nullptr && active->isOpen() && direct,
+        primaryOutputArmed,
+        active != nullptr ? active->getActiveInputChannels().countNumberOfSetBits() : 0,
+        active != nullptr ? active->getActiveOutputChannels().countNumberOfSetBits() : 0));
     return juce::var (root.release());
 }
 
