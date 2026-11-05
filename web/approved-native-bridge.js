@@ -263,6 +263,58 @@
   let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
+  function requestProcessingFormat(t){
+    const channel=m4Index(t);
+    const ep=safeNativeCounter(hardware?.device?.epoch),
+      rev=safeNativeCounter(legacy()?.routingRevision);
+    if(!m4Verified()||channel<0||channel>=10||
+       ep===null||rev===null||pendingOutputPatch||nativeUiSourcePending||
+       !deviceReady()){
+      status("M/ST unavailable · wait for accepted hardware route");
+      return false;
+    }
+    const target=t.format==="mono"?"STEREO":"MONO";
+    const requestId=++outputSerial;
+    pendingOutputPatch={requestId,channel,target,epoch:ep,
+      operation:"SET_PROCESSING_FORMAT"};
+    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
+      operation:"SET_PROCESSING_FORMAT",requestId,channel,target,
+      deviceEpoch:ep,revision:rev});
+    status("CH "+(channel+1)+" processing "+target+" · verifying native PCM");
+    window.setTimeout(()=>{
+      if(pendingOutputPatch?.requestId!==requestId)return;
+      pendingOutputPatch=null;
+      status("CH "+(channel+1)+" M/ST timed out · prior format preserved");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+  function previewNativePan(t,el,event){
+    let value=Math.max(-100,Math.min(100,Number(el.value)));
+    if(!Number.isFinite(value))return null;
+    // Identical center latch to the approved Pages mixer: capture at 7,
+    // hold until 12, snap on release. No fake demo-model DSP mutation.
+    const keyboard=el.dataset.panKeyboard==="true";
+    const bypass=!!event.altKey||el.dataset.panAltPointer==="true";
+    const latched=el.dataset.panDetent==="true";
+    const width=event.type==="change"?12:latched?12:7;
+    if(!keyboard&&!bypass&&Math.abs(value)<=width){value=0;el.value="0";}
+    el.dataset.panDetent=String(!keyboard&&value===0&&!bypass);
+    if(event.type==="change")delete el.dataset.panKeyboard;
+    el.setAttribute?.("aria-valuetext",value===0?"Center":
+      value<0?"Left "+Math.abs(value):"Right "+value);
+    const container=el.closest?.(".pan-control");
+    if(container){
+      const left=Math.min(50,50+value/2),right=Math.max(50,50+value/2);
+      container.style?.setProperty("--pan-start",left+"%");
+      container.style?.setProperty("--pan-end",right+"%");
+      container.classList?.toggle("is-centered",value===0);
+      const readout=container.nextElementSibling;
+      if(readout)readout.textContent=value===0?"C":
+        value<0?"L"+Math.abs(value):"R"+value;
+    }
+    return value;
+  }
   // One request/ACK/readback path for BOTH the ordinary OUT select and the
   // hardware-like OUT→MAIN WIRE jack. No browser graph mutation on click.
   function requestPrimaryOut(t,target){
@@ -272,8 +324,14 @@
     if(!m4Verified()||channel<0||channel>=10||
        (target!=="MAIN"&&target!=="NONE")||ep===null||rev===null||
        pendingOutputPatch||!deviceReady())return false;
+    const accepted=legacy()?.channels?.[channel];
+    if(accepted?.main===(target==="MAIN")){
+      status("CH "+(channel+1)+" OUT already "+
+        (target==="MAIN"?"MAIN":"SOURCE ONLY")+" · native readback");
+      controller?.subscribe();return true; // no need to blink audio
+    }
     const requestId=++outputSerial;
-    pendingOutputPatch={requestId,channel,target,epoch:ep};
+    pendingOutputPatch={requestId,channel,target,epoch:ep,operation:"SET_PRIMARY_OUT"};
     backend.emitEvent("arMixAction",{action:"routingChannelPatch",
       requestId,channel,target,deviceEpoch:ep,revision:rev});
     window.setTimeout(()=>{
@@ -461,6 +519,15 @@
       t.input=inputLabelFor(row);
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
+      if(row && ["MONO","STEREO"].includes(row.channelFormat)){
+        const format=row.channelFormat.toLowerCase();
+        if(t.format!==format){
+          t.format=format;
+          if((scope.activeFaderId??-1)!==t.id &&
+             !document.activeElement?.matches?.(".strip select"))
+            scope.refreshStrip?.(t);
+        }
+      }
     }
     // A source ACK changes only affected fields; never replace the whole
     // mixer while another select is open or another fader is being dragged.
@@ -1084,11 +1151,20 @@
       const p=pendingOutputPatch;
       pendingOutputPatch=null;
       const row=ack?.state?.acceptedRoute?.channels?.[p.channel];
-      if(ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
-         row?.main===(p.target==="MAIN"))
-        status("CH "+(p.channel+1)+" OUT accepted; verifying native readback");
-      else status("CH "+(p.channel+1)+" OUT rejected · "+
-        (ack?.error||"stale route"));
+      const accepted=ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
+        (p.operation==="SET_PROCESSING_FORMAT"?
+          row?.channelFormat===p.target:
+          row?.main===(p.target==="MAIN"));
+      if(accepted)
+        status("CH "+(p.channel+1)+" "+
+          (p.operation==="SET_PROCESSING_FORMAT"?"M/ST ":"OUT ")+p.target+
+          " accepted · verifying native PCM");
+      else {
+        status("CH "+(p.channel+1)+" "+
+          (p.operation==="SET_PROCESSING_FORMAT"?"M/ST":"OUT")+
+          " rejected · "+(ack?.error||"stale route"));
+        nativeToast(ack?.error||"Native channel route rejected");
+      }
       controller.subscribe();
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
@@ -1102,7 +1178,9 @@
         scope?.setNativeCatalog?.([...nativeCatalog.values()]);
         controller.subscribe();
       }else {
-        status("FX INSERT REJECTED · "+(ack?.error||"native readback mismatch"));
+        const reason=ack?.error||"native FX instance missing from accepted PCM";
+        status("FX INSERT REJECTED · "+reason);
+        nativeToast(reason);
         controller.subscribe();
       }
     });
@@ -1121,6 +1199,12 @@
       if(statusEl)statusEl.textContent=progress?.active?
         "Scanning real VST3… "+(progress.done||0)+"/"+(progress.total||"…"):
         "Native VST3 scan finished; results from JUCE catalog";
+    });
+    backend.addEventListener("arMixNotice",notice=>{
+      if(notice?.error===true && typeof notice.message==="string"){
+        nativeToast(notice.message); // native VST3/driver cause survives 12Hz status repaint
+        status("JUCE · "+notice.message);
+      }
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(pendingDeviceMute){
@@ -1218,9 +1302,9 @@
          (m4Index(t)>=0||t.kind==="master")){
         const numeric=Number(el.value);
         if(!Number.isFinite(numeric))return true;
-        const normalized=field==="pan" &&
-          !el.dataset.panKeyboard && !el.dataset.panAltPointer &&
-          Math.abs(numeric)<=12 ? 0:numeric;
+        const normalized=field==="pan"?
+          previewNativePan(t,el,event):numeric;
+        if(normalized===null)return true;
         const key=field==="level"?
           (t.kind==="master"?"masterGain":"faderDb"):"pan";
         if(field==="level")previewFaderWithoutModelMutation(t,numeric);
@@ -1273,6 +1357,16 @@
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if(action==="openPlugin"){
         scope?.openFastPicker?.(t,Number(btn?.dataset.slot),btn);
+        return true;
+      }
+      if(action==="format"&&t?.kind==="audio"){
+        requestProcessingFormat(t);return true;
+      }
+      if(action==="cue"){
+        // PFL must use a separate physical pre-fader monitor bus; do not
+        // make a GUI-only toggle or mix a cue into audience MAIN.
+        nativeToast("PFL requires a separate MONITOR L/R pair; MAIN unchanged");
+        status("PFL not armed · independent physical MONITOR output required");
         return true;
       }
       if (action==="mute"||action==="solo") {

@@ -183,6 +183,26 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(builder,/NATIVE JUCE VST3/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics",()=>{
+ const page=read("site/preview-v2/index.html");
+ const bridge=read("web/approved-native-bridge.js");
+ const main=read("src/Main.cpp");
+ const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ assert.match(page,/const FADER_TAPER=Object\.freeze/);
+ assert.match(page,/function faderDbFromTravelPercent\(percent,isSend\)/);
+ assert.match(page,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
+ assert.match(bridge,/function previewNativePan\(t,el,event\)/);
+ assert.match(bridge,/const width=event\.type==="change"\?12:latched\?12:7/);
+ assert.match(bridge,/readout\.textContent=value===0\?"C"/);
+ assert.match(bridge,/function requestProcessingFormat\(t\)/);
+ assert.match(bridge,/operation:"SET_PROCESSING_FORMAT"/);
+ assert.match(bridge,/if\(action==="format"&&t\?\.kind==="audio"\)/);
+ assert.match(main,/operation=="SET_PROCESSING_FORMAT"/);
+ assert.match(main,/operation,target\)/);
+ assert.match(snapshot,/verified->setProperty\("channelFormat",format\)/);
+ assert.match(bridge,/backend\.addEventListener\("arMixNotice"/);
+ assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");
