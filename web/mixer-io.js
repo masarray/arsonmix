@@ -775,7 +775,25 @@
     toolbar.querySelectorAll('[data-mix-mode]').forEach(b=>{const selected=b.dataset.mixMode===mode;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
     refresh();
   }
+  // Approved /preview/ renders data-id (stable UI track identity), while
+  // the native routing controller uses zero-based channel ordinals.
+  // Previously all .strip[data-strip] queries matched ZERO strips, silently
+  // disabling every existing native per-channel source selector.
+  // Translate identity on each render; never assume DOM order after drag.
+  function bindNativeChannelStrips(){
+    if(!isNative())return;
+    const view=window.__ARMIX_NATIVE_SCOPE__;
+    const inputs=Array.isArray(view?.tracks)?
+      view.tracks.filter(track=>track?.kind==='audio').slice(0,10):[];
+    const ordinal=new Map(inputs.map((track,i)=>[String(track.id),i]));
+    for(const strip of mixer.querySelectorAll('.strip[data-id]')){
+      const index=ordinal.get(String(strip.dataset.id));
+      if(index===undefined)strip.removeAttribute('data-strip');
+      else strip.dataset.strip=String(index);
+    }
+  }
   function decorate(){
+    bindNativeChannelStrips();
     for(const strip of mixer.querySelectorAll('.strip[data-strip]')){
       // Every physical channel gets its own source selector. The native
       // routing controller is unchanged and owns every hardware APPLY.
@@ -808,6 +826,16 @@
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
     const current=valueFor(r),choices=portsFor(s,r);
+    // The approved DAW-like IN dropdown is the canonical operator control.
+    // Replace its PREVIEW options only inside JUCE with verified physical
+    // port names. Every track can bind ANY input, including shared sources.
+    const visible=strip.querySelector('.route-select[data-field="input"]');
+    if(visible && isNative()){
+      populate(visible,choices,current);
+      visible.dataset.channel=String(i);
+      visible.disabled=!s.ready||!!s.pending||!!quickSourcePending;
+      visible.title='CH '+(i+1)+' · Select physical input · native ACK';
+    }
     const inline=strip.querySelector('.arChannelQuickInput');
     if(inline){
       populate(inline,choices,current);
@@ -1628,7 +1656,7 @@
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
     const mode=parts[0],left=mode==='NONE'?-1:Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
-    const direct=select.matches('.arBankSource,.arChannelQuickInput');
+    const direct=select.matches('.arBankSource,.arChannelQuickInput,.route-select[data-field="input"]');
     const response=direct?commitSourceInOneGesture(channel,mode,left,right):
       window.__arMixStageChannelInput?.(channel,mode,left,right);
     if(response?.pending)quickSourcePending={channel,epoch:response.epoch,
@@ -1669,6 +1697,12 @@
       if(!result?.ok){el('arIOFeedback').textContent=result?.error||'Invalid MAIN output';}
       else el('arIOFeedback').textContent=result.message;
       lastSignature='';refresh();return;
+    }
+    if(e.target.matches('.route-select[data-field="input"]')&&isNative()){
+      // Capture before the Pages demo handleField reducer and before any
+      // later native adapter handler. Never write demo t.input/PCM.
+      e.preventDefault();e.stopImmediatePropagation();
+      changeSource(e.target);return;
     }
     if(e.target.matches('.arChannelQuickInput,.arBankSource,.arIOSource'))changeSource(e.target);
     if(e.target.matches('.arBankChannelFormat')){
