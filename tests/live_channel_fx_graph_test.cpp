@@ -178,7 +178,18 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     auto second=newFx(1.25f,"ch11-second-vst3");
     assert(Bank::appendOwned(epoch,3,bank,ch11,ProcessingFormat::mono,
                              second,expanded)==Bank::Fault::none);
+    // Rack OFF applies to the new plugin too; old per-plugin OFF remains
+    // untouched and native append carries the same authoritative override.
+    assert(bank.setRackBypass(epoch,2,ch11,true));
+    assert(bank.rackBypassed(ch11));
     assert(expanded.insertCount(ch11)==2);
+    // expanded was already created before the OFF gesture. Its revision
+    // holds the same shared rack gate, so it observes the control live.
+    assert(expanded.rackBypassed(ch11));
+    assert(!expanded.setRackBypass(epoch,2,ch11,false)); // stale version
+    assert(expanded.setRackBypass(epoch,3,ch11,false));
+    assert(!bank.rackBypassed(ch11));
+    assert(!expanded.rackBypassed(ch11));
     assert(expanded.insertCount(ch1)==bank.insertCount(ch1));
     assert((*expanded.ownerForControl(ch11,0))->instanceId==
            (*bank.ownerForControl(ch11,0))->instanceId);
@@ -2245,6 +2256,33 @@ int main(int argc,char** argv) {
         assert(next->process(pins,2,left.data(),right.data(),4));
         assert(heapCalls.load(std::memory_order_relaxed)==beforeNextProcess);
         assert(left[0]>.3f);
+    }
+    // FX RACK POWER: one atomic master overrides effective processing,
+    // without destroying the ON/OFF preferences of individual inserts.
+    {
+        auto graph=makeGraph(2.f,3.f);
+        const auto token=graph->insertInstanceId(0);
+        assert(!graph->rackBypassed(0));
+        assert(graph->setInsertBypass(0,0,token,true)); // individual OFF
+        assert(graph->insertBypassed(0,0));
+        assert(graph->setRackBypass(0,true));           // master OFF
+        assert(graph->rackBypassed(0)&&graph->insertBypassed(0,0));
+        assert(graph->setRackBypass(0,false));          // master ON
+        assert(!graph->rackBypassed(0));
+        assert(graph->insertBypassed(0,0));             // stays OFF
+        assert(graph->setInsertBypass(0,0,token,false));
+        assert(graph->setRackBypass(0,true));
+        assert(graph->setRackBypass(0,false));
+        assert(!graph->insertBypassed(0,0));            // returns to ON
+        assert(!graph->setRackBypass(-1,true));
+        assert(!graph->setRackBypass(LiveChannelFxGraph::fxSlots,true));
+        auto moved=makeGraph(1.f,1.f,false);
+        assert(graph->setRackBypass(0,true));
+        assert(moved->reuse(0,*graph,"vst3-ch1-id"));
+        assert(moved->rackBypassed(0));                 // graph retirement retains gate
+        assert(moved->insertBypassed(0,0)==graph->insertBypassed(0,0));
+        assert(moved->setRackBypass(0,false));
+        assert(!moved->insertBypassed(0,0));           // saved ON restored
     }
     // Run M5 AFTER the legacy suite: older M4 tests use absolute global
     // GainFx::living/released counters as their own lifetime oracle. Running
