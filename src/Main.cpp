@@ -2627,18 +2627,14 @@ private:
             pendingPresetUI_ = juce::var();
             pendingPresetName_.clear();
         }
-        if (timerTicks_ % 12 == 0)
+        // A disconnected WebView still needs the 1 Hz safety/health trace.
+        // Once the browser is ready, reuse the exact status read below:
+        // no duplicate engine_.status() and NO second 1 Hz GUI snapshot.
+        if (timerTicks_ % 12 == 0 && !browser_.loaded)
         {
-            auto health = engine_.status();
-            crackleEvidence_.push (makeEvidenceSample(health));
+            const auto health = engine_.status();
+            crackleEvidence_.push (makeEvidenceSample (health));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (health, false));
-            if (consoleSubscribed_ && browser_.loaded)
-            {
-                // This extra 1 Hz publication is retained in Stage A for A/B evidence.
-                if (timing) ++guiPerf_.duplicateSnapshots;
-                browser_.emitEventIfBrowserIsVisible ("arMixConsoleSnapshot",
-                    approvedNativeSnapshot (health));
-            }
         }
 
         if (deviceSettingsDirty_)
@@ -2691,6 +2687,13 @@ private:
             guiPerf_.totalStatusMs += elapsed;
             guiPerf_.maxStatusMs = std::max(guiPerf_.maxStatusMs, elapsed);
         }
+        // Share the 12 Hz control-thread status with the 1 Hz health log.
+        // Preserve real device/hotplug/First Sound evidence and the async writer.
+        if (timerTicks_ % 12 == 0)
+        {
+            crackleEvidence_.push (makeEvidenceSample (state));
+            diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
+        }
         if(routedEditorOwner_) {
             // Unplug/reopen may bypass normal GUI actions. Never keep a
             // vendor editor on an invalid device epoch or removed instance.
@@ -2718,12 +2721,10 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
-        // The WebView subscribes BEFORE audio startup. A one-shot G0 snapshot
-        // can therefore precede JUCE initialise() and leave PATCH CH1 grayed
-        // out forever. Publish the SAME real engine status at the existing
-        // 12 Hz control-thread cadence: physical pins, accepted ChannelIds and
-        // PCM meters update after startup, source patch, ARM and hotplug.
-        // No additional DSP callback, allocation or work on realtime thread.
+        // One authoritative 12 Hz console snapshot, NOT a second 1 Hz burst.
+        // Keep continuous real meters, safe native ACK/readback, PATCH/ARM,
+        // hot-plug recovery and future subscribed channels observable.
+        // All work stays on JUCE's message thread; RT PCM remains untouched.
         if (consoleSubscribed_)
         {
             const double snapshotStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
