@@ -414,13 +414,13 @@ static void firstSoundRouteAdmissionRegression() {
     // Reject forged physical pins instead of silently assigning other
     // channels or painting imaginary source/meter data.
     rows.getReference(7).getDynamicObject()->setProperty("left",42);
-    routeData->getProperty("acceptedRoute",{}).getDynamicObject()
+    routeData->getProperty("acceptedRoute").getDynamicObject()
         ->setProperty("channels",juce::var(rows));
     assert(publishVerifiedFirstSoundState(snapshot,live));
     m4=snapshot.getProperty("legacyM4",{});
     assert(m4.getProperty("channelSources",{}).getArray()->isEmpty());
     rows.getReference(7).getDynamicObject()->setProperty("left",2);
-    routeData->getProperty("acceptedRoute",{}).getDynamicObject()
+    routeData->getProperty("acceptedRoute").getDynamicObject()
         ->setProperty("channels",juce::var(rows));
     auto reject=[&](const juce::var& degraded) {
         auto fresh=juce::JSON::parse(juce::JSON::toString(snapshot,false));
