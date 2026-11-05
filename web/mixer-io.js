@@ -793,6 +793,16 @@
       // Retire the obsolete second selector from the tiny CH header.
       if(isNative()&&strip.querySelector('.route-field .arChannelQuickInput'))
         strip.querySelector('.ch-id .arChannelQuickInput')?.remove();
+      // The approved Pages OUT dropdown is also DEMO state. Do not leave
+      // "SOURCE ONLY" beside a verified native MAIN patch. Make the real
+      // accepted destination visible until full ChannelId OUT is admitted.
+      const demoOutput=strip.querySelector('select.route-select[data-field="output"]');
+      if(isNative()&&demoOutput){
+        const display=node('span','route-select arChannelNativeOutput','OUT · UNVERIFIED');
+        display.setAttribute('aria-label','Native output destination');
+        display.title='Read-only native output; change MAIN device in Audio I/O';
+        demoOutput.replaceWith(display);
+      }
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
       bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
@@ -815,6 +825,18 @@
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
     const current=valueFor(r),choices=portsFor(s,r);
+    const acceptedChannel=s.acceptedRoute?.channels?.[i];
+    const nativeDestination=strip.querySelector('.arChannelNativeOutput');
+    if(nativeDestination){
+      const verified=s.ready&&s.active&&acceptedChannel&&
+        Number(s.acceptedRoute.deviceEpoch)===Number(s.epoch)&&!s.pending;
+      const destination=!verified?'UNVERIFIED':
+        acceptedChannel.main?
+          (acceptedChannel.mode==='NONE'?'MAIN · NO INPUT':'MAIN'):
+          'SEND ONLY';
+      if(nativeDestination.textContent!==destination)
+        nativeDestination.textContent=destination;
+    }
     const inline=strip.querySelector('.arChannelQuickInput');
     if(inline){
       populate(inline,choices,current);
