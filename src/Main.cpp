@@ -1457,6 +1457,54 @@ private:
         // F0: independently acknowledged existing M4 PCM controls during
         // G0, before ChannelId admission. Do not send GUI demo parameters
         // or mutate a second DSP. One control-thread atomic update only.
+
+        // Route the approved channel FX picker to the SAME prepared M4
+        // graph as physical IN/OUT. ID resolves exclusively in the JUCE
+        // catalog; browser paths/names are never trusted as plugin identity.
+        if(action=="routingFxInsert"){
+            const auto requestId=args.getProperty("requestId",{}).toString();
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const int position=static_cast<int>(args.getProperty("slot",-1));
+            const auto id=args.getProperty("id",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto actualEp=status.getProperty("epoch",{});
+            const auto actualRev=status.getProperty("revision",{});
+            const auto* plugin=catalog_.find(id);
+            juce::String error="FX INSERT: invalid/stale device, channel, slot or catalog";
+            const bool tokens=(ep.isInt()||ep.isInt64())&&
+                (rv.isInt()||rv.isInt64())&&
+                static_cast<juce::int64>(ep)>0 &&
+                static_cast<juce::int64>(ep)==static_cast<juce::int64>(actualEp)&&
+                static_cast<juce::int64>(rv)==static_cast<juce::int64>(actualRev);
+            if(requestId.startsWith("fx-")&&requestId.length()<=48 &&
+               tokens && lane>=0&&lane<LiveDryRoutingLab::count &&
+               position>=0&&position<LiveDryRoutingLab::maxFxPerLane &&
+               plugin && !catalog_.busy() && !nativeShowBusy_ &&
+               !studioBackupBusy_ && !engine_.isGraphSwitchPending() &&
+               static_cast<bool>(status.getProperty("hasAcceptedRoute",false))) {
+                const LiveDryRoutingLab::FxSelection selection{
+                    plugin->key(),plugin->path,plugin->name,plugin->uid};
+                error=engine_.insertDryRoutingLabFx(lane,position,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    selection);
+            }
+            auto reply=std::make_unique<juce::DynamicObject>();
+            reply->setProperty("requestId",requestId);
+            reply->setProperty("ok",error.isEmpty());
+            reply->setProperty("error",error);
+            reply->setProperty("channel",lane);
+            reply->setProperty("slot",position);
+            reply->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixRoutingFxInsertAck",juce::var(reply.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            else diagnostics_.record("NATIVE_ROUTED_FX_INSERT",
+                "CH "+juce::String(lane+1)+" slot "+juce::String(position+1));
+            return;
+        }
         if(action=="routingM4Control"){
             const auto requestId=args.getProperty("requestId",juce::var()).toString();
             const int channel=static_cast<int>(args.getProperty("channel",-1));
@@ -1477,7 +1525,7 @@ private:
                 requestId.length()<=48 &&
                 !nativeShowBusy_ && !studioBackupBusy_ &&
                 static_cast<bool>(route.getProperty("hasAcceptedRoute",false)) &&
-                !static_cast<bool>(route.getProperty("nativeChannelIdPcmActive",false)) &&
+                !static_cast<bool>(route.getProperty("nativeBusStructural",false)) &&
                 !static_cast<bool>(route.getProperty("topologyFault",true)) &&
                 engine_.directRouteAuthorized() && !engine_.independentClockActive();
             const bool boolean=(name=="mute"||name=="solo"||name=="masterMute");

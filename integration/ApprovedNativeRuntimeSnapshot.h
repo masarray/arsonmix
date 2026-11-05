@@ -135,7 +135,7 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
     // Publish only verified PCM controls and measured per-channel peaks.
     // Never infer controls from the Pages reference model.
     if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
-       !boolIs(route,"nativeChannelIdPcmActive",true) &&
+       !boolIs(route,"nativeBusStructural",true) &&
        verifiedChannels.size()==10) {
         const auto controls=route.getProperty("channelControls",{});
         const auto levelsL=route.getProperty("channelPeaksL",{});
@@ -171,6 +171,15 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
             if(masterMute.isBool())firstSound->setProperty("masterMute",masterMute);
         }
     }
+    // Real routed FX instance IDs and catalog keys are read only from the
+    // installed publisher. A browser cannot insert forged plugin identities.
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true)) {
+        const auto fx=route.getProperty("fxInstances",{});
+        if(auto* rows=fx.getArray();rows && rows->size()==14)
+            firstSound->setProperty("fxInstances",fx);
+    }
+    firstSound->setProperty("nativeBusStructural",
+        route.getProperty("nativeBusStructural",false));
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;

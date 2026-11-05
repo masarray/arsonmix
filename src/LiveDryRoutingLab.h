@@ -479,6 +479,38 @@ public:
         }
     }
 
+
+    // Native /preview/ FX picker: append one catalog-verified stereo VST3 to
+    // the SAME accepted ten-channel/4AUX renderer. This is a prepared graph
+    // transaction on JUCE CONTROL, never a JS plugin or RT instantiation.
+    juce::String insertCatalogFx(int lane,int slot,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            const FxSelection& chosen,bool directPermitted,
+            bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        if(lane<0||lane>=fxSlots||slot<0||slot>=maxFxPerLane||
+           chosen.id.isEmpty()||chosen.path.isEmpty()||chosen.name.isEmpty()||
+           !ready()||!hasExplicitRoute()||nativeStructureLive_||
+           topologyFault_.load(std::memory_order_acquire)||
+           !registryValid_.load(std::memory_order_acquire)||
+           expectedEpoch!=epoch()||expectedRevision!=revision()||
+           !sourceTemplate_.isObject())
+            return "FX INSERT: stale routing/ChannelId authority or unsupported lane";
+        if(acceptedFxSelections_[lane][slot].id.isNotEmpty())
+            return "FX INSERT: this slot already has a native VST3";
+        if(slot>0&&acceptedFxSelections_[lane][slot-1].id.isEmpty())
+            return "FX INSERT: use the first empty insert position";
+        auto command=juce::JSON::parse(
+            juce::JSON::toString(sourceTemplate_,false));
+        if(!command.isObject())
+            return "FX INSERT: accepted source template cannot be cloned";
+        auto next=acceptedFxSelections_;
+        next[lane][slot]=chosen;
+        return apply(command,directPermitted,independentClock,occupiedCh1Fx,
+                     next,formats,sampleRate,deviceFrames,true);
+    }
+
     // M1 direct-source parameter: only same-format physical→physical
     // input on an ALREADY scheduled channel. Route DAG, VST3 lease, FX
     // identity and hardware output ownership are immutable. Epoch/revision

@@ -1213,6 +1213,34 @@ public:
             return "CHANNEL PATCH: native preparation failed; previous mix preserved";
         }
     }
+
+    // Existing single-callback native FX rack. Internally mute for a
+    // structural vendor prepare, then restore monitoring only on verified
+    // same-device/safe routing. The operator never needs an Arm/Patch wizard.
+    juce::String insertDryRoutingLabFx(int lane,int slot,
+        std::uint64_t epoch,std::uint64_t revision,
+        const LiveDryRoutingLab::FxSelection& chosen) {
+        if(independent_.active()||handoff_.busy()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           !directFence_.permitted()||savedDirectSetup_||savedLiveSetup_||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)
+            return "FX INSERT: native direct graph or device unavailable";
+        if(secondaryOutput_.armed())
+            return "FX INSERT: stop the secondary stream before changing VST topology";
+        for(int i=0;i<graphOwned_->count;++i)
+            if(graphOwned_->slots[i].latency!=0)
+                return "FX INSERT: CH1 latent VST3 needs PDC before routed inserts";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "FX INSERT: select an actual audio device";
+        const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        return applyGuardedDryTopology(epoch,frames,[&] {
+            return dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
+                chosen,directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),
+                frames);
+        });
+    }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,
             float value) noexcept {
