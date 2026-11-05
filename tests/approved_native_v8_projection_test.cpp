@@ -368,6 +368,60 @@ static void firstSoundRouteAdmissionRegression() {
     assert(publishVerifiedFirstSoundState(snapshot,live));
     m4=snapshot.getProperty("legacyM4",{});
     assert(static_cast<bool>(m4.getProperty("routeAccepted",false)));
+    // Ten independent physical inputs, including non-contiguous verified
+    // input pins, are authoritative JUCE readback (not Pages mock labels).
+    juce::Array<juce::var> physicalPins;
+    physicalPins.add(0);physicalPins.add(2);
+    snapshot.getProperty("device",{}).getDynamicObject()
+        ->setProperty("enabledInputs",juce::var(physicalPins));
+    juce::Array<juce::var> rows,controls,peaksL,peaksR;
+    for(int i=0;i<10;++i) {
+        auto row=std::make_unique<juce::DynamicObject>();
+        row->setProperty("mode",i==7?"MONO":"NONE");
+        row->setProperty("left",i==7?2:-1);
+        row->setProperty("right",-1);
+        row->setProperty("main",true);
+        rows.add(juce::var(row.release()));
+        auto control=std::make_unique<juce::DynamicObject>();
+        control->setProperty("db",-12.0);
+        control->setProperty("pan",0.0);
+        control->setProperty("mute",false);
+        control->setProperty("solo",false);
+        controls.add(juce::var(control.release()));
+        peaksL.add(i==7?0.3:0.);
+        peaksR.add(i==7?0.2:0.);
+    }
+    auto routeData=live.getProperty("dryRoutingLab",{}).getDynamicObject();
+    auto accepted=std::make_unique<juce::DynamicObject>();
+    accepted->setProperty("channels",juce::var(rows));
+    routeData->setProperty("acceptedRoute",juce::var(accepted.release()));
+    routeData->setProperty("channelControls",juce::var(controls));
+    routeData->setProperty("channelPeaksL",juce::var(peaksL));
+    routeData->setProperty("channelPeaksR",juce::var(peaksR));
+    snapshot.getProperty("telemetry",{}).getDynamicObject()
+        ->setProperty("captureObserved",true);
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    m4=snapshot.getProperty("legacyM4",{});
+    const auto nativeInputs=m4.getProperty("channelSources",{});
+    const auto nativeControls=m4.getProperty("channelControls",{});
+    assert(nativeInputs.isArray() && nativeInputs.getArray()->size()==10);
+    assert(nativeControls.isArray() && nativeControls.getArray()->size()==10);
+    assert(nativeInputs[7].getProperty("mode","").toString()=="MONO");
+    assert(static_cast<int>(nativeInputs[7].getProperty("left",-1))==2);
+    assert(static_cast<bool>(nativeInputs[7].getProperty("main",false)));
+    assert(static_cast<double>(nativeControls[7].getProperty("db",0.))==-12.);
+    assert(m4.getProperty("channelPeaksL",{}).getArray()->size()==10);
+    // Reject forged physical pins instead of silently assigning other
+    // channels or painting imaginary source/meter data.
+    rows.getReference(7).getDynamicObject()->setProperty("left",42);
+    routeData->getProperty("acceptedRoute",{}).getDynamicObject()
+        ->setProperty("channels",juce::var(rows));
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    m4=snapshot.getProperty("legacyM4",{});
+    assert(m4.getProperty("channelSources",{}).getArray()->isEmpty());
+    rows.getReference(7).getDynamicObject()->setProperty("left",2);
+    routeData->getProperty("acceptedRoute",{}).getDynamicObject()
+        ->setProperty("channels",juce::var(rows));
     auto reject=[&](const juce::var& degraded) {
         auto fresh=juce::JSON::parse(juce::JSON::toString(snapshot,false));
         assert(!publishVerifiedFirstSoundState(fresh,degraded));
