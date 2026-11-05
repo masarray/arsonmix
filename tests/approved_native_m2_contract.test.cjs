@@ -301,7 +301,8 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  const sent=[],listeners=new Map(),handlers=new Map();
  const selects=new Map();
  const tracks=Array.from({length:10},(_,i)=>({kind:"audio",id:i+1,name:"CH"+(i+1)}));
- const scope={tracks,master:{id:11,kind:"master"},stopDemo(){}};
+ const scope={tracks,master:{id:11,kind:"master"},stopDemo(){},
+   findTrack(){return tracks[7];}};
  for(const tr of tracks){
    const sel={dataset:{},value:"None",disabled:false,options:[],
      replaceChildren(...opts){this.options=opts;this.value=opts[0]?.value??"";},
@@ -332,7 +333,8 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
    {id:"in:2",port:2,callback:1,label:"Mic 3",active:true}
  ];
  snap.legacyM4={active:true,routeAccepted:false,routingRevision:"8",
-   channelSources:tracks.map(()=>({mode:"NONE",left:-1,right:-1}))};
+   channelSources:tracks.map(()=>({mode:"NONE",left:-1,right:-1})),
+   channelControls:tracks.map(()=>({db:-12,pan:0,mute:false,solo:false}))};
  listeners.get("arMixConsoleSnapshot")(snap);
  const selected=selects.get("8");
  assert.equal(selected.dataset.nativeChannel,"7");
@@ -378,6 +380,43 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  assert.equal(selected.disabled,false);
  assert.equal(selects.get("1").value,"NONE",
    "unselected channel must not inherit another channel's patch");
+ // M4 G0 callback controls must be REAL, even before universal ChannelId
+ // operations are admitted. One gesture changes only CH08 on native engine.
+ const slider={dataset:{field:"level"},value:"-3"};
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeField({
+   target:slider,type:"change"
+ }),true);
+ const control=sent.findLast(x=>x.name==="arMixAction").payload;
+ assert.equal(control.action,"routingM4ChannelControl");
+ assert.equal(control.channel,7);
+ assert.equal(control.parameter,"faderDb");
+ assert.equal(control.value,-3);
+ assert.equal(control.deviceEpoch,10);
+ assert.equal(control.revision,8);
+ assert.equal(tracks[7].level,-12,"unverified fader request is not accepted GUI");
+ const changed=clone(readback);
+ changed.legacyM4.channelControls[7].db=-3;
+ listeners.get("arMixM4ControlAck")({
+   requestId:control.requestId,channel:7,parameter:"faderDb",ok:true,
+   state:{epoch:10,revision:8,channelControls:changed.legacyM4.channelControls}
+ });
+ assert.equal(tracks[7].level,-12,"ACK alone is not current PCM readback");
+ listeners.get("arMixConsoleSnapshot")(changed);
+ assert.equal(tracks[7].level,-3,"only verified native fader state is projected");
+ assert.equal(tracks[0].level,-12,"other channels not mutated");
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeAction(tracks[7],"mute",{}),true);
+ const mute=sent.findLast(x=>x.name==="arMixAction").payload;
+ assert.equal(mute.action,"routingM4ChannelControl");
+ assert.equal(mute.parameter,"mute");
+ assert.equal(mute.value,true);
+ const muted=clone(changed);
+ muted.legacyM4.channelControls[7].mute=true;
+ listeners.get("arMixM4ControlAck")({
+   requestId:mute.requestId,channel:7,parameter:"mute",ok:true,
+   state:{epoch:10,revision:8,channelControls:muted.legacyM4.channelControls}
+ });
+ listeners.get("arMixConsoleSnapshot")(muted);
+ assert.equal(tracks[7].mute,true);
 });
 test("M2 code edits approved Pages *events* only, not a second native GUI/audio engine",()=>{
  const page=read("site/preview-v2/index.html");
