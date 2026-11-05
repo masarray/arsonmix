@@ -21,7 +21,7 @@ import re
 LINK = re.compile(r'(<link\s+rel="stylesheet"\s+href="assets/)([^"?]+\.css)(\?[^"]*)?(")', re.I)
 PROPERTY = re.compile(r"^\s*(--[A-Za-z0-9_-]+|[-A-Za-z_][-A-Za-z0-9_]*)\s*:", re.S)
 IMPORTANT = re.compile(r"!\s*important\s*$", re.I)
-CONTAINERS = ("@media ", "@supports ", "@container ", "@layer ", "@scope ")
+CONTAINER = re.compile(r"^@(media|supports|container|layer|scope)(?=\\s|\\()", re.I)
 # Explicit byte parity with the owner-approved PNG buttons and VIRE historical
 # socket source: these 2 assets participate as winners but never change bytes.
 LOCKED_ASSETS = frozenset({"mixer-control-keys.css", "mixer-wire-dots.css"})
@@ -109,7 +109,7 @@ def _declarations(source: str, filename: str):
                 raise ValueError(f"{filename}: unmatched CSS brace near {at}")
             if header.startswith("@"):
                 normalized = " ".join(header.split())
-                if normalized.lower().startswith(CONTAINERS):
+                if CONTAINER.match(normalized):
                     walk(at + 1, close, context + (normalized,))
                 cursor = close + 1
                 continue
