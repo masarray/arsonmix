@@ -1767,6 +1767,9 @@ private:
                 lane,slot,epoch,revision,token,static_cast<bool>(value));
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",ok);
+            ack->setProperty("requestId",args.getProperty("requestId",juce::var()));
+            ack->setProperty("channel",lane);
+            ack->setProperty("slot",slot);
             ack->setProperty("error",ok?juce::String():
                 "FX bypass rejected: route revision, instance or device changed");
             ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));

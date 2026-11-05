@@ -213,6 +213,20 @@ test("P0 MAIN WIRE unplug uses UI-to-native EdgeId and no fake graph",()=>{
  assert.match(adapter,/WIRE BUS\/FX return is not admitted/);
  assert.match(adapter,/requestPrimaryOut\(t,target\)/);
 });
+test("P0 real slot VST3 power and native editor use verified instance tokens",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const main=read("src/Main.cpp");
+ assert.match(bridge,/function verifiedFxFor\(t,slot\)/);
+ assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
+ assert.match(bridge,/if\(action==="slotPower"\)/);
+ assert.match(bridge,/if\(action==="fxOn"\)/);
+ assert.match(bridge,/action:"routingFxEditor"/);
+ assert.match(bridge,/action:"routingFxBypass"/);
+ assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
+ assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\)/);
+ assert.match(main,/action == "routingFxEditor"/);
+ assert.match(main,/action == "routingFxBypass"/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");

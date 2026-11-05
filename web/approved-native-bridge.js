@@ -343,6 +343,34 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
+  function verifiedFxFor(t,slot){
+    const lane=m4Index(t),live=legacy()?.fxInstances?.[lane]?.[slot];
+    return lane>=0 && Number.isInteger(slot) && slot>=0&&slot<8 &&
+      live && typeof live.instanceId==="string" &&
+      live.instanceId && typeof live.catalogId==="string"?
+      {lane,slot,live}:null;
+  }
+  function requestNativeFxPower(t,slot,bypass){
+    const picked=verifiedFxFor(t,slot);
+    if(!picked||!m4Verified())return false;
+    const ep=safeNativeCounter(hardware?.device?.epoch),
+      rev=safeNativeCounter(legacy()?.routingRevision);
+    const {lane,live}=picked,requestId="fxpower-"+(++fxRequestSerial);
+    if(ep===null||rev===null||pendingSlotPowers.has(lane+":"+slot))
+      return false;
+    pendingSlotPowers.set(lane+":"+slot,{requestId,token:live.instanceId,bypass});
+    backend.emitEvent("arMixAction",{action:"routingFxBypass",
+      requestId,channel:lane,slot,instanceId:live.instanceId,
+      deviceEpoch:ep,revision:rev,value:bypass});
+    window.setTimeout(()=>{
+      if(pendingSlotPowers.get(lane+":"+slot)?.requestId!==requestId)return;
+      pendingSlotPowers.delete(lane+":"+slot);
+      status("FX bypass timed out · restoring real rack state");
+      controller?.subscribe();
+    },5000);
+    return true;
+  }
   let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
   const m4Verified=()=>{
@@ -1167,6 +1195,22 @@
       }
       controller.subscribe();
     });
+    backend.addEventListener("arMixRoutingFxBypassAck",ack=>{
+      const key=(Number(ack?.channel)||0)+":"+Number(ack?.slot);
+      // Legacy ACKs without channel/requestId can never authorize an
+      // arbitrary in-flight slot or paint an invented bypass state.
+      const pending=pendingSlotPowers.get(key);
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      pendingSlotPowers.delete(key);
+      if(ack?.ok!==true)
+        nativeToast(ack?.error||"Native VST3 bypass rejected");
+      controller?.subscribe(); // real FxInstance state owns visual power
+    });
+    backend.addEventListener("arMixRoutingFxEditorAck",ack=>{
+      if(ack?.ok!==true)
+        nativeToast(ack?.error||"VST3 editor could not open");
+      else status("Native VST3 editor opened");
+    });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
       if(!pendingFxInsert||ack?.requestId!==pendingFxInsert.requestId)return;
       const p=pendingFxInsert;pendingFxInsert=null;
@@ -1356,7 +1400,39 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if(action==="openPlugin"){
-        scope?.openFastPicker?.(t,Number(btn?.dataset.slot),btn);
+        const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
+        if(instance){
+          const ep=safeNativeCounter(hardware?.device?.epoch),
+            rev=safeNativeCounter(legacy()?.routingRevision);
+          if(ep!==null&&rev!==null)
+            backend.emitEvent("arMixAction",{action:"routingFxEditor",
+              channel:instance.lane,slot,
+              instanceId:instance.live.instanceId,deviceEpoch:ep,revision:rev});
+          else nativeToast("VST3 editor · refresh native device and FX instance");
+        }else scope?.openFastPicker?.(t,slot,btn);
+        return true;
+      }
+      if(action==="slotPower"){
+        const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
+        if(!instance||!requestNativeFxPower(t,slot,!instance.live.bypassed))
+          nativeToast("FX bypass unavailable · select an accepted VST3 slot");
+        return true;
+      }
+      if(action==="fxOn"){
+        // A rack-wide toggle is a coordinated group of native atomic
+        // per-instance bypasses, not a purely visual FX Rack power icon.
+        const lane=m4Index(t),rows=legacy()?.fxInstances?.[lane]||[];
+        if(lane<0||!m4Verified()||!rows.length){
+          nativeToast("FX rack is empty · choose a VST3 insert first");return true;
+        }
+        const off=rows.some(row=>row?.bypassed===false);
+        let sent=0;
+        for(let slot=0;slot<rows.length;slot++)
+          if(rows[slot]?.bypassed!==off &&
+             requestNativeFxPower(t,slot,off))sent++;
+        if(!sent)status("FX rack already "+(off?"bypassed":"enabled"));
+        else status("CH "+(lane+1)+" FX power · "+sent+
+          " native insert bypass requests sent");
         return true;
       }
       if(action==="format"&&t?.kind==="audio"){
