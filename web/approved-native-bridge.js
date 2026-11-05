@@ -436,6 +436,14 @@
         return true;
       }
       if (!flags.acceptedGraphConnected) {
+        if(m4Verified()&&t.kind==="master"&&field==="level"){
+          if(event.type==="change"&&Number.isFinite(Number(el.value)))
+            backend.emitEvent("arMixParameter",{
+              parameter:"masterGain",channel:-1,value:Number(el.value),
+              routeEpoch:safeNativeCounter(hardware.device.epoch),
+              routeRevision:safeNativeCounter(legacy().routingRevision)});
+          return true;
+        }
         const n=m4StripIndex(el);
         if(m4Verified()&&n>=0&&(field==="level"||field==="pan")){
           if(event.type!=="change")return true; // cap preview, native control on commit
@@ -490,6 +498,14 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected && m4Verified()&&
+           t.kind==="master"&&action==="mute"){
+          backend.emitEvent("arMixParameter",{
+            parameter:"masterMute",channel:-1,value:!t.mute,
+            routeEpoch:safeNativeCounter(hardware.device.epoch),
+            routeRevision:safeNativeCounter(legacy().routingRevision)});
+          return true;
+        }
         if(!flags.acceptedGraphConnected && m4Verified()){
           const n=m4StripIndex(btn);
           if(n>=0) {
@@ -575,7 +591,9 @@
   // Presentation-only bank/selection remains available.
   document.addEventListener("pointerdown",event=>{
     if (flags.acceptedGraphConnected) return;
-    if (m4Verified()&&m4StripIndex(event.target)>=0) return;
+    if (m4Verified()&&
+        (m4StripIndex(event.target)>=0||
+         scope?.findTrack?.(event.target)?.kind==="master"))return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
