@@ -356,7 +356,10 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  stale.device.epoch="9";
  listeners.get("arMixConsoleSnapshot")(stale);
  assert.equal(selected.disabled,false,"device epoch change releases stale UI transaction");
- listeners.get("arMixConsoleSnapshot")(snap);
+ // The controller correctly rejects a regressive device epoch. Resume
+ // on a NEWER native hardware generation, never replay the old epoch 7.
+ const resumed=clone(snap);resumed.device.epoch="10";
+ listeners.get("arMixConsoleSnapshot")(resumed);
  selected.value="MONO:2";
  handlers.get("change")({target:selected,preventDefault(){},stopImmediatePropagation(){}});
  const pending=sent.findLast(x=>x.name==="arMixAction").payload;
@@ -364,10 +367,10 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  rows[7]={mode:"MONO",left:2,right:-1};
  listeners.get("arMixSourceSwitchAck")({
    requestId:pending.requestId,channel:7,ok:true,error:"",
-   state:{epoch:7,acceptedRoute:{channels:rows}}
+   state:{epoch:10,acceptedRoute:{channels:rows}}
  });
  assert.equal(selected.disabled,true,"ACK alone must not project native source");
- const readback=clone(snap);
+ const readback=clone(resumed);
  readback.legacyM4.routeAccepted=true;
  readback.legacyM4.channelSources=rows;
  listeners.get("arMixConsoleSnapshot")(readback);
