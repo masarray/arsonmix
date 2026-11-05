@@ -60,9 +60,9 @@ def accepted_pages_html() -> str:
 NATIVE_EVENT_HOOKS = (
     # The approved Pages HTML stays byte-for-byte unchanged; these two
     # reversible native-only hooks expose verified mixer hardware choices.
-    ("const option=(values,selected)=>values.map(x=>'<option value=\"'+escapeHtml(x)+'\"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');\\n", "const option=(values,selected)=>values.map(x=>{const value=Array.isArray(x)?x[0]:x,label=Array.isArray(x)?x[1]:x;return '<option value=\"'+escapeHtml(value)+'\"'+(value===selected?' selected':'')+'>'+escapeHtml(label)+'</option>';}).join('');\\n"),
-    ("const channelOptions=(t,type)=>\\n",
-     "const channelOptions=(t,type)=>\\n if(window.__JUCE__?.backend){\\n  const native=window.__ARMIX_NATIVE_M2__?.channelOptions?.(t,type);\\n  if(native)return native;\\n  return type==='input'?[['None','Choose audio device…']]:type==='output'?[[t.output||'Master','MAIN']]:['None'];\\n }\\n"),
+    ("const option=(values,selected)=>values.map(x=>'<option value=\"'+escapeHtml(x)+'\"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');\n", "const option=(values,selected)=>values.map(x=>{const value=Array.isArray(x)?x[0]:x,label=Array.isArray(x)?x[1]:x;return '<option value=\"'+escapeHtml(value)+'\"'+(value===selected?' selected':'')+'>'+escapeHtml(label)+'</option>';}).join('');\n"),
+    ("const channelOptions=(t,type)=>\n",
+     "const channelOptions=(t,type)=>\n if(window.__JUCE__?.backend){\n  const native=window.__ARMIX_NATIVE_M2__?.channelOptions?.(t,type);\n  if(native)return native;\n  return type==='input'?[['None','Choose audio device…']]:type==='output'?[[t.output||'Master','MAIN']]:['None'];\n }\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
