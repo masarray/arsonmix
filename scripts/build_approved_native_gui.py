@@ -62,7 +62,9 @@ NATIVE_EVENT_HOOKS = (
     ("const channelOptions=(t,type)=>{\n",
      "const channelOptions=(t,type)=>{\n"
      " if(type==='input'&&window.__JUCE__?.backend)\n"
-     "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"),
+     "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
+     " if(type==='output'&&window.__JUCE__?.backend)\n"
+     "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),

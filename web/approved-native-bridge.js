@@ -207,7 +207,97 @@
       x.left===row.left && x.right===row.right);
     return exact?.label||"None";
   };
-  let lastM4UiSignature="",nativeUiSourcePending=null;
+  // ChannelId and the existing M4 use the SAME ten native input ordinals.
+  // GUI track reorder must never silently repatch a different physical lane.
+  const m4TrackIds=Array.isArray(scope?.tracks)?
+    scope.tracks.filter(t=>t.kind==="audio").slice(0,10).map(t=>t.id):[];
+  const m4Index=t=>t?.kind==="audio"?m4TrackIds.indexOf(t.id):-1;
+  let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
+  let pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
+  const m4Meters=new Map();
+  const m4Verified=()=>{
+    const m=legacy(),d=hardware?.device;
+    return !flags.acceptedGraphConnected && m?.active===true &&
+      m.routeAccepted===true && Array.isArray(m.channelControls) &&
+      m.channelControls.length===10 && m.channels?.length===10 &&
+      safeNativeCounter(d?.epoch)!==null &&
+      safeNativeCounter(m.routingRevision)!==null;
+  };
+  function sendM4Control(parameter,t,value) {
+    if(!m4Verified() || (typeof value!=="boolean"&&!Number.isFinite(value)))
+      return false;
+    const channel=t?.kind==="master"?-1:m4Index(t);
+    if(channel<0 && t?.kind!=="master")return false;
+    const ep=safeNativeCounter(hardware.device.epoch),
+      rev=safeNativeCounter(legacy().routingRevision);
+    if(ep===null||rev===null)return false;
+    const requestId="m4-"+(++m4RequestSerial);
+    backend.emitEvent("arMixAction",{action:"routingM4Control",
+      requestId,channel,parameter,controlValue:value,deviceEpoch:ep,
+      revision:rev});
+    window.setTimeout(()=>{
+      if(requestId!==lastM4Request)return;
+      lastM4Request="";
+      status("M4 control response timed out; verifying actual native readback");
+      controller?.subscribe();
+    },8000);
+    lastM4Request=requestId;
+    return true;
+  }
+  let lastM4Request="";
+  function paintM4Fallback(next) {
+    if(!m4Verified()||!Array.isArray(scope?.tracks))return;
+    const m=next.raw.legacyM4,ctl=m.channelControls;
+    const controlSignature=JSON.stringify([next.device.epoch,
+      m.routingRevision,ctl,m.masterDb,m.masterMute]);
+    if(controlSignature!==lastM4Controls) {
+      lastM4Controls=controlSignature;
+      let changed=false;
+      for(let i=0;i<10;i++){
+        const t=scope.tracks.find(x=>x.id===m4TrackIds[i]),c=ctl[i];
+        if(!t||!c||!Number.isFinite(c.db)||!Number.isFinite(c.pan)||
+           typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
+        if(Math.abs(t.level-c.db)>.015){t.level=c.db;changed=true;}
+        if(Math.abs(t.pan-c.pan)>.015){t.pan=c.pan;changed=true;}
+        if(t.mute!==c.mute){t.mute=c.mute;changed=true;}
+        if(t.solo!==c.solo){t.solo=c.solo;changed=true;}
+      }
+      if(scope.master && Number.isFinite(m.masterDb) &&
+         Math.abs(scope.master.level-m.masterDb)>.015){
+        scope.master.level=m.masterDb;changed=true;
+      }
+      if(scope.master && typeof m.masterMute==="boolean" &&
+         scope.master.mute!==m.masterMute){
+        scope.master.mute=m.masterMute;changed=true;
+      }
+      if(changed){m4Meters.clear();scope.render?.();}
+    }
+    // Only measured JUCE callback peaks are painted. Cache actual live DOM
+    // fills to avoid repeated selector searches for every timer/signal tick.
+    if(!Array.isArray(m.channelPeaksL)||!Array.isArray(m.channelPeaksR)||
+       !scope?.displayMeterDbfs)return;
+    const now=performance.now();
+    for(let i=0;i<10;i++){
+      const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
+      if(!t)continue;
+      let entry=m4Meters.get(t.id);
+      if(!entry?.root?.isConnected){
+        const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+        if(!root)continue;
+        entry={root,left:root.querySelector(".meter-fill.left"),
+          right:root.querySelector(".meter-fill.right")};
+        m4Meters.set(t.id,entry);
+      }
+      for(const side of ["left","right"]){
+        const peak=side==="left"?m.channelPeaksL[i]:m.channelPeaksR[i];
+        if(!Number.isFinite(peak)||peak<0)continue;
+        const fill=entry[side];if(!fill)continue;
+        scope.displayMeterDbfs(fill,peak===0?-90:
+          Math.max(-90,Math.min(6,20*Math.log10(peak))),
+          now,"native-m4:"+i+":"+side);
+      }
+    }
+  }
   function refreshRealM4Inputs(next){
     if(!scope?.tracks || next?.admitted || !Array.isArray(scope.tracks) ||
        scope.tracks.length<10) return;
@@ -219,15 +309,15 @@
     if(signature===lastM4UiSignature)return;
     lastM4UiSignature=signature;
     for(let i=0;i<10;++i){
-      const t=scope.tracks[i];
+      const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
       if(t?.kind!=="audio")continue;
       const row=Array.isArray(rows)&&rows.length===10?rows[i]:null;
       t.input=inputLabelFor(row);
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
     }
-    // One existing canonical mixer renderer, updated only when the actual
-    // hardware topology/route changes, never on periodic PCM meter frames.
+    // One canonical renderer, only on a real routing/topology change.
+    m4Meters.clear();
     scope.render?.();
   }
 
@@ -250,6 +340,19 @@
     const label=document.getElementById("transport");
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
+    const monitorButton=document.querySelector?.("[data-native-monitor]");
+    if(monitorButton){
+      monitorButton.textContent=d?.outputArmed?"MONITOR OFF":"MONITOR ON";
+      monitorButton.title=d?.outputArmed?
+        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
+      monitorButton.disabled=!d?.outputArmed && !deviceReady();
+      monitorButton.dataset.armed=String(!!d?.outputArmed);
+    }
+    if(scope?.master && deviceOpen &&
+       scope.master.output!==playback){
+      scope.master.output=playback;
+      if(!next?.admitted)scope.render?.();
+    }
     const transport=!deviceOpen?"Audio device not ready":
       (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
       (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
@@ -610,19 +713,40 @@
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
+      const monitor=item("button","tool","MONITOR ON");
+      monitor.dataset.nativeMonitor="true";
+      monitor.addEventListener("click",()=>{
+        const armed=hardware?.device?.outputArmed===true;
+        if(!armed && (!deviceReady()||legacy()?.routeAccepted!==true ||
+            virtualCableFeedbackPair())){
+          status("MONITOR OFF · select real input and safe playback device");
+          return;
+        }
+        const ep=safeNativeCounter(hardware?.device?.epoch),
+          rev=safeNativeCounter(legacy()?.routingRevision);
+        if(!armed&&(ep===null||rev===null))return;
+        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
+          requestId:"manual-monitor-"+(++m4RequestSerial),
+          ...(armed?{}:{expectedEpoch:ep,expectedRevision:rev})});
+        status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
+      });
+      toolbar.insertBefore(monitor,io);
     }
     updateHardwarePanel(hardware);
   }
 
   function onNativeReadback(next) {
     updateHardwarePanel(next);
+    paintM4Fallback(next);
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      status(m4Verified()?
+        "NATIVE M4 · real PCM faders and meters · ChannelId buses not yet admitted":
+        "NATIVE G0 · choose real hardware IN on any channel");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -689,7 +813,8 @@
           // UI only from a subsequent authoritative snapshot.
           controller.subscribe();
           const firstListen=p.autoListen && row?.main===true &&
-             next.nativeChannelIdPcmActive===true &&
+             (next.nativeChannelIdPcmActive===true ||
+              (Array.isArray(next.channelControls)&&next.channelControls.length===10)) &&
              hardware?.device?.epoch===String(p.epoch);
           // Never arm physical audio when the GUI still lacks admitted PCM
           // controls, or when capture and playback feed the *same* VB Cable.
@@ -718,6 +843,24 @@
       }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
       updateHardwarePanel(hardware);
     });
+    backend.addEventListener("arMixM4ControlAck",ack=>{
+      if(ack?.requestId===lastM4Request)lastM4Request="";
+      if(ack?.ok!==true)
+        status("NATIVE M4 REJECTED · "+(ack?.error||"stale graph"));
+      controller.subscribe(); // accepted producer snapshot is authoritative
+    });
+    backend.addEventListener("arMixChannelPatchAck",ack=>{
+      if(!pendingOutputPatch||ack?.requestId!==pendingOutputPatch.requestId)return;
+      const p=pendingOutputPatch;
+      pendingOutputPatch=null;
+      const row=ack?.state?.acceptedRoute?.channels?.[p.channel];
+      if(ack?.ok===true && Number(ack.state?.epoch)===p.epoch &&
+         row?.main===(p.target==="MAIN"))
+        status("CH "+(p.channel+1)+" OUT accepted; verifying native readback");
+      else status("CH "+(p.channel+1)+" OUT rejected · "+
+        (ack?.error||"stale route"));
+      controller.subscribe();
+    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(pendingDeviceMute){
         // Reject any stale/unrelated ACK and any device epoch change.
@@ -745,6 +888,18 @@
       if(t?.kind!=="audio")return ["None"];
       return inputChoicesFor().map(x=>x.label);
     },
+    outputChoices(t) {
+      if(t?.kind==="master")
+        return [String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
+      if(t?.kind==="audio"){
+        // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
+        // never pretend the demo's other destinations have native PCM.
+        const options=["Master","SOURCE ONLY (No Main)"];
+        if(t.output && !options.includes(t.output))options.push(t.output);
+        return options;
+      }
+      return [t?.output||"None"];
+    },
     consumeField(event) {
       if (!connected)return false;
       const el=event.target,field=el?.dataset?.field;
@@ -756,7 +911,7 @@
         // ChannelId admission. A physical mixer strip can receive ANY active
         // source, including the very first source in an unpatched session.
         if(event.type!=="change")return true;
-        const channel=scope?.tracks?.findIndex?.(x=>x.id===t.id)??-1;
+        const channel=m4Index(t);
         const choice=inputChoicesFor().find(x=>x.label===el.value);
         const ep=safeNativeCounter(hardware?.device?.epoch);
         const rev=safeNativeCounter(legacy()?.routingRevision);
@@ -788,7 +943,52 @@
         status("CH "+(channel+1)+" INPUT · verifying physical routing");
         return true;
       }
+      if(field==="output"){
+        if(event.type!=="change")return true;
+        if(t.kind==="master"){
+          el.value=t.output;openNativeAudioIO();return true;
+        }
+        const channel=m4Index(t),target=el.value==="Master"?"MAIN":
+          el.value==="SOURCE ONLY (No Main)"?"NONE":null;
+        const ep=safeNativeCounter(hardware?.device?.epoch),
+          rev=safeNativeCounter(legacy()?.routingRevision);
+        if(channel<0||target===null||ep===null||rev===null ||
+           pendingOutputPatch||!deviceReady()){
+          status("OUT requires a native MAIN/source-only route; unchanged");
+          el.value=t.output;return true;
+        }
+        if(el.value===t.output)return true;
+        const requestId=++outputSerial;
+        pendingOutputPatch={requestId,channel,target,epoch:ep};
+        el.value=t.output;
+        backend.emitEvent("arMixAction",{action:"routingChannelPatch",
+          requestId,channel,target,deviceEpoch:ep,revision:rev});
+        window.setTimeout(()=>{
+          if(pendingOutputPatch?.requestId!==requestId)return;
+          pendingOutputPatch=null;
+          status("OUT response timed out; refreshing accepted native route");
+          controller.subscribe();
+        },8000);
+        return true;
+      }
       if (!flags.acceptedGraphConnected) {
+        if(m4Verified()){
+          if(t.kind==="master" && field==="level"){
+            if(event.type==="change" && Number.isFinite(Number(el.value)))
+              sendM4Control("masterGain",t,Number(el.value));
+            return true;
+          }
+          if(m4Index(t)>=0 && (field==="level"||field==="pan")){
+            if(event.type!=="change")return true;
+            const numeric=Number(el.value);
+            const value=field==="pan"&&
+              !el.dataset.panKeyboard&&!el.dataset.panAltPointer&&
+              Math.abs(numeric)<=12?0:numeric;
+            if(!sendM4Control(field==="level"?"faderDb":"pan",t,value))
+              status("G0 native control rejected; restoring accepted readback");
+            return true;
+          }
+        }
         if (field==="level")el.value=String(t.level);
         else if (field==="pan")el.value=String(t.pan);
         status("NATIVE: ChannelId PCM not admitted; control unchanged");
@@ -831,6 +1031,16 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(m4Verified() && t.kind==="master" && action==="mute"){
+          if(!sendM4Control("masterMute",t,!t.mute))
+            status("Native MAIN mute rejected");
+          return true;
+        }
+        if(m4Verified()&&m4Index(t)>=0){
+          if(!sendM4Control(action,t,!t[action]))
+            status("Native M4 mute/solo rejected");
+          return true;
+        }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
@@ -883,8 +1093,14 @@
     consumeUndo() {if (!connected)return false;status("NATIVE: WIRE undo requires accepted native transaction");return true;},
     consumeDoubleClick(event,t) {
       if (!connected)return false;
-      if (event.target.classList.contains("fader"))intent("SET_FADER",t,{valueDb:0});
-      else if(event.target.classList.contains("center-pan"))intent("SET_PAN",t,{value:0});
+      if (event.target.classList.contains("fader")){
+        if(m4Verified())sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
+        else intent("SET_FADER",t,{valueDb:0});
+      }
+      else if(event.target.classList.contains("center-pan")){
+        if(m4Verified())sendM4Control("pan",t,0);
+        else intent("SET_PAN",t,{value:0});
+      }
       else status("NATIVE: identity editor unavailable until native ACK contract");
       return true;
     },
@@ -908,6 +1124,8 @@
   // Presentation-only bank/selection remains available.
   document.addEventListener("pointerdown",event=>{
     if (flags.acceptedGraphConnected) return;
+    const t=scope?.findTrack?.(event.target);
+    if(m4Verified() && (t?.kind==="audio"||t?.kind==="master"))return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE G0: physical gain/pan unavailable until engine graph admission");

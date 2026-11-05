@@ -139,6 +139,31 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   // can be submitted by the native bridge. Only the native injected source.
   assert.doesNotMatch(bridge,/channelOptions\(t,'input'\)/);
 });
+test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
+ const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ const bridge=read("web/approved-native-bridge.js");
+ const native=read("src/Main.cpp");
+ const source=read("src/NativeVerifiedSourcePatch.h");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(producer,/firstSound->setProperty\("channelControls",controls\)/);
+ assert.match(producer,/firstSound->setProperty\("channelPeaksL",levelsL\)/);
+ assert.match(bridge,/function paintM4Fallback\(next\)/);
+ assert.match(bridge,/function sendM4Control\(parameter,t,value\)/);
+ assert.match(bridge,/action:"routingM4Control"/);
+ assert.match(bridge,/action:"routingChannelPatch"/);
+ assert.match(bridge,/const channel=m4Index\(t\)/);
+ assert.match(bridge,/data-native-monitor/);
+ assert.match(bridge,/const firstListen=p.autoListen/);
+ assert.match(bridge,/next\.nativeChannelIdPcmActive===true \|\|/);
+ assert.match(native,/if\(action=="routingM4Control"\)/);
+ assert.match(native,/engine_\.setDryRoutingLabParameter\(channel,/);
+ assert.match(native,/if\(action=="routingChannelPatch"\)/);
+ assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
+ assert.match(source,/if\(mode!="NONE"&&mode!="MONO"&&mode!="STEREO"\)/);
+ assert.match(source,/row->setProperty\("sourceKind",clearing\?"NONE":"PHYSICAL"\)/);
+ assert.match(builder,/type==='output'/);
+ assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");
