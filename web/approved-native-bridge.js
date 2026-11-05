@@ -653,7 +653,12 @@
         (selected.mode!=="STEREO"||row.right===selected.right);
       if(verified){
         status("CH "+(selected.channel+1)+" · INPUT CONNECTED · native ACK");
-        if(hardware?.device?.outputArmed!==true)
+        // Avoid directly feeding VB-Cable playback back into its own
+        // recording endpoint. A physical output or a deliberate independent
+        // stream must be selected before software monitoring that loop.
+        if(cableFeedbackPair())
+          status("INPUT CONNECTED · VB-Cable feedback loop blocked; choose headphones in Audio I/O");
+        else if(hardware?.device?.outputArmed!==true)
           backend.emitEvent("arMixAction",{
             action:"monitor",value:true,
             expectedEpoch:selected.epoch,
