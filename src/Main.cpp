@@ -1402,6 +1402,46 @@ private:
         // M1 RT source switch on an existing physical channel. Unlike
         // structural routingDryApply, it does not unpatch outputs, rebuild
         // VST3s, or restart the device; input PCM fades inside one graph.
+        // DAW-like strip fader/pan/mute/solo: existing atomic M4 PCM owner.
+        // This is an explicit message-thread control ACK, not an alternative
+        // VST/audio callback, G0 ChannelId admission, or optimistic JS state.
+        if(action=="routingM4ChannelControl"){
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto name=args.getProperty("parameter",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto value=args.getProperty("value",{});
+            const bool flag=name=="mute"||name=="solo";
+            const bool numeric=name=="faderDb"||name=="pan";
+            const bool kind=flag||numeric;
+            const double amount=static_cast<double>(value);
+            const bool valid=requestId>0&&channel>=0&&channel<LiveDryRoutingLab::count&&
+                kind&&(ep.isInt()||ep.isInt64()||ep.isDouble())&&
+                (rv.isInt()||rv.isInt64()||rv.isDouble())&&
+                (flag?value.isBool():(value.isDouble()||value.isInt()||value.isInt64()))&&
+                std::isfinite(amount)&&(!numeric||
+                    (name=="faderDb"?(amount>=-60.&&amount<=10.):
+                                        (amount>=-100.&&amount<=100.)));
+            const auto epoch=valid?static_cast<std::uint64_t>(
+                static_cast<juce::int64>(ep)):0;
+            const auto revision=valid?static_cast<std::uint64_t>(
+                static_cast<juce::int64>(rv)):0;
+            const bool accepted=valid&&engine_.setDryRoutingLabParameter(
+                channel,epoch,revision,name,
+                flag?(static_cast<bool>(value)?1.f:0.f):static_cast<float>(amount));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channel",channel);
+            ack->setProperty("parameter",name);
+            ack->setProperty("ok",accepted);
+            ack->setProperty("error",accepted?juce::String():
+                juce::String("STALE_ROUTE_OR_INVALID_CONTROL"));
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixM4ControlAck",juce::var(ack.release()));
+            return;
+        }
         if(action=="routingSourceSwitch"){
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));
