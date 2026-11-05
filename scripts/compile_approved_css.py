@@ -212,6 +212,7 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
     removals = defaultdict(list)
     potential = 0
     locked = 0
+    fallback = 0
     across = 0
     for declarations in groups.values():
         if len(declarations) < 2:
@@ -229,7 +230,7 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
             if item is winner:
                 continue
             if preserve_fallbacks:
-                locked += 1
+                fallback += 1
                 continue
             if item.filename in LOCKED_ASSETS:
                 locked += 1
@@ -252,11 +253,12 @@ def optimize_css(stylesheets: list[tuple[str, str]]):
         "removedDeclarations": sum(map(len, removals.values())),
         "removedCrossFileDeclarations": across,
         "lockedCandidateDeclarations": locked,
+        "preservedFallbackDeclarations": fallback,
         "sourceStylesheetCount": len(stylesheets),
         "generatedStylesheetCount": len(compiled),
         "addedOverrideStylesheets": 0,
     }
-    if stats["removedDeclarations"] + locked != potential:
+    if stats["removedDeclarations"] + locked + fallback != potential:
         raise ValueError("CSS loser accounting does not balance")
     return compiled, stats
 
