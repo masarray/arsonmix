@@ -182,6 +182,43 @@
       return false;
     });
   }
+  // Read-only operator diagnosis from verified Windows callback evidence.
+  // UI-only: this routine cannot patch, ARM, create PCM or certify speakers.
+  function diagnoseFirstSound(snapshot, selectedPhysicalPort=null) {
+    const d=snapshot?.device, t=snapshot?.telemetry, m4=snapshot?.raw?.legacyM4;
+    const opened=Boolean(d && d.sampleRate>0 && Array.isArray(d.enabledOutputs) &&
+      d.enabledOutputs.length>=2 && Array.isArray(d.enabledInputs) && d.enabledInputs.length>0);
+    const measured=x=>typeof x==="number"&&Number.isFinite(x)&&x>=0&&x<=16?x:null;
+    const dbfs=x=>x===null?"N/A":x===0?"−∞ dBFS":
+      (20*Math.log10(x)).toFixed(1)+" dBFS";
+    const endpoints=Array.isArray(d?.inputEndpoints)?d.inputEndpoints:[];
+    const physical=selectedPhysicalPort===null||selectedPhysicalPort===""?
+      null:Number(selectedPhysicalPort);
+    const pin=Number.isInteger(physical)?endpoints.find(p=>
+      p.port===physical && p.active===true && d.enabledInputs.includes(p.port)):null;
+    const observed=t?.captureObserved===true;
+    const portPeak=pin && Array.isArray(t?.captureCallbackPeaks)?
+      measured(t.captureCallbackPeaks[pin.callback]):null;
+    const raw=observed?(pin?portPeak:measured(t?.rawCapturePeak)):null;
+    const mainObserved=t?.mainPcmObserved===true;
+    const main=mainObserved?measured(t?.mainPcmPeak):null;
+    let nextAction;
+    if(!opened)nextAction="Choose verified input and output devices in Audio Setup.";
+    else if(m4?.active!==true)nextAction="Native mixer not ready; check verified DIRECT device.";
+    else if(!observed)nextAction="No current-epoch capture callback evidence; verify driver and inputs.";
+    else if(pin && raw===0)nextAction="Selected input is silent; check physical source and input gain.";
+    else if(raw===null)nextAction="Capture peak unavailable; do not assume an active source.";
+    else if(m4.routeAccepted!==true)nextAction="PATCH CH1 to the selected hardware input.";
+    else if(d.outputArmed!==true)nextAction="Patch accepted; lower volume then ARM output.";
+    else if(!mainObserved)nextAction="No MAIN PCM measurement; check routing and output state.";
+    else if(main===0)nextAction="MAIN PCM silent; check CH1 fader/MUTE and MASTER MUTE.";
+    else nextAction="MAIN PCM measured; verify headphone/speaker sound physically.";
+    const label=pin?"IN "+(pin.port+1):"ALL INPUTS";
+    return Object.freeze({captureObserved:observed,mainPcmObserved:mainObserved,
+      rawPeak:raw,mainPeak:main,rawDbfs:dbfs(raw),mainDbfs:dbfs(main),
+      selectedPin:pin?.port??null,nextAction,
+      readout:label+" "+dbfs(raw)+" · MAIN PCM "+dbfs(main)});
+  }
   function createController({emit, onStatus=()=>{}, onAccepted=()=>{}}) {
     if (typeof emit !== "function") throw Error("Native emitter required");
     let current = null, pending = null, lastRequest = 0, lastError = "NATIVE_NOT_SUBSCRIBED";
@@ -298,5 +335,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,createController});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,diagnoseFirstSound,createController});
 });
