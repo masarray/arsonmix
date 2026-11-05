@@ -107,6 +107,8 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
                 src->setProperty("mode",mode);
                 src->setProperty("left",mono||stereo?left:juce::var(-1));
                 src->setProperty("right",stereo?right:juce::var(-1));
+                const auto main=row.getProperty("main",{});
+                src->setProperty("main",main.isBool()&&static_cast<bool>(main));
                 sources.add(juce::var(src.release()));
             }
         }
