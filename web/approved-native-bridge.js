@@ -1300,9 +1300,13 @@
         "Native VST3 scan finished; results from JUCE catalog";
     });
     backend.addEventListener("arMixNotice",notice=>{
-      if(notice?.error===true && typeof notice.message==="string"){
-        nativeToast(notice.message); // native VST3/driver cause survives 12Hz status repaint
-        status("JUCE · "+notice.message);
+      // ConsoleWindow::emitNotice publishes {text,error}, never {message}.
+      // The mismatched field hid native VST3 layout/latency, driver and
+      // routing failures behind rapid meter/readback status updates.
+      const message=notice?.text;
+      if(notice?.error===true && typeof message==="string" && message.length){
+        nativeToast(message); // physical FX/driver failures remain visible
+        status("JUCE · "+message);
       }
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{

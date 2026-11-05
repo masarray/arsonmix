@@ -266,6 +266,16 @@ test("P0 FX command preflight never mutes monitoring for deterministic rejection
  assert.match(engine,/pluginFormat->fileMightContainThisPluginType\(chosen\.path\)/);
  assert.match(engine,/FX INSERT: VST3 bundle unavailable or invalid/);
 });
+test("P0 JUCE native errors use the actual notice.text event contract",()=>{
+ const host=read("src/Main.cpp");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(host,/o->setProperty \("text", message\)/);
+ assert.match(host,/o->setProperty \("error", error\)/);
+ assert.match(bridge,/backend\.addEventListener\("arMixNotice",notice=>/);
+ assert.match(bridge,/const message=notice\?\.text/);
+ assert.match(bridge,/nativeToast\(message\)/);
+ assert.doesNotMatch(bridge,/notice\.message/);
+});
 test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified M4 route",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
