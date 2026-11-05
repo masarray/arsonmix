@@ -160,6 +160,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Verify opt-in actual /preview/ GUI profiling, default OFF
         run: python tests/approved_gui_perf_stage_a_smoke.py
+      - name: Validate Stage B native meter dirty-write / authoritative Pages parity
+        run: python tests/approved_native_meter_dirty_stage_b_smoke.py
       - name: WIRE A main edge and safe graph integration in real Chromium DOM
         run: python tests/pages_wire_first_canonical_main_smoke.py
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
