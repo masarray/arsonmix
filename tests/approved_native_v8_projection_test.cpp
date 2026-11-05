@@ -260,6 +260,11 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
       "nativeChannelIdPcmActive":true,"epoch":91}})JSON");
     live.getProperty("dryRoutingLab",{}).getDynamicObject()
         ->setProperty("nativeBus",rawBus);
+    // The physical master is post-ChannelId host PCM, not the generic
+    // roster's default 0 dB. Keep its accepted gain and mute across native
+    // projection, even when the source input fader changes independently.
+    live.getDynamicObject()->setProperty("masterDb",-13.5);
+    live.getDynamicObject()->setProperty("masterMute",true);
     auto fail=[&](const juce::var& candidate) {
         auto before=juce::JSON::toString(snap,false);
         assert(!projectInstalledNativeChannelIdGraph(snap,candidate));
@@ -290,6 +295,19 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     fail(deny);
     assert(synchronizeApprovedRouteDeviceEpoch(snap,live));
     assert(projectInstalledNativeChannelIdGraph(snap,live));
+    const auto projectedRows=snap.getProperty("graph",{}).getProperty("channels",{});
+    const auto* projected=projectedRows.getArray();
+    assert(projected && projected->size()==2);
+    bool physicalMasterFound=false;
+    for(const auto& row:*projected)
+        if(row.getProperty("role",{}).toString()=="MAIN") {
+            const auto ctl=row.getProperty("controls",{});
+            assert(std::abs(static_cast<double>(ctl.getProperty("faderDb",{}))
+                              -(-13.5))<0.00001);
+            assert(static_cast<bool>(ctl.getProperty("mute",false)));
+            physicalMasterFound=true;
+        }
+    assert(physicalMasterFound);
     // Real restart: lab routing epoch counts STOP+START, unlike M2
     // deviceStartCount. This G0-to-native authority switch must advance.
     auto disconnected=canonicalSnapshot();

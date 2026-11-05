@@ -233,6 +233,28 @@ inline bool projectInstalledNativeChannelIdGraph(
     // comes from the verified installed ENGINE status above, not the caller.
     if (!projectApprovedNativeV8(snapshot,bus,true))
         return false;
+    // ChannelId owns channel PCM, but the physical MAIN gain/mute is
+    // applied by the single LiveAudioEngine host after that render. The
+    // generic ChannelId roster's default MAIN fader is not this physical
+    // gain. Publish the real host readback, or the visible master will
+    // snap back to 0 dB after every accepted native scalar snapshot.
+    double physicalMasterDb=0.;
+    const auto physicalMasterMute=live.getProperty("masterMute",{});
+    if(nativeV8Number(live.getProperty("masterDb",{}),physicalMasterDb) &&
+       physicalMasterDb>=-60.01 && physicalMasterDb<=10.01 &&
+       physicalMasterMute.isBool()) {
+        const auto installedGraph=snapshot.getProperty("graph",{});
+        const auto channels=installedGraph.getProperty("channels",{});
+        if(auto* rows=channels.getArray())
+            for(auto& row:*rows)
+                if(row.getProperty("role",{}).toString()=="MAIN") {
+                    const auto controls=row.getProperty("controls",{});
+                    if(auto* obj=controls.getDynamicObject()) {
+                        obj->setProperty("faderDb",physicalMasterDb);
+                        obj->setProperty("mute",physicalMasterMute);
+                    }
+                }
+    }
     // Advertise only controls provided by the currently installed and
     // positively admitted native callback (never inferred from a JSON shape
     // or the browser). Both the native and public capability are required by
