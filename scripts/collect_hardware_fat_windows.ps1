@@ -23,17 +23,30 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
+# SHA256 must remain available in Windows PowerShell even when optional modules
+# are unavailable; never depend on Get-FileHash module auto-loading.
+function Get-FatSha256([string] $Path) {
+  $filePath=(Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath
+  $stream=[System.IO.File]::OpenRead($filePath)
+  $hasher=[System.Security.Cryptography.SHA256]::Create()
+  try {
+    return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-','').ToLowerInvariant()
+  } finally {
+    $stream.Dispose()
+    $hasher.Dispose()
+  }
+}
 $manifestPath=Join-Path $root 'BUILD_PROVENANCE.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Missing BUILD_PROVENANCE.json: extract the complete verified Windows FAT ZIP first' }
 $m=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([string]$m.fatStatus -ne 'EXPERIMENTAL_NOT_HARDWARE_QUALIFIED') { throw 'Unexpected hardware qualification claim' }
 if ([string]$m.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid exact source SHA' }
 if ([string]$m.fatCollectorSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Missing FAT collector provenance' }
-$selfHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$selfHash=(Get-FatSha256 -Path $PSCommandPath)
 if ($selfHash -ne [string]$m.fatCollectorSha256) { throw 'FAT collector was modified after packaging' }
 $app=Join-Path $root ([string]$m.executable)
 if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw 'Missing packaged native GUI EXE' }
-$exeHash=(Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
+$exeHash=(Get-FatSha256 -Path $app)
 if ($exeHash -ne [string]$m.exeSha256) { throw 'GUI EXE SHA-256 mismatch: do not test or label this artifact' }
 $journalPath=Join-Path $root 'FAT_RUNS.json'
 function Save-Journal($j) {
@@ -162,7 +175,7 @@ if ($Action -eq 'Stop') {
     $reportFileName=('FAT_REPORT_'+$j.active.mode+'_'+$end.ToString('yyyyMMddTHHmmssZ')+'.txt')
     $destination=Join-Path $root $reportFileName
     Copy-Item -LiteralPath $ReportPath -Destination $destination -ErrorAction Stop
-    $reportHash=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    $reportHash=(Get-FatSha256 -Path $destination)
   }
   $session=[pscustomobject]@{
     mode=$j.active.mode
@@ -240,7 +253,7 @@ if ($Action -eq 'Summary') {
           $reportInKit=Join-Path $root $reportName
           if (-not (Test-Path -LiteralPath $reportInKit -PathType Leaf)) {
             $missing+=($tag+': native report file missing')
-          } elseif ((Get-FileHash -LiteralPath $reportInKit -Algorithm SHA256).Hash.ToLowerInvariant() -ne
+          } elseif ((Get-FatSha256 -Path $reportInKit) -ne
                     [string]$s.reportSha256) {
             $missing+=($tag+': native report SHA256 mismatch')
           }

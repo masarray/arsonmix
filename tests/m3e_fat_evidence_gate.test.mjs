@@ -230,3 +230,16 @@ test('PowerShell Summary validates 44.1/48 kHz real start/end duration rather th
   assert.match(bad.blockers.join(' '),/48000 DRY_THROUGH_0FX: recorded duration inconsistent with UTC start\/end/);
  }finally{clean(d);}
 });
+
+test('field collector uses module-independent streaming SHA256 and preserves exact package provenance',()=>{
+ const ps=readFileSync('scripts/collect_hardware_fat_windows.ps1','utf8');
+ assert.match(ps,/function Get-FatSha256/);
+ assert.match(ps,/System\.Security\.Cryptography\.SHA256/);
+ assert.match(ps,/filePath=\(Resolve-Path -LiteralPath \$Path/);
+ assert.match(ps,/\$stream\.Dispose\(\)/);
+ assert.match(ps,/\$hasher\.Dispose\(\)/);
+ assert.doesNotMatch(ps,/^\s*\$[a-zA-Z]\w*=\(Get-FileHash\b/m);
+ assert.match(ps,/FAT collector was modified after packaging/);
+ assert.match(ps,/GUI EXE SHA-256 mismatch/);
+ assert.match(ps,/native report SHA256 mismatch/);
+});
