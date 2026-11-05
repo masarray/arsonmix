@@ -82,6 +82,48 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // Exactly ten hardware INPUT readbacks from the existing accepted M4
+    // compiler, not the public Pages demo. A new unpatched session reports
+    // an empty array: we must not fabricate a default CH1 microphone.
+    juce::Array<juce::var> verifiedChannels;
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true)) {
+        const auto accepted=route.getProperty("acceptedRoute",{});
+        const auto channels=accepted.getProperty("channels",{});
+        if(auto* list=channels.getArray();list!=nullptr &&
+           list->size()==10) {
+            bool valid=true;
+            for(const auto& item:*list) {
+                if(!item.isObject()) {valid=false;break;}
+                const auto mode=item.getProperty("mode",{}).toString();
+                const auto left=item.getProperty("left",juce::var());
+                const auto right=item.getProperty("right",juce::var());
+                const auto main=item.getProperty("main",{});
+                if((mode!="NONE" && mode!="MONO" && mode!="STEREO") ||
+                   !(left.isInt()||left.isInt64()) ||
+                   !(right.isInt()||right.isInt64()) || !main.isBool()) {
+                    valid=false;break;
+                }
+                const int l=static_cast<int>(left),r=static_cast<int>(right);
+                if((mode=="NONE"&&(l!=-1||r!=-1)) ||
+                   (mode=="MONO"&&(r!=-1||l<0)) ||
+                   (mode=="STEREO"&&(l<0||r<0||l==r))) {
+                    valid=false;break;
+                }
+                if(mode!="NONE"&&(!inputs.getArray()->contains(l)||
+                   (mode=="STEREO"&&!inputs.getArray()->contains(r)))) {
+                    valid=false;break;
+                }
+                auto verified=std::make_unique<juce::DynamicObject>();
+                verified->setProperty("mode",mode);
+                verified->setProperty("left",l);
+                verified->setProperty("right",r);
+                verified->setProperty("main",main);
+                verifiedChannels.add(juce::var(verified.release()));
+            }
+            if(!valid)verifiedChannels.clear();
+        }
+    }
+    firstSound->setProperty("channels",juce::var(verifiedChannels));
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;

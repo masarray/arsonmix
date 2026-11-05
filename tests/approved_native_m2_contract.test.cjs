@@ -114,6 +114,31 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
   assert.match(bridge,/protocol\.diagnoseFirstSound/);
 });
+test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports, never Pages demo",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
+  const builder=read("scripts/build_approved_native_gui.py");
+  const nativeMain=read("src/Main.cpp");
+  assert.match(builder,/type==='input'&&window\.__JUCE__\?\.backend/);
+  assert.match(builder,/__ARMIX_NATIVE_M2__\?\.inputChoices/);
+  assert.match(bridge,/inputChoices\(t\)/);
+  assert.match(bridge,/hardware\.device\.enabledInputs\.includes\(p\.port\)/);
+  assert.match(bridge,/field==="input"/);
+  assert.match(bridge,/scope\?\.tracks\?\.findIndex/);
+  assert.match(bridge,/action:"routingSourceSwitch"/);
+  assert.match(bridge,/row\?\.left===p\.choice\.left/);
+  assert.match(bridge,/expectedEpoch:p\.epoch,expectedRevision:Number\(next\.revision\)/);
+  assert.match(bridge,/inputSelect\.hidden=true;routeBtn\.hidden=true;armBtn\.hidden=true/);
+  assert.match(bridge,/openNativeAudioIO\(\)/);
+  assert.match(bridge,/\.armix-audio-shade\[hidden\]\{display:none\}/);
+  assert.match(producer,/firstSound->setProperty\("channels",juce::var\(verifiedChannels\)\)/);
+  assert.match(producer,/list->size\(\)==10/);
+  assert.match(nativeMain,/engine_\.switchDryRoutingLabSource\(channel,/);
+  assert.match(nativeMain,/engine_\.liveOutputArmFault\(\)/);
+  // Public Pages still has its simulation, but NONE of those fake inputs
+  // can be submitted by the native bridge. Only the native injected source.
+  assert.doesNotMatch(bridge,/channelOptions\(t,'input'\)/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
@@ -433,7 +458,9 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/REAL AUDIO · FIRST SOUND/);
- assert.match(js,/action:"audioSetup"/);
+ assert.match(js,/function openNativeAudioIO\(\)/);
+ assert.match(js,/action:"audioDeviceInventory"/);
+ assert.match(js,/action:"audioDeviceApply"/);
  assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
  assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
