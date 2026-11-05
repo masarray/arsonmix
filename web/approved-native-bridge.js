@@ -602,6 +602,35 @@
       renderNativeAudioDeviceDialog('Muting MAIN safely before driver change');
     }else sendNativeDeviceApply();
   }
+  // G0 audio meters: use ONLY actual M4 callback sample peaks from the
+  // installed JUCE renderer. The Pages animation is disabled in native mode.
+  function paintVerifiedM4Meters(){
+    const d=verifiedM4ControlLane();
+    const observed=Number(m4LiveStatus?.captureObservationBlocks)>0;
+    if(!d||!observed||flags.acceptedGraphConnected||
+       !Array.isArray(d.channelPeaksL)||d.channelPeaksL.length!==10||
+       !Array.isArray(d.channelPeaksR)||d.channelPeaksR.length!==10||
+       !scope?.displayMeterDbfs||!bindPhysicalTrackIds())return;
+    const ts=performance.now();
+    const paint=(root,side,peak,id)=>{
+      if(!root)return;
+      const fill=root.querySelector('.meter-fill.'+side);
+      if(!fill)return;
+      // The callback's atomic peak 0 is a MEASURED silence, while an absent
+      // callback must never be displayed as genuine PCM (observed gate).
+      if(typeof peak!=='number'||!Number.isFinite(peak)||peak<0)return;
+      const db=peak===0?-90:Math.max(-90,Math.min(6,20*Math.log10(peak)));
+      scope.displayMeterDbfs(fill,db,ts,id+':'+side);
+    };
+    for(let lane=0;lane<10;++lane){
+      const root=document.querySelector('.strip[data-id="'+physicalTrackIds[lane]+'"]');
+      paint(root,'left',d.channelPeaksL[lane],'nativeM4-'+lane);
+      paint(root,'right',d.channelPeaksR[lane],'nativeM4-'+lane);
+    }
+    const main=document.querySelector('#master .strip.master');
+    paint(main,'left',d.peakL,'nativeM4-MAIN');
+    paint(main,'right',d.peakR,'nativeM4-MAIN');
+  }
   // One hardware setup authority: the existing custom Audio I/O WebView
   // (web/mixer-io.js). Never mount a second CH1-only Patch/Arm/Start menu:
   // all ten mixer IN fields now use the same native route controller.
@@ -683,6 +712,7 @@
       }
       projectVerifiedM4ControlReadback();
       updateNativeM4Inputs();
+      paintVerifiedM4Meters();
     });
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
       deviceInventory=inventory;
