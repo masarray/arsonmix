@@ -479,9 +479,131 @@
     });
     getStatus("Opening selected hardware · verifying actual driver readback…");
   }
+
+  // Real ten-strip M4 fader/solo/mute control path. The installed native DSP
+  // already applies these atomically. Request-id ACK + later current-epoch
+  // snapshot is the only presentation commit, never a Pages demo mutation.
+  const m4Pending=new Map();
+  let m4Request=30000;
+  const m4Key=(ch,name)=>ch+":"+name;
+  const m4Index=t=>physicalUiIds.indexOf(String(t?.id));
+  const m4Controls=()=>hardware?.raw?.legacyM4?.channelControls;
+  const m4Expected=(actual,p)=>{
+    if(!actual)return false;
+    const value=p.value;
+    if(p.parameter==="faderDb")return Number.isFinite(actual.db)&&
+      Math.abs(actual.db-value)<0.12;
+    if(p.parameter==="pan")return Number.isFinite(actual.pan)&&
+      Math.abs(actual.pan-value)<0.12;
+    if(p.parameter==="mute"||p.parameter==="solo")
+      return actual[p.parameter]===value;
+    return false;
+  };
+  function submitM4Control(t,parameter,value){
+    const channel=m4Index(t);
+    const controls=m4Controls();
+    const key=m4Key(channel,parameter);
+    const epoch=Number(hardware?.device?.epoch);
+    const revision=Number(hardware?.raw?.legacyM4?.routingRevision);
+    if(channel<0 || channel>=10 || !firstSoundReady() ||
+       !Array.isArray(controls)||controls.length!==10 ||
+       m4Pending.has(key)||!Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0) {
+      status("CONTROL unavailable · verify native strip readback");
+      return false;
+    }
+    const flag=parameter==="mute"||parameter==="solo";
+    if(flag?typeof value!=="boolean":
+       !Number.isFinite(value)||
+       (parameter==="faderDb"&&(value< -60||value>10))||
+       (parameter==="pan"&&(value< -100||value>100)))return false;
+    const pending={id:++m4Request,channel,parameter,value,epoch,revision,
+      acked:false};
+    m4Pending.set(key,pending);
+    backend.emitEvent("arMixAction",{action:"routingM4ChannelControl",
+      requestId:pending.id,channel,parameter,value,
+      deviceEpoch:epoch,revision});
+    window.setTimeout(()=>{
+      if(m4Pending.get(key)?.id!==pending.id)return;
+      m4Pending.delete(key);
+      controller?.subscribe();
+      syncDawM4Controls();
+      status("CH "+(channel+1)+" "+parameter+" timed out · native state restored");
+    },8000);
+    return true;
+  }
+  function syncDawM4Controls(){
+    if(hardware?.admitted===true)return;
+    const controls=m4Controls(),ready=firstSoundReady() &&
+      Array.isArray(controls)&&controls.length===10;
+    for(let i=0;i<physicalUiIds.length;i++){
+      const strip=document.querySelector('.strip[data-id="'+physicalUiIds[i]+'"]');
+      const c=ready?controls[i]:null;
+      if(!strip)continue;
+      // Clear all demo-only metering unless real callback peaks are present.
+      const peaks=hardware?.raw?.legacyM4;
+      const actual=Array.isArray(peaks?.channelPeaksL)&&
+        Array.isArray(peaks?.channelPeaksR)&&
+        peaks.channelPeaksL.length===10&&peaks.channelPeaksR.length===10;
+      const paint=(side,value)=>{
+        const fill=strip.querySelector(".meter-fill."+side);
+        if(!fill||!scope?.displayMeterDbfs)return;
+        const peak=Number(value);
+        const db=actual&&Number.isFinite(peak)&&peak>0?
+          20*Math.log10(peak):-90;
+        scope.displayMeterDbfs(fill,Math.max(-90,Math.min(6,db)),
+          performance.now(),physicalUiIds[i]+":"+side);
+      };
+      paint("left",peaks?.channelPeaksL?.[i]);
+      paint("right",peaks?.channelPeaksR?.[i]);
+      if(!c)continue;
+      const t=(scope?.tracks||[]).find(item=>String(item.id)===physicalUiIds[i]);
+      if(!t)continue;
+      for(const name of ["faderDb","pan","mute","solo"]){
+        const key=m4Key(i,name),pending=m4Pending.get(key);
+        if(pending && String(hardware?.device?.epoch)!==String(pending.epoch))
+          m4Pending.delete(key);
+        else if(pending?.acked && m4Expected(c,pending))
+          m4Pending.delete(key);
+      }
+      const level=Number(c.db),pan=Number(c.pan);
+      if(Number.isFinite(level)&&!m4Pending.has(m4Key(i,"faderDb"))){
+        t.level=level;
+        const slider=strip.querySelector('.fader[data-field="level"]');
+        if(slider && Number(slider.value)!==level){
+          slider.value=String(level);
+          const min=Number(slider.min),max=Number(slider.max);
+          const p=(level-min)/(max-min);
+          const box=strip.querySelector(".fader-box");
+          if(box&&Number.isFinite(p)&&max>min){
+            const frac=Math.max(0,Math.min(1,p));
+            box.style.setProperty("--fader-fill",(frac*100)+"%");
+            box.style.setProperty("--fader-lit",String(frac));
+            box.style.setProperty("--fader-y",((1-frac)*100)+"%");
+            box.style.setProperty("--fader-frac",String(frac));
+          }
+        }
+        const display=strip.querySelector(".db-value");
+        const label=level.toFixed(1)+" dB";
+        if(display&&display.textContent!==label)display.textContent=label;
+      }
+      if(Number.isFinite(pan)&&!m4Pending.has(m4Key(i,"pan"))){
+        t.pan=pan;
+        const slider=strip.querySelector('.center-pan[data-field="pan"]');
+        if(slider&&Number(slider.value)!==pan)slider.value=String(pan);
+      }
+      for(const name of ["mute","solo"]){
+        if(typeof c[name]!=="boolean"||m4Pending.has(m4Key(i,name)))continue;
+        t[name]=c[name];
+        const button=strip.querySelector('[data-action="'+name+'"]');
+        if(button)button.setAttribute("aria-pressed",String(c[name]));
+      }
+    }
+  }
   function updateHardwarePanel(next) {
     hardware=next||null;
     syncDawNativeInputs();
+    syncDawM4Controls();
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
@@ -543,7 +665,7 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · pilih hardware IN langsung pada CH1–CH10; fader/WIRE ChannelId tetap menunggu accepted PCM.");
+      status("NATIVE M4 · hardware IN, fader, pan, mute, solo tersedia pada CH1–CH10; ChannelId WIRE menunggu admission.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -620,6 +742,26 @@
       controller?.subscribe();
     });
 
+    backend.addEventListener("arMixM4ControlAck",ack=>{
+      if(!Number.isInteger(ack?.channel))return;
+      const key=m4Key(ack.channel,ack.parameter);
+      const pending=m4Pending.get(key);
+      if(!pending||pending.id!==ack.requestId)return;
+      const controls=ack?.state?.channelControls;
+      const verified=ack.ok===true &&
+        Number(ack?.state?.epoch)===pending.epoch &&
+        Number(ack?.state?.revision)===pending.revision &&
+        Array.isArray(controls)&&controls.length===10 &&
+        m4Expected(controls[pending.channel],pending);
+      if(verified)pending.acked=true;
+      else {
+        m4Pending.delete(key);
+        status("CH "+(pending.channel+1)+" "+pending.parameter+
+          " rejected · "+String(ack.error||"native readback mismatch"));
+      }
+      controller?.subscribe();
+      syncDawM4Controls();
+    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(deviceMutePending){
         deviceMutePending=false;
@@ -642,9 +784,29 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if (!flags.acceptedGraphConnected) {
+        if((field==="level"||field==="pan")&&
+           event.type==="change"&&firstSoundReady()){
+          const value=Number(el.value);
+          const name=field==="level"?"faderDb":"pan";
+          if(!submitM4Control(t,name,value))el.value=
+            String(field==="level"?t.level:t.pan);
+          return true;
+        }
+        if(event.type!=="change"&&field==="level"&&firstSoundReady()){
+          const n=Number(el.value),min=Number(el.min),max=Number(el.max);
+          if([n,min,max].every(Number.isFinite)&&max>min){
+            const frac=Math.max(0,Math.min(1,(n-min)/(max-min)));
+            const box=el.closest?.(".fader-box");
+            box?.style?.setProperty("--fader-fill",(100*frac)+"%");
+            box?.style?.setProperty("--fader-lit",String(frac));
+            box?.style?.setProperty("--fader-y",(100*(1-frac))+"%");
+            box?.style?.setProperty("--fader-frac",String(frac));
+          }
+          return true;
+        }
         if (field==="level")el.value=String(t.level);
         else if (field==="pan")el.value=String(t.pan);
-        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        status("NATIVE: control unavailable until verified DSP readback");
         return true;
       }
       // During a native pointer drag move the approved fader *cap* only.
@@ -684,6 +846,11 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
+        if(!flags.acceptedGraphConnected){
+          if(firstSoundReady())submitM4Control(t,action,!Boolean(t[action]));
+          else status("NATIVE: device not ready for "+action);
+          return true;
+        }
         const key=action==="mute"?"SET_MUTE":"SET_SOLO";
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
