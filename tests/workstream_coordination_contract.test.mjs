@@ -225,8 +225,11 @@ test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>
   assert.match(ui,/ready_for_review/);
   assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
   const guide=readFileSync('AGENTS.md','utf8');
-  assert.match(guide,/MULTI_AGENT_COORDINATION\.md/);
-  assert.match(guide,/#397/);
+  assert.match(guide,/One integration owner/);
+  assert.match(guide,/arsonmix-integration: single-owner/);
+  assert.match(guide,/branch protection, review, exact-SHA tests/);
+  assert.match(readFileSync('docs/workstreams/MULTI_AGENT_COORDINATION.md','utf8'),
+    /SUPERSEDED — 2026-11-05/);
 });
 
 test('M2.6 always-on PR admission scopes Chromium to UI changes',()=>{
