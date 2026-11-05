@@ -227,7 +227,7 @@ test('coordinator uses existing native + Chromium CI, not a fifth workflow',()=>
   const guide=readFileSync('AGENTS.md','utf8');
   assert.match(guide,/One integration owner/);
   assert.match(guide,/arsonmix-integration: single-owner/);
-  assert.match(guide,/branch protection, review, exact-SHA tests/);
+  assert.match(guide,/Branch protection, review, exact-SHA tests/);
   assert.match(readFileSync('docs/workstreams/MULTI_AGENT_COORDINATION.md','utf8'),
     /SUPERSEDED — 2026-11-05/);
 });
