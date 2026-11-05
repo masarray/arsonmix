@@ -176,6 +176,21 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
     }
     firstSound->setProperty("channelPeaksL",juce::var(peakL));
     firstSound->setProperty("channelPeaksR",juce::var(peakR));
+    // MAIN L/R callback peaks must remain dark until the monitor/output gate
+    // reports measured native PCM. Never paint the Pages demo oscillator.
+    juce::var mainL,mainR;
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       boolIs(telemetry,"mainPcmObserved",true)) {
+        double l=0.,r=0.;
+        if(nativeV8Number(route.getProperty("peakL",{}),l) &&
+           nativeV8Number(route.getProperty("peakR",{}),r) &&
+           std::isfinite(l)&&std::isfinite(r)&&l>=0.&&r>=0.&&
+           l<=16.&&r<=16.) {
+            mainL=l;mainR=r;
+        }
+    }
+    firstSound->setProperty("mainPeakL",mainL);
+    firstSound->setProperty("mainPeakR",mainR);
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;
