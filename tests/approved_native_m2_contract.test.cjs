@@ -116,6 +116,30 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.match(read("web/approved-native-contract.js"),/function diagnoseFirstSound/);
   assert.doesNotMatch(bridge,/rawCapturePeak.*Math\.random/);
 });
+test("M4 ten-strip fader/pan/mute/solo and MAIN controls use verified native readback",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const main=read("src/Main.cpp");
+  const engine=read("src/LiveDryRoutingLab.h");
+  assert.match(bridge,/function verifiedM4ControlLane\(\)/);
+  assert.match(bridge,/m4Status=state\?\.dryRoutingLab\|\|null/);
+  assert.match(bridge,/m4LiveStatus=state\|\|null/);
+  assert.match(bridge,/d\.channelControls\.length===10/);
+  assert.match(bridge,/const lane=nativePhysicalStrip\(btn\)/);
+  assert.match(bridge,/routeEpoch:Number\(d\.epoch\),routeRevision:Number\(d\.revision\)/);
+  assert.match(bridge,/channel:lane\+1,parameter:name,value/);
+  assert.match(bridge,/emitVerifiedM4Param\(el,field==="level"\?"faderDb":"pan",value\)/);
+  assert.match(bridge,/emitVerifiedM4Param\(btn,action,!now\)/);
+  assert.match(bridge,/function projectVerifiedM4ControlReadback/);
+  assert.match(bridge,/if\(dirty\)scope\.render\(\)/);
+  assert.match(bridge,/changes\[lane\]\.model\.output=target/);
+  assert.match(bridge,/emitVerifiedMasterParam\('masterGain',numeric\)/);
+  assert.match(bridge,/emitVerifiedMasterParam\('masterMute',!m4LiveStatus\.masterMute\)/);
+  assert.match(main,/name=="faderDb"\|\|name=="pan"\|\|name=="mute"\|\|name=="solo"/);
+  assert.match(main,/engine_\.setDryRoutingLabParameter\(channel-1,epoch,revision,/);
+  assert.match(main,/name == "masterGain"/);
+  assert.match(engine,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+  assert.doesNotMatch(bridge,/Math\.random\(\).*channelControls/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
