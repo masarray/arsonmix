@@ -58,7 +58,7 @@ if not (buttons_dest/'assets'/probe).is_file():
 probe_tag='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script>'
 if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
     raise SystemExit('Approved Pages profiler injection must have exactly one body')
-canonical_html=canonical_html.replace('</body>',probe_tag+'\\n</body>',1)
+canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets')
