@@ -55,7 +55,8 @@ test("native G0 preserves verified first-sound M4 route without claiming Channel
   const nativeMain=read("src/Main.cpp");
   assert.match(nativeMain,/if \(consoleSubscribed_\)[\s\S]*?"arMixConsoleSnapshot", approvedNativeSnapshot\(state\)/);
   const nativeBridge=read("web/approved-native-bridge.js");
-  assert.match(nativeBridge,/const legacy=\(\)=>hardware\?\.raw\?\.legacyM4/);
+  assert.doesNotMatch(nativeBridge,/routeBtn=item\("button","tool","Patch CH1"\)/);
+  assert.match(nativeBridge,/function updateNativeM4Inputs\(\)/);
   assert.match(read("src/ApprovedConsoleNativeTransportV6.h"),
     /"outputArmed", primaryOutputArmed/);
 });
@@ -112,7 +113,36 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.match(header,/directRouteAuthorized/);
   assert.match(transport,/projectFirstSoundSignalEvidence/);
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
-  assert.match(bridge,/protocol\.diagnoseFirstSound/);
+  assert.match(read("web/approved-native-contract.js"),/function diagnoseFirstSound/);
+  assert.doesNotMatch(bridge,/rawCapturePeak.*Math\.random/);
+});
+test("M4 ten-strip fader/pan/mute/solo and MAIN controls use verified native readback",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const main=read("src/Main.cpp");
+  const engine=read("src/LiveDryRoutingLab.h");
+  assert.match(bridge,/function verifiedM4ControlLane\(\)/);
+  assert.match(bridge,/m4Status=state\?\.dryRoutingLab\|\|null/);
+  assert.match(bridge,/m4LiveStatus=state\|\|null/);
+  assert.match(bridge,/d\.channelControls\.length===10/);
+  assert.match(bridge,/const lane=nativePhysicalStrip\(btn\)/);
+  assert.match(bridge,/routeEpoch:Number\(d\.epoch\),routeRevision:Number\(d\.revision\)/);
+  assert.match(bridge,/channel:lane\+1,parameter:name,value/);
+  assert.match(bridge,/emitVerifiedM4Param\(el,field==="level"\?"faderDb":"pan",value\)/);
+  assert.match(bridge,/emitVerifiedM4Param\(btn,action,!now\)/);
+  assert.match(bridge,/function projectVerifiedM4ControlReadback/);
+  assert.match(bridge,/if\(dirty\)scope\.render\(\)/);
+  // Regression: native G0 physical faders cannot be blocked by the old
+  // blanket pointerdown fence when the installed M4 graph is ready.
+  assert.match(bridge,/if \(flags\.acceptedGraphConnected \|\| verifiedM4ControlLane\(\)\) return/);
+  assert.doesNotMatch(bridge,/NATIVE G0: physical gain\/pan unavailable until engine graph admission/);
+  assert.match(bridge,/changes\[lane\]\.model\.output=target/);
+  assert.match(bridge,/emitVerifiedMasterParam\('masterGain',numeric\)/);
+  assert.match(bridge,/emitVerifiedMasterParam\('masterMute',!m4LiveStatus\.masterMute\)/);
+  assert.match(main,/name=="faderDb"\|\|name=="pan"\|\|name=="mute"\|\|name=="solo"/);
+  assert.match(main,/engine_\.setDryRoutingLabParameter\(channel-1,epoch,revision,/);
+  assert.match(main,/name == "masterGain"/);
+  assert.match(engine,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+  assert.doesNotMatch(bridge,/Math\.random\(\).*channelControls/);
 });
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
@@ -428,29 +458,55 @@ test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboa
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
 
-test("native Windows operator can explicitly patch first physical input, arm and mute",()=>{
- const js=read("web/approved-native-bridge.js");
+test("shipped approved WebView binds every IN to real native M4 and one Audio I/O",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const nativeBundle=read("scripts/build_approved_native_gui.py");
+ const pages=read("site/preview-v2/index.html");
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
- assert.match(js,/REAL AUDIO · FIRST SOUND/);
- assert.match(js,/action:"audioSetup"/);
- assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
- assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
- assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
- assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
- assert.match(js,/action:"monitor",value:true/);
- assert.match(js,/action:"monitor",value:false/);
- assert.match(js,/expectedEpoch:epoch,expectedRevision:revision/);
- assert.match(js,/arMixSourceSwitchAck/);
- assert.match(js,/arMixAudioArmAck/);
- assert.match(js,/if\(ack\.ok===true\)/);
- assert.match(js,/NATIVE PATCH REJECTED:/);
- assert.match(js,/NO VERIFIED AUDIO DEVICE/);
- assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
- assert.match(js,/MAIN ARMED · PCM NOT YET ADMITTED/);
+ const routing=read("src/LiveDryRoutingLab.h");
+ assert.match(pages,/class="route-select" data-field="input"/);
+ assert.match(bridge,/function bindPhysicalTrackIds\(\)/);
+ assert.match(bridge,/physicalTrackIds\.push\(\.\.\.first\.map/);
+ assert.match(bridge,/function nativePhysicalStrip\(el\)/);
+ assert.match(bridge,/\.strip\[data-id\]/);
+ assert.match(bridge,/function updateNativeM4Inputs\(\)/);
+ assert.match(bridge,/function paintVerifiedM4Meters\(\)/);
+ assert.match(bridge,/m4LiveStatus\?\.captureObservationBlocks/);
+ assert.match(bridge,/d\.channelPeaksL\.length!==10/);
+ assert.match(bridge,/d\.channelPeaksR\.length!==10/);
+ assert.match(bridge,/d\.peakL/);
+ assert.match(bridge,/scope\.displayMeterDbfs\(fill,db,ts/);
+ assert.match(bridge,/paintVerifiedM4Meters\(\)/);
+ assert.doesNotMatch(bridge,/Math\.random\(\)/);
+
+ assert.match(bridge,/m4Rows\(d\)/);
+ assert.match(bridge,/d\.ports/);
+ assert.match(bridge,/for\(let lane=0;lane<10;\+\+lane\)/);
+ assert.match(bridge,/select\.route-select\[data-field="input"\]/);
+ assert.match(bridge,/sel\.dataset\.nativeHardwareChannel=String\(lane\)/);
+ assert.match(bridge,/select\.route-select\[data-native-hardware-channel\]/);
+ assert.match(bridge,/event\.stopImmediatePropagation\(\)/);
+ assert.match(bridge,/function chooseM4HardwareInput\(el\)/);
+ assert.match(bridge,/action:'routingSourceSwitch'/);
+ assert.match(bridge,/backend\.addEventListener\("arMixSourceSwitchAck",acceptM4SourceAck\)/);
+ assert.match(bridge,/row\.left===p\.left&&row\.right===p\.right/);
+ assert.match(bridge,/sourcePending\.phase='mute'/);
+ assert.match(bridge,/function acceptM4MonitorAck\(ack\)/);
+ assert.match(bridge,/data-native-monitor/);
+ assert.match(bridge,/installNativeAudioDeviceDialog\(\)/);
+ assert.match(bridge,/action:'audioDeviceInventory'/);
+ assert.match(bridge,/action:'audioDeviceApply'/);
+ assert.match(bridge,/arMixAudioDeviceApplyAck/);
+ assert.match(bridge,/Advanced driver panel/);
+ assert.match(bridge,/VB-Cable \(virtual\), not your headphones/);
+ assert.doesNotMatch(bridge,/routeBtn=item\("button","tool","Patch CH1"\)/);
+ assert.doesNotMatch(bridge,/installFirstSoundMenu\(\)/);
  assert.match(main,/action=="routingSourceSwitch"/);
  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
- assert.match(main,/safe->emitApprovedNativeSnapshot\(\)/);
+ assert.match(main,/action == "audioDeviceApply"/);
  assert.match(engine,/juce::String switchDryRoutingLabSource\(/);
- assert.match(engine,/setOutputMuted\(true\)/);
+ assert.match(routing,/repatchPhysicalSource\(/);
+ assert.match(nativeBundle,/NATIVE_ADAPTER = ROOT \/ "web" \/ "approved-native-bridge.js"/);
+ assert.doesNotMatch(nativeBundle,/NATIVE_ADAPTER = ROOT \/ "web" \/ "mixer-io.js"/);
 });
