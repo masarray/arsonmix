@@ -21,7 +21,7 @@
   const status = message => {
     lastNativeError = message;
     const info = document.getElementById("info");
-    if (info) info.textContent = message;
+    if (info && info.textContent !== message) info.textContent = message;
   };
   const stopDemo = () => {
     // The public Pages demo remains unchanged. In native, DEMO meters and
@@ -663,9 +663,13 @@
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
-      lastPaintedSignature="";
+      // Repeated 12Hz snapshots must never repaint a fixed status label or
+      // erase the operator's pending input/fader ACK feedback on each tick.
+      if(lastPaintedSignature!=="G0"){
+        lastPaintedSignature="G0";
+        status("NATIVE M4 · IN/fader/pan/mute/solo available on all ten strips; WIRE pending.");
+      }
       stopDemo();
-      status("NATIVE M4 · hardware IN, fader, pan, mute, solo tersedia pada CH1–CH10; ChannelId WIRE menunggu admission.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
