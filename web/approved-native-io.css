@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+   Native-only Audio I/O controls. ONE approved /preview/ mixer skin is retained.
+   The panel runs entirely on the JUCE message thread; no DSP/JS WebAudio. */
+.ar-native-io-open{min-width:75px;white-space:nowrap}
+.ar-native-monitor{min-width:92px;white-space:nowrap}
+.ar-native-monitor[data-on="true"]{color:#a3e8ca;border-color:#4a8f78}
+.ar-native-io[hidden]{display:none!important}
+.ar-native-io{position:fixed;inset:0;z-index:999;display:flex;align-items:flex-start;justify-content:center;padding:clamp(25px,9vh,98px) 16px 16px;background:rgba(1,8,12,.67)}
+.ar-native-io-panel{width:min(550px,100%);max-height:min(690px,86vh);overflow:auto;color:#d4e6e9;background:#122630;border:1px solid #436574;border-radius:9px;box-shadow:0 18px 50px #0008;font:12px 'Inter','Segoe UI',Arial,sans-serif}
+.ar-native-io-header{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid #31515c}
+.ar-native-io-header strong{font-size:13px;font-weight:600;letter-spacing:.02em}
+.ar-native-io-close{border:1px solid #42616c;border-radius:5px;color:inherit;background:#213940;min-width:28px;height:27px;cursor:pointer}
+.ar-native-io-body{padding:14px 16px;display:grid;gap:10px}
+.ar-native-io-field{display:grid;grid-template-columns:114px minmax(0,1fr);align-items:center;gap:10px}
+.ar-native-io-field label{color:#99b6c1;font-size:11px}
+.ar-native-io-field select{width:100%;height:32px;min-width:0;border:1px solid #416878;border-radius:5px;padding:0 8px;color:#e6f5f6;background:#1a3440;font:inherit}
+.ar-native-io-readback{padding:9px 11px;border:1px solid #345663;background:#10232c;border-radius:5px;line-height:1.55;color:#bcd1d9}
+.ar-native-io-notice{color:#edc78d;line-height:1.5;font-size:11px}
+.ar-native-io-controls{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin-top:4px}
+.ar-native-io-controls button{border:1px solid #557884;border-radius:5px;color:#e5f6f5;background:#24424c;padding:8px 12px;font:inherit;cursor:pointer}
+.ar-native-io-controls button.primary{background:#257d91;border-color:#4b9bac;color:white}
+.ar-native-io-controls button:disabled{opacity:.45;cursor:not-allowed}
+.ar-native-io-busy{color:#a6c6cf;flex:1;line-height:1.4;font-size:11px}
+.ar-native-io summary{cursor:pointer;color:#a8cbd7}
+@media(max-height:650px){.ar-native-io{padding:12px}.ar-native-io-panel{max-height:calc(100vh - 24px)}}
+@media(max-width:500px){.ar-native-io-field{grid-template-columns:1fr;gap:3px}}

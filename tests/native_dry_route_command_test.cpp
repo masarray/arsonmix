@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../src/NativeVerifiedSourcePatch.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -138,6 +139,35 @@ int main(){
     // should be sqrt(1/2), not un-normalized stereo BALANCE.
     assert(near(l[0],0.5f*0.70710678118f));
     assert(near(r[0],0.5f*0.70710678118f));
+
+    // Audition-style IN=None on ANY previously routed native channel is a
+    // complete typed source patch, not an invalid physical input/guessed pin.
+    // The accepted reference stays unchanged until the graph is republished.
+    auto sourceTemplate=juce::JSON::parse(juce::JSON::toString(typed,false));
+    sourceTemplate.getDynamicObject()->setProperty("deviceEpoch",juce::int64(91));
+    sourceTemplate.getDynamicObject()->setProperty("revision",juce::int64(7));
+    sourceTemplate.getDynamicObject()->setProperty("sends",
+        juce::var(juce::Array<juce::var>{}));
+    juce::var noSource,invalidClear;
+    assert(NativeVerifiedSourcePatch::prepare(sourceTemplate,0,"NONE",-1,-1,
+        ports,91,7,noSource).isEmpty());
+    const auto cleared=noSource.getProperty("channels",{}).getArray()->getReference(0);
+    assert(cleared.getProperty("mode",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceKind",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceFormat",{}).toString()=="NONE");
+    assert(static_cast<int>(cleared.getProperty("left",0))==-1);
+    assert(static_cast<int>(cleared.getProperty("right",0))==-1);
+    assert(sourceTemplate.getProperty("channels",{}).getArray()
+        ->getReference(0).getProperty("mode",{}).toString()=="MONO");
+    assert(NativeVerifiedSourcePatch::prepare(sourceTemplate,0,"NONE",2,-1,
+        ports,91,7,invalidClear).isNotEmpty());
+    assert(invalidClear.isVoid());
+    assert(NativeVerifiedSourcePatch::prepare(sourceTemplate,0,"NONE",-1,-1,
+        ports,92,7,invalidClear).isNotEmpty()); // wrong driver epoch
+    NativeDryRouteCommand clearedPlan;
+    assert(NativeDryRouteCommand::decode(noSource,clearedPlan,error));
+    assert(clearedPlan.channels.stripsAndMaster.strips[0].source==SourceMode::disconnected);
+    assert(clearedPlan.channels.formats[0]==ChannelFormat::stereo);
 
     // Fail-closed: one type mismatch, old decoded plan unchanged.
     const auto before=v2;

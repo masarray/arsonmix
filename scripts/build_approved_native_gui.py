@@ -21,7 +21,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
-ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
+ADAPTER_MARKER = ('<link rel="stylesheet" href="assets/approved-native-io.css">\n'
+                  '<script defer src="assets/approved-native-contract.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
@@ -57,6 +58,11 @@ def accepted_pages_html() -> str:
 # HTML at native build time. Every anchor must occur exactly once: no silent
 # breakage if Pages GUI source evolves. No extra layout or simulated PCM.
 NATIVE_EVENT_HOOKS = (
+    # The approved Pages HTML stays byte-for-byte unchanged; these two
+    # reversible native-only hooks expose verified mixer hardware choices.
+    ("const option=(values,selected)=>values.map(x=>'<option value=\"'+escapeHtml(x)+'\"'+(x===selected?' selected':'')+'>'+escapeHtml(x)+'</option>').join('');\n", "const option=(values,selected)=>values.map(x=>{const value=Array.isArray(x)?x[0]:x,label=Array.isArray(x)?x[1]:x;return '<option value=\"'+escapeHtml(value)+'\"'+(value===selected?' selected':'')+'>'+escapeHtml(label)+'</option>';}).join('');\n"),
+    ("const channelOptions=(t,type)=>{\n",
+     "const channelOptions=(t,type)=>{\n if(window.__JUCE__?.backend){\n  const native=window.__ARMIX_NATIVE_M2__?.channelOptions?.(t,type);\n  if(native)return native;\n  return type==='input'?[['None','Choose audio device…']]:type==='output'?[[t.output||'Master','MAIN']]:['None'];\n }\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
@@ -186,6 +192,8 @@ def stage(out: Path) -> dict:
         out.mkdir(parents=True)
         shutil.copytree(pages / "assets", out / "assets")
         shutil.copy2(NATIVE_ADAPTER, out / "assets" / "approved-native-bridge.js")
+        shutil.copy2(ROOT / "web" / "approved-native-io.css",
+                     out / "assets" / "approved-native-io.css")
         shutil.copy2(ROOT / "web" / "approved-native-contract.js",
                      out / "assets" / "approved-native-contract.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
