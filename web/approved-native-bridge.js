@@ -314,6 +314,11 @@
         .armix-audio-dialog button:disabled{opacity:.45}
         .armix-audio-dialog .armix-device-actions{display:flex;gap:8px;justify-content:flex-end}
         .armix-audio-dialog .armix-device-note{color:#a4c4d0;line-height:1.4}
+        .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
+        .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
+        .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
+          max-height:135px;overflow:auto;padding:5px 0}
+        .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
       `;
       document.head.appendChild(style);
       devicePanel=document.createElement("div");
@@ -325,9 +330,13 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
-        <div class="armix-device-note">Choose the actual playback destination.
-          A virtual cable is not necessarily audible through headphones.
-          Sample rate and buffer use driver defaults until configured in Advanced.</div>
+        <div class="armix-device-note">The output device above is the real destination.
+          A virtual cable does not automatically play through headphones.</div>
+        <details><summary>Advanced · rate, buffer and channel pins</summary>
+          <label>Sample rate<select data-audio-field="rate"></select></label>
+          <label>Buffer<select data-audio-field="buffer"></select></label>
+          <div class="armix-device-pins" data-audio-pins></div>
+        </details>
         <div class="armix-device-actions">
           <button type="button" data-audio-close>Close</button>
           <button type="button" data-audio-apply>Apply device</button>
@@ -339,15 +348,36 @@
         if(e.target===devicePanel)devicePanel.hidden=true;
       });
       devicePanel.addEventListener("change",e=>{
+        if(!deviceChoice)return;
+        const pinSide=e.target.dataset.audioPin;
+        if(pinSide==="input"||pinSide==="output"){
+          const index=Number(e.target.dataset.pinIndex);
+          const key=pinSide==="input"?"inputPins":"outputPins";
+          if(!Number.isInteger(index)||!Array.isArray(deviceChoice[key]))return;
+          const next=new Set(deviceChoice[key]);
+          if(e.target.checked)next.add(index);else next.delete(index);
+          deviceChoice[key]=[...next].sort((a,b)=>a-b);
+          renderDevicePanel();return;
+        }
         const field=e.target.dataset.audioField;
-        if(!deviceChoice||!field)return;
+        if(!field)return;
         if(field==="backend"){
           deviceChoice.backend=e.target.value;
           const t=deviceInventory?.types?.find(x=>x.name===deviceChoice.backend);
           deviceChoice.capture=t?.inputs?.[0]||"";
           deviceChoice.playback=t?.separate?t?.outputs?.[0]||"":deviceChoice.capture;
-        }else if(field==="capture")deviceChoice.capture=e.target.value;
-        else if(field==="playback")deviceChoice.playback=e.target.value;
+          deviceChoice.inputPins=null;deviceChoice.outputPins=null;
+          deviceChoice.rate=0;deviceChoice.buffer=0;
+        }else if(field==="capture"){
+          deviceChoice.capture=e.target.value;
+          const t=deviceInventory?.types?.find(x=>x.name===deviceChoice.backend);
+          if(t&&!t.separate)deviceChoice.playback=e.target.value;
+          deviceChoice.inputPins=null;deviceChoice.outputPins=null;
+        }else if(field==="playback"){
+          deviceChoice.playback=e.target.value;
+          deviceChoice.inputPins=null;deviceChoice.outputPins=null;
+        }else if(field==="rate")deviceChoice.rate=Number(e.target.value)||0;
+        else if(field==="buffer")deviceChoice.buffer=Number(e.target.value)||0;
         renderDevicePanel();
       });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
@@ -387,12 +417,54 @@
       const capture=active.captureDevice||selected?.inputs?.[0]||"";
       deviceChoice={backend:backendName,capture,
         playback:active.playbackDevice||
-          (selected?.separate?selected?.outputs?.[0]:capture)||""};
+          (selected?.separate?selected?.outputs?.[0]:capture)||"",
+        inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
+        outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
+        rate:0,buffer:0};
     }
     const t=types.find(x=>x.name===deviceChoice.backend);
     fillAudioSelect("backend",types.map(x=>x.name),deviceChoice.backend);
     fillAudioSelect("capture",t?.inputs||[],deviceChoice.capture);
     fillAudioSelect("playback",t?.outputs||[],deviceChoice.playback);
+    const same=active.open&&active.backend===deviceChoice.backend&&
+      active.captureDevice===deviceChoice.capture&&
+      active.playbackDevice===deviceChoice.playback;
+    const rates=same?active.rates||[]:[];
+    const buffers=same?active.buffers||[]:[];
+    fillAudioSelect("rate",["0",...rates.map(String)],String(deviceChoice.rate||0));
+    fillAudioSelect("buffer",["0",...buffers.map(String)],String(deviceChoice.buffer||0));
+    const rateSelect=devicePanel.querySelector('[data-audio-field="rate"]');
+    const bufferSelect=devicePanel.querySelector('[data-audio-field="buffer"]');
+    if(rateSelect){rateSelect.options[0].textContent="Driver default";rateSelect.disabled=!same||deviceBusy;}
+    if(bufferSelect){bufferSelect.options[0].textContent="Driver default";bufferSelect.disabled=!same||deviceBusy;}
+    const pins=document.querySelector(".armix-audio-dialog [data-audio-pins]");
+    if(pins){
+      pins.replaceChildren();
+      if(same){
+        const container=document.createElement("div");
+        container.className="armix-audio-pins";
+        for(const [side,names,key,enabled] of [
+          ["input",active.inputNames,"inputPins",active.enabledInputs],
+          ["output",active.outputNames,"outputPins",active.enabledOutputs]]){
+          const group=document.createElement("div");
+          const title=document.createElement("strong");
+          title.textContent=side==="input"?"Capture pins":"Playback pins";
+          group.appendChild(title);
+          (names||[]).forEach((name,index)=>{
+            const label=document.createElement("label");
+            const control=document.createElement("input");
+            control.type="checkbox";control.dataset.audioPin=side;
+            control.dataset.pinIndex=String(index);
+            control.checked=(deviceChoice[key]||enabled||[]).includes(index);
+            control.disabled=deviceBusy;
+            label.append(control,document.createTextNode(String(name)));
+            group.appendChild(label);
+          });
+          container.appendChild(group);
+        }
+        pins.appendChild(container);
+      }else pins.textContent="Apply this device first to inspect its real enabled pins.";
+    }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText && !deviceBusy)activeText.textContent=active.open?
       "ACTIVE · "+active.backend+" · "+active.captureDevice+
@@ -414,9 +486,10 @@
     backend.emitEvent("arMixAction",{action:"audioDeviceApply",
       requestId,expectedDeviceGeneration:Number(a.deviceGeneration),
       config:{backend:c.backend,captureDevice:c.capture,
-        playbackDevice:c.playback,sampleRate:0,bufferSize:0,
-        enabledInputs:same?a.enabledInputs:[],
-        enabledOutputs:same?a.enabledOutputs:[]}});
+        playbackDevice:c.playback,sampleRate:same?c.rate:0,
+        bufferSize:same?c.buffer:0,
+        enabledInputs:same?c.inputPins:[],
+        enabledOutputs:same?c.outputPins:[]}});
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
