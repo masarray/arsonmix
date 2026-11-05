@@ -716,7 +716,8 @@
         if(ack?.ok===true && ack.armed===false)sendNativeDeviceApply();
         else{
           nativeDeviceBusy=false;nativeDeviceAwaitingMute=null;
-          nativeDeviceDialog?.querySelector('[data-device-feedback]').textContent=
+          const feedback=nativeDeviceDialog?.querySelector('[data-device-feedback]');
+          if(feedback)feedback.textContent=
             "Cannot safely mute output · device unchanged";
           renderNativeDeviceDialog();
         }
