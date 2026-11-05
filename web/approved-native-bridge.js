@@ -550,6 +550,23 @@
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
       deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="";
+  let toastTimer=0;
+  function nativeToast(message){
+    let element=document.getElementById("armixNativeToast");
+    if(!element){
+      element=document.createElement("div");
+      element.id="armixNativeToast";
+      element.setAttribute("role","status");
+      element.style.cssText="position:fixed;right:16px;bottom:36px;z-index:99999;"+
+        "max-width:min(390px,88vw);padding:9px 13px;border:1px solid #426f7e;"+
+        "border-radius:6px;background:#123240;color:#dff8fd;"+
+        "font:12px system-ui,sans-serif;box-shadow:0 9px 28px #0008";
+      document.body.appendChild(element);
+    }
+    element.textContent=message;element.hidden=false;
+    window.clearTimeout(toastTimer);
+    toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
+  }
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -770,11 +787,25 @@
       if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
       if(ack.active)deviceInventory.active=ack.active;
-      deviceResult=ack.ok?
-        "Device verified · choose a hardware input on any mixer channel.":
-        "Device rejected · "+(ack.error||"driver readback failed");
+      const accepted=ack.ok===true&&ack.state==="ACCEPTED_MUTED" &&
+        ack.active?.open===true && ack.active?.authorized===true &&
+        Array.isArray(ack.active.enabledInputs) &&
+        ack.active.enabledInputs.length>0 &&
+        Array.isArray(ack.active.enabledOutputs) &&
+        ack.active.enabledOutputs.length>=2;
+      deviceResult=accepted?
+        "Audio device ready · choose an IN on any channel":
+        "Device rejected · "+(ack.error||"native hardware readback failed");
       deviceChoice=null;
-      renderDevicePanel();
+      if(accepted){
+        devicePanel.hidden=true;
+        status("AUDIO ACTIVE · "+ack.active.backend+" · "+
+          ack.active.rate+" Hz / "+ack.active.buffer+
+          " samples · MONITOR muted until a real IN is selected");
+        nativeToast("Audio device connected · "+ack.active.backend+
+          " · "+ack.active.rate+" Hz · choose channel IN");
+        controller?.subscribe();
+      }else renderDevicePanel();
     });
   }
 
@@ -878,9 +909,38 @@
     updateHardwarePanel(hardware);
   }
 
+  // One control-thread routing transaction at a time, but NEVER lock other
+  // dropdowns or lose their choices. Latest choice wins per channel.
+  function dispatchQueuedSource(){
+    if(nativeUiSourcePending||pendingSourceQueue.size===0)return;
+    if(!deviceReady()){pendingSourceQueue.clear();return;}
+    const [channel,choice]=pendingSourceQueue.entries().next().value;
+    pendingSourceQueue.delete(channel);
+    const ep=safeNativeCounter(hardware?.device?.epoch),
+      rev=safeNativeCounter(legacy()?.routingRevision);
+    if(ep===null||rev===null)return;
+    const requestId=++sourceSerial;
+    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev,
+      autoListen:legacy()?.routeAccepted!==true &&
+        hardware?.device?.outputArmed!==true};
+    backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
+      requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
+      deviceEpoch:ep,revision:rev});
+    window.setTimeout(()=>{
+      if(nativeUiSourcePending?.requestId!==requestId)return;
+      nativeUiSourcePending=null;
+      status("CH "+(channel+1)+" INPUT timeout · native state preserved");
+      controller.subscribe();
+    },8000);
+  }
   function onNativeReadback(next) {
     updateHardwarePanel(next);
     paintM4Fallback(next);
+    // A second channel's IN can be selected while the first transaction is
+    // in flight. Always dispatch its latest choice with a FRESH native route
+    // revision, not stale tokens captured before the previous ACK.
+    if(!nativeUiSourcePending && pendingSourceQueue.size)
+      window.queueMicrotask(()=>dispatchQueuedSource());
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
@@ -924,8 +984,9 @@
           lastNativeError=state.lastError;
           // Native REJECTED / STALE / timeout must roll back a temporary fader
           // cap and every input value; no optimistic GUI state survives.
-          if (!state.pending && flags.acceptedGraphConnected && scope?.render) {
-            scope.render();
+          if (!state.pending && flags.acceptedGraphConnected &&
+              scope.activeFaderId<0){
+            controller.subscribe(); // restore from native, never redraw active selects
             if(state.current)paintNativeMeters(state.current);
           }
         }
@@ -1004,6 +1065,36 @@
         (ack?.error||"stale route"));
       controller.subscribe();
     });
+    backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
+      if(!pendingFxInsert||ack?.requestId!==pendingFxInsert.requestId)return;
+      const p=pendingFxInsert;pendingFxInsert=null;
+      const actual=ack?.state?.fxInstances?.[p.channel]?.[p.slot];
+      if(ack?.ok===true && actual?.catalogId===p.id &&
+         typeof actual?.instanceId==="string"&&actual.instanceId.length){
+        status("CH "+(p.channel+1)+" FX loaded · verified native VST3");
+        scope?.setNativeCatalog?.([...nativeCatalog.values()]);
+        controller.subscribe();
+      }else {
+        status("FX INSERT REJECTED · "+(ack?.error||"native readback mismatch"));
+        controller.subscribe();
+      }
+    });
+    backend.addEventListener("arMixCatalog",catalog=>{
+      if(!Array.isArray(catalog?.items))return;
+      nativeCatalog=new Map(catalog.items.filter(p=>
+        p&&typeof p.id==="string"&&p.id.length>0&&
+        typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
+      scope?.setNativeCatalog?.([...nativeCatalog.values()]);
+      if(hardware?.raw?.legacyM4)paintM4FxInstances(hardware.raw.legacyM4);
+      const count=document.getElementById("pluginCount");
+      if(count)count.title="Verified JUCE native VST3 catalog";
+    });
+    backend.addEventListener("arMixScanProgress",progress=>{
+      const statusEl=document.getElementById("pluginScanStatus");
+      if(statusEl)statusEl.textContent=progress?.active?
+        "Scanning real VST3… "+(progress.done||0)+"/"+(progress.total||"…"):
+        "Native VST3 scan finished; results from JUCE catalog";
+    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(pendingDeviceMute){
         // Reject any stale/unrelated ACK and any device epoch change.
@@ -1062,32 +1153,21 @@
         const choice=inputChoicesFor().find(x=>x.label===el.value);
         const ep=safeNativeCounter(hardware?.device?.epoch);
         const rev=safeNativeCounter(legacy()?.routingRevision);
-        if(channel<0||channel>=10||!choice||!deviceReady() ||
-           ep===null||rev===null||pendingSourceId!==0 ||
-           nativeUiSourcePending){
-          status("NATIVE INPUT REJECTED · device/source changed or busy");
+        if(channel<0||channel>=10||!choice||!deviceReady()||
+           ep===null||rev===null){
+          status("INPUT REJECTED · refresh verified hardware pins");
           el.value=t.input;return true;
         }
-        if(el.value===t.input)return true;
-        const first=legacy()?.routeAccepted!==true;
-        const requestId=++sourceSerial;
-        nativeUiSourcePending={requestId,channel,choice,epoch:ep,
-          revision:rev,autoListen:first&&!hardware.device.outputArmed};
-        // Keep the visible IN at its last accepted value until native ACK
-        // and a fresh verified revision arrive. No optimistic demo routing.
+        if(choice.label===t.input&&!pendingSourceQueue.has(channel)){
+          el.value=t.input;return true;
+        }
+        pendingSourceQueue.set(channel,choice);
+        // No browser demo optimistic patch. The selector stays operable for
+        // every channel during a previous JUCE routing transaction.
         el.value=t.input;
-        backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
-          requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
-          deviceEpoch:ep,revision:rev});
-        // An absent ACK cannot freeze further source changes indefinitely.
-        // Timeout belongs to WebView control logic, not the realtime callback.
-        window.setTimeout(()=>{
-          if(nativeUiSourcePending?.requestId!==requestId)return;
-          nativeUiSourcePending=null;
-          status("CH "+(channel+1)+" INPUT · response timed out; unchanged");
-          controller.subscribe();
-        },8000);
-        status("CH "+(channel+1)+" INPUT · verifying physical routing");
+        if(nativeUiSourcePending)
+          status("CH "+(channel+1)+" input queued behind native route ACK");
+        else dispatchQueuedSource();
         return true;
       }
       if(field==="output"){
@@ -1118,27 +1198,28 @@
         },8000);
         return true;
       }
+      // ONE realtime PCM control for original ten channels and MAIN,
+      // regardless of whether the admitted ChannelId callback or M4 renders.
+      // <=33 commands/s/control while dragging; always flush on release.
+      if((field==="level"||field==="pan") && m4Verified() &&
+         (m4Index(t)>=0||t.kind==="master")){
+        const numeric=Number(el.value);
+        if(!Number.isFinite(numeric))return true;
+        const normalized=field==="pan" &&
+          !el.dataset.panKeyboard && !el.dataset.panAltPointer &&
+          Math.abs(numeric)<=12 ? 0:numeric;
+        const key=field==="level"?
+          (t.kind==="master"?"masterGain":"faderDb"):"pan";
+        if(field==="level")previewFaderWithoutModelMutation(t,numeric);
+        if(streamFaderControl(key,t,normalized,event.type==="change"))
+          queueLiveControlFlush();
+        else status("LIVE PCM control rejected; checking route identity");
+        return true;
+      }
       if (!flags.acceptedGraphConnected) {
-        if(m4Verified()){
-          if(t.kind==="master" && field==="level"){
-            if(event.type==="change" && Number.isFinite(Number(el.value)))
-              sendM4Control("masterGain",t,Number(el.value));
-            return true;
-          }
-          if(m4Index(t)>=0 && (field==="level"||field==="pan")){
-            if(event.type!=="change")return true;
-            const numeric=Number(el.value);
-            const value=field==="pan"&&
-              !el.dataset.panKeyboard&&!el.dataset.panAltPointer&&
-              Math.abs(numeric)<=12?0:numeric;
-            if(!sendM4Control(field==="level"?"faderDb":"pan",t,value))
-              status("G0 native control rejected; restoring accepted readback");
-            return true;
-          }
-        }
         if (field==="level")el.value=String(t.level);
         else if (field==="pan")el.value=String(t.pan);
-        status("NATIVE: ChannelId PCM not admitted; control unchanged");
+        status("LIVE PCM control unavailable · selected route not admitted");
         return true;
       }
       // During a native pointer drag move the approved fader *cap* only.
@@ -1177,6 +1258,10 @@
       // Selection, WIRE inspection and section presentation are UI-only.
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
+      if(action==="openPlugin"){
+        scope?.openFastPicker?.(t,Number(btn?.dataset.slot),btn);
+        return true;
+      }
       if (action==="mute"||action==="solo") {
         if(m4Verified() && t.kind==="master" && action==="mute"){
           if(!sendM4Control("masterMute",t,!t.mute))
@@ -1238,6 +1323,34 @@
       return true;
     },
     consumeUndo() {if (!connected)return false;status("NATIVE: WIRE undo requires accepted native transaction");return true;},
+    insertPlugin(id,target){
+      if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
+      const plugin=nativeCatalog.get(id);
+      const track=scope?.tracks?.find(x=>x.id===target?.channelId);
+      const channel=m4Index(track),slot=Number(target?.slot);
+      const ep=safeNativeCounter(hardware?.device?.epoch);
+      const rev=safeNativeCounter(legacy()?.routingRevision);
+      const existing=legacy()?.fxInstances?.[channel]||[];
+      if(!plugin||!m4Verified()||channel<0||
+         !Number.isInteger(slot)||slot<0||slot>=8 ||
+         ep===null||rev===null||existing[slot] ||
+         (slot>0&&!existing[slot-1])){
+        status("FX INSERT REJECTED · choose an empty consecutive slot on a native CH with verified route/catalog");
+        return true;
+      }
+      const requestId="fx-"+(++fxRequestSerial);
+      pendingFxInsert={requestId,id,channel,slot};
+      backend.emitEvent("arMixAction",{action:"routingFxInsert",
+        requestId,id,channel,slot,deviceEpoch:ep,revision:rev});
+      status("CH "+(channel+1)+" · preparing real VST3, awaiting native ACK");
+      window.setTimeout(()=>{
+        if(pendingFxInsert?.requestId!==requestId)return;
+        pendingFxInsert=null;
+        status("FX INSERT timeout; accepted routing preserved");
+        controller.subscribe();
+      },15000);
+      return true;
+    },
     consumeDoubleClick(event,t) {
       if (!connected)return false;
       if (event.target.classList.contains("fader")){
@@ -1280,16 +1393,25 @@
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
-      "#preview,#addTrack,#addBus,#addFx,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginsButton,#pluginScan,#pluginImport,#pluginAddPath");
+      "#preview,#addTrack,#addBus,#addFx,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
     if(!target)return;
     event.preventDefault();event.stopImmediatePropagation();
-    status("NATIVE: "+target.id+" requires real engine admission and readback");
+    const action=target.id==="pluginScan"?"scanVst3":
+      target.id==="pluginImport"?"importVst3":
+      target.id==="pluginAddPath"?"addScanFolder":null;
+    if(action){
+      backend.emitEvent("arMixAction",{action});
+      status("PLUGIN MANAGER · "+action+" requested from native JUCE");
+      return;
+    }
+    status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);
   // Native fader is committed exactly once INSIDE the original GUI's
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     installFirstSoundMenu();
+    scope?.setNativeCatalog?.([]); // no synthetic/demo VST3 in Windows host
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
