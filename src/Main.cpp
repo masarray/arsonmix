@@ -1432,6 +1432,15 @@ private:
                     action=="routingDryApply"?"arMixRoutingLabAck":"arMixRoutingFxBypassAck",
                     juce::var(ack.release()));
             }
+            if((action=="routingNativeFxRackBypass" ||
+                action=="routingNativeFxInsertBypass") && browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeFxPowerAck",juce::var(ack.release()));
+            }
             return emitNotice(reason,true);
         }
 
