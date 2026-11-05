@@ -783,17 +783,31 @@ private:
         if(engine_.dryRoutingLabActive() && channel>=1 &&
            channel<=LiveDryRoutingLab::count &&
            (name=="faderDb"||name=="pan"||name=="mute"||name=="solo")) {
+            // Audition-style live mixer control: all ten strip faders/pans/
+            // mute/solo target their REAL native PCM owner, never the Pages
+            // demo model or hardcoded legacy CH1. No UI-thread graph rebuild.
             const auto ep=args.getProperty("routeEpoch",juce::var());
             const auto rev=args.getProperty("routeRevision",juce::var());
+            bool accepted=false;
             if(!ep.isVoid()&&!rev.isVoid() &&
                ((name=="mute"||name=="solo")?value.isBool():
                   (value.isDouble()||value.isInt()))) {
                 const auto epoch=static_cast<std::uint64_t>(static_cast<juce::int64>(ep));
                 const auto revision=static_cast<std::uint64_t>(static_cast<juce::int64>(rev));
                 const float liveValue=value.isBool()?(bool(value)?1.f:0.f):valueNumber;
-                (void)engine_.setDryRoutingLabParameter(channel-1,epoch,revision,
+                accepted=engine_.setDryRoutingLabParameter(channel-1,epoch,revision,
                     name,liveValue);
             }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("channel",channel);
+            ack->setProperty("parameter",name);
+            ack->setProperty("ok",accepted);
+            ack->setProperty("routeEpoch",
+                static_cast<juce::int64>(engine_.dryRoutingLabEpoch()));
+            ack->setProperty("routeRevision",
+                static_cast<juce::int64>(engine_.dryRoutingLabRevision()));
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible("arMixM4ControlAck",juce::var(ack.release()));
             return;
         }
         if (name == "masterGain" && (value.isDouble() || value.isInt()))
