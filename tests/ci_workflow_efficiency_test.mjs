@@ -164,12 +164,12 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.doesNotMatch(factory, /^\s{2}push:/m);
 });
 
-test('M2.6 always-on coordination job has a stable name and skips unrelated Chromium', () => {
+test('single-owner qualification job scopes native/Chromium without blocking product work', () => {
   const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
   assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
   assert.doesNotMatch(prBlock,/^\s+paths:/m);
-  assert.match(ui,/name: PR coordination admission/);
-  assert.match(ui,/needs: coordination/);
+  assert.match(ui,/name: PR qualification scope \(single product owner\)/);
+  assert.match(ui,/needs: coordination/);\n  assert.match(ui,/check_workstream_coordination\\.mjs --pr .* --scope/);
   assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
   assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
 });
