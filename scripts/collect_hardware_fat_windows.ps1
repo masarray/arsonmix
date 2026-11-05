@@ -209,6 +209,22 @@ if ($Action -eq 'Summary') {
       $s=$matches[-1]
       $byMode[$required]=$s
       $selected+= $s
+      # Independent 30-minute evidence cannot trust a typed elapsedSeconds.
+      # Use UTC-aware instants: a forged 1800s counter with 1s timestamps is
+      # INCOMPLETE even if all other user-entered fields claim CLEAR.
+      try {
+        $startUtc=[DateTimeOffset]::Parse([string]$s.startedUtc,[Globalization.CultureInfo]::InvariantCulture)
+        $endUtc=[DateTimeOffset]::Parse([string]$s.endedUtc,[Globalization.CultureInfo]::InvariantCulture)
+        $wallSeconds=($endUtc-$startUtc).TotalSeconds
+        $claimedSeconds=[double]$s.elapsedSeconds
+        if ($wallSeconds -lt 0 -or $claimedSeconds -lt 0 -or
+            [double]::IsNaN($claimedSeconds) -or [double]::IsInfinity($claimedSeconds) -or
+            [Math]::Abs($wallSeconds-$claimedSeconds) -gt 5) {
+          $missing+=($tag+': recorded duration inconsistent with UTC start/end')
+        }
+      } catch {
+        $missing+=($tag+': invalid UTC start/end or elapsed duration')
+      }
       if ($s.operatorObservation -ne 'CLEAR' -or
           [string]::IsNullOrWhiteSpace([string]$s.witness)) {
         $missing+=($tag+': verified CLEAR observation and human witness required')

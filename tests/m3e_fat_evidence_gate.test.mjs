@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {inspectM3eJournal,inspectM3ePackage,assessM3eFat,M3E_MODES,M3E_RATES} from
@@ -197,4 +198,35 @@ test('BOM does not weaken malformed-journal rejection or source SHA pinning',()=
     assert.equal(altered.hardwareCertified,false);
     assert.match(altered.blockers.join(' '),/source\/executable SHA differs/);
   }finally{clean(d);}
+});
+
+test('PowerShell Summary validates 44.1/48 kHz real start/end duration rather than a forged 30-minute field',()=>{
+ if(process.platform!=='win32')return;
+ const d=makeTemp();try{
+  const p=makePackage(d);
+  // This is a synthetic source-verified test-only FAT kit, NOT live hardware.
+  const actualCollector=readFileSync('scripts/collect_hardware_fat_windows.ps1');
+  writeFileSync(join(d,'collect_hardware_fat_windows.ps1'),actualCollector);
+  p.m.fatCollectorSha256=sha(actualCollector);p.save();
+  const j=journal(d),journalPath=join(d,'FAT_RUNS.json');
+  const bom='\uFEFF';
+  const runSummary=()=>{
+    writeFileSync(journalPath,bom+JSON.stringify(j));
+    execFileSync('powershell.exe',[
+      '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+      '-File',join(d,'collect_hardware_fat_windows.ps1'),
+      '-Action','Summary'
+    ],{cwd:d,timeout:30000,encoding:'utf8'});
+    return JSON.parse(readFileSync(join(d,'FAT_SUMMARY.json'),'utf8').replace(/^\uFEFF/,''));
+  };
+  const good=runSummary();
+  assert.equal(good.status,'EVIDENCE_READY_FOR_HUMAN_REVIEW');
+  assert.equal(good.hardwareCertified,false);
+  const forged=j.sessions.find(s=>s.sampleRate===48000&&s.mode==='DRY_THROUGH_0FX');
+  forged.endedUtc=new Date(Date.parse(forged.startedUtc)+1000).toISOString();
+  const bad=runSummary();
+  assert.equal(bad.status,'EVIDENCE_INCOMPLETE');
+  assert.equal(bad.hardwareCertified,false);
+  assert.match(bad.blockers.join(' '),/48000 DRY_THROUGH_0FX: recorded duration inconsistent with UTC start\/end/);
+ }finally{clean(d);}
 });
