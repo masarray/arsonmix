@@ -169,6 +169,10 @@
     const label=document.getElementById("transport");
     if(label)label.textContent=!deviceOpen?"Choose audio device":
       d.outputArmed?"MAIN monitoring on":"MAIN monitoring off";
+    if(ioMonitorButton){
+      ioMonitorButton.textContent=d?.outputArmed?"Monitor on":"Monitor off";
+      ioMonitorButton.dataset.on=String(!!d?.outputArmed);
+    }
     const warning=document.querySelector?.(".status-bar .warning");
     if(warning)warning.textContent=!deviceOpen?"CHOOSE AUDIO OUTPUT":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
@@ -200,6 +204,210 @@
     hardwareNote.style.whiteSpace="normal";
     menu.append(caption,setup,hardwareNote);
     updateHardwarePanel(hardware);
+  }
+  // Compact Audio I/O is native-only. The EXISTING JUCE AudioDeviceManager
+  // remains the single owner, via its already-tested inventory/Apply APIs.
+  // No AudioDeviceSelectorComponent popup or additional device callback in the
+  // normal workflow; the stock JUCE selector remains Advanced recovery.
+  let ioRoot=null,ioDraft=null,ioInventory=null,ioBusy=false,
+    ioMutePending=false,ioRequest="",ioCounter=0,ioMessage="",
+    ioMonitorButton=null;
+  const ioElement=(tag,cls,label)=>{
+    const n=document.createElement(tag);
+    if(cls)n.className=cls;if(label!==undefined)n.textContent=label;
+    if(tag==="button")n.type="button";
+    return n;
+  };
+  const ioType=()=>ioInventory?.types?.find(t=>t.name===ioDraft?.backend);
+  const ioField=(parent,id,label)=>{
+    const row=ioElement("div","ar-native-io-field");
+    const text=ioElement("label","",label);text.htmlFor=id;
+    const select=ioElement("select");select.id=id;row.append(text,select);
+    parent.appendChild(row);return select;
+  };
+  const ioPopulate=(select,items,current)=>{
+    const key=JSON.stringify(items);
+    if(select.dataset.options!==key){
+      select.dataset.options=key;
+      select.replaceChildren(...items.map(([value,label])=>new Option(label,value)));
+    }
+    if(items.some(x=>x[0]===current))select.value=current;
+    else select.value=items[0]?.[0]??"";
+  };
+  const actualIo=()=>ioInventory?.active||{};
+  const setIoDraftFromActual=()=>{
+    const a=actualIo(),types=ioInventory?.types||[];
+    const name=a.backend||types.find(t=>/ASIO/i.test(t.name))?.name||
+      types[0]?.name||"";
+    const selected=types.find(t=>t.name===name);
+    const capture=a.open&&a.backend===name?a.captureDevice:
+      selected?.inputs?.[0]||selected?.outputs?.[0]||"";
+    const playback=a.open&&a.backend===name?a.playbackDevice:
+      selected?.outputs?.[0]||"";
+    ioDraft={backend:name,captureDevice:capture,playbackDevice:playback,
+      sampleRate:a.open&&a.backend===name?Number(a.rate)||0:0,
+      bufferSize:a.open&&a.backend===name?Number(a.buffer)||0:0};
+  };
+  const ioSameDevice=()=>{
+    const a=actualIo(),d=ioDraft;
+    return !!(a?.open&&d&&a.backend===d.backend&&
+      a.captureDevice===d.captureDevice&&a.playbackDevice===d.playbackDevice);
+  };
+  const ioVirtualOutput=name=>/virtual|vb-audio|cable input|loopback|obs/i.test(name||"");
+  function renderNativeIo(){
+    if(!ioRoot)return;
+    const a=actualIo(),d=ioDraft||{},types=ioInventory?.types||[],type=ioType();
+    const backendSelect=ioRoot.querySelector("#arNativeBackend");
+    const capture=ioRoot.querySelector("#arNativeCapture");
+    const playback=ioRoot.querySelector("#arNativePlayback");
+    const rate=ioRoot.querySelector("#arNativeRate");
+    const buffer=ioRoot.querySelector("#arNativeBuffer");
+    ioPopulate(backendSelect,types.map(t=>[t.name,t.name]),d.backend);
+    const inputs=type?.inputs||[],outputs=type?.outputs||[];
+    ioPopulate(capture,inputs.map(x=>[x,x]),d.captureDevice);
+    ioPopulate(playback,outputs.map(x=>[x,x]),d.playbackDevice);
+    capture.disabled=!!ioBusy||!type?.separate;
+    if(!type?.separate && outputs.length){
+      ioDraft.captureDevice=ioDraft.playbackDevice;
+      ioPopulate(capture,[[ioDraft.captureDevice,ioDraft.captureDevice]],ioDraft.captureDevice);
+    }
+    const same=ioSameDevice();
+    ioPopulate(rate,[["0","Auto / driver default"],
+      ...(same?(a.rates||[]).map(x=>[String(x),Number(x).toLocaleString()+" Hz"]):[])],
+      String(same?d.sampleRate:0));
+    ioPopulate(buffer,[["0","Auto / driver default"],
+      ...(same?(a.buffers||[]).map(x=>[String(x),x+" samples"]):[])],
+      String(same?d.bufferSize:0));
+    for(const select of [backendSelect,playback,rate,buffer])
+      select.disabled=!!ioBusy||!select.options.length;
+    const status=ioRoot.querySelector("#arNativeIoActual");
+    status.textContent=a.open?
+      "ACTIVE · "+a.backend+" · "+a.captureDevice+" → "+a.playbackDevice+
+      " · "+Math.round(Number(a.rate)||0)+" Hz / "+(a.buffer||0)+" samples"+
+      (a.outputMuted?" · MAIN muted":" · MAIN monitoring"):
+      "NO VERIFIED AUDIO DEVICE · choose driver, input and output";
+    const virtual=ioRoot.querySelector("#arNativeIoVirtual");
+    virtual.textContent=ioVirtualOutput(d.playbackDevice)?
+      "Virtual playback endpoint: this may feed another app, not your headphones. Choose a physical speaker/headphone output to listen directly.":"";
+    const note=ioRoot.querySelector("#arNativeIoNote");
+    note.textContent=ioMessage||"Apply hardware once. Then select IN on any mixer channel.";
+    ioRoot.querySelector("#arNativeIoApply").disabled=ioBusy||
+      !d.backend||!d.captureDevice||!d.playbackDevice||!a||
+      !ioInventory?.types?.length;
+    ioRoot.querySelector("#arNativeIoApply").textContent=ioBusy?"Verifying…":"Apply Device";
+  }
+  function installNativeIoPanel(){
+    if(ioRoot)return;
+    ioRoot=ioElement("div","ar-native-io");ioRoot.id="arNativeAudioIo";
+    ioRoot.hidden=true;ioRoot.setAttribute("role","dialog");
+    ioRoot.setAttribute("aria-label","Audio hardware setup");
+    ioRoot.setAttribute("aria-modal","true");
+    const panel=ioElement("section","ar-native-io-panel");
+    const head=ioElement("header","ar-native-io-header");
+    head.append(ioElement("strong","","Audio I/O · Driver & Monitoring"));
+    const close=ioElement("button","ar-native-io-close","×");
+    close.setAttribute("aria-label","Close audio settings");
+    close.addEventListener("click",()=>{ioRoot.hidden=true;});
+    head.append(close);panel.append(head);
+    const body=ioElement("div","ar-native-io-body");
+    const readback=ioElement("div","ar-native-io-readback");readback.id="arNativeIoActual";
+    body.append(readback);
+    const backendSelect=ioField(body,"arNativeBackend","Audio driver");
+    const capture=ioField(body,"arNativeCapture","Capture / input");
+    const playback=ioField(body,"arNativePlayback","Playback / output");
+    backendSelect.addEventListener("change",()=>{
+      const type=(ioInventory?.types||[]).find(t=>t.name===backendSelect.value);
+      ioDraft={backend:backendSelect.value,
+        captureDevice:type?.separate?(type.inputs?.[0]||""):(type?.outputs?.[0]||""),
+        playbackDevice:type?.outputs?.[0]||"",sampleRate:0,bufferSize:0};
+      ioMessage="Device selection is a draft until Apply Device succeeds.";
+      renderNativeIo();
+    });
+    capture.addEventListener("change",()=>{ioDraft.captureDevice=capture.value;renderNativeIo();});
+    playback.addEventListener("change",()=>{
+      ioDraft.playbackDevice=playback.value;
+      if(!ioType()?.separate)ioDraft.captureDevice=playback.value;
+      renderNativeIo();
+    });
+    const warning=ioElement("div","ar-native-io-notice");warning.id="arNativeIoVirtual";
+    body.append(warning);
+    const advanced=ioElement("details","");
+    const summary=ioElement("summary","","Advanced · sample rate & buffer");
+    advanced.append(summary);
+    const fields=ioElement("div","ar-native-io-body");
+    const rate=ioField(fields,"arNativeRate","Sample rate");
+    const buffer=ioField(fields,"arNativeBuffer","Buffer");
+    rate.addEventListener("change",()=>{ioDraft.sampleRate=Number(rate.value);});
+    buffer.addEventListener("change",()=>{ioDraft.bufferSize=Number(buffer.value);});
+    advanced.append(fields);body.append(advanced);
+    const actions=ioElement("div","ar-native-io-controls");
+    const apply=ioElement("button","primary","Apply Device");apply.id="arNativeIoApply";
+    apply.addEventListener("click",applyNativeAudioIO);
+    const recover=ioElement("button","","Driver Recovery…");
+    recover.title="Advanced JUCE selector — only for driver troubleshooting";
+    recover.addEventListener("click",()=>{
+      ioRoot.hidden=true;
+      backend.emitEvent("arMixAction",{action:"audioSetup"});
+    });
+    actions.append(apply,recover);body.append(actions);
+    const note=ioElement("div","ar-native-io-busy");note.id="arNativeIoNote";
+    body.append(note);panel.append(body);ioRoot.append(panel);
+    ioRoot.addEventListener("click",e=>{if(e.target===ioRoot)ioRoot.hidden=true;});
+    document.body.appendChild(ioRoot);
+    const bar=document.querySelector(".command-bar");
+    const before=document.getElementById("pluginsButton");
+    if(bar&&before){
+      const b=ioElement("button","tool ar-native-io-open","Audio I/O");
+      b.id="arNativeIoOpen";b.addEventListener("click",openNativeAudioIO);
+      before.insertAdjacentElement("afterend",b);
+      ioMonitorButton=ioElement("button","tool ar-native-monitor","Monitor off");
+      ioMonitorButton.id="arNativeMonitor";
+      ioMonitorButton.addEventListener("click",()=>{
+        const armed=hardware?.device?.outputArmed===true;
+        if(!armed&&!verifiedM4()){
+          status("Choose a verified input on any mixer channel first.");return;
+        }
+        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
+          ...(armed?{}:{
+            expectedEpoch:Number(lastDryReadback.epoch),
+            expectedRevision:Number(lastDryReadback.revision)
+          })});
+      });
+      b.insertAdjacentElement("afterend",ioMonitorButton);
+    }
+  }
+  function openNativeAudioIO(){
+    installNativeIoPanel();
+    ioRoot.hidden=false;
+    ioMessage="Reading verified driver inventory…";
+    renderNativeIo();
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function applyNativeAudioIO(){
+    if(ioBusy||!ioDraft||!ioInventory)return;
+    const d=ioDraft;
+    if(!d.backend||!d.captureDevice||!d.playbackDevice){
+      ioMessage="Choose a valid input and playback device.";renderNativeIo();return;
+    }
+    ioBusy=true;
+    ioMessage="Applying driver selection · verify hardware ACK before using audio.";
+    if(hardware?.device?.outputArmed){
+      ioMutePending=true;
+      backend.emitEvent("arMixAction",{action:"monitor",value:false});
+    }else submitDeviceApply();
+    renderNativeIo();
+  }
+  function submitDeviceApply(){
+    const d=ioDraft,a=actualIo(),same=ioSameDevice();
+    ioRequest="io-"+(++ioCounter);
+    backend.emitEvent("arMixAction",{action:"audioDeviceApply",
+      requestId:ioRequest,expectedDeviceGeneration:Number(a.deviceGeneration)||0,
+      config:{backend:d.backend,captureDevice:d.captureDevice,
+        playbackDevice:d.playbackDevice,
+        sampleRate:same?Number(d.sampleRate)||0:0,
+        bufferSize:same?Number(d.bufferSize)||0:0,
+        enabledInputs:same?a.enabledInputs:null,
+        enabledOutputs:same?a.enabledOutputs:null}});
   }
   // Same operator contract as Adobe/FL: every processing strip selects
   // its own VERIFIED hardware input; output initially targets MAIN. No
@@ -438,6 +646,29 @@
         }
       }
     });
+    backend.addEventListener("arMixAudioDeviceInventory",data=>{
+      if(!data||!Array.isArray(data.types))return;
+      ioInventory=data;
+      if(!ioDraft||!ioBusy)setIoDraftFromActual();
+      if(ioRoot)renderNativeIo();
+    });
+    backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
+      if(!ioBusy||ack?.requestId!==ioRequest)return;
+      ioBusy=false;ioMutePending=false;ioRequest="";
+      if(ioInventory&&ack?.active)ioInventory.active=ack.active;
+      if(ack?.ok===true){
+        setIoDraftFromActual();
+        ioMessage="Device verified. Select IN on any channel; monitoring is handled automatically.";
+        controller?.subscribe();
+      }else ioMessage="Device rejected · "+String(ack?.error||"Check audio driver and retry");
+      renderNativeIo();
+    });
+    backend.addEventListener("arMixAudioArmAck",ack=>{
+      if(!ioMutePending)return;
+      ioMutePending=false;
+      if(ack?.ok===true&&ack.armed===false)submitDeviceApply();
+      else {ioBusy=false;ioMessage="Cannot safely switch device while output is active.";renderNativeIo();}
+    });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
     backend.addEventListener("arMixStatus",live=>renderMeasuredM4(live));
@@ -668,6 +899,7 @@
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
+    installNativeIoPanel();
     installFirstSoundMenu();
     updateHardwarePanel(null);
     stopDemo();
