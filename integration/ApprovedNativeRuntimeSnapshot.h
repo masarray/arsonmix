@@ -36,6 +36,57 @@ inline bool synchronizeApprovedRouteDeviceEpoch(
     return true;
 }
 
+// First Sound is a REAL legacy M4 physical route before ChannelId migration.
+// The approved native More-menu needs its actual epoch/revision to PATCH CH1.
+// Prior G0 snapshots omitted legacyM4 entirely, permanently disabling PATCH
+// and ARM even when JUCE had a valid prepared mixer. This CONTROL-only
+// metadata does not admit ChannelId operations, synthesize PCM or arm output.
+inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
+                                            const juce::var& live)
+{
+    if(!snapshot.isObject() || !live.isObject()) return false;
+    const auto device=snapshot.getProperty("device",{});
+    const auto route=live.getProperty("dryRoutingLab",{});
+    if(!device.isObject() || !route.isObject()) return false;
+    const auto boolIs=[&](const juce::var& parent,const char* key,bool expected) {
+        const auto actual=parent.getProperty(key,{});
+        return actual.isBool() && static_cast<bool>(actual)==expected;
+    };
+    const auto epoch=device.getProperty("epoch",{});
+    const auto routeEpoch=route.getProperty("epoch",{});
+    const auto revision=route.getProperty("revision",{});
+    const auto inputs=device.getProperty("enabledInputs",{});
+    const auto outputs=device.getProperty("enabledOutputs",{});
+    double rate=0.,frames=0.;
+    const bool physicalReady=
+        boolIs(live,"connected",true) &&
+        boolIs(live,"directRouteAuthorized",true) &&
+        boolIs(live,"adaptiveClockActive",false) &&
+        boolIs(route,"active",true) &&
+        boolIs(route,"ready",true) &&
+        boolIs(route,"topologyFault",false) &&
+        nativeV8Decimal(epoch) &&
+        (routeEpoch.isInt() || routeEpoch.isInt64()) &&
+        (revision.isInt() || revision.isInt64()) &&
+        static_cast<juce::int64>(routeEpoch)>0 &&
+        static_cast<juce::int64>(revision)>0 &&
+        juce::String(static_cast<juce::int64>(routeEpoch))==epoch.toString() &&
+        inputs.isArray() && !inputs.getArray()->isEmpty() &&
+        outputs.isArray() && outputs.getArray()->size()>=2 &&
+        nativeV8Number(device.getProperty("sampleRate",{}),rate) &&
+        nativeV8Number(device.getProperty("bufferFrames",{}),frames) &&
+        rate>=8000. && frames>=16.;
+    auto firstSound=std::make_unique<juce::DynamicObject>();
+    firstSound->setProperty("active",physicalReady);
+    firstSound->setProperty("routeAccepted",physicalReady &&
+        boolIs(route,"hasAcceptedRoute",true));
+    firstSound->setProperty("routingRevision",physicalReady
+        ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // Do not write the route to the graph or change native capability flags.
+    snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
+    return physicalReady;
+}
+
 inline bool projectInstalledNativeChannelIdGraph(
     juce::var& snapshot, const juce::var& live)
 {
