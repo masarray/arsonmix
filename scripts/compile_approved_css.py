@@ -21,7 +21,7 @@ import re
 LINK = re.compile(r'(<link\s+rel="stylesheet"\s+href="assets/)([^"?]+\.css)(\?[^"]*)?(")', re.I)
 PROPERTY = re.compile(r"^\s*(--[A-Za-z0-9_-]+|[-A-Za-z_][-A-Za-z0-9_]*)\s*:", re.S)
 IMPORTANT = re.compile(r"!\s*important\s*$", re.I)
-CONTAINER = re.compile(r"^@(media|supports|container|layer|scope)(?=\\s|\\()", re.I)
+CONTAINER = re.compile(r"^@(media|supports|container|layer|scope)(?=\s|\()", re.I)
 # Explicit byte parity with the owner-approved PNG buttons and VIRE historical
 # socket source: these 2 assets participate as winners but never change bytes.
 LOCKED_ASSETS = frozenset({"mixer-control-keys.css", "mixer-wire-dots.css"})
