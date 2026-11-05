@@ -622,7 +622,7 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      status("NATIVE G0 · select hardware IN on any channel; native audio readback required.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -895,6 +895,19 @@
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     installFirstSoundMenu();
+    // One primary, always-visible AUDIO I/O entry in the existing approved
+    // mixer toolbar. The Pages layout and metal controls remain unchanged.
+    const bar=document.querySelector(".command-bar");
+    if(bar && !document.getElementById("arNativeAudioIO")){
+      const setupButton=document.createElement("button");
+      setupButton.type="button";
+      setupButton.className="tool";
+      setupButton.id="arNativeAudioIO";
+      setupButton.textContent="Audio I/O";
+      setupButton.title="Choose native ASIO/Windows Audio input and playback device";
+      setupButton.addEventListener("click",openNativeAudioSettings);
+      bar.insertBefore(setupButton,bar.querySelector("#pluginsButton")||bar.firstChild);
+    }
     installNativeStripInputEvents();
     updateHardwarePanel(null);
     stopDemo();
