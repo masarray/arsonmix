@@ -130,7 +130,11 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
   assert.match(ui, /python tests\/pages_v51_portrait_led_peak_hold_smoke.py/);
   const fullOnly = [...ui.matchAll(/^\s{8}if: .*workflow_dispatch.*integration\/product-/gm)].length;
-  assert.ok(fullOnly >= 35, 'Historical/extended GUI steps must be opt-in, found ' + fullOnly);
+  // Frozen V8–V27 CSS migration fixtures are explicit manual diagnostics.
+  // Current /preview/ and native mixing tests still run for product PRs.
+  const manualHistorical=[...ui.matchAll(/^\\s{8}if: \\$\\{\\{ github\\.event_name == 'workflow_dispatch' \\}\\}/gm)].length;
+  assert.ok(manualHistorical >= 28, 'Frozen historical CSS comparisons must not block product PRs');
+  assert.ok(fullOnly >= 20, 'Current extended /preview/ verification must run on product PRs');
   assert.match(ui, /python tests\/pages_css_architecture_v27_smoke.py/);
   assert.match(ui, /retention-days: 3/);
 });
