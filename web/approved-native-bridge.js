@@ -447,7 +447,7 @@
       next?.device?.enabledInputs,next?.device?.inputEndpoints]);
     if(ports!==lastM4PortSignature){
       lastM4PortSignature=ports;
-      if(scope.activeFaderId<0 &&
+      if((scope.activeFaderId??-1)<0 &&
          !document.activeElement?.matches?.('.strip select'))
         scope.render?.(); // refresh all hardware choices ONLY after device setup
     }else{
@@ -985,7 +985,7 @@
           // Native REJECTED / STALE / timeout must roll back a temporary fader
           // cap and every input value; no optimistic GUI state survives.
           if (!state.pending && flags.acceptedGraphConnected &&
-              scope.activeFaderId<0){
+              (scope.activeFaderId??-1)<0){
             // A rejected edit MUST restore the visual model immediately,
             // but never unmount an open hardware selector. This also keeps
             // existing native transaction rollback semantics testable.
