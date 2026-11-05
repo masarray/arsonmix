@@ -208,6 +208,180 @@
         "No verified hardware PCM readback available.";
     }
   }
+  // The approved Windows GUI is built from /preview/ (NOT web/mixer-io).
+  // A single compact device preference panel uses the existing JUCE
+  // AudioDeviceManager inventory/APPLY ACK. All controls stay off the DSP RT.
+  let ioInventory=null,ioDraft=null,ioPanel=null,ioRequest=null,ioAfterMute=null;
+  const virtualOutput=name=>/cable input|virtual cable|vb.audio|virtual audio/i.test(String(name||""));
+  const cableFeedbackPair=()=>{
+    const d=hardware?.device;
+    return /cable output/i.test(String(d?.captureDevice||"")) &&
+           /cable input/i.test(String(d?.playbackDevice||"")) &&
+           /vb.audio/i.test(String(d?.captureDevice||"")+" "+String(d?.playbackDevice||""));
+  };
+  const ioType=()=>ioInventory?.types?.find(t=>t.name===ioDraft?.backend);
+  function paintNativeIo(){
+    if(!ioPanel||ioPanel.hidden||!ioInventory)return;
+    const active=ioInventory.active||{},types=ioInventory.types||[];
+    if(!ioDraft)ioDraft={backend:active.backend||types[0]?.name||"",
+      captureDevice:active.captureDevice||"",playbackDevice:active.playbackDevice||"",
+      sampleRate:0,bufferSize:0};
+    const setOptions=(id,values,current)=>{
+      const sel=ioPanel.querySelector('[data-native-io="'+id+'"]');
+      if(!sel)return;
+      const previous=sel.value,signature=JSON.stringify(values);
+      if(sel.dataset.options!==signature){
+        sel.replaceChildren(...values.map(([value,label])=>new Option(label,value)));
+        sel.dataset.options=signature;
+      }
+      if(current!==undefined)sel.value=current;
+      else if(values.some(v=>v[0]===previous))sel.value=previous;
+    };
+    setOptions("backend",types.map(t=>[t.name,t.name]),ioDraft.backend);
+    const type=ioType()||{};
+    const outputs=type.outputs||[],inputs=type.separate?(type.inputs||[]):outputs;
+    if(!outputs.includes(ioDraft.playbackDevice))ioDraft.playbackDevice=outputs[0]||"";
+    if(!inputs.includes(ioDraft.captureDevice))ioDraft.captureDevice=
+      type.separate?inputs[0]||"":ioDraft.playbackDevice;
+    if(!type.separate)ioDraft.captureDevice=ioDraft.playbackDevice;
+    setOptions("capture",inputs.map(n=>[n,n]),ioDraft.captureDevice);
+    setOptions("playback",outputs.map(n=>[n,n]),ioDraft.playbackDevice);
+    const same=active.open&&active.backend===ioDraft.backend&&
+      active.captureDevice===ioDraft.captureDevice&&
+      active.playbackDevice===ioDraft.playbackDevice;
+    const rates=same?(active.rates||[]):[],buffers=same?(active.buffers||[]):[];
+    setOptions("rate",[[0,"Auto"],...rates.map(n=>[n,Math.round(n)+" Hz"])],
+      ioDraft.sampleRate||0);
+    setOptions("buffer",[[0,"Auto"],...buffers.map(n=>[n,n+" samples"])],
+      ioDraft.bufferSize||0);
+    const selected=ioDraft.playbackDevice;
+    const hint=ioPanel.querySelector('[data-native-io="hint"]');
+    if(hint)hint.textContent=
+      "Current: "+(active.open?active.backend+" · "+active.playbackDevice:"No audio device")+
+      " · "+(active.rate||0)+" Hz / "+(active.buffer||0)+" samples. "+
+      (virtualOutput(selected)?
+        "Selected output appears virtual: this is NOT a physical headphone/speaker. Choose a real playback device to listen.":
+        "Output: "+(selected||"not selected")+". Keep headphone volume low.");
+    const apply=ioPanel.querySelector('[data-native-io="apply"]');
+    if(apply)apply.disabled=!!ioRequest||!ioDraft.captureDevice||!ioDraft.playbackDevice;
+  }
+  function installNativeIo(){
+    if(!connected||ioPanel)return;
+    const css=document.createElement("style");
+    css.textContent=`
+      .armix-native-io{position:fixed;inset:0;z-index:200000;background:#0009;
+        display:grid;place-items:center;font:12px Inter,Arial,sans-serif;color:#d8eaf0}
+      .armix-native-io[hidden]{display:none}
+      .armix-native-io-panel{width:min(560px,calc(100vw - 32px));
+        max-height:calc(100vh - 40px);overflow:auto;background:#142630;
+        border:1px solid #45616d;border-radius:8px;box-shadow:0 20px 70px #0009;padding:18px}
+      .armix-native-io-header{display:flex;align-items:center;justify-content:space-between;
+        gap:14px;margin-bottom:13px;font-size:15px;font-weight:500}
+      .armix-native-io-field{display:grid;grid-template-columns:105px minmax(0,1fr);
+        align-items:center;gap:12px;margin:8px 0}
+      .armix-native-io select{min-width:0;width:100%;box-sizing:border-box;
+        background:#0c1c25;color:#d8eaf0;border:1px solid #4a6672;
+        border-radius:4px;padding:8px;font:inherit}
+      .armix-native-io button{background:#25414d;color:#e2f3f5;
+        border:1px solid #4a6875;border-radius:4px;padding:7px 13px;cursor:pointer;font:inherit}
+      .armix-native-io button:disabled{opacity:.45;cursor:default}
+      .armix-native-io-hint{color:#a7c7d0;line-height:1.5;font-size:11px;margin:13px 0}
+      .armix-native-io-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
+      .armix-native-io [data-native-io="apply"]{background:#245b61;border-color:#488f8e}
+      .armix-native-io details{margin-top:12px}
+    `;
+    document.head.appendChild(css);
+    ioPanel=document.createElement("div");ioPanel.className="armix-native-io";ioPanel.hidden=true;
+    ioPanel.innerHTML=`<section class="armix-native-io-panel" role="dialog" aria-modal="true"
+      aria-label="Audio hardware">
+      <header class="armix-native-io-header"><span>Audio I/O · Hardware</span>
+      <button type="button" data-native-io="close" aria-label="Close audio settings">×</button></header>
+      <label class="armix-native-io-field">Driver <select data-native-io="backend"></select></label>
+      <label class="armix-native-io-field">Input device <select data-native-io="capture"></select></label>
+      <label class="armix-native-io-field">Output device <select data-native-io="playback"></select></label>
+      <details><summary>Advanced · sample rate &amp; buffer</summary>
+      <label class="armix-native-io-field">Sample rate <select data-native-io="rate"></select></label>
+      <label class="armix-native-io-field">Buffer <select data-native-io="buffer"></select></label></details>
+      <p class="armix-native-io-hint" data-native-io="hint"></p>
+      <div class="armix-native-io-footer">
+      <button type="button" data-native-io="cancel">Cancel</button>
+      <button type="button" data-native-io="apply">Use device</button></div></section>`;
+    document.body.appendChild(ioPanel);
+    const open=()=>{
+      ioPanel.hidden=false;ioDraft=null;ioInventory=null;
+      ioPanel.querySelector('[data-native-io="hint"]').textContent="Reading actual installed drivers...";
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+    };
+    const close=()=>{if(!ioRequest)ioPanel.hidden=true;};
+    const bar=document.querySelector(".command-bar");
+    const btn=document.createElement("button");btn.className="tool";
+    btn.type="button";btn.textContent="Audio I/O";
+    btn.title="Choose hardware driver, input and output once";
+    bar?.insertBefore(btn,document.getElementById("moreTools"));
+    btn.addEventListener("click",open);
+    ioPanel.addEventListener("click",event=>{
+      const action=event.target.closest?.("[data-native-io]")?.dataset.nativeIo;
+      if(action==="close"||action==="cancel"){close();return;}
+      if(action!=="apply"||ioRequest||!ioDraft)return;
+      const active=ioInventory?.active;
+      if(!active){return;}
+      const same=active.open&&active.backend===ioDraft.backend&&
+        active.captureDevice===ioDraft.captureDevice&&active.playbackDevice===ioDraft.playbackDevice;
+      const config={...ioDraft,
+        enabledInputs:same?active.enabledInputs:null,
+        enabledOutputs:same?active.enabledOutputs:null};
+      ioRequest={requestId:"daw-io-"+(++sourceSerial),config,
+        expectedDeviceGeneration:Number(active.deviceGeneration)||0};
+      ioPanel.querySelector('[data-native-io="hint"]').textContent="Applying driver (native readback required)...";
+      if(hardware?.device?.outputArmed){
+        ioAfterMute=ioRequest;
+        backend.emitEvent("arMixAction",{action:"monitor",value:false});
+      }else sendNativeIoApply();
+    });
+    ioPanel.addEventListener("change",event=>{
+      const field=event.target.dataset.nativeIo;
+      if(!ioDraft||!["backend","capture","playback","rate","buffer"].includes(field))return;
+      const value=event.target.value;
+      if(field==="backend"){
+        ioDraft={backend:value,captureDevice:"",playbackDevice:"",sampleRate:0,bufferSize:0};
+      }else if(field==="capture")ioDraft.captureDevice=value;
+      else if(field==="playback")ioDraft.playbackDevice=value;
+      else if(field==="rate")ioDraft.sampleRate=Number(value)||0;
+      else if(field==="buffer")ioDraft.bufferSize=Number(value)||0;
+      paintNativeIo();
+    });
+    ioPanel.addEventListener("click",event=>{if(event.target===ioPanel)close();});
+    backend.addEventListener("arMixAudioDeviceInventory",data=>{
+      ioInventory=data;
+      if(!ioPanel.hidden)paintNativeIo();
+    });
+    backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
+      if(!ioRequest||ack?.requestId!==ioRequest.requestId)return;
+      ioRequest=null;ioAfterMute=null;
+      if(ack?.ok===true&&ack?.active?.open){
+        ioPanel.hidden=true;controller?.subscribe();
+        status("AUDIO I/O READY · choose IN directly on any mixer channel");
+      }else{
+        ioPanel.querySelector('[data-native-io="hint"]').textContent=
+          "Driver rejected: "+String(ack?.error||"device not ready");
+        paintNativeIo();
+      }
+    });
+    backend.addEventListener("arMixAudioArmAck",ack=>{
+      if(!ioAfterMute)return;
+      if(ack?.ok===true&&ack?.armed===false)sendNativeIoApply();
+      else{
+        ioAfterMute=null;ioRequest=null;
+        ioPanel.querySelector('[data-native-io="hint"]').textContent=
+          "Cannot change driver safely while output is active";
+      }
+    });
+  }
+  function sendNativeIoApply(){
+    if(!ioRequest)return;
+    backend.emitEvent("arMixAction",{
+      action:"audioDeviceApply",...ioRequest});
+  }
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
     if(!menu || typeof document.createElement!=="function")return;
@@ -690,6 +864,7 @@
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     installFirstSoundMenu();
+    installNativeIo();
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
