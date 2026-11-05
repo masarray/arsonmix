@@ -386,9 +386,9 @@
     sourceChooser.querySelector('[data-source-alias-help]').textContent=identified?
       'Saved for this verified device and enabled-pin layout · native ACK required':
       'Awaiting actual driver inventory; naming disabled until hardware is verified';
-    sourceNote.textContent=!s.ready?'No verified native driver input ports':
-      s.monitor?'Same-format physical input changes use native 64-sample crossfade · new patch or format requires MUTE':
-      'Choose verified source; native ACK required before it is LIVE';
+    sourceNote.textContent=!s.ready?'Choose a verified audio interface in Audio I/O':
+      'Select an input for CH '+(sourceChooserChannel+1)+
+      ' · native mixer handles safe changes and monitoring automatically';
   };
   const openSourceChooser=channel=>{
     if(!Number.isInteger(channel)||channel<0||channel>=10)return;
@@ -967,7 +967,7 @@
         row.dataset.state==='live'?'LIVE · ACK':'UNPATCHED'));
       row.append(identity,mode,left,right,action);section.appendChild(row);
     }
-    section.appendChild(node('p','arIOQuickFooter','Select verified inputs, click USE INPUT. Native routing handles any required safe mute, ACK and re-arm automatically.'));
+    section.appendChild(node('p','arIOQuickFooter','Choose IN on any mixer strip. The native mixer connects that channel to MAIN after verified readback; no separate Patch or Start.'));
     return section;
   }
   function stageQuickInput(button){
@@ -1612,17 +1612,12 @@
       s.ready?'E'+s.epoch+' · Native APPLY required for input edits':'CHOOSE A VERIFIED DIRECT DEVICE';
     el('arIOFeedback').textContent=(ioTab==='device'?deviceNote:matrixMessage)||hint;
   }
-  // Operator makes one choice. Same-format moves use the native source ramp;
-  // structural moves use FAST3's safe MUTE -> graph ACK -> guarded ARM internally.
+  // One hardware-IN chooser for EVERY mixer strip, as in Audition/FL.
+  // Native routingSourceSwitch supports silent first boot and live per-strip
+  // updates. Do not stage a second draft graph or guess CH1/CH2 sources.
   function commitSourceInOneGesture(channel,mode,left,right){
-    const s=route(),accepted=s.acceptedRoute?.channels?.[channel];
-    if(accepted?.mode===mode&&['MONO','STEREO'].includes(mode))
-      return window.__arMixCommitSelectedSource?.(channel,mode,left,right);
-    const staged=window.__arMixStageChannelInput?.(channel,mode,left,right);
-    if(!staged?.ok)return staged||{ok:false,error:'Native staging unavailable'};
-    const committed=window.__arMixApplyAndActivate?.();
-    return committed?.ok?{ok:true,pending:true,live:false,epoch:s.epoch}:
-      {ok:false,error:committed?.error||'Safe native APPLY rejected'};
+    return window.__arMixChooseChannelInput?.(channel,mode,left,right)||
+      {ok:false,error:'Verified native audio routing is not initialized'};
   }
   function changeSource(select){
     const channel=Number(select.dataset.channel);
@@ -2005,14 +2000,17 @@
     if(ack?.active?.open&&Number(ack.active.deviceGeneration)!==oldGeneration)
       deviceMatrixWaitEpoch=route().epoch;
     deviceDraft=makeDeviceDraft();
-    if(ack?.ok&&ack?.active?.open)applyAfterDevice={generation:Number(ack.active.deviceGeneration),capture:ack.active.captureDevice,playback:ack.active.playbackDevice,driver:ack.active.backend};
+    // After a device APPLY the operator chooses IN on the desired strip.
+    // Never silently map the first two capture pins or start output.
     deviceNote=ack?.ok?'DEVICE ACCEPTED · OUTPUT MUTED · '+devicePinNextStep():
       (ack?.state||'REJECTED')+' · '+(ack?.error||'Check driver and retry');
     // Same real routing controller sees the new device epoch via normal status.
     lastSignature='';if(!overlay.hidden)refreshIO();
   });
   backend?.addEventListener?.('arMixRoutingLabAck',ack=>{
-    if(quickSourcePending){
+    // Advanced matrix APPLY owns its own draft; the per-channel IN selector
+    // is committed by arMixMixerSourceResult, not by this structural ACK.
+    if(quickSourcePending?.structural){
       const requested=quickSourcePending;
       quickSourcePending=null;
       if(ack?.ok!==true)window.__arMixRevertMixerDraft?.();
@@ -2030,6 +2028,18 @@
         'SOURCE REJECTED · '+(ack?.error||'Route unchanged');
       renderSourceChooser();
     }
+  });
+  window.addEventListener('arMixMixerSourceResult',event=>{
+    const detail=event.detail||{};
+    if(quickSourcePending?.channel===detail.channel)quickSourcePending=null;
+    const message=detail.message||
+      (detail.ok?'Verified hardware source connected':'Hardware source rejected');
+    matrixMessage=message;
+    if(!sourceChooser.hidden){
+      renderSourceChooser();
+      sourceNote.textContent=message;
+    }
+    lastSignature='';refresh();
   });
   window.addEventListener('arMixSourceSwitchResult',event=>{
     const result=event.detail||{};
