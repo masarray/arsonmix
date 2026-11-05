@@ -532,6 +532,32 @@
     },8000);
     return true;
   }
+  let masterPending=null,masterSequence=40000;
+  function submitNativeMaster(parameter,value){
+    const epoch=Number(hardware?.device?.epoch);
+    const revision=Number(hardware?.raw?.legacyM4?.routingRevision);
+    const controls=hardware?.raw?.legacyM4?.masterControls;
+    if(!firstSoundReady()||!controls||masterPending||
+       !Number.isSafeInteger(epoch)||epoch<=0||
+       !Number.isSafeInteger(revision)||revision<=0 ||
+       (parameter==="mute"?typeof value!=="boolean":
+         parameter!=="faderDb"||!Number.isFinite(value)||
+         value< -60||value>10)){
+      status("MAIN control requires verified active routing");
+      return false;
+    }
+    const pending={id:++masterSequence,parameter,value,epoch,revision,acked:false};
+    masterPending=pending;
+    backend.emitEvent("arMixAction",{action:"routingM4MasterControl",
+      requestId:pending.id,parameter,value,deviceEpoch:epoch,revision});
+    window.setTimeout(()=>{
+      if(masterPending?.id!==pending.id)return;
+      masterPending=null;
+      controller?.subscribe();syncDawM4Controls();
+      status("MAIN control timed out · restored last native readback");
+    },8000);
+    return true;
+  }
   function syncDawM4Controls(){
     if(hardware?.admitted===true)return;
     const controls=m4Controls(),ready=firstSoundReady() &&
@@ -597,6 +623,43 @@
         t[name]=c[name];
         const button=strip.querySelector('[data-action="'+name+'"]');
         if(button)button.setAttribute("aria-pressed",String(c[name]));
+      }
+    }
+    const master=hardware?.raw?.legacyM4?.masterControls;
+    const masterTrack=scope?.master;
+    if(master&&masterTrack){
+      if(masterPending?.acked && String(hardware?.device?.epoch)===
+           String(masterPending.epoch) &&
+         (masterPending.parameter==="mute"?
+            master.mute===masterPending.value:
+            Math.abs(Number(master.db)-masterPending.value)<0.12))
+        masterPending=null;
+      else if(masterPending && String(hardware?.device?.epoch)!==
+         String(masterPending.epoch))masterPending=null;
+      if(!masterPending){
+        const strip=document.querySelector(".strip.master");
+        if(Number.isFinite(Number(master.db))){
+          masterTrack.level=Number(master.db);
+          const slider=strip?.querySelector('.fader[data-field="level"]');
+          if(slider&&Number(slider.value)!==Number(master.db)){
+            slider.value=String(master.db);
+            const min=Number(slider.min),max=Number(slider.max);
+            const frac=max>min?Math.max(0,Math.min(1,(Number(master.db)-min)/(max-min))):0;
+            const box=strip.querySelector(".fader-box");
+            box?.style?.setProperty("--fader-fill",(100*frac)+"%");
+            box?.style?.setProperty("--fader-lit",String(frac));
+            box?.style?.setProperty("--fader-y",(100*(1-frac))+"%");
+            box?.style?.setProperty("--fader-frac",String(frac));
+          }
+          const db=strip?.querySelector(".db-value");
+          const label=Number(master.db).toFixed(1)+" dB";
+          if(db&&db.textContent!==label)db.textContent=label;
+        }
+        if(typeof master.mute==="boolean"){
+          masterTrack.mute=master.mute;
+          strip?.querySelector('[data-action="mute"]')?.setAttribute(
+            "aria-pressed",String(master.mute));
+        }
       }
     }
   }
@@ -746,6 +809,21 @@
       controller?.subscribe();
     });
 
+    backend.addEventListener("arMixM4MasterAck",ack=>{
+      const pending=masterPending;
+      if(!pending||pending.id!==ack?.requestId)return;
+      const verified=ack.ok===true&&ack.parameter===pending.parameter &&
+        Number(ack.deviceEpoch)===pending.epoch &&
+        Number(ack.revision)===pending.revision &&
+        (pending.parameter==="mute"?ack.value===pending.value:
+          Math.abs(Number(ack.value)-pending.value)<0.12);
+      if(verified)pending.acked=true;
+      else{
+        masterPending=null;
+        status("MAIN "+pending.parameter+" rejected · native state unchanged");
+      }
+      controller?.subscribe();syncDawM4Controls();
+    });
     backend.addEventListener("arMixM4ControlAck",ack=>{
       if(!Number.isInteger(ack?.channel))return;
       const key=m4Key(ack.channel,ack.parameter);
@@ -788,6 +866,12 @@
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
       if (!flags.acceptedGraphConnected) {
+        if(field==="level" && t===scope?.master && firstSoundReady() &&
+           event.type==="change"){
+          if(!submitNativeMaster("faderDb",Number(el.value)))
+            el.value=String(t.level);
+          return true;
+        }
         if((field==="level"||field==="pan")&&
            event.type==="change"&&firstSoundReady()){
           const value=Number(el.value);
@@ -851,6 +935,10 @@
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if (action==="mute"||action==="solo") {
         if(!flags.acceptedGraphConnected){
+          if(t===scope?.master && action==="mute" && firstSoundReady()){
+            submitNativeMaster("mute",!Boolean(t.mute));
+            return true;
+          }
           if(firstSoundReady())submitM4Control(t,action,!Boolean(t[action]));
           else status("NATIVE: device not ready for "+action);
           return true;
