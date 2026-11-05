@@ -169,7 +169,8 @@ test('single-owner qualification job scopes native/Chromium without blocking pro
   assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
   assert.doesNotMatch(prBlock,/^\s+paths:/m);
   assert.match(ui,/name: PR qualification scope \(single product owner\)/);
-  assert.match(ui,/needs: coordination/);\n  assert.match(ui,/check_workstream_coordination\\.mjs --pr .* --scope/);
+  assert.match(ui,/needs: coordination/);
+  assert.match(ui,/check_workstream_coordination\.mjs --pr .* --scope/);
   assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
   assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
 });
