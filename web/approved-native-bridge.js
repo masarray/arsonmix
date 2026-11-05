@@ -63,11 +63,15 @@
         !["faderDb","pan","mute","solo"].every(k => Object.hasOwn(ch.controls,k)))) return false;
     const previous = new Map(scope.tracks.concat(scope.master).map(t=>[t.id,t]));
     const nextTracks = [], localByNative = new Map(), nextNativeByUi = new Map();
-    let nextMaster = null;
+    let nextMaster = null, inputOrdinal=0;
     for (const [index,ch] of accepted.channels.entries()) {
       const kind = ch.role==="MAIN"?"master":ch.role==="GROUP"?"bus":
         ch.role==="FX_RETURN"?"fx":"audio";
-      const savedId = uiByNativeId.get(ch.id);
+      // Preserve approved CH01..CH10 DOM/model identities across M4 G0
+      // -> native ChannelId admission -> any later G0 fallback. A new
+      // temporary track ID would silently move hardware to another strip.
+      const m4Id=ch.role==="INPUT"?m4TrackIds[inputOrdinal++]:undefined;
+      const savedId = uiByNativeId.get(ch.id) ?? m4Id;
       const t = savedId !== undefined && previous.has(savedId) ?
         previous.get(savedId) : scope.make(ch.name,kind,scope.colors[index%scope.colors.length]||"#568ead");
       if (savedId !== undefined) t.id = savedId;
@@ -88,6 +92,9 @@
           r=/^in:(\d+)$/.exec(src.portIdRight||"");
         t.input=l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
           left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
+        const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
+        t.output=out?.role==="MAIN"?"Master":
+          (out?.name||"SOURCE ONLY (No Main)");
       }
       t.selected=previous.get(t.id)?.selected || false;
       if (Array.isArray(ch.inserts)) {
@@ -217,7 +224,9 @@
   const m4Meters=new Map();
   const m4Verified=()=>{
     const m=legacy(),d=hardware?.device;
-    return !flags.acceptedGraphConnected && m?.active===true &&
+    return m4TrackIds.length===10 &&
+      new Set(m4TrackIds).size===10 &&
+      !flags.acceptedGraphConnected && m?.active===true &&
       m.routeAccepted===true && Array.isArray(m.channelControls) &&
       m.channelControls.length===10 && m.channels?.length===10 &&
       safeNativeCounter(d?.epoch)!==null &&
