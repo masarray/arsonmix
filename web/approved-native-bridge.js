@@ -219,11 +219,12 @@
     };
     const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
     const setup=item("button","tool","Audio Setup");
-    // Reuse the ALREADY implemented compact Audio I/O panel from mixer-io.
-    // Its window-capture setup handler owns driver inventory and APPLY/ACK.
-    // The stock JUCE device popup remains available only via Advanced.
-    setup.dataset.nativeAction="audioSetup";
-    setup.title="Configure real input and output devices in the mixer";
+    // Device preferences remain a one-time JUCE owner. The approved Pages
+    // WebView does NOT load legacy mixer-io.js; never call its absent overlay.
+    setup.addEventListener("click",()=>{
+      backend.emitEvent("arMixAction",{action:"audioSetup"});
+      status("Choose hardware driver/input/output once; then select IN on each strip.");
+    });
     inputSelect=item("select","toolbar-select","");
     inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
     inputSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
@@ -465,12 +466,30 @@
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
-      pendingSourceId=0;
-      if(ack.ok===true) {
-        status("NATIVE: CH1 PATCH accepted by JUCE; validating later readback.");
-        controller.subscribe();
-      }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
+      const selected=pendingStripSource;
+      pendingSourceId=0;pendingStripSource=null;
+      const result=ack?.state,channels=result?.acceptedRoute?.channels;
+      const row=selected&&Array.isArray(channels)?channels[selected.channel]:null;
+      const verified=!!selected&&ack?.ok===true&&result?.ready===true &&
+        result?.hasAcceptedRoute===true&&
+        Number(result.epoch)===selected.epoch&&
+        Number(hardware?.device?.epoch)===selected.epoch&&
+        Number.isSafeInteger(Number(result.revision))&&Number(result.revision)>0&&
+        row?.mode===selected.mode&&row?.left===selected.left&&
+        (selected.mode!=="STEREO"||row.right===selected.right);
+      if(verified){
+        status("CH "+(selected.channel+1)+" · INPUT CONNECTED · native ACK");
+        if(hardware?.device?.outputArmed!==true)
+          backend.emitEvent("arMixAction",{
+            action:"monitor",value:true,
+            expectedEpoch:selected.epoch,
+            expectedRevision:Number(result.revision)
+          });
+      }else if(ack?.ok!==true)status("INPUT REJECTED · "+(ack?.error||"device changed"));
+      else if(selected)status("INPUT UNVERIFIED · source readback changed; MAIN remains safe");
+      controller.subscribe(); // Never assume ACK alone is audible PCM.
       updateHardwarePanel(hardware);
+      paintM4Inputs(hardware);
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(ack?.ok===true){
