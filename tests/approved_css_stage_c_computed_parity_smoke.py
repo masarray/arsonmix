@@ -50,11 +50,15 @@ async def snapshot(page):
         const rows = elements.map((el, index) => {
             const c = getComputedStyle(el);
             const rect = el.getBoundingClientRect();
-            const values = properties.map(p => c.getPropertyValue(p));
+            // Compare computed values, not deployment-specific file:// roots.
+            // Preserve every filename, query string, color and dimension.
+            const normalized = value => value.replace(
+                /file:\/\/\/[^"')]*\/assets\//g,'assets/');
+            const values = properties.map(p => normalized(c.getPropertyValue(p)));
             const pseudo = ['::before','::after'].map(part => {
                 const s = getComputedStyle(el,part);
                 return [s.content,s.display,s.opacity,s.filter,s.transform,
-                        s.backgroundImage,s.backgroundColor,s.boxShadow];
+                        s.backgroundImage,s.backgroundColor,s.boxShadow].map(normalized);
             });
             return {
                 tag:el.tagName,cls:typeof el.className==='string'?el.className:'',
