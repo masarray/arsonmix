@@ -312,7 +312,7 @@ test("ten on-strip hardware selectors dispatch exact native channel, await ACK t
  const doc={readyState:"complete",documentElement:{dataset:{}},
    getElementById:id=>id==="info"?info:id==="preview"?preview:null,
    querySelector:selector=>{
-     const id=/^\\.strip\\[data-id="(\\d+)"\\]$/.exec(selector)?.[1];
+     const id=/^\.strip\[data-id="(\d+)"\]$/.exec(selector)?.[1];
      return id?{querySelector:q=>q.includes('field="input"')?selects.get(id):null}:null;
    },
    createElement:tag=>({value:"",textContent:"",dataset:{},tag}),
