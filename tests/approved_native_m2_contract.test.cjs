@@ -114,6 +114,29 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
   assert.match(bridge,/protocol\.diagnoseFirstSound/);
 });
+test("DAW-style all-channel IN / M4 fader mute pan use real native control and readback, never mock PCM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const io=read("web/mixer-io.js");
+  const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
+  const engine=read("src/LiveDryRoutingLab.h");
+  const nativeMain=read("src/Main.cpp");
+  assert.match(io,/\.route-select\[data-field="input"\]/);
+  assert.match(io,/__arMixChooseChannelHardwareInput=/);
+  assert.match(bridge,/field==="input"/);
+  assert.match(bridge,/__arMixChooseChannelHardwareInput\?\.\(channel,el\.value\)/);
+  assert.match(bridge,/function paintM4Readback\(next\)/);
+  assert.match(bridge,/channelControls/);
+  assert.match(bridge,/parameter,channel:channel\+1,value/);
+  assert.match(bridge,/routeEpoch:safeNativeCounter/);
+  assert.match(bridge,/if\(m4Verified\(\)\&\&m4StripIndex\(event\.target\)>=0/);
+  assert.match(producer,/firstSound->setProperty\("channelControls",controls\)/);
+  assert.match(producer,/firstSound->setProperty\("channelPeaksL",levelsL\)/);
+  assert.match(engine,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+  assert.match(nativeMain,/engine_\.setDryRoutingLabParameter\(channel-1,epoch,revision/);
+  assert.doesNotMatch(bridge,/const audioContext=new AudioContext/);
+  assert.doesNotMatch(bridge,/function synthesizePCM/);
+  assert.match(bridge,/setup\.dataset\.nativeAction="audioSetup"/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
