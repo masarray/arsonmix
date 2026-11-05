@@ -124,7 +124,10 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(bridge,/inputChoices\(t\)/);
   assert.match(bridge,/hardware\.device\.enabledInputs\.includes\(p\.port\)/);
   assert.match(bridge,/field==="input"/);
-  assert.match(bridge,/scope\?\.tracks\?\.findIndex/);
+  // Reordering /preview/ strips must NOT change the real hardware lane.
+  assert.match(bridge,/const channel=m4Index\\(t\\)/);
+  assert.match(bridge,/const m4TrackIds=Array\\.isArray\\(scope\\?\\.tracks\\)/);
+  assert.match(bridge,/const savedId = uiByNativeId\\.get\\(ch\\.id\\) \\?\\? m4Id/);
   assert.match(bridge,/action:"routingSourceSwitch"/);
   assert.match(bridge,/row\?\.left===p\.choice\.left/);
   assert.match(bridge,/expectedEpoch:p\.epoch,expectedRevision:Number\(next\.revision\)/);
