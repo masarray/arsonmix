@@ -295,7 +295,7 @@ test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified 
 test("P0 native-only WIRE cables reflect actual M4 MAIN readback, not demo ghosts",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const bundle=read("scripts/build_approved_native_gui.py");
- assert.match(bridge,/if\(!next\?\.admitted && m4Verified\(\)\)/);
+ assert.match(bridge,/if\(session\.authority==="M4" && m4Verified\(\)\)/);
  assert.match(bridge,/scope\?\.syncVerifiedM4Wires\?\.\(legacy\(\)\?\.channels,m4TrackIds\)/);
  assert.match(bundle,/syncVerifiedM4Wires\(rows,ids\)/);
  assert.match(bundle,/typeof r\.main!=='boolean'/);
@@ -327,7 +327,7 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(builder,/public = destination \/ "preview"/);
  assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
  assert.match(bridge,/field==="input"/);
- assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?response timed out/);
+ assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(bridge,/row\?\.main===true/);
  assert.match(bridge,/pendingDeviceMute=\{requestId,epoch:String\(hardware\.device\.epoch\)\}/);
  assert.match(bridge,/ack\?\.requestId!==pendingDeviceMute\.requestId/);
@@ -583,6 +583,13 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.equal(sent[1].name,"arMixConsoleSubscribe");
  assert.equal(window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,false);
  const accepted=acceptedFixture();
+ // The native callback, not this browser fixture, selects ChannelId PCM.
+ accepted.mixerSession={
+   authority:"CHANNEL_ID",deviceEpoch:accepted.device.epoch,
+   routeRevision:accepted.graph.revision,
+   rosterRevision:accepted.graph.rosterRevision,
+   channels:accepted.graph.channels,main:{db:0,mute:false}
+ };
  listeners.get("arMixConsoleSnapshot")(accepted);
  assert.equal(window.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
  assert.equal(scope.tracks.length,1);
