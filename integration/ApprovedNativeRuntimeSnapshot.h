@@ -114,6 +114,54 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         }
     }
     firstSound->setProperty("channelSources",juce::var(sources));
+    // Native ten-strip faders/pan/mute/solo already drive the SINGLE M4
+    // callback through LiveDryRoutingLab::setChannelParameter(). Expose the
+    // actual acknowledged CONTROL-thread state, never public Pages defaults.
+    juce::var verifiedControls(juce::Array<juce::var>{});
+    if(physicalReady) {
+        const auto controls=route.getProperty("channelControls",{});
+        const auto* list=controls.getArray();
+        if(list && list->size()==10) {
+            bool valid=true;
+            for(const auto& entry:*list) {
+                double db=0.,pan=0.;
+                if(!entry.isObject() ||
+                   !nativeV8Number(entry.getProperty("db",{}),db) ||
+                   !nativeV8Number(entry.getProperty("pan",{}),pan) ||
+                   !std::isfinite(db) || db< -60.01 || db>10.01 ||
+                   !std::isfinite(pan) || pan< -100.01 || pan>100.01 ||
+                   !entry.getProperty("mute",{}).isBool() ||
+                   !entry.getProperty("solo",{}).isBool()) {
+                    valid=false;break;
+                }
+            }
+            if(valid)verifiedControls=controls;
+        }
+    }
+    firstSound->setProperty("channelControls",verifiedControls);
+    // These peaks are REAL atomics from the installed M4 render callback,
+    // not UI-generated meters. Zero is silence, not proof of loudspeakers.
+    juce::Array<juce::var> peakL,peakR;
+    const auto telemetry=snapshot.getProperty("telemetry",{});
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       boolIs(telemetry,"captureObserved",true)) {
+        const auto left=route.getProperty("channelPeaksL",{}),
+                   right=route.getProperty("channelPeaksR",{});
+        const auto* l=left.getArray();const auto* r=right.getArray();
+        if(l&&r&&l->size()==10&&r->size()==10) {
+            bool valid=true;
+            for(int i=0;i<10;++i) {
+                double p=0.,q=0.;
+                if(!nativeV8Number(l->getReference(i),p) ||
+                   !nativeV8Number(r->getReference(i),q) ||
+                   !std::isfinite(p)||!std::isfinite(q)||
+                   p<0.||q<0.||p>16.||q>16.) {valid=false;break;}
+            }
+            if(valid) {peakL=*l;peakR=*r;}
+        }
+    }
+    firstSound->setProperty("channelPeaksL",juce::var(peakL));
+    firstSound->setProperty("channelPeaksR",juce::var(peakR));
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;
