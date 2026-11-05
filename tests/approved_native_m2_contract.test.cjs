@@ -114,6 +114,25 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
   assert.match(bridge,/protocol\.diagnoseFirstSound/);
 });
+test("P0 DAW native output uses shipped ONE WebView2 source menu on every installed channel",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ assert.match(bridge,/scope\.tracks\.filter\(t=>t\.kind==="audio"\)\.slice\(0,10\)/);
+ assert.match(bridge,/select\.route-select\[data-field="input"\]/);
+ assert.match(bridge,/select\.dataset\.armixPhysicalInput=String\(channel\)/);
+ assert.match(bridge,/select\.replaceChildren/);
+ assert.match(bridge,/action:"routingSourceSwitch",requestId:p\.id,channel:p\.channel/);
+ assert.match(bridge,/backend\.addEventListener\("arMixSourceSwitchAck"/);
+ assert.match(bridge,/completeNativeSourceFromReadback\(next\)/);
+ assert.match(bridge,/action:"monitor",value:true/);
+ assert.match(bridge,/action:"audioDeviceInventory"/);
+ assert.match(bridge,/action:"audioDeviceApply"/);
+ assert.match(producer,/firstSound->setProperty\("channels",juce::var\(channels\)\)/);
+ assert.match(producer,/boolIs\(route,"hasAcceptedRoute",true\)\?"acceptedRoute":"preparedM4Route"/);
+ assert.doesNotMatch(bridge,/window\.__arMixOpenAudioIO/);
+ // No EXE startup dependency on a second non-bundled mixer renderer:
+ assert.match(read("scripts/build_approved_native_gui.py"),/NATIVE_ADAPTER = ROOT \/ "web" \/ "approved-native-bridge\.js"/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
@@ -433,7 +452,10 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/ADVANCED · DRIVER \/ FIRST SOUND DIAGNOSTICS/);
- assert.match(js,/window\.__arMixOpenAudioIO\("device"\)/);
+ assert.match(js,/setup\.addEventListener\("click",openNativeAudioSettings\)/);
+ assert.match(js,/function openNativeAudioSettings\(\)/);
+ assert.match(js,/id="arNativeAudioIO"|setupButton\.id="arNativeAudioIO"/);
+ assert.match(js,/renderVerifiedStripInputs\(next\)/);
  assert.match(js,/advanced\.append\(caption,setup,driver,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote\)/);
  assert.match(js,/action:"audioSetup"/);
  assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
