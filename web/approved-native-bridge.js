@@ -1091,6 +1091,12 @@
   function onNativeReadback(next) {
     updateHardwarePanel(next);
     paintM4Fallback(next);
+    // When ChannelId graph is not yet admitted, the REAL 10CH M4
+    // channel.main readback is authoritative for visible CH→MAIN cables.
+    // Project only its verified PRIMARY edges, never the initial Pages demo
+    // BUS/sends or an assumed always-on MAIN wire. No PCM graph mutation.
+    if(!next?.admitted && m4Verified())
+      scope?.syncVerifiedM4Wires?.(legacy()?.channels,m4TrackIds);
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
     // revision, not stale tokens captured before the previous ACK.

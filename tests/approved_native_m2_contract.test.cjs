@@ -266,6 +266,19 @@ test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified 
  assert.match(bridge,/e\.destId===scope\?\.master\?\.id/);
  assert.match(bundle,/get wireEdges\(\)\{return wireEdges;\}/);
 });
+test("P0 native-only WIRE cables reflect actual M4 MAIN readback, not demo ghosts",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const bundle=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/if\(!next\?\.admitted && m4Verified\(\)\)/);
+ assert.match(bridge,/scope\?\.syncVerifiedM4Wires\?\.\(legacy\(\)\?\.channels,m4TrackIds\)/);
+ assert.match(bundle,/syncVerifiedM4Wires\(rows,ids\)/);
+ assert.match(bundle,/typeof r\.main!=='boolean'/);
+ assert.match(bundle,/if\(rows\[i\]\.main\)/);
+ assert.match(bundle,/nextWireId\+\+/);
+ assert.match(bundle,/verifiedM4WireDirty/);
+ assert.match(bundle,/refreshWireRoutingNodes\(\)/);
+ assert.match(bundle,/!wireGesture&&!faderGesture/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");
