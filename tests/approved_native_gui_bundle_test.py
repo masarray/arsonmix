@@ -28,6 +28,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             # no visual duplication; it must be stripped in public_from_native.
             self.assertIn("window.__ARMIX_NATIVE_SCOPE__=Object.freeze({", native)
             self.assertNotIn("__ARMIX_NATIVE_SCOPE__", approved)
+            self.assertIn("nativeMeterPainted", native)
+            self.assertNotIn("nativeMeterPainted", approved)
+            self.assertIn("nativeWireBounds", native)
+            self.assertNotIn("nativeWireBounds", approved)
+            # No new CSS override or second mixer: native HTML differs only
+            # through exactly reversible data/events/DOM-write optimizations.
             self.assertIn("make,render,findTrack,displayMeterDbfs", native)
             self.assertIn("installGraph(channels,main,edges)", native)
             self.assertIn("if(window.__JUCE__?.backend)return true;", native)

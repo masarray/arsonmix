@@ -68,6 +68,38 @@ async def main():
                 assert len([w for w in measured["raised"] if w[0]=="--lit"])==2,measured
                 assert measured["markerOpacity"]=="1",measured
                 assert measured["litValue"].endswith("%"),measured
+                # Native-only WIRE proximity never synchronously queries a
+                # socket box on each high-rate idle pointermove.
+                wire=await page.evaluate("""() => {
+                    const tray=document.querySelector('.console-body .wire-tray');
+                    const out=tray?.querySelector('.wire-node-out');
+                    if(!out)return {missing:true};
+                    const disabled=out.disabled;
+                    out.disabled=false;
+                    const original=Element.prototype.getBoundingClientRect;
+                    const bounds=original.call(out);
+                    let reads=0;
+                    Element.prototype.getBoundingClientRect=function(){
+                        if(this===out)reads++;
+                        return original.call(this);
+                    };
+                    const ev=()=>new PointerEvent('pointermove',{
+                        bubbles:true,pointerType:'mouse',buttons:0,
+                        clientX:bounds.left+bounds.width/2,
+                        clientY:bounds.top+bounds.height/2
+                    });
+                    try {
+                        for(let i=0;i<12;i++)tray.dispatchEvent(ev());
+                        const burst=reads;
+                        window.dispatchEvent(new Event('resize'));
+                        tray.dispatchEvent(ev());
+                        return {burst,afterResize:reads};
+                    } finally {
+                        Element.prototype.getBoundingClientRect=original;
+                        out.disabled=disabled;
+                    }
+                }""")
+                assert wire=={"burst":1,"afterResize":2},wire
                 assert not errors,errors
                 await page.close()
             finally:
