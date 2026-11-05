@@ -139,6 +139,24 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   // can be submitted by the native bridge. Only the native injected source.
   assert.doesNotMatch(bridge,/channelOptions\(t,'input'\)/);
 });
+test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
+ const pages=read("scripts/build_pages.py");
+ const builder=read("scripts/build_approved_native_gui.py");
+ const bridge=read("web/approved-native-bridge.js");
+ const native=read("src/Main.cpp");
+ assert.match(pages,/buttons_dest=dst\/'preview'/);
+ assert.match(builder,/public = destination \/ "preview"/);
+ assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
+ assert.match(bridge,/field==="input"/);
+ assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?response timed out/);
+ assert.match(bridge,/row\?\.main===true/);
+ assert.match(bridge,/pendingDeviceMute=\{requestId,epoch:String\(hardware\.device\.epoch\)\}/);
+ assert.match(bridge,/ack\?\.requestId!==pendingDeviceMute\.requestId/);
+ assert.match(bridge,/VIRTUAL \/ NO SPEAKERS/);
+ assert.match(bridge,/Advanced driver recovery/);
+ assert.match(native,/ack->setProperty\("requestId",[\s\S]*?args\.getProperty\("requestId",juce::var\(\)\)/);
+ assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},

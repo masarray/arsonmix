@@ -242,8 +242,11 @@
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     const label=document.getElementById("transport");
+    const playback=String(d?.playbackDevice||"unknown output");
+    const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
     const transport=!deviceOpen?"Audio device not ready":
-      (d.outputArmed?"Monitoring":"Output muted")+" · "+(d.playbackDevice||"unknown output");
+      (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
+      (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
     if(label && label.textContent!==transport)label.textContent=transport;
     const warning=document.querySelector?.(".status-bar .warning");
     const warningText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
@@ -294,7 +297,7 @@
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,pendingDeviceMute=false,deviceChoice=null,deviceResult="";
+      deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="";
   function openNativeAudioIO(){
     if(!devicePanel){
       const style=document.createElement("style");
@@ -382,14 +385,24 @@
         renderDevicePanel();
       });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
-        if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
+        if(deviceBusy||pendingDeviceMute||!deviceChoice||!deviceInventory?.active)return;
         const draft=deviceChoice,active=deviceInventory.active;
         if(!draft.backend||!draft.capture||!draft.playback)return;
         if(hardware?.device?.outputArmed){
-          pendingDeviceMute=true;
+          // Correlate one deliberate MUTE to this Apply. An unrelated ACK
+          // must never authorize a hardware switch.
+          const requestId="device-mute-"+(++deviceRequest);
+          pendingDeviceMute={requestId,epoch:String(hardware.device.epoch)};
+          devicePanel.querySelector("[data-audio-apply]").disabled=true;
           devicePanel.querySelector("[data-audio-active]").textContent=
             "Muting current output before changing driver…";
-          backend.emitEvent("arMixAction",{action:"monitor",value:false});
+          backend.emitEvent("arMixAction",{action:"monitor",value:false,requestId});
+          window.setTimeout(()=>{
+            if(pendingDeviceMute?.requestId!==requestId)return;
+            pendingDeviceMute=null;
+            deviceResult="Driver change cancelled: no verified MUTE acknowledgement.";
+            renderDevicePanel();
+          },8000);
         }else sendDeviceApply();
       };
       document.body.appendChild(devicePanel);
@@ -473,7 +486,8 @@
         " → "+active.playbackDevice+" · "+active.rate+" Hz / "+active.buffer+" samples":
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
-      !deviceChoice.backend||!deviceChoice.capture||!deviceChoice.playback;
+      !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
+      !deviceChoice.playback;
   }
   function sendDeviceApply(){
     if(!deviceChoice||!deviceInventory?.active)return;
@@ -521,8 +535,8 @@
       if(tag==="button")el.type="button";
       return el;
     };
-    const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
-    const setup=item("button","tool","Audio Setup");
+    const caption=item("span","more-tools-caption","AUDIO / SAFETY");
+    const setup=item("button","tool","Audio I/O");
     setup.addEventListener("click",()=>{
       // Reuse the EXISTING custom driver/endpoint pane. The stock JUCE
       // selector is reserved for explicitly requested advanced recovery.
@@ -569,11 +583,18 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    // Legacy developer-first staging is no longer a user-facing workflow.
-    // IN is on every mixer strip; emergency MUTE stays accessible here.
-    caption.textContent="AUDIO / SAFETY";
+    // Everyday I/O remains in the one approved /preview/ mixer. Keep the
+    // raw JUCE selector as an explicitly advanced recovery tool only.
     inputSelect.hidden=true;routeBtn.hidden=true;armBtn.hidden=true;
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
+    const advanced=document.createElement("details");
+    advanced.className="arNativeAdvancedRecovery";
+    const summary=item("summary","more-tools-caption","Advanced driver recovery");
+    const driver=item("button","tool","Open JUCE driver recovery");
+    driver.addEventListener("click",()=>{
+      backend.emitEvent("arMixAction",{action:"audioSetup"});
+    });
+    advanced.append(summary,driver);
+    menu.append(caption,setup,muteBtn,hardwareNote,advanced);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");
@@ -661,7 +682,8 @@
           // Native publisher + engine own the accepted graph; refresh the
           // UI only from a subsequent authoritative snapshot.
           controller.subscribe();
-          if(p.autoListen && hardware?.device?.epoch===String(p.epoch)) {
+          if(p.autoListen && row?.main===true &&
+             hardware?.device?.epoch===String(p.epoch)) {
             // Selecting the first physical INPUT is user intent to monitor,
             // no second ARM button. The C++ liveOutputArmFault gate still
             // refuses invalid outputs and never opens an unrelated device.
@@ -685,11 +707,15 @@
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(pendingDeviceMute){
-        pendingDeviceMute=false;
-        if(ack?.ok===true && ack?.armed===false)sendDeviceApply();
+        // Reject any stale/unrelated ACK and any device epoch change.
+        if(ack?.requestId!==pendingDeviceMute.requestId)return;
+        const epochMatches=String(ack?.deviceEpoch)===pendingDeviceMute.epoch;
+        pendingDeviceMute=null;
+        if(ack?.ok===true && ack?.armed===false && epochMatches)
+          sendDeviceApply();
         else if(devicePanel){
-          deviceResult="Device change rejected: existing output could not be muted.";
-          devicePanel.querySelector("[data-audio-active]").textContent=deviceResult;
+          deviceResult="Device change rejected: MUTE or audio epoch not verified.";
+          renderDevicePanel();
         }
         return;
       }
@@ -738,6 +764,14 @@
         backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
           requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
           deviceEpoch:ep,revision:rev});
+        // An absent ACK cannot freeze further source changes indefinitely.
+        // Timeout belongs to WebView control logic, not the realtime callback.
+        window.setTimeout(()=>{
+          if(nativeUiSourcePending?.requestId!==requestId)return;
+          nativeUiSourcePending=null;
+          status("CH "+(channel+1)+" INPUT · response timed out; unchanged");
+          controller.subscribe();
+        },8000);
         status("CH "+(channel+1)+" INPUT · verifying physical routing");
         return true;
       }
@@ -845,7 +879,7 @@
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;
   const descriptor = Object.freeze({
-    source:"site/preview-v2 + site/preview-buttons",
+    source:"/preview/ approved compiled Pages GUI",
     pagesRoute:"/preview/",
     nativeTransport:connected,
     get acceptedGraphConnected(){return flags.acceptedGraphConnected;},

@@ -2488,6 +2488,10 @@ private:
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("ok",fault.isEmpty());
                 ack->setProperty("armed",engine_.isMonitorEnabled());
+                // Optional request identity for safe, ordered device changes.
+                // No new audio-thread state and backward-compatible with MUTE.
+                ack->setProperty("requestId",
+                    args.getProperty("requestId",juce::var()));
                 ack->setProperty("error",fault);
                 ack->setProperty("deviceEpoch",
                     static_cast<double>(engine_.dryRoutingLabEpoch()));
