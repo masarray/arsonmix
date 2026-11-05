@@ -98,18 +98,24 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
                 const auto left=item.getProperty("left",juce::var());
                 const auto right=item.getProperty("right",juce::var());
                 const auto main=item.getProperty("main",{});
-                if((mode!="NONE" && mode!="MONO" && mode!="STEREO") ||
+                // BUS is a real accepted, internally-fed M4 lane. Discarding
+                // all 10 readbacks because ONE lane is BUS would hide live
+                // physical microphone inputs on otherwise verified channels.
+                // Preserve BUS identity without claiming a hardware pin.
+                if((mode!="NONE" && mode!="MONO" &&
+                    mode!="STEREO" && mode!="BUS") ||
                    !(left.isInt()||left.isInt64()) ||
                    !(right.isInt()||right.isInt64()) || !main.isBool()) {
                     valid=false;break;
                 }
                 const int l=static_cast<int>(left),r=static_cast<int>(right);
-                if((mode=="NONE"&&(l!=-1||r!=-1)) ||
+                if(((mode=="NONE"||mode=="BUS")&&(l!=-1||r!=-1)) ||
                    (mode=="MONO"&&(r!=-1||l<0)) ||
                    (mode=="STEREO"&&(l<0||r<0||l==r))) {
                     valid=false;break;
                 }
-                if(mode!="NONE"&&(!inputs.getArray()->contains(l)||
+                if((mode=="MONO"||mode=="STEREO")&&
+                   (!inputs.getArray()->contains(l)||
                    (mode=="STEREO"&&!inputs.getArray()->contains(r)))) {
                     valid=false;break;
                 }

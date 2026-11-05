@@ -390,6 +390,27 @@ static void firstSoundRouteAdmissionRegression() {
     assert(physicalRows.getArray()->size()==10);
     assert(physicalRows.getArray()->getReference(4).getProperty("mode",{}).toString()=="MONO");
     assert(static_cast<int>(physicalRows.getArray()->getReference(4).getProperty("left",-1))==0);
+    // One internal BUS must NOT invalidate the ten-lane native projection
+    // or erase physical CH05 input/controls, which are still accepted PCM.
+    auto withBus=juce::JSON::parse(juce::JSON::toString(live,false));
+    withBus.getProperty("dryRoutingLab",{})
+      .getProperty("acceptedRoute",{}).getProperty("channels",{})
+      .getArray()->getReference(2).getDynamicObject()->setProperty("mode","BUS");
+    assert(publishVerifiedFirstSoundState(snapshot,withBus));
+    auto busReadback=snapshot.getProperty("legacyM4",{}).getProperty("channels",{});
+    assert(busReadback.isArray()&&busReadback.getArray()->size()==10);
+    assert(busReadback[2].getProperty("mode","").toString()=="BUS");
+    assert(static_cast<int>(busReadback[2].getProperty("left",0))==-1);
+    assert(busReadback[4].getProperty("mode","").toString()=="MONO");
+    assert(static_cast<int>(busReadback[4].getProperty("left",-1))==0);
+    auto invalidBus=juce::JSON::parse(juce::JSON::toString(withBus,false));
+    invalidBus.getProperty("dryRoutingLab",{})
+      .getProperty("acceptedRoute",{}).getProperty("channels",{})
+      .getArray()->getReference(2).getDynamicObject()->setProperty("left",7);
+    assert(publishVerifiedFirstSoundState(snapshot,invalidBus));
+    assert(snapshot.getProperty("legacyM4",{})
+        .getProperty("channels",{}).getArray()->isEmpty());
+    assert(publishVerifiedFirstSoundState(snapshot,live));
     // Disabled hardware input is never presented as accepted physical PCM.
     auto badPins=juce::JSON::parse(juce::JSON::toString(live,false));
     badPins.getProperty("dryRoutingLab",{}).getProperty("acceptedRoute",{})

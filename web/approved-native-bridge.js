@@ -194,6 +194,8 @@
   const hardwarePins=()=>Array.isArray(hardware?.device?.inputEndpoints)?
     hardware.device.inputEndpoints.filter(p=>p.active===true &&
       Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
+  // BUS is verified engine state, not an available hardware input choice.
+  const INTERNAL_BUS="Internal BUS (read-only)";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   const inputChoicesFor=()=>{
@@ -209,6 +211,7 @@
   };
   const inputLabelFor=row=>{
     if(!row||row.mode==="NONE")return "None";
+    if(row.mode==="BUS")return INTERNAL_BUS;
     const entries=inputChoicesFor();
     const exact=entries.find(x=>x.mode===row.mode &&
       x.left===row.left && x.right===row.right);
@@ -895,7 +898,11 @@
     enabled:connected,
     inputChoices(t) {
       if(t?.kind!=="audio")return ["None"];
-      return inputChoicesFor().map(x=>x.label);
+      const choices=inputChoicesFor().map(x=>x.label);
+      // The native BUS lane is selectable only for display: never invent a
+      // hardware pin or promote the internal BUS to a writable physical IN.
+      if(t.input===INTERNAL_BUS)choices.push(INTERNAL_BUS);
+      return choices;
     },
     outputChoices(t) {
       if(t?.kind==="master")
