@@ -178,6 +178,18 @@
   function syncDawNativeInputs(){
     const options=portOptions();
     const sources=hardware?.raw?.legacyM4?.channelSources;
+    // ACK is not final presentation authority. Keep the source disabled
+    // until the following CURRENT-EPOCH snapshot proves the accepted route.
+    if(sourcePending?.acked && Array.isArray(sources) &&
+       sources.length===10 &&
+       String(hardware?.device?.epoch)===String(sourcePending.epoch) &&
+       routeValue(sources[sourcePending.channel])===
+         routeValue(sourcePending)){
+      sourcePending=null;
+    }
+    if(sourcePending &&
+       String(hardware?.device?.epoch)!==String(sourcePending.epoch))
+      sourcePending=null; // hotplug/driver change cancels stale source UI
     const signature=JSON.stringify(options);
     for(let i=0;i<physicalUiIds.length;i++){
       const strip=document.querySelector('.strip[data-id="'+physicalUiIds[i]+'"]');
@@ -530,12 +542,13 @@
     backend.addEventListener("arMixSourceSwitchAck",ack=>{
       const p=sourcePending;
       if(!p||ack?.requestId!==p.id||ack?.channel!==p.channel)return;
-      sourcePending=null;
       const route=ack?.state?.acceptedRoute?.channels?.[p.channel];
       const valid=ack.ok===true&&Number(ack?.state?.epoch)===p.epoch&&
         route?.mode===p.mode&&
         (p.mode==="NONE" || (route?.left===p.left&&route?.right===p.right));
-      status(valid?"CH "+(p.channel+1)+" input connected · monitor on MAIN to listen":
+      if(valid)sourcePending.acked=true;
+      else sourcePending=null;
+      status(valid?"CH "+(p.channel+1)+" source ACK accepted · verifying next readback":
         "CH "+(p.channel+1)+" input rejected · "+String(ack?.error||"readback mismatch"));
       controller?.subscribe();
       syncDawNativeInputs();
