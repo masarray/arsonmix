@@ -21,7 +21,7 @@ inline bool evidenceInteger(const juce::var& v, double& n) {
 inline bool evidencePeak(const juce::var& v, double& peak) {
     if(!(v.isInt()||v.isInt64()||v.isDouble()))return false;
     peak=static_cast<double>(v);
-    return std::isfinite(peak) && peak>=0.0 && peak<=1.0;
+    return std::isfinite(peak) && peak>=0.0 && peak<=16.0;
 }
 inline juce::var projectFirstSoundSignalEvidence(
     const juce::var& live, bool verifiedDirectOpen,
