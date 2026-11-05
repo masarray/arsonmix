@@ -308,6 +308,16 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
             physicalMasterFound=true;
         }
     assert(physicalMasterFound);
+    publishAuthoritativeMixerSession(snap);
+    const auto session=snap.getProperty("mixerSession",{});
+    assert(session.getProperty("authority","").toString()=="CHANNEL_ID");
+    assert(session.getProperty("deviceEpoch","").toString()=="91");
+    assert(session.getProperty("routeRevision","").toString()=="25");
+    assert(session.getProperty("channels",{}).getArray()->size()==2);
+    assert(session.getProperty("channels",{})[0].getProperty("id","").toString()
+           =="9007199254740993");
+    assert(std::abs(static_cast<double>(session.getProperty("main",{})
+        .getProperty("db",0.))-(-13.5))<0.00001);
     // Real restart: lab routing epoch counts STOP+START, unlike M2
     // deviceStartCount. This G0-to-native authority switch must advance.
     auto disconnected=canonicalSnapshot();
@@ -327,6 +337,9 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     assert(disconnected.getProperty("device",{})
                .getProperty("epoch","").toString()=="93");
     assert(!projectInstalledNativeChannelIdGraph(disconnected,dead));
+    publishAuthoritativeMixerSession(disconnected);
+    assert(disconnected.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
     const auto ghost=disconnected.getProperty("graph",{});
     assert(!static_cast<bool>(ghost.getProperty("capabilities",{})
                             .getProperty("callbackOwnsChannelIds",false)));
@@ -561,6 +574,10 @@ int main() {
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
     firstSoundMeasuredSignalEvidenceRegression();
+    auto unadmitted=canonicalSnapshot();
+    publishAuthoritativeMixerSession(unadmitted);
+    assert(unadmitted.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()

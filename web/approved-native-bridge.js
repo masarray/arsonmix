@@ -226,6 +226,14 @@
     return Number.isSafeInteger(number)&&number>0?number:null;
   };
   const legacy=()=>hardware?.raw?.legacyM4;
+  // One native SessionSnapshot, not an independently reconstructed M4 model.
+  const mixerSession=()=>hardware?.raw?.mixerSession;
+  const m4ControlIsOwner=()=>mixerSession()?.authority==="M4";
+  const nativeMasterReady=()=>mixerSession()?.authority==="CHANNEL_ID" &&
+    safeNativeCounter(hardware?.device?.epoch)!==null &&
+    safeNativeCounter(legacy()?.routingRevision)!==null &&
+    Number.isFinite(mixerSession()?.main?.db) &&
+    typeof mixerSession()?.main?.mute==="boolean";
   // The shipped /preview/ IN dropdown is the sole normal hardware source
   // selector. Build options exclusively from JUCE-reported active pins, never
   // the public browser demo's hardcoded "Input 1 / CABLE / Realtek" strings.
@@ -352,7 +360,6 @@
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
-  const rackSavedBypass=new Map(); // lane -> instanceId / original bypass
   // The rack header restores exact prior per-insert state, including
   // deliberately bypassed plugins; it never blindly turns ALL FX on.
   function verifiedFxFor(t,slot){
@@ -438,8 +445,7 @@
       const rows=m.fxInstances[lane];
       if(!t||!Array.isArray(rows))continue;
       let change=false;
-      const headerOff=rackSavedBypass.has(lane);
-      if(t.fxOn===headerOff){t.fxOn=!headerOff;change=true;}
+      if(t.fxOn!==true){t.fxOn=true;change=true;}
       for(let slot=0;slot<8;slot++){
         const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
         const name=live?(entry?.name||"VST3 Loaded"):"None";
@@ -457,7 +463,9 @@
     }
   }
   function sendM4Control(parameter,t,value) {
-    if(!m4Verified() || (typeof value!=="boolean"&&!Number.isFinite(value)))
+    if((t?.kind!=="master"&&!m4ControlIsOwner()) ||
+       !(m4Verified()||(t?.kind==="master"&&nativeMasterReady())) ||
+       (typeof value!=="boolean"&&!Number.isFinite(value)))
       return false;
     const channel=t?.kind==="master"?-1:m4Index(t);
     if(channel<0 && t?.kind!=="master")return false;
@@ -465,19 +473,50 @@
       rev=safeNativeCounter(legacy().routingRevision);
     if(ep===null||rev===null)return false;
     const requestId="m4-"+(++m4RequestSerial);
+    const key=m4ControlKey(parameter,channel);
+    pendingM4Controls.set(key,{requestId,channel,parameter,value,
+      epoch:String(ep),revision:String(rev),acked:false});
     backend.emitEvent("arMixAction",{action:"routingM4Control",
       requestId,channel,parameter,controlValue:value,deviceEpoch:ep,
       revision:rev});
     window.setTimeout(()=>{
-      if(requestId!==lastM4Request)return;
-      lastM4Request="";
-      status("M4 control response timed out; verifying actual native readback");
+      if(pendingM4Controls.get(key)?.requestId!==requestId)return;
+      pendingM4Controls.delete(key);
+      status("M4 control ACK/readback timed out · restoring native state");
       controller?.subscribe();
     },8000);
-    lastM4Request=requestId;
     return true;
   }
-  let lastM4Request="";
+  // Correlate each scalar edit, including simultaneous different-channel
+  // gestures. An ACK is only permission to request an INDEPENDENT readback.
+  const pendingM4Controls=new Map();
+  const m4ControlKey=(parameter,channel)=>parameter+":"+channel;
+  function reconcileM4ControlReadback(next) {
+    let awaiting=false;
+    const session=next?.raw?.mixerSession;
+    for(const [key,p] of pendingM4Controls) {
+      const revision=p.channel===-1?
+        next?.raw?.legacyM4?.routingRevision:session?.routeRevision;
+      if(next.device.epoch!==p.epoch || revision!==p.revision ||
+         (p.channel!==-1 && session?.authority!=="M4")) {
+        pendingM4Controls.delete(key);
+        status("STALE M4 control · device/route changed; restoring readback");
+        continue;
+      }
+      const row=p.channel===-1?null:session?.channels?.[p.channel];
+      const value=p.channel===-1?
+        (p.parameter==="masterGain"?session?.main?.db:session?.main?.mute):
+        p.parameter==="faderDb"?row?.controls?.faderDb:
+        p.parameter==="pan"?row?.controls?.pan*100:
+        row?.controls?.[p.parameter];
+      const matches=typeof p.value==="boolean"?value===p.value:
+        Number.isFinite(value)&&Math.abs(value-p.value)<=
+          (p.parameter==="pan"?.8:.11);
+      if(p.acked && matches)pendingM4Controls.delete(key);
+      else awaiting=true;
+    }
+    return awaiting;
+  }
   function paintM4Fallback(next) {
     if(!m4Verified()||!Array.isArray(scope?.tracks))return;
     const m=next.raw.legacyM4,ctl=m.channelControls;
@@ -1090,20 +1129,27 @@
   }
   function onNativeReadback(next) {
     updateHardwarePanel(next);
-    paintM4Fallback(next);
-    // When ChannelId graph is not yet admitted, the REAL 10CH M4
-    // channel.main readback is authoritative for visible CH→MAIN cables.
-    // Project only its verified PRIMARY edges, never the initial Pages demo
-    // BUS/sends or an assumed always-on MAIN wire. No PCM graph mutation.
-    if(!next?.admitted && m4Verified())
+    // The installed native SessionSnapshot selects exactly one UI authority.
+    const session=next?.raw?.mixerSession;
+    if(!session || session.deviceEpoch!==next.device.epoch) {
+      flags.acceptedGraphConnected=false;
+      status("NATIVE SESSION UNAVAILABLE · controls unchanged");
+      return;
+    }
+    // Never paint unacknowledged or still-unproven M4 scalar edits.
+    if(reconcileM4ControlReadback(next))return;
+    if(session.authority==="M4" && m4Verified()) {
+      paintM4Fallback(next);
       scope?.syncVerifiedM4Wires?.(legacy()?.channels,m4TrackIds);
+    }
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
     // revision, not stale tokens captured before the previous ACK.
     if(!nativeUiSourcePending && pendingSourceQueue.size)
       window.queueMicrotask(()=>dispatchQueuedSource());
     const caps=next?.graph?.capabilities;
-    const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
+    const nativeAdmitted=session.authority==="CHANNEL_ID" &&
+      next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
@@ -1214,10 +1260,18 @@
       updateHardwarePanel(hardware);
     });
     backend.addEventListener("arMixM4ControlAck",ack=>{
-      if(ack?.requestId===lastM4Request)lastM4Request="";
-      if(ack?.ok!==true)
-        status("NATIVE M4 REJECTED · "+(ack?.error||"stale graph"));
-      controller.subscribe(); // accepted producer snapshot is authoritative
+      const item=[...pendingM4Controls].find(([,p])=>p.requestId===ack?.requestId);
+      if(!item)return; // late, unrelated and superseded ACKs cannot commit
+      const [key,p]=item;
+      const accepted=ack.ok===true &&
+        String(ack.deviceEpoch)===p.epoch &&
+        String(ack.routingRevision)===p.revision &&
+        ack.channel===p.channel && ack.parameter===p.parameter;
+      if(!accepted) {
+        pendingM4Controls.delete(key);
+        status("NATIVE M4 REJECTED · "+(ack?.error||"stale control token"));
+      } else p.acked=true;
+      controller.subscribe(); // request later independent producer readback
     });
     backend.addEventListener("arMixChannelPatchAck",ack=>{
       if(!pendingOutputPatch||ack?.requestId!==pendingOutputPatch.requestId)return;
@@ -1403,8 +1457,9 @@
       // ONE realtime PCM control for original ten channels and MAIN,
       // regardless of whether the admitted ChannelId callback or M4 renders.
       // <=33 commands/s/control while dragging; always flush on release.
-      if((field==="level"||field==="pan") && m4Verified() &&
-         (m4Index(t)>=0||t.kind==="master")){
+      if((field==="level"||field==="pan") &&
+         ((t.kind==="master"&&(m4Verified()||nativeMasterReady())) ||
+          (m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0))){
         const numeric=Number(el.value);
         if(!Number.isFinite(numeric))return true;
         const normalized=field==="pan"?
@@ -1475,56 +1530,17 @@
       }
       if(action==="slotPower"){
         const lane=m4Index(t);
-        if(rackSavedBypass.has(lane)){
-          nativeToast("Enable FX rack header before changing individual inserts");
-          return true;
-        }
         const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
         if(!instance||!requestNativeFxPower(t,slot,!instance.live.bypassed))
           nativeToast("FX bypass unavailable · select an accepted VST3 slot");
         return true;
       }
       if(action==="fxOn"){
-        const lane=m4Index(t),rows=legacy()?.fxInstances?.[lane]||[];
-        if(lane<0||!m4Verified()||!rows.length){
-          nativeToast("FX rack is empty · choose a VST3 insert first");return true;
-        }
-        if([...pendingSlotPowers.keys()].some(key=>key.startsWith(lane+":"))){
-          status("FX rack power · waiting for existing native bypass ACK");
-          return true;
-        }
-        const saved=rackSavedBypass.get(lane);
-        if(!saved){
-          const original=new Map(rows.filter(x=>x?.instanceId).map(x=>
-            [x.instanceId,x.bypassed===true]));
-          rackSavedBypass.set(lane,original);
-          let applied=0;
-          for(let slot=0;slot<rows.length;slot++)
-            if(rows[slot]&&!rows[slot].bypassed &&
-               requestNativeFxPower(t,slot,true))applied++;
-          if(!applied && rows.some(x=>x&&!x.bypassed)){
-            rackSavedBypass.delete(lane);
-            nativeToast("Rack bypass failed · original FX power preserved");
-          }else status("CH "+(lane+1)+" FX rack OFF requested · "+
-            "individual ON/OFF states saved");
-        }else{
-          const current=new Set(rows.filter(x=>x?.instanceId).map(x=>x.instanceId));
-          if(saved.size!==current.size || [...saved.keys()].some(id=>!current.has(id))){
-            nativeToast("FX rack changed · cannot restore stale insert identity");
-            return true;
-          }
-          let applied=0;
-          for(let slot=0;slot<rows.length;slot++){
-            const row=rows[slot],restore=saved.get(row.instanceId);
-            if(row.bypassed!==restore && requestNativeFxPower(t,slot,restore))applied++;
-          }
-          rackSavedBypass.delete(lane);
-          status("CH "+(lane+1)+" FX rack ON requested · "+
-            "restoring prior individual bypasses ("+applied+" changes)");
-        }
-        // No browser-side VST DSP: the following accepted publisher
-        // snapshot owns all visible insert ON/OFF indicators.
-        controller?.subscribe();
+        // #421 supplies the native atomic rack bypass. Until admitted here,
+        // preserve all independent VST3 slot states: never fan out partial
+        // per-slot bypass commands from browser JavaScript.
+        nativeToast("FX rack master bypass requires admitted native gate");
+        status("FX HEADER NOT ADMITTED · individual VST3 states preserved");
         return true;
       }
       if(action==="format"&&t?.kind==="audio"){
@@ -1538,12 +1554,13 @@
         return true;
       }
       if (action==="mute"||action==="solo") {
-        if(m4Verified() && t.kind==="master" && action==="mute"){
+        if((m4Verified()||nativeMasterReady()) &&
+           t.kind==="master" && action==="mute"){
           if(!sendM4Control("masterMute",t,!t.mute))
             status("Native MAIN mute rejected");
           return true;
         }
-        if(m4Verified()&&m4Index(t)>=0){
+        if(m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0){
           if(!sendM4Control(action,t,!t[action]))
             status("Native M4 mute/solo rejected");
           return true;
@@ -1651,9 +1668,6 @@
       const ep=safeNativeCounter(hardware?.device?.epoch);
       const rev=safeNativeCounter(legacy()?.routingRevision);
       const existing=legacy()?.fxInstances?.[channel]||[];
-      if(rackSavedBypass.has(channel)){
-        nativeToast("Enable the FX rack before inserting another VST3");return true;
-      }
       if(!plugin||!m4Verified()||channel<0||
          !Number.isInteger(slot)||slot<0||slot>=8 ||
          ep===null||rev===null||existing[slot] ||
@@ -1677,11 +1691,13 @@
     consumeDoubleClick(event,t) {
       if (!connected)return false;
       if (event.target.classList.contains("fader")){
-        if(m4Verified())sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
+        if((m4ControlIsOwner()&&m4Verified()) ||
+           (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
+          sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.classList.contains("center-pan")){
-        if(m4Verified())sendM4Control("pan",t,0);
+        if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
         else intent("SET_PAN",t,{value:0});
       }
       else status("NATIVE: identity editor unavailable until native ACK contract");

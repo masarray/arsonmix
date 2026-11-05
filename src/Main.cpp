@@ -852,6 +852,8 @@ private:
         (void) armix::console::publishVerifiedFirstSoundState (accepted, live);
         (void) armix::console::projectInstalledNativeChannelIdGraph (
             accepted, live);
+        // Sole control-thread SessionSnapshot from the installed PCM publisher.
+        armix::console::publishAuthoritativeMixerSession(accepted);
         return accepted;
     }
 
@@ -1637,7 +1639,10 @@ private:
                 requestId.length()<=48 &&
                 !nativeShowBusy_ && !studioBackupBusy_ &&
                 static_cast<bool>(route.getProperty("hasAcceptedRoute",false)) &&
-                !static_cast<bool>(route.getProperty("nativeBusStructural",false)) &&
+                // Native ChannelId may own CH1..10 while the physical host
+                // still owns post-mixer MAIN gain/mute. Admit only MAIN in that case.
+                (channel==-1 ||
+                 !static_cast<bool>(route.getProperty("nativeBusStructural",false))) &&
                 !static_cast<bool>(route.getProperty("topologyFault",true)) &&
                 engine_.directRouteAuthorized() && !engine_.independentClockActive();
             const bool boolean=(name=="mute"||name=="solo"||name=="masterMute");
@@ -1665,6 +1670,10 @@ private:
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("ok",applied);
+            ack->setProperty("deviceEpoch",currentEp);
+            ack->setProperty("routingRevision",currentRv);
+            ack->setProperty("channel",channel);
+            ack->setProperty("parameter",name);
             ack->setProperty("error",applied?juce::String():
                 juce::String("Stale G0 route, invalid parameter or PCM authority changed"));
             if(browser_.loaded)

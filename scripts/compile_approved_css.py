@@ -18,7 +18,10 @@ import hashlib
 from pathlib import Path
 import re
 
-LINK = re.compile(r'(<link\s+rel="stylesheet"\s+href="assets/)([^"?]+\.css)(\?[^"]*)?(")', re.I)
+# Match the WHOLE tag, including its closing >. Stage D removes 17 links;
+# matching only their closing quote left 18 literal '>' rendered above the GUI,
+# most visibly in mobile viewport. Preserve all attributes/order fail-closed.
+LINK = re.compile(r'(<link\s+rel="stylesheet"\s+href="assets/)([^"?]+\.css)(\?[^"]*)?("\s*/?>)', re.I)
 PROPERTY = re.compile(r"^\s*(--[A-Za-z0-9_-]+|[-A-Za-z_][-A-Za-z0-9_]*)\s*:", re.S)
 IMPORTANT = re.compile(r"!\s*important\s*$", re.I)
 CONTAINER = re.compile(r"^@(media|supports|container|layer|scope)(?=\s|\()", re.I)

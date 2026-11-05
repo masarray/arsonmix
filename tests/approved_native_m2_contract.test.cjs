@@ -135,6 +135,10 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(bridge,/openNativeAudioIO\(\)/);
   assert.match(bridge,/\.armix-audio-shade\[hidden\]\{display:none\}/);
   assert.match(producer,/firstSound->setProperty\("channels",juce::var\(verifiedChannels\)\)/);
+  assert.match(producer,/publishAuthoritativeMixerSession/);
+  assert.match(nativeMain,/publishAuthoritativeMixerSession\(accepted\)/);
+  assert.match(bridge,/session\.authority==="CHANNEL_ID"/);
+  assert.match(bridge,/m4ControlIsOwner\(\)/);
   assert.match(producer,/list->size\(\)==10/);
   assert.match(nativeMain,/engine_\.switchDryRoutingLabSource\(channel,/);
   assert.match(nativeMain,/engine_\.liveOutputArmFault\(\)/);
@@ -222,9 +226,9 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
- assert.match(bridge,/const rackSavedBypass=new Map\(\)/);
- assert.match(bridge,/saved\.get\(row\.instanceId\)/);
- assert.match(bridge,/rackSavedBypass\.set\(lane,original\)/);
+ assert.doesNotMatch(bridge,/rackSavedBypass/);
+ assert.match(bridge,/FX HEADER NOT ADMITTED/);
+ assert.match(bridge,/individual VST3 states preserved/);
  assert.match(bridge,/action:"routingFxEditor"/);
  assert.match(bridge,/action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);

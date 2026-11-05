@@ -6,7 +6,7 @@
   font:11px/1.32 "Segoe UI",Arial,sans-serif;
 }
 *{box-sizing:border-box}
-html,body{width:100%;height:100%;min-width:760px;min-height:540px;margin:0;overflow:hidden;background:#202123;color:var(--ink)}
+html,body{width:100%;height:100%;min-width:min(760px,100%);min-height:540px;margin:0;overflow:hidden;background:#202123;color:var(--ink)}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:1px solid #8cc5da;outline-offset:-1px}
@@ -32,3 +32,29 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .mixer-title .panel-name{font-weight:600}
 .mixer-title .panel-sub{color:#8f9295}
 .mixer-title .right{margin-left:auto;color:#808488;font-size:10px}
+
+/* Official /preview/ on phone: the desktop console remains a real, scrollable
+   mixer, not a second mobile skin. All selectors belong to this foundation
+   owner; no CSS override file, repeated > arrows or changed desktop controls.
+   More stays reachable, and its popup must not be clipped by toolbar scroll. */
+@media (max-width:759px){
+  .app .window-title{min-width:0;gap:8px;overflow:hidden}
+  .app .window-title .study{display:none}
+  .app .window-title .file-name{min-width:0;max-width:55vw;overflow:hidden;text-overflow:ellipsis}
+  .app .command-bar{
+    max-width:100%;min-width:0;
+    overflow-x:auto;overflow-y:hidden;
+    touch-action:pan-x;overscroll-behavior-x:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;
+  }
+  .app .command-bar .more-tools{
+    order:-1;margin-left:0;left:0;position:sticky;z-index:2;
+  }
+  .app .command-bar .more-tools-panel{
+    position:fixed;left:8px;right:8px;top:64px;width:auto;
+    max-height:calc(100dvh - 76px);overflow:auto;z-index:60;
+  }
+  .app .console-pane{min-width:0}
+  .app .tracks-viewport{min-width:0}
+}
