@@ -201,6 +201,122 @@
     menu.append(caption,setup,hardwareNote);
     updateHardwarePanel(hardware);
   }
+  // Same operator contract as Adobe/FL: every processing strip selects
+  // its own VERIFIED hardware input; output initially targets MAIN. No
+  // forced CH1, no draft graph, no separate Start or Arm button.
+  const inputAt=track=>{
+    const index=scope?.tracks?.indexOf(track)??-1;
+    return index>=0&&index<10?index:-1;
+  };
+  const routeRow=index=>(lastDryReadback?.acceptedRoute?.channels||
+    lastDryReadback?.preparedM4Route?.channels||[])[index];
+  const routeValue=r=>r?.mode==="MONO"?"MONO:"+r.left:
+    r?.mode==="STEREO"?"STEREO:"+r.left+":"+r.right:"None";
+  const hardwareInputs=()=>{
+    const d=hardware?.device;
+    if(!deviceReady()||!Array.isArray(d?.inputEndpoints))return [];
+    const enabled=new Set(d.enabledInputs);
+    return d.inputEndpoints.filter(p=>p?.active===true &&
+      Number.isInteger(p.port)&&enabled.has(p.port) && p.port>=0&&p.port<64);
+  };
+  let nativeSourcePending=null,nativeSourceSerial=1500000;
+  const signalSourceResult=message=>{status(message);};
+  const stopSource=error=>{
+    nativeSourcePending=null;
+    signalSourceResult("INPUT NOT CHANGED · "+error+
+      ". Review hardware I/O; previous audio route preserved.");
+  };
+  const submitSource=()=>{
+    const p=nativeSourcePending,d=lastDryReadback||{};
+    if(!p||!deviceReady()||!d.ready||d.topologyFault||
+       String(d.epoch)!==String(p.epoch)||Number(d.revision)!==p.revision){
+      stopSource("device or route became stale");return;
+    }
+    p.phase="source";
+    backend.emitEvent("arMixAction",{
+      action:"routingSourceSwitch",requestId:p.id,channel:p.channel,
+      mode:p.mode,left:p.left,right:p.right,
+      deviceEpoch:p.epoch,revision:p.revision
+    });
+    signalSourceResult("CH "+(p.channel+1)+" · connecting verified hardware source…");
+  };
+  const monitorAfterSource=()=>{
+    const p=nativeSourcePending,d=p?.accepted;
+    if(!p||!d?.ready||!d.hasAcceptedRoute||d.topologyFault||
+       String(d.epoch)!==String(p.epoch)){
+      stopSource("output cannot be monitored until route is verified");return;
+    }
+    p.phase="monitor";p.revision=Number(d.revision);
+    backend.emitEvent("arMixAction",{action:"monitor",value:true,
+      expectedEpoch:p.epoch,expectedRevision:p.revision});
+    signalSourceResult("CH "+(p.channel+1)+" · enabling MAIN monitoring…");
+  };
+  const chooseNativePhysicalInput=(track,value)=>{
+    const channel=inputAt(track),d=lastDryReadback||{};
+    if(channel<0)return false;
+    if(value==="__IO__"){openNativeAudioIO();return true;}
+    if(nativeSourcePending) {signalSourceResult("Previous input is still being verified.");return true;}
+    if(!deviceReady()||!d.ready||d.topologyFault||!d.active||
+       String(d.epoch)!==hardware.device.epoch){
+      signalSourceResult("Choose Audio I/O and a valid input/output device first.");
+      return true;
+    }
+    const mode=value==="None"?"NONE":value.startsWith("MONO:")?"MONO":
+      value.startsWith("STEREO:")?"STEREO":"INVALID";
+    if(mode==="INVALID"){signalSourceResult("Input unavailable on this hardware.");return true;}
+    const pins=hardwareInputs(),set=new Set(pins.map(p=>p.port));
+    const parts=value.split(":"),left=mode==="NONE"?-1:Number(parts[1]),
+      right=mode==="STEREO"?Number(parts[2]):-1;
+    if(mode==="MONO"&&(!set.has(left)||parts.length!==2) ||
+       mode==="STEREO"&&(!set.has(left)||!set.has(right)||left===right||parts.length!==3)){
+      signalSourceResult("This input is not enabled by the selected audio driver.");return true;
+    }
+    const before=routeRow(channel);
+    const unchanged=routeValue(before)===value;
+    if(unchanged&&hardware.device.outputArmed || unchanged&&mode==="NONE")
+      return true;
+    const epoch=Number(d.epoch),revision=Number(d.revision);
+    if(!Number.isSafeInteger(epoch)||epoch<=0||!Number.isSafeInteger(revision)||revision<1){
+      signalSourceResult("Native route revision is not ready.");return true;
+    }
+    nativeSourcePending={id:++nativeSourceSerial,channel,mode,left,right,
+      epoch,revision,phase:"source",wasMonitoring:hardware.device.outputArmed===true};
+    // Native M4 applies SAME-FORMAT source changes in 64-sample crossfade.
+    // Structural changes while monitored mute on the existing control thread
+    // before preparing the immutable graph, then resume only after real ACK.
+    if(hardware.device.outputArmed && !unchanged&&before?.mode!==mode){
+      nativeSourcePending.phase="mute";
+      backend.emitEvent("arMixAction",{action:"monitor",value:false,
+        expectedEpoch:epoch,expectedRevision:revision});
+    }else if(unchanged){
+      nativeSourcePending.accepted=d;
+      monitorAfterSource();
+    }else submitSource();
+    return true;
+  };
+  function nativeChannelOptions(track,type){
+    if(type==="input"){
+      if(inputAt(track)<0)return [["None","No input"]];
+      const pins=hardwareInputs(),list=[["None","No input"]];
+      for(const pin of pins)
+        list.push(["MONO:"+pin.port,"Mono · IN "+(pin.port+1)+" · "+(pin.label||"Input")]);
+      for(let i=0;i+1<pins.length;++i)
+        list.push(["STEREO:"+pins[i].port+":"+pins[i+1].port,
+          "Stereo · IN "+(pins[i].port+1)+" / "+(pins[i+1].port+1)]);
+      if(!pins.length)list.push(["__IO__","Configure Audio I/O…"]);
+      // Explicitly keep the selected accepted route visible even if the
+      // device was hotplugged: do NOT claim it is available on new hardware.
+      return list;
+    }
+    if(type==="output"){
+      if(track===scope?.master){
+        const name=hardware?.device?.playbackDevice||"Choose Audio I/O";
+        return [["Default Output","MAIN → "+name],["__IO__","Change hardware output…"]];
+      }
+      return [["Master","MAIN"],["SOURCE ONLY (No Main)","No MAIN · advanced"]];
+    }
+    return [["None","No send"]];
+  }
   // M4 is already the TRUE ten-channel realtime PCM owner before the
   // universal ChannelId ABI is fully admitted. Its proven native parameter
   // setter must not be hidden behind an unrelated G0 ChannelId gate.
@@ -265,7 +381,15 @@
     paint(master,Number(d.peakL),Number(d.peakR));
   };
   function onNativeReadback(next) {
+    const oldPortSignature=hardware?.device?
+      JSON.stringify([hardware.device.epoch,hardware.device.inputEndpoints,hardware.device.playbackDevice]):"";
     updateHardwarePanel(next);
+    const newPortSignature=next?.device?
+      JSON.stringify([next.device.epoch,next.device.inputEndpoints,next.device.playbackDevice]):"";
+    // Only re-render the full mixer when real hardware inventory changes,
+    // never on each 12Hz meter or transport update.
+    if(oldPortSignature!==newPortSignature && !nativeSourcePending)
+      scope?.render?.();
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
@@ -321,15 +445,66 @@
       if(ack?.ok!==true)
         status("Control rejected: hardware/route changed; original mix retained.");
     });
+    backend.addEventListener("arMixSourceSwitchAck",ack=>{
+      const p=nativeSourcePending;
+      if(!p||p.phase!=="source"||Number(ack?.requestId)!==p.id||
+         Number(ack?.channel)!==p.channel)return;
+      const next=ack?.state||{},row=next.acceptedRoute?.channels?.[p.channel];
+      if(ack.ok!==true||!next.ready||next.topologyFault||
+         String(next.epoch)!==String(p.epoch)||
+         routeValue(row)!==(p.mode==="NONE"?"None":
+           p.mode+":"+p.left+(p.mode==="STEREO"?":"+p.right:""))){
+        stopSource(String(ack?.error||"Native patch ACK/readback mismatch"));return;
+      }
+      lastDryReadback=next;
+      p.accepted=next;
+      if(scope?.tracks?.[p.channel]){
+        scope.tracks[p.channel].input=routeValue(row);
+        scope.render?.();
+      }
+      const hasInput=(next.acceptedRoute?.channels||[])
+        .some(r=>r.mode==="MONO"||r.mode==="STEREO");
+      if(!hasInput && p.mode==="NONE"){
+        nativeSourcePending=null;
+        signalSourceResult("No input selected · MAIN remains safe.");
+      }else if(p.wasMonitoring&&hardware?.device?.outputArmed){
+        nativeSourcePending=null;
+        signalSourceResult("CH "+(p.channel+1)+" · live source switched.");
+      }else monitorAfterSource();
+    });
+    backend.addEventListener("arMixAudioArmAck",ack=>{
+      const p=nativeSourcePending;
+      if(!p||!(p.phase==="mute"||p.phase==="monitor"))return;
+      const valid=ack?.ok===true&&Number(ack.deviceEpoch)===p.epoch&&
+        (p.phase==="mute"?ack.armed===false:ack.armed===true);
+      if(!valid){stopSource(String(ack?.error||"Monitor gate rejected"));return;}
+      if(hardware?.device)hardware.device.outputArmed=!!ack.armed;
+      if(p.phase==="mute")submitSource();
+      else {
+        nativeSourcePending=null;
+        signalSourceResult("CH "+(p.channel+1)+
+          " → MAIN · monitoring active. Verify audible output on the selected device.");
+      }
+    });
   }
   const nativeHooks=Object.freeze({
     enabled:connected,
+    channelOptions:nativeChannelOptions,
     consumeField(event) {
       if (!connected)return false;
       const el=event.target,field=el?.dataset?.field;
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      if (!flags.acceptedGraphConnected && field==="input") {
+        chooseNativePhysicalInput(t,el.value);
+        return true;
+      }
+      if (!flags.acceptedGraphConnected && field==="output") {
+        if(t===scope?.master || el.value==="__IO__")openNativeAudioIO();
+        else status("Internal output routing requires a verified native MAIN path.");
+        return true;
+      }
       if (!flags.acceptedGraphConnected) {
         // Drag may move only the physical fader thumb. On release, send one
         // real native M4 parameter with exact epoch/revision; the next real
