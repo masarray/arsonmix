@@ -139,6 +139,19 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   // can be submitted by the native bridge. Only the native injected source.
   assert.doesNotMatch(bridge,/channelOptions\(t,'input'\)/);
 });
+test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
+ const engine=read("src/LiveAudioEngine.h");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(engine,/knownVirtualCableFeedbackPair/);
+ assert.match(engine,/in\.contains\("cable output"\) && out\.contains\("cable input"\)/);
+ assert.match(engine,/currentSetup\.inputDeviceName/);
+ assert.match(engine,/currentSetup\.outputDeviceName/);
+ assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
+ assert.match(bridge,/const virtualCableFeedbackPair=/);
+ assert.match(bridge,/next\.nativeChannelIdPcmActive===true/);
+ assert.match(bridge,/if\(firstListen && !virtualCableFeedbackPair\(\)\)/);
+ assert.match(bridge,/VB-Cable feedback loop; select physical playback/);
+});
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
  const pages=read("scripts/build_pages.py");
  const builder=read("scripts/build_approved_native_gui.py");

@@ -231,6 +231,12 @@
     scope.render?.();
   }
 
+  const virtualCableFeedbackPair=()=>{
+    const capture=String(hardware?.device?.captureDevice||"").toLowerCase();
+    const playback=String(hardware?.device?.playbackDevice||"").toLowerCase();
+    return (capture.includes("vb-audio")||playback.includes("vb-audio")) &&
+      capture.includes("cable output") && playback.includes("cable input");
+  };
   const deviceReady=()=>!!(hardware?.device?.backend &&
     hardware.device.sampleRate>0 &&
     hardware.device.enabledInputs.length>0 &&
@@ -682,15 +688,22 @@
           // Native publisher + engine own the accepted graph; refresh the
           // UI only from a subsequent authoritative snapshot.
           controller.subscribe();
-          if(p.autoListen && row?.main===true &&
-             hardware?.device?.epoch===String(p.epoch)) {
-            // Selecting the first physical INPUT is user intent to monitor,
-            // no second ARM button. The C++ liveOutputArmFault gate still
-            // refuses invalid outputs and never opens an unrelated device.
+          const firstListen=p.autoListen && row?.main===true &&
+             next.nativeChannelIdPcmActive===true &&
+             hardware?.device?.epoch===String(p.epoch);
+          // Never arm physical audio when the GUI still lacks admitted PCM
+          // controls, or when capture and playback feed the *same* VB Cable.
+          // Native C++ enforces the feedback policy a second time.
+          if(firstListen && !virtualCableFeedbackPair()) {
             backend.emitEvent("arMixAction",{action:"monitor",value:true,
               expectedEpoch:p.epoch,expectedRevision:Number(next.revision)});
           }
-          status("CH "+(p.channel+1)+" native input accepted");
+          if(firstListen && virtualCableFeedbackPair())
+            status("MONITOR OFF · VB-Cable feedback loop; select physical playback");
+          else if(p.autoListen && !firstListen)
+            status("CH "+(p.channel+1)+" routed · PCM controls not yet admitted; MONITOR OFF");
+          else
+            status("CH "+(p.channel+1)+" native input accepted");
         } else {
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
           controller.subscribe();

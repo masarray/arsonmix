@@ -295,12 +295,31 @@ public:
 
     // FAST1: control-thread output arm preflight; physical MUTE always works.
     // No auto-arm on device reopen, no RT allocation or driver reconfiguration.
+    // Names are only an extra conservative policy for one identifiable
+    // VB-Cable *self loop*. Never guess that an arbitrary virtual endpoint
+    // equals another physical card; the native output gate remains primary.
+    static bool knownVirtualCableFeedbackPair(const juce::String& capture,
+                                              const juce::String& playback) noexcept
+    {
+        const auto in=capture.toLowerCase(),out=playback.toLowerCase();
+        return (in.contains("vb-audio") || out.contains("vb-audio")) &&
+               in.contains("cable output") && out.contains("cable input");
+    }
+
     juce::String liveOutputArmFault()
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
         if (!device || !device->isOpen() || !directFence_.permitted()
             || independent_.active())
             return "Select a verified DIRECT ASIO/Windows Audio device first.";
+        // Do not turn on a known VB-Cable -> same VB-Cable feedback loop,
+        // even if JS or an external host sends a monitor request. CONTROL
+        // thread only; no DSP callback cost, no implicit hardware redirect.
+        juce::AudioDeviceManager::AudioDeviceSetup currentSetup;
+        deviceManager_.getAudioDeviceSetup(currentSetup);
+        if (knownVirtualCableFeedbackPair(currentSetup.inputDeviceName,
+                                          currentSetup.outputDeviceName))
+            return "MONITOR OFF: VB-Cable capture/playback self-loop. Choose a physical output or separate virtual cable.";
         if (routeReconfiguring_.load(std::memory_order_acquire) || handoff_.busy()
             || !dryRoutingLab_.active() || !dryRoutingLab_.ready()
             || !dryRoutingLab_.hasExplicitRoute())
