@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../src/NativeVerifiedSourcePatch.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -123,6 +124,33 @@ int main(){
     }
     NativeDryRouteCommand v2;
     assert(NativeDryRouteCommand::decode(typed,v2,error));
+    // /preview/ IN=None disconnects real hardware without changing
+    // channel processing width or other accepted channels.
+    typed.getDynamicObject()->setProperty("deviceEpoch",juce::int64(91));
+    typed.getDynamicObject()->setProperty("revision",juce::int64(7));
+    juce::var sourceCleared, rejectedClear;
+    const auto activePins=std::span<const int>(ports.data(),ports.size());
+    assert(NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",-1,-1,activePins,91,7,sourceCleared).isEmpty());
+    const auto cleared=sourceCleared.getProperty("channels",{})
+        .getArray()->getReference(0);
+    assert(cleared.getProperty("mode",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceKind",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceFormat",{}).toString()=="NONE");
+    assert(cleared.getProperty("channelFormat",{}).toString()=="STEREO");
+    assert(static_cast<int>(cleared.getProperty("left",-2))==-1);
+    assert(static_cast<int>(cleared.getProperty("right",-2))==-1);
+    assert(typed.getProperty("channels",{}).getArray()->getReference(0)
+        .getProperty("sourceKind",{}).toString()=="PHYSICAL");
+    NativeDryRouteCommand disconnectedPlan;
+    assert(NativeDryRouteCommand::decode(sourceCleared,disconnectedPlan,error));
+    assert(disconnectedPlan.channels.stripsAndMaster.strips[0].source
+        ==SourceMode::disconnected);
+    assert(!NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",2,-1,activePins,91,7,rejectedClear).isEmpty());
+    assert(!NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",-1,-1,activePins,90,7,rejectedClear).isEmpty());
+
     assert(v2.channels.stripsAndMaster.strips[0].source==SourceMode::mono);
     assert(v2.channels.formats[0]==ChannelFormat::stereo);
     assert(v2.channels.stripsAndMaster.strips[1].source==SourceMode::disconnected);
