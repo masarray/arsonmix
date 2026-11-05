@@ -178,9 +178,13 @@
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN MONITOR ON · VERIFY SOUND"):
       "CHOOSE CHANNEL IN · THEN MONITOR";
-    if(hardwareNote)hardwareNote.textContent=!deviceOpen?
-      "Audio I/O: choose the hardware input and actual listening/output device.":
-      "Choose IN on any mixer channel. Source and monitoring are committed by native readback.";
+    if(hardwareNote) {
+      const observed=protocol.diagnoseFirstSound?.(next,null);
+      hardwareNote.textContent=!deviceOpen?
+        "Audio I/O: choose the hardware input and actual listening/output device.":
+        (observed?observed.readout+" · ":"")+
+        "Choose IN on any mixer channel. Routing and monitoring use native readback.";
+    }
   }
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
@@ -913,7 +917,10 @@
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
-    installNativeIoPanel();
+    // Contract/protocol tests deliberately use a minimal DOM without
+    // createElement. Production WebView always provides it; publishing the
+    // native transport must not depend on constructing the settings overlay.
+    if(typeof document.createElement==="function")installNativeIoPanel();
     installFirstSoundMenu();
     updateHardwarePanel(null);
     stopDemo();
