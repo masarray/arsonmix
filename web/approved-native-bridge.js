@@ -114,6 +114,13 @@
     wireByUiId.clear();for(const [ui,id] of newWireByUi)wireByUiId.set(ui,id);
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     scope.installGraph(nextTracks,nextMaster,edges);
+    // ChannelId admission replaces Pages objects; rebind the SAME ten
+    // physical strip identities from exact native INPUT roles, never guesses.
+    const inputUiIds=accepted.channels.filter(ch=>ch.role==="INPUT")
+      .map(ch=>localByNative.get(ch.id)).filter(id=>Number.isSafeInteger(id));
+    if(inputUiIds.length===10&&new Set(inputUiIds).size===10)
+      physicalTrackIds.splice(0,physicalTrackIds.length,...inputUiIds.map(String));
+    updateNativeM4Inputs();
     return true;
   }
   // Native telemetry owns the physical meter. When no measured per-channel
@@ -169,7 +176,7 @@
   }
   function verifiedM4ControlLane() {
     const d=m4Status;
-    return !flags.acceptedGraphConnected && d?.ready===true &&
+    return d?.ready===true &&
       d?.active===true && d?.topologyFault!==true &&
       validM4Integer(Number(d.epoch)) &&
       validM4Integer(Number(d.revision)) &&
@@ -207,7 +214,9 @@
   }
   function projectVerifiedM4ControlReadback() {
     const d=verifiedM4ControlLane();
-    if(!d||!scope?.findTrack||!scope?.render)return;
+    // Once ChannelId has accepted the callback, its own full controls/graph
+    // projection is authoritative. M4 remains hardware source selector only.
+    if(flags.acceptedGraphConnected||!d||!scope?.findTrack||!scope?.render)return;
     if(!bindPhysicalTrackIds())return;
     const controls=d.channelControls,changes=[];
     for(let lane=0;lane<10;++lane) {
@@ -459,6 +468,7 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    updateNativeM4Inputs();
     status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
       " · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
