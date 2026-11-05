@@ -23,9 +23,12 @@ struct NativeVerifiedSourcePatch final {
            actualRevision>static_cast<std::uint64_t>(std::numeric_limits<juce::int64>::max()) ||
            !accepted.isObject() || channel<0 || channel>=10)
             return "SOURCE: stale device epoch or invalid native channel";
-        if(mode!="MONO"&&mode!="STEREO")
-            return "SOURCE: MONO or STEREO mode required";
-        if(physicalLeft<0 || enabledPhysicalPorts.empty())
+        if(mode!="NONE"&&mode!="MONO"&&mode!="STEREO")
+            return "SOURCE: NONE, MONO or STEREO mode required";
+        const bool clearing=mode=="NONE";
+        if(clearing && (physicalLeft!=-1||physicalRight!=-1))
+            return "SOURCE: clearing input cannot supply physical pins";
+        if(!clearing && (physicalLeft<0 || enabledPhysicalPorts.empty()))
             return "SOURCE: select an enabled physical capture pin";
         if(static_cast<juce::int64>(accepted.getProperty("deviceEpoch",juce::var(-1))) !=
              static_cast<juce::int64>(actualEpoch))
@@ -35,8 +38,8 @@ struct NativeVerifiedSourcePatch final {
             if(port==physicalLeft)validLeft=true;
             if(port==physicalRight)validRight=true;
         }
-        if(!validLeft || (mode=="STEREO" &&
-            (!validRight || physicalLeft==physicalRight)))
+        if(!clearing && (!validLeft || (mode=="STEREO" &&
+            (!validRight || physicalLeft==physicalRight))))
             return "SOURCE: STEREO requires two distinct active physical pins; MONO accepts one";
         // JUCE var assignment shares the underlying DynamicObject. Deep
         // clone before touching a row, or failed prepare would silently
@@ -62,11 +65,11 @@ struct NativeVerifiedSourcePatch final {
             const auto width=row->getProperty("channelFormat").toString();
             if(width!="MONO" && width!="STEREO")
                 return "SOURCE: native processing format missing or invalid";
-            row->setProperty("sourceKind","PHYSICAL");
+            row->setProperty("sourceKind",clearing?"NONE":"PHYSICAL");
             row->setProperty("sourceFormat",mode);
         }
         row->setProperty("mode",mode);
-        row->setProperty("left",physicalLeft);
+        row->setProperty("left",clearing?-1:physicalLeft);
         row->setProperty("right",mode=="STEREO"?physicalRight:-1);
         // The existing M4 producer handles revision/epoch publication and
         // fails back to its prior accepted graph on any bad plugin/routing.

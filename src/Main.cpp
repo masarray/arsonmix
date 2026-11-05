@@ -1454,6 +1454,94 @@ private:
         // M1 RT source switch on an existing physical channel. Unlike
         // structural routingDryApply, it does not unpatch outputs, rebuild
         // VST3s, or restart the device; input PCM fades inside one graph.
+        // F0: independently acknowledged existing M4 PCM controls during
+        // G0, before ChannelId admission. Do not send GUI demo parameters
+        // or mutate a second DSP. One control-thread atomic update only.
+        if(action=="routingM4Control"){
+            const auto requestId=args.getProperty("requestId",juce::var()).toString();
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto name=args.getProperty("parameter",juce::var()).toString();
+            const auto val=args.getProperty("controlValue",juce::var());
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const auto state=engine_.status();
+            const auto route=state.getProperty("dryRoutingLab",{});
+            const auto currentEp=route.getProperty("epoch",juce::var());
+            const auto currentRv=route.getProperty("revision",juce::var());
+            const bool tokenOk=(ep.isInt()||ep.isInt64()) &&
+                (rv.isInt()||rv.isInt64()) &&
+                static_cast<juce::int64>(ep)>0 &&
+                static_cast<juce::int64>(ep)==static_cast<juce::int64>(currentEp) &&
+                static_cast<juce::int64>(rv)==static_cast<juce::int64>(currentRv);
+            const bool ready=tokenOk && requestId.startsWith("m4-") &&
+                requestId.length()<=48 &&
+                !nativeShowBusy_ && !studioBackupBusy_ &&
+                static_cast<bool>(route.getProperty("hasAcceptedRoute",false)) &&
+                !static_cast<bool>(route.getProperty("nativeChannelIdPcmActive",false)) &&
+                !static_cast<bool>(route.getProperty("topologyFault",true)) &&
+                engine_.directRouteAuthorized() && !engine_.independentClockActive();
+            const bool boolean=(name=="mute"||name=="solo"||name=="masterMute");
+            const double numeric=boolean?0.:static_cast<double>(val);
+            const bool typeOk=boolean?val.isBool():(val.isDouble()||val.isInt());
+            const bool master=(channel==-1 &&
+                (name=="masterGain"||name=="masterMute"));
+            const bool lane=(channel>=0 && channel<LiveDryRoutingLab::count &&
+                (name=="faderDb"||name=="pan"||name=="mute"||name=="solo"));
+            const bool range=boolean||((name=="pan")?
+                (numeric>=-100.&&numeric<=100.):
+                (numeric>=-60.&&numeric<=10.));
+            bool applied=ready && typeOk && (master||lane) &&
+                (boolean||std::isfinite(numeric)) && range;
+            if(applied && lane)
+                applied=engine_.setDryRoutingLabParameter(channel,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    name,val.isBool()?(bool(val)?1.f:0.f):
+                         static_cast<float>(numeric));
+            else if(applied && name=="masterGain")
+                engine_.setMasterGainDb(static_cast<float>(numeric));
+            else if(applied && name=="masterMute")
+                engine_.setMasterMuted(bool(val));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("ok",applied);
+            ack->setProperty("error",applied?juce::String():
+                juce::String("Stale G0 route, invalid parameter or PCM authority changed"));
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible("arMixM4ControlAck",
+                    juce::var(ack.release()));
+            // ACK is not PCM proof; the bridge requires a LATER snapshot.
+            return;
+        }
+        // A visible /preview/ channel OUT changes this same installed M4
+        // topology. Only actual MAIN / NONE semantics are supported here.
+        if(action=="routingChannelPatch"){
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const int channel=static_cast<int>(args.getProperty("channel",-1));
+            const auto target=args.getProperty("target",juce::var()).toString();
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            juce::String error="OUT: stale identity, unsupported destination or busy Show";
+            if(requestId>0 && channel>=0 && channel<LiveDryRoutingLab::count &&
+               (target=="MAIN"||target=="NONE") &&
+               (ep.isInt()||ep.isInt64()) &&
+               (rv.isInt()||rv.isInt64()) &&
+               !nativeShowBusy_ && !studioBackupBusy_)
+                error=engine_.repatchDryRoutingLabChannel(channel,
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    "SET_PRIMARY_OUT",target);
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channel",channel);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixChannelPatchAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
         if(action=="routingSourceSwitch"){
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));

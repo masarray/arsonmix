@@ -124,6 +124,47 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         }
     }
     firstSound->setProperty("channels",juce::var(verifiedChannels));
+    // Native M4 remains the real 10-channel callback before ChannelId
+    // admission, including a stable source patch under armed monitoring.
+    // Publish only verified PCM controls and measured per-channel peaks.
+    // Never infer controls from the Pages reference model.
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       !boolIs(route,"nativeChannelIdPcmActive",true) &&
+       verifiedChannels.size()==10) {
+        const auto controls=route.getProperty("channelControls",{});
+        const auto levelsL=route.getProperty("channelPeaksL",{});
+        const auto levelsR=route.getProperty("channelPeaksR",{});
+        const auto* ctl=controls.getArray();
+        const auto* l=levelsL.getArray();
+        const auto* r=levelsR.getArray();
+        bool valid=ctl && l && r && ctl->size()==10 &&
+                   l->size()==10 && r->size()==10;
+        for(int i=0;valid && i<10;++i) {
+            const auto row=ctl->getReference(i);
+            double db=0.,pan=0.,peakL=0.,peakR=0.;
+            valid=row.isObject() &&
+                  nativeV8Number(row.getProperty("db",{}),db) &&
+                  nativeV8Number(row.getProperty("pan",{}),pan) &&
+                  nativeV8Number(l->getReference(i),peakL) &&
+                  nativeV8Number(r->getReference(i),peakR) &&
+                  db>=-60.01 && db<=10.01 &&
+                  pan>=-100.01 && pan<=100.01 &&
+                  peakL>=0. && peakR>=0. &&
+                  row.getProperty("mute",{}).isBool() &&
+                  row.getProperty("solo",{}).isBool();
+        }
+        if(valid) {
+            firstSound->setProperty("channelControls",controls);
+            firstSound->setProperty("channelPeaksL",levelsL);
+            firstSound->setProperty("channelPeaksR",levelsR);
+            double masterDb=0.;
+            if(nativeV8Number(live.getProperty("masterDb",{}),masterDb) &&
+               masterDb>=-60.01 && masterDb<=10.01)
+                firstSound->setProperty("masterDb",masterDb);
+            const auto masterMute=live.getProperty("masterMute",{});
+            if(masterMute.isBool())firstSound->setProperty("masterMute",masterMute);
+        }
+    }
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;
