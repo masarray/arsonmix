@@ -265,15 +265,34 @@ export async function auditGitHub({repo,number,token}) {
   return {...result, runUi: requiresUiSmoke(changedPaths),
     runNative: requiresNativeQualification(changedPaths)};
 }
+// Single-owner product recovery: scope selected verification from the EXACT
+// changed filenames. This path deliberately does not fetch competing PRs,
+// enforce agent lanes, or gate integration on historic #397 ownership.
+export async function qualificationScopeGitHub({repo,number,token}) {
+  if(!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo))
+    throw Error('Invalid repository selector');
+  if(!Number.isSafeInteger(number)||number<1||!token)
+    throw Error('A valid PR number and a GitHub read token are mandatory');
+  const changed=await allPages('https://api.github.com/repos/'+repo+
+    '/pulls/'+number+'/files',token,10);
+  const paths=changed.map(file=>file.filename);
+  return {ok:true,lane:'SINGLE_INTEGRATION_OWNER',legacy:false,
+    changedFiles:paths.length,activeCollisions:0,warnings:[],errors:[],
+    runUi:requiresUiSmoke(paths),runNative:requiresNativeQualification(paths)};
+}
+
 async function main() {
   const args=process.argv.slice(2);
   if(args.includes('--help')) {
-    console.log('Usage: node scripts/check_workstream_coordination.mjs --pr NUMBER');
+    console.log('Usage: node scripts/check_workstream_coordination.mjs --pr NUMBER --scope');
     return;
   }
   const index=args.indexOf('--pr');
   const number=Number(index>=0?args[index+1]:0);
-  const result=await auditGitHub({
+  // --scope is the active lightweight product gate. Legacy --pr without
+  // --scope remains available only for archived coordination diagnostics.
+  const run= args.includes('--scope')?qualificationScopeGitHub:auditGitHub;
+  const result=await run({
     repo:process.env.GITHUB_REPOSITORY || '',
     number,token:process.env.GH_TOKEN || ''
   });

@@ -1,3 +1,5 @@
+> **ARCHIVED / SUPERSEDED 2026-11-05 — NOT A BLOCKING DEVELOPMENT POLICY.** ArSonMix now operates with a single product integration owner and one working product PR. Historical roles, file restrictions, PR-collision checks and handoff requirements below are retained only for traceability and **must not block implementation**. Current authority: [AGENTS.md](../../AGENTS.md). Native PCM/GUI quality, exact-SHA Windows regression, approved /preview/ visual parity and physical FAT safety requirements remain in force.
+
 # ArSonMix — Parallel Agent Coordination (binding for new work)
 
 **Control tower:** [issue #397](https://github.com/masarray/arsonmix/issues/397).

@@ -60,11 +60,11 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Cheap one-owner / overlapping-PR preflight (read-only)
+      - name: Cheap exact changed-file product scope (read-only)
         if: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
+        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }} --scope
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout

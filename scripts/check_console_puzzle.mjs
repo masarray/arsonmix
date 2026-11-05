@@ -14,6 +14,9 @@ export const PATHS=Object.freeze({
   engine:'src/LiveAudioEngine.h',
   nativeG0:'src/ApprovedConsoleNativeTransportV6.h',
   nativeV8:'src/ConsoleLiveBridgeV6.h',
+  installedProjection:'integration/ApprovedNativeRuntimeSnapshot.h',
+  nativeIntent:'integration/ApprovedNativeControlIntent.h',
+  nativeMixer:'src/LiveDryRoutingLab.h',
   projection:'integration/ApprovedNativeV8Projection.h',
   renderOwner:'engine/core/NativeRenderAuthority.h',
   gui:'web/approved-native-bridge.js',
@@ -80,15 +83,28 @@ export function inspectMilestoneA(s) {
     yes('ci-keeps-native-qualification',tests,
       'One Windows pipeline must build, CTest, verify approved GUI and package')
   ];
-  const producerJoined=has('entry',/ConsoleLiveBridgeV6\.h/) &&
-    has('nativeV8',/PuzzleV8Wire/) &&
-    has('projection',/mainChannelId/) &&
-    has('projection',/processingFormat/);
-  const dispatched=has('entry',/processNativeBusIntent|processConsoleIntent|dispatchConsoleIntent/) &&
+  // M3-F is installed through the *real* JUCE channel publisher and the
+  // approved integration projection. Historical ConsoleLiveBridgeV6 was an
+  // ENGINE-side adapter, not the currently installed production source. Do
+  // not gate a working callback on dead symbol names or a fabricated fixture.
+  const producerJoined=has('entry',/ApprovedNativeRuntimeSnapshot\.h/) &&
+    has('entry',/projectInstalledNativeChannelIdGraph/) &&
+    has('installedProjection',/projectInstalledNativeChannelIdGraph/) &&
+    has('installedProjection',/nativeChannelIdPcmActive/) &&
+    has('nativeMixer',/juce::var nativeBusStatus\(/) &&
+    has('nativeMixer',/nativePublisher_\.render\(/);
+  const dispatched=has('entry',/handleApprovedNativeControl\(/) &&
+    has('entry',/executeApprovedNativeControl\(/) &&
+    has('entry',/withEventListener\s*\(\s*"arMixConsoleIntent"/) &&
+    has('nativeIntent',/engine\.setNativeInputMix\(/) &&
+    has('nativeIntent',/engine\.setNativeInputMuteSolo\(/) &&
     !has('entry',/native_console_m2::reject\s*\(\s*args,\s*accepted\s*\)/);
-  const pcmReadback=has('engine',/nativeChannelIdPcmActive|acceptedChannelId/) &&
-    has('engine',/audioDeviceIOCallbackWithContext/) &&
-    has('nativeV8',/nativeBus|acceptedRouting/);
+  const pcmReadback=has('engine',/audioDeviceIOCallbackWithContext/) &&
+    has('engine',/dryRoutingLab_\.process\(/) &&
+    has('nativeMixer',/nativePublisher_\.render\(/) &&
+    has('nativeMixer',/channelIdPcmEpoch_/) &&
+    has('installedProjection',/actualFlag\(route,"nativeChannelIdPcmActive"\)/) &&
+    has('installedProjection',/projectApprovedNativeV8\(/);
   const integration=[
     yes('real-v8-producer-installed',producerJoined,
       'ENGINE #266 must connect its real accepted native V8 graph producer to Main.cpp',true),

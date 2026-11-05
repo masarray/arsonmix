@@ -228,7 +228,7 @@ test('M2.6 always-on PR admission scopes Chromium to UI changes',()=>{
   const prBlock=workflow.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
   assert.ok(prBlock,'missing PR event');
   assert.doesNotMatch(prBlock,/^\s+paths:/m,'PR entrypoint must not filter docs or PCM PRs');
-  assert.match(workflow,/name: PR coordination admission/);
+  assert.match(workflow,/name: PR qualification scope \(single product owner\)/);
   assert.match(workflow,/needs: coordination/);
   assert.match(workflow,/needs\.coordination\.outputs\.run_ui/);
 });

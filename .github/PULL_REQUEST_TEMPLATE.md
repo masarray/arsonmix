@@ -1,24 +1,17 @@
-## Why this work is not duplicated
-Current main SHA: `...`
-Related issue / existing PRs reviewed: 
+## ArSonMix — one product integration owner
 
-## REQUIRED agent ownership (replace CHANGE_ME before opening)
-<!-- arsonmix-workstream: CHANGE_ME -->
-<!-- arsonmix-issue: #397 -->
+**Current main SHA:**  
+**Branch origin / existing PRs reconciled:**  
+**Product behavior fixed:**  
+**Native signal path, device and VST3 impact:**  
 
-Allowed workstream: GUI / ENGINE / INTEGRATOR / FAT.
-Only the owning lane edits each production file. See [coordination #397](https://github.com/masarray/arsonmix/issues/397) and [workstream rules](../docs/workstreams/MULTI_AGENT_COORDINATION.md).
+## Implementation and evidence
 
-## Meaningful implementation and handoff
-- Owned files changed:
-- Existing implementation reused (PR/SHA):
-- Native producer/consumer ABI change (if any):
-- Exact-head targeted CI URL and demonstrated behavior:
-- Real PCM/GUI/physical FAT proof or **PENDING**:
-- Next blocked dependency + receiving workstream:
+- Code paths changed (and existing implementation reused):
+- Audio callback owner remains ONE JUCE producer:
+- Real PCM test and expected input → MAIN → output behavior:
+- Windows MSVC / CTest / Chromium results at the **exact PR SHA**:
+- Windows EXE / ZIP source SHA and integrity:
+- Physical ASIO/WASAPI listening FAT: **PASS with evidence** or **PENDING** (never inferred from CI):
 
-Do not create another GUI, PCM engine, duplicate routing graph, or second CI workflow. Avoid changing CMake/src/Main.cpp outside INTEGRATOR; test evidence is not an audio-LIVE claim.
-
-If this older PR has been parked pending reconciliation, include:
-<!-- arsonmix-coordination: parked -->
-Remove the parked marker only after an owner-scoped diff and conflict audit.
+Protect the approved /preview/ GUI, proper physical port enumeration, native PCM, and user-safe output mute. No parallel browser DSP or speculative hardcoded devices. A single integrator may edit any required subsystem; no legacy workstream marker or owner approval is required.

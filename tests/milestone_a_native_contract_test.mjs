@@ -40,18 +40,31 @@ test('breaking native event protocol or accepted-readback reconciliation blocks 
   assert.equal(status(inspect(brokenProtocol),'gui-four-event-consumer').pass,false);
 });
 
-test('engine-only graph headers or a fake native producer cannot pass milestone A',()=>{
+test('a fake ENGINE adapter cannot pass installed native callback release checks',()=>{
   const fake={...sources,
     nativeV8:'PuzzleV8Wire nativeBus acceptedRouting',
-    projection:'mainChannelId processingFormat',
-    entry:sources.entry+'#include "ConsoleLiveBridgeV6.h"\n',
+    installedProjection:'// old adapter that never verified installed native callbacks',
+    nativeMixer:'// no native PCM publisher',
+    entry:sources.entry+'#include "ConsoleLiveBridgeV6.h"\\n',
     engine:sources.engine+' nativeChannelIdPcmActive ',
   };
-  assert.equal(status(inspect(fake),'real-v8-producer-installed').pass,true,
-    'a static adapter reference alone can match SOURCE, but is NOT audio proof');
-  assert.equal(status(inspect(fake),'intent-dispatch-not-g0-rejection').pass,false,
-    'G0 REJECTED dispatch must still prohibit release');
-  assert.equal(inspect(fake).integration.every(x=>x.pass),false);
+  assert.equal(status(inspect(fake),'real-v8-producer-installed').pass,false,
+    'old ENGINE symbol names cannot fake an installed render authority');
+  assert.equal(status(inspect(fake),'actual-channelid-callback-readback').pass,false,
+    'a fake adapted bus cannot fake real JUCE PCM');
+  const rejected={...sources,entry:sources.entry.replaceAll(
+    'handleApprovedNativeControl','G0_BLANKET_REJECTION')};
+  assert.equal(status(inspect(rejected),'intent-dispatch-not-g0-rejection').pass,false,
+    'removing actual native control dispatcher must block release');
+  const withoutSetter={...sources,nativeIntent:'// UI-only optimistic controls'};
+  assert.equal(status(inspect(withoutSetter),'intent-dispatch-not-g0-rejection').pass,false);
+});
+
+test('current installed callback and ACK/readback pass the *source* convergence gate',()=>{
+  const checked=inspect(sources);
+  assert.deepEqual(checked.integration.filter(x=>!x.pass).map(x=>x.id),[],
+    JSON.stringify(checked.integration,null,2));
+  // Source is necessary but never sufficient: no physical listening here.
 });
 
 test('accepted native callback still requires a proper event dispatcher and physical FAT',()=>{

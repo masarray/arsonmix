@@ -1132,6 +1132,40 @@ public:
             return "SOURCE: native prepare failed; prior audio kept";
         }
     }
+    // Operator-assigned physical MAIN output pair (not a ChannelId WIRE).
+    // Only an already patched, muted DIRECT route may change speaker pins.
+    // The existing JUCE callback and VST3 lease are reused without restart.
+    juce::String repatchDryRoutingLabMainOutputs(std::uint64_t epoch,
+            std::uint64_t revision,int physicalLeft,int physicalRight) {
+        if(!allOutputsDisarmed())
+            return "MAIN OUTPUT: MUTE physical output and DISARM STREAM first";
+        if(independent_.active()||routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||!directFence_.permitted()||
+           diagnosticRoute_.load(std::memory_order_acquire)
+               !=armix::diagnostics::Route::normal||
+           savedDirectSetup_||savedLiveSetup_)
+            return "MAIN OUTPUT: verified DIRECT device or FX handoff unavailable";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device)return "MAIN OUTPUT: no active hardware output device";
+        try {
+            const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+            const auto oldRevision=dryRoutingLab_.revision();
+            const auto result=dryRoutingLab_.repatchMainOutputPair(
+                epoch,revision,physicalLeft,physicalRight,
+                directFence_.permitted(),independent_.active(),
+                graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+            if(result.isEmpty()&&oldRevision!=dryRoutingLab_.revision())
+                (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                    graphOwned_->count,frames,true,currentOriginalCh1Lease());
+            return result;
+        } catch(const std::exception& ex) {
+            return "MAIN OUTPUT: native prepare failed; existing route preserved: "
+                +juce::String(ex.what());
+        } catch(...) {
+            return "MAIN OUTPUT: native prepare failed; existing route preserved";
+        }
+    }
+
     // Direct compact OUT / MONO-STEREO operator edits. One existing M4
     // prepared graph is republished; original VST3 instances/Orbit remain
     // owned by the same native callback. Never touched on RT.

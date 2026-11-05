@@ -376,3 +376,27 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(engine,/juce::String switchDryRoutingLabSource\(/);
  assert.match(engine,/setOutputMuted\(true\)/);
 });
+
+
+test("MAIN hardware output pair is a verified native patch, never GUI-only PCM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const main=read("src/Main.cpp");
+  const engine=read("src/LiveAudioEngine.h");
+  const routing=read("src/LiveDryRoutingLab.h");
+  assert.match(bridge,/d\.outputEndpoints\.filter\(p=>/);
+  assert.match(bridge,/d\.enabledOutputs\.includes\(p\.port\)/);
+  assert.match(bridge,/action:"routingMainOutput",requestId:pendingMainId/);
+  assert.match(bridge,/arMixMainOutputAck/);
+  assert.match(bridge,/pendingMainId!==0/);
+  assert.match(main,/action=="routingMainOutput"/);
+  assert.match(main,/engine_\.repatchDryRoutingLabMainOutputs\(/);
+  assert.match(main,/"arMixMainOutputAck"/);
+  assert.match(engine,/if\(!allOutputsDisarmed\(\)\)/);
+  assert.match(engine,/dryRoutingLab_\.repatchMainOutputPair\(/);
+  assert.match(engine,/dryRoutingLab_\.admitChannelIdFromAcceptedM4\(/);
+  assert.match(routing,/juce::String repatchMainOutputPair\(/);
+  assert.match(routing,/hasExplicitRoute\(\)/);
+  assert.match(routing,/setProperty\("mainOutputs",juce::var\(outputPins\)\)/);
+  assert.match(routing,/return publishRevisedTopology\(staged,expectedEpoch,expectedRevision/);
+  assert.match(routing,/MAIN output patch uses inactive or duplicate physical ports/);
+});

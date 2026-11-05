@@ -1399,6 +1399,36 @@ private:
         // M1 RT source switch on an existing physical channel. Unlike
         // structural routingDryApply, it does not unpatch outputs, rebuild
         // VST3s, or restart the device; input PCM fades inside one graph.
+        // User-selected physical MAIN pair. Reuse the native routing
+        // compiler, never guess a callback index or move output while armed.
+        if(action=="routingMainOutput") {
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto epochValue=args.getProperty("deviceEpoch",juce::var());
+            const auto revisionValue=args.getProperty("revision",juce::var());
+            const int left=static_cast<int>(args.getProperty("left",-1));
+            const int right=static_cast<int>(args.getProperty("right",-1));
+            const bool valid=requestId>0&&
+                (epochValue.isInt()||epochValue.isInt64())&&
+                (revisionValue.isInt()||revisionValue.isInt64())&&
+                static_cast<juce::int64>(epochValue)>0&&
+                static_cast<juce::int64>(revisionValue)>0&&
+                !nativeShowBusy_&&!studioBackupBusy_;
+            const auto error=valid?
+                engine_.repatchDryRoutingLabMainOutputs(
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(epochValue)),
+                    static_cast<std::uint64_t>(static_cast<juce::int64>(revisionValue)),
+                    left,right):
+                juce::String("MAIN OUTPUT: stale request or Show/backup busy");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("state",engine_.status().getProperty("dryRoutingLab",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixMainOutputAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            return;
+        }
         if(action=="routingSourceSwitch"){
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));
