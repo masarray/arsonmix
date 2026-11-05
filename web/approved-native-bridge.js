@@ -177,8 +177,190 @@
     hardware.device.sampleRate>0 &&
     hardware.device.enabledInputs.length>0 &&
     hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
+  // Shipped DAW-style physical-source controls. These live in the ONE
+  // approved /preview/ WebView2, not web/mixer-io.js (not part of this EXE).
+  // The ORIGINAL visible strip IN row replaces demo input choices. Each of
+  // the ten installed M4 inputs has its own native routing command and ACK.
+  let selectedSourcePending=null, selectedSourceSerial=5000;
+  const availablePhysicalInputs=next=>{
+    const d=next?.device;
+    if(!next?.raw?.legacyM4?.active || !Array.isArray(d?.inputEndpoints) ||
+       !Array.isArray(d?.enabledInputs))return [];
+    return d.inputEndpoints.filter(p=>
+      p?.active===true && Number.isInteger(p.port) &&
+      d.enabledInputs.includes(p.port)).sort((a,b)=>a.port-b.port);
+  };
+  const routeValue=r=>r?.mode==="MONO"?"MONO:"+r.left:
+    r?.mode==="STEREO"?"STEREO:"+r.left+":"+r.right:
+    r?.mode==="NONE"?"NONE":"CUSTOM";
+  const sourceChoices=pins=>{
+    const items=[["NONE","None · silent"]];
+    for(const p of pins)
+      items.push(["MONO:"+p.port,"Mono · "+String(p.label||"IN "+(p.port+1))]);
+    for(let i=0;i+1<pins.length;i++)
+      if(pins[i+1].port===pins[i].port+1)
+        items.push(["STEREO:"+pins[i].port+":"+pins[i+1].port,
+          "Stereo · IN "+(pins[i].port+1)+"/"+(pins[i+1].port+1)]);
+    return items;
+  };
+  function renderVerifiedStripInputs(next) {
+    if(!connected||!scope?.tracks)return;
+    const d=next?.device,legacyRoute=next?.raw?.legacyM4;
+    const rows=Array.isArray(legacyRoute?.channels)?legacyRoute.channels:[];
+    const pins=availablePhysicalInputs(next),choices=sourceChoices(pins);
+    const signature=JSON.stringify(choices);
+    const ready=legacyRoute?.active===true && rows.length===10 && pins.length>0;
+    const tracks=scope.tracks.filter(t=>t.kind==="audio").slice(0,10);
+    for(let channel=0;channel<tracks.length;channel++){
+      const track=tracks[channel];
+      const strip=document.querySelector('.strip[data-id="'+track.id+'"]');
+      if(!strip)continue; // off-screen banks are decorated when rendered
+      const demo=strip.querySelector('select.route-select[data-field="input"]');
+      let select=strip.querySelector('select[data-armix-physical-input]');
+      if(demo){
+        select=document.createElement("select");
+        select.className="route-select";
+        select.dataset.armixPhysicalInput=String(channel);
+        select.setAttribute("aria-label","CH "+(channel+1)+" hardware input");
+        select.title="Choose physical input directly · native ACK required";
+        demo.replaceWith(select);
+      }
+      if(select){
+        if(select.dataset.options!==signature){
+          select.replaceChildren(...choices.map(([value,label])=>{
+            const option=document.createElement("option");
+            option.value=value;option.textContent=label;return option;
+          }));
+          select.dataset.options=signature;
+        }
+        const live=rows[channel],value=routeValue(live);
+        if(value==="CUSTOM" && !Array.from(select.options).some(o=>o.value===value)){
+          const extra=document.createElement("option");
+          extra.value="CUSTOM";extra.textContent="Internal bus · advanced";
+          select.appendChild(extra);
+        }
+        const selected=Array.from(select.options).some(o=>o.value===value)?value:"NONE";
+        if(select.value!==selected)select.value=selected;
+        const disabled=!ready || !!selectedSourcePending;
+        if(select.disabled!==disabled)select.disabled=disabled;
+        select.title=ready?"CH "+(channel+1)+" · "+(select.selectedOptions[0]?.textContent||"Input")+
+          " · accepted hardware route":"Choose real ASIO/WASAPI input/output in Audio Setup";
+      }
+      // Don't display Pages-only SOURCE ONLY and phantom hardware outputs.
+      const demoOut=strip.querySelector('select.route-select[data-field="output"]');
+      let actualOut=strip.querySelector('[data-armix-native-output]');
+      if(demoOut){
+        actualOut=document.createElement("span");
+        actualOut.className="route-select";
+        actualOut.dataset.armixNativeOutput=String(channel);
+        demoOut.replaceWith(actualOut);
+      }
+      if(actualOut){
+        const accepted=legacyRoute?.routeAccepted===true && ready;
+        const text=!accepted?"MAIN · unverified":
+          rows[channel]?.main===false?"SEND ONLY":
+          rows[channel]?.mode==="NONE"?"MAIN · no input":"MAIN";
+        if(actualOut.textContent!==text)actualOut.textContent=text;
+        actualOut.title="Native output "+String(d?.playbackDevice||"not set");
+      }
+    }
+  }
+  function requestNativeSource() {
+    const p=selectedSourcePending;
+    if(!p)return;
+    p.phase="patch";
+    backend.emitEvent("arMixAction",{
+      action:"routingSourceSwitch",requestId:p.id,channel:p.channel,
+      mode:p.mode,left:p.left,right:p.right,
+      deviceEpoch:p.epoch,revision:p.revision
+    });
+    status("CH "+(p.channel+1)+" · input routing requested");
+  }
+  function completeNativeSourceFromReadback(next) {
+    const p=selectedSourcePending;
+    if(!p||p.phase!=="readback")return;
+    if(next?.device?.epoch!==String(p.epoch)){
+      selectedSourcePending=null;
+      status("Device changed · select input again");return;
+    }
+    const l=next?.raw?.legacyM4,actual=l?.channels?.[p.channel];
+    if(l?.routeAccepted!==true||routeValue(actual)!==p.value)return;
+    if(next.device.outputArmed){
+      selectedSourcePending=null;
+      status("CH "+(p.channel+1)+" · hardware input LIVE");return;
+    }
+    // One operator input choice also requests monitoring after an actual
+    // native patch ACK. Native liveOutputArmFault remains final authority.
+    // Driver opens/hotplug NEVER initiate this independently.
+    const anyRouted=l.channels.some(r=>r.main!==false &&
+      (r.mode==="MONO"||r.mode==="STEREO"));
+    if(!anyRouted){
+      selectedSourcePending=null;
+      status("Inputs unpatched · output remains muted");return;
+    }
+    const revision=safeNativeCounter(l.routingRevision);
+    if(revision===null){selectedSourcePending=null;return;}
+    p.phase="arming";
+    backend.emitEvent("arMixAction",{action:"monitor",value:true,
+      expectedEpoch:p.epoch,expectedRevision:revision});
+  }
+  function installNativeStripInputEvents() {
+    const bank=document.getElementById("tracks");
+    if(bank && typeof MutationObserver==="function"){
+      const observer=new MutationObserver(()=>renderVerifiedStripInputs(hardware));
+      // Only the bank's direct children change on re-render/bank switch.
+      // Updating <option> children never retriggers this observer.
+      observer.observe(bank,{childList:true});
+    }
+    document.addEventListener("change",event=>{
+      const select=event.target?.closest?.("select[data-armix-physical-input]");
+      if(!select)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const channel=Number(select.dataset.armixPhysicalInput);
+      const d=hardware?.device,l=legacy();
+      const epoch=safeNativeCounter(d?.epoch);
+      const revision=safeNativeCounter(l?.routingRevision);
+      const row=l?.channels?.[channel];
+      const tokens=select.value.split(":");
+      const mode=tokens[0],left=mode==="NONE"?-1:Number(tokens[1]);
+      const right=mode==="STEREO"?Number(tokens[2]):-1;
+      const pins=availablePhysicalInputs(hardware).map(x=>x.port);
+      const valid=(mode==="NONE") ||
+        (mode==="MONO"&&pins.includes(left)) ||
+        (mode==="STEREO"&&pins.includes(left)&&pins.includes(right)&&left!==right);
+      if(!deviceReady()||!Array.isArray(l?.channels)||l.channels.length!==10||
+         !Number.isInteger(channel)||channel<0||channel>=10||
+         epoch===null||revision===null||!valid||selectedSourcePending){
+        renderVerifiedStripInputs(hardware);
+        status("Input selection rejected · verify driver and channel");return;
+      }
+      const value=mode==="MONO"?"MONO:"+left:
+        mode==="STEREO"?"STEREO:"+left+":"+right:"NONE";
+      if(routeValue(row)===value)return;
+      const p={id:++selectedSourceSerial,channel,mode,left,right,value,
+        epoch,revision,phase:"initial"};
+      selectedSourcePending=p;
+      renderVerifiedStripInputs(hardware);
+      // Same-format switch uses native atomic source crossfade. Structural
+      // changes must first safely mute MAIN; never add a second DSP callback.
+      const structural=row?.mode!==mode;
+      if(d.outputArmed && structural){
+        p.phase="muting";
+        backend.emitEvent("arMixAction",{action:"monitor",value:false});
+      } else requestNativeSource();
+      window.setTimeout(()=>{
+        if(selectedSourcePending?.id===p.id){
+          selectedSourcePending=null;
+          renderVerifiedStripInputs(hardware);
+          status("Input request timed out · native route unchanged or unverified");
+          controller?.subscribe();
+        }
+      },8000);
+    },true);
+  }
   function updateHardwarePanel(next) {
     hardware=next || null;
+    renderVerifiedStripInputs(next);
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
@@ -307,6 +489,7 @@
 
   function onNativeReadback(next) {
     updateHardwarePanel(next);
+    completeNativeSourceFromReadback(next);
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
@@ -365,6 +548,20 @@
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
+      const p=selectedSourcePending;
+      if(p?.phase==="patch" && ack?.requestId===p.id &&
+         Number(ack.channel)===p.channel){
+        if(ack.ok===true){
+          p.phase="readback";
+          controller.subscribe(); // require a subsequent native producer snapshot
+        }else{
+          selectedSourcePending=null;
+          status("CH "+(p.channel+1)+" · input rejected: "+(ack.error||"stale route"));
+          renderVerifiedStripInputs(hardware);
+          controller.subscribe();
+        }
+        return;
+      }
       if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
       pendingSourceId=0;
       if(ack.ok===true) {
@@ -374,6 +571,27 @@
       updateHardwarePanel(hardware);
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
+      const p=selectedSourcePending;
+      if(p?.phase==="muting"){
+        if(ack?.ok===true && ack.armed===false &&
+           Number(ack.deviceEpoch)===p.epoch){
+          requestNativeSource();
+        }else{
+          selectedSourcePending=null;
+          status("Cannot safely switch source · output mute rejected");
+          renderVerifiedStripInputs(hardware);
+        }
+        return;
+      }
+      if(p?.phase==="arming"){
+        selectedSourcePending=null;
+        renderVerifiedStripInputs(hardware);
+        status(ack?.ok===true&&ack?.armed===true?
+          "CH "+(p.channel+1)+" · monitoring enabled":
+          "Input patched; monitoring unavailable: "+(ack?.error||"device not ready"));
+        controller.subscribe();
+        return;
+      }
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
           "NATIVE: output muted.");
@@ -526,6 +744,7 @@
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
     installFirstSoundMenu();
+    installNativeStripInputEvents();
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
