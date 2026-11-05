@@ -467,6 +467,15 @@ test("shipped approved WebView binds every IN to real native M4 and one Audio I/
  assert.match(bridge,/function nativePhysicalStrip\(el\)/);
  assert.match(bridge,/\.strip\[data-id\]/);
  assert.match(bridge,/function updateNativeM4Inputs\(\)/);
+ assert.match(bridge,/function paintVerifiedM4Meters\(\)/);
+ assert.match(bridge,/m4LiveStatus\?\.captureObservationBlocks/);
+ assert.match(bridge,/d\.channelPeaksL\.length!==10/);
+ assert.match(bridge,/d\.channelPeaksR\.length!==10/);
+ assert.match(bridge,/d\.peakL/);
+ assert.match(bridge,/scope\.displayMeterDbfs\(fill,db,ts/);
+ assert.match(bridge,/paintVerifiedM4Meters\(\)/);
+ assert.doesNotMatch(bridge,/Math\.random\(\)/);
+
  assert.match(bridge,/m4Rows\(d\)/);
  assert.match(bridge,/d\.ports/);
  assert.match(bridge,/for\(let lane=0;lane<10;\+\+lane\)/);
