@@ -26,14 +26,18 @@ STYLE_EVIDENCE=r"""() => {
   '--lit','--peak-extent','--ch'];
  const included='.app,.app *,#wireWorkspace,#wireWorkspace *,#moreTools,#moreTools *';
  const nodes=[...document.querySelectorAll(included)];
+ // Baseline resides in a temporary folder; shipped CSS resides in dist-pages.
+ // Absolute file:// asset URLs are equivalent only when their final /assets/
+ // path matches. Normalize path prefixes, NOT colors, selector, query or image.
+ const norm=value=>String(value).replace(/file:\/\/\/[^"')]+\/assets\//g,'assets/');
  return nodes.map((node,i)=>{
    const style=getComputedStyle(node);
    const name=typeof node.className==='string'?node.className:'';
-   const values=props.map(p=>style.getPropertyValue(p));
+   const values=props.map(p=>norm(style.getPropertyValue(p)));
    const pseudo=node.matches('.strip,.meter-fill,.meter-lane,.mx-hw-key,.fader-travel,.wire-node-out,.strip-identity-top');
    const before=pseudo?getComputedStyle(node,'::before'):null;
    const after=pseudo?getComputedStyle(node,'::after'):null;
-   const pseudoValue=s=>s?[s.content,s.backgroundImage,s.border,s.boxShadow,
+   const pseudoValue=s=>s?[s.content,norm(s.backgroundImage),s.border,s.boxShadow,
                           s.transform,s.filter,s.opacity]:null;
    return [i,node.tagName,name,values,pseudoValue(before),pseudoValue(after)];
  });
