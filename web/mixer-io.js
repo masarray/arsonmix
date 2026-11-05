@@ -780,12 +780,9 @@
       // Every physical channel gets its own source selector. The native
       // routing controller is unchanged and owns every hardware APPLY.
       const head=strip.querySelector('.ch-id');
-      if(isNative()&&head&&!head.querySelector('.arChannelQuickInput')){
-        const picker=node('select','arChannelQuickInput');
-        picker.setAttribute('aria-label','CH '+(Number(strip.dataset.strip)+1)+' physical input');
-        picker.title='Verified hardware source · native ACK required';
-        head.appendChild(picker);
-      }
+      // Native hardware selection now lives in the approved strip's EXISTING
+      // IN dropdown, identical in location to a DAW mixer. No header duplicate.
+      head?.querySelector('.arChannelQuickInput')?.remove();
       if(strip.querySelector('.arChannelBank'))continue;
       const bank=node('div','arChannelBank');
       bank.innerHTML='<div class="arRouteBank"><span class="arBankTitle">INPUT SOURCE · NATIVE</span><select class="arBankSource" aria-label="Physical channel input source"></select><span class="arBankTitle">OUTPUT DESTINATION</span><span class="arBankOutput">MAIN · UNKNOWN</span><div class="arBankFormatRow"><select class="arBankChannelFormat" aria-label="Independent channel processing format" title="Processing MONO / STEREO independent from hardware input"><option value="MONO">CH M</option><option value="STEREO">CH L/R</option></select><span class="arBankStage">NATIVE PATCH REQUIRED</span></div><button class="btn-180 arBankPatch" data-mix-patch="input">OPEN INPUT PATCH</button></div><div class="arSendBank"><span class="arBankTitle">AUX SENDS · PRE / POST</span><div class="arSendSummary"></div><button class="btn-180 arBankPatch" data-mix-patch="internal">EDIT AUX SENDS</button></div>';
@@ -808,13 +805,14 @@
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
     const current=valueFor(r),choices=portsFor(s,r);
-    const inline=strip.querySelector('.arChannelQuickInput');
-    if(inline){
+    // Never create a parallel source picker. The visible approved IN control
+    // is the only normal operator entry point and displays native ACK truth.
+    const inline=strip.querySelector('.route-select[data-field="input"]');
+    if(inline&&isNative()){
       populate(inline,choices,current);
       inline.dataset.channel=String(i);
-      inline.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
-      inline.title='CH '+(i+1)+' · '+(choices.find(p=>p[0]===current)?.[1]||'Select physical input')+
-        ' · hardware source; native ACK required';
+      inline.disabled=!s.ready||!!s.pending||!!quickSourcePending;
+      inline.title='CH '+(i+1)+' · verified hardware input · native ACK';
     }
     populate(source,choices,current);
     source.dataset.channel=String(i);source.disabled=!isNative()||!s.ready||!!s.pending||!!quickSourcePending;
@@ -1624,6 +1622,26 @@
     return committed?.ok?{ok:true,pending:true,live:false,epoch:s.epoch}:
       {ok:false,error:committed?.error||'Safe native APPLY rejected'};
   }
+  // The canonical mixer IN dropdown invokes the same 10-channel route
+  // controller as Advanced Audio I/O. The bridge consumes the Pages demo
+  // change event and calls this one action; no demo track model is mutated.
+  window.__arMixChooseChannelHardwareInput=(channel,value)=>{
+    if(!isNative()||!Number.isInteger(channel)||channel<0||channel>=10)
+      return {ok:false,error:'No verified native mixer channel'};
+    const parts=String(value).split(':'),mode=parts[0];
+    const left=mode==='NONE'?-1:Number(parts[1]);
+    const right=mode==='STEREO'?Number(parts[2]):-1;
+    if(!['NONE','MONO','STEREO'].includes(mode)||
+       (mode!=='NONE'&&!Number.isInteger(left))||
+       (mode==='STEREO'&&!Number.isInteger(right)))
+      return {ok:false,error:'Select an actual mono/stereo hardware input'};
+    const answer=commitSourceInOneGesture(channel,mode,left,right);
+    if(answer?.pending)quickSourcePending={channel,epoch:answer.epoch,
+      value:valueFor({mode,left,right}),live:!!answer.live};
+    if(!answer?.ok)matrixSay(answer?.error||'Native INPUT rejected');
+    lastSignature='';refresh();
+    return answer||{ok:false,error:'Native source controller unavailable'};
+  };
   function changeSource(select){
     const channel=Number(select.dataset.channel);
     const value=select.value,parts=value.split(':');
