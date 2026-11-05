@@ -1405,6 +1405,52 @@ private:
         // DAW-like strip fader/pan/mute/solo: existing atomic M4 PCM owner.
         // This is an explicit message-thread control ACK, not an alternative
         // VST/audio callback, G0 ChannelId admission, or optimistic JS state.
+        // Master fader / MUTE are existing no-heap atomic controls on the
+        // SAME 10-channel callback, with verified device epoch and route.
+        if(action=="routingM4MasterControl"){
+            const int requestId=static_cast<int>(args.getProperty("requestId",0));
+            const auto name=args.getProperty("parameter",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto value=args.getProperty("value",{});
+            const auto live=engine_.status();
+            const auto routing=live.getProperty("dryRoutingLab",{});
+            const auto routeEpoch=routing.getProperty("epoch",{});
+            const auto routeRevision=routing.getProperty("revision",{});
+            const bool tokenValid=(ep.isInt()||ep.isInt64()||ep.isDouble())&&
+                (rv.isInt()||rv.isInt64()||rv.isDouble())&&
+                (routeEpoch.isInt()||routeEpoch.isInt64())&&
+                (routeRevision.isInt()||routeRevision.isInt64())&&
+                static_cast<juce::int64>(ep)==static_cast<juce::int64>(routeEpoch)&&
+                static_cast<juce::int64>(rv)==static_cast<juce::int64>(routeRevision);
+            const bool validated=requestId>0&&tokenValid&&
+                static_cast<bool>(routing.getProperty("ready",false))&&
+                static_cast<bool>(routing.getProperty("hasAcceptedRoute",false))&&
+                engine_.directRouteAuthorized()&&!engine_.independentClockActive()&&
+                (name=="mute"?value.isBool():
+                    name=="faderDb"&&(value.isDouble()||value.isInt()||value.isInt64())&&
+                    std::isfinite(static_cast<double>(value))&&
+                    static_cast<double>(value)>=-60.&&
+                    static_cast<double>(value)<=10.);
+            if(validated) {
+                if(name=="mute")engine_.setMasterMuted(static_cast<bool>(value));
+                else engine_.setMasterGainDb(static_cast<float>(static_cast<double>(value)));
+            }
+            const auto now=engine_.status();
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("parameter",name);
+            ack->setProperty("ok",validated);
+            ack->setProperty("error",validated?juce::String():
+                juce::String("STALE_OR_UNVERIFIED_MASTER_CONTROL"));
+            ack->setProperty("deviceEpoch",routeEpoch);
+            ack->setProperty("revision",routeRevision);
+            ack->setProperty("value",name=="mute"?
+                now.getProperty("masterMute",{}):now.getProperty("masterDb",{}));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixM4MasterAck",juce::var(ack.release()));
+            return;
+        }
         if(action=="routingM4ChannelControl"){
             const int requestId=static_cast<int>(args.getProperty("requestId",0));
             const int channel=static_cast<int>(args.getProperty("channel",-1));
