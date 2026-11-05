@@ -150,6 +150,8 @@ public:
             if(peaksL.isArray())object->setProperty("channelPeaksL",peaksL);
             if(peaksR.isArray())object->setProperty("channelPeaksR",peaksR);
             if(inserts.isArray())object->setProperty("fxInstances",inserts);
+            const auto rackPower=route.getProperty("fxRackBypassed",juce::var());
+            if(rackPower.isArray())object->setProperty("fxRackBypassed",rackPower);
             // The prepared/unpatched native M4 graph is a real silent route.
             // It allows direct IN gesture to activate the FIRST source.
             // This does not set productionCallbackLive or fake PCM.

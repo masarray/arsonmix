@@ -91,6 +91,7 @@ public:
         }
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
+        std::atomic<bool> rackBypassed{false}; // does not overwrite per-slot flags
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
@@ -1248,6 +1249,16 @@ public:
                !=armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setFxBypass(lane,slot,epoch,revision,instanceId,bypass);
     }
+    bool setDryRoutingLabFxRackBypass(int lane,std::uint64_t epoch,
+             std::uint64_t revision,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        if(!dryRoutingLab_.setFxRackBypass(lane,epoch,revision,bypass))return false;
+        if(lane==0 && graphOwned_)
+            graphOwned_->rackBypassed.store(bypass,std::memory_order_release);
+        return true;
+    }
     armix::mixer::LiveChannelFxGraph::InstanceLease leaseRoutedFxForEditor(
             int lane,int slot,std::uint64_t epoch,std::uint64_t revision,
             const juce::String& instanceId) const noexcept {
@@ -1351,6 +1362,18 @@ public:
             const juce::String& token,bool bypass) noexcept {
         return dryRoutingLab_.bypassNativeInsert(epoch,revision,id,slot,
                                                  token,bypass);
+    }
+    bool bypassNativeFxRack(std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId id,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        if(!dryRoutingLab_.bypassNativeRack(epoch,revision,id,bypass))return false;
+        // The original CH1 VST3 instance can be external-leased into the
+        // native ChannelId publisher. Its own crossfade gate must agree.
+        if(graphOwned_ && dryRoutingLab_.nativeChannelIsOriginalCh1(id))
+            graphOwned_->rackBypassed.store(bypass,std::memory_order_release);
+        return true;
     }
     armix::mixer::LiveChannelFxGraph::InstanceLease leaseNativeVst3Editor(
             std::uint64_t epoch,std::uint64_t revision,
@@ -1954,7 +1977,8 @@ private:
             auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
             auto& bypass=graph.bypassEnvelope[physical];
-            bypass.request(graph.bypassFlags[physical].load(std::memory_order_acquire));
+            bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
+                           graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
             {
