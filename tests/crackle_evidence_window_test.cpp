@@ -38,6 +38,37 @@ int main()
     check(window.ready() && window.elapsedMs==4500);
     check(delta(window,E::Counter::renderedCallbacks).comparable);
     check(delta(window,E::Counter::renderedCallbacks).value==450);
+    // A known Windows RAM load at a marked glitch is contextual evidence,
+    // not a DSP change, physical xrun, or source of invented hard faults.
+    tracker.reset();
+    auto memoryBase=sample(1000);
+    memoryBase.memory={71,2800,440,690,1000,true,true};
+    tracker.push(memoryBase);
+    for(std::uint64_t ms=2000;ms<=4000;ms+=1000) {
+        auto point=sample(ms);
+        point.memory={static_cast<std::uint32_t>(ms==3000?78:74),
+                      2100,460,710,1000+ms/10,true,true};
+        tracker.push(point);
+    }
+    auto memoryMark=sample(5000);
+    memoryMark.memory={75,2200,490,740,1450,true,true};
+    const auto pressure=tracker.mark(memoryMark);
+    check(pressure.ready() && pressure.loadComparable);
+    check(pressure.memoryBefore.systemLoadPercent==71);
+    check(pressure.memoryAtMark.systemLoadPercent==75);
+    check(pressure.peakLoadPercent==78);
+    check(pressure.processPageFaults.comparable);
+    check(pressure.processPageFaults.value==450);
+    auto memoryReset=sample(5000);
+    memoryReset.memory={76,2000,500,760,999,true,true};
+    const auto afterReset=tracker.mark(memoryReset);
+    check(afterReset.ready()&&!afterReset.processPageFaults.comparable);
+    auto absent=sample(5000);
+    absent.memory.systemAvailable=false;
+    check(!tracker.mark(absent).loadComparable);
+    tracker.reset();
+    for(std::uint64_t ms=1000;ms<=6000;ms+=1000)
+        tracker.push(sample(ms));
     check(delta(window,E::Counter::overBudgetCallbacks).comparable);
     check(delta(window,E::Counter::overBudgetCallbacks).value==0);
     check(!delta(window,E::Counter::wasapiCaptureDiscontinuities).comparable);

@@ -19,6 +19,11 @@
 #include "../engine/diagnostics/CrackleEvidenceWindow.h"
 #if defined(_WIN32)
 #include "../engine/device/WasapiCapabilityProbe.h"
+#include <windows.h>
+#include <psapi.h>
+#if defined(_MSC_VER)
+#pragma comment(lib, "Psapi.lib")
+#endif
 #endif
 #include "PluginCatalog.h"
 #include "PortableWorkspace.h"
@@ -372,12 +377,45 @@ private:
         return {static_cast<std::uint64_t>(amount), true};
     }
 
+    // O(1) Windows OS counters at the existing 1 Hz AUDIO_HEALTH poll
+    // (and explicit Mark Crackle); never inside audioDeviceIOCallback.
+    // GlobalMemoryStatusEx load is whole-system RAM pressure, NOT process
+    // usage. PROCESS_MEMORY_COUNTERS_EX PageFaultCount includes SOFT faults;
+    // a Windows ETW hard-fault trace is needed to prove disk paging.
+    static armix::diagnostics::CrackleEvidenceWindow::MemoryPressure
+        readMemoryPressure() noexcept
+    {
+        using Memory = armix::diagnostics::CrackleEvidenceWindow::MemoryPressure;
+        Memory out;
+#if defined(_WIN32)
+        MEMORYSTATUSEX system {};
+        system.dwLength = sizeof(system);
+        if(::GlobalMemoryStatusEx(&system) != FALSE)
+        {
+            out.systemAvailable = true;
+            out.systemLoadPercent = system.dwMemoryLoad;
+            out.availablePhysicalMiB = system.ullAvailPhys/(1024ull*1024ull);
+        }
+        PROCESS_MEMORY_COUNTERS_EX process {};
+        if(::GetProcessMemoryInfo(::GetCurrentProcess(),
+                reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&process),
+                static_cast<DWORD>(sizeof(process))) != FALSE)
+        {
+            out.processAvailable = true;
+            out.processWorkingSetMiB = process.WorkingSetSize/(1024ull*1024ull);
+            out.processPrivateCommitMiB = process.PrivateUsage/(1024ull*1024ull);
+            out.processPageFaults = process.PageFaultCount;
+        }
+#endif
+        return out;
+    }
     static armix::diagnostics::CrackleEvidenceWindow::Sample makeEvidenceSample (
         const juce::var& state)
     {
         using Window = armix::diagnostics::CrackleEvidenceWindow;
         Window::Sample out;
         out.atMs = monotonicMilliseconds();
+        out.memory = readMemoryPressure();
         out.connected = bool(state.getProperty("connected", false));
         const auto epoch = evidenceCounter(state.getProperty("deviceGeneration", {}));
         if (!epoch.available) out.connected = false;
@@ -440,6 +478,34 @@ private:
                 ? juce::String(static_cast<juce::int64>(delta.value))
                 : juce::String("N/A");
         }
+        const auto& before = window.memoryBefore;
+        const auto& marked = window.memoryAtMark;
+        report += " | SYSTEM_RAM_LOAD_BEFORE_PCT=";
+        report += window.ready() && before.systemAvailable
+            ? juce::String(before.systemLoadPercent):juce::String("N/A");
+        report += " | SYSTEM_RAM_LOAD_AT_MARK_PCT=";
+        report += window.ready() && marked.systemAvailable
+            ? juce::String(marked.systemLoadPercent):juce::String("N/A");
+        report += " | SYSTEM_RAM_LOAD_WINDOW_PEAK_PCT=";
+        report += window.loadComparable
+            ? juce::String(window.peakLoadPercent):juce::String("N/A");
+        report += " | SYSTEM_AVAILABLE_PHYSICAL_MIB_AT_MARK=";
+        report += window.ready() && marked.systemAvailable
+            ? juce::String(static_cast<juce::int64>(marked.availablePhysicalMiB))
+            : juce::String("N/A");
+        report += " | ARSONMIX_WORKING_SET_MIB_AT_MARK=";
+        report += window.ready() && marked.processAvailable
+            ? juce::String(static_cast<juce::int64>(marked.processWorkingSetMiB))
+            : juce::String("N/A");
+        report += " | ARSONMIX_PRIVATE_COMMIT_MIB_AT_MARK=";
+        report += window.ready() && marked.processAvailable
+            ? juce::String(static_cast<juce::int64>(marked.processPrivateCommitMiB))
+            : juce::String("N/A");
+        report += " | PROCESS_ALL_PAGE_FAULTS_SOFT_OR_HARD_DELTA=";
+        report += window.processPageFaults.comparable
+            ? juce::String(static_cast<juce::int64>(window.processPageFaults.value))
+            : juce::String("N/A");
+        report += " | OS_HARD_PAGE_FAULTS=UNAVAILABLE_REQUIRES_ETW";
         report += " | CORRELATION_ONLY_NOT_CAUSAL_PROOF";
         return report;
     }
@@ -1321,6 +1387,24 @@ private:
         result << "Logical cores: " << juce::SystemStats::getNumCpus()
                << " | RAM: " << juce::SystemStats::getMemorySizeInMegabytes() << " MiB\n";
         result << "Telemetry: true hardware render underruns UNAVAILABLE; callback time/gap are proxies only.\n";
+        const auto memory=readMemoryPressure();
+        result << "=== WINDOWS MEMORY PRESSURE (MESSAGE THREAD ONLY) ===\n";
+        if(memory.systemAvailable)
+            result << "System RAM load: " << memory.systemLoadPercent
+                   << "% | Physically available: "
+                   << static_cast<juce::int64>(memory.availablePhysicalMiB)
+                   << " MiB\n";
+        else result << "System RAM pressure: UNAVAILABLE\n";
+        if(memory.processAvailable)
+            result << "ArSonMix resident working set: "
+                   << static_cast<juce::int64>(memory.processWorkingSetMiB)
+                   << " MiB | Private commit: "
+                   << static_cast<juce::int64>(memory.processPrivateCommitMiB)
+                   << " MiB | All process page faults (SOFT+HARD): "
+                   << static_cast<juce::int64>(memory.processPageFaults) << "\n";
+        else result << "ArSonMix process counters: UNAVAILABLE\n";
+        result << "70% is NOT an OS or ASIO glitch threshold. These are correlation"
+                  " indicators, not disk hard-fault evidence or a fix for lost audio.\n";
         result << "CALLBACK CADENCE: START-to-START estimates use PREVIOUS callback frame count; "
                   "normal variable block sizes are not driver xruns. 1.5x/2.3x flags "
                   "are scheduling heuristics only, not WASAPI/ASIO underrun evidence.\n";
