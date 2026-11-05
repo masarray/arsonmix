@@ -40,6 +40,27 @@ class StageCCssCompiler(unittest.TestCase):
         self.assertNotIn("color:blue",compiled["b.css"])
         self.assertEqual(stats["removedDeclarations"],2)
 
+    def test_variable_and_modern_color_keep_old_runtime_fallbacks(self):
+        original=[
+            ("a.css",".strip{color:#ededed;color:var(--unbound)}"),
+            ("b.css",".meter{background:#153028;"
+                     "background:color-mix(in srgb,#153028 80%,#000)}")
+        ]
+        compiled,stats=css.optimize_css(original)
+        self.assertEqual(compiled,dict(original),
+                         "WebView2 versions and unset custom properties need fallback")
+        self.assertEqual(stats["removedDeclarations"],0)
+        self.assertEqual(stats["preservedFallbackDeclarations"],2)
+        self.assertEqual(stats["lockedCandidateDeclarations"],0)
+
+    def test_redundant_non_fallback_still_pruned(self):
+        compiled,stats=css.optimize_css([
+            ("a.css",".strip{border-radius:2px;border-radius:3px}")
+        ])
+        self.assertNotIn("2px",compiled["a.css"])
+        self.assertIn("3px",compiled["a.css"])
+        self.assertEqual(stats["removedDeclarations"],1)
+
     def test_media_and_supports_conditions_never_confused(self):
         compiled,stats=css.optimize_css([
             ("a.css", ".meter{color:red}@media(max-width:700px){.meter{color:orange}}"),
