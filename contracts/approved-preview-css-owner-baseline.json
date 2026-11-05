@@ -1,5 +1,5 @@
 {
-  "schema": "arsonmix.approved-css-cross-owner-baseline.v1",
+  "schema": "arsonmix.approved-css-owner-debt-baseline.v2",
   "sourceMainHead": "e477b3ebb8b2a1ab71fd7226b3f03a81868b70ab",
   "linkedStylesheets": [
     "mixer-console-foundation.css",
@@ -481,5 +481,25 @@
       "mixer-chrome-material.css",
       "mixer-console-foundation.css"
     ]
+  },
+  "sameFileRepeatedDeclarationCaps": {
+    "mixer-console-foundation.css": 4,
+    "mixer-channel-grid.css": 0,
+    "mixer-section-controls.css": 4,
+    "mixer-section-layout.css": 14,
+    "mixer-hardware-artwork.css": 0,
+    "mixer-v3-layout-contract.css": 0,
+    "mixer-chrome-material.css": 36,
+    "mixer-control-keys.css": 1,
+    "mixer-fx-rack.css": 8,
+    "mixer-plugin-browser.css": 13,
+    "mixer-pan-controls.css": 18,
+    "mixer-fader-assembly.css": 99,
+    "mixer-meter-display.css": 18,
+    "mixer-utility-controls.css": 1,
+    "inter-embedded.css": 0,
+    "mixer-wire-dots.css": 36,
+    "mixer-wire-out-align-v48.css": 0,
+    "mixer-contextual-buttons.css": 0
   }
 }
