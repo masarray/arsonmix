@@ -1118,6 +1118,9 @@ private:
                             safe->startupError_.clear();
                             safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
                                 "User confirmed selected ASIO/WASAPI backend in AUDIO SETUP");
+                            // Refresh native physical port inventory after the user
+                            // finishes device selection; never require a restart.
+                            safe->emitApprovedNativeSnapshot();
                         }
                         else
                         {

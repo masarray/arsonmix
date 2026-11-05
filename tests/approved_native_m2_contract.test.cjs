@@ -350,3 +350,29 @@ test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboa
  assert.ok(bridge.includes("scope?.findTrack?.(el)"));
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
+
+test("native Windows operator can explicitly patch first physical input, arm and mute",()=>{
+ const js=read("web/approved-native-bridge.js");
+ const main=read("src/Main.cpp");
+ const engine=read("src/LiveAudioEngine.h");
+ assert.match(js,/REAL AUDIO · FIRST SOUND/);
+ assert.match(js,/action:"audioSetup"/);
+ assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
+ assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
+ assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
+ assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
+ assert.match(js,/action:"monitor",value:true/);
+ assert.match(js,/action:"monitor",value:false/);
+ assert.match(js,/expectedEpoch:epoch,expectedRevision:revision/);
+ assert.match(js,/arMixSourceSwitchAck/);
+ assert.match(js,/arMixAudioArmAck/);
+ assert.match(js,/if\(ack\.ok===true\)/);
+ assert.match(js,/NATIVE PATCH REJECTED:/);
+ assert.match(js,/NO VERIFIED AUDIO DEVICE/);
+ assert.match(js,/REAL NATIVE PCM · FAT PENDING/);
+ assert.match(main,/action=="routingSourceSwitch"/);
+ assert.match(main,/engine_\.liveOutputArmFault\(\)/);
+ assert.match(main,/safe->emitApprovedNativeSnapshot\(\)/);
+ assert.match(engine,/juce::String switchDryRoutingLabSource\(/);
+ assert.match(engine,/setOutputMuted\(true\)/);
+});
