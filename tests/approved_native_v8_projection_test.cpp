@@ -11,6 +11,28 @@
 #include <limits>
 using namespace armix::console;
 
+
+// Compile-time and runtime proof that accepted v8 native intents route to
+// the actual ChannelId setter rather than a fake WebView-only state change.
+struct NativeControlProbe {
+    std::uint64_t lastEpoch=0,lastRevision=0,lastId=0;
+    float lastGain= -1.f,lastPan= -2.f;
+    bool lastMute=false,lastSolo=false;
+    bool setNativeInputMix(std::uint64_t e,std::uint64_t r,
+                           armix::mixer::ChannelId id,float g,float p) {
+        lastEpoch=e;lastRevision=r;lastId=id.value;lastGain=g;lastPan=p;
+        return true;
+    }
+    bool setNativeBusMix(std::uint64_t e,std::uint64_t r,
+                         armix::mixer::ChannelId id,float g,float p) {
+        return setNativeInputMix(e,r,id,g,p);
+    }
+    bool setNativeInputMuteSolo(std::uint64_t e,std::uint64_t r,
+                        armix::mixer::ChannelId id,bool m,bool s) {
+        lastEpoch=e;lastRevision=r;lastId=id.value;
+        lastMute=m;lastSolo=s;return true;
+    }
+};
 static juce::var parse(const char* bytes) {
     auto json=juce::JSON::parse(juce::String::fromUTF8(bytes));
     assert(json.isObject());
@@ -90,6 +112,12 @@ static void controlIntentTranslationCases(const juce::var& canonical,
     const auto fader=makeIntent("SET_FADER",juce::var(-12.0),source);
     const auto translated=translateApprovedNativeControl(fader,accepted,bus);
     assert(translated.ok());
+    NativeControlProbe producer;
+    assert(executeApprovedNativeControl(producer,translated.translated));
+    assert(producer.lastEpoch==91 && producer.lastRevision==25);
+    assert(producer.lastId==9007199254740993ULL);
+    assert(std::abs(producer.lastGain-std::pow(10.,-12./20.))<0.000001);
+    assert(!executeApprovedNativeControl(producer,juce::var{}));
     assert(translated.translated.getProperty("operation","").toString()
            =="NATIVE_SET_CHANNEL_MIX");
     assert(translated.translated.getProperty("targetChannelId","").toString()

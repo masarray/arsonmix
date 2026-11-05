@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "ApprovedNativeV8Projection.h"
+#include "../engine/core/DynamicChannelRoster.h"
+#include <charconv>
+#include <system_error>
 #include <juce_core/juce_core.h>
 #include <cmath>
 #include <cstdint>
@@ -168,5 +171,61 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
     converted->setProperty("operation",nativeOperation);
     converted->setProperty("payload",juce::var(translatedPayload.release()));
     return {juce::var(converted.release()),{}};
+}
+
+inline bool approvedNativeId(const juce::var& value,std::uint64_t& result) {
+    if(!value.isString()||!nativeV8Decimal(value))return false;
+    const auto bytes=value.toString().toStdString();
+    std::uint64_t decoded=0;
+    const auto parsed=std::from_chars(bytes.data(),bytes.data()+bytes.size(),decoded);
+    if(parsed.ec!=std::errc{} ||
+       parsed.ptr!=bytes.data()+bytes.size() || decoded==0)
+        return false;
+    result=decoded;
+    return true;
+}
+
+// The only PCM mutation route for the approved Pages WebView controller.
+// This does NOT own a callback, plugin instance, graph or UI state.
+// The installed ENGINE source must accept the exact epoch/revision/ChannelId.
+// No fallback to ordinal-only M4 or synthetic JS/DSP is permitted.
+template<class Engine>
+inline bool executeApprovedNativeControl(Engine& engine,
+                                         const juce::var& translated) {
+    if(!translated.isObject())return false;
+    std::uint64_t epoch=0,revision=0,roster=0,id=0;
+    if(!approvedNativeId(translated.getProperty("deviceEpoch",{}),epoch) ||
+       !approvedNativeId(translated.getProperty("baseGraphRevision",{}),revision) ||
+       !approvedNativeId(translated.getProperty("baseRosterRevision",{}),roster) ||
+       !approvedNativeId(translated.getProperty("targetChannelId",{}),id))
+        return false;
+    const auto payload=translated.getProperty("payload",{});
+    if(!payload.isObject())return false;
+    const auto operation=translated.getProperty("operation","").toString();
+    const auto channel=armix::mixer::ChannelId{id};
+    if(operation=="NATIVE_SET_CHANNEL_MIX" ||
+       operation=="NATIVE_SET_BUS_MIX") {
+        const auto rawGain=payload.getProperty("gain",{});
+        const auto rawPan=payload.getProperty("pan",{});
+        double gain=0.,pan=0.;
+        if(!nativeV8Number(rawGain,gain) ||
+           !nativeV8Number(rawPan,pan) ||
+           gain<0. || gain>4. || pan< -1. || pan>1.)
+            return false;
+        if(operation=="NATIVE_SET_CHANNEL_MIX")
+            return engine.setNativeInputMix(epoch,revision,channel,
+                    static_cast<float>(gain),static_cast<float>(pan));
+        return engine.setNativeBusMix(epoch,revision,channel,
+                    static_cast<float>(gain),static_cast<float>(pan));
+    }
+    if(operation=="NATIVE_SET_CHANNEL_MUTE_SOLO") {
+        const auto mute=payload.getProperty("mute",{});
+        const auto solo=payload.getProperty("solo",{});
+        if(!mute.isBool()||!solo.isBool())return false;
+        return engine.setNativeInputMuteSolo(epoch,revision,channel,
+                                            static_cast<bool>(mute),
+                                            static_cast<bool>(solo));
+    }
+    return false;
 }
 } // namespace armix::console
