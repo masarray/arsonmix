@@ -271,6 +271,46 @@ if ($Action -eq 'Summary') {
           [string]::IsNullOrWhiteSpace([string]$s.renderEndpoint)) {
         $missing+=($tag+': render endpoint identity missing')
       }
+      # Validate the real pin inventory here too, independently of Start.
+      # FAT_RUNS.json may be manually edited; two equally empty 0FX/1FX
+      # inventories must NEVER satisfy the PowerShell-only Summary gate.
+      foreach ($field in @('capturePins','renderPins')) {
+        $pinField=$s.PSObject.Properties[$field]
+        if ($null -eq $pinField -or $null -eq $pinField.Value -or
+            $pinField.Value -isnot [System.Array]) {
+          $missing+=($tag+': invalid physical '+$field+' inventory')
+          continue
+        }
+        $seenPin=@{}
+        foreach ($pin in $pinField.Value) {
+          $physicalPin=0
+          if ($null -eq $pin -or $pin -is [bool] -or
+              -not [int]::TryParse([string]$pin,[ref]$physicalPin) -or
+              $physicalPin -lt 0 -or $physicalPin -gt 255) {
+            $missing+=($tag+': invalid physical '+$field+' ordinal (0..255 required)')
+            break
+          }
+          if ($seenPin.ContainsKey([string]$physicalPin)) {
+            $missing+=($tag+': duplicate physical '+$field+' ordinal')
+            break
+          }
+          $seenPin[[string]$physicalPin]=$true
+        }
+      }
+      $capturePinCount=@($s.capturePins | Where-Object { $null -ne $_ }).Count
+      $renderPinCount=@($s.renderPins | Where-Object { $null -ne $_ }).Count
+      if ($required -eq 'OUTPUT_ONLY_TONE' -and
+          ($capturePinCount -ne 0 -or $renderPinCount -lt 1)) {
+        $missing+=($tag+': output-only must have no capture and >=1 render pin')
+      }
+      if ($required -eq 'CAPTURE_ONLY' -and
+          ($renderPinCount -ne 0 -or $capturePinCount -lt 1)) {
+        $missing+=($tag+': capture-only must have no render and >=1 capture pin')
+      }
+      if ($required -in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX') -and
+          ($capturePinCount -lt 1 -or $renderPinCount -lt 1)) {
+        $missing+=($tag+': wired through-mode requires actual capture and render pins')
+      }
       if ($required -in @('DRY_THROUGH_0FX','LIVE_THROUGH_1FX')) {
         if ($s.elapsedSeconds -lt 1800 -or -not $s.wired) {
           $missing+=($tag+': 1800-second real wired route required')

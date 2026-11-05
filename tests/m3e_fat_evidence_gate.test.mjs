@@ -228,6 +228,23 @@ test('PowerShell Summary validates 44.1/48 kHz real start/end duration rather th
   assert.equal(bad.status,'EVIDENCE_INCOMPLETE');
   assert.equal(bad.hardwareCertified,false);
   assert.match(bad.blockers.join(' '),/48000 DRY_THROUGH_0FX: recorded duration inconsistent with UTC start\/end/);
+  forged.endedUtc=new Date(Date.parse(forged.startedUtc)+1800e3).toISOString();
+  for(const mode of ['DRY_THROUGH_0FX','LIVE_THROUGH_1FX']){
+    const s=j.sessions.find(x=>x.sampleRate===48000&&x.mode===mode);
+    s.capturePins=[];s.renderPins=[];
+  }
+  const missingPins=runSummary();
+  assert.equal(missingPins.status,'EVIDENCE_INCOMPLETE');
+  assert.match(missingPins.blockers.join(' '),/wired through-mode requires actual capture and render pins/);
+  const dry=j.sessions.find(x=>x.sampleRate===44100&&x.mode==='DRY_THROUGH_0FX');
+  dry.capturePins=[0,0];
+  const duplicatePins=runSummary();
+  assert.equal(duplicatePins.status,'EVIDENCE_INCOMPLETE');
+  assert.match(duplicatePins.blockers.join(' '),/duplicate physical capturePins ordinal/);
+  dry.capturePins=[-1,257];
+  const outOfRange=runSummary();
+  assert.equal(outOfRange.status,'EVIDENCE_INCOMPLETE');
+  assert.match(outOfRange.blockers.join(' '),/invalid physical capturePins ordinal/);
  }finally{clean(d);}
 });
 
