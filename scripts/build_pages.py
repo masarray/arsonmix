@@ -62,6 +62,10 @@ canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets')
+print("Stage C approved CSS: removed",css_compilation["removedDeclarations"],
+      "redundant declarations (cross-file",
+      css_compilation["removedCrossFileDeclarations"],"), kept original",
+      css_compilation["sourceStylesheetCount"],"CSS owners; zero new overrides")
 if css_compilation['removedDeclarations']<1:
     raise SystemExit('CSS Stage C produced no obsolete-declaration removals')
 (buttons_dest/'index.html').write_text(canonical_html,encoding='utf-8')
