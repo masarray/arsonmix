@@ -254,6 +254,18 @@ test("P0 FX command preflight never mutes monitoring for deterministic rejection
  assert.match(engine,/pluginFormat->fileMightContainThisPluginType\(chosen\.path\)/);
  assert.match(engine,/FX INSERT: VST3 bundle unavailable or invalid/);
 });
+test("P0 native WIRE MAIN disconnect requires exact accepted EdgeId or verified M4 route",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const bundle=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/const edgeId=wireByUiId\.get\(op\.edgeId\)/);
+ assert.match(bridge,/const graphMainRemove=op\.type==="REMOVE"/);
+ assert.match(bridge,/const m4MainRemove=op\.type==="REMOVE"/);
+ assert.match(bridge,/current\?\.admitted!==true/);
+ assert.match(bridge,/legacy\(\)\?\.channels\?\.\[lane\]\?\.main===true/);
+ assert.match(bridge,/e\.id===op\.edgeId&&e\.sourceId===op\.sourceId/);
+ assert.match(bridge,/e\.destId===scope\?\.master\?\.id/);
+ assert.match(bundle,/get wireEdges\(\)\{return wireEdges;\}/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");

@@ -1560,11 +1560,25 @@
         // uiByWireId is the inverse. The old inverse lookup always returned
         // undefined, so unplugging an existing MAIN wire was impossible.
         const edgeId=wireByUiId.get(op.edgeId);
-        const isMainRemove=op.type==="REMOVE" && sourceId &&
+        const lane=m4Index(t);
+        const graphMainRemove=op.type==="REMOVE" && sourceId &&
           current?.admitted===true &&
           current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
             e.from===sourceId&&e.to===current.graph.mainChannelId);
-        if(t&&m4Index(t)>=0&&(isMainConnect||isMainRemove)){
+        // The approved M4 renderer remains the accepted First Sound owner
+        // if ChannelId projection was not admitted. Verify BOTH an exact UI
+        // PRIMARY edge and the producer's real MAIN readback before removing.
+        // When native ChannelId *is* admitted, never replace its edge-token
+        // guard with an M4 label. No invented browser-only PCM or routing.
+        const m4MainRemove=op.type==="REMOVE" && current?.admitted!==true &&
+          lane>=0 && m4Verified() &&
+          legacy()?.channels?.[lane]?.main===true &&
+          Array.isArray(scope?.wireEdges) &&
+          scope.wireEdges.some(e=>e.enabled&&e.kind==="primary"&&
+            e.id===op.edgeId&&e.sourceId===op.sourceId&&
+            e.destId===scope?.master?.id);
+        const isMainRemove=graphMainRemove||m4MainRemove;
+        if(t&&lane>=0&&(isMainConnect||isMainRemove)){
           const target=isMainRemove?"NONE":"MAIN";
           if(requestPrimaryOut(t,target))
             status("CH "+(m4Index(t)+1)+" WIRE → "+

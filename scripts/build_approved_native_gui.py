@@ -174,6 +174,7 @@ NATIVE_EVENT_HOOKS = (
     ("restorePluginPreferences();init();\n})();",
      "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
      " get tracks(){return tracks;},get master(){return master;},\n"
+     " get wireEdges(){return wireEdges;}, // native read-only UI edge identity\n"
      " make,render,findTrack,displayMeterDbfs,\n"
      " refreshStrip,syncFaderVisual,openFastPicker,openPluginBrowser,\n"
      " get activeFaderId(){return faderGesture?Number(faderGesture.input.closest('.strip')?.dataset.id):-1;},\n"
