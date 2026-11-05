@@ -4226,16 +4226,6 @@ scheduleDemoMeter();
     if(Number.isInteger(channel))overlay.querySelector('[data-io-quick-row="'+channel+'"]')?.scrollIntoView({block:'nearest'});
   }
   window.__arMixOpenAudioIO=openIO;
-  // Reuse ONE existing Audio Setup and native I/O authority. The old
-  // standalone JUCE AudioDeviceSelectorComponent remains advanced recovery,
-  // never the entry point for normal live operators.
-  window.__arMixOpenPrimaryAudioSetup=()=>openIO('device');
-  window.__arMixOpenChannelHardwareInput=channel=>{
-    if(!Number.isInteger(channel)||channel<0||channel>=10)return false;
-    if(!route().ready){openIO('device');return true;}
-    openSourceChooser(channel);return true;
-  };
-
   function closeIO(){overlay.hidden=true;matrixDraft.clear();matrixSide.clear();matrixMessage='';}
   function setMode(next){
     if(!['FX','ROUTE','SENDS'].includes(next))return;
@@ -4277,18 +4267,6 @@ scheduleDemoMeter();
     const source=strip.querySelector('.arBankSource'),output=strip.querySelector('.arBankOutput');
     if(!source||!output)return;
     const current=valueFor(r),choices=portsFor(s,r);
-    // The APPROVED Adobe-style IN field is the primary HARDWARE input control.
-    // Replace web-only demo choices with actual enabled JUCE capture pins.
-    // Each of 10 strips independently owns one source selector, and dispatches
-    // through the existing native ACK/epoch routing controller below.
-    const face=strip.querySelector('.route-select[data-field="input"]');
-    if(face&&isNative()){
-      populate(face,choices,current);
-      face.dataset.nativeHardwareInput='1';
-      face.dataset.channel=String(i);
-      face.disabled=!s.ready||!!s.pending||!!quickSourcePending;
-      face.title='CH '+(i+1)+' · Choose physical input · native ACK confirms route';
-    }
     const inline=strip.querySelector('.arChannelQuickInput');
     if(inline){
       populate(inline,choices,current);
@@ -5121,16 +5099,6 @@ scheduleDemoMeter();
     }
     lastSignature='';refresh();
   }
-  // Handle the visible approved mixer IN dropdown BEFORE the Pages/demo
-  // renderer or native ChannelId fallback. Native source routing is one
-  // direct gesture for ANY strip, not More > Patch CH1 > Arm Output.
-  document.addEventListener('change',e=>{
-    const select=e.target;
-    if(!isNative()||!select.matches('.route-select[data-native-hardware-input="1"]'))return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    changeSource(select); // one canonical source transaction / ACK path
-  },true);
   document.addEventListener('change',e=>{
     if(e.target.matches('[data-io-quick-mode]')){
       const row=e.target.closest('[data-io-quick-row]'),mode=e.target.value;
