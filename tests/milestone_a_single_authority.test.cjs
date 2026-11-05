@@ -14,6 +14,9 @@ test("only installed callback determines GUI channel control authority",()=>{
  assert.match(adapter,/const nativeAdmitted=session\.authority==="CHANNEL_ID"/);
  assert.match(adapter,/m4ControlIsOwner\(\)&&m4Verified\(\)&&m4Index\(t\)>=0/);
  assert.doesNotMatch(adapter,/rackSavedBypass/);
+ assert.match(adapter,/const ctl=session\.channels\.map\(row=>row\.controls\)/);
+ assert.match(adapter,/session\.channels\.map\(ch=>ch\.source\)/);
+ assert.match(producer,/row->setProperty\("fxRackBypassed",rackFlags\[i\]\)/);
  assert.doesNotMatch(adapter,/AudioContext|AudioWorklet/);
 });
 test("M4 scalar commands require correlated ACK then later publisher snapshot",()=>{
@@ -25,6 +28,20 @@ test("M4 scalar commands require correlated ACK then later publisher snapshot",(
  assert.match(adapter,/p\.acked=true/);
  assert.match(adapter,/reconcileM4ControlReadback\(next\)/);
  assert.match(adapter,/session\?\.channels\?\.\[p\.channel\]/);
+});
+test("FX rack parent is a producer gate with independent slot preferences",()=>{
+ const host=read("src/Main.cpp"),adapter=read("web/approved-native-bridge.js");
+ const fx=read("engine/core/LiveChannelFxGraph.h");
+ const lease=read("engine/core/DynamicChannelFxLeaseBank.h");
+ assert.match(host,/action=="routingFxRackBypass"/);
+ assert.match(host,/setDryRoutingLabFxRackBypass/);
+ assert.match(host,/routingNativeFxRackBypass/);
+ assert.match(adapter,/requestM4RackPower\(t\)/);
+ assert.match(adapter,/requestAdmittedFxPower\(t,action,btn\)/);
+ assert.match(adapter,/reconcileM4RackReadback\(next\)/);
+ assert.match(fx,/rackBypassed_\[strip\]/);
+ assert.match(lease,/setRackBypass\(/);
+ assert.doesNotMatch(adapter,/rackSavedBypass/);
 });
 test("native ChannelId source preserves post-fader physical MAIN and VST3",()=>{
  const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");

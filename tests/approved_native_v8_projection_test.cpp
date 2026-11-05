@@ -481,6 +481,66 @@ static void firstSoundRouteAdmissionRegression() {
     assert(!publishVerifiedFirstSoundState(withoutInput,live));
 }
 
+// Control-only fixture: validates exclusive M4 session normalization,
+// never claims that fixture data is a hardware PCM recording.
+static void milestoneAM4SessionProjectionRegression() {
+    auto snapshot=canonicalSnapshot();
+    snapshot.getProperty("device",{}).getDynamicObject()->setProperty("epoch","33");
+    auto m4=std::make_unique<juce::DynamicObject>();
+    m4->setProperty("active",true);
+    m4->setProperty("routeAccepted",true);
+    m4->setProperty("nativeBusStructural",false);
+    m4->setProperty("routingRevision","19");
+    m4->setProperty("masterDb",-7.5);
+    m4->setProperty("masterMute",false);
+    juce::Array<juce::var> sources,controls,peaksL,peaksR,rackFlags;
+    for(int i=0;i<10;++i) {
+        auto src=std::make_unique<juce::DynamicObject>();
+        src->setProperty("mode",i==4?"MONO":"NONE");
+        src->setProperty("left",i==4?2:-1);
+        src->setProperty("right",-1);
+        src->setProperty("main",true);
+        sources.add(juce::var(src.release()));
+        auto ctl=std::make_unique<juce::DynamicObject>();
+        ctl->setProperty("db",i==4?-6.:0.);
+        ctl->setProperty("pan",i==4?25.:0.);
+        ctl->setProperty("mute",false);
+        ctl->setProperty("solo",false);
+        controls.add(juce::var(ctl.release()));
+        peaksL.add(i==4?0.125:0.0);
+        peaksR.add(i==4?0.25:0.0);
+        rackFlags.add(i==4);
+    }
+    m4->setProperty("channels",juce::var(sources));
+    m4->setProperty("channelControls",juce::var(controls));
+    m4->setProperty("channelPeaksL",juce::var(peaksL));
+    m4->setProperty("channelPeaksR",juce::var(peaksR));
+    m4->setProperty("fxRackBypassed",juce::var(rackFlags));
+    snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(m4.release()));
+    publishAuthoritativeMixerSession(snapshot);
+    const auto session=snapshot.getProperty("mixerSession",{});
+    assert(session.getProperty("authority","").toString()=="M4");
+    assert(session.getProperty("deviceEpoch","").toString()=="33");
+    assert(session.getProperty("routeRevision","").toString()=="19");
+    const auto rows=session.getProperty("channels",{});
+    assert(rows.isArray()&&rows.getArray()->size()==10);
+    assert(rows[4].getProperty("id","").toString()=="m4:05");
+    assert(rows[4].getProperty("fxRackBypassed",{}).isBool());
+    assert(static_cast<bool>(rows[4].getProperty("fxRackBypassed",false)));
+    assert(std::abs(static_cast<double>(rows[4].getProperty("controls",{})
+        .getProperty("faderDb",0.0))+6.)<0.00001);
+    assert(std::abs(static_cast<double>(rows[4].getProperty("controls",{})
+        .getProperty("pan",0.0))-.25)<0.00001);
+    assert(std::abs(static_cast<double>(session.getProperty("main",{})
+        .getProperty("db",0.0))+7.5)<0.00001);
+    // Reject corrupt producer readback atomically, not just the bad strip.
+    snapshot.getProperty("legacyM4",{}).getProperty("channelControls",{})
+        .getArray()->getReference(4).getDynamicObject()->setProperty("db",55.);
+    publishAuthoritativeMixerSession(snapshot);
+    assert(snapshot.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
+}
+
 static void firstSoundMeasuredSignalEvidenceRegression() {
     auto live=parse(R"JSON({
       "connected":true,"directRouteAuthorized":true,
@@ -573,6 +633,7 @@ int main() {
     controlIntentTranslationCases(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
+    milestoneAM4SessionProjectionRegression();
     firstSoundMeasuredSignalEvidenceRegression();
     auto unadmitted=canonicalSnapshot();
     publishAuthoritativeMixerSession(unadmitted);

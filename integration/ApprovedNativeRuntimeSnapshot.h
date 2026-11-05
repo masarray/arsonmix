@@ -309,6 +309,7 @@ inline void publishAuthoritativeMixerSession(juce::var& snapshot)
     const auto controls=m4.getProperty("channelControls",{});
     const auto peakL=m4.getProperty("channelPeaksL",{});
     const auto peakR=m4.getProperty("channelPeaksR",{});
+    const auto rackFlags=m4.getProperty("fxRackBypassed",{});
     const bool preparedM4=!channelIdReady && m4.isObject() &&
         static_cast<bool>(m4.getProperty("active",false)) &&
         static_cast<bool>(m4.getProperty("routeAccepted",false)) &&
@@ -350,6 +351,8 @@ inline void publishAuthoritativeMixerSession(juce::var& snapshot)
                 src.getProperty("main",false))?"MAIN":"NONE");
             row->setProperty("peakL",l);
             row->setProperty("peakR",r);
+            if(rackFlags.isArray() && rackFlags.getArray()->size()>i && rackFlags[i].isBool())
+                row->setProperty("fxRackBypassed",rackFlags[i]);
             rows.add(juce::var(row.release()));
         }
         if(!validM4)rows.clear();

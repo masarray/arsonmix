@@ -8,7 +8,73 @@
 #include <cmath>
 using namespace armix::mixer;
 static bool near(float a,float b){return std::abs(a-b)<1.e-5f;}
+// Real prepared native DSP kernel: deterministic multichannel PCM through
+// the existing production mixer/publisher, NOT browser-mock or hardware FAT.
+static void multiChannelGoldenPcm() {
+    PreparedNativeMixerSession native;
+    ChannelRoutingConfig cfg;SendRequest sends;
+    juce::BigInteger inputsMask,outputsMask;
+    for(int pin=0;pin<3;++pin)inputsMask.setBit(pin);
+    outputsMask.setBit(0);outputsMask.setBit(1);
+    cfg.stripsAndMaster.strips[0]={SourceMode::mono,0,-1,.8f,-1.f,false,false};
+    cfg.stripsAndMaster.strips[4]={SourceMode::stereo,1,2,.5f,0.f,false,false};
+    cfg.stripsAndMaster.strips[9]={SourceMode::mono,2,-1,.25f,1.f,false,false};
+    cfg.stripsAndMaster.master.gainLinear=.5f;
+    std::uint64_t revision=0;
+    auto publish=[&](){
+        PreparedNativeMixerSession::PrepareResult result;
+        auto candidate=PreparedNativeMixerSession::prepare(
+            cfg,sends,inputsMask,outputsMask,77,revision+1,64,result);
+        assert(candidate);
+        assert(native.publish(std::move(candidate),revision,77)==
+               PreparedNativeMixerSession::PublishResult::applied);
+        ++revision;
+        (void)native.pollRetirement();
+    };
+    const std::array<float,8> a{.1f,.1f,.1f,.1f,.1f,.1f,.1f,.1f};
+    const std::array<float,8> b{.2f,.2f,.2f,.2f,.2f,.2f,.2f,.2f};
+    const std::array<float,8> c{.4f,.4f,.4f,.4f,.4f,.4f,.4f,.4f};
+    const float* inputs[]{a.data(),b.data(),c.data()};
+    std::array<float,8> l{},r{};
+    auto noop=[](int,float*,float*,int) noexcept {};
+    auto check=[&](float left,float right){
+        assert(native.render(inputs,3,l.data(),r.data(),2,8,77,noop));
+        for(int i=0;i<8;++i){assert(near(l[i],left));assert(near(r[i],right));}
+    };
+    publish();check(.09f,.15f); // CH01+CH05+CH10, true mono/stereo PCM
+    cfg.stripsAndMaster.strips[4].solo=true;
+    publish();check(.05f,.10f); // native SOLO excludes both other inputs
+    cfg.stripsAndMaster.strips[4].solo=false;
+    cfg.stripsAndMaster.strips[9].mute=true;
+    publish();check(.09f,.10f); // native per-lane MUTE
+    cfg.stripsAndMaster.master.mute=true;
+    publish();check(0.f,0.f); // real PCM post-mixer MAIN mute
+    auto invalid=cfg;
+    invalid.stripsAndMaster.strips[0].inputA=7;
+    PreparedNativeMixerSession::PrepareResult result;
+    auto rejected=PreparedNativeMixerSession::prepare(
+        invalid,sends,inputsMask,outputsMask,77,revision+1,64,result);
+    assert(!rejected);check(0.f,0.f); // invalid pin never replaces graph
+    cfg.stripsAndMaster.master.mute=false;
+    cfg.stripsAndMaster.strips[9].mute=false;
+    cfg.stripsAndMaster.strips[0].inputA=2;
+    publish();check(.21f,.15f); // source switch, retained lane controls
+    auto stale=PreparedNativeMixerSession::prepare(
+        cfg,sends,inputsMask,outputsMask,77,revision+1,64,result);
+    assert(stale);
+    assert(native.publish(std::move(stale),revision-1,77)!=
+           PreparedNativeMixerSession::PublishResult::applied);
+    check(.21f,.15f); // rejected stale revision cannot change PCM
+    cfg.stripsAndMaster.strips[3]=cfg.stripsAndMaster.strips[0];
+    cfg.stripsAndMaster.strips[0]=StripConfig{};
+    publish();check(.21f,.15f); // lane reorder preserves actual routing PCM
+    l.fill(8.f);r.fill(8.f);
+    assert(!native.render(inputs,3,l.data(),r.data(),2,8,78,noop));
+    assert(l[0]==0.f&&r[0]==0.f); // device hotplug epoch fails silent
+    native.unpublish();
+}
 int main(){
+    multiChannelGoldenPcm();
     PreparedNativeMixerSession session;
     ChannelRoutingConfig cfg; SendRequest sends;
     juce::BigInteger in,out;

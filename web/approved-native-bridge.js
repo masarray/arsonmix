@@ -21,6 +21,8 @@
   // B-stage: attached-node-only meter caches; a structural render invalidates
   // them atomically. Never retain detached WebView2 strips or stale channel IDs.
   const meterElements = new Map();
+  let nativeFxPowerSerial=0,pendingNativeFxPower=null;
+  const pendingM4RackPowers=new Map();
   let controller = null;
   const status = message => {
     lastNativeError = message;
@@ -98,6 +100,7 @@
           (out?.name||"SOURCE ONLY (No Main)");
       }
       t.selected=previous.get(t.id)?.selected || false;
+      if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
         t.fx=Array.from({length:8},(_,i)=>ch.inserts[i]?.name||"None");
         t.slotBypass=Array.from({length:8},(_,i)=>Boolean(ch.inserts[i]?.bypassed));
@@ -144,7 +147,7 @@
   function projectNativeGraphWithoutFocusLoss(next) {
     const structure=JSON.stringify([
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
-        ch.processingFormat,ch.source,ch.primaryOutId,ch.inserts]),
+        ch.processingFormat,ch.source,ch.primaryOutId,ch.inserts,ch.fxRackBypassed]),
       next.graph.edges]);
     if(structure!==lastNativeTopologySignature){
       if(!projection(next))return false;
@@ -389,6 +392,68 @@
     },5000);
     return true;
   }
+  // M4 remains an internal PCM implementation; only native mixerSession
+  // readback commits UI state. Rack gate never rewrites saved plugin flags.
+  function requestM4RackPower(t){
+    const lane=m4Index(t),session=mixerSession(),row=session?.channels?.[lane];
+    const ep=safeNativeCounter(session?.deviceEpoch),
+      rev=safeNativeCounter(session?.routeRevision);
+    if(session?.authority!=="M4"||lane<0||!row ||
+       typeof row.fxRackBypassed!=="boolean"||ep===null||rev===null||
+       pendingM4RackPowers.has(lane))return false;
+    const bypassed=!row.fxRackBypassed,requestId="rack-m4-"+(++nativeFxPowerSerial);
+    pendingM4RackPowers.set(lane,{requestId,channel:lane,bypassed,
+      epoch:String(ep),revision:String(rev),acked:false});
+    backend.emitEvent("arMixAction",{action:"routingFxRackBypass",
+      requestId,channel:lane,deviceEpoch:ep,revision:rev,value:bypassed});
+    window.setTimeout(()=>{
+      if(pendingM4RackPowers.get(lane)?.requestId!==requestId)return;
+      pendingM4RackPowers.delete(lane);
+      status("Native rack gate timed out · restoring accepted readback");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+  function reconcileM4RackReadback(next){
+    const session=next?.raw?.mixerSession;
+    for(const [lane,p] of pendingM4RackPowers){
+      if(session?.authority!=="M4"||
+         session.deviceEpoch!==p.epoch||session.routeRevision!==p.revision){
+        pendingM4RackPowers.delete(lane);continue;
+      }
+      const actual=session.channels?.[lane]?.fxRackBypassed;
+      if(p.acked && actual===p.bypassed)pendingM4RackPowers.delete(lane);
+    }
+  }
+  function requestAdmittedFxPower(t,action,button){
+    const session=mixerSession(),current=controller?.state()?.current;
+    const channelId=nativeIdFor(t);
+    const ch=current?.graph?.channels?.find(x=>x.id===channelId);
+    if(session?.authority!=="CHANNEL_ID"||!current?.admitted||
+       !channelId||!ch||pendingNativeFxPower)return false;
+    const rack=action==="fxOn",slot=Number(button?.dataset?.slot);
+    const insert=!rack&&Number.isInteger(slot)&&slot>=0&&slot<8?
+      ch.inserts?.[slot]:null;
+    if((rack&&typeof ch.fxRackBypassed!=="boolean")||
+       (!rack&&(!insert||typeof insert.id!=="string"||
+                !insert.id||typeof insert.bypassed!=="boolean")))return false;
+    const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
+    const requestId="native-rack-"+(++nativeFxPowerSerial);
+    pendingNativeFxPower={requestId,channelId,kind:rack?"rack":"insert",
+      insertId:insert?.id,bypassed,acked:false};
+    backend.emitEvent("arMixAction",{action:rack?
+      "routingNativeFxRackBypass":"routingNativeFxInsertBypass",
+      requestId,channelId,deviceEpoch:current.device.epoch,
+      revision:current.graph.revision,value:bypassed,
+      ...(rack?{}:{slot,insertId:insert.id})});
+    window.setTimeout(()=>{
+      if(pendingNativeFxPower?.requestId!==requestId)return;
+      pendingNativeFxPower=null;
+      status("Native FX power timed out · accepted state preserved");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
   let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
   const m4Verified=()=>{
@@ -445,7 +510,11 @@
       const rows=m.fxInstances[lane];
       if(!t||!Array.isArray(rows))continue;
       let change=false;
-      if(t.fxOn!==true){t.fxOn=true;change=true;}
+      const acceptedRack=mixerSession()?.authority==="M4"?
+        mixerSession()?.channels?.[lane]?.fxRackBypassed:undefined;
+      if(typeof acceptedRack==="boolean" && t.fxOn===acceptedRack){
+        t.fxOn=!acceptedRack;change=true;
+      }
       for(let slot=0;slot<8;slot++){
         const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
         const name=live?(entry?.name||"VST3 Loaded"):"None";
@@ -519,47 +588,49 @@
   }
   function paintM4Fallback(next) {
     if(!m4Verified()||!Array.isArray(scope?.tracks))return;
-    const m=next.raw.legacyM4,ctl=m.channelControls;
+    const session=next.raw?.mixerSession,m=next.raw?.legacyM4;
+    if(session?.authority!=="M4"||!Array.isArray(session.channels)||session.channels.length!==10)return;
+    const ctl=session.channels.map(row=>row.controls);
     paintM4FxInstances(m);
     const controlSignature=JSON.stringify([next.device.epoch,
-      m.routingRevision,ctl,m.masterDb,m.masterMute]);
+      session.routeRevision,ctl,session.main]);
     if(controlSignature!==lastM4Controls) {
       lastM4Controls=controlSignature;
       for(let i=0;i<10;i++){
         const t=scope.tracks.find(x=>x.id===m4TrackIds[i]),c=ctl[i];
-        if(!t||!c||!Number.isFinite(c.db)||!Number.isFinite(c.pan)||
+        const db=c?.faderDb,pan=c?.pan*100;
+        if(!t||!c||!Number.isFinite(db)||!Number.isFinite(pan)||
            typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
         const oldDb=t.level;
         const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
-        t.level=c.db;t.pan=c.pan;t.mute=c.mute;t.solo=c.solo;
+        t.level=db;t.pan=pan;t.mute=c.mute;t.solo=c.solo;
         if(switchChanged && scope.activeFaderId!==t.id){
           scope.refreshStrip?.(t);
           m4Meters.delete(t.id);
-        }else if(Math.abs(oldDb-c.db)>.015 &&
+        }else if(Math.abs(oldDb-db)>.015 &&
                  scope.activeFaderId!==t.id)
           scope.syncFaderVisual?.(t);
         const panKnob=document.querySelector(
           '.strip[data-id="'+t.id+'"] .center-pan');
         if(panKnob && document.activeElement!==panKnob)
-          panKnob.value=String(c.pan);
+          panKnob.value=String(pan);
       }
-      if(scope.master && Number.isFinite(m.masterDb) &&
-         Math.abs(scope.master.level-m.masterDb)>.015){
-        scope.master.level=m.masterDb;
+      if(scope.master && Number.isFinite(session.main?.db) &&
+         Math.abs(scope.master.level-session.main.db)>.015){
+        scope.master.level=session.main.db;
         if(scope.activeFaderId!==scope.master.id)
           scope.syncFaderVisual?.(scope.master);
       }
-      if(scope.master && typeof m.masterMute==="boolean" &&
-         scope.master.mute!==m.masterMute){
-        scope.master.mute=m.masterMute;
+      if(scope.master && typeof session.main?.mute==="boolean" &&
+         scope.master.mute!==session.main.mute){
+        scope.master.mute=session.main.mute;
         if(scope.activeFaderId!==scope.master.id)
           scope.refreshStrip?.(scope.master);
       }
     }
     // Only measured JUCE callback peaks are painted. Cache actual live DOM
     // fills to avoid repeated selector searches for every timer/signal tick.
-    if(!Array.isArray(m.channelPeaksL)||!Array.isArray(m.channelPeaksR)||
-       !scope?.displayMeterDbfs)return;
+    if(!scope?.displayMeterDbfs)return;
     const now=performance.now();
     for(let i=0;i<10;i++){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
@@ -573,7 +644,7 @@
         m4Meters.set(t.id,entry);
       }
       for(const side of ["left","right"]){
-        const peak=side==="left"?m.channelPeaksL[i]:m.channelPeaksR[i];
+        const peak=side==="left"?session.channels[i].peakL:session.channels[i].peakR;
         if(!Number.isFinite(peak)||peak<0)continue;
         const fill=entry[side];if(!fill)continue;
         scope.displayMeterDbfs(fill,peak===0?-90:
@@ -585,8 +656,10 @@
   function refreshRealM4Inputs(next){
     if(!scope?.tracks || next?.admitted || !Array.isArray(scope.tracks) ||
        scope.tracks.length<10) return;
+    const session=next?.raw?.mixerSession;
+    if(session?.authority!=="M4"||!Array.isArray(session.channels)||session.channels.length!==10)return;
     const m4=next?.raw?.legacyM4;
-    const rows=m4?.channels;
+    const rows=session.channels.map(ch=>ch.source);
     const signature=JSON.stringify([next?.device?.epoch,
       next?.device?.enabledInputs,next?.device?.inputEndpoints,
       m4?.active,m4?.routingRevision,rows]);
@@ -1138,9 +1211,10 @@
     }
     // Never paint unacknowledged or still-unproven M4 scalar edits.
     if(reconcileM4ControlReadback(next))return;
+    reconcileM4RackReadback(next);
     if(session.authority==="M4" && m4Verified()) {
       paintM4Fallback(next);
-      scope?.syncVerifiedM4Wires?.(legacy()?.channels,m4TrackIds);
+      scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds);
     }
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
@@ -1162,7 +1236,7 @@
     // Control readback may change at the SAME structural graph revision.
     // Compare the actual accepted controls/edges, never skip native fader updates.
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
     if (signature===lastPaintedSignature) {
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -1175,6 +1249,13 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    if(pendingNativeFxPower?.acked){
+      const p=pendingNativeFxPower;
+      const ch=next.graph.channels.find(x=>x.id===p.channelId);
+      const actual=p.kind==="rack"?ch?.fxRackBypassed:
+        ch?.inserts?.find(x=>x.id===p.insertId)?.bypassed;
+      if(actual===p.bypassed)pendingNativeFxPower=null;
+    }
     status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
       " · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
@@ -1213,6 +1294,27 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixNativeFxPowerAck",ack=>{
+      const p=pendingNativeFxPower;
+      if(!p||ack?.requestId!==p.requestId)return;
+      if(ack?.ok!==true || ack?.channelId!==p.channelId ||
+         ack?.bypassed!==p.bypassed){
+        pendingNativeFxPower=null;
+        status("NATIVE FX rejected · "+(ack?.error||"stale epoch or insert"));
+      }else p.acked=true;
+      controller.subscribe(); // ACK is not independently observed PCM state
+    });
+    backend.addEventListener("arMixRoutingFxRackAck",ack=>{
+      const p=pendingM4RackPowers.get(ack?.channel);
+      if(!p||ack?.requestId!==p.requestId)return;
+      if(ack?.ok!==true || String(ack.deviceEpoch)!==p.epoch ||
+         String(ack.routingRevision)!==p.revision ||
+         ack.bypassed!==p.bypassed){
+        pendingM4RackPowers.delete(p.channel);
+        status("Native M4 rack gate rejected · "+(ack?.error||"stale route"));
+      }else p.acked=true;
+      controller.subscribe(); // later authoritative M4 snapshot required
+    });
     backend.addEventListener("arMixSourceSwitchAck", ack=>{
       if(nativeUiSourcePending &&
          ack?.requestId===nativeUiSourcePending.requestId) {
@@ -1529,18 +1631,25 @@
         return true;
       }
       if(action==="slotPower"){
-        const lane=m4Index(t);
-        const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
-        if(!instance||!requestNativeFxPower(t,slot,!instance.live.bypassed))
-          nativeToast("FX bypass unavailable · select an accepted VST3 slot");
+        if(mixerSession()?.authority==="CHANNEL_ID"){
+          if(!requestAdmittedFxPower(t,action,btn))
+            nativeToast("Native FX slot unavailable · accepted insert/epoch required");
+        }else{
+          const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
+          if(!m4ControlIsOwner()||!instance||
+             !requestNativeFxPower(t,slot,!instance.live.bypassed))
+            nativeToast("FX bypass unavailable · select an accepted VST3 slot");
+        }
         return true;
       }
       if(action==="fxOn"){
-        // #421 supplies the native atomic rack bypass. Until admitted here,
-        // preserve all independent VST3 slot states: never fan out partial
-        // per-slot bypass commands from browser JavaScript.
-        nativeToast("FX rack master bypass requires admitted native gate");
-        status("FX HEADER NOT ADMITTED · individual VST3 states preserved");
+        const authority=mixerSession()?.authority;
+        const ok=authority==="M4"?requestM4RackPower(t):
+          authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
+        if(!ok){
+          nativeToast("FX header requires an accepted native rack gate");
+          status("FX rack unchanged · native PCM authority or readback unavailable");
+        }
         return true;
       }
       if(action==="format"&&t?.kind==="audio"){

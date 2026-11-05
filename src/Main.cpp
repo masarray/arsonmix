@@ -1528,7 +1528,8 @@ private:
             action == "scanVst3" || action == "routingDryApply" ||
             action == "routingFxBypass" ||
             action == "routingNativeFxRackBypass" ||
-            action == "routingNativeFxInsertBypass"))
+            action == "routingNativeFxInsertBypass" ||
+            action == "routingFxRackBypass"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -1545,6 +1546,15 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     action=="routingDryApply"?"arMixRoutingLabAck":"arMixRoutingFxBypassAck",
                     juce::var(ack.release()));
+            }
+            if(action=="routingFxRackBypass" && browser_.loaded){
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("channel",args.getProperty("channel",-1));
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixRoutingFxRackAck",juce::var(ack.release()));
             }
             if((action=="routingNativeFxRackBypass" ||
                 action=="routingNativeFxInsertBypass") && browser_.loaded) {
@@ -1628,6 +1638,52 @@ private:
             if(error.isNotEmpty())emitNotice(error,true);
             else diagnostics_.record("NATIVE_ROUTED_FX_INSERT",
                 "CH "+juce::String(lane+1)+" slot "+juce::String(position+1));
+            return;
+        }
+        // M4 is internal PCM compatibility, not an independent GUI state.
+        // One native rack gate overrides FX wet/dry, preserving slot bypasses.
+        if(action=="routingFxRackBypass"){
+            const auto requestId=args.getProperty("requestId",{}).toString();
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const auto ep=args.getProperty("deviceEpoch",juce::var());
+            const auto rv=args.getProperty("revision",juce::var());
+            const auto route=engine_.status().getProperty("dryRoutingLab",{});
+            const auto currentEp=route.getProperty("epoch",juce::var());
+            const auto currentRv=route.getProperty("revision",juce::var());
+            const bool tokens=(ep.isInt()||ep.isInt64()) &&
+                (rv.isInt()||rv.isInt64()) &&
+                static_cast<juce::int64>(ep)>0 &&
+                static_cast<juce::int64>(ep)==static_cast<juce::int64>(currentEp) &&
+                static_cast<juce::int64>(rv)==static_cast<juce::int64>(currentRv);
+            const bool replay=acceptedControlRequests_.contains(requestId);
+            const bool valid=tokens&&value.isBool()&&
+                requestId.startsWith("rack-m4-")&&requestId.length()<=48 &&
+                lane>=0&&lane<LiveDryRoutingLab::count&&!replay&&
+                !nativeShowBusy_&&!studioBackupBusy_&&
+                static_cast<bool>(route.getProperty("hasAcceptedRoute",false)) &&
+                !static_cast<bool>(route.getProperty("nativeChannelIdPcmActive",false)) &&
+                !static_cast<bool>(route.getProperty("nativeBusStructural",false)) &&
+                !static_cast<bool>(route.getProperty("topologyFault",true)) &&
+                engine_.directRouteAuthorized()&&!engine_.independentClockActive();
+            if(!replay && requestId.startsWith("rack-m4-") && requestId.length()<=48){
+                acceptedControlRequests_.add(requestId);
+                if(acceptedControlRequests_.size()>512)acceptedControlRequests_.remove(0);
+            }
+            const bool applied=valid&&engine_.setDryRoutingLabFxRackBypass(
+                lane,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
+                static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                static_cast<bool>(value));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("ok",applied);
+            ack->setProperty("deviceEpoch",currentEp);
+            ack->setProperty("routingRevision",currentRv);
+            ack->setProperty("channel",lane);
+            ack->setProperty("bypassed",value);
+            ack->setProperty("error",applied?juce::String():
+                "Native rack bypass rejected: stale epoch, revision or PCM authority");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixRoutingFxRackAck",juce::var(ack.release()));
             return;
         }
         if(action=="routingM4Control"){
