@@ -2644,6 +2644,15 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
+        // The WebView subscribes BEFORE audio startup. A one-shot G0 snapshot
+        // can therefore precede JUCE initialise() and leave PATCH CH1 grayed
+        // out forever. Publish the SAME real engine status at the existing
+        // 12 Hz control-thread cadence: physical pins, accepted ChannelIds and
+        // PCM meters update after startup, source patch, ARM and hotplug.
+        // No additional DSP callback, allocation or work on realtime thread.
+        if (consoleSubscribed_)
+            browser_.emitEventIfBrowserIsVisible (
+                "arMixConsoleSnapshot", approvedNativeSnapshot(state));
     }
 };
 
