@@ -82,6 +82,32 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // The default GUI IN selector must reflect the ACTUAL accepted or
+    // verified prepared M4 topology, never the Pages demo route string.
+    // All ten lanes are independently selectable (including sparse ASIO pins).
+    if(physicalReady) {
+        const auto topology=boolIs(route,"hasAcceptedRoute",true)
+            ?route.getProperty("acceptedRoute",{})
+            :route.getProperty("preparedM4Route",{});
+        const auto sourceRows=topology.getProperty("channels",{});
+        const auto* entries=sourceRows.getArray();
+        bool valid=entries && entries->size()==10;
+        if(valid)for(const auto& row:*entries) {
+            const auto mode=row.getProperty("mode",{}).toString();
+            if(!row.isObject()||
+               (mode!="NONE"&&mode!="MONO"&&mode!="STEREO"&&mode!="BUS")) {
+                valid=false;break;
+            }
+            if(mode=="MONO"||mode=="STEREO") {
+                const auto left=row.getProperty("left",{}),right=row.getProperty("right",{});
+                if(!left.isInt() && !left.isInt64()){valid=false;break;}
+                if(mode=="STEREO" && !right.isInt() && !right.isInt64()) {
+                    valid=false;break;
+                }
+            }
+        }
+        if(valid)firstSound->setProperty("channelSources",sourceRows);
+    }
     // G0 may still have the genuine 10-strip M4 DSP callback. Export its
     // existing atomic control readback without falsely admitting ChannelId.
     // A fresh/unpatched device must NEVER display pseudo-active controls.
