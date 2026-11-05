@@ -188,9 +188,11 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  const bridge=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
- assert.match(page,/const FADER_TAPER=Object\.freeze/);
- assert.match(page,/function faderDbFromTravelPercent\(percent,isSend\)/);
- assert.match(page,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
+ const nativeBundle=read("scripts/build_approved_native_gui.py");
+ assert.match(nativeBundle,/const FADER_TAPER=Object\.freeze/);
+ assert.match(nativeBundle,/function faderDbFromTravelPercent\(percent,isSend\)/);
+ assert.match(nativeBundle,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
+ assert.doesNotMatch(page,/FADER_TAPER/, "public Pages reference remains immutable");
  assert.match(bridge,/function previewNativePan\(t,el,event\)/);
  assert.match(bridge,/const width=event\.type==="change"\?12:latched\?12:7/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);

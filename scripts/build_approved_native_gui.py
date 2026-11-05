@@ -57,6 +57,32 @@ def accepted_pages_html() -> str:
 # HTML at native build time. Every anchor must occur exactly once: no silent
 # breakage if Pages GUI source evolves. No extra layout or simulated PCM.
 NATIVE_EVENT_HOOKS = (
+    # The published /preview/ HTML and its V28 checkpoint are immutable.
+    # Change ONLY the compiled native WebView's operator fader travel law.
+    # The DSP gain remains exact dB -> 10^(dB/20), and the mapping is
+    # invertible at every tick; no new JS audio engine or controller.
+    ("function faderPercent(value,isSend){return rangePct(value,-60,isSend?6:10);}\n",
+     "const FADER_TAPER=Object.freeze([[-60,0],[-48,15],[-36,27],[-24,39],[-12,54],[-6,65],[0,77],[6,92],[10,100]]);\n"
+     "function faderPercent(value,isSend){\n"
+     " if(isSend)return rangePct(value,-60,6);\n"
+     " const db=Math.max(-60,Math.min(10,Number(value)));\n"
+     " for(let i=1;i<FADER_TAPER.length;i++){\n"
+     "  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];\n"
+     "  if(db<=hiDb)return loPct+(db-loDb)*(hiPct-loPct)/(hiDb-loDb);\n"
+     " }return 100;\n"
+     "}\n"
+     "function faderDbFromTravelPercent(percent,isSend){\n"
+     " const p=Math.max(0,Math.min(100,Number(percent)));\n"
+     " if(isSend)return -60+66*p/100;\n"
+     " for(let i=1;i<FADER_TAPER.length;i++){\n"
+     "  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];\n"
+     "  if(p<=hiPct)return loDb+(p-loPct)*(hiDb-loDb)/(hiPct-loPct);\n"
+     " }return 10;\n"
+     "}\n"),
+    ("scaleTopPct(v,-60,gainMax)",
+     "(100-faderPercent(v,isSend))"),
+    (" const gain=Math.round((max-(max-min)*frac)*10)/10;\n",
+     " const gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;\n"),
     # Only the compiled Windows WebView gets verified native driver inputs.
     # Public /preview/ continues to show its labeled simulated reference.
     ("const channelOptions=(t,type)=>{\n",
