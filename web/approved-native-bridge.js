@@ -266,7 +266,7 @@
     if(apply)apply.disabled=!!ioRequest||!ioDraft.captureDevice||!ioDraft.playbackDevice;
   }
   function installNativeIo(){
-    if(!connected||ioPanel)return;
+    if(!connected||ioPanel||typeof document.createElement!=="function")return;
     const css=document.createElement("style");
     css.textContent=`
       .armix-native-io{position:fixed;inset:0;z-index:200000;background:#0009;
