@@ -469,7 +469,7 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/arMixSourceSwitchAck/);
  assert.match(js,/arMixAudioArmAck/);
   assert.match(js,/ack\?\.ok===true/);
- assert.match(js,/NATIVE PATCH REJECTED:/);
+  assert.match(js,/INPUT REJECTED/);
  assert.match(js,/NO VERIFIED AUDIO DEVICE/);
  assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
  assert.match(js,/MAIN ARMED · PCM NOT YET ADMITTED/);
