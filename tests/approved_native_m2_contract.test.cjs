@@ -131,6 +131,10 @@ test("M4 ten-strip fader/pan/mute/solo and MAIN controls use verified native rea
   assert.match(bridge,/emitVerifiedM4Param\(btn,action,!now\)/);
   assert.match(bridge,/function projectVerifiedM4ControlReadback/);
   assert.match(bridge,/if\(dirty\)scope\.render\(\)/);
+  // Regression: native G0 physical faders cannot be blocked by the old
+  // blanket pointerdown fence when the installed M4 graph is ready.
+  assert.match(bridge,/if \(flags\.acceptedGraphConnected \|\| verifiedM4ControlLane\(\)\) return/);
+  assert.doesNotMatch(bridge,/NATIVE G0: physical gain\/pan unavailable until engine graph admission/);
   assert.match(bridge,/changes\[lane\]\.model\.output=target/);
   assert.match(bridge,/emitVerifiedMasterParam\('masterGain',numeric\)/);
   assert.match(bridge,/emitVerifiedMasterParam\('masterMute',!m4LiveStatus\.masterMute\)/);
