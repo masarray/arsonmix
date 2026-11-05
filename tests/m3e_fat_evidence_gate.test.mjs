@@ -169,3 +169,32 @@ test('physical endpoint IDs are mandatory for wired 0FX/1FX evidence, not just p
   assert.match(inspectM3eJournal(j,{root:d}).blockers.join(' '),/actual capture\/render endpoint identity missing/);
  }finally{clean(d);}
 });
+
+test('UTF-8 BOM written by Windows PowerShell 5.1 preserves exact source and report SHA verification',()=>{
+  const d=makeTemp();try{
+    const p=makePackage(d),bom=Buffer.from([0xef,0xbb,0xbf]);
+    writeFileSync(join(d,'BUILD_PROVENANCE.json'),Buffer.concat([bom,Buffer.from(JSON.stringify(p.m))]));
+    assert.equal(inspectM3ePackage(d).build,'EXE_AND_FAT_BYTES_VERIFIED');
+    const j=journal(d);
+    writeFileSync(join(d,'FAT_RUNS.json'),Buffer.concat([bom,Buffer.from(JSON.stringify(j))]));
+    const r=assessM3eFat(d);
+    assert.equal(r.physical,'EVIDENCE_READY_FOR_HUMAN_REVIEW');
+    assert.equal(r.hardwareCertified,false);
+    assert.equal(r.releaseReady,false);
+  }finally{clean(d);}
+});
+test('BOM does not weaken malformed-journal rejection or source SHA pinning',()=>{
+  const d=makeTemp();try{
+    makePackage(d);
+    writeFileSync(join(d,'FAT_RUNS.json'), '\uFEFF{"schema":bad}');
+    const malformed=assessM3eFat(d);
+    assert.equal(malformed.physical,'PENDING');
+    assert.match(malformed.blockers.join(' '),/FAT journal integrity/);
+    const j=journal(d);j.sourceSha='b'.repeat(40);
+    writeFileSync(join(d,'FAT_RUNS.json'), '\uFEFF'+JSON.stringify(j));
+    const altered=assessM3eFat(d);
+    assert.equal(altered.physical,'PENDING');
+    assert.equal(altered.hardwareCertified,false);
+    assert.match(altered.blockers.join(' '),/source\/executable SHA differs/);
+  }finally{clean(d);}
+});

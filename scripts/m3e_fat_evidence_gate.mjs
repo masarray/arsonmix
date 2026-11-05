@@ -21,6 +21,11 @@ const safeName=v=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,179}$/.test
   basename(v)===v&&v!=='.'&&v!=='..';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const time=v=>typeof v==='string'?Date.parse(v):NaN;
+// Windows PowerShell 5.1 -Encoding UTF8 emits a BOM; retain strict JSON+SHA checks.
+const readJsonFile=path=>{
+  const s=readFileSync(path,'utf8');
+  return JSON.parse(s.charCodeAt(0)===0xfeff?s.slice(1):s);
+};
 function checkPe64Gui(bytes){
   if(bytes.length<4*1024*1024||bytes.toString('ascii',0,2)!=='MZ')
     throw Error('Native EXE missing / under 4 MiB / invalid MZ');
@@ -43,7 +48,7 @@ function readExact(root,filename,expectedHash){
   return bytes;
 }
 export function inspectM3ePackage(root){
-  const p=resolve(root),manifest=JSON.parse(readFileSync(join(p,'BUILD_PROVENANCE.json'),'utf8'));
+  const p=resolve(root),manifest=readJsonFile(join(p,'BUILD_PROVENANCE.json'));
   if(manifest.schema!=='arsonmix.native-artifact-provenance.v1'||
      !HEX40.test(manifest.sourceCommit||'')||
      manifest.executable!=='ArSonMix-GUI10CH-P012-Windows-x64.exe'||
@@ -169,7 +174,7 @@ export function assessM3eFat(root){
       physical:'PENDING',releaseReady:false,hardwareCertified:false,
       blockers:['No physical FAT_RUNS.json: no 44.1/48-kHz field evidence']};
   try{
-    const journal=JSON.parse(readFileSync(journalPath,'utf8'));
+    const journal=readJsonFile(journalPath);
     if(journal.sourceSha!==packageResult.sourceSha||
        journal.exeSha256!==packageResult.exeSha256)
       throw Error('Journal source/executable SHA differs from packaged native EXE');
