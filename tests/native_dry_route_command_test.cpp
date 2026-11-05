@@ -28,6 +28,16 @@ int main(){
     assert(!Guard::mayRestoreMonitor(true,true,false,false));
     assert(!Guard::mayRestoreMonitor(true,true,true,true));
     assert(!Guard::mayRestoreMonitor(false,true,true,false));
+    constexpr Guard::MixSnapshot oldM4{0.25f,-0.25f,false,false};
+    constexpr Guard::MixSnapshot acceptedNative{0.75f,0.5f,true,true};
+    constexpr auto migrated=Guard::preserveAcceptedMix(
+        oldM4,acceptedNative,true);
+    static_assert(migrated.linear==0.75f && migrated.pan==0.5f &&
+                  migrated.mute && migrated.solo);
+    constexpr auto legacyOnly=Guard::preserveAcceptedMix(
+        oldM4,acceptedNative,false);
+    static_assert(legacyOnly.linear==0.25f && legacyOnly.pan==-0.25f &&
+                  !legacyOnly.mute && !legacyOnly.solo);
     juce::String json=R"({"channels":[)";
     for(int i=0;i<stripCount;++i) {
         if(i)json<<",";

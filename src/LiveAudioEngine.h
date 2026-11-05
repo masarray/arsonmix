@@ -1145,8 +1145,11 @@ public:
                 graphOwned_->count,frames,true,currentOriginalCh1Lease());
         // A failed edit may restore the PREVIOUS valid audible route; device
         // or graph faults, an unpatched last source, or STREAM never auto-arm.
-        if(wasMonitoring && expectedEpoch==dryRoutingLab_.epoch() &&
-           !secondaryOutput_.armed() && liveOutputArmFault().isEmpty())
+        const bool sameEpoch=expectedEpoch==dryRoutingLab_.epoch();
+        if(wasMonitoring && sameEpoch &&
+           armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
+               wasMonitoring,sameEpoch,liveOutputArmFault().isEmpty(),
+               secondaryOutput_.armed()))
             setMonitorEnabled(true);
         return error;
     }

@@ -452,6 +452,12 @@ public:
                 // enter ANY channel/master vendor DSP or produce sound.
                 userPatched_.store(explicitSelection,std::memory_order_release);
                 channelEdits_=proposed; // control thread SSOT for this route revision
+                // The freshly accepted M4 graph now owns these exact controls.
+                // Dirty native-only gestures have been captured into the new
+                // graph or superseded by a deliberate explicit APPLY.
+                // Otherwise re-admission would reject forever after one fader
+                // gesture and disable all fallback live controls.
+                nativeControlDirty_=false;
                 for(int i=0;i<count;++i)channelFxNames_[i]=selections[i][0].name;
                 for(int b=0;b<auxCount;++b)
                     auxFxNames_[b]=selections[count+b][0].name;
@@ -739,14 +745,37 @@ public:
         auto* editable=stagedRows.getArray();
         if(!editable||editable->size()!=count)
             return "CHANNEL PATCH: malformed native topology";
+        // ChannelId gestures are authoritative once admitted. M4's saved
+        // channelEdits_ may be older; copy ACTUAL accepted roster controls
+        // into the recompiled M4 fallback so a SOURCE/OUT edit never changes
+        // a singer's last fader, pan, mute or solo setting.
+        const bool nativeControls=channelIdPhysicalPcmActive();
+        if(nativeControls && (nativeStructureLive_ ||
+           nativeAccepted_.deviceEpoch!=expectedEpoch))
+            return "CHANNEL PATCH: incompatible native roster";
         for(int i=0;i<count;++i) {
             auto* row=editable->getReference(i).getDynamicObject();
             if(!row)return "CHANNEL PATCH: missing native channel";
             const auto& c=channelEdits_[i];
-            row->setProperty("gain",static_cast<double>(c.linear));
-            row->setProperty("pan",static_cast<double>(c.pan));
-            row->setProperty("mute",c.mute);
-            row->setProperty("solo",c.solo);
+            const auto* accepted=nativeControls
+                ?nativeAccepted_.graph.roster.find(nativeAccepted_.graph.ids.inputs[i])
+                :nullptr;
+            if(nativeControls && (!accepted ||
+                accepted->role!=armix::mixer::ChannelRole::input))
+                return "CHANNEL PATCH: admitted input roster is stale";
+            const armix::mixer::NativeTopologyEditSafety::MixSnapshot legacy{
+                c.linear,c.pan,c.mute,c.solo};
+            const armix::mixer::NativeTopologyEditSafety::MixSnapshot native{
+                accepted?accepted->faderLinear:c.linear,
+                accepted?accepted->pan:c.pan,
+                accepted?accepted->mute:c.mute,
+                accepted?accepted->solo:c.solo};
+            const auto preserved=armix::mixer::NativeTopologyEditSafety::preserveAcceptedMix(
+                legacy,native,nativeControls);
+            row->setProperty("gain",static_cast<double>(preserved.linear));
+            row->setProperty("pan",static_cast<double>(preserved.pan));
+            row->setProperty("mute",preserved.mute);
+            row->setProperty("solo",preserved.solo);
         }
         if(expectedEpoch!=epoch()||expectedRevision!=revision()||
            !registryValid_.load(std::memory_order_acquire))
