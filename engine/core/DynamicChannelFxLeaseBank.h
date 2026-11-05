@@ -247,6 +247,7 @@ public:
         bool found=false;
         for(const auto& row:prior.rows_) {
             Assignment a;a.id=row.id;a.format=row.format;
+            a.rackBypassed=row.rackBypassed;
             a.inserts.reserve(row.count+(row.id==target?1:0));
             for(std::size_t i=0;i<row.count;++i)a.inserts.push_back(row.owners[i]);
             if(row.id==target) {
