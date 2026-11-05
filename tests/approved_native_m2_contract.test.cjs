@@ -450,8 +450,9 @@ test("Windows mixer uses Audition-style native IN on any channel, no hidden CH1 
  assert.match(js,/Audio I\/O Settings/);
  assert.match(js,/Driver Recovery…/);
  assert.doesNotMatch(js,/Patch CH1|Arm output/);
- assert.match(page,/window\.__ARMIX_NATIVE_M2__\?\.channelOptions\?\.\(t,type\)/);
- assert.match(page,/Array\.isArray\(x\)\?x\[0\]:x/);
+ assert.doesNotMatch(page,/__ARMIX_NATIVE_M2__/,"public approved Pages must remain byte-identical");
+ assert.match(builder,/const channelOptions=\(t,type\)=>/);
+ assert.match(builder,/Array\.isArray\(x\)\?x\[0\]:x/);
  assert.match(builder,/approved-native-io\.css/);
  assert.match(main,/action=="routingSourceSwitch"/);
  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
