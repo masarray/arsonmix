@@ -33,7 +33,11 @@ test('every ADD click identifies request and reports result inside the open sele
   assert.match(host,/FX_LOAD_FAIL/);
 });
 test('plugin load and preset restore both negotiate existing VST3 bus layouts',()=>{
-  assert.equal((dsp.match(/prepareStereoEffectLayout/g)||[]).length,2);
+  // Legacy ADD + preset restore + native dynamic ChannelId insert share one
+  // JUCE stereo layout negotiator; no extra fake plugin host is allowed.
+  assert.equal((dsp.match(/prepareStereoEffectLayout/g)||[]).length,3);
+  assert.match(dsp,/LiveDryRoutingLab::NativeBusResult installNativeVst3/);
+  assert.match(dsp,/dryRoutingLab_\.attachNativeInsert/);
   assert.match(layout,/if \(compatible \(original\)\) return \{\};/);
   assert.match(layout,/requested\.inputBuses\.set \(i, disabled\)/);
   assert.match(layout,/processor\.setBusesLayout \(requested\)/);

@@ -49,6 +49,11 @@ public:
             return "CH1 FX Rack has VST3 state: cannot SAVE as a DRY-only Show";
         const auto lab=nativeStatus.getProperty("dryRoutingLab",{});
         if(!lab.isObject())return "Native Routing LAB has no published session";
+        // The accepted ShowV2 contains only 10 fixed CH/4 AUX. Saving a
+        // live native GROUP/FX RETURN would discard real serial/parallel PCM.
+        // Reject even if topologyFault subsequently forced silent fallback.
+        if(static_cast<bool>(lab.getProperty("nativeBusStructural",false)))
+            return "Remove extra native GROUP/FX RETURN buses before Show SAVE";
         bool active=false,ready=false;
         if(!flag(lab.getProperty("active",{}),active) ||
            !flag(lab.getProperty("ready",{}),ready) || !active || !ready)

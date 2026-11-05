@@ -2,6 +2,8 @@
 #pragma once
 #include "ChannelSendPlan.h"
 #include "AuxBusPlan.h"
+#include "RealtimeSlew64.h"
+#include "RealtimeStereoControlWord.h"
 #include <algorithm>
 #include <atomic>
 #include <array>
@@ -124,12 +126,25 @@ struct PreparedRenderGraph final {
 // once per block and interpolates into fixed strip scratch buffers. The
 // immutable topology (DAG/physical ports/FX ownership) is never rebuilt for
 // ordinary fader, pan, MUTE, or SOLO changes.
+// One packed uint64 captures both stereo coefficients AND MUTE/SOLO in one
+// coherent block-boundary atomic load. A WebView gesture can never publish
+// the left level from edit N and right/mute/solo from edit N+1.
+// Two 31-bit fixed-point gains cover 0..4 with better-than-float readback
+// precision and leave 2 bits for MUTE/SOLO. All quantization is CONTROL-only.
 class RealtimeStripControls final {
 public:
-    struct Target {
-        std::atomic<float> left{1.f},right{1.f};
-        std::atomic<bool> mute{false},solo{false};
-    };
+    using Word=armix::dsp::RealtimeStereoControlWord;
+    static constexpr std::uint64_t gainMask=Word::gainMask;
+    static constexpr std::uint64_t mutedBit=Word::mutedBit;
+    static constexpr std::uint64_t soloBit=Word::soloBit;
+    static constexpr std::uint64_t unity=Word::unity;
+    using Snapshot=Word::Snapshot;
+    struct Target final {std::atomic<std::uint64_t> state{unity|(unity<<31)};};
+    static std::uint64_t quantize(float v) noexcept {return Word::quantize(v);}
+    static std::uint64_t encode(float l,float r,bool mute,bool solo) noexcept {
+        return Word::encode(l,r,mute,solo);
+    }
+    static Snapshot decode(std::uint64_t v) noexcept {return Word::decode(v);}
     bool set(int strip,float gain,float pan,bool mono,bool mute,bool solo) noexcept {
         if(strip<0||strip>=stripCount||!std::isfinite(gain)||gain<0.f||gain>4.f||
            !std::isfinite(pan)||pan< -1.f||pan>1.f)return false;
@@ -137,18 +152,22 @@ public:
                                gain*(pan>0.f?1.f-pan:1.f);
         const float right=mono?gain*std::sqrt(0.5f*(1.f+pan)):
                                 gain*(pan<0.f?1.f+pan:1.f);
-        auto& c=targets_[strip];
-        c.left.store(left,std::memory_order_relaxed);
-        c.right.store(right,std::memory_order_relaxed);
-        c.mute.store(mute,std::memory_order_relaxed);
-        c.solo.store(solo,std::memory_order_relaxed);
+        targets_[strip].state.store(encode(left,right,mute,solo),
+                                    std::memory_order_release);
         return true;
     }
+    // Called on the unpublished graph's CONTROL constructor. Preserve flags
+    // for safe reuse, but ship a single coherent stereo snapshot.
     void setPreparedCoefficients(int strip,float left,float right) noexcept {
-        targets_[strip].left.store(left,std::memory_order_relaxed);
-        targets_[strip].right.store(right,std::memory_order_relaxed);
+        if(strip<0||strip>=stripCount)return;
+        const auto old=targets_[strip].state.load(std::memory_order_relaxed);
+        targets_[strip].state.store(
+            encode(left,right,(old&mutedBit)!=0,(old&soloBit)!=0),
+            std::memory_order_relaxed);
     }
-    const Target& at(int strip) const noexcept{return targets_[strip];}
+    Snapshot read(int strip) const noexcept {
+        return decode(targets_[strip].state.load(std::memory_order_acquire));
+    }
 private:
     std::array<Target,stripCount> targets_{};
 };
@@ -190,11 +209,14 @@ public:
             const float v=plan_.aux.edges[e].initialGain;
             auxTarget_[e].store(v,std::memory_order_relaxed);
             auxApplied_[e]=v;
+            auxGoal_[e]=v;
+            auxRampRemaining_[e]=0;
         }
         for(int b=0;b<auxBusCount;++b){
             const float gain=plan_.aux.buses[b].gain;
             auxBusTarget_[b].store(gain,std::memory_order_relaxed);
-            auxBusApplied_[b]=gain;
+            auxBusApplied_[b]=auxBusGoal_[b]=gain;
+            auxBusRemaining_[b]=0;
         }
         if(!capacity_)return;
         for(int i=0;i<stripCount;++i) {
@@ -236,16 +258,20 @@ public:
         return true;
     }
 
-    // Message-thread-only target update; immutable edge topology/pan/FX ownership.
-    // Only an ALREADY EXISTING POST edge may be adjusted while output is live.
-    // This index lookup is on CONTROL, never inside the audio callback.
+    // Control thread updates an EXISTING PRE or POST edge only. Creating a
+    // new edge or changing its tap remains a structural graph transaction.
+    // Every valid send has its own independently smoothed DSP target.
     bool setAuxSendGain(int source,int bus,SendTap tap,float gain) noexcept {
         if(source<0||source>=stripCount||bus<0||bus>=auxBusCount||
-           tap!=SendTap::postFader||!std::isfinite(gain)||gain<0.f||gain>1.f)
+           (tap!=SendTap::preFader&&tap!=SendTap::postFader)||
+           !std::isfinite(gain)||gain<0.f||gain>1.f)
             return false;
         for(int e=plan_.aux.offset[source];e<plan_.aux.offset[source+1];++e)
             if(plan_.aux.edges[e].bus==bus && plan_.aux.edges[e].tap==tap){
                 auxTarget_[e].store(gain,std::memory_order_release);
+                // Publish target before making the native PCM renderer
+                // switch from its original static-zero-cost path.
+                auxAutomationActive_.store(true,std::memory_order_release);
                 return true;
             }
         return false;
@@ -257,6 +283,7 @@ public:
            !plan_.aux.buses[bus].enabled||!std::isfinite(gain)||
            gain<0.f||gain>4.f)return false;
         auxBusTarget_[bus].store(gain,std::memory_order_release);
+        auxBusAutomationActive_.store(true,std::memory_order_release);
         return true;
     }
     float auxBusGain(int bus) const noexcept {
@@ -271,6 +298,18 @@ public:
         return -1.f;
     }
 
+    // CONTROL only, before publishing a MONITOR-enabled prepared graph.
+    // Initial send levels start at their approved values, not an audible
+    // ramp from zero when a device first arms its independent MONITOR bus.
+    void prepareMonitorGains(
+        const std::array<float,stripCount+auxBusCount>& gains) noexcept {
+        for(int i=0;i<stripCount+auxBusCount;++i) {
+            monitorApplied_[i]=monitorGoal_[i]=gains[i];
+            monitorRemaining_[i]=0;
+        }
+        monitorPrimed_=true;
+    }
+
     // FX callback signature: void(int stripId, float* L, float* R, int frames)
     // noexcept, with stripId=-1 for the master FX chain. This interface is
     // explicitly stereo scratch, NOT a claim that mono VST bus negotiation is
@@ -281,7 +320,9 @@ public:
                  RenderLevels* observed=nullptr,
                  const RealtimeStripControls* live=nullptr,
                  const std::array<float,stripCount+auxBusCount>* monitorGains=nullptr,
-                 float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
+                 float* monitorL=nullptr,float* monitorR=nullptr,
+                 const std::array<std::atomic<float>,stripCount+auxBusCount>*
+                     liveMonitorGains=nullptr) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx&,int,float*,float*,int>,
                       "DSP hook must be noexcept and realtime bounded");
         if (observed) *observed={};
@@ -302,6 +343,19 @@ public:
             if(monitorR && monitorR!=monitorL)std::fill_n(monitorR,frames,0.f);
             return false;
         }
+        // Also support direct PreparedMixerBlock users (no JUCE FxGraph
+        // wrapper): the first real MONITOR render starts at its approved
+        // levels, never with a fake 64-frame fade from an unpatched zero.
+        if(monitorL && !monitorPrimed_) {
+            for(int i=0;i<stripCount+auxBusCount;++i) {
+                const float gain=liveMonitorGains
+                    ?(*liveMonitorGains)[i].load(std::memory_order_acquire)
+                    :(*monitorGains)[i];
+                monitorApplied_[i]=monitorGoal_[i]=gain;
+                monitorRemaining_[i]=0;
+            }
+            monitorPrimed_=true;
+        }
         float* const monitorBusL=monitorL?monitorScratchL_:nullptr;
         float* const monitorBusR=monitorR?monitorScratchR_:nullptr;
         if(monitorBusL) {
@@ -321,10 +375,16 @@ public:
                 std::fill_n(auxRight_[b],frames,0.f);
             }
 
+        // AUDIO owns a single immutable block-local control view.
+        // One atomic load/strip, irrespective of SOLO closure cardinality.
+        // Structural topology remains in the accepted prepared graph.
+        std::array<RealtimeStripControls::Snapshot,stripCount> currentControls{};
         bool anySolo=false;
-        if(live)for(int strip=0;strip<stripCount;++strip)
-            anySolo |= live->at(strip).solo.load(std::memory_order_relaxed) &&
-                      !live->at(strip).mute.load(std::memory_order_relaxed);
+        if(live)for(int strip=0;strip<stripCount;++strip) {
+            auto& state=currentControls[strip];
+            state=live->read(strip);
+            anySolo |= state.solo && !state.mute;
+        }
         for(int k=0;k<stripCount;++k) {
             const int strip=graph.sends.topologicalOrder[k];
             if(!graph.scheduled[strip]) continue;
@@ -389,61 +449,75 @@ public:
             bool routeAudible=true;
             float gl=graph.leftGain[strip],gr=graph.rightGain[strip];
             if(live) {
-                const auto& target=live->at(strip);
-                routeAudible=!target.mute.load(std::memory_order_relaxed);
+                const auto& target=currentControls[strip];
+                routeAudible=!target.mute;
                 if(routeAudible&&anySolo) {
                     routeAudible=false;
                     for(int j=0;j<stripCount;++j) {
-                        const auto& s=live->at(j);
-                        if(s.solo.load(std::memory_order_relaxed) &&
-                           !s.mute.load(std::memory_order_relaxed) &&
+                        const auto& s=currentControls[j];
+                        if(s.solo && !s.mute &&
                            (j==strip||graph.sends.upstreamOf(strip,j)||
                             graph.sends.upstreamOf(j,strip))) {
                             routeAudible=true;break;
                         }
                     }
                 }
-                gl=target.left.load(std::memory_order_relaxed);
-                gr=target.right.load(std::memory_order_relaxed);
+                gl=target.left;
+                gr=target.right;
                 // A MUTE or SOLO transition must also silence PRE sends.
                 // Smooth the pre-send source gate over <=64 samples; it does
                 // not create/restart FX, drivers, nodes or send topology.
                 const float targetGate=routeAudible?1.f:0.f;
                 if(!rampPrimed_[strip]) {
-                    preGate_[strip]=targetGate;
-                    lastGainL_[strip]=gl;
-                    lastGainR_[strip]=gr;
+                    preSlew_[strip].reset(targetGate);
+                    gainSlewL_[strip].reset(gl);
+                    gainSlewR_[strip].reset(gr);
                     rampPrimed_[strip]=true;
                 }
-                const int ramp=std::min(frames,64);
-                const float dGate=(targetGate-preGate_[strip])/ramp;
-                float gate=preGate_[strip];
+                // Same canonical 64-SAMPLE slew as ChannelId. No division in
+                // the actual audio-sample loop, even at 4-frame ASIO quantum.
+                auto& gate=preSlew_[strip];
+                gate.retarget(targetGate);
                 for(int f=0;f<frames;++f) {
-                    if(f<ramp)gate+=dGate;
-                    l[f]*=gate;r[f]*=gate;
+                    const float applied=gate.next();
+                    l[f]*=applied;r[f]*=applied;
                 }
-                preGate_[strip]=targetGate;
             }
             graph.sends.dispatch(strip,SendTap::preFader,l,r,
                                  left_.data(),right_.data(),frames);
-            if(live)dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
+            // Before operator automation, preserve the original
+            // precompiled immutable AUX dispatch (fast path, no atomics).
+            // Once the message thread publishes a changed send target,
+            // the SAME callback switches to one live PRE/POST processor
+            // which follows 64-sample gains across varying block sizes.
+            if(auxAutomationActive_.load(std::memory_order_acquire))
+                dispatchLiveAux(strip,SendTap::preFader,l,r,frames);
             else graph.aux.dispatch(strip,SendTap::preFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
             float peak=0.f, peakL=0.f, peakR=0.f;
-            const float monitorGain=monitorL?(*monitorGains)[strip]:0.f;
+            if(monitorBusL) {
+                const float next=liveMonitorGains
+                    ?(*liveMonitorGains)[strip].load(std::memory_order_acquire)
+                    :(*monitorGains)[strip];
+                if(next!=monitorGoal_[strip]) {
+                    monitorGoal_[strip]=next;
+                    monitorRemaining_[strip]=64;
+                }
+            }
             if(live) {
-                // A block-linear fader/PAN ramp avoids zipper clicks at the
-                // native callback rate. UI sends at most one target per rAF.
-                const int ramp=std::min(frames,64);
-                const float dL=(gl-lastGainL_[strip])/ramp;
-                const float dR=(gr-lastGainR_[strip])/ramp;
-                float lv=lastGainL_[strip],rv=lastGainR_[strip];
+                // One stereo goal from the exact same accepted atomic word.
+                // Both legs reverse from their last applied coefficients.
+                auto& slewL=gainSlewL_[strip];
+                auto& slewR=gainSlewR_[strip];
+                slewL.retarget(gl);
+                slewR.retarget(gr);
                 for(int f=0;f<frames;++f) {
-                    if(f<ramp){lv+=dL;rv+=dR;}
-                    l[f]*=lv;r[f]*=rv;
-                    if(monitorGain>0.f) {
-                        monitorBusL[f]+=l[f]*monitorGain;
-                        monitorBusR[f]+=r[f]*monitorGain;
+                    l[f]*=slewL.next();
+                    r[f]*=slewR.next();
+                    if(monitorBusL) {
+                        const float gain=nextMonitorGain(strip);
+                        monitorBusL[f]+=l[f]*gain;
+                        monitorBusR[f]+=r[f]*gain;
                     }
                     const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
                     peakL=std::max(peakL,sampleL);
@@ -453,13 +527,13 @@ public:
                         masterL_[f]+=l[f];masterR_[f]+=r[f];
                     }
                 }
-                lastGainL_[strip]=gl;lastGainR_[strip]=gr;
             }else for(int f=0;f<frames;++f) {
                 l[f]*=gl;
                 r[f]*=gr;
-                if(monitorGain>0.f) {
-                    monitorBusL[f]+=l[f]*monitorGain;
-                    monitorBusR[f]+=r[f]*monitorGain;
+                if(monitorBusL) {
+                    const float gain=nextMonitorGain(strip);
+                    monitorBusL[f]+=l[f]*gain;
+                    monitorBusR[f]+=r[f]*gain;
                 }
                 const float sampleL=std::abs(l[f]), sampleR=std::abs(r[f]);
                 peakL=std::max(peakL,sampleL);
@@ -477,7 +551,13 @@ public:
             }
             graph.sends.dispatch(strip,SendTap::postFader,l,r,
                                  left_.data(),right_.data(),frames);
-            if(live)dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
+            // Before operator automation, preserve the original
+            // precompiled immutable AUX dispatch (fast path, no atomics).
+            // Once the message thread publishes a changed send target,
+            // the SAME callback switches to one live PRE/POST processor
+            // which follows 64-sample gains across varying block sizes.
+            if(auxAutomationActive_.load(std::memory_order_acquire))
+                dispatchLiveAux(strip,SendTap::postFader,l,r,frames);
             else graph.aux.dispatch(strip,SendTap::postFader,l,r,
                                     auxLeft_.data(),auxRight_.data(),frames);
         }
@@ -490,19 +570,46 @@ public:
             float* const l=auxLeft_[b],* const r=auxRight_[b];
             processFx(stripCount+b,l,r,frames);
             float peak=0.f;
-            const float monitorGain=monitorL?(*monitorGains)[stripCount+b]:0.f;
-            const float target=live
+            const int monitorLane=stripCount+b;
+            if(monitorBusL) {
+                const float next=liveMonitorGains
+                    ?(*liveMonitorGains)[monitorLane].load(std::memory_order_acquire)
+                    :(*monitorGains)[monitorLane];
+                if(next!=monitorGoal_[monitorLane]) {
+                    monitorGoal_[monitorLane]=next;
+                    monitorRemaining_[monitorLane]=64;
+                }
+            }
+            // Original zero-automation fast path remains one scalar
+            // multiplication; only a real operator AUX fader edit enables
+            // the sample-continuous 64-frame de-zipper across 4/8/16-frame
+            // callbacks. The fader scales the return AFTER hosted AUX VST3
+            // for both MAIN and independent MONITOR, not source dry PCM.
+            // AUX automation is independent of channel fader/MUTE control.
+            // A caller may automate AUX sends/returns without supplying a
+            // RealtimeStripControls bank; keep one canonical DSP target plane.
+            const bool automated=auxBusAutomationActive_.load(
+                std::memory_order_acquire);
+            const float target=automated
                 ?auxBusTarget_[b].load(std::memory_order_acquire):bus.gain;
-            const float start=live?auxBusApplied_[b]:bus.gain;
-            const int ramp=std::min(frames,64);
-            const float step=(target-start)/static_cast<float>(ramp);
-            float current=start;
+            if(automated && target!=auxBusGoal_[b]) {
+                auxBusGoal_[b]=target;
+                auxBusRemaining_[b]=64;
+            }
+            float current=automated?auxBusApplied_[b]:bus.gain;
+            int remaining=automated?auxBusRemaining_[b]:0;
             for(int f=0;f<frames;++f) {
-                if(f<ramp)current+=step;
+                if(remaining>0) {
+                    current+=(target-current)/static_cast<float>(remaining);
+                    --remaining;
+                } else current=target;
                 const float vl=l[f]*current,vr=r[f]*current;
-                if(!bus.mute && monitorGain>0.f) {
-                    monitorBusL[f]+=vl*monitorGain;
-                    monitorBusR[f]+=vr*monitorGain;
+                if(monitorBusL) {
+                    const float gain=nextMonitorGain(monitorLane);
+                    if(!bus.mute) {
+                        monitorBusL[f]+=vl*gain;
+                        monitorBusR[f]+=vr*gain;
+                    }
                 }
                 peak=std::max(peak,std::max(std::abs(vl),std::abs(vr)));
                 if(bus.toMaster && !bus.mute){
@@ -510,7 +617,10 @@ public:
                     masterR_[f]+=vr;
                 }
             }
-            if(live)auxBusApplied_[b]=target;
+            if(automated) {
+                auxBusApplied_[b]=remaining==0?target:current;
+                auxBusRemaining_[b]=remaining;
+            }
             if(observed)observed->auxPeak[b]=peak;
         }
         processFx(-1,masterL_,masterR_,frames);
@@ -532,6 +642,18 @@ public:
         return true;
     }
 private:
+    // Callback exclusive: monitor gain follows 64 sample steps regardless of
+    // 4/16/32/512-frame hardware buffers; no second effect render.
+    float nextMonitorGain(int lane) noexcept {
+        auto& applied=monitorApplied_[lane];
+        auto& remaining=monitorRemaining_[lane];
+        const float target=monitorGoal_[lane];
+        if(remaining>0) {
+            applied+=(target-applied)/static_cast<float>(remaining);
+            --remaining;
+        } else applied=target;
+        return applied;
+    }
     static constexpr std::uint32_t invalidSourcePair=0xffffffffu;
     static constexpr std::uint32_t packSourcePair(int left,int right) noexcept {
         return static_cast<std::uint32_t>(left)|
@@ -552,22 +674,31 @@ private:
             if(edge.tap!=tap)continue;
             float* dl=auxLeft_[edge.bus],* dr=auxRight_[edge.bus];
             if(!dl||!dr)continue;
+            // Preserve a 64-SAMPLE de-zipper across arbitrarily small /
+            // variable callbacks. PRE and POST use the same ramp; no
+            // frame-size-dependent jump, heap, lock, or graph recompilation.
             const float target=auxTarget_[e].load(std::memory_order_acquire);
-            const float start=auxApplied_[e];
-            const int ramp=std::min(frames,64);
-            if(std::abs(target-start)<1.e-7f){
+            if(target!=auxGoal_[e]) {
+                auxGoal_[e]=target;
+                auxRampRemaining_[e]=64;
+            }
+            float current=auxApplied_[e];
+            int remaining=auxRampRemaining_[e];
+            if(remaining==0) {
                 const float gl=target*edge.leftPan,gr=target*edge.rightPan;
                 for(int f=0;f<frames;++f){dl[f]+=l[f]*gl;dr[f]+=r[f]*gr;}
-            }else{
-                const float step=(target-start)/static_cast<float>(ramp);
-                float current=start;
-                for(int f=0;f<frames;++f){
-                    if(f<ramp)current+=step;
+            } else {
+                for(int f=0;f<frames;++f) {
+                    if(remaining>0) {
+                        current+=(target-current)/static_cast<float>(remaining);
+                        --remaining;
+                    }else current=target;
                     dl[f]+=l[f]*current*edge.leftPan;
                     dr[f]+=r[f]*current*edge.rightPan;
                 }
             }
-            auxApplied_[e]=target;
+            auxApplied_[e]=remaining==0?target:current;
+            auxRampRemaining_[e]=remaining;
         }
     }
     static bool validCapacity(int f) noexcept {return f>0 && f<=hardFrameLimit;}
@@ -577,13 +708,24 @@ private:
     std::array<float*,stripCount> left_{};
     std::array<float*,stripCount> right_{};
     std::array<float*,auxBusCount> auxLeft_{},auxRight_{};
-    std::array<float,stripCount> preGate_{},lastGainL_{},lastGainR_{};
+    std::array<armix::dsp::RealtimeSlew64,stripCount> preSlew_{},
+        gainSlewL_{},gainSlewR_{}; // audio callback only, no heap
     std::array<std::atomic<std::uint32_t>,stripCount> physicalTarget_{};
     std::array<PhysicalSourceFade,stripCount> physicalBlend_{};
+    // OFF until any native SET_SEND_LEVEL. Audio callback reads only;
+    // control-thread publication is monotonic for this prepared graph.
+    std::atomic<bool> auxAutomationActive_{false};
     std::array<std::atomic<float>,maxAuxSends> auxTarget_{};
-    std::array<float,maxAuxSends> auxApplied_{}; // callback thread exclusive
+    std::array<float,maxAuxSends> auxApplied_{},auxGoal_{}; // callback exclusive
+    std::array<int,maxAuxSends> auxRampRemaining_{};
+    std::array<float,stripCount+auxBusCount> monitorApplied_{},monitorGoal_{};
+    std::array<int,stripCount+auxBusCount> monitorRemaining_{};
+    bool monitorPrimed_=false; // sole audio producer except prepublish seeding
     std::array<std::atomic<float>,auxBusCount> auxBusTarget_{};
-    std::array<float,auxBusCount> auxBusApplied_{}; // callback thread exclusive
+    std::array<float,auxBusCount> auxBusApplied_{},auxBusGoal_{};
+    std::array<int,auxBusCount> auxBusRemaining_{};
+    std::atomic<bool> auxBusAutomationActive_{false};
+    // State exclusively advanced in the single JUCE audio callback.
     std::array<bool,stripCount> rampPrimed_{};
     float* masterL_=nullptr;
     float* masterR_=nullptr;
