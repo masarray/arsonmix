@@ -459,10 +459,38 @@ private:
         return out;
     }
 
-    juce::String crackleWindowReport (const juce::var& status) const
+    static juce::String compactMemoryWindowReport (
+        const armix::diagnostics::CrackleEvidenceWindow::Window& window)
+    {
+        const auto& before=window.memoryBefore;
+        const auto& at=window.memoryAtMark;
+        const auto fmt=[](std::uint64_t value,bool valid) {
+            return valid ? juce::String(static_cast<juce::int64>(value))
+                         : juce::String("N/A");
+        };
+        juce::String result="RAM_LOAD_START_PCT=";
+        result+=fmt(before.systemLoadPercent,window.ready()&&before.systemAvailable);
+        result+=" | RAM_LOAD_MARK_PCT=";
+        result+=fmt(at.systemLoadPercent,window.ready()&&at.systemAvailable);
+        result+=" | RAM_LOAD_PREMARK_PEAK_PCT=";
+        result+=fmt(window.peakLoadPercent,window.loadComparable);
+        result+=" | FREE_PHYSICAL_MIB=";
+        result+=fmt(at.availablePhysicalMiB,window.ready()&&at.systemAvailable);
+        result+=" | PROCESS_WORKING_SET_MIB=";
+        result+=fmt(at.processWorkingSetMiB,window.ready()&&at.processAvailable);
+        result+=" | PROCESS_PRIVATE_COMMIT_MIB=";
+        result+=fmt(at.processPrivateCommitMiB,window.ready()&&at.processAvailable);
+        result+=" | ALL_PAGE_FAULTS_DELTA=";
+        result+=fmt(window.processPageFaults.value,
+                    window.processPageFaults.comparable);
+        result+=" | HARD_FAULTS=UNAVAILABLE | NOT_CAUSAL_PROOF";
+        return result;
+    }
+
+    juce::String crackleWindowReport (
+        const armix::diagnostics::CrackleEvidenceWindow::Window& window) const
     {
         using Window = armix::diagnostics::CrackleEvidenceWindow;
-        const auto window = crackleEvidence_.mark (makeEvidenceSample(status));
         juce::String report = "PRE_MARK_EVIDENCE_5S=";
         report += Window::reasonName(window.reason);
         report += " | elapsedMs=" + juce::String(static_cast<juce::int64>(window.elapsedMs));
@@ -2367,8 +2395,15 @@ private:
         else if (action == "diagnosticMark")
         {
             const auto status = engine_.status();
+            const auto window=crackleEvidence_.mark(makeEvidenceSample(status));
             diagnostics_.record ("AUDIO_GLITCH_MARK", juce::JSON::toString (status, false));
-            diagnostics_.record ("AUDIO_GLITCH_WINDOW", crackleWindowReport (status));
+            // The recent/important history intentionally caps each entry
+            // at 950 characters. Keep MEMORY as a separate compact event
+            // so a long XRun/cadence report never truncates RAM evidence.
+            diagnostics_.record ("AUDIO_GLITCH_MEMORY",
+                compactMemoryWindowReport(window));
+            diagnostics_.record ("AUDIO_GLITCH_WINDOW",
+                crackleWindowReport(window));
             emitNotice ("Crackle marker saved with source-labeled pre-mark evidence (up to 5 s).");
         }
         else if (action == "backupStudio")
