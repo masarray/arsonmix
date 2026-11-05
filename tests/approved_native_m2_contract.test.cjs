@@ -428,29 +428,50 @@ test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboa
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
 
-test("native Windows operator can explicitly patch first physical input, arm and mute",()=>{
+test("Windows mixer uses Audition-style native IN on any channel, no hidden CH1 arm wizard",()=>{
  const js=read("web/approved-native-bridge.js");
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
- assert.match(js,/REAL AUDIO · FIRST SOUND/);
- assert.match(js,/action:"audioSetup"/);
- assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
- assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
- assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
- assert.match(js,/channel:0,mode:"MONO",left:pin,right:-1/);
- assert.match(js,/action:"monitor",value:true/);
+ const page=read("site/preview-v2/index.html");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(js,/channelOptions:nativeChannelOptions/);
+ assert.match(js,/const chooseNativePhysicalInput=\(track,value\)=>/);
+ assert.match(js,/const channel=inputAt\(track\)/);
+ assert.match(js,/action:"routingSourceSwitch",requestId:p.id,channel:p.channel/);
+ assert.match(js,/inputAt\(track\)/);
+ assert.match(js,/nativeSourcePending\.phase="mute"/);
  assert.match(js,/action:"monitor",value:false/);
- assert.match(js,/expectedEpoch:epoch,expectedRevision:revision/);
+ assert.match(js,/action:"monitor",value:true/);
  assert.match(js,/arMixSourceSwitchAck/);
  assert.match(js,/arMixAudioArmAck/);
- assert.match(js,/if\(ack\.ok===true\)/);
- assert.match(js,/NATIVE PATCH REJECTED:/);
- assert.match(js,/NO VERIFIED AUDIO DEVICE/);
- assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
- assert.match(js,/MAIN ARMED · PCM NOT YET ADMITTED/);
+ assert.match(js,/deviceEpoch:p.epoch,revision:p.revision/);
+ assert.match(js,/arMixAudioDeviceApplyAck/);
+ assert.match(js,/arMixAudioDeviceInventory/);
+ assert.match(js,/Audio I\/O Settings/);
+ assert.match(js,/Driver Recovery…/);
+ assert.doesNotMatch(js,/Patch CH1|Arm output/);
+ assert.match(page,/window\.__ARMIX_NATIVE_M2__\?\.channelOptions\?\.\(t,type\)/);
+ assert.match(page,/Array\.isArray\(x\)\?x\[0\]:x/);
+ assert.match(builder,/approved-native-io\.css/);
  assert.match(main,/action=="routingSourceSwitch"/);
  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
- assert.match(main,/safe->emitApprovedNativeSnapshot\(\)/);
  assert.match(engine,/juce::String switchDryRoutingLabSource\(/);
  assert.match(engine,/setOutputMuted\(true\)/);
 });
+test("G0 M4 real mixer fader/pan/mute/solo work before universal ChannelId admission",()=>{
+ const js=read("web/approved-native-bridge.js");
+ const main=read("src/Main.cpp");
+ const dry=read("src/LiveDryRoutingLab.h");
+ assert.match(js,/verifiedM4\(\)/);
+ assert.match(js,/m4Parameter\(t,"faderDb",numeric\)/);
+ assert.match(js,/m4Parameter\(t,"pan",pan\)/);
+ assert.match(js,/m4Parameter\(t,action,!t\[action\]\)/);
+ assert.match(js,/channel:channel\+1,value,routeEpoch:epoch,routeRevision:revision/);
+ assert.match(js,/renderMeasuredM4\(live\)/);
+ assert.match(js,/channelPeaksL/);
+ assert.match(js,/channelPeaksR/);
+ assert.match(main,/accepted=engine_\.setDryRoutingLabParameter\(channel-1/);
+ assert.match(main,/arMixM4ControlAck/);
+ assert.match(dry,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+});
+
