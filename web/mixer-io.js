@@ -2051,9 +2051,19 @@
   });
   window.addEventListener('arMixSourceSwitchResult',event=>{
     const result=event.detail||{};
-    if(quickSourcePending?.live&&quickSourcePending.channel===result.channel)
-      quickSourcePending=null;
+    // Changing an already-prepared source uses the atomic PCM crossfade.
+    // When monitoring had been off, the user's explicit IN selection is the
+    // one live-audio gesture: arm only AFTER a verified SOURCE ACK and only on
+    // the current native epoch. Never enable playback on stale/failed ACK.
+    const source=quickSourcePending;
     const s=route();
+    if(source?.live&&source.channel===result.channel){
+      quickSourcePending=null;
+      if(result.ok===true&&source.epoch===s.epoch&&!s.monitor){
+        const resumed=window.__arMixApplyAndActivate?.();
+        if(!resumed?.ok)matrixSay(resumed?.error||'Monitor output unavailable');
+      }
+    }
     lastSignature='';refresh();
     if(!sourceChooser.hidden){
       renderSourceChooser();
