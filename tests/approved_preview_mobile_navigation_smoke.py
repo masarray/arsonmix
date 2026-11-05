@@ -4,6 +4,7 @@ Tests the actual official assembled Pages DOM and PNG-key skin in real Chromium
 with mobile viewport + touch, not a second HTML, temporary CSS patch or mock UI.
 """
 import asyncio
+import re
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -52,6 +53,7 @@ async def verify_phone(browser, width: int, height: int):
             moreLeft: m.left, moreRight:m.right,
             moreText: more.textContent.trim(),
             mixerClient:mixer.clientWidth,mixerScroll:mixer.scrollWidth,
+            channelBanks:document.querySelectorAll("#bankSelect option").length,
             visualText:document.body.innerText,
             literalMarker:document.body.innerText.includes(">>>>>>>"),
             pseudoMarkers:glyphs,
@@ -66,7 +68,12 @@ async def verify_phone(browser, width: int, height: int):
         assert info["toolbarOverflow"] == "auto", ("toolbar cannot swipe", info)
         assert info["toolbarScroll"] > info["toolbarClient"] + 90, info
         assert 0 <= info["moreLeft"] < info["moreRight"] <= width, info
-        assert info["mixerClient"] > 75 and info["mixerScroll"] > info["mixerClient"], info
+        # At phone widths the approved mixer shows one channel PER BANK
+        # instead of a horizontally overflowing ten-channel strip. Bank
+        # selector and Next remain the official navigation authority.
+        assert info["mixerClient"] > 75 and info["channelBanks"] > 1, info
+        assert not re.match(r"^(?:>\s*){3,}", info["visualText"]), (
+            "orphaned CSS-link closing > rendered above title", info["visualText"][:90])
         assert info["literalMarker"] is False and not info["pseudoMarkers"], (
             "stray mobile >>>>>>> chevrons/conflict markers", info)
         assert len(info["stylesheets"]) == 1, ("extra CSS layers", info)
@@ -77,6 +84,13 @@ async def verify_phone(browser, width: int, height: int):
         await mute.click()
         assert await mute.get_attribute("aria-pressed") == "true"
         await page.screenshot(path=f"pages-mobile-viewport-{width}.png")
+        # Bank navigation is genuine, not a fake replacement mobile mixer.
+        assert await page.locator(".strip[data-id='1']").count() == 1
+        await page.locator("#bankSelect").select_option("1")
+        await page.wait_for_selector("#tracks .strip[data-id='2']")
+        assert await page.locator(".strip[data-id='1']").count() == 0
+        await page.locator("#bankSelect").select_option("0")
+        await page.wait_for_selector("#tracks .strip[data-id='1']")
 
         # Toolbar is genuinely swipeable; More remains reachable while scrolling.
         await page.locator(".command-bar").evaluate("(bar)=>{bar.scrollLeft=bar.scrollWidth;}")
@@ -98,8 +112,8 @@ async def verify_phone(browser, width: int, height: int):
         await page.screenshot(path=f"pages-mobile-toolbar-more-{width}.png")
         await page.locator("#moreTools summary").click()
         assert not errors, errors
-        print(f"PASS {width}x{height} mobile: one CSS, no > marker, "
-              f"scrollable toolbar and channels, fixed More popup, PNG MUTE")
+        print(f"PASS {width}x{height} mobile: one CSS, no orphan > marker, "
+              f"swipe toolbar + real channel banks, fixed More popup, PNG MUTE")
     finally:
         await context.close()
 
