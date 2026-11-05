@@ -243,6 +243,90 @@ static void controlIntentTranslationCases(const juce::var& canonical,
 }
 
 
+// P1 WIRE gateway regression: all ChannelId/EdgeId conversion is validated
+// on the CONTROL thread. A test probe is not a hardware PCM producer.
+struct NativeWireProbe {
+    std::uint64_t epoch=0,pcmRevision=0,rosterRevision=0;
+    std::vector<armix::mixer::WireChange> applied;
+    struct Result { bool accepted=false; juce::String error; };
+    Result applyNativeWireTransaction(std::uint64_t ep,std::uint64_t rev,
+        std::uint64_t roster,std::span<const armix::mixer::WireChange> edits) {
+        epoch=ep;pcmRevision=rev;rosterRevision=roster;
+        applied.assign(edits.begin(),edits.end());
+        return {true,{}};
+    }
+};
+static void approvedWireTranslationRegression(const juce::var& canonical,
+                                                const juce::var& producer) {
+    auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
+    auto bus=juce::JSON::parse(juce::JSON::toString(producer,false));
+    juce::Array<juce::var> publicOps,nativeOps;
+    publicOps.add("APPLY_WIRE_TRANSACTION");
+    nativeOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    bus.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    const juce::String id="9007199254740993";
+    const juce::String edge="9223372036854775808";
+    auto request=std::make_unique<juce::DynamicObject>();
+    request->setProperty("requestId","p1-wire-control-test");
+    request->setProperty("operation","APPLY_WIRE_TRANSACTION");
+    request->setProperty("targetChannelId",id);
+    request->setProperty("deviceEpoch","91");
+    request->setProperty("baseGraphRevision","25");
+    request->setProperty("baseRosterRevision","9");
+    auto one=std::make_unique<juce::DynamicObject>();
+    one->setProperty("op","REMOVE");
+    one->setProperty("from",id);
+    one->setProperty("edgeId",edge);
+    juce::Array<juce::var> changes;changes.add(juce::var(one.release()));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("changes",juce::var(changes));
+    request->setProperty("payload",juce::var(payload.release()));
+    const auto original=juce::var(request.release());
+    const auto translated=translateApprovedNativeControl(original,accepted,bus);
+    assert(translated.ok());
+    assert(translated.translated.getProperty("operation","").toString()
+           =="NATIVE_APPLY_WIRE_TRANSACTION");
+    NativeWireProbe native;
+    assert(executeApprovedNativeControl(native,translated.translated));
+    assert(native.epoch==91&&native.pcmRevision==25&&native.rosterRevision==9);
+    assert(native.applied.size()==1);
+    assert(native.applied[0].kind==armix::mixer::WireChange::Kind::remove);
+    assert(native.applied[0].from.value==9007199254740993ULL);
+    assert(native.applied[0].edgeId==9223372036854775808ULL);
+
+    auto fail=[&](juce::var intent,juce::var acceptedState,juce::var nativeState){
+        const auto before=juce::JSON::toString(nativeState,false);
+        const auto result=translateApprovedNativeControl(intent,acceptedState,nativeState);
+        assert(!result.ok());assert(!result.translated.isObject());
+        assert(juce::JSON::toString(nativeState,false)==before);
+        return result.error;
+    };
+    auto forged=juce::JSON::parse(juce::JSON::toString(original,false));
+    forged.getProperty("payload",{}).getProperty("changes",{})[0]
+          .getDynamicObject()->setProperty("edgeId","9223372036854775807");
+    assert(fail(forged,accepted,bus)=="WIRE_STALE_EDGE");
+    auto wrongSource=juce::JSON::parse(juce::JSON::toString(original,false));
+    wrongSource.getProperty("payload",{}).getProperty("changes",{})[0]
+          .getDynamicObject()->setProperty("from","18446744073709551615");
+    assert(fail(wrongSource,accepted,bus)=="WIRE_SOURCE_OR_OPERATION_INVALID");
+    auto stale=juce::JSON::parse(juce::JSON::toString(original,false));
+    stale.getDynamicObject()->setProperty("baseGraphRevision","24");
+    assert(fail(stale,accepted,bus)=="STALE_NATIVE_CONTROL_REVISION");
+    auto noNative=juce::JSON::parse(juce::JSON::toString(bus,false));
+    noNative.getDynamicObject()->setProperty("supportedOps",
+                                              juce::var(juce::Array<juce::var>{}));
+    assert(fail(original,accepted,noNative)=="NATIVE_WIRE_NOT_ADMITTED");
+    auto invalidTap=juce::JSON::parse(juce::JSON::toString(original,false));
+    auto edit=invalidTap.getProperty("payload",{}).getProperty("changes",{})[0];
+    edit.getDynamicObject()->setProperty("op","CONNECT");
+    edit.getDynamicObject()->setProperty("to","18446744073709551615");
+    edit.getDynamicObject()->setProperty("tap","PRE_FADER");
+    edit.getDynamicObject()->setProperty("gainLinear",1.0);
+    assert(fail(invalidTap,accepted,bus)=="WIRE_UNSUPPORTED_TAP_OR_GAIN");
+}
+
 static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     // This fixture is ONLY accepted native readback; not a hardware device.
     // It proves Main.cpp cannot publish a fake live graph from G0/M4 JSON.
@@ -519,6 +603,7 @@ int main() {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 
     controlIntentTranslationCases(snap,bus);
+    approvedWireTranslationRegression(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
     firstSoundMeasuredSignalEvidenceRegression();

@@ -153,6 +153,21 @@ class StageCCssCompiler(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"@import"):
             css.compile_runtime_bundle([("a.css",'@import url("other.css");.x{opacity:1}')])
 
+    def test_stage_d_consumes_complete_link_tags_no_stray_gt_in_mobile_body(self):
+        # Regression: previous LINK matched closing quote but not '>'. After
+        # removing 18 tags the browser displayed '> > > ...' before ArSonMix.
+        owners = "".join(
+            f'<link rel="stylesheet" href="assets/owner-{i}.css?v=1">'
+            for i in range(18)
+        )
+        document = "<html><head>" + owners + "</head><body><div>ArSonMix</div></body></html>"
+        rebuilt = css.link_runtime_bundle(document, "0123456789abcdef")
+        expected = ('<html><head><link rel="stylesheet" href="assets/'
+                    'arsonmix-approved-runtime.css?sha=0123456789abcdef">'
+                    '</head><body><div>ArSonMix</div></body></html>')
+        self.assertEqual(rebuilt, expected, "No orphan > text nodes from removed links")
+        self.assertEqual(len(list(css.LINK.finditer(rebuilt))), 1)
+
     def test_stage_d_retains_fallbacks_for_older_webview2_and_missing_vars(self):
         original='.control{color:#fff;color:var(--preferred-color)}'
         optimized,stats=css.optimize_css([("a.css",original)])

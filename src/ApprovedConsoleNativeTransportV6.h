@@ -117,6 +117,19 @@ inline juce::var snapshot (const juce::var& live,
         primaryOutputArmed,
         active != nullptr ? active->getActiveInputChannels().countNumberOfSetBits() : 0,
         active != nullptr ? active->getActiveOutputChannels().countNumberOfSetBits() : 0));
+    // Optional output-copy readback comes only from the native WASAPI
+    // consumer. Never equate an armed virtual endpoint with audible speakers
+    // or OBS/TikTok receiving audio.
+    auto secondary=std::make_unique<juce::DynamicObject>();
+    secondary->setProperty("ready",live.getProperty("secondaryOutputReady",false));
+    secondary->setProperty("armed",live.getProperty("secondaryOutputArmed",false));
+    secondary->setProperty("fault",live.getProperty("secondaryOutputFault",false));
+    secondary->setProperty("endpoint",live.getProperty("secondaryOutputName",""));
+    secondary->setProperty("rate",live.getProperty("secondaryOutputRate",0.0));
+    secondary->setProperty("latencyMs",live.getProperty("secondaryOutputBridgeMs",0.0));
+    secondary->setProperty("underflowFrames",live.getProperty("secondaryOutputUnderflow",0.0));
+    secondary->setProperty("overflowFrames",live.getProperty("secondaryOutputOverflow",0.0));
+    root->setProperty("secondaryOutput",juce::var(secondary.release()));
     return juce::var (root.release());
 }
 

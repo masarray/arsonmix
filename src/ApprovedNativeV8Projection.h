@@ -82,6 +82,11 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
             fx.add(juce::var(insert.release()));
         }
         ch->setProperty("inserts",juce::var(fx));
+        const auto rackBypassed=row.getProperty("fxRackBypassed",{});
+        if(!rackBypassed.isVoid()) {
+            if(!rackBypassed.isBool())return false;
+            ch->setProperty("fxRackBypassed",rackBypassed);
+        }
         ch->setProperty("sends",juce::var(juce::Array<juce::var>{}));
         if(role!="INPUT"){
             auto dst=std::make_unique<juce::DynamicObject>();
