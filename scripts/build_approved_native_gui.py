@@ -112,6 +112,23 @@ NATIVE_EVENT_HOOKS = (
     ("  marker.style.setProperty('--peak-extent',extent+'px');\n",
      "  const peakExtent=extent+'px';\n"
      "  if(painted.peakExtent!==peakExtent){marker.style.setProperty('--peak-extent',peakExtent);painted.peakExtent=peakExtent;}\n"),
+    # Stage B: WIRE idle pointer proximity still works, but avoid forcing a
+    # synchronous layout read for *every mousemove* while a 12 Hz snapshot
+    # updates native meters. Bound geometry age and invalidate on scroll/resize.
+    ("let nearWireOut=null;\n",
+     "let nearWireOut=null;\n"
+     "let nativeWireBounds=new WeakMap();\n"
+     "window.addEventListener('resize',()=>{nativeWireBounds=new WeakMap();},{passive:true});\n"
+     "window.addEventListener('scroll',()=>{nativeWireBounds=new WeakMap();},true);\n"),
+    (" let out=tray?.querySelector('.wire-node-out:not(:disabled)')||null;\n"
+     " if(out){\n"
+     "  const r=out.getBoundingClientRect();\n",
+     " let out=tray?.querySelector('.wire-node-out:not(:disabled)')||null;\n"
+     " if(out){\n"
+     "  const now=performance.now();\n"
+     "  let box=nativeWireBounds.get(out);\n"
+     "  if(!box||now-box.at>=120){box={at:now,rect:out.getBoundingClientRect()};nativeWireBounds.set(out,box);}\n"
+     "  const r=box.rect;\n"),
     # Native WebView2 only: expose the original Pages IIFE model to the thin
     # bridge. No second renderer/state reducer, no change to public /preview/.
     ("restorePluginPreferences();init();\n})();",
