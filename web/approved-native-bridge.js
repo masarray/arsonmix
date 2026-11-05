@@ -344,6 +344,9 @@
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
+  const rackSavedBypass=new Map(); // lane -> instanceId / original bypass
+  // The rack header restores exact prior per-insert state, including
+  // deliberately bypassed plugins; it never blindly turns ALL FX on.
   function verifiedFxFor(t,slot){
     const lane=m4Index(t),live=legacy()?.fxInstances?.[lane]?.[slot];
     return lane>=0 && Number.isInteger(slot) && slot>=0&&slot<8 &&
@@ -427,6 +430,8 @@
       const rows=m.fxInstances[lane];
       if(!t||!Array.isArray(rows))continue;
       let change=false;
+      const headerOff=rackSavedBypass.has(lane);
+      if(t.fxOn===headerOff){t.fxOn=!headerOff;change=true;}
       for(let slot=0;slot<8;slot++){
         const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
         const name=live?(entry?.name||"VST3 Loaded"):"None";
@@ -1413,26 +1418,57 @@
         return true;
       }
       if(action==="slotPower"){
+        const lane=m4Index(t);
+        if(rackSavedBypass.has(lane)){
+          nativeToast("Enable FX rack header before changing individual inserts");
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
         if(!instance||!requestNativeFxPower(t,slot,!instance.live.bypassed))
           nativeToast("FX bypass unavailable · select an accepted VST3 slot");
         return true;
       }
       if(action==="fxOn"){
-        // A rack-wide toggle is a coordinated group of native atomic
-        // per-instance bypasses, not a purely visual FX Rack power icon.
         const lane=m4Index(t),rows=legacy()?.fxInstances?.[lane]||[];
         if(lane<0||!m4Verified()||!rows.length){
           nativeToast("FX rack is empty · choose a VST3 insert first");return true;
         }
-        const off=rows.some(row=>row?.bypassed===false);
-        let sent=0;
-        for(let slot=0;slot<rows.length;slot++)
-          if(rows[slot]?.bypassed!==off &&
-             requestNativeFxPower(t,slot,off))sent++;
-        if(!sent)status("FX rack already "+(off?"bypassed":"enabled"));
-        else status("CH "+(lane+1)+" FX power · "+sent+
-          " native insert bypass requests sent");
+        if([...pendingSlotPowers.keys()].some(key=>key.startsWith(lane+":"))){
+          status("FX rack power · waiting for existing native bypass ACK");
+          return true;
+        }
+        const saved=rackSavedBypass.get(lane);
+        if(!saved){
+          const original=new Map(rows.filter(x=>x?.instanceId).map(x=>
+            [x.instanceId,x.bypassed===true]));
+          rackSavedBypass.set(lane,original);
+          let applied=0;
+          for(let slot=0;slot<rows.length;slot++)
+            if(rows[slot]&&!rows[slot].bypassed &&
+               requestNativeFxPower(t,slot,true))applied++;
+          if(!applied && rows.some(x=>x&&!x.bypassed)){
+            rackSavedBypass.delete(lane);
+            nativeToast("Rack bypass failed · original FX power preserved");
+          }else status("CH "+(lane+1)+" FX rack OFF requested · "+
+            "individual ON/OFF states saved");
+        }else{
+          const current=new Set(rows.filter(x=>x?.instanceId).map(x=>x.instanceId));
+          if(saved.size!==current.size || [...saved.keys()].some(id=>!current.has(id))){
+            nativeToast("FX rack changed · cannot restore stale insert identity");
+            return true;
+          }
+          let applied=0;
+          for(let slot=0;slot<rows.length;slot++){
+            const row=rows[slot],restore=saved.get(row.instanceId);
+            if(row.bypassed!==restore && requestNativeFxPower(t,slot,restore))applied++;
+          }
+          rackSavedBypass.delete(lane);
+          status("CH "+(lane+1)+" FX rack ON requested · "+
+            "restoring prior individual bypasses ("+applied+" changes)");
+        }
+        // No browser-side VST DSP: the following accepted publisher
+        // snapshot owns all visible insert ON/OFF indicators.
+        controller?.subscribe();
         return true;
       }
       if(action==="format"&&t?.kind==="audio"){
@@ -1545,6 +1581,9 @@
       const ep=safeNativeCounter(hardware?.device?.epoch);
       const rev=safeNativeCounter(legacy()?.routingRevision);
       const existing=legacy()?.fxInstances?.[channel]||[];
+      if(rackSavedBypass.has(channel)){
+        nativeToast("Enable the FX rack before inserting another VST3");return true;
+      }
       if(!plugin||!m4Verified()||channel<0||
          !Number.isInteger(slot)||slot<0||slot>=8 ||
          ep===null||rev===null||existing[slot] ||

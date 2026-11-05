@@ -220,6 +220,9 @@ test("P0 real slot VST3 power and native editor use verified instance tokens",()
  assert.match(bridge,/function requestNativeFxPower\(t,slot,bypass\)/);
  assert.match(bridge,/if\(action==="slotPower"\)/);
  assert.match(bridge,/if\(action==="fxOn"\)/);
+ assert.match(bridge,/const rackSavedBypass=new Map\(\)/);
+ assert.match(bridge,/saved\.get\(row\.instanceId\)/);
+ assert.match(bridge,/rackSavedBypass\.set\(lane,original\)/);
  assert.match(bridge,/action:"routingFxEditor"/);
  assert.match(bridge,/action:"routingFxBypass"/);
  assert.match(bridge,/backend\.addEventListener\("arMixRoutingFxBypassAck"/);
