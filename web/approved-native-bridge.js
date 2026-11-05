@@ -210,9 +210,41 @@
       select.disabled=!firstSoundReady()||!!sourcePending||!Array.isArray(sources)||
         sources.length!==10;
       select.title="CH "+(i+1)+" · verified physical input · native ACK";
+      const out=strip.querySelector('.route-select[data-field="output"]');
+      if(out){
+        const src=Array.isArray(sources)&&sources.length===10?sources[i]:null;
+        const label=src?.main===true?"MAIN":"SOURCE ONLY";
+        if(out.dataset.nativeOutput!==label){
+          out.replaceChildren(Object.assign(document.createElement("option"),{
+            value:label,textContent:label
+          }));
+          out.dataset.nativeOutput=label;
+        }
+        out.value=label;
+        // Per-channel OUT patching requires its own accepted MAIN/AUX
+        // transaction; never expose synthetic demo hardware destinations.
+        out.disabled=true;
+        out.title="Accepted native routing · advanced OUTPUT matrix required to change";
+      }
     }
     const master=document.querySelector(".strip.master .route-top");
     if(master){
+      const output=master.closest(".strip")?.querySelector(
+        '.route-select[data-field="output"]');
+      if(output){
+        const device=hardware?.device?.playbackDevice||"No output";
+        if(output.dataset.nativeDevice!==device){
+          const selected=document.createElement("option");
+          selected.value=device;selected.textContent=device;
+          const settings=document.createElement("option");
+          settings.value="__SETUP__";settings.textContent="Change output…";
+          output.replaceChildren(selected,settings);
+          output.dataset.nativeDevice=device;
+        }
+        if(output.value!==device)output.value=device;
+        output.disabled=false;
+        output.title="Current JUCE playback device · change in Audio I/O";
+      }
       let monitor=master.querySelector("[data-native-monitor]");
       if(!monitor){
         monitor=document.createElement("button");
@@ -248,8 +280,18 @@
     }
   }
   function changeNativeInput(event){
+    if(!connected)return;
+    const output=event.target?.closest?.('.route-select[data-field="output"]');
+    if(output){
+      // The actual driver/playback destination is selected in ONE Audio I/O
+      // dialog. Never write the Pages demonstration output to the real graph.
+      event.preventDefault();event.stopImmediatePropagation();
+      if(output.closest(".strip.master"))openNativeAudioSetup();
+      syncDawNativeInputs();
+      return;
+    }
     const select=event.target?.closest?.('.route-select[data-field="input"]');
-    if(!select || !connected)return;
+    if(!select)return;
     event.preventDefault();event.stopImmediatePropagation();
     const index=Number(select.dataset.nativeChannel);
     const parts=String(select.value).split(":");
@@ -267,6 +309,14 @@
     }
     sourcePending={id:++sourceRequest,channel:index,mode,left,right,
       epoch,revision};
+    const requestId=sourcePending.id;
+    window.setTimeout(()=>{
+      if(sourcePending?.id!==requestId)return;
+      sourcePending=null;
+      status("INPUT timeout · native ACK/readback missing; refresh actual hardware");
+      controller?.subscribe();
+      syncDawNativeInputs();
+    },8000);
     backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
       requestId:sourcePending.id,channel:index,mode,left,right,
       deviceEpoch:epoch,revision});
