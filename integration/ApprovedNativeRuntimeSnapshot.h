@@ -82,6 +82,36 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // Direct physical-source readback for EVERY existing 10-channel M4 strip.
+    // Never infer source routes from demo UI, or mark stale controls accepted.
+    juce::Array<juce::var> sources;
+    if(physicalReady) {
+        const bool patched=boolIs(route,"hasAcceptedRoute",true);
+        const auto accepted=route.getProperty(
+            patched?"acceptedRoute":"preparedM4Route",{});
+        const auto rows=accepted.getProperty("channels",{});
+        const auto* list=rows.getArray();
+        if(list && list->size()==10) {
+            for(const auto& row:*list) {
+                const auto mode=row.getProperty("mode",{}).toString();
+                const auto left=row.getProperty("left",{});
+                const auto right=row.getProperty("right",{});
+                const bool mono=mode=="MONO", stereo=mode=="STEREO";
+                const bool valid=mode=="NONE" ||
+                    ((mono||stereo) && (left.isInt()||left.isInt64()) &&
+                     (right.isInt()||right.isInt64()) &&
+                     inputs.getArray()->contains(left) &&
+                     (!stereo || (inputs.getArray()->contains(right) && left!=right)));
+                if(!valid) {sources.clear();break;}
+                auto src=std::make_unique<juce::DynamicObject>();
+                src->setProperty("mode",mode);
+                src->setProperty("left",mono||stereo?left:juce::var(-1));
+                src->setProperty("right",stereo?right:juce::var(-1));
+                sources.add(juce::var(src.release()));
+            }
+        }
+    }
+    firstSound->setProperty("channelSources",juce::var(sources));
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;
