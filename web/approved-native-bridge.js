@@ -170,7 +170,9 @@
       d.outputArmed?"Output armed":"Output muted";
     const warning=document.querySelector?.(".status-bar .warning");
     if(warning)warning.textContent=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
-      next.admitted&&d.outputArmed?"REAL NATIVE PCM · FAT PENDING":
+      d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
+        "MAIN ARMED · PCM NOT YET ADMITTED"):
+      legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
       "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
@@ -197,12 +199,14 @@
     if(armBtn)armBtn.disabled=!deviceReady() ||
       legacy()?.routeAccepted!==true || d.outputArmed;
     if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
-    if(hardwareNote)hardwareNote.textContent=!deviceOpen?
-      "Open Audio Setup: select a real input and output.":
-      !deviceReady()?"Verify ASIO/WASAPI input/output masks.":
-      !legacy()?.routeAccepted?"Select input, PATCH CH1, then ARM output.":
-      !d.outputArmed?"Input patch accepted. Reduce speaker volume before ARM.":
-      "User-armed output · check physical sound and native meter.";
+    if(hardwareNote) {
+      const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
+      // Human-readable PCM stages from the ORIGINAL native callback only.
+      // These values are NOT evidence that the DAC or speaker is audible.
+      hardwareNote.textContent=evidence?
+        evidence.readout+" · "+evidence.nextAction:
+        "No verified hardware PCM readback available.";
+    }
   }
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
@@ -271,7 +275,7 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · perangkat aktual terbaca; ChannelId PCM/WIRE belum diterima. Edit audio diblokir.");
+      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.

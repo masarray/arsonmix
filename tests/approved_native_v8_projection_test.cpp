@@ -3,6 +3,7 @@
 #include "../integration/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
+#include "../integration/FirstSoundSignalEvidence.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -397,6 +398,65 @@ static void firstSoundRouteAdmissionRegression() {
     assert(!publishVerifiedFirstSoundState(withoutInput,live));
 }
 
+static void firstSoundMeasuredSignalEvidenceRegression() {
+    auto live=parse(R"JSON({
+      "connected":true,"directRouteAuthorized":true,
+      "adaptiveClockActive":false,"monitor":true,
+      "captureObservationBlocks":19,
+      "callbackInputChannels":2,"callbackOutputChannels":2,
+      "inputPeak":0.35,"captureCallbackPeaks":[0.0,0.35],
+      "peakLeft":0.08,"peakRight":0.12,
+      "dryRoutingLab":{"active":true,"ready":true,"topologyFault":false,
+        "hasAcceptedRoute":true}
+    })JSON");
+    const auto signal=[&](const juce::var& l,bool direct,bool arm,int ins=2,int outs=2) {
+        return projectFirstSoundSignalEvidence(l,direct,arm,ins,outs);
+    };
+    const auto accepted=signal(live,true,true);
+    assert(static_cast<bool>(accepted.getProperty("captureObserved",false)));
+    assert(static_cast<bool>(accepted.getProperty("rawCapturePresent",false)));
+    assert(static_cast<bool>(accepted.getProperty("mainPcmObserved",false)));
+    assert(static_cast<bool>(accepted.getProperty("mainPcmPresent",false)));
+    assert(std::abs(static_cast<double>(accepted.getProperty("rawCapturePeak",0.))-0.35)<1e-7);
+    assert(std::abs(static_cast<double>(accepted.getProperty("mainPcmPeak",0.))-0.12)<1e-7);
+    assert(accepted.getProperty("captureCallbackPeaks",{}).getArray()->size()==2);
+    // An active unpatched graph still observes real input while correctly
+    // hiding routed MAIN PCM. No physical output is ever auto-authorized.
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("hasAcceptedRoute",false);
+    auto unpatched=signal(live,true,true);
+    assert(static_cast<bool>(unpatched.getProperty("captureObserved",false)));
+    assert(!static_cast<bool>(unpatched.getProperty("mainPcmObserved",true)));
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("hasAcceptedRoute",true);
+    auto disarmed=signal(live,true,false);
+    assert(static_cast<bool>(disarmed.getProperty("captureObserved",false)));
+    assert(!static_cast<bool>(disarmed.getProperty("mainPcmObserved",true)));
+    live.getDynamicObject()->setProperty("inputPeak",0.);
+    live.getDynamicObject()->setProperty("captureCallbackPeaks",parse(
+        R"JSON({"peaks":[0,0]})JSON").getProperty("peaks",{}));
+    auto silence=signal(live,true,true);
+    assert(static_cast<bool>(silence.getProperty("captureObserved",false)));
+    assert(!static_cast<bool>(silence.getProperty("rawCapturePresent",true)));
+    assert(!silence.getProperty("rawCapturePeak",{}).isVoid());
+    live.getDynamicObject()->setProperty("inputPeak",0.35);
+    // Driver callback never occurred (or is stale): evidence UNKNOWN rather
+    // than a fabricated 0 dBFS or reported hardware source.
+    live.getDynamicObject()->setProperty("captureObservationBlocks",0);
+    auto none=signal(live,true,true);
+    assert(!static_cast<bool>(none.getProperty("captureObserved",true)));
+    assert(none.getProperty("rawCapturePeak",{}).isVoid());
+    live.getDynamicObject()->setProperty("captureObservationBlocks",19);
+    assert(!static_cast<bool>(signal(live,false,true).getProperty("captureObserved",true)));
+    assert(!static_cast<bool>(signal(live,true,true,1,2)
+        .getProperty("captureObserved",true)));
+    live.getDynamicObject()->setProperty("directRouteAuthorized",false);
+    assert(!static_cast<bool>(signal(live,true,true).getProperty("captureObserved",true)));
+    live.getDynamicObject()->setProperty("directRouteAuthorized",true);
+    live.getDynamicObject()->setProperty("captureCallbackPeaks",juce::var());
+    assert(!static_cast<bool>(signal(live,true,true).getProperty("captureObserved",true)));
+}
+ 
 int main() {
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
@@ -430,6 +490,7 @@ int main() {
     controlIntentTranslationCases(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
+    firstSoundMeasuredSignalEvidenceRegression();
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()
