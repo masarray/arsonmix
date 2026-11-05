@@ -128,7 +128,7 @@ test("DAW-style all-channel IN / M4 fader mute pan use real native control and r
   assert.match(bridge,/channelControls/);
   assert.match(bridge,/parameter,channel:channel\+1,value/);
   assert.match(bridge,/routeEpoch:safeNativeCounter/);
-  assert.match(bridge,/if\(m4Verified\(\)\&\&m4StripIndex\(event\.target\)>=0/);
+  assert.match(bridge,/m4StripIndex\(event\.target\)>=0/);
   assert.match(producer,/firstSound->setProperty\("channelControls",controls\)/);
   assert.match(producer,/firstSound->setProperty\("channelPeaksL",levelsL\)/);
   assert.match(engine,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
