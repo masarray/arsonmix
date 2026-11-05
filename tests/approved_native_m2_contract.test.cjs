@@ -416,6 +416,85 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.equal(scope.edges.length,0,"accepted snapshot replaces reference wire");
 });
 
+test("verified Windows CH10 selects sparse hardware IN3 then native ACK starts MAIN; M4 fader targets CH10",()=>{
+ const vm=require("node:vm"),events=[],listeners=new Map();
+ const tracks=Array.from({length:10},(_,i)=>({
+   id:30+i,name:"CH"+(i+1),kind:"audio",input:"None",output:"Master",
+   level:-12,pan:0,mute:false,solo:false
+ }));
+ const scope={tracks,master:{id:90,name:"MAIN",level:0,mute:false},
+   render(){},stopDemo(){},findTrack(el){return el.track;},
+   displayMeterDbfs(){}};
+ const backend={
+   emitEvent(name,payload){events.push({name,payload});},
+   addEventListener(name,cb){listeners.set(name,cb);}
+ };
+ const preview={disabled:false};
+ const document={
+   readyState:"complete",documentElement:{dataset:{}},
+   getElementById:id=>id==="info"?{textContent:""}:id==="preview"?preview:null,
+   querySelector(){return null;},addEventListener(){}
+ };
+ const window={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   __ARMIX_NATIVE_SCOPE__:scope,setTimeout(){return 0;}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+   {window,document,performance:{now:()=>0},console},{timeout:1500});
+ const g0=clone(fixtures.g0);
+ g0.device.enabledInputs=[0,2];
+ g0.device.inputEndpoints=[
+   {id:"in:0",port:0,callback:0,label:"Mic 1",active:true},
+   {id:"in:2",port:2,callback:1,label:"Mic 3",active:true}
+ ];
+ g0.legacyM4={active:true,routeAccepted:false,routingRevision:"12"};
+ listeners.get("arMixConsoleSnapshot")(g0);
+ listeners.get("arMixStatus")({
+   connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
+   monitor:false,dryRoutingLab:{active:true,ready:true,topologyFault:false,
+     hasAcceptedRoute:false,epoch:69,revision:12}
+ });
+ const choices=window.__ARMIX_NATIVE_M2__.channelOptions(tracks[9],"input");
+ assert.ok(choices.some(x=>x[0]==="MONO:2"),"sparse physical input is real");
+ assert.ok(!choices.some(x=>/CABLE Output L\/R \(Stereo\)/.test(x[0])),
+   "fake Pages CABLE list must not be selectable as hardware");
+ const picker={dataset:{field:"input"},value:"MONO:2",track:tracks[9]};
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeField({target:picker,type:"change"}),true);
+ const req=events.findLast(x=>x.payload?.action==="routingSourceSwitch");
+ assert.ok(req);
+ assert.equal(req.payload.channel,9,"CH10 routes its OWN hardware input");
+ assert.equal(req.payload.left,2);
+ assert.equal(req.payload.mode,"MONO");
+ assert.equal(req.payload.deviceEpoch,69);
+ assert.equal(req.payload.revision,12);
+ const rows=Array.from({length:10},(_,i)=>i===9?
+   {mode:"MONO",left:2,right:-1,main:true}:
+   {mode:"NONE",left:-1,right:-1,main:true});
+ listeners.get("arMixSourceSwitchAck")({
+   ok:true,requestId:req.payload.requestId,channel:9,
+   state:{active:true,ready:true,topologyFault:false,
+     hasAcceptedRoute:true,epoch:69,revision:13,
+     acceptedRoute:{channels:rows}}
+ });
+ const monitor=events.findLast(x=>x.payload?.action==="monitor");
+ assert.ok(monitor);
+ assert.equal(monitor.payload.value,true);
+ assert.equal(monitor.payload.expectedRevision,13);
+ assert.equal(tracks[9].input,"MONO:2");
+ listeners.get("arMixAudioArmAck")({ok:true,armed:true,deviceEpoch:69});
+ const armed=clone(g0);
+ armed.legacyM4={active:true,routeAccepted:true,routingRevision:"13"};
+ armed.device.outputArmed=true;
+ listeners.get("arMixConsoleSnapshot")(armed);
+ const fader={dataset:{field:"level"},value:"-18",track:tracks[9]};
+ window.__ARMIX_NATIVE_M2__.consumeField({target:fader,type:"change"});
+ const param=events.findLast(x=>x.name==="arMixParameter");
+ assert.ok(param,"M4 CH10 fader reaches real native parameter transport");
+ assert.equal(param.payload.channel,10);
+ assert.equal(param.payload.parameter,"faderDb");
+ assert.equal(param.payload.routeEpoch,69);
+ assert.equal(param.payload.routeRevision,13);
+ assert.equal(param.payload.value,-18);
+});
+
 test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
  const builder=read("scripts/build_approved_native_gui.py");
  const bridge=read("web/approved-native-bridge.js");
