@@ -318,7 +318,7 @@ def link_runtime_bundle(html: str, css_sha: str) -> str:
     return rewritten
 
 
-def optimize_assets(html: str, assets: Path):
+def optimize_assets(html: str, assets: Path, *, runtime_bundle: bool = False):
     """Change only copied CSS asset bytes and add content-addressing to URLs."""
     names = [match.group(2) for match in LINK.finditer(html)]
     if not names or len(set(names)) != len(names):
@@ -345,6 +345,12 @@ def optimize_assets(html: str, assets: Path):
         return prefix + name + base + delim + "armixc=" + revisions[name] + trailing
 
     rendered = LINK.sub(link, html)
+    stats["shaByCssOwner"] = revisions
+    if not runtime_bundle:
+        # Low-level optimizer retains its original per-owner API for tools,
+        # unit fixtures and source migration; only the official assembler
+        # opts into Stage D's single runtime CSSOM.
+        return rendered, stats
     # Keep all per-owner compiled CSS copies as inspectable provenance.
     # The browser/native WebView2 now *request just one* generated CSS file.
     # Packaging may discard redundant unreferenced owner copies separately
@@ -353,7 +359,6 @@ def optimize_assets(html: str, assets: Path):
     digest = hashlib.sha256(bundled.encode("utf-8")).hexdigest()[:16]
     (assets / RUNTIME_CSS).write_text(bundled, encoding="utf-8", newline="")
     rendered = link_runtime_bundle(rendered, digest)
-    stats["shaByCssOwner"] = revisions
     stats["runtimeStylesheetCount"] = 1
     stats["removedStylesheetRequests"] = len(files) - 1
     stats["runtimeBundleCssSHA256"] = digest
