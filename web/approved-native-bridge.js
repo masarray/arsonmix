@@ -29,9 +29,10 @@
     const demo = document.getElementById("preview");
     if (demo) {demo.disabled = true;demo.title = "Demo meters disabled in native Windows application";}
     scope?.stopDemo?.();
-    document.documentElement.dataset.armixNativeAuthority =
-      flags.productionCallbackLive ? "product-live" :
-      flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
+    const authority=flags.productionCallbackLive?"product-live":
+      flags.acceptedGraphConnected?"pcm-accepted":"not-admitted";
+    if(document.documentElement.dataset.armixNativeAuthority!==authority)
+      document.documentElement.dataset.armixNativeAuthority=authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const intent = (operation,t,payload) => {
