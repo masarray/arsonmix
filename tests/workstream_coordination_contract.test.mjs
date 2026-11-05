@@ -14,6 +14,24 @@ const pr=(number,lane,branch,parked=false)=>({
 const check=(current,files,others=[],filesByPR={})=>
   audit({pr:current,files,others,filesByPR});
 
+test('single-owner product recovery removes blocking lane and PR collisions but guards approved GUI',()=>{
+  const current={number:420,state:'open',draft:false,
+    head:{ref:'integration/first-sound-native-g0-patch-20261105'},
+    body:'<!-- arsonmix-integration: single-owner -->'};
+  const changed=['src/LiveAudioEngine.h','src/Main.cpp',
+    'integration/ApprovedNativeRuntimeSnapshot.h','AGENTS.md'];
+  const result=audit({pr:current,files:changed,
+    others:[pr(421,'ENGINE','engine/competing'),pr(422,'INTEGRATOR','integration/competing')],
+    filesByPR:{421:['src/LiveAudioEngine.h'],422:['src/Main.cpp']}});
+  assert.equal(result.ok,true,'one integration PR is not blocked by inactive lane approvals');
+  assert.equal(result.lane,'PRODUCT');
+  assert.equal(result.activeCollisions,0);
+  assert.equal(audit({pr:current,files:['web/console-native.html']}).ok,false,
+    'the forbidden alternate GUI remains a release blocker');
+  assert.equal(audit({pr:current,files:['web/console-native.html'],
+    fileStatuses:{'web/console-native.html':'removed'}}).ok,true,
+    'removing an obsolete visual variant is allowed');
+});
 test('only one approved GUI has GUI ownership; no accidental native source authority',()=>{
   for(const path of [
     'site/preview/index.html', 'site/preview-v2/index.html',
