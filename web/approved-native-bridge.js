@@ -151,7 +151,22 @@
   // drive fader/pan/mute/solo. All DSP mutations remain JUCE message-thread
   // calls through the existing arMixParameter -> setDryRoutingLabParameter.
   let m4Status=null, m4LiveStatus=null, m4ControlStamp="";
+  const physicalTrackIds=[];
+  let sourceRequestSeq=2000, sourcePending=null, g0Announced=false;
   const validM4Integer=x=>Number.isSafeInteger(x)&&x>0;
+  // Native /preview/ uses data-id, NOT the legacy standalone data-strip.
+  // Bind a stable ten-channel hardware identity once, independent of visual
+  // selection/reorder, and never infer pins from track display numbers.
+  function bindPhysicalTrackIds(){
+    if(physicalTrackIds.length===10)return true;
+    const tracks=scope?.tracks;
+    if(!Array.isArray(tracks)||tracks.length<10)return false;
+    const first=tracks.slice(0,10);
+    if(first.some(t=>t?.kind!=='audio'||!Number.isSafeInteger(t.id))||
+       new Set(first.map(t=>t.id)).size!==10)return false;
+    physicalTrackIds.push(...first.map(t=>String(t.id)));
+    return true;
+  }
   function verifiedM4ControlLane() {
     const d=m4Status;
     return !flags.acceptedGraphConnected && d?.ready===true &&
@@ -161,9 +176,9 @@
       Array.isArray(d.channelControls) && d.channelControls.length===10?d:null;
   }
   function nativePhysicalStrip(el) {
-    const value=el?.closest?.('.strip[data-strip]')?.dataset?.strip;
-    if(value===undefined || !/^(?:[0-9])$/.test(value))return -1;
-    return Number(value);
+    if(!bindPhysicalTrackIds())return -1;
+    const id=el?.closest?.('.strip[data-id]')?.dataset?.id;
+    return id===undefined?-1:physicalTrackIds.indexOf(id);
   }
   function emitVerifiedM4Param(source,name,value) {
     const d=verifiedM4ControlLane(),lane=nativePhysicalStrip(source);
@@ -193,10 +208,10 @@
   function projectVerifiedM4ControlReadback() {
     const d=verifiedM4ControlLane();
     if(!d||!scope?.findTrack||!scope?.render)return;
+    if(!bindPhysicalTrackIds())return;
     const controls=d.channelControls,changes=[];
     for(let lane=0;lane<10;++lane) {
-      const strip=document.querySelector('.strip[data-strip="'+lane+'"]');
-      const model=strip&&scope.findTrack(strip);
+      const model=scope.tracks.find(t=>String(t.id)===physicalTrackIds[lane]);
       const c=controls[lane];
       if(!model||model.kind!=='audio'||!c ||
          !Number.isFinite(c.db)||c.db < -60||c.db > 10 ||
@@ -243,6 +258,159 @@
     }
     if(dirty)scope.render();
   }
+  // The approved /preview/ HTML embeds its own renderer; legacy
+  // web/mixer-io.js is NOT loaded into the Windows executable. Populate that
+  // renderer's EXISTING IN select directly with actual JUCE callback pins.
+  // No second widget for CH1, no synthetic browser audio graph.
+  const m4Rows=d=>d?.acceptedRoute?.channels||d?.preparedM4Route?.channels||null;
+  function updateNativeM4Inputs(){
+    const d=verifiedM4ControlLane();
+    if(!d||!bindPhysicalTrackIds())return;
+    const ports=Array.isArray(d.ports)?d.ports.filter(p=>
+      Number.isInteger(p?.port)&&p.port>=0&&p.port<64):[];
+    const occupied=new Set(ports.map(p=>p.port));
+    const choices=[['NONE','No hardware input']];
+    for(const port of ports)
+      choices.push(['MONO:'+port.port,'Mono · '+String(port.label||('Input '+(port.port+1)))]);
+    for(const port of ports)
+      if(occupied.has(port.port+1))
+        choices.push(['STEREO:'+port.port+':'+(port.port+1),
+          'Stereo · IN '+(port.port+1)+' / '+(port.port+2)]);
+    const rows=m4Rows(d), key=JSON.stringify([d.epoch,choices]);
+    for(let lane=0;lane<10;++lane) {
+      const id=physicalTrackIds[lane];
+      const sel=document.querySelector('.strip[data-id="'+id+'"] select.route-select[data-field="input"]');
+      if(!sel)continue;
+      const row=Array.isArray(rows)?rows[lane]:null;
+      const current=row?.mode==='MONO'?'MONO:'+row.left:
+        row?.mode==='STEREO'?'STEREO:'+row.left+':'+row.right:'NONE';
+      if(sel.dataset.nativeM4Choices!==key) {
+        sel.replaceChildren(...choices.map(([value,label])=>{
+          const option=document.createElement('option');
+          option.value=value;option.textContent=label;
+          // A currently patched channel is never cleared through an
+          // unsupported shortcut. Explicit structural UNPATCH is a separate gate.
+          if(value==='NONE'&&current!=='NONE')option.disabled=true;
+          return option;
+        }));
+        sel.dataset.nativeM4Choices=key;
+      }
+      if(!choices.some(([value])=>value===current)){
+        const custom=document.createElement('option');
+        custom.value=current;custom.textContent='Previously accepted input · verify ports';
+        custom.disabled=true;sel.appendChild(custom);
+      }
+      if(sel.value!==current)sel.value=current;
+      sel.dataset.nativeHardwareChannel=String(lane);
+      sel.disabled=!!sourcePending||!ports.length;
+      sel.title='Select real hardware input for CH '+(lane+1)+' · native ACK required';
+    }
+    // Main monitor is a normal visible mixer action (Audition-style I),
+    // not a hidden START / ARM wizard. OFF is default until user enables it.
+    const master=document.querySelector('#master .strip.master .route-top');
+    if(master){
+      let button=master.querySelector('[data-native-monitor]');
+      if(!button){
+        button=document.createElement('button');
+        button.type='button';button.className='mx-util-key';
+        button.dataset.nativeMonitor='1';
+        button.setAttribute('aria-label','Main input monitoring');
+        master.appendChild(button);
+      }
+      button.textContent=m4LiveStatus?.monitor?'I · ON':'I · OFF';
+      button.setAttribute('aria-pressed',String(!!m4LiveStatus?.monitor));
+      button.title='Monitor live hardware input through MAIN · click to toggle';
+      button.disabled=!!sourcePending;
+    }
+  }
+  function sendM4SourcePatch(p){
+    if(!p)return;
+    p.phase='source';
+    backend.emitEvent('arMixAction',{
+      action:'routingSourceSwitch',requestId:p.id,channel:p.lane,
+      mode:p.mode,left:p.left,right:p.right,
+      deviceEpoch:p.epoch,revision:p.revision
+    });
+  }
+  function chooseM4HardwareInput(el){
+    const d=verifiedM4ControlLane(),lane=nativePhysicalStrip(el);
+    if(!d||lane<0||sourcePending)return;
+    const rows=m4Rows(d),old=rows?.[lane],parts=String(el.value).split(':');
+    const mode=parts[0],left=Number(parts[1]),right=mode==='STEREO'?Number(parts[2]):-1;
+    const ports=new Set((d.ports||[]).map(p=>p.port));
+    const valid=(mode==='MONO'||mode==='STEREO')&&
+      Number.isInteger(left)&&ports.has(left)&&
+      (mode==='MONO'||Number.isInteger(right)&&right!==left&&ports.has(right));
+    if(!valid){status('Select an enabled driver input; source unchanged');updateNativeM4Inputs();return;}
+    if(old?.mode===mode&&old.left===left&&(mode!=='STEREO'||old.right===right)){
+      updateNativeM4Inputs();return;
+    }
+    sourcePending={id:++sourceRequestSeq,lane,mode,left,right,
+      epoch:Number(d.epoch),revision:Number(d.revision),
+      resume:!!m4LiveStatus?.monitor,phase:'source'};
+    // Only a STRUCTURAL change needs the guarded mute/republish.
+    // Same-format changes use existing native 64-sample crossfade live.
+    if(sourcePending.resume&&old?.mode!==mode) {
+      sourcePending.phase='mute';
+      backend.emitEvent('arMixAction',{action:'monitor',value:false,
+        expectedEpoch:sourcePending.epoch,expectedRevision:sourcePending.revision});
+    }else sendM4SourcePatch(sourcePending);
+    status('CH '+(lane+1)+' input change pending native ACK');
+    updateNativeM4Inputs();
+  }
+  function acceptM4SourceAck(ack){
+    const p=sourcePending;
+    if(!p||p.phase!=='source'||Number(ack?.requestId)!==p.id)return;
+    const next=ack?.state, row=next?.acceptedRoute?.channels?.[p.lane];
+    const valid=ack?.ok===true&&Number(next?.epoch)===p.epoch&&
+      Number(next?.revision)>=p.revision &&
+      row?.mode===p.mode&&row.left===p.left&&row.right===p.right;
+    if(!valid){
+      sourcePending=null;
+      status('INPUT REJECTED · '+String(ack?.error||'stale native routing readback'));
+      updateNativeM4Inputs();return;
+    }
+    m4Status=next; // Engine-provided real readback, never optimistic local route.
+    if(p.resume&&p.phase==='source'){
+      p.phase='resume';
+      p.revision=Number(next.revision);
+      backend.emitEvent('arMixAction',{action:'monitor',value:true,
+        expectedEpoch:p.epoch,expectedRevision:p.revision});
+    }else sourcePending=null;
+    status('CH '+(p.lane+1)+' input accepted by native engine');
+    projectVerifiedM4ControlReadback();
+    updateNativeM4Inputs();
+  }
+  function acceptM4MonitorAck(ack){
+    const p=sourcePending;
+    if(!p||!['mute','resume'].includes(p.phase))return;
+    if(ack?.ok!==true||Number(ack.deviceEpoch)!==p.epoch||
+       ack.armed!==(p.phase==='resume')){
+      sourcePending=null;
+      status('MONITOR TRANSITION REJECTED · output remains under native safety gate');
+      updateNativeM4Inputs();return;
+    }
+    if(p.phase==='mute')sendM4SourcePatch(p);
+    else {sourcePending=null;status('CH '+(p.lane+1)+' source accepted · MAIN monitoring restored');}
+    updateNativeM4Inputs();
+  }
+  // Stop Pages' synthetic input select model from seeing any native choice.
+  // This listener captures before the embedded Pages handleField bubble.
+  document.addEventListener('change',event=>{
+    const select=event.target;
+    if(!connected||!select?.matches?.('select.route-select[data-native-hardware-channel]'))return;
+    event.preventDefault();event.stopImmediatePropagation();
+    chooseM4HardwareInput(select);
+  },true);
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('[data-native-monitor]');
+    if(!connected||!button)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const d=verifiedM4ControlLane();
+    if(!d||sourcePending)return;
+    backend.emitEvent('arMixAction',{action:'monitor',value:!m4LiveStatus?.monitor,
+      expectedEpoch:Number(d.epoch),expectedRevision:Number(d.revision)});
+  },true);
   // One hardware setup authority: the existing custom Audio I/O WebView
   // (web/mixer-io.js). Never mount a second CH1-only Patch/Arm/Start menu:
   // all ten mixer IN fields now use the same native route controller.
@@ -267,9 +435,12 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      // The separate physical-route controller owns input changes in G0.
-      // Only ChannelId-owned faders/FX/wires remain capability guarded.
-      status("AUDIO I/O · pilih sumber pada IN tiap channel · native ACK menentukan route.");
+      updateNativeM4Inputs();
+      // In G0, physical M4 DSP owns the ten inputs and faders; unrelated
+      // ChannelId-only operations remain gated, not silently simulated.
+      if(!g0Announced){g0Announced=true;
+        status("Select the real IN on any channel · M4 native source is live");
+      }
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -314,11 +485,18 @@
     backend.addEventListener("arMixStatus", state=>{
       m4LiveStatus=state||null;
       m4Status=state?.dryRoutingLab||null;
+      if(sourcePending&&Number(m4Status?.epoch)!==sourcePending.epoch) {
+        sourcePending=null;
+        status('Audio device changed: source transaction cancelled; output stays safe');
+      }
       projectVerifiedM4ControlReadback();
+      updateNativeM4Inputs();
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixSourceSwitchAck",acceptM4SourceAck);
     backend.addEventListener("arMixAudioArmAck", ack=>{
+      acceptM4MonitorAck(ack);
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
           "NATIVE: output muted.");
