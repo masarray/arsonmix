@@ -625,7 +625,8 @@ public:
             int physicalLeft,int physicalRight,bool directPermitted,
             bool independentClock,int occupiedCh1Fx,
             juce::AudioPluginFormatManager& formats,double sampleRate,
-            int deviceFrames)
+            int deviceFrames,
+            const std::function<void()>& beforePublish={})
     {
         if(!ready() || !registryValid_.load(std::memory_order_acquire) ||
            topologyFault_.load(std::memory_order_acquire) ||
@@ -656,7 +657,7 @@ public:
         if(error.isNotEmpty())return error;
         return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
              directPermitted,independentClock,occupiedCh1Fx,formats,
-             sampleRate,deviceFrames);
+             sampleRate,deviceFrames,beforePublish);
     }
 
     // One-click channel OUT and format: the existing native M4 routing/FX
@@ -668,7 +669,8 @@ public:
             const juce::String& operation,const juce::String& requested,
             bool directPermitted,bool independentClock,int occupiedCh1Fx,
             juce::AudioPluginFormatManager& formats,double sampleRate,
-            int deviceFrames) {
+            int deviceFrames,
+            const std::function<void()>& beforePublish={}) {
         if(!ready()||!registryValid_.load(std::memory_order_acquire)||
            topologyFault_.load(std::memory_order_acquire)||
            epoch()!=expectedEpoch||revision()!=expectedRevision||
@@ -700,7 +702,7 @@ public:
         } else return "CHANNEL PATCH: unsupported graph operation";
         return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
              directPermitted,independentClock,occupiedCh1Fx,formats,
-             sampleRate,deviceFrames);
+             sampleRate,deviceFrames,beforePublish);
     }
 
     // Operator one-action AUX send connection: prepare a real parallel
@@ -795,7 +797,8 @@ public:
             std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
             bool directPermitted,bool independentClock,int occupiedCh1Fx,
             juce::AudioPluginFormatManager& formats,double sampleRate,
-            int deviceFrames) {
+            int deviceFrames,
+            const std::function<void()>& beforePublish={}) {
         auto stagedRows=staged.getProperty("channels",juce::var());
         auto* editable=stagedRows.getArray();
         if(!editable||editable->size()!=count)
@@ -836,7 +839,8 @@ public:
            !registryValid_.load(std::memory_order_acquire))
             return "CHANNEL PATCH: device changed; previous mix preserved";
         return apply(staged,directPermitted,independentClock,occupiedCh1Fx,
-                     acceptedFxSelections_,formats,sampleRate,deviceFrames,true);
+                     acceptedFxSelections_,formats,sampleRate,deviceFrames,true,
+                     nullptr,beforePublish);
     }
 
     // Native live control path. Only the JUCE message thread writes. No

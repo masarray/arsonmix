@@ -1117,26 +1117,33 @@ public:
         setOutputMuted(true); // never expose CH1 unexpectedly on STOP
         dryRoutingLab_.disable();
     }
-    // Structural source/OUT changes recompile ONE existing native PCM
-    // publisher. Suspend physical monitoring internally (never ask the user
-    // to click MUTE/ARM), perform the edit, then re-admit the ChannelId graph
-    // while disarmed. If admission rejects, the accepted M4 renderer remains
-    // the only safe fallback in this SAME JUCE callback.
-    // All control-thread only. A running STREAM forbids structural edits;
-    // it must never consume a half-switched main graph.
+    // One structural graph transaction for SOURCE, OUT, M/ST and FX inserts:
+    // keep the last accepted PCM audible while the CONTROL thread validates,
+    // clones, and prepares the candidate. Disarm MAIN only at the atomic
+    // publication boundary, then re-admit ChannelId before restoring it.
+    // Rejected preparation must never cause a hardware mute or a fake GUI ACK.
+    // STREAM forbids structural editing and fast scalar controls stay atomic.
     template<class Edit>
     juce::String applyGuardedDryTopology(std::uint64_t expectedEpoch,
                                         int frames,Edit&& edit) {
         if(secondaryOutput_.armed())
             return "STOP STREAM before a structural INPUT/OUT change";
         const bool wasMonitoring=isMonitorEnabled();
-        if(wasMonitoring)setOutputMuted(true);
+        bool enteredPublication=false;
         juce::String error;
-        try { error=edit(); }
+        try {
+            error=edit([&] {
+                enteredPublication=true;
+                if(wasMonitoring)setOutputMuted(true);
+            });
+        }
         catch(const std::exception& ex) {
             error="NATIVE TOPOLOGY: preparation failed: "+juce::String(ex.what());
         }
         catch(...) { error="NATIVE TOPOLOGY: preparation failed"; }
+        // A syntactically valid request can still reject before publication:
+        // retain the previous monitor, graph and ChannelId authority.
+        if(!enteredPublication)return error;
         return finishGuardedDryTopology(
             expectedEpoch,frames,wasMonitoring,std::move(error));
     }
@@ -1173,16 +1180,20 @@ public:
             if(!armix::mixer::NativeTopologyEditSafety::mayEdit(
                    structural,secondaryOutput_.armed()))
                 return "SOURCE: STOP STREAM before changing source format";
-            const auto edit=[&]{
+            // Existing same-format physical pin changes remain live, atomic
+            // and 64-sample crossfaded; no unnecessary mute or recompile.
+            if(!structural)
                 return dryRoutingLab_.repatchPhysicalSource(
                     strip,epoch,revision,mode,left,right,
                     directFence_.permitted(),independent_.active(),
                     graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
-            };
-            // Existing same-format physical pin changes remain live, atomic
-            // and 64-sample crossfaded; no unnecessary mute or recompile.
-            if(!structural)return edit();
-            return applyGuardedDryTopology(epoch,frames,edit);
+            return applyGuardedDryTopology(epoch,frames,[&](const auto& beforePublish){
+                return dryRoutingLab_.repatchPhysicalSource(
+                    strip,epoch,revision,mode,left,right,
+                    directFence_.permitted(),independent_.active(),
+                    graphOwned_->count,formats_,device->getCurrentSampleRate(),
+                    frames,beforePublish);
+            });
         } catch(const std::exception& ex) {
             return "SOURCE: native prepare failed; prior audio kept: " + juce::String(ex.what());
         } catch(...) {
@@ -1206,11 +1217,12 @@ public:
         if(!device)return "CHANNEL PATCH: no active native audio interface";
         try {
             const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-            return applyGuardedDryTopology(epoch,frames,[&] {
+            return applyGuardedDryTopology(epoch,frames,[&](const auto& beforePublish) {
                 return dryRoutingLab_.repatchChannelStructure(
                     strip,epoch,revision,operation,value,
                     directFence_.permitted(),independent_.active(),
-                    graphOwned_->count,formats_,device->getCurrentSampleRate(),frames);
+                    graphOwned_->count,formats_,device->getCurrentSampleRate(),
+                    frames,beforePublish);
             });
         } catch(...) {
             return "CHANNEL PATCH: native preparation failed; previous mix preserved";
@@ -1244,33 +1256,12 @@ public:
            !pluginFormat->fileMightContainThisPluginType(chosen.path))
             return "FX INSERT: VST3 bundle unavailable or invalid; rescan catalog";
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        // The previous audio path keeps sounding while JUCE examines the
-        // VST3 bundle, instantiates the new effect and prepares its buffers.
-        // A rejected/missing/latent plugin must NOT briefly mute a singer.
-        // The pre-publish hook is CONTROL-only; it runs AFTER successful
-        // fallible preparation and BEFORE switching graph authority.
-        const bool wasMonitoring=isMonitorEnabled();
-        bool enteredPublication=false;
-        juce::String error;
-        try {
-            error=dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
+        return applyGuardedDryTopology(epoch,frames,[&](const auto& beforePublish) {
+            return dryRoutingLab_.insertCatalogFx(lane,slot,epoch,revision,
                 chosen,directFence_.permitted(),independent_.active(),
                 graphOwned_->count,formats_,device->getCurrentSampleRate(),
-                frames,[&] {
-                    enteredPublication=true;
-                    if(wasMonitoring)setOutputMuted(true);
-                });
-        } catch(const std::exception& ex) {
-            error="FX INSERT: prepare failed; previous audio preserved: "+
-                juce::String(ex.what());
-        } catch(...) {
-            error="FX INSERT: prepare failed; previous audio preserved";
-        }
-        // No graph publication, no change of output state and no
-        // unnecessary ChannelId re-admission on any preparation failure.
-        if(!enteredPublication)return error;
-        return finishGuardedDryTopology(
-            epoch,frames,wasMonitoring,std::move(error));
+                frames,beforePublish);
+        });
     }
     bool setDryRoutingLabParameter(int strip,std::uint64_t epoch,
             std::uint64_t revision,const juce::String& parameter,

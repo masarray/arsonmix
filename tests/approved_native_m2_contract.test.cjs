@@ -243,7 +243,19 @@ test("P0 VST3 preparation runs with old live PCM; monitor closes only at publica
  assert.match(engine,/enteredPublication=true;\s*if\(wasMonitoring\)setOutputMuted\(true\)/);
  assert.match(engine,/if\(!enteredPublication\)return error/);
  assert.match(engine,/return finishGuardedDryTopology\(/);
- assert.match(engine,/The previous audio path keeps sounding while JUCE examines/);
+ assert.match(engine,/return applyGuardedDryTopology\(epoch,frames,\[&\]\(const auto& beforePublish\)/);
+});
+test("P0 SOURCE, OUT, M-ST and FX share late-gated graph publication",()=>{
+ const lab=read("src/LiveDryRoutingLab.h");
+ const engine=read("src/LiveAudioEngine.h");
+ // Format/input edits and native VST3 insert must all enter the same gate.
+ assert.match(lab,/juce::String repatchPhysicalSource[\s\S]*?int deviceFrames,\s*const std::function<void\(\)>& beforePublish/);
+ assert.match(lab,/juce::String repatchChannelStructure[\s\S]*?int deviceFrames,\s*const std::function<void\(\)>& beforePublish/);
+ assert.match(lab,/juce::String publishRevisedTopology[\s\S]*?int deviceFrames,\s*const std::function<void\(\)>& beforePublish/);
+ assert.match(lab,/acceptedFxSelections_,formats,sampleRate,deviceFrames,true,\s*nullptr,beforePublish/);
+ assert.match(engine,/if\(!structural\)\s*return dryRoutingLab_\.repatchPhysicalSource/);
+ assert.match(engine,/return applyGuardedDryTopology\(epoch,frames,\[&\]\(const auto& beforePublish\)/);
+ assert.match(engine,/frames,beforePublish\);/);
 });
 test("P0 FX command preflight never mutes monitoring for deterministic rejection",()=>{
  const lab=read("src/LiveDryRoutingLab.h");
