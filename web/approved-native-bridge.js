@@ -145,128 +145,22 @@
     }
   }
 
-  // Native-only operator controls in the EXISTING approved More menu:
-  // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
-  // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
-  let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
-  const safeNativeCounter=x=>{
-    if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
-    const number=Number(x);
-    return Number.isSafeInteger(number)&&number>0?number:null;
-  };
-  const legacy=()=>hardware?.raw?.legacyM4;
-  const deviceReady=()=>!!(hardware?.device?.backend &&
-    hardware.device.sampleRate>0 &&
-    hardware.device.enabledInputs.length>0 &&
-    hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
+  // One hardware setup authority: the existing custom Audio I/O WebView
+  // (web/mixer-io.js). Never mount a second CH1-only Patch/Arm/Start menu:
+  // all ten mixer IN fields now use the same native route controller.
   function updateHardwarePanel(next) {
-    hardware=next || null;
     const d=next?.device;
-    const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
-      d.enabledOutputs.length>=2);
+    const opened=!!(d?.backend && d.sampleRate>0 &&
+      Array.isArray(d.enabledOutputs) && d.enabledOutputs.length>=2);
     const label=document.getElementById("transport");
-    if(label)label.textContent=!deviceOpen?"Device not ready":
-      d.outputArmed?"Output armed":"Output muted";
+    if(label)label.textContent=!opened?"Choose audio device":
+      d.outputArmed?"Monitor ON":"Monitor OFF";
     const warning=document.querySelector?.(".status-bar .warning");
-    if(warning)warning.textContent=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
+    if(warning)warning.textContent=!opened?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
-        "MAIN ARMED · PCM NOT YET ADMITTED"):
-      legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
-      "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
-    if(!inputSelect)return;
-    const pins=deviceOpen?d.inputEndpoints.filter(p=>
-      p.active===true && d.enabledInputs.includes(p.port)):[];
-    const key=pins.map(p=>p.id+"|"+p.label).join(";");
-    if(inputSelect.dataset.pins!==key) {
-      const before=inputSelect.value;
-      inputSelect.dataset.pins=key;
-      inputSelect.replaceChildren();
-      const option=document.createElement("option");
-      option.value="";option.textContent="Physical input for CH1";
-      inputSelect.appendChild(option);
-      for(const pin of pins){
-        const item=document.createElement("option");
-        item.value=String(pin.port);
-        item.textContent=pin.label+" · IN "+(pin.port+1);
-        inputSelect.appendChild(item);
-      }
-      if(pins.some(p=>String(p.port)===before))inputSelect.value=before;
-    }
-    inputSelect.disabled=!deviceReady();
-    if(routeBtn)routeBtn.disabled=!deviceReady() ||
-      inputSelect.value==="" || pendingSourceId!==0;
-    if(armBtn)armBtn.disabled=!deviceReady() ||
-      legacy()?.routeAccepted!==true || d.outputArmed;
-    if(muteBtn)muteBtn.disabled=!deviceOpen || !d.outputArmed;
-    if(hardwareNote) {
-      const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
-      // Human-readable PCM stages from the ORIGINAL native callback only.
-      // These values are NOT evidence that the DAC or speaker is audible.
-      hardwareNote.textContent=evidence?
-        evidence.readout+" · "+evidence.nextAction:
-        "No verified hardware PCM readback available.";
-    }
+        "MONITOR ON · CHECK REAL INPUT/MAIN PCM"):
+      "MONITOR OFF · INPUT CHOICES AVAILABLE IN EACH CHANNEL";
   }
-  function installFirstSoundMenu() {
-    const menu=document.querySelector?.("#moreTools .more-tools-panel");
-    if(!menu || typeof document.createElement!=="function")return;
-    const item=(tag,cls,label)=>{
-      const el=document.createElement(tag);
-      el.className=cls;el.textContent=label;
-      if(tag==="button")el.type="button";
-      return el;
-    };
-    const caption=item("span","more-tools-caption","REAL AUDIO · FIRST SOUND");
-    const setup=item("button","tool","Audio Setup");
-    setup.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"audioSetup"});
-      status("NATIVE: select actual ASIO/WASAPI input + output in Audio Setup.");
-    });
-    inputSelect=item("select","toolbar-select","");
-    inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
-    inputSelect.addEventListener("change",()=>updateHardwarePanel(hardware));
-    routeBtn=item("button","tool","Patch CH1");
-    routeBtn.addEventListener("click",()=>{
-      const d=hardware?.device,l=legacy();
-      const epoch=safeNativeCounter(d?.epoch);
-      const revision=safeNativeCounter(l?.routingRevision);
-      const pin=Number(inputSelect?.value);
-      if(!deviceReady()||inputSelect.value==="" ||
-         epoch===null||revision===null||
-         !Number.isInteger(pin)||!d.enabledInputs.includes(pin)){
-        status("NATIVE: invalid input pin, epoch or route revision.");return;
-      }
-      pendingSourceId=++sourceSerial;
-      routeBtn.disabled=true;
-      backend.emitEvent("arMixAction",{
-        action:"routingSourceSwitch",requestId:pendingSourceId,
-        channel:0,mode:"MONO",left:pin,right:-1,
-        deviceEpoch:epoch,revision
-      });
-      status("NATIVE: CH1 physical input patch pending real ACK.");
-    });
-    armBtn=item("button","tool","Arm output");
-    armBtn.addEventListener("click",()=>{
-      if(!deviceReady()||legacy()?.routeAccepted!==true)return;
-      const epoch=safeNativeCounter(hardware.device.epoch);
-      const revision=safeNativeCounter(legacy().routingRevision);
-      if(epoch===null||revision===null)return;
-      backend.emitEvent("arMixAction",{action:"monitor",value:true,
-        expectedEpoch:epoch,expectedRevision:revision});
-      status("NATIVE: output ARM requested; awaiting JUCE ACK.");
-    });
-    muteBtn=item("button","tool","Mute output");
-    muteBtn.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
-    });
-    hardwareNote=item("span","more-tools-caption","Device not initialized");
-    hardwareNote.style.whiteSpace="normal";
-    menu.append(caption,setup,inputSelect,routeBtn,armBtn,muteBtn,hardwareNote);
-    updateHardwarePanel(hardware);
-  }
-
   function onNativeReadback(next) {
     updateHardwarePanel(next);
     const caps=next?.graph?.capabilities;
@@ -275,7 +169,9 @@
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";
       stopDemo();
-      status("NATIVE G0 · PATCH CH1/ARM tersedia pada device terverifikasi; kontrol ChannelId/WIRE menunggu PCM native.");
+      // The separate physical-route controller owns input changes in G0.
+      // Only ChannelId-owned faders/FX/wires remain capability guarded.
+      status("AUDIO I/O · pilih sumber pada IN tiap channel · native ACK menentukan route.");
       return;
     }
     // Control readback may change at the SAME structural graph revision.
@@ -319,15 +215,6 @@
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>controller.onSnapshot(snapshot));
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
-    backend.addEventListener("arMixSourceSwitchAck", ack=>{
-      if(!pendingSourceId||ack?.requestId!==pendingSourceId)return;
-      pendingSourceId=0;
-      if(ack.ok===true) {
-        status("NATIVE: CH1 PATCH accepted by JUCE; validating later readback.");
-        controller.subscribe();
-      }else status("NATIVE PATCH REJECTED: "+(ack?.error||"stale physical route"));
-      updateHardwarePanel(hardware);
-    });
     backend.addEventListener("arMixAudioArmAck", ack=>{
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
@@ -480,7 +367,6 @@
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
   const ready=()=>{
-    installFirstSoundMenu();
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
