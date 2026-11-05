@@ -167,6 +167,22 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(builder,/type==='output'/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ const native=read("src/Main.cpp");
+ assert.match(bridge,/function requestPrimaryOut\(t,target\)/);
+ assert.match(bridge,/const isMainConnect=/);
+ assert.match(bridge,/const isMainRemove=/);
+ assert.match(bridge,/current\.graph\.edges\.some/);
+ assert.match(bridge,/if\(requestPrimaryOut\(t,target\)\)/);
+ assert.match(native,/action=="routingChannelPatch"/);
+ assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
+ assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
+ assert.match(builder,/closeNativePicker\(\)\{setFastPicker\(false\);\}/);
+ assert.match(builder,/NATIVE JUCE VST3/);
+ assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
+});
 test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const bridge=read("web/approved-native-bridge.js");

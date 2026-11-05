@@ -263,6 +263,27 @@
   let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
+  // One request/ACK/readback path for BOTH the ordinary OUT select and the
+  // hardware-like OUT→MAIN WIRE jack. No browser graph mutation on click.
+  function requestPrimaryOut(t,target){
+    const channel=m4Index(t);
+    const ep=safeNativeCounter(hardware?.device?.epoch),
+      rev=safeNativeCounter(legacy()?.routingRevision);
+    if(!m4Verified()||channel<0||channel>=10||
+       (target!=="MAIN"&&target!=="NONE")||ep===null||rev===null||
+       pendingOutputPatch||!deviceReady())return false;
+    const requestId=++outputSerial;
+    pendingOutputPatch={requestId,channel,target,epoch:ep};
+    backend.emitEvent("arMixAction",{action:"routingChannelPatch",
+      requestId,channel,target,deviceEpoch:ep,revision:rev});
+    window.setTimeout(()=>{
+      if(pendingOutputPatch?.requestId!==requestId)return;
+      pendingOutputPatch=null;
+      status("CH "+(channel+1)+" OUT timed out · restoring verified native route");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
@@ -1077,6 +1098,7 @@
       if(ack?.ok===true && actual?.catalogId===p.id &&
          typeof actual?.instanceId==="string"&&actual.instanceId.length){
         status("CH "+(p.channel+1)+" FX loaded · verified native VST3");
+        scope?.closeNativePicker?.();
         scope?.setNativeCatalog?.([...nativeCatalog.values()]);
         controller.subscribe();
       }else {
@@ -1180,27 +1202,13 @@
         if(t.kind==="master"){
           el.value=t.output;openNativeAudioIO();return true;
         }
-        const channel=m4Index(t),target=el.value==="Master"?"MAIN":
+        const target=el.value==="Master"?"MAIN":
           el.value==="SOURCE ONLY (No Main)"?"NONE":null;
-        const ep=safeNativeCounter(hardware?.device?.epoch),
-          rev=safeNativeCounter(legacy()?.routingRevision);
-        if(channel<0||target===null||ep===null||rev===null ||
-           pendingOutputPatch||!deviceReady()){
-          status("OUT requires a native MAIN/source-only route; unchanged");
-          el.value=t.output;return true;
-        }
-        if(el.value===t.output)return true;
-        const requestId=++outputSerial;
-        pendingOutputPatch={requestId,channel,target,epoch:ep};
+        // No optimistic GUI state. Both this menu and the WIRE jack use
+        // the same ID/epoch-guarded, acknowledged native route transaction.
+        if(el.value!==t.output && !requestPrimaryOut(t,target))
+          status("OUT unavailable · verify device, MAIN route and pending edit");
         el.value=t.output;
-        backend.emitEvent("arMixAction",{action:"routingChannelPatch",
-          requestId,channel,target,deviceEpoch:ep,revision:rev});
-        window.setTimeout(()=>{
-          if(pendingOutputPatch?.requestId!==requestId)return;
-          pendingOutputPatch=null;
-          status("OUT response timed out; refreshing accepted native route");
-          controller.subscribe();
-        },8000);
         return true;
       }
       // ONE realtime PCM control for original ten channels and MAIN,
@@ -1286,6 +1294,31 @@
     consumeWire(ops) {
       if (!connected)return false;
       const current=controller?.state().current;
+      // P0 first-sound WIRE to MAIN is the very same native M4 PRIMARY_OUT
+      // transaction as the ordinary OUT drop-down. Do not reject a real
+      // physical CH→MAIN connection merely because P1 dynamic BUS/WIRE
+      // transaction capability has not been admitted yet.
+      if(Array.isArray(ops)&&ops.length===1){
+        const op=ops[0];
+        const t=scope?.tracks?.find(x=>x.id===op.sourceId);
+        const sourceId=t?nativeByUiId.get(t.id):null;
+        const isMainConnect=(op.type==="CONNECT"||op.type==="ROUTE_ONLY") &&
+          op.destId===scope?.master?.id;
+        const edgeId=uiByWireId.get(op.edgeId);
+        const isMainRemove=op.type==="REMOVE" && sourceId &&
+          current?.admitted===true &&
+          current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
+            e.from===sourceId&&e.to===current.graph.mainChannelId);
+        if(t&&m4Index(t)>=0&&(isMainConnect||isMainRemove)){
+          const target=isMainRemove?"NONE":"MAIN";
+          if(requestPrimaryOut(t,target))
+            status("CH "+(m4Index(t)+1)+" WIRE → "+
+              (target==="MAIN"?"MAIN":"SOURCE ONLY")+
+              " · awaiting actual native ACK");
+          else status("WIRE MAIN unavailable · routing unchanged");
+          return true; // original Pages reducer never simulates native PCM
+        }
+      }
       if (!flags.acceptedGraphConnected || !current?.admitted ||
           !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")) {
         status("NATIVE: WIRE transaction not admitted; graph unchanged");return true;
