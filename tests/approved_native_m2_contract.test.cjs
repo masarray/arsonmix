@@ -296,6 +296,86 @@ test("STALE/REJECTED/timeout leave accepted GUI untouched and request fresh nati
    deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"7",errorCode:"NONE"}),false);
  assert.ok(sent.filter(x=>x.name==="arMixConsoleSubscribe").length>=2);
 });
+test("ten on-strip hardware selectors dispatch exact native channel, await ACK then readback",()=>{
+ const vm=require("node:vm");
+ const sent=[],listeners=new Map(),handlers=new Map();
+ const selects=new Map();
+ const tracks=Array.from({length:10},(_,i)=>({kind:"audio",id:i+1,name:"CH"+(i+1)}));
+ const scope={tracks,master:{id:11,kind:"master"},stopDemo(){}};
+ for(const tr of tracks){
+   const sel={dataset:{},value:"None",disabled:false,options:[],
+     replaceChildren(...opts){this.options=opts;this.value=opts[0]?.value??"";},
+     closest(){return this;}};
+   selects.set(String(tr.id),sel);
+ }
+ const info={textContent:""},preview={disabled:false,title:""};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   getElementById:id=>id==="info"?info:id==="preview"?preview:null,
+   querySelector:selector=>{
+     const id=/^\\.strip\\[data-id="(\\d+)"\\]$/.exec(selector)?.[1];
+     return id?{querySelector:()=>selects.get(id)}:null;
+   },
+   createElement:tag=>({value:"",textContent:"",dataset:{},tag}),
+   addEventListener:(type,listener)=>handlers.set(type,listener)
+ };
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const window={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   __ARMIX_NATIVE_SCOPE__:scope,setTimeout(){},addEventListener(){}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+   {window,document:doc,performance:{now:()=>0}},{timeout:3000});
+ const snap=clone(fixtures.g0);
+ snap.device.epoch="7";
+ snap.device.enabledInputs=[0,2];
+ snap.device.inputEndpoints=[
+   {id:"in:0",port:0,callback:0,label:"Mic 1",active:true},
+   {id:"in:2",port:2,callback:1,label:"Mic 3",active:true}
+ ];
+ snap.legacyM4={active:true,routeAccepted:false,routingRevision:"8",
+   channelSources:tracks.map(()=>({mode:"NONE",left:-1,right:-1}))};
+ listeners.get("arMixConsoleSnapshot")(snap);
+ const selected=selects.get("8");
+ assert.equal(selected.dataset.nativeChannel,"7");
+ assert.equal(selected.disabled,false);
+ assert.deepEqual(selected.options.map(o=>o.value),["NONE","MONO:0","MONO:2"]);
+ selected.value="MONO:2";
+ let prevented=false,stopped=false;
+ handlers.get("change")({target:selected,preventDefault(){prevented=true;},
+   stopImmediatePropagation(){stopped=true;}});
+ assert.equal(prevented,true);assert.equal(stopped,true);
+ const source=sent.findLast(x=>x.name==="arMixAction");
+ assert.equal(source.payload.action,"routingSourceSwitch");
+ assert.equal(source.payload.channel,7);
+ assert.equal(source.payload.mode,"MONO");
+ assert.equal(source.payload.left,2);
+ assert.equal(source.payload.right,-1);
+ assert.equal(source.payload.deviceEpoch,7);
+ assert.equal(source.payload.revision,8);
+ assert.equal(selected.disabled,true,"another channel edit cannot overtake ACK");
+ const stale=clone(snap);
+ stale.device.epoch="9";
+ listeners.get("arMixConsoleSnapshot")(stale);
+ assert.equal(selected.disabled,false,"device epoch change releases stale UI transaction");
+ listeners.get("arMixConsoleSnapshot")(snap);
+ selected.value="MONO:2";
+ handlers.get("change")({target:selected,preventDefault(){},stopImmediatePropagation(){}});
+ const pending=sent.findLast(x=>x.name==="arMixAction").payload;
+ const rows=tracks.map(()=>({mode:"NONE",left:-1,right:-1}));
+ rows[7]={mode:"MONO",left:2,right:-1};
+ listeners.get("arMixSourceSwitchAck")({
+   requestId:pending.requestId,channel:7,ok:true,error:"",
+   state:{epoch:7,acceptedRoute:{channels:rows}}
+ });
+ assert.equal(selected.disabled,true,"ACK alone must not project native source");
+ const readback=clone(snap);
+ readback.legacyM4.routeAccepted=true;
+ readback.legacyM4.channelSources=rows;
+ listeners.get("arMixConsoleSnapshot")(readback);
+ assert.equal(selected.value,"MONO:2");
+ assert.equal(selected.disabled,false);
+ assert.equal(selects.get("1").value,"NONE",
+   "unselected channel must not inherit another channel's patch");
+});
 test("M2 code edits approved Pages *events* only, not a second native GUI/audio engine",()=>{
  const page=read("site/preview-v2/index.html");
  const native=read("src/Main.cpp");
