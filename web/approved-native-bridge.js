@@ -279,6 +279,69 @@
   // The installed M4 renderer already has ten real native strip setters.
   // Before ChannelId migration, show its ACCEPTED readback rather than
   // disabling fader/PAN/MUTE/SOLO or inventing an optimistic demo state.
+  // User's one IN selection is the entire normal patch+monitor gesture.
+  // A real ACK/epoch/accepted row must precede any guarded output resume.
+  let pendingStripSource=null;
+  function chooseNativeStripInput(select) {
+    const n=m4StripIndex(select),d=hardware?.device,m=legacy();
+    const epoch=safeNativeCounter(d?.epoch),revision=safeNativeCounter(m?.routingRevision);
+    const parts=String(select.value).split(":");
+    const mode=parts[0],left=Number(parts[1]),right=mode==="STEREO"?Number(parts[2]):-1;
+    const active=new Set((d?.inputEndpoints||[]).filter(x=>x.active===true).map(x=>x.port));
+    if(!deviceReady()||n<0||n>=10||pendingSourceId||
+       epoch===null||revision===null||!["MONO","STEREO"].includes(mode)||
+       !Number.isInteger(left)||!active.has(left)||
+       (mode==="STEREO"&&(!Number.isInteger(right)||right===left||!active.has(right)))) {
+      status("INPUT NOT CHANGED · select a verified active mono/stereo input");
+      paintM4Inputs(hardware);return;
+    }
+    pendingSourceId=++sourceSerial;
+    pendingStripSource={requestId:pendingSourceId,channel:n,mode,left,right,epoch};
+    backend.emitEvent("arMixAction",{
+      action:"routingSourceSwitch",requestId:pendingSourceId,
+      channel:n,mode,left,right,deviceEpoch:epoch,revision
+    });
+    status("CH "+(n+1)+" · connecting input (native ACK)");
+    paintM4Inputs(hardware);
+  }
+  function paintM4Inputs(next) {
+    if(!Array.isArray(scope?.tracks))return;
+    const d=next?.device,m=next?.raw?.legacyM4;
+    const active=Array.isArray(d?.inputEndpoints)?d.inputEndpoints.filter(p=>
+      p?.active===true && d.enabledInputs?.includes(p.port)):[];
+    const options=[];
+    // NONE is displayed as state, not offered as a nonfunctional patch.
+    options.push(["NONE","No input"]);
+    for(const pin of active)options.push(["MONO:"+pin.port,
+      "Mono · "+pin.label]);
+    for(let i=0;i<active.length;i++)for(let j=i+1;j<active.length;j++){
+      const l=active[i],r=active[j];
+      if(r.port===l.port+1)options.push([
+        "STEREO:"+l.port+":"+r.port,
+        "Stereo · "+l.label+" / "+r.label]);
+    }
+    const sources=Array.isArray(m?.channelSources)?m.channelSources:[];
+    for(let i=0;i<Math.min(scope.tracks.length,10);i++){
+      const t=scope.tracks[i];
+      const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+      const select=root?.querySelector('select[data-field="input"]');
+      if(!select)continue;
+      const src=sources[i],value=src?.mode==="STEREO"?
+        "STEREO:"+src.left+":"+src.right:src?.mode==="MONO"?
+        "MONO:"+src.left:"NONE";
+      const list=options.slice();
+      if(value!=="NONE"&&!list.some(o=>o[0]===value))
+        list.push([value,"Previous input · not active"]);
+      const signature=JSON.stringify(list);
+      if(select.dataset.nativeOptions!==signature){
+        select.replaceChildren(...list.map(([v,label])=>new Option(label,v)));
+        select.dataset.nativeOptions=signature;
+      }
+      if(select.value!==value)select.value=value;
+      select.disabled=!deviceReady()||pendingSourceId!==0||!Array.isArray(m?.channelSources);
+      select.title="CH "+(i+1)+" · verified hardware IN · native route ACK";
+    }
+  }
   function m4Verified(){
     const m=legacy(),d=hardware?.device;
     return m?.active===true&&m.routeAccepted===true &&
@@ -287,10 +350,11 @@
       safeNativeCounter(m.routingRevision)!==null;
   }
   function m4StripIndex(el){
-    const root=el?.closest?.('.strip[data-strip]');
-    if(!root)return -1;
-    const n=Number(root.dataset.strip);
-    return Number.isInteger(n)&&n>=0&&n<10?n:-1;
+    // /preview/ uses stable view-local data-id, NOT the retired data-strip.
+    const root=el?.closest?.('.strip[data-id]');
+    if(!root || !Array.isArray(scope?.tracks))return -1;
+    const index=scope.tracks.findIndex(t=>String(t.id)===root.dataset.id);
+    return index>=0&&index<10?index:-1;
   }
   function m4Send(parameter,channel,value){
     if(!m4Verified()||channel<0||channel>=10)return false;
@@ -327,11 +391,12 @@
       scope.master.mute=m.masterMute;change=true;
     }
     if(change)scope.render();
+    paintM4Inputs(next);
     const l=m.channelPeaksL,r=m.channelPeaksR;
     if(!Array.isArray(l)||!Array.isArray(r)||!scope.displayMeterDbfs)return;
     const now=performance.now();
     for(let i=0;i<10;i++){
-      const root=document.querySelector('.strip[data-strip="'+i+'"]');
+      const root=document.querySelector('.strip[data-id="'+scope.tracks[i]?.id+'"]');
       if(!root)continue;
       for(const [side,v] of [["left",l[i]],["right",r[i]]]){
         if(!Number.isFinite(v)||v<0)continue;
@@ -351,6 +416,7 @@
       lastPaintedSignature="";
       stopDemo();
       paintM4Readback(next);
+      if(!m4Verified())paintM4Inputs(next);
       status(m4Verified()?
         "LIVE 10CH MIXER · INPUT/FADER/PAN/MUTE native · ChannelId migration pending":
         "NATIVE DEVICE · select real IN on channel; output remains safe until native route");
@@ -422,17 +488,11 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
-      // DAW-style per-track IN is routing, not ChannelId G0 control.
-      // Every native input is committed through the existing M4 ten-channel
-      // ACK controller. NEVER let Pages' demo field change actual audio.
+      // Approved /preview/ IN selects from actual JUCE callback pins.
+      // The installed M4 native graph owns the ten physical source switches.
+      // This is the SAME engine route used by the live PCM callback.
       if(field==="input"){
-        if(event.type==="change"){
-          const strip=el.closest?.(".strip[data-strip]");
-          const channel=Number(strip?.dataset.strip);
-          const outcome=window.__arMixChooseChannelHardwareInput?.(channel,el.value);
-          if(!outcome?.ok)status("INPUT REJECTED · "+(outcome?.error||"native mixer unavailable"));
-          else status("CH "+(channel+1)+" INPUT · native ACK pending");
-        }
+        if(event.type==="change")chooseNativeStripInput(el);
         return true;
       }
       if (!flags.acceptedGraphConnected) {
