@@ -52,7 +52,7 @@ inline juce::var realDevicePorts (const juce::StringArray& labels,
 
 inline juce::var snapshot (const juce::var& live,
                             juce::AudioDeviceManager& manager,
-                            bool allOutputsDisarmed)
+                            bool primaryOutputArmed)
 {
     // Message-thread read of the REAL engine and real current JUCE device.
     // When separate clocks are active, direct JUCE input pins cannot be
@@ -87,7 +87,7 @@ inline juce::var snapshot (const juce::var& live,
                                           ? active->getCurrentSampleRate() : 0.0);
     dev->setProperty ("bufferFrames", active != nullptr && active->isOpen()
                                            ? active->getCurrentBufferSizeSamples() : 0);
-    dev->setProperty ("outputArmed", ! allOutputsDisarmed);
+    dev->setProperty ("outputArmed", primaryOutputArmed);
     root->setProperty ("device", juce::var (dev.release()));
 
     auto caps = std::make_unique<juce::DynamicObject>();
