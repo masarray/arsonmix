@@ -576,6 +576,36 @@ public:
              sampleRate,deviceFrames);
     }
 
+    // Hardware MAIN L/R is an explicit physical-port pair, not a guessed
+    // callback index. Recompile only on the JUCE message thread while all
+    // outputs are disarmed; apply() verifies the actual sparse output mask,
+    // monitor exclusivity, stable device epoch and retained VST3 instances.
+    juce::String repatchMainOutputPair(std::uint64_t expectedEpoch,
+            std::uint64_t expectedRevision,int physicalLeft,int physicalRight,
+            bool directPermitted,bool independentClock,int occupiedCh1Fx,
+            juce::AudioPluginFormatManager& formats,double sampleRate,
+            int deviceFrames) {
+        if(!ready()||!hasExplicitRoute()||
+           !registryValid_.load(std::memory_order_acquire)||
+           topologyFault_.load(std::memory_order_acquire)||
+           expectedEpoch!=epoch()||expectedRevision!=revision()||
+           !sourceTemplate_.isObject())
+            return "MAIN OUTPUT: stale native device or missing input patch";
+        if(physicalLeft<0||physicalRight<0||physicalLeft==physicalRight)
+            return "MAIN OUTPUT: choose two distinct active physical outputs";
+        // Preserve the accepted CHANNEL/SEND/FX route; only change MAIN pins.
+        auto staged=juce::JSON::parse(juce::JSON::toString(sourceTemplate_,false));
+        if(!staged.isObject())
+            return "MAIN OUTPUT: cannot clone native routing";
+        juce::Array<juce::var> outputPins;
+        outputPins.add(physicalLeft);
+        outputPins.add(physicalRight);
+        staged.getDynamicObject()->setProperty("mainOutputs",juce::var(outputPins));
+        return publishRevisedTopology(staged,expectedEpoch,expectedRevision,
+            directPermitted,independentClock,occupiedCh1Fx,formats,
+            sampleRate,deviceFrames);
+    }
+
     // One-click channel OUT and format: the existing native M4 routing/FX
     // graph is the sole PCM owner. Prepare OUT/format on the JUCE control
     // thread, then publish with exactly the same epoch/VST3 lease/Show
