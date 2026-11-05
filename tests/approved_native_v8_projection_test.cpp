@@ -368,6 +368,37 @@ static void firstSoundRouteAdmissionRegression() {
     assert(publishVerifiedFirstSoundState(snapshot,live));
     m4=snapshot.getProperty("legacyM4",{});
     assert(static_cast<bool>(m4.getProperty("routeAccepted",false)));
+    // First hardware choice may target CH05 (not hardcoded CH01). All ten
+    // rows must project from native accepted data, never demo INPUT 1.
+    juce::Array<juce::var> rows;
+    for(int i=0;i<10;++i) {
+        auto row=std::make_unique<juce::DynamicObject>();
+        row->setProperty("mode",i==4?"MONO":"NONE");
+        row->setProperty("left",i==4?0:-1);
+        row->setProperty("right",-1);
+        row->setProperty("main",true);
+        rows.add(juce::var(row.release()));
+    }
+    auto accepted=std::make_unique<juce::DynamicObject>();
+    accepted->setProperty("channels",juce::var(rows));
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()->setProperty(
+        "acceptedRoute",juce::var(accepted.release()));
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    m4=snapshot.getProperty("legacyM4",{});
+    const auto physicalRows=m4.getProperty("channels",{});
+    assert(physicalRows.isArray());
+    assert(physicalRows.getArray()->size()==10);
+    assert(physicalRows.getArray()->getReference(4).getProperty("mode",{}).toString()=="MONO");
+    assert(static_cast<int>(physicalRows.getArray()->getReference(4).getProperty("left",-1))==0);
+    // Disabled hardware input is never presented as accepted physical PCM.
+    auto badPins=juce::JSON::parse(juce::JSON::toString(live,false));
+    badPins.getProperty("dryRoutingLab",{}).getProperty("acceptedRoute",{})
+        .getProperty("channels",{}).getArray()->getReference(4)
+        .getDynamicObject()->setProperty("left",7);
+    assert(publishVerifiedFirstSoundState(snapshot,badPins));
+    assert(snapshot.getProperty("legacyM4",{}).getProperty("channels",{}).getArray()->isEmpty());
+    // Restore valid accepted rows for the stale epoch/fail-closed matrix.
+    assert(publishVerifiedFirstSoundState(snapshot,live));
     auto reject=[&](const juce::var& degraded) {
         auto fresh=juce::JSON::parse(juce::JSON::toString(snapshot,false));
         assert(!publishVerifiedFirstSoundState(fresh,degraded));
