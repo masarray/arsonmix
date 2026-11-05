@@ -3,16 +3,23 @@
 
 **ONLY approved/public/product GUI: https://masarray.github.io/arsonmix/preview/**. There must be ONE public preview, ONE actual rendered GUI, and ONE native Windows GUI. **/preview-v2/ is rejected**: do not display, promote, publish or base native design on it as a separate UI. Do not substitute another console from `web/index.html`, `web/mixer-layout.js`, `web/console-native.html`, PR #278 or old M3/V48 mock. **The JUCE ENGINE must stitch into the EXACT approved /preview/ GUI**, never redesign it.
 
-## Multi-agent GitHub coordination — REQUIRED (issue #397)
+## One integration owner — binding product recovery (2026-11-05)
 
-Before touching ArSonMix code, read [workstream ownership and collaboration contract](docs/workstreams/MULTI_AGENT_COORDINATION.md) and [coordination control tower #397](https://github.com/masarray/arsonmix/issues/397). GitHub main, active PRs, changed-file overlap and accepted native ABI are the shared state; independent ChatGPT threads cannot see each other's private unpushed work.
+Previous four-lane ENGINE / INTEGRATOR / FAT / GUI ownership and active-PR
+collision gates are **superseded**. A single product integration PR may edit
+engine, native host, GUI data bridge, tests, packaging and CI as necessary.
+Declare `<!-- arsonmix-integration: single-owner -->` in its PR body so the
+existing lightweight qualification selector skips cross-thread admission,
+not the actual Windows build, JUCE/CTest, browser gates or release checks.
+No waiting for abandoned thread approvals; no fake milestone/progress claims.
 
-- **GUI** owns `site/**` and browser presentation. ONLY the assembled `/preview/`, no alternative renderer.
-- **ENGINE** owns `engine/**` and realtime DSP/PCM/device/VST3 sources; **#266** remains sole callback producer.
-- **INTEGRATOR** alone owns `src/Main.cpp`, `CMakeLists.txt`, `integration/**` and `web/approved-native*` and assembles one Windows application.
-- **FAT** owns native Windows evidence, packaging and independent QA; FAT must not edit production DSP or GUI to claim PASS.
-
-New PRs require the owner and linked issue metadata from `.github/PULL_REQUEST_TEMPLATE.md`. Existing Windows and Chromium workflows run the cheap, read-only source-owner/collision preflight; no extra workflow. Cross-owner changes must be handed off to the owner through issue #397, **not** implemented in parallel. Mark superseded older PRs `<!-- arsonmix-coordination: parked -->` while extracting unique verified changes. Pre-policy PRs #399 and earlier receive nonblocking findings while DRAFT; when marked ready_for_review they must meet the SAME strict gate and re-run CI. This is not permission to merge conflicting code. One exact-SHA integrator gates a Windows EXE on real native PCM + visual parity + FAT; missing hardware evidence is PENDING.
+Before a change: fetch latest main HEAD, compare merged #266/#408/#406,
+reconcile source file-by-file, and preserve functional VST3, Show, device
+selection and the accepted GUI. Use **one integrated PR** with meaningful
+product changes. Branch protection, review, exact-SHA tests, source integrity
+and independently witnessed hardware FAT remain binding. No forced merge,
+no uncontrolled callbacks, no silent auto-arm or output reroute. If real
+hardware is unavailable, mark physical audio FAT **PENDING**.
 
 ## Verified current published GUI implementation
 `site/preview/index.html` was merely a wrapper/iframe pointing at a generated `/preview-buttons/index.html`. `scripts/build_pages.py` generates that **approved PNG hardware-button variant** using current `site/preview-v2/index.html` as an INTERNAL HTML/WIRE/FX/fader source, with specifically `site/preview-buttons/assets/mixer-control-keys.css`, `mixer-control-keys.js` and `mute-solo-pfl-56x37.png` as approved button source. **The assembled result behind /preview/ is the visual authority, not /preview-v2/ in isolation.** There must be exactly ONE deterministic assembled output and no independent published variant. Internal source files may survive only as build inputs until safely consolidated; they are NOT alternate product GUIs. **Current approved visual including PNG keys must never be silently replaced by the base variant.**

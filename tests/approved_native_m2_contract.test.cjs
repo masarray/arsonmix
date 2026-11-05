@@ -37,6 +37,28 @@ test("G0 current JUCE device snapshot is valid, never ChannelId PCM LIVE",()=>{
   assert.equal(protocol.decimal(invalid),null);
  }
 });
+test("native G0 preserves verified first-sound M4 route without claiming ChannelId PCM",()=>{
+  const g0=clone(fixtures.g0);
+  g0.legacyM4={active:true,routeAccepted:false,routingRevision:"12"};
+  const initial=protocol.normalizeSnapshot(g0);
+  assert.ok(initial);
+  assert.equal(initial.admitted,false);
+  assert.deepEqual(initial.raw.legacyM4,g0.legacyM4);
+  g0.legacyM4.routeAccepted=true;
+  const patched=protocol.normalizeSnapshot(g0);
+  assert.ok(patched);
+  assert.equal(patched.raw.legacyM4.routeAccepted,true);
+  assert.equal(patched.admitted,false,
+    "a physical M4 patch is NOT fabricated ChannelId or product admission");
+  // The existing JUCE 12Hz status publisher must also deliver late native
+  // snapshots: WebView's first subscribe occurs before device initialise().
+  const nativeMain=read("src/Main.cpp");
+  assert.match(nativeMain,/if \(consoleSubscribed_\)[\s\S]*?"arMixConsoleSnapshot", approvedNativeSnapshot\(state\)/);
+  const nativeBridge=read("web/approved-native-bridge.js");
+  assert.match(nativeBridge,/const legacy=\(\)=>hardware\?\.raw\?\.legacyM4/);
+  assert.match(read("src/ApprovedConsoleNativeTransportV6.h"),
+    /"outputArmed", primaryOutputArmed/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},

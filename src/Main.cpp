@@ -696,11 +696,14 @@ private:
     juce::var approvedNativeSnapshot (const juce::var& live)
     {
         auto accepted=armix::native_console_m2::snapshot (
-            live, engine_.devices(), engine_.allOutputsDisarmed());
+            live, engine_.devices(), engine_.isMonitorEnabled());
         // Native routing's generation advances on STOP as well as START.
         // Keep even disconnected G0 snapshots monotonic to invalidate UI.
         (void) armix::console::synchronizeApprovedRouteDeviceEpoch (
             accepted, live);
+        // Actual prepared M4 epoch/revision enables the native First Sound
+        // hardware PATCH/ARM workflow before full ChannelId admission.
+        (void) armix::console::publishVerifiedFirstSoundState (accepted, live);
         (void) armix::console::projectInstalledNativeChannelIdGraph (
             accepted, live);
         return accepted;
@@ -2641,6 +2644,15 @@ private:
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
+        // The WebView subscribes BEFORE audio startup. A one-shot G0 snapshot
+        // can therefore precede JUCE initialise() and leave PATCH CH1 grayed
+        // out forever. Publish the SAME real engine status at the existing
+        // 12 Hz control-thread cadence: physical pins, accepted ChannelIds and
+        // PCM meters update after startup, source patch, ARM and hotplug.
+        // No additional DSP callback, allocation or work on realtime thread.
+        if (consoleSubscribed_)
+            browser_.emitEventIfBrowserIsVisible (
+                "arMixConsoleSnapshot", approvedNativeSnapshot(state));
     }
 };
 
