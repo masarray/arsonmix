@@ -86,7 +86,7 @@ export function audit({pr, files, others = [], filesByPR = {}, fileStatuses = {}
   // cross-thread lanes. Keep essential alternate-GUI and exact-source checks;
   // collisions are reconciled through the normal Git diff + PR review, NOT
   // a GitHub-API preflight that can block a working Windows build.
-  if (/<!--\\s*arsonmix-integration:\\s*single-owner\\s*-->/i.test(pr.body || '')) {
+  if (/<!--\s*arsonmix-integration:\s*single-owner\s*-->/i.test(pr.body || '')) {
     const errors=[];
     for (const path of files)
       if (['web/console-native.html','web/console-native.js',
@@ -266,7 +266,7 @@ export async function auditGitHub({repo,number,token}) {
   const fileStatuses=Object.fromEntries(files.map(f=>[f.filename,f.status]));
   // Single-owner mode deliberately skips scanning all other PRs and their
   // files: no waiting on abandoned ENGINE/FAT/INTEGRATOR workstreams.
-  if (/<!--\\s*arsonmix-integration:\\s*single-owner\\s*-->/i.test(pr.body||'')) {
+  if (/<!--\s*arsonmix-integration:\s*single-owner\s*-->/i.test(pr.body||'')) {
     const result=audit({pr,files:changedPaths,fileStatuses});
     return {...result,runUi:requiresUiSmoke(changedPaths),
       runNative:requiresNativeQualification(changedPaths)};
