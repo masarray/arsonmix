@@ -74,6 +74,12 @@ NATIVE_EVENT_HOOKS = (
     ("function handleField(event){\n",
      "function handleField(event){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;}\n"),
+    # Native-only: the SAME original quick picker/manager owns the UI.
+    # Only insertion leaves the demo reducer and goes to JUCE's actual VST3
+    # graph; never mark a browser insert as loaded.
+    ("function insertCatalogPlugin(id){\n",
+     "function insertCatalogPlugin(id){\n"
+     " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.insertPlugin?.(id,activeFxTarget);return;}\n"),
     (" if(a==='wireExpand'){document.querySelector('.section-rail",
      " if(window.__JUCE__?.backend&&!window.__ARMIX_NATIVE_M2__?.enabled)return;\n"
      " if(window.__ARMIX_NATIVE_M2__?.consumeAction?.(t,a,btn))return;\n"
@@ -143,6 +149,15 @@ NATIVE_EVENT_HOOKS = (
      "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
      " get tracks(){return tracks;},get master(){return master;},\n"
      " make,render,findTrack,displayMeterDbfs,\n"
+     " refreshStrip,syncFaderVisual,openFastPicker,openPluginBrowser,\n"
+     " get activeFaderId(){return faderGesture?Number(faderGesture.input.closest('.strip')?.dataset.id):-1;},\n"
+     " setNativeCatalog(rows){\n"
+     "  pluginCatalog=rows.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').map(x=>({\n"
+     "   id:x.id,name:x.name,vendor:x.vendor||'Unknown',category:x.category||'Utility',\n"
+     "   format:'VST3',status:'ready',latencySamples:null,\n"
+     "   favorite:!!x.favorite,hidden:false}));\n"
+     "  renderPluginCatalog();renderFastPicker();return pluginCatalog.length;\n"
+     " },\n"
      " colors:COLORS,wireGraph:ArSonWireGraph,\n"
      " allocateWireId(){return nextWireId++;},\n"
      " installGraph(channels,main,edges){\n"

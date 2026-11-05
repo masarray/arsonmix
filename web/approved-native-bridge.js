@@ -16,7 +16,8 @@
   const uiByNativeId = new Map();       // EXACT uint64 string -> local view-only ordinal
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
-  let lastPaintedSignature = "", lastNativeError = "NATIVE_NOT_SUBSCRIBED";
+  let lastPaintedSignature = "",lastNativeTopologySignature = "",
+      lastNativeError = "NATIVE_NOT_SUBSCRIBED";
   // B-stage: attached-node-only meter caches; a structural render invalidates
   // them atomically. Never retain detached WebView2 strips or stale channel IDs.
   const meterElements = new Map();
@@ -140,6 +141,43 @@
     scope.installGraph(nextTracks,nextMaster,edges);
     return true;
   }
+  function projectNativeGraphWithoutFocusLoss(next) {
+    const structure=JSON.stringify([
+      next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
+        ch.processingFormat,ch.source,ch.primaryOutId,ch.inserts]),
+      next.graph.edges]);
+    if(structure!==lastNativeTopologySignature){
+      if(!projection(next))return false;
+      lastNativeTopologySignature=structure;
+      return true;
+    }
+    // Immutable graph topology is identical: update actual scalar controls
+    // only. Never detach the active HTML select or the captured fader pointer.
+    for(const ch of next.graph.channels){
+      const id=uiByNativeId.get(ch.id);
+      const t=id===scope?.master?.id?scope.master:
+        scope?.tracks?.find(x=>x.id===id);
+      if(!t||!ch.controls)continue;
+      const c=ch.controls;
+      const db=c.faderDb,pan=c.pan*100;
+      const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
+      const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
+      if(faderChanged)t.level=db;
+      if(Number.isFinite(pan))t.pan=pan;
+      t.mute=c.mute;t.solo=c.solo;
+      if(switchChanged){
+        scope.refreshStrip?.(t);
+        meterElements.delete(t.id);
+      }else if(faderChanged&&scope.activeFaderId!==t.id)
+        scope.syncFaderVisual?.(t);
+      const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+      const knob=root?.querySelector('.center-pan');
+      if(knob&&scope.activeFaderId!==t.id&&
+         document.activeElement!==knob && Number.isFinite(pan))
+        knob.value=String(pan);
+    }
+    return true;
+  }
   // Native telemetry owns the physical meter. When no measured per-channel
   // samples are published, leave the meter dark; never use Pages sine demo.
   function paintNativeMeters(next) {
@@ -223,18 +261,81 @@
     scope.tracks.filter(t=>t.kind==="audio").slice(0,10).map(t=>t.id):[];
   const m4Index=t=>t?.kind==="audio"?m4TrackIds.indexOf(t.id):-1;
   let lastM4UiSignature="",lastM4Controls="",nativeUiSourcePending=null;
-  let pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
+  let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
+  const pendingSourceQueue=new Map();
+  let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  let pendingNativeControl=new Map(),lastNativeControlSent=new Map();
   const m4Meters=new Map();
   const m4Verified=()=>{
     const m=legacy(),d=hardware?.device;
     return m4TrackIds.length===10 &&
       new Set(m4TrackIds).size===10 &&
-      !flags.acceptedGraphConnected && m?.active===true &&
-      m.routeAccepted===true && Array.isArray(m.channelControls) &&
+      m?.active===true && m.routeAccepted===true &&
+      m.nativeBusStructural!==true &&
+      Array.isArray(m.channelControls) &&
       m.channelControls.length===10 && m.channels?.length===10 &&
       safeNativeCounter(d?.epoch)!==null &&
       safeNativeCounter(m.routingRevision)!==null;
   };
+
+  // One verified control path for original 10 channels and MAIN, whether
+  // the callback currently renders M4 or its admitted ChannelId mirror.
+  // Browser holds only transient gesture feedback; engine remains SSOT.
+  const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":m4Index(t));
+  function streamFaderControl(parameter,t,value,final){
+    if(!m4Verified())return false;
+    const key=controlKey(parameter,t),now=performance.now();
+    const last=lastNativeControlSent.get(key)||0;
+    if(!final&&now-last<30){
+      pendingNativeControl.set(key,{parameter,t,value});
+      return true;
+    }
+    pendingNativeControl.delete(key);
+    lastNativeControlSent.set(key,now);
+    return sendM4Control(parameter,t,value);
+  }
+  // A quiet trailing flush guarantees final PCM value, even if the pointer
+  // stops between two 30ms live-control ticks or a keyboard commits instantly.
+  let nativeControlFlushQueued=false;
+  function queueLiveControlFlush(){
+    if(nativeControlFlushQueued)return;
+    nativeControlFlushQueued=true;
+    window.setTimeout(()=>{
+      nativeControlFlushQueued=false;
+      for(const [key,edit] of pendingNativeControl) {
+        pendingNativeControl.delete(key);
+        lastNativeControlSent.set(key,performance.now());
+        sendM4Control(edit.parameter,edit.t,edit.value);
+      }
+    },32);
+  }
+  function previewFaderWithoutModelMutation(t,db){
+    if(!Number.isFinite(db)||!t)return;
+    scope?.syncFaderVisual?.({...t,level:db});
+  }
+  function paintM4FxInstances(m) {
+    if(!Array.isArray(m?.fxInstances)||!scope?.tracks)return;
+    for(let lane=0;lane<10;lane++){
+      const t=scope.tracks.find(x=>x.id===m4TrackIds[lane]);
+      const rows=m.fxInstances[lane];
+      if(!t||!Array.isArray(rows))continue;
+      let change=false;
+      for(let slot=0;slot<8;slot++){
+        const live=rows[slot],entry=nativeCatalog.get(live?.catalogId);
+        const name=live?(entry?.name||"VST3 Loaded"):"None";
+        if(t.fx[slot]!==name || t.slotBypass[slot]!==Boolean(live?.bypassed) ||
+           (t.fxInsertIds?.[slot]?.id||null)!==(live?.instanceId||null)){
+          t.fx[slot]=name;
+          t.slotBypass[slot]=Boolean(live?.bypassed);
+          if(!Array.isArray(t.fxInsertIds))t.fxInsertIds=Array(8).fill(null);
+          t.fxInsertIds[slot]=live?{id:live.instanceId,name}:null;
+          change=true;
+        }
+      }
+      if(change && scope.activeFaderId!==t.id)
+        scope.refreshStrip?.(t);
+    }
+  }
   function sendM4Control(parameter,t,value) {
     if(!m4Verified() || (typeof value!=="boolean"&&!Number.isFinite(value)))
       return false;
@@ -260,29 +361,41 @@
   function paintM4Fallback(next) {
     if(!m4Verified()||!Array.isArray(scope?.tracks))return;
     const m=next.raw.legacyM4,ctl=m.channelControls;
+    paintM4FxInstances(m);
     const controlSignature=JSON.stringify([next.device.epoch,
       m.routingRevision,ctl,m.masterDb,m.masterMute]);
     if(controlSignature!==lastM4Controls) {
       lastM4Controls=controlSignature;
-      let changed=false;
       for(let i=0;i<10;i++){
         const t=scope.tracks.find(x=>x.id===m4TrackIds[i]),c=ctl[i];
         if(!t||!c||!Number.isFinite(c.db)||!Number.isFinite(c.pan)||
            typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
-        if(Math.abs(t.level-c.db)>.015){t.level=c.db;changed=true;}
-        if(Math.abs(t.pan-c.pan)>.015){t.pan=c.pan;changed=true;}
-        if(t.mute!==c.mute){t.mute=c.mute;changed=true;}
-        if(t.solo!==c.solo){t.solo=c.solo;changed=true;}
+        const oldDb=t.level;
+        const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
+        t.level=c.db;t.pan=c.pan;t.mute=c.mute;t.solo=c.solo;
+        if(switchChanged && scope.activeFaderId!==t.id){
+          scope.refreshStrip?.(t);
+          m4Meters.delete(t.id);
+        }else if(Math.abs(oldDb-c.db)>.015 &&
+                 scope.activeFaderId!==t.id)
+          scope.syncFaderVisual?.(t);
+        const panKnob=document.querySelector(
+          '.strip[data-id="'+t.id+'"] .center-pan');
+        if(panKnob && document.activeElement!==panKnob)
+          panKnob.value=String(c.pan);
       }
       if(scope.master && Number.isFinite(m.masterDb) &&
          Math.abs(scope.master.level-m.masterDb)>.015){
-        scope.master.level=m.masterDb;changed=true;
+        scope.master.level=m.masterDb;
+        if(scope.activeFaderId!==scope.master.id)
+          scope.syncFaderVisual?.(scope.master);
       }
       if(scope.master && typeof m.masterMute==="boolean" &&
          scope.master.mute!==m.masterMute){
-        scope.master.mute=m.masterMute;changed=true;
+        scope.master.mute=m.masterMute;
+        if(scope.activeFaderId!==scope.master.id)
+          scope.refreshStrip?.(scope.master);
       }
-      if(changed){m4Meters.clear();scope.render?.();}
     }
     // Only measured JUCE callback peaks are painted. Cache actual live DOM
     // fills to avoid repeated selector searches for every timer/signal tick.
@@ -328,9 +441,27 @@
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
     }
-    // One canonical renderer, only on a real routing/topology change.
-    m4Meters.clear();
-    scope.render?.();
+    // A source ACK changes only affected fields; never replace the whole
+    // mixer while another select is open or another fader is being dragged.
+    const ports=JSON.stringify([next?.device?.epoch,
+      next?.device?.enabledInputs,next?.device?.inputEndpoints]);
+    if(ports!==lastM4PortSignature){
+      lastM4PortSignature=ports;
+      if(scope.activeFaderId<0 &&
+         !document.activeElement?.matches?.('.strip select'))
+        scope.render?.(); // refresh all hardware choices ONLY after device setup
+    }else{
+      for(let i=0;i<10;++i){
+        const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
+        if(!t)continue;
+        const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+        for(const field of ["input","output"]){
+          const element=root?.querySelector('select[data-field="'+field+'"]');
+          if(element && document.activeElement!==element &&
+             element.value!==t[field])element.value=t[field];
+        }
+      }
+    }
   }
 
   const virtualCableFeedbackPair=()=>{
@@ -754,7 +885,7 @@
     const nativeAdmitted=next.admitted && caps?.callbackOwnsChannelIds===true;
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
-      lastPaintedSignature="";
+      lastPaintedSignature="";lastNativeTopologySignature="";
       stopDemo();
       status(m4Verified()?
         "NATIVE M4 · real PCM faders and meters · ChannelId buses not yet admitted":
@@ -770,7 +901,7 @@
       paintNativeMeters(next);
       return;
     }
-    if (!projection(next)) {
+    if (!projectNativeGraphWithoutFocusLoss(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
