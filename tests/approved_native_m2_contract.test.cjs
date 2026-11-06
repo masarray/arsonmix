@@ -223,8 +223,12 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(bridge,/e\.primaryOutput!==false/);
  assert.match(bridge,/const channel=m4Index\(t\)/);
  // A native-owned MAIN WIRE never triggers the legacy routingChannelPatch.
- assert.ok(bridge.indexOf('session?.authority==="CHANNEL_ID"')<
-           bridge.indexOf('backend.emitEvent("arMixAction",{action:"routingChannelPatch"'));
+ const primary=bridge.slice(bridge.indexOf("function requestPrimaryOut(t,target)"),
+                            bridge.indexOf("let pendingFxInsert"));
+ assert.ok(primary.indexOf('session?.authority==="CHANNEL_ID"')>=0);
+ assert.ok(primary.indexOf('session?.authority==="CHANNEL_ID"')<
+           primary.indexOf("const channel=m4Index(t)"),
+           "ChannelId branch must precede the legacy M4 fallback inside requestPrimaryOut");
  assert.match(bridge,/const isMainConnect=/);
  assert.match(bridge,/const isMainRemove=/);
  assert.match(bridge,/current\.graph\.edges\.some/);
