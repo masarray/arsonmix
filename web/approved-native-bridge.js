@@ -2162,7 +2162,9 @@
           const current=controller?.state()?.current,id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
           const insert=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot];
           if(current?.admitted&&insert?.id&&Number.isInteger(slot)&&slot>=0&&slot<8) {
-            backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
+            if(insert.catalogId==='armix.builtin.channel-eq.v1') {
+              window.ArSonMixNativeEq?.open(t,slot);
+            } else backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
               instanceId:insert.id,deviceEpoch:current.device.epoch,revision:current.graph.revision});
           } else {discoverFxOnFirstPickerOpen();scope?.openFastPicker?.(t,slot,btn);}
           return true;
@@ -2353,9 +2355,11 @@
       const source=all.find(t=>t?.id===sourceId),dest=all.find(t=>t?.id===destId);
       return !!source&&!!dest&&editNativeFx(source,slot,dest,position,token);
     },
+    nativeIdFor(t){return nativeIdFor(t);},
     insertPlugin(id,target){
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
-      const plugin=nativeCatalog.get(id);
+      const plugin=nativeCatalog.get(id) ||
+        (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:null);
       const track=scope?.tracks?.find(x=>x.id===target?.channelId)||
         (scope?.master?.id===target?.channelId?scope.master:null);
       const channel=m4Index(track),slot=Number(target?.slot);

@@ -3,6 +3,7 @@
 #include "PreparedMixerBlock.h"
 #include "FxBypassEnvelope.h"
 #include "StereoLatencyDelay.h"
+#include "RealtimeNativeFxControl.h"
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -31,6 +32,7 @@ public:
 
     struct FxInstance final : juce::AudioProcessorListener {
         std::unique_ptr<Processor> processor;
+        RealtimeNativeFxControl* nativeControl=nullptr; // bound once OFF realtime
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
@@ -57,7 +59,10 @@ public:
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
-            if(processor)processor->addListener(this);
+            if(processor){
+                nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
+                processor->addListener(this);
+            }
         }
         FxInstance(const FxInstance&)=delete;
         FxInstance& operator=(const FxInstance&)=delete;
@@ -110,6 +115,11 @@ public:
                 processing.clear(std::memory_order_release);
                 return;
             }
+            // Drain at most one native EQ control edit even while bypassed.
+            // Fully bypassed plugins otherwise never call processBlock, which
+            // would strand pending GUI commands until users turned them ON.
+            if(nativeControl && bypassFade.fullyBypassed())
+                nativeControl->consumeRealtimeEdits();
             // Keep bypass at the SAME declared latency as wet, including
             // rack bypass and disabled slots. PDC never changes on a scalar.
             for(int i=0;i<samples;++i) {

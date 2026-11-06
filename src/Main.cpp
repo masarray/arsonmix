@@ -282,6 +282,14 @@ private:
     // retained vendor processor lease. No vendor destructor runs on RT.
     armix::mixer::LiveChannelFxGraph::InstanceLease routedEditorOwner_;
     std::uint64_t routedEditorEpoch_=0;
+    struct PendingNativeEq {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        int slot=-1;
+        juce::uint32 started=0;
+    } pendingNativeEq_;
+    juce::String lastNativeEqRequest_,lastNativeEqInstance_;
+    juce::String lastNativeEqEpoch_,lastNativeEqRevision_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -900,9 +908,11 @@ private:
                 // fallback, secondary DSP or user-visible MONITOR ritual.
                 const auto args=command.getProperty("payload",{});
                 const auto catalogId=args.getProperty("catalogId","").toString();
-                const auto* plugin=catalog_.find(catalogId);
+                const bool builtInEq=catalogId==
+                    armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
+                const auto* plugin=builtInEq?nullptr:catalog_.find(catalogId);
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if(!plugin||catalog_.busy()||nativeShowBusy_||
+                if((!builtInEq&&!plugin)||catalog_.busy()||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(
@@ -915,9 +925,12 @@ private:
                             command.getProperty("targetChannelId",{}),target)) {
                     nativeError="NATIVE_VST3_INVALID_SESSION_ID";
                 } else {
-                    const auto result=engine_.installNativeVst3(
-                        ep,rev,roster,armix::mixer::ChannelId{target},
-                        plugin->path,plugin->uid,plugin->key());
+                    const auto result=builtInEq?
+                        engine_.installNativeBuiltInEq(
+                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                        engine_.installNativeVst3(
+                            ep,rev,roster,armix::mixer::ChannelId{target},
+                            plugin->path,plugin->uid,plugin->key());
                     applied=result.accepted && result.error &&
                             result.error[0]==0;
                     if(!applied)nativeError=result.error;
@@ -1551,6 +1564,83 @@ private:
         return result;
     }
 
+    // One message-thread owner for native EQ commands/readback. The only
+    // parameter writer is the existing JUCE callback via ChannelEqProcessor's
+    // bounded SPSC mailbox. ACK is emitted only AFTER audio consumed the edit.
+    void emitNativeEqSnapshot(const juce::String& request,
+        const juce::String& channelId,const juce::String& epoch,
+        const juce::String& revision,int slot,const juce::String& instanceId,
+        armix::builtin_fx::ChannelEqProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("slot",slot);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            juce::Array<juce::var> bands;
+            for(const auto& band:processor->acceptedBands()){
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty("enabled",band.enabled);
+                item->setProperty("frequencyHz",static_cast<double>(band.frequencyHz));
+                item->setProperty("gainDb",static_cast<double>(band.gainDb));
+                item->setProperty("q",static_cast<double>(band.q));
+                item->setProperty("slope",static_cast<int>(band.slope));
+                bands.add(juce::var(item.release()));
+            }
+            reply->setProperty("bands",juce::var(bands));
+            if(instanceId==lastNativeEqInstance_ &&
+               epoch==lastNativeEqEpoch_ && revision==lastNativeEqRevision_)
+                reply->setProperty("appliedRequestId",lastNativeEqRequest_);
+        } else reply->setProperty("error","NATIVE_EQ_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinEqSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeEq() {
+        if(!pendingNativeEq_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::ChannelEqProcessor*>(
+            pendingNativeEq_.owner->processor.get());
+        if(!processor){pendingNativeEq_={};return;}
+        armix::builtin_fx::ChannelEqProcessor::Completion completion;
+        if(!processor->pollCompletion(completion)){
+            if(juce::Time::getMillisecondCounter()-pendingNativeEq_.started<3000u)
+                return;
+        }
+        const auto request=pendingNativeEq_.request;
+        bool applied=completion.applied && completion.requestId &&
+            request=="eq-"+juce::String(std::to_string(completion.requestId));
+        // Reject stale graph/device ACKs even if DSP consumed the old command.
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied && pendingNativeEq_.deviceEpoch==
+                device.getProperty("epoch","").toString() &&
+                pendingNativeEq_.revision==
+                graph.getProperty("revision","").toString();
+        if(applied){
+            lastNativeEqRequest_=request;
+            lastNativeEqInstance_=pendingNativeEq_.instanceId;
+            lastNativeEqEpoch_=pendingNativeEq_.deviceEpoch;
+            lastNativeEqRevision_=pendingNativeEq_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeEq_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeEq_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeEq_.revision);
+        ack->setProperty("instanceId",pendingNativeEq_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("errorCode",applied?"NONE":"DSP_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeEq_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinEqAck",juce::var(ack.release()));
+    }
+
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
@@ -1565,7 +1655,8 @@ private:
             action == "routingFxBypass" ||
             action == "routingNativeFxRackBypass" ||
             action == "routingNativeFxInsertBypass" ||
-            action == "routingFxRackBypass"))
+            action == "routingFxRackBypass" ||
+            action == "nativeEqSetBand"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -1628,6 +1719,93 @@ private:
         // F0: independently acknowledged existing M4 PCM controls during
         // G0, before ChannelId admission. Do not send GUI demo parameters
         // or mutate a second DSP. One control-thread atomic update only.
+
+        // Real built-in rack node, not a GUI-only pre-VST channel EQ.
+        // All identity fields are validated by the accepted native lease.
+        if(action=="nativeEqSnapshot"||action=="nativeEqSetBand") {
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            const int eqSlot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t ch=0,ep=0,rev=0;
+            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
+                armix::console::approvedNativeId(rawEpoch,ep)&&
+                armix::console::approvedNativeId(rawRevision,rev)&&
+                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
+                eqSlot>=0&&eqSlot<LiveDryRoutingLab::maxFxPerLane &&
+                request.isNotEmpty()&&request.length()<=72;
+            auto owner=valid?engine_.leaseNativeVst3Editor(ep,rev,
+                armix::mixer::ChannelId{ch},static_cast<std::size_t>(eqSlot),
+                rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=owner?dynamic_cast<armix::builtin_fx::ChannelEqProcessor*>(
+                owner->processor.get()):nullptr;
+            if(action=="nativeEqSnapshot") {
+                emitNativeEqSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    eqSlot,rawInstance.toString(),processor);
+                return;
+            }
+            const auto bandData=args.getProperty("band",{});
+            const int index=static_cast<int>(args.getProperty("bandIndex",-1));
+            const auto enabled=bandData.getProperty("enabled",{});
+            const auto frequency=bandData.getProperty("frequencyHz",{});
+            const auto gain=bandData.getProperty("gainDb",{});
+            const auto q=bandData.getProperty("q",{});
+            const auto slope=bandData.getProperty("slope",{});
+            double f=0.,g=0.,quality=0.;
+            auto validNumber=[](const juce::var& v,double& d) {
+                if(!v.isDouble()&&!v.isInt())return false;
+                d=static_cast<double>(v);return std::isfinite(d);
+            };
+            bool queued=false;
+            if(processor&&!pendingNativeEq_.owner&&!nativeShowBusy_&&!studioBackupBusy_ &&
+               !engine_.independentClockActive() && index>=0&&index<8 &&
+               enabled.isBool()&&slope.isInt() &&
+               (static_cast<int>(slope)==12||static_cast<int>(slope)==24) &&
+               validNumber(frequency,f)&&validNumber(gain,g)&&
+               validNumber(q,quality) && request.startsWith("eq-")) {
+                armix::builtin_fx::Band b;
+                b.enabled=static_cast<bool>(enabled);
+                b.frequencyHz=static_cast<float>(f);
+                b.gainDb=static_cast<float>(g);
+                b.q=static_cast<float>(quality);
+                b.slope=static_cast<int>(slope)==24?
+                    armix::builtin_fx::Slope::db24:armix::builtin_fx::Slope::db12;
+                // Id strings are decimal after "eq-", unlike canonical
+                // ChannelIds; never convert 64-bit ChannelId to JS Number.
+                const auto wire=request.substring(3).toStdString();
+                std::uint64_t numeric=0;
+                if(!wire.empty()&&wire.size()<=19&&
+                   wire.find_first_not_of("0123456789")==std::string::npos) {
+                    try{numeric=std::stoull(wire);}catch(...){numeric=0;}
+                }
+                queued=numeric>0&&processor->queueBand(
+                    static_cast<std::size_t>(index),b,numeric);
+                if(queued) {
+                    pendingNativeEq_.owner=owner;
+                    pendingNativeEq_.request=request;
+                    pendingNativeEq_.channelId=rawChannel.toString();
+                    pendingNativeEq_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeEq_.revision=rawRevision.toString();
+                    pendingNativeEq_.instanceId=rawInstance.toString();
+                    pendingNativeEq_.slot=eqSlot;
+                    pendingNativeEq_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("channelId",rawChannel);
+            ack->setProperty("instanceId",rawInstance);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeEq_.owner?"EQ_CONTROL_BUSY":"INVALID_OR_STALE_NATIVE_EQ");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinEqQueue",juce::var(ack.release()));
+            return;
+        }
 
         // Route the approved channel FX picker to the SAME prepared M4
         // graph as physical IN/OUT. ID resolves exclusively in the JUCE
@@ -3104,6 +3282,7 @@ private:
             guiPerf_.prevTickMs = tickStart;
         }
         ++timerTicks_;
+        servicePendingNativeEq();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
         // the user sees the completed mixer only after the ready handshake.

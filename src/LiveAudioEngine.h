@@ -9,6 +9,7 @@
 #include "LiveDryRoutingLab.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
+#include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
@@ -1476,6 +1477,50 @@ public:
             return rejected;
         }
     }
+    // Native built-in EQ travels through EXACTLY the same ordered FxInstance
+    // lease, ChannelId graph revision, bypass envelope, and PDC as VST3.
+    // It is not the legacy fixed pre-VST EQ bank.
+    LiveDryRoutingLab::NativeBusResult installNativeBuiltInEq(
+            std::uint64_t ep,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+        LiveDryRoutingLab::NativeBusResult fail{};
+        fail.error="NATIVE_EQ_HOST_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(independent_.active()||!attached_||!device||
+           !directFence_.permitted()||secondaryOutput_.armed()||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return fail;
+        if(ep!=dryRoutingLab_.epoch()){
+            fail.error="NATIVE_EQ_DEVICE_CHANGED";return fail;
+        }
+        const auto rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        if(!(rate>=8000. && rate<=384000.)||
+           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
+            fail.error="NATIVE_EQ_UNSUPPORTED_AUDIO_FORMAT";return fail;
+        }
+        try {
+            auto processor=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
+            processor->prepareToPlay(rate,frames);
+            if(!processor->isReady()){
+                fail.error="NATIVE_EQ_PREPARE_REJECTED";return fail;
+            }
+            auto lease=std::make_shared<
+                armix::mixer::LiveChannelFxGraph::FxInstance>(
+                std::move(processor),
+                juce::String(armix::builtin_fx::ChannelEqProcessor::catalogIdentity),
+                "Parametric EQ",LiveDryRoutingLab::Block::hardFrameLimit);
+            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
+                rosterRevision,id,
+                armix::builtin_fx::ChannelEqProcessor::catalogIdentity,
+                std::move(lease),true);
+        } catch(...) {
+            fail.error="NATIVE_EQ_PREPARE_EXCEPTION";return fail;
+        }
+    }
+
     // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout
     // work is CONTROL only; the callback receives an immutable fx lease.
     LiveDryRoutingLab::NativeBusResult installNativeVst3(

@@ -4,6 +4,7 @@ import argparse,os,json,shutil,subprocess,sys
 from compile_approved_css import optimize_assets
 from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
+from compose_native_peq import apply_native_peq
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -63,6 +64,7 @@ if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
 canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 canonical_html=apply_authoritative_fx_power(canonical_html)
 canonical_html=apply_fx_rack_interaction(canonical_html)
+canonical_html=apply_native_peq(canonical_html)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets',runtime_bundle=True)

@@ -26,7 +26,9 @@ file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-buttons/assets/*")
 list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
-    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py")
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_pages.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compose_native_peq.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARMIX_APPROVED_GUI_SOURCE_INPUTS})
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
@@ -308,6 +310,14 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixShowStoreTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixShowStoreTests PRIVATE cxx_std_20)
   add_test(NAME P4ImmutableNativeShowsAndVendorStateRoundTrip COMMAND ARMixShowStoreTests)
+
+  # Eight-band native PEQ: deterministic sweep, stereo isolation, RT no-heap,
+  # smoothing and Nyquist guards. Built with the existing Windows native lane.
+  add_executable(ARMixNativeChannelEqTests tests/builtin_channel_eq_test.cpp
+      engine/builtin_fx/BuiltInFxCatalog.h engine/builtin_fx/ChannelEq.h)
+  target_compile_features(ARMixNativeChannelEqTests PRIVATE cxx_std_20)
+  add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)

@@ -95,6 +95,8 @@ jobs:
           node --check web/approved-native-bridge.js
           node --check web/approved-native-contract.js
           node --check site/preview-v2/assets/gui-perf-probe.js
+          node --check site/preview-v2/assets/mixer-native-peq.js
+          python tests/native_peq_assembly_test.py
           python scripts/build_ui_css.py --check
           python tests/gui_baseline_lock_test.py
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
