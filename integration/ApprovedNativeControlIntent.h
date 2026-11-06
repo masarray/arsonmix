@@ -403,7 +403,7 @@ inline bool executeApprovedNativeControl(Engine& engine,
             const auto changed=engine.editNativeProcessingFormat(
                 epoch,revision,roster,channel,mode);
             return changed.accepted && changed.error!=nullptr &&
-                   changed.error[0]=='\\0';
+                   changed.error[0]==0;
         } else return false;
     }
     if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
