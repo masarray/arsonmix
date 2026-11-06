@@ -106,6 +106,13 @@ public:
     bool setBandOffline(std::size_t lane, std::size_t slot,const Band& band) noexcept {
         return ready_ && lane < laneCount && eqs_[lane].setBand(slot,band);
     }
+    // CONTROL only on an UNPUBLISHED, never-shared candidate. Restore
+    // a complete EQ before graph publication, not as eight audible UI writes.
+    bool setGateOffline(std::size_t lane,bool installed,bool bypassed) noexcept {
+        if(!ready_||lane>=laneCount||(!installed&&bypassed))return false;
+        eqs_[lane].setExternalBypass(!installed||bypassed);
+        return true;
+    }
     // AUDIO OWNER ONLY. At most one filter change per strip per block, and
     // never start another 5ms topology fade before the previous one ends.
     // A full acknowledgement ring BACKPRESSURES the request queue; it must

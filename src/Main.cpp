@@ -293,13 +293,38 @@ private:
     std::array<std::array<armix::builtin_fx::Band,8>,14> eqAccepted_{};
     std::array<bool,14> eqInstalled_{},eqBypassed_{};
     std::uint64_t eqCacheEpoch_=0;
-    // The existing native Show v4 records VST3 but NOT these EQ coefficients.
-    // Fail closed until a transactional Show format and DSP recall are shipped.
-    bool uncapturedBuiltInEq() const noexcept {
-        return std::any_of(eqInstalled_.begin(),eqInstalled_.end(),
-                           [](bool installed){return installed;}) ||
-               std::any_of(eqPending_.begin(),eqPending_.end(),
+    // Never serialize an unacknowledged command, even if output is muted.
+    bool unsettledBuiltInEq() const noexcept {
+        return std::any_of(eqPending_.begin(),eqPending_.end(),
                            [](const EqPending& p){return p.active;});
+    }
+    void captureAcceptedEq(armix::shows::SnapshotV2& show) const noexcept {
+        for(std::size_t lane=0;lane<eqAccepted_.size();++lane){
+            auto& target=lane<10?show.strips[lane].eq:show.aux[lane-10].eq;
+            target.installed=eqInstalled_[lane];
+            target.bypassed=eqBypassed_[lane];
+            target.bands=eqAccepted_[lane];
+        }
+    }
+    void acceptedEqFromShow(const armix::shows::SnapshotV2& show,
+                             std::uint64_t epoch) {
+        eqCacheEpoch_=0;
+        syncEqEpoch(epoch); // clears all stale requests and readback IDs
+        for(std::size_t lane=0;lane<eqAccepted_.size();++lane){
+            const auto& saved=lane<10?show.strips[lane].eq:show.aux[lane-10].eq;
+            eqInstalled_[lane]=saved.installed;
+            eqBypassed_[lane]=saved.bypassed;
+            eqAccepted_[lane]=saved.bands;
+            if(auto* device=engine_.devices().getCurrentAudioDevice()) {
+                const auto safeHz=static_cast<float>(std::min(
+                    20000.0,device->getCurrentSampleRate()*.45));
+                for(auto& band:eqAccepted_[lane])
+                    if(!band.enabled)band.frequencyHz=std::min(
+                        band.frequencyHz,safeHz);
+            }
+            // No fabricated DSP acknowledgement; the new graph contains
+            // accepted offline state and UI requests a fresh native snapshot.
+        }
     }
     void syncEqEpoch(std::uint64_t ep) {
         if(eqCacheEpoch_==ep)return;
@@ -1898,9 +1923,8 @@ private:
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
                 return reject("Finish the current Studio task before capturing a native Show.");
-            if(uncapturedBuiltInEq())
-                return reject("Native Show v4 cannot save Built-in Channel EQ bands. "
-                              "Save blocked to avoid silently losing live EQ state.");
+            if(unsettledBuiltInEq())
+                return reject("Wait for the pending native EQ AUDIO ACK before Show SAVE.");
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -1914,6 +1938,11 @@ private:
                 static_cast<juce::int64>(lab.getProperty("revision",juce::var(0))));
             auto error=armix::shows::NativeLiveShowCapture::captureDry(
                 nativeStatus,name,captured,true);
+            if(error.isEmpty()) {
+                syncEqEpoch(epoch);
+                if(unsettledBuiltInEq())error="Native EQ changed during Show capture";
+                else captureAcceptedEq(captured); // exact ACK-accepted 10 CH + 4 AUX
+            }
             std::vector<armix::shows::BinaryState> blobs;
             if(error.isEmpty()) {
                 // Do not read vendor parameters while an editor is open.
@@ -1955,7 +1984,7 @@ private:
                             }
                         }
                         if(error.isEmpty()) {
-                            captured.sourceBuild="G5E_NATIVE_FX_SHOW_CAPTURE";
+                            captured.sourceBuild="BUILTIN_EQ_V5_PLUS_G5E_VST3_SHOW_CAPTURE";
                             armix::shows::SnapshotV2 verified;
                             if(!armix::shows::Codec::decode(
                                 armix::shows::Codec::encode(captured),verified))
@@ -2052,9 +2081,8 @@ private:
             };
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
-            if(uncapturedBuiltInEq())
-                return reject("Native Show recall cannot replace an active Built-in EQ "
-                              "until EQ state is included in transactional Show recall.");
+            if(unsettledBuiltInEq())
+                return reject("Wait for pending native EQ AUDIO ACK before Show RECALL.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
                 return reject("Mute native output and finish ongoing Studio work.");
@@ -2092,6 +2120,17 @@ private:
                             try {
                                 LiveDryRoutingLab::FxSelections selections{};
                                 LiveDryRoutingLab::FxRestores restores{};
+                                LiveDryRoutingLab::EqRestores eqRestores{};
+                                for(int lane=0;lane<LiveDryRoutingLab::fxSlots;++lane) {
+                                    const auto& eqSaved=lane<LiveDryRoutingLab::count
+                                        ?result.loaded.strips[static_cast<size_t>(lane)].eq
+                                        :result.loaded.aux[static_cast<size_t>(
+                                            lane-LiveDryRoutingLab::count)].eq;
+                                    auto& eq=eqRestores[static_cast<size_t>(lane)];
+                                    eq.installed=eqSaved.installed;
+                                    eq.bypassed=eqSaved.bypassed;
+                                    eq.bands=eqSaved.bands;
+                                }
                                 const auto attach=[&](int lane,
                                     const std::vector<armix::shows::FxRef>& refs)
                                       ->juce::String {
@@ -2134,7 +2173,15 @@ private:
                                 if(error.isEmpty()) {
                                     safe->closePluginEditor();
                                     error=safe->engine_.applyDryRoutingLab(
-                                        command,selections,&restores);
+                                        command,selections,&restores,&eqRestores);
+                                    if(error.isEmpty()) {
+                                        // Only after all VST3 AND built-in EQ
+                                        // state is accepted in one new native graph.
+                                        const auto epochNow=static_cast<std::uint64_t>(
+                                            static_cast<juce::int64>(
+                                                lab.getProperty("epoch",juce::var(0))));
+                                        safe->acceptedEqFromShow(result.loaded,epochNow);
+                                    }
                                 }
                             } catch(const std::exception& ex) {
                                 error="Native VST3 Show preflight exception: "+

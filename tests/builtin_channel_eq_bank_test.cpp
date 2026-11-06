@@ -81,5 +81,42 @@ int main() {
   bank.render(13,l.data(),r.data(),32);
   denyHeap.store(false);
   CHECK(bank.pollAck(13,a)&&a.requestId==1);
-  std::puts("PASS: 14-lane native EQ; SPSC control->audio/ACK, no realtime heap");
+  // Native Show V5 recall pre-seeds a NEW unpublished EQ graph: ensure
+  // saved bypass preserves bands and the audio owner processes real PCM
+  // when that restored insert is enabled. No live graph is mutated.
+  ChannelEqBank restored;
+  CHECK(restored.prepare(48000));
+  Band stored{};stored.enabled=true;stored.frequencyHz=1000.f;
+  stored.gainDb=9.f;stored.q=1.f;
+  CHECK(restored.setBandOffline(3,2,stored));
+  CHECK(restored.setGateOffline(3,true,true)); // saved BYPASS
+  std::array<float,128> reference{},out{},silent{};
+  double dryEnergy=0,wetEnergy=0;
+  for(int block=0;block<64;++block) {
+    for(int i=0;i<128;++i)
+      reference[static_cast<std::size_t>(i)]=
+        static_cast<float>(.1*std::sin(6.283185307179586*
+            1000.0*(block*128+i)/48000.0));
+    out=reference;
+    restored.render(3,out.data(),silent.data(),128);
+    CHECK(out==reference); // restored bypass must be bitwise dry
+  }
+  CHECK(restored.setGateOffline(3,true,false)); // offline only, new candidate
+  for(int block=0;block<64;++block) {
+    for(int i=0;i<128;++i)
+      reference[static_cast<std::size_t>(i)]=
+        static_cast<float>(.1*std::sin(6.283185307179586*
+            1000.0*(block*128+i)/48000.0));
+    out=reference;
+    restored.render(3,out.data(),silent.data(),128);
+    if(block>=48)for(int i=0;i<128;++i) {
+      dryEnergy+=reference[static_cast<std::size_t>(i)]*
+                 reference[static_cast<std::size_t>(i)];
+      wetEnergy+=out[static_cast<std::size_t>(i)]*
+                 out[static_cast<std::size_t>(i)];
+    }
+  }
+  CHECK(dryEnergy>0.001&&wetEnergy>dryEnergy*4);
+  CHECK(!restored.setGateOffline(14,true,false));
+  std::puts("PASS: 14-lane EQ, Show V5 offline restore/bypass PCM, SPSC ACK, no RT heap");
 }

@@ -1059,7 +1059,8 @@ public:
     juce::String applyDryRoutingLab (
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
-        const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        const LiveDryRoutingLab::FxRestores* restored=nullptr,
+        const LiveDryRoutingLab::EqRestores* restoredEq=nullptr) {
         if (dryRoutingLab_.nativeBusTopologyLive())
             return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
@@ -1084,7 +1085,7 @@ public:
         const auto result=dryRoutingLab_.apply(
             command,directFence_.permitted(),independent_.active(),
             graphOwned_->count,fx,formats_,device->getCurrentSampleRate(),
-            frames,true,restored);
+            frames,true,restored,restoredEq);
         // Same original PCM callback/hardware gate; a failed ChannelId
         // admission retains the last accepted M4 with original Orbit/Show.
         if(result.isEmpty())

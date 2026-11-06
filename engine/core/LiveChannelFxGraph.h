@@ -208,6 +208,16 @@ public:
     void setBuiltInEqSession(std::uint64_t ep,std::uint64_t rev) noexcept {
         builtinEqEpoch_=ep;builtinEqRevision_=rev;
     }
+    bool setBuiltInEqOffline(int lane,std::size_t slot,
+                             const armix::builtin_fx::Band& b) noexcept {
+        return lane>=0&&lane<fxSlots&&builtinEq_&&
+               builtinEq_->setBandOffline(static_cast<std::size_t>(lane),slot,b);
+    }
+    bool setBuiltInEqGateOffline(int lane,bool installed,bool bypassed) noexcept {
+        return lane>=0&&lane<fxSlots&&builtinEq_&&
+               builtinEq_->setGateOffline(static_cast<std::size_t>(lane),
+                                           installed,bypassed);
+    }
     bool queueBuiltInEqEdit(int lane,std::size_t slot,const armix::builtin_fx::Band& b,
                             std::uint64_t req,std::uint64_t epoch,std::uint64_t rev) noexcept {
         return lane>=0&&lane<fxSlots&&builtinEq_->queueBandEdit(

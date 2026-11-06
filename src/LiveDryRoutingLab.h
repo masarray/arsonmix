@@ -57,6 +57,11 @@ public:
         const juce::MemoryBlock* binary=nullptr;
     };
     using FxRestores=std::array<std::array<FxRestore,maxFxPerLane>,fxSlots>;
+    struct EqRestore final {
+        bool installed=false,bypassed=false;
+        std::array<armix::builtin_fx::Band,8> bands{};
+    };
+    using EqRestores=std::array<EqRestore,fxSlots>;
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -174,7 +179,8 @@ public:
                         const FxSelections& selections,
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames,bool explicitSelection=true,
-                        const FxRestores* restores=nullptr) {
+                        const FxRestores* restores=nullptr,
+        const EqRestores* eqRestores=nullptr) {
         // E5: the M4 compiler cannot encode an admitted native GROUP/FX RETURN.
         // An M4 APPLY, Show recall or structural SOURCE/AUX edit must not
         // erase native BUS PCM while its ChannelId graph owns the callback.
@@ -341,7 +347,30 @@ public:
         // and FxInstance has an atomic try-enter to guard against overlap.
         // Never reuse across a device epoch or changed device quantum.
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
-        if(prior)next->prepared->inheritBuiltInEqFrom(*prior);
+        // Show recall must publish ONE fresh, fully prepared DSP bank.
+        // Never edit a prior LIVE EQ owner or borrow its histories for recall.
+        if(eqRestores) {
+            for(int lane=0;lane<fxSlots;++lane) {
+                const auto& saved=(*eqRestores)[static_cast<std::size_t>(lane)];
+                if(!saved.installed && saved.bypassed)
+                    return "Invalid Show EQ: bypass without insert";
+                for(std::size_t slot=0;slot<saved.bands.size();++slot) {
+                    auto band=saved.bands[slot];
+                    // Disabled filter frequency is inert; clamp it to the
+                    // CURRENT device Nyquist limit on legacy V2-V4 recalls.
+                    // Enabled out-of-Nyquist settings still fail CLOSED.
+                    if(!band.enabled)band.frequencyHz=std::min(
+                        band.frequencyHz,static_cast<float>(
+                            std::min(20000.0,sampleRate*.45)));
+                    if((!saved.installed&&band.enabled)||
+                       !next->prepared->setBuiltInEqOffline(lane,slot,band))
+                        return "Show EQ filter not valid for current audio device rate";
+                }
+                if(!next->prepared->setBuiltInEqGateOffline(lane,
+                         saved.installed,saved.bypassed))
+                    return "Cannot prepare native Show EQ gate";
+            }
+        } else if(prior)next->prepared->inheritBuiltInEqFrom(*prior);
         int insertCount=0,reusedCount=0;
         for(int lane=0;lane<fxSlots;++lane) {
             // FX ownership is independent of assigned hardware PCM.

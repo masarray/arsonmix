@@ -273,14 +273,14 @@ int main() {
            typedCaptured.strips[1].channelFormat==1);
     assert(typedCaptured.strips[2].busReturn &&
            typedCaptured.strips[2].channelFormat==1);
-    const auto savedV4=Codec::encode(typedCaptured);
-    auto rawV4=juce::JSON::parse(savedV4);
-    assert(static_cast<int>(rawV4.getProperty("schemaVersion",{}))==4);
-    SnapshotV2 restoredV4;
-    assert(Codec::decode(savedV4,restoredV4));
-    assert(Codec::encode(restoredV4)==savedV4);
+    const auto savedV5=Codec::encode(typedCaptured);
+    auto rawV5=juce::JSON::parse(savedV5);
+    assert(static_cast<int>(rawV5.getProperty("schemaVersion",{}))==5);
+    SnapshotV2 restoredV5;
+    assert(Codec::decode(savedV5,restoredV5));
+    assert(Codec::encode(restoredV5)==savedV5);
     juce::var appliedV2;
-    const auto prepareTyped=NativeDryShowRecall::prepare(restoredV4,
+    const auto prepareTyped=NativeDryShowRecall::prepare(restoredV5,
         typedStatus,appliedV2);
     if(prepareTyped.isNotEmpty())std::cerr<<"MS1 typed recall failure: "<<prepareTyped<<"\n";
     assert(prepareTyped.isEmpty());
