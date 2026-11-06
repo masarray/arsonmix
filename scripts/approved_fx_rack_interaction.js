@@ -64,6 +64,8 @@ function paintFxPointer(){
 }
 document.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
+ // A fresh gesture must never inherit suppression of the previous drag's click.
+ fxPointerSuppressUntil=0;
  const handle=e.target.closest?.('.fx-grip,.fx-pick:not(.empty)'),row=handle?.closest('.fxslot-row:not(.is-empty)'),t=row&&findTrack(row);
  if(!row||!t)return;ensureFxInsertIds(t);
  const slot=Number(row.dataset.slot),token=t.fxInsertIds[slot]?.id;if(!token)return;
@@ -111,7 +113,7 @@ document.addEventListener('dragstart',e=>{
  if(e.target.closest?.('.fx-grip,.fx-pick')){e.preventDefault();e.stopImmediatePropagation();}
 },true);
 document.addEventListener('click',e=>{
- if(performance.now()<fxPointerSuppressUntil&&e.target.closest?.('.fx-section')){
+ if(e.detail!==0&&performance.now()<fxPointerSuppressUntil&&e.target.closest?.('.fx-section')){
   e.preventDefault();e.stopImmediatePropagation();
  }
 },true);

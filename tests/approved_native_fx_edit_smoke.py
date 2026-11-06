@@ -67,7 +67,6 @@ def main():
             assert request['payload']['instanceId']=='actual-a'
             state['graph']['channels'][1]['inserts'].append(state['graph']['channels'][0]['inserts'].pop(1));accept(request)
             assert row(2,0).get_attribute('data-insert-id')=='actual-a'
-            page.wait_for_timeout(360)
             row(2,0).locator('[data-action="openPlugin"]').click()
             editor=page.evaluate('()=>window.__actions.at(-1)')
             assert editor['action']=='routingFxEditor' and editor['channelId']==RECEIVER and editor['instanceId']=='actual-a'
