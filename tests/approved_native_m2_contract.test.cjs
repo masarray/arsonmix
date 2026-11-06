@@ -171,6 +171,27 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(builder,/type==='output'/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",()=>{
+ const engine=read("src/LiveAudioEngine.h");
+ const host=read("src/Main.cpp");
+ const bridge=read("web/approved-native-bridge.js");
+ const guard=read("src/NativeTopologyEditSafety.h");
+ // First ARM remains strict, including inactive hardware and known VB-Cable loops.
+ assert.match(engine,/liveOutputArmFault\(bool requirePhysicalSource=true\)/);
+ assert.match(engine,/if \(!physicalSource && requirePhysicalSource\)/);
+ assert.match(engine,/knownVirtualCableFeedbackPair\(currentSetup\.inputDeviceName,/);
+ assert.match(host,/fault=engine_\.liveOutputArmFault\(\)/);
+ // Structural SOURCE changes briefly close MAIN at publish, then restore the
+ // previously verified destination on the SAME epoch, including silent NONE.
+ assert.match(engine,/if\(wasMonitoring\)setOutputMuted\(true\)/);
+ assert.match(engine,/wasMonitoring,sameEpoch,liveOutputArmFault\(false\)\.isEmpty\(\),/);
+ assert.match(guard,/return previouslyArmed && sameDeviceEpoch && outputArmSafe && !streamArmed/);
+ assert.match(bridge,/action:"routingSourceSwitch"/);
+ // The browser must not be the authority for re-arming a previously verified
+ // route; the engine owns state across silent source changes.
+ assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
+});
+
 test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");

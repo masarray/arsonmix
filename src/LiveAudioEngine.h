@@ -308,7 +308,12 @@ public:
                in.contains("cable output") && out.contains("cable input");
     }
 
-    juce::String liveOutputArmFault()
+    // First-time output authorization requires a verified capture source.
+    // Restoring an ALREADY-ARMED MAIN after a structural input edit instead
+    // verifies the existing destination/route even when every source is NONE:
+    // silence is safe and the user must not have to re-press MONITOR after
+    // NONE -> STEREO on the same device. Epoch/feedback/STREAM fences remain.
+    juce::String liveOutputArmFault(bool requirePhysicalSource=true)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
         if (!device || !device->isOpen() || !directFence_.permitted()
@@ -338,7 +343,8 @@ public:
             if(row.getProperty("mode",juce::var()).toString()=="MONO" ||
                row.getProperty("mode",juce::var()).toString()=="STEREO")
             {physicalSource=true;break;}
-        if (!physicalSource)return "No physical input assigned. Connect CH1/CH2 first.";
+        if (!physicalSource && requirePhysicalSource)
+            return "No physical input assigned. Connect CH1/CH2 first.";
         return {};
     }
     void setMonitorEnabled (bool value) noexcept { monitor_.store (value); }
@@ -1159,7 +1165,10 @@ public:
         const bool sameEpoch=expectedEpoch==dryRoutingLab_.epoch();
         if(wasMonitoring && sameEpoch &&
            armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
-               wasMonitoring,sameEpoch,liveOutputArmFault().isEmpty(),
+               // The destination was previously authorized by the operator.
+               // The accepted graph may now be silent (all sources NONE).
+               // Requiring another source here loses MAIN state permanently.
+               wasMonitoring,sameEpoch,liveOutputArmFault(false).isEmpty(),
                secondaryOutput_.armed()))
             setMonitorEnabled(true);
         return error;
