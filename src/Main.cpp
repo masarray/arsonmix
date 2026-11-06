@@ -9,6 +9,7 @@
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "LiveAudioEngine.h"
+#include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -1608,11 +1609,9 @@ private:
             const auto actualRev=status.getProperty("revision",{});
             const auto* plugin=catalog_.find(id);
             juce::String error="FX INSERT: invalid/stale device, channel, slot or catalog";
-            const bool tokens=(ep.isInt()||ep.isInt64())&&
-                (rv.isInt()||rv.isInt64())&&
-                static_cast<juce::int64>(ep)>0 &&
-                static_cast<juce::int64>(ep)==static_cast<juce::int64>(actualEp)&&
-                static_cast<juce::int64>(rv)==static_cast<juce::int64>(actualRev);
+            const bool tokens=
+                armix::console::nativeSessionTokenMatches(ep,actualEp) &&
+                armix::console::nativeSessionTokenMatches(rv,actualRev);
             if(requestId.startsWith("fx-")&&requestId.length()<=48 &&
                tokens && lane>=0&&lane<LiveDryRoutingLab::count &&
                position>=0&&position<LiveDryRoutingLab::maxFxPerLane &&
@@ -1650,11 +1649,9 @@ private:
             const auto route=engine_.status().getProperty("dryRoutingLab",{});
             const auto currentEp=route.getProperty("epoch",juce::var());
             const auto currentRv=route.getProperty("revision",juce::var());
-            const bool tokens=(ep.isInt()||ep.isInt64()) &&
-                (rv.isInt()||rv.isInt64()) &&
-                static_cast<juce::int64>(ep)>0 &&
-                static_cast<juce::int64>(ep)==static_cast<juce::int64>(currentEp) &&
-                static_cast<juce::int64>(rv)==static_cast<juce::int64>(currentRv);
+            const bool tokens=
+                armix::console::nativeSessionTokenMatches(ep,currentEp) &&
+                armix::console::nativeSessionTokenMatches(rv,currentRv);
             const bool replay=acceptedControlRequests_.contains(requestId);
             const bool valid=tokens&&value.isBool()&&
                 requestId.startsWith("rack-m4-")&&requestId.length()<=48 &&
@@ -1697,11 +1694,9 @@ private:
             const auto route=state.getProperty("dryRoutingLab",{});
             const auto currentEp=route.getProperty("epoch",juce::var());
             const auto currentRv=route.getProperty("revision",juce::var());
-            const bool tokenOk=(ep.isInt()||ep.isInt64()) &&
-                (rv.isInt()||rv.isInt64()) &&
-                static_cast<juce::int64>(ep)>0 &&
-                static_cast<juce::int64>(ep)==static_cast<juce::int64>(currentEp) &&
-                static_cast<juce::int64>(rv)==static_cast<juce::int64>(currentRv);
+            const bool tokenOk=
+                armix::console::nativeSessionTokenMatches(ep,currentEp) &&
+                armix::console::nativeSessionTokenMatches(rv,currentRv);
             const bool ready=tokenOk && requestId.startsWith("m4-") &&
                 requestId.length()<=48 &&
                 !nativeShowBusy_ && !studioBackupBusy_ &&
@@ -1764,8 +1759,8 @@ private:
                                (operation=="SET_PROCESSING_FORMAT" &&
                                 (target=="MONO"||target=="STEREO"));
             if(requestId>0 && channel>=0 && channel<LiveDryRoutingLab::count &&
-               allowed && (ep.isInt()||ep.isInt64()) &&
-               (rv.isInt()||rv.isInt64()) &&
+               allowed && armix::console::nativeSessionTokenValid(ep) &&
+               armix::console::nativeSessionTokenValid(rv) &&
                !nativeShowBusy_ && !studioBackupBusy_)
                 error=engine_.repatchDryRoutingLabChannel(channel,
                     static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),

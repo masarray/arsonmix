@@ -3,6 +3,8 @@
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../src/NativeVerifiedSourcePatch.h"
 #include "../src/NativeTopologyEditSafety.h"
+#include "../src/NativeSessionToken.h"
+#include <limits>
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -17,6 +19,25 @@ int main(){
     // STREAM is consuming the old graph. Physical re-arm is never implicit
     // after a device epoch change or unsafe / unpatched output.
     using Guard=NativeTopologyEditSafety;
+    // JUCE WebView JSON can carry whole numbers as Double. Native routing
+    // commands must accept the SAME epoch/revision but reject stale/fractional
+    // and JS-inexact tokens, regardless of action (FX/OUT/M4).
+    using armix::console::nativeSessionTokenMatches;
+    using armix::console::nativeSessionTokenValid;
+    const juce::var epoch=juce::int64(91);
+    assert(nativeSessionTokenMatches(juce::var(91),epoch));
+    assert(nativeSessionTokenMatches(juce::var(91.0),epoch));
+    assert(nativeSessionTokenMatches(juce::var(juce::int64(91)),epoch));
+    assert(!nativeSessionTokenMatches(juce::var(92.0),epoch));
+    assert(!nativeSessionTokenMatches(juce::var(91.5),epoch));
+    assert(!nativeSessionTokenMatches(juce::var("91"),epoch));
+    assert(!nativeSessionTokenValid(juce::var(0.0)));
+    assert(!nativeSessionTokenValid(juce::var(-1.0)));
+    assert(!nativeSessionTokenValid(juce::var(9007199254740992.0)));
+    assert(!nativeSessionTokenValid(
+        juce::var(std::numeric_limits<double>::quiet_NaN())));
+    assert(!nativeSessionTokenValid(
+        juce::var(std::numeric_limits<double>::infinity())));
     static_assert(!Guard::structuralSource(true,true));
     static_assert( Guard::structuralSource(true,false));
     static_assert( Guard::structuralSource(false,true));
