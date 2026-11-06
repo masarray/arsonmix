@@ -1432,6 +1432,50 @@ public:
             return rejected;
         }
     }
+    // Processing M/ST is an accepted ChannelId PCM topology transaction.
+    // The host gates physical output only at publication, then preserves
+    // the operator's original MONITOR decision on the same verified device.
+    LiveDryRoutingLab::NativeBusResult editNativeProcessingFormat(
+            std::uint64_t epoch,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id,
+            armix::mixer::ProcessingFormat format) {
+        LiveDryRoutingLab::NativeBusResult rejected{};
+        rejected.error="NATIVE_PROCESSING_DEVICE_UNAVAILABLE";
+        if(independent_.active()||!attached_||secondaryOutput_.armed()||
+           !directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return rejected;
+        const bool wasMonitoring=isMonitorEnabled();
+        bool publishing=false;
+        try {
+            const auto result=dryRoutingLab_.editNativeProcessingFormat(
+                epoch,pcmRevision,rosterRevision,id,format,true,[&] {
+                    publishing=true;
+                    if(wasMonitoring)topologyPublicationMute_.store(
+                        true,std::memory_order_release);
+                });
+            if(publishing) {
+                if(wasMonitoring &&
+                   !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
+                       wasMonitoring,epoch==dryRoutingLab_.epoch(),
+                       liveOutputArmFault(false).isEmpty(),
+                       secondaryOutput_.armed()))
+                    setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            return result;
+        } catch(...) {
+            if(publishing) {
+                setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            rejected.error="NATIVE_PROCESSING_PUBLICATION_EXCEPTION";
+            return rejected;
+        }
+    }
     // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout
     // work is CONTROL only; the callback receives an immutable fx lease.
     LiveDryRoutingLab::NativeBusResult installNativeVst3(
