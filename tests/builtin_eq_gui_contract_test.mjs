@@ -11,7 +11,10 @@ const native=fs.readFileSync('web/approved-native-bridge.js','utf8');
 assert.ok(assembler.includes('compose_builtin_eq(canonical_html)'));
 assert.ok(component.includes('assets/mixer-builtin-eq.js'));
 assert.ok(!html.includes('assets/mixer-builtin-eq.js'), 'V28 source HTML stays byte-frozen');
-assert.ok(component.includes('data-action="openBuiltinEq"'));
+assert.ok(js.includes('data-action="openBuiltinEq"'), 'Only the rack insert opens editor');
+assert.ok(!component.includes('mx-eq-open'), 'No redundant header EQ popup launcher');
+assert.ok(component.includes('insertChosenBuiltinEq') &&
+          component.includes('PICKER_ENTER_HOOK'), 'Picker click and Enter use same insert workflow');
 assert.ok(component.includes('BUILT-IN FX')&&component.includes('VST3 PLUGINS'));
 assert.ok(component.includes('RACK_ROWS_HOOK')&&component.includes('PICKER_CLICK_HOOK'));
 assert.ok(js.includes('slotMarkup(track')&&js.includes('builtinEqSetGate'));
@@ -48,7 +51,7 @@ const eqBank=fs.readFileSync('engine/builtin_fx/ChannelEqBank.h','utf8');
 assert.ok(eqBank.includes('rackBypassed_[lane].load')&&
           eqBank.includes('insertBypassed_[lane]||rackOff'),
  'FX header OFF must override native EQ PCM without losing insert preference');
-console.log('Built-in Channel EQ GUI contract: PASS (isolated from VST3 and alt mixer)');
+console.log('Built-in Parametric EQ DAW GUI contract: PASS (isolated from VST3 and alt mixer)');
 
 assert.ok(!html.includes('assets/mixer-builtin-eq.css'), 'No second CSS cascade owner');
 
