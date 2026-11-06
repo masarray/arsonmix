@@ -31,7 +31,9 @@ previously working OUT-dropdown transaction.
    is retained, requests independent readback and dispatches only after native
    projection is ready. Epoch changes, changed mapped endpoint identities,
    failure and timeout discard it. No automatic OUT rewrite, output arm or
-   optimistic wire is introduced.
+   optimistic wire is introduced. A new CONNECT rejected solely for a stale
+   native revision receives at most one rebase after independent readback;
+   removals/retargets, changed epochs and feedback rejection are never retried.
 
 ## Fixed-latency VST3 support
 

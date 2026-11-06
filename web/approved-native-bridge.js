@@ -18,15 +18,15 @@
   const uiByWireId = new Map();
   const pendingWireGains=new Map();
   let wireGainFlushQueued=false;
-  let startupWire=null, startupWireSerial=0;
-  function deferStartupWire(ops){
+  let startupWire=null, startupWireSerial=0, activeWireAttempt=null;
+  function deferStartupWire(ops,retries=0){
     if(!Array.isArray(ops)||ops.length!==1||
        !["CONNECT","ROUTE_ONLY"].includes(ops[0].type)||!deviceReady())return false;
     const current=controller?.state()?.current,op=ops[0];
     const epoch=current?.device?.epoch||String(hardware?.device?.epoch||"");
     if(!/^[1-9][0-9]*$/.test(epoch))return false;
     const token=++startupWireSerial;
-    startupWire={ops:ops.map(x=>({...x})),epoch,token,
+    startupWire={ops:ops.map(x=>({...x})),epoch,token,retries,identity:current?.identity,
       source:nativeByUiId.get(op.sourceId),destination:nativeByUiId.get(op.destId)};
     status("WIRE · completing initial native input admission");
     controller?.subscribe();
@@ -42,11 +42,16 @@
     if(current?.device?.epoch!==p.epoch){startupWire=null;return;}
     if(state.pending||activeNativeSource||nativeUiSourcePending||
        pendingNativeSources.size||pendingSourceQueue.size||
-       !flags.acceptedGraphConnected||!current.admitted)return;
+       !flags.acceptedGraphConnected||!current?.admitted)return;
+    if(p.retries&&current.identity===p.identity)return; // require a later revision before rebasing
     startupWire=null;
     if((p.source&&nativeByUiId.get(op.sourceId)!==p.source)||
        (p.destination&&nativeByUiId.get(op.destId)!==p.destination))return;
-    nativeHooks.consumeWire(p.ops);
+    const from=nativeByUiId.get(op.sourceId),to=nativeByUiId.get(op.destId);
+    if(op.type==="CONNECT"&&current.graph.edges.some(e=>e.enabled&&e.from===from&&e.to===to)) {
+      status("WIRE connected · independently accepted native route");return;
+    }
+    nativeHooks.consumeWire(p.ops,p.retries);
   }
 
   let lastPaintedSignature = "",lastNativeTopologySignature = "",
@@ -1713,7 +1718,19 @@
           state.lastError!=="NATIVE_NOT_SUBSCRIBED";
         if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&startupWire)
           window.queueMicrotask(flushStartupWire);
+        if(!state.pending&&state.lastError==="ACCEPTED_READBACK")activeWireAttempt=null;
+        if(failed&&startupWire?.retries===1&&
+           ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)) {
+          window.queueMicrotask(flushStartupWire);return;
+        }
         if(failed){
+          const wire=activeWireAttempt;activeWireAttempt=null;
+          // One stale-revision rebase of a new connection only. A fresh
+          // independent snapshot must still prove device/endpoints. Never
+          // replay retarget/remove, a changed epoch, or a rejected cycle.
+          if(wire&&wire.retries===0&&
+             ["STALE_NATIVE_CONTROL_REVISION","STALE_NATIVE_WIRE_GRAPH"].includes(state.lastError)&&
+             state.current?.device?.epoch===wire.epoch&&deferStartupWire(wire.ops,1))return;
           startupWire=null;
           pendingWireGains.clear();
           if(pendingFxInsert?.authority==="CHANNEL_ID"){
@@ -2193,7 +2210,7 @@
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
-    consumeWire(ops) {
+    consumeWire(ops,retries=0) {
       if (!connected)return false;
       const state=controller?.state();
       // A first drag may arrive before SOURCE's later accepted snapshot.
@@ -2201,7 +2218,7 @@
       // identities, never require a hidden OUT-dropdown priming operation.
       if((!flags.acceptedGraphConnected||!state?.current?.admitted||state.pending||
           activeNativeSource||nativeUiSourcePending||pendingNativeSources.size||pendingSourceQueue.size)&&
-         deferStartupWire(ops))return true;
+         deferStartupWire(ops,retries))return true;
       if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="GAIN"){
         if(!requestWireGain(ops[0]))status("WIRE gain unavailable · accepted parallel send required");
         return true;
@@ -2303,6 +2320,8 @@
         return true;
       }
       const accepted=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes});
+      if(accepted.ok&&ops.length===1&&ops[0].type==="CONNECT")
+        activeWireAttempt={ops:ops.map(x=>({...x})),epoch:current.device.epoch,retries};
       if (!accepted.ok)status("NATIVE: "+accepted.error+"; WIRE unchanged");
       else window.setTimeout(()=>controller?.expire(accepted.requestId),8000);
       return true;

@@ -62,10 +62,23 @@ def main():
             assert route['payload']['changes'][0]['from']==SOURCE
             assert route['payload']['changes'][0]['to']==RECEIVER
             assert route['payload']['changes'][0]['op']=='CONNECT'
+            # Source admission can advance after the GUI's last readback.
+            # Reject once as stale, independently refresh, then rebase only
+            # the same explicit connection with a new request ID.
+            emit(page,'arMixConsoleAck',{'requestId':route['requestId'],'status':'REJECTED',
+                'errorCode':'STALE_NATIVE_CONTROL_REVISION','deviceEpoch':state['device']['epoch'],
+                'graphRevision':'3','rosterRevision':'3'})
             state['graph'].update(revision='3',rosterRevision='3')
+            emit(page,'arMixConsoleSnapshot',state)
+            page.wait_for_function('()=>window.__nativeIntents.length===2')
+            retry=page.evaluate('()=>window.__nativeIntents.at(-1)')
+            assert retry['baseGraphRevision']=='3' and retry['requestId']!=route['requestId']
+            assert retry['payload']==route['payload']
+            route=retry
+            state['graph'].update(revision='4',rosterRevision='4')
             state['graph']['edges'].append({'edgeId':'9223372036854775810','from':SOURCE,'to':RECEIVER,
                 'primaryOutput':False,'enabled':True,'gainLinear':1,'tap':'POST_FADER','signalKind':'AUDIO'})
-            state['mixerSession'].update(routeRevision='3',rosterRevision='3',channels=copy.deepcopy(state['graph']['channels']))
+            state['mixerSession'].update(routeRevision='4',rosterRevision='4',channels=copy.deepcopy(state['graph']['channels']))
             ack(page,state,route)
             emit(page,'arMixConsoleSnapshot',state)
             page.wait_for_function('()=>!window.__ARMIX_NATIVE_M2__.state().pending')
@@ -75,14 +88,14 @@ def main():
                 'category':'EQ','favorite':True}],'scanning':False})
             page.locator('#tracks .strip[data-id="1"] .fx-section [data-action="openPlugin"]').first.click()
             page.locator('#fastPicker [data-fast-id="test-vst-64"]').click()
-            page.wait_for_function('()=>window.__nativeIntents.length===2')
+            page.wait_for_function('()=>window.__nativeIntents.length===3')
             fx=page.evaluate('()=>window.__nativeIntents.at(-1)')
-            assert fx['operation']=='LOAD_INSERT' and fx['baseGraphRevision']=='3'
+            assert fx['operation']=='LOAD_INSERT' and fx['baseGraphRevision']=='4'
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='routingFxInsert')")
-            state['graph'].update(revision='4',rosterRevision='4')
+            state['graph'].update(revision='5',rosterRevision='5')
             state['graph']['channels'][0]['inserts']=[{'id':'g5c-actual','catalogId':'test-vst-64',
                 'name':'Latency VST','bypassed':False,'latencySamples':64}]
-            state['mixerSession'].update(routeRevision='4',rosterRevision='4',channels=copy.deepcopy(state['graph']['channels']))
+            state['mixerSession'].update(routeRevision='5',rosterRevision='5',channels=copy.deepcopy(state['graph']['channels']))
             ack(page,state,fx)
             emit(page,'arMixConsoleSnapshot',state)
             page.wait_for_function("()=>document.getElementById('fastPicker').hidden")
@@ -93,7 +106,7 @@ def main():
             page.locator('#tracks .strip[data-id="1"] .fx-section [data-action="openPlugin"]').first.click()
             editor=page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='routingFxEditor').at(-1)?.payload")
             assert editor and editor['channelId']==SOURCE and editor['instanceId']=='g5c-actual'
-            assert editor['revision']=='4' and 'channel' not in editor
+            assert editor['revision']=='5' and 'channel' not in editor
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()

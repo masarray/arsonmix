@@ -866,7 +866,7 @@ test("M2 code edits approved Pages *events* only, not a second native GUI/audio 
 });
 
 test("M3 native-only Pages scope performs real bridge projection, fader intent and ACK readback",()=>{
- const vm=require("node:vm"),sent=[],listeners=new Map(),timers=[];
+ const vm=require("node:vm"),sent=[],listeners=new Map(),timers=[],microtasks=[];
  let nextId=100,nextEdgeId=200,paints=0,rollbacks=0;
  const scope={
    tracks:[],master:{id:1,name:"Master"},colors:["#568ead"],
@@ -895,7 +895,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  };
  const window={
    __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
-   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},queueMicrotask(fn){microtasks.push(fn);},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
    window,document,performance:{now:()=>0},console
@@ -978,9 +978,24 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([
    {type:"CONNECT",sourceId:sourceUi,destId:receiverUi,mode:"send"}
  ]),true);
- const send=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ let send=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
  assert.equal(send.payload.changes[0].to,receiver.id);
  assert.equal(scope.edges.length,0,"INPUT WIRE stays pending until native readback");
+ const originalSend=send;
+ const flushMicro=()=>{while(microtasks.length)microtasks.shift()();};
+ listeners.get("arMixConsoleAck")({requestId:send.requestId,status:"REJECTED",
+   errorCode:"STALE_NATIVE_CONTROL_REVISION",deviceEpoch:ready.device.epoch,
+   graphRevision:"7",rosterRevision:"8"});
+ listeners.get("arMixConsoleSnapshot")(ready);flushMicro();
+ assert.equal(sent.findLast(x=>x.name==="arMixConsoleIntent").payload.requestId,originalSend.requestId,
+   "unchanged snapshot cannot authorize replay");
+ const fresh=clone(ready);fresh.graph.rosterRevision="8";
+ listeners.get("arMixConsoleSnapshot")(fresh);flushMicro();
+ send=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.notEqual(send.requestId,originalSend.requestId,"new ledger ID for one verified rebase");
+ assert.equal(send.baseRosterRevision,"8");
+ assert.deepEqual(JSON.parse(JSON.stringify(send.payload)),JSON.parse(JSON.stringify(originalSend.payload)));
+
  listeners.get("arMixConsoleAck")({
    requestId:send.requestId,status:"ACCEPTED",errorCode:"NONE",
    deviceEpoch:ready.device.epoch,graphRevision:"8",rosterRevision:"8"
