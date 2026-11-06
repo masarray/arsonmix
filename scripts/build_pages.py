@@ -26,6 +26,23 @@ if buttons_dest.exists(): shutil.rmtree(buttons_dest)
 # are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
+# Compose the OPTIONAL built-in EQ operator control into the approved assembled
+# /preview/ only. Preserve historical internal seed HTML byte-for-byte: V28
+# baseline recovery must remain possible. Both public Pages and the JUCE native
+# binary use this SAME deterministic assembled output; no second mixer UI.
+eq_script='<script defer src="assets/mixer-builtin-eq.js?v=builtin-eq-native-1"></script>'
+if canonical_html.count('</head>')!=1 or 'mixer-builtin-eq.js' in canonical_html:
+    raise SystemExit('Built-in EQ assembler must have one pristine HTML source')
+canonical_html=canonical_html.replace('</head>',eq_script+'\\n</head>',1)
+fx_header='</span><span class="push"></span><button class="mx-util-key"'
+if canonical_html.count(fx_header)!=1: raise SystemExit('Unexpected FX rack source/header')
+eq_header='</span>\\\'+'+(t.kind===\\\'master\\\'?\\\'\\\':\\\'<button type="button" class="mx-eq-open" data-action="openBuiltinEq" title="Open lightweight built-in channel EQ" aria-label="Open channel EQ for \\'+escapeHtml(t.name)+\\\'">EQ</button>\\\')+\\\'<span class="push"></span><button class="mx-util-key"'
+canonical_html=canonical_html.replace(fx_header,eq_header,1)
+action_anchor=" if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}"
+if canonical_html.count(action_anchor)!=1:raise SystemExit('Missing canonical FX click handler')
+canonical_html=canonical_html.replace(action_anchor,
+ " if(a==='openBuiltinEq'){window.ArSonMixBuiltinEq?.open(t);return;}\\n"+action_anchor,1)
+
 special=('mixer-control-keys.css','mixer-control-keys.js')
 sprite='mute-solo-pfl-56x37.png'
 for src in sorted((canonical/'assets').iterdir()):
