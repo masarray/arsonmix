@@ -201,7 +201,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
  assert.match(bridge,/inserted\?\.id===p\.id/);
- assert.match(translate,/if\(op==="LOAD_INSERT"\)/);
+ assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
  assert.match(snapshot,/available\.add\(juce::String\("LOAD_INSERT"\)\)/);
  assert.match(main,/engine_\.installNativeVst3\(/);
  assert.match(contract,/if \(operation === "LOAD_INSERT"\)/);
