@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <span>
+#include <vector>
 
 // INTEGRATOR M3-B: bridge the approved /preview/ control ABI to the ONE
 // native ChannelId PCM owner from ENGINE #266. Translation is CONTROL-thread
@@ -68,6 +70,108 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         return reject("STALE_NATIVE_CONTROL_REVISION");
     if(!request.isString() || request.toString().isEmpty() ||
        request.toString().length()>128)return reject("INVALID_REQUEST_ID");
+    // P1 WIRE: the previous GUI emitted APPLY_WIRE_TRANSACTION, but this
+    // translator accepted only fader/pan/mute/solo and silently left native
+    // BUS routing unavailable. Validate the exact accepted ChannelId/EdgeId
+    // inventory and public+native capabilities BEFORE compiling any changes.
+    if(op=="APPLY_WIRE_TRANSACTION") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),
+                                 "APPLY_WIRE_TRANSACTION") ||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_APPLY_WIRE_TRANSACTION"))
+            return reject("NATIVE_WIRE_NOT_ADMITTED");
+        juce::var owner,producer;
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())owner=row;
+        for(const auto& row:*nativeRows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())producer=row;
+        if(!owner.isObject()||!producer.isObject()||
+           owner.getProperty("role","").toString()!=
+           producer.getProperty("role","").toString())
+            return reject("WIRE_SOURCE_NOT_ADMITTED");
+        const auto sourceRole=owner.getProperty("role","").toString();
+        if(sourceRole!="INPUT"&&sourceRole!="GROUP"&&sourceRole!="FX_RETURN")
+            return reject("WIRE_INVALID_SOURCE_ROLE");
+        const auto sourcePayload=publicIntent.getProperty("payload",{});
+        const auto rawChanges=sourcePayload.getProperty("changes",{});
+        const auto* changes=rawChanges.getArray();
+        if(!changes||changes->isEmpty()||changes->size()>64)
+            return reject("WIRE_INVALID_BATCH");
+        const auto pubEdges=graph.getProperty("edges",{});
+        const auto nativeEdges=installedBus.getProperty("edges",{});
+        if(!pubEdges.isArray()||!nativeEdges.isArray())
+            return reject("WIRE_EDGE_INVENTORY_UNAVAILABLE");
+        juce::Array<juce::var> verified;
+        for(const auto& edit:*changes) {
+            if(!edit.isObject())return reject("WIRE_INVALID_EDIT");
+            const auto kind=edit.getProperty("op","").toString();
+            const auto from=edit.getProperty("from",{});
+            if(from.toString()!=ids.toString()||
+               (kind!="CONNECT" && kind!="REMOVE" &&
+                kind!="RETARGET" && kind!="ROUTE_ONLY"))
+                return reject("WIRE_SOURCE_OR_OPERATION_INVALID");
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("op",kind);
+            item->setProperty("from",ids);
+            if(kind=="REMOVE" || kind=="RETARGET") {
+                const auto edgeId=edit.getProperty("edgeId",{});
+                if(!nativeV8Decimal(edgeId))return reject("WIRE_EDGE_ID_INVALID");
+                bool pubFound=false,nativeFound=false;
+                for(const auto& e:*pubEdges.getArray())
+                    if(e.getProperty("edgeId","").toString()==edgeId.toString() &&
+                       e.getProperty("from","").toString()==ids.toString())
+                        pubFound=true;
+                for(const auto& e:*nativeEdges.getArray())
+                    if(e.getProperty("edgeId","").toString()==edgeId.toString() &&
+                       e.getProperty("from","").toString()==ids.toString())
+                        nativeFound=true;
+                if(!pubFound||!nativeFound)return reject("WIRE_STALE_EDGE");
+                item->setProperty("edgeId",edgeId);
+            }
+            if(kind=="CONNECT" || kind=="RETARGET" || kind=="ROUTE_ONLY") {
+                const auto to=edit.getProperty("to",{});
+                if(!nativeV8Decimal(to) || to.toString()==ids.toString())
+                    return reject("WIRE_INVALID_DESTINATION");
+                juce::String role;
+                bool nativeFound=false;
+                for(const auto& row:*rows.getArray())
+                    if(row.getProperty("id","").toString()==to.toString())
+                        role=row.getProperty("role","").toString();
+                for(const auto& row:*nativeRows.getArray())
+                    if(row.getProperty("id","").toString()==to.toString())
+                        nativeFound=true;
+                if(!nativeFound ||
+                   (role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN"))
+                    return reject("WIRE_UNSUPPORTED_DESTINATION");
+                // The roster's ROUTE_ONLY decoder explicitly forbids MAIN;
+                // choosing MAIN requires a native primary-output operation.
+                if(kind=="ROUTE_ONLY"&&role=="MAIN")
+                    return reject("WIRE_MAIN_PRIMARY_REQUIRED");
+                item->setProperty("to",to);
+            }
+            if(kind=="CONNECT" || kind=="ROUTE_ONLY") {
+                double gain=0.;
+                if(edit.getProperty("tap","").toString()!="POST_FADER" ||
+                   !nativeV8Number(edit.getProperty("gainLinear",{}),gain) ||
+                   gain<0.||gain>4.||
+                   (kind=="ROUTE_ONLY"&&gain!=1.))
+                    return reject("WIRE_UNSUPPORTED_TAP_OR_GAIN");
+                item->setProperty("gainLinear",gain);
+            }
+            verified.add(juce::var(item.release()));
+        }
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("changes",juce::var(verified));
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);
+        converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);
+        converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);
+        converted->setProperty("operation","NATIVE_APPLY_WIRE_TRANSACTION");
+        converted->setProperty("payload",juce::var(payload.release()));
+        return {juce::var(converted.release()),{}};
+    }
     if(op!="SET_FADER" && op!="SET_PAN" && op!="SET_MUTE" &&
        op!="SET_SOLO")return reject("UNSUPPORTED_APPROVED_CONTROL");
     // Both native *and* GUI-side capabilities must be explicitly advertised
@@ -203,6 +307,56 @@ inline bool executeApprovedNativeControl(Engine& engine,
     if(!payload.isObject())return false;
     const auto operation=translated.getProperty("operation","").toString();
     const auto channel=armix::mixer::ChannelId{id};
+    if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
+        const raw=payload.getProperty("changes",{});
+        const auto* edits=raw.getArray();
+        if(!edits||edits->isEmpty()||edits->size()>64)return false;
+        std::vector<armix::mixer::WireChange> changes;
+        changes.reserve(static_cast<std::size_t>(edits->size()));
+        for(const auto& edit:*edits) {
+            if(!edit.isObject())return false;
+            const auto op=edit.getProperty("op","").toString();
+            std::uint64_t from=0,to=0,edgeId=0;
+            if(!approvedNativeId(edit.getProperty("from",{}),from) || from!=id)
+                return false;
+            armix::mixer::WireChange change;
+            change.from=armix::mixer::ChannelId{from};
+            if(op=="CONNECT")change.kind=armix::mixer::WireChange::Kind::connect;
+            else if(op=="REMOVE")change.kind=armix::mixer::WireChange::Kind::remove;
+            else if(op=="RETARGET")change.kind=armix::mixer::WireChange::Kind::retarget;
+            else if(op=="ROUTE_ONLY")change.kind=armix::mixer::WireChange::Kind::routeOnly;
+            else return false;
+            if(op=="CONNECT"||op=="RETARGET"||op=="ROUTE_ONLY") {
+                if(!approvedNativeId(edit.getProperty("to",{}),to)||to==from)
+                    return false;
+                change.to=armix::mixer::ChannelId{to};
+            }
+            if(op=="REMOVE"||op=="RETARGET") {
+                if(!approvedNativeId(edit.getProperty("edgeId",{}),edgeId))
+                    return false;
+                change.edgeId=edgeId;
+            }
+            if(op=="CONNECT"||op=="ROUTE_ONLY") {
+                double gain=0.;
+                if(!nativeV8Number(edit.getProperty("gainLinear",{}),gain) ||
+                   gain<0.||gain>4.||
+                   (op=="ROUTE_ONLY"&&gain!=1.))
+                    return false;
+                change.gain=static_cast<float>(gain);
+            }
+            changes.push_back(change);
+        }
+        // The real engine may still reject while monitoring/output is armed.
+        // Never auto-mute, fabricate a JS graph, or bypass its safety fence.
+        if constexpr(requires(Engine& e, std::span<const armix::mixer::WireChange> values) {
+            e.applyNativeWireTransaction(epoch,revision,roster,values);
+        }) {
+            const auto applied=engine.applyNativeWireTransaction(
+                epoch,revision,roster,
+                std::span<const armix::mixer::WireChange>(changes));
+            return applied.accepted && applied.error.isEmpty();
+        } else return false;
+    }
     if(operation=="NATIVE_SET_CHANNEL_MIX" ||
        operation=="NATIVE_SET_BUS_MIX") {
         const auto rawGain=payload.getProperty("gain",{});
