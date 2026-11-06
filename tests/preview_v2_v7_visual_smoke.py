@@ -310,7 +310,7 @@ def main():
     assert cssmeta["runtimeBundleCssSHA256"]==digest
     assert cssmeta["runtimeStylesheetCount"]==1
     assert assembled.count("assets/arsonmix-approved-runtime.css?sha="+digest)==1
-    assert "assets/mixer-wire-dots.css" in runtime.decode("utf-8")
+    assert b"BEGIN approved owner mixer-wire-dots.css" in runtime
     for asset in ("mixer-control-keys.css","mixer-control-keys.js"):
         expected=hashlib.sha256(
             (ROOT/"site/preview-buttons/assets"/asset).read_bytes()).hexdigest()[:16]
