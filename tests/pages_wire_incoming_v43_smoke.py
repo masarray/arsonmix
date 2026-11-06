@@ -1,12 +1,41 @@
 #!/usr/bin/env python3
 """V43: generated public /preview/ parity, persistent incoming cables, and physical socket impact."""
 from pathlib import Path
-import json,math,re,subprocess,sys,tempfile
+import hashlib,json,math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
 CANONICAL=ROOT/"site/preview-v2/index.html"
 WIRE_CSS=ROOT/"site/preview-v2/assets/mixer-wire-dots.css"
+
+
+def verify_approved_wire_bundle(dist, *, extra_owners=()):
+ """Prove one public /preview/ with the approved WIRE owners.
+
+ The assembler legitimately adds EQ, PNG keys, rack controls, a profiler,
+ and one Stage D runtime CSS. Internal historical HTML is not public HTML.
+ The separate single-preview contract checks complete source-derived bytes.
+ """
+ public=dist/"preview/index.html"
+ html=public.read_text("utf-8")
+ meta=json.loads((dist/"preview/build.json").read_text("utf-8"))
+ assert meta["kind"]=="APPROVED_SINGLE_GUI" and meta["live_audio"] is False
+ assert meta["wire_source_sha256"]==hashlib.sha256(
+    (ROOT/"site/preview-v2/index.html").read_bytes()).hexdigest()
+ assert "<iframe" not in html and "console-body" in html
+ cssmeta=meta["css_compilation"]
+ runtime=(dist/"preview/assets/arsonmix-approved-runtime.css").read_bytes()
+ digest=hashlib.sha256(runtime).hexdigest()[:16]
+ assert cssmeta["runtimeBundleCssSHA256"]==digest
+ assert cssmeta["runtimeStylesheetCount"]==1
+ assert cssmeta["removedStylesheetRequests"]==17
+ assert html.count("assets/arsonmix-approved-runtime.css?sha="+digest)==1
+ assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==WIRE_CSS.read_bytes()
+ for owner in ("mixer-wire-dots.css",*extra_owners):
+  assert ("BEGIN approved owner "+owner).encode() in runtime,owner
+  data=(dist/"preview/assets"/owner).read_bytes()
+  assert cssmeta["shaByCssOwner"][owner]==hashlib.sha256(data).hexdigest()[:16],owner
+ return public
 
 def center(el):
  r=el.bounding_box()
