@@ -333,6 +333,45 @@ test("WIRE SOURCE ONLY readback retains physical input but removes primary MAIN"
   assert.equal(controller.state().current.graph.channels[0].source.portId,"in:0");
   assert.equal(controller.state().current.graph.channels[0].primaryOutId,undefined);
 });
+test("M/ST after BUS/WIRE uses native ChannelId intent and accepted PCM processing width",()=>{
+  const before=acceptedFixture();
+  before.graph.capabilities.supportedOps.push("SET_PROCESSING_FORMAT");
+  before.graph.channels[0].source={sourceFormat:"MONO",portId:"in:0"};
+  const source=before.graph.channels[0].id,events=[];
+  const controller=protocol.createController({emit:(name,payload)=>
+    events.push({name,payload})});
+  assert.equal(controller.onSnapshot(before),true);
+  const change=controller.intent("SET_PROCESSING_FORMAT",source,{format:"STEREO"});
+  assert.equal(change.ok,true);
+  assert.equal(events.at(-1).payload.operation,"SET_PROCESSING_FORMAT");
+  assert.equal(events.at(-1).payload.targetChannelId,source);
+  const after=clone(before);
+  after.graph.revision="6";after.graph.rosterRevision="8";
+  after.graph.channels[0].processingFormat="STEREO";
+  assert.equal(controller.onAck({requestId:change.requestId,status:"ACCEPTED",
+    deviceEpoch:before.device.epoch,graphRevision:"6",rosterRevision:"8",
+    errorCode:"NONE"}),true);
+  assert.equal(controller.state().lastError,"PENDING_ACCEPTED_SNAPSHOT");
+  assert.equal(controller.onSnapshot(after),true);
+  assert.equal(controller.state().lastError,"ACCEPTED_READBACK");
+  assert.equal(controller.state().current.graph.channels[0].source.portId,"in:0");
+  const pending={operation:"SET_PROCESSING_FORMAT",targetChannelId:source,
+    baseGraphRevision:"5",baseRosterRevision:"7",payload:{format:"STEREO"}};
+  const stale=clone(after);
+  stale.graph.channels[0].processingFormat="MONO";
+  assert.equal(protocol.readbackProvesIntent(protocol.normalizeSnapshot(stale),pending),false);
+  stale.graph.channels[0].processingFormat="STEREO";
+  stale.graph.rosterRevision="7";
+  assert.equal(protocol.readbackProvesIntent(protocol.normalizeSnapshot(stale),pending),false,
+    "no M/ST success from a stale native roster revision");
+  const bridge=read("web/approved-native-bridge.js");
+  const fn=bridge.slice(bridge.indexOf("function requestProcessingFormat(t)"),
+    bridge.indexOf("function previewNativePan(t,el,event)"));
+  assert.match(fn,/session\(\)\?\.authority|mixerSession\(\)\?\.authority/);
+  assert.match(fn,/controller.intent\("SET_PROCESSING_FORMAT",channelId,/);
+  assert.ok(fn.indexOf('authority==="CHANNEL_ID"')<
+    fn.indexOf('action:"routingChannelPatch"'));
+});
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const native=read("src/Main.cpp");
