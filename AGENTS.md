@@ -52,10 +52,11 @@ it cannot add reviewer/runner/owner barriers.
 Previous four-lane ENGINE / INTEGRATOR / FAT / GUI ownership and active-PR
 collision gates are **superseded**. A single product integration PR may edit
 engine, native host, GUI data bridge, tests, packaging and CI as necessary.
-Declare `<!-- arsonmix-integration: single-owner -->` in its PR body so the
-old cross-thread coordination mechanism is archival and non-binding.
-Fast contracts run on relevant PR commits; expensive Windows, browser and FAT
-qualification are selected by the exact-SHA milestone workflow below.
+The `<!-- arsonmix-integration: single-owner -->` marker identifies the
+current integrated P0 PR for historical traceability; it is **not a CI
+admission or owner-approval gate**. The old cross-thread coordinator was
+retired. Fast contracts run on relevant PR commits; expensive Windows,
+browser and FAT qualification use the selective exact-SHA milestone below.
 No waiting for abandoned thread approvals; no fake milestone/progress claims.
 
 Before a change: fetch the latest main HEAD and current active PR status,
