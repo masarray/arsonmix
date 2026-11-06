@@ -254,6 +254,85 @@ test("Native VST3 insert ACK + readback distinguishes vendor catalog key from li
   assert.equal(accepted.at(-1).graph.channels[0].inserts[0].id,"vst3-instance-unique-7");
   assert.ok(sent.some(evt=>evt.name==="arMixConsoleSubscribe"));
 });
+test("WIRE ROUTE ONLY to BUS preserves explicit MAIN parallel send after native ACK and readback",()=>{
+  const before=acceptedFixture();
+  const source=before.graph.channels[0], main=before.graph.mainChannelId;
+  const oldBus="9007199254740994",newBus="9007199254740995";
+  const group=id=>({id,role:"GROUP",name:id===oldBus?"BUS A":"BUS B",
+    processingFormat:"STEREO",primaryOutId:main,
+    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]});
+  before.graph.channels.splice(1,0,group(oldBus),group(newBus));
+  before.graph.destinations=[{id:oldBus},{id:newBus},{id:main}];
+  source.primaryOutId=oldBus;
+  source.source={sourceFormat:"MONO",portId:"in:0"};
+  const mkEdge=(id,from,to,primary)=>({edgeId:id,from,to,
+    tap:"POST_FADER",gainLinear:1,enabled:true,signalKind:"AUDIO",
+    primaryOutput:primary});
+  before.graph.edges=[
+    mkEdge("9223372036854775808",source.id,oldBus,true),
+    mkEdge("9223372036854775809",source.id,main,false),
+    mkEdge("9223372036854775810",oldBus,main,true),
+    mkEdge("9223372036854775811",newBus,main,true)
+  ];
+  const events=[],controller=protocol.createController({
+    emit:(name,payload)=>events.push({name,payload})});
+  assert.equal(controller.onSnapshot(before),true);
+  assert.equal(controller.state().current.admitted,true);
+  const change={op:"ROUTE_ONLY",from:source.id,to:newBus,
+    tap:"POST_FADER",gainLinear:1};
+  const submitted=controller.intent("APPLY_WIRE_TRANSACTION",source.id,
+    {changes:[change]});
+  assert.equal(submitted.ok,true);
+  const after=clone(before);
+  after.graph.revision="6";after.graph.rosterRevision="8";
+  after.graph.channels[0].primaryOutId=newBus;
+  after.graph.edges[0].to=newBus; // exact native EdgeId promoted/retargeted
+  assert.equal(controller.onAck({requestId:submitted.requestId,status:"ACCEPTED",
+    deviceEpoch:before.device.epoch,graphRevision:"6",rosterRevision:"8",
+    errorCode:"NONE"}),true);
+  assert.equal(controller.state().lastError,"PENDING_ACCEPTED_SNAPSHOT");
+  assert.equal(controller.onSnapshot(after),true);
+  assert.equal(controller.state().lastError,"ACCEPTED_READBACK",
+    "verified ROUTE_ONLY must not reject intentionally preserved parallel MAIN");
+  assert.equal(controller.state().current.graph.channels[0].primaryOutId,newBus);
+  assert.equal(controller.state().current.graph.edges.find(e=>
+    e.edgeId==="9223372036854775809").primaryOutput,false);
+  assert.ok(events.some(e=>e.name==="arMixConsoleSubscribe"));
+  const invalid=clone(after);
+  invalid.graph.edges[1].primaryOutput=true;
+  const pending={operation:"APPLY_WIRE_TRANSACTION",targetChannelId:source.id,
+    baseGraphRevision:"5",baseRosterRevision:"7",
+    originalPrimaryOutId:oldBus,payload:{changes:[change]}};
+  assert.equal(protocol.readbackProvesIntent(protocol.normalizeSnapshot(invalid),pending),false,
+    "a second MAIN primary must still fail closed");
+  invalid.graph.edges[1].primaryOutput=false;
+  invalid.graph.edges[0].to=oldBus;
+  assert.equal(protocol.readbackProvesIntent(protocol.normalizeSnapshot(invalid),pending),false,
+    "old primary may not survive as an independent cable");
+});
+test("WIRE SOURCE ONLY readback retains physical input but removes primary MAIN",()=>{
+  const before=acceptedFixture();
+  const source=before.graph.channels[0];
+  before.graph.edges[0].primaryOutput=true;
+  source.source={sourceFormat:"MONO",portId:"in:0"};
+  const after=clone(before);
+  after.graph.revision="6";after.graph.rosterRevision="8";
+  delete after.graph.channels[0].primaryOutId;
+  after.graph.edges=[];
+  const controller=protocol.createController({emit:()=>{}});
+  assert.equal(controller.onSnapshot(before),true);
+  const cmd=controller.intent("APPLY_WIRE_TRANSACTION",source.id,{changes:[
+    {op:"REMOVE",from:source.id,edgeId:before.graph.edges[0].edgeId}
+  ]});
+  assert.equal(cmd.ok,true);
+  assert.equal(controller.onAck({requestId:cmd.requestId,status:"ACCEPTED",
+    deviceEpoch:before.device.epoch,graphRevision:"6",rosterRevision:"8",
+    errorCode:"NONE"}),true);
+  assert.equal(controller.onSnapshot(after),true);
+  assert.equal(controller.state().lastError,"ACCEPTED_READBACK");
+  assert.equal(controller.state().current.graph.channels[0].source.portId,"in:0");
+  assert.equal(controller.state().current.graph.channels[0].primaryOutId,undefined);
+});
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const native=read("src/Main.cpp");
