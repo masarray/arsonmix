@@ -230,6 +230,38 @@ public:
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
+    // Processing MONO/STEREO is a DSP lane property, not a device pin change.
+    // Rebind the vendor lease's matching format atomically with the PCM
+    // topology; otherwise a later insert would see stale format metadata.
+    // Never duplicate, reset or instantiate a live processor on this path.
+    static Fault reuseWithProcessingFormat(
+            std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId target,
+            ProcessingFormat format,DynamicChannelFxLeaseBank& destination) {
+        if(!epoch || epoch!=prior.epoch_ || revision<=prior.revision_)
+            return Fault::invalidEpoch;
+        if(!target.value || prior.external_.id==target)
+            return Fault::invalidExternalLease;
+        if(format!=ProcessingFormat::mono && format!=ProcessingFormat::stereo)
+            return Fault::invalidBusLayout;
+        std::vector<Assignment> retained;
+        retained.reserve(prior.rows_.size());
+        bool found=false;
+        for(const auto& row:prior.rows_) {
+            Assignment item;
+            item.id=row.id;
+            item.format=row.id==target?format:row.format;
+            item.rackBypassed=row.rackBypassed;
+            item.inserts.reserve(row.count);
+            for(std::size_t slot=0;slot<row.count;++slot)
+                item.inserts.push_back(row.owners[slot]);
+            found|=row.id==target;
+            retained.push_back(std::move(item));
+        }
+        if(!found)return Fault::emptyId;
+        return prepare(epoch,revision,retained,destination,prior.external_);
+    }
+
     // CONTROL thread: publish a newly instantiated vendor insert on an
     // independently owned ChannelId, retaining old leases/state/tails.
     // This does NOT call a vendor or allocate from the audio callback.
