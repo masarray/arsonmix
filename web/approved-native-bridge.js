@@ -923,10 +923,20 @@
     if(!scope?.tracks || next?.admitted || !Array.isArray(scope.tracks) ||
        scope.tracks.length<10) return;
     const session=next?.raw?.mixerSession;
-    if(session?.authority!=="M4"||!Array.isArray(session.channels)||session.channels.length!==10)return;
     const m4=next?.raw?.legacyM4;
-    const rows=session.channels.map(ch=>ch.source);
-    const signature=JSON.stringify([next?.device?.epoch,
+    const acceptedM4=session?.authority==="M4" &&
+      Array.isArray(session.channels)&&session.channels.length===10;
+    // An UNPATCHED prepared native M4 renderer has no accepted route yet,
+    // so the SessionSnapshot deliberately reports authority NONE. The
+    // operator must still SEE its verified physical IN choices to create
+    // the first route. Previously an early return left every dropdown at
+    // "None" forever; requiring a patched route to display the first pin
+    // created a circular bootstrap dependency.
+    const preparedFirstSound=session?.authority==="NONE" &&
+      m4?.active===true && m4?.routeAccepted===false;
+    if(!acceptedM4&&!preparedFirstSound)return;
+    const rows=acceptedM4?session.channels.map(ch=>ch.source):null;
+    const signature=JSON.stringify([session.authority,next?.device?.epoch,
       next?.device?.enabledInputs,next?.device?.inputEndpoints,
       m4?.active,m4?.routingRevision,rows]);
     if(signature===lastM4UiSignature)return;
@@ -934,7 +944,11 @@
     for(let i=0;i<10;++i){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
       if(t?.kind!=="audio")continue;
-      const row=Array.isArray(rows)&&rows.length===10?rows[i]:null;
+      // An unpatched session has NO physical row. Keep the model at None,
+      // while rendering the native pin choices for the initial operator
+      // selection. Do not borrow source/OUT data from the demo or a prior
+      // device session.
+      const row=acceptedM4?rows[i]:null;
       t.input=inputLabelFor(row);
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
@@ -979,18 +993,27 @@
     return (capture.includes("vb-audio")||playback.includes("vb-audio")) &&
       capture.includes("cable output") && playback.includes("cable input");
   };
-  // A migrated ChannelId graph is the sole PCM authority. Its physical
-  // input chooser must NOT depend on the legacy M4.active bit after BUS/WIRE
-  // has made M4 structurally obsolete. First-sound M4 still requires its
-  // own verified active renderer; never manufacture hardware readiness.
+  // ChannelId requires its installed accepted callback. Before the FIRST
+  // source selection there is intentionally no ChannelId or M4 route yet:
+  // authoritative SessionSnapshot is NONE, but legacyM4.active means the
+  // JUCE callback has independently prepared a real SILENT M4 graph and
+  // verified sparse physical pins. Let THAT state accept the first IN patch.
+  // Never infer readiness from the Pages/demo tracks or the presence of a
+  // Windows playback device alone.
   const deviceReady=()=>!!(hardware?.device?.backend &&
-    hardware.device.sampleRate>0 &&
+    safeNativeCounter(hardware.device.epoch)!==null &&
+    hardware.device.sampleRate>0 && hardware.device.bufferFrames>0 &&
+    Array.isArray(hardware.device.enabledInputs) &&
     hardware.device.enabledInputs.length>0 &&
+    Array.isArray(hardware.device.enabledOutputs) &&
     hardware.device.enabledOutputs.length>=2 &&
     (mixerSession()?.authority==="CHANNEL_ID"
       ? controller?.state()?.current?.admitted===true &&
         flags.acceptedGraphConnected
-      : mixerSession()?.authority==="M4" && legacy()?.active===true));
+      : (mixerSession()?.authority==="M4" ||
+         mixerSession()?.authority==="NONE") &&
+        legacy()?.active===true &&
+        safeNativeCounter(legacy()?.routingRevision)!==null));
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -1519,7 +1542,11 @@
       stopDemo();
       status(m4Verified()?
         "NATIVE M4 · real PCM faders and meters · ChannelId buses not yet admitted":
-        "NATIVE G0 · choose real hardware IN on any channel");
+        deviceReady()?
+        "NATIVE G0 · verified physical IN ready · select a channel input":
+        hardware?.device?.enabledInputs?.length===0?
+        "NO CAPTURE PINS · Audio I/O: enable an actual hardware input":
+        "NATIVE G0 NOT READY · open Audio I/O and verify device / native route");
       return;
     }
     // Control readback may change at the SAME structural graph revision.

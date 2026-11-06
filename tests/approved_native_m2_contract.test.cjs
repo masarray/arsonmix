@@ -1057,6 +1057,100 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  assert.equal(paints,2,"an actual VST instance identity change MUST re-project");
 });
 
+test("P0 FIRST SOUND G0 NONE authority exposes verified physical IN before any route and arms only after native ACK",()=>{
+ const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
+ let win;
+ const tracks=Array.from({length:10},(_,i)=>({
+  id:i+1,kind:"audio",name:"CH "+(i+1),input:"None",
+  output:"Master",format:"mono",fx:[],slotBypass:[],fxInsertIds:[]
+ }));
+ const scope={
+  tracks,master:{id:50,kind:"master",output:"Master"},
+  findTrack:el=>el?.track||null,
+  render(){renderedChoices.push([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])]);},
+  stopDemo(){}
+ };
+ const backend={
+  emitEvent:(name,payload)=>sent.push({name,payload}),
+  addEventListener:(name,fn)=>listeners.set(name,fn)
+ };
+ const info={textContent:""},preview={disabled:false};
+ const document={
+  readyState:"complete",documentElement:{dataset:{}},activeElement:null,
+  querySelector:()=>null,
+  getElementById:id=>id==="info"?info:id==="preview"?preview:null,
+  addEventListener(){}
+ };
+ win={
+  __JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+  __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+  setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}
+ };
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{
+  window:win,document,performance:{now:()=>0},console
+ },{timeout:1500});
+ const boot=clone(fixtures.g0);
+ boot.device.backend="Windows Audio";
+ boot.device.captureDevice="Real hardware microphone";
+ boot.device.playbackDevice="Speakers";
+ boot.legacyM4={active:true,routeAccepted:false,routingRevision:"12"};
+ boot.mixerSession={authority:"NONE",deviceEpoch:boot.device.epoch,
+  routeRevision:"0",rosterRevision:"0",channels:[],main:{outputArmed:false}};
+ listeners.get("arMixConsoleSnapshot")(boot);
+ assert.equal(win.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,false,
+  "unpatched G0 must not masquerade as ChannelId PCM");
+ assert.ok(renderedChoices.length>0,
+  "first real JUCE pin readback must refresh the previously empty selector");
+ assert.deepEqual(renderedChoices.at(-1),["None","Mono · IN 1 [IN 1]"],
+  "the only offered input is the native enabled physical pin");
+ const choose=(label)=>win.__ARMIX_NATIVE_M2__.consumeField({
+  type:"change",target:{dataset:{field:"input"},value:label,track:tracks[4]}
+ });
+ assert.equal(choose("Mono · IN 1 [IN 1]"),true);
+ const source=sent.filter(x=>x.name==="arMixAction"&&
+  x.payload.action==="routingSourceSwitch");
+ assert.equal(source.length,1,
+  "G0 needs exactly one direct JUCE source command, no Start/Patch/Arm wizard");
+ assert.deepEqual([
+  source[0].payload.channel,source[0].payload.mode,
+  source[0].payload.left,source[0].payload.right,
+  source[0].payload.deviceEpoch,source[0].payload.revision
+ ],[4,"MONO",0,-1,69,12]);
+ assert.equal(sent.filter(x=>x.name==="arMixAction"&&
+  x.payload.action==="monitor").length,0,
+  "MAIN cannot auto-arm before accepted native source topology");
+ // Native control-thread producer ACK, not a fake browser state.
+ const acceptedRows=Array.from({length:10},(_,i)=>({
+  mode:i===4?"MONO":"NONE",left:i===4?0:-1,
+  right:-1,main:true
+ }));
+ listeners.get("arMixSourceSwitchAck")({
+  requestId:source[0].payload.requestId,ok:true,
+  state:{ready:true,epoch:69,revision:13,hasAcceptedRoute:true,
+   nativeChannelIdPcmActive:false,
+   channelControls:Array.from({length:10},()=>({db:0,pan:0,mute:false,solo:false})),
+   acceptedRoute:{channels:acceptedRows}}
+ });
+ const monitors=sent.filter(x=>x.name==="arMixAction"&&
+  x.payload.action==="monitor");
+ assert.equal(monitors.length,1,
+  "first accepted input routed to MAIN authorizes one automatic safe listen");
+ assert.equal(monitors[0].payload.value,true);
+ assert.equal(monitors[0].payload.expectedEpoch,69);
+ assert.equal(monitors[0].payload.expectedRevision,13);
+ assert.equal(tracks[4].input,"None",
+  "GUI must wait for a subsequent independent native readback");
+ const none=clone(boot);
+ none.device.enabledInputs=[];none.device.inputEndpoints=[];
+ listeners.get("arMixConsoleSnapshot")(none);
+ assert.deepEqual([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])],["None"]);
+ const commandsBefore=sent.filter(x=>x.name==="arMixAction"&&
+  x.payload.action==="routingSourceSwitch").length;
+ assert.equal(choose("Mono · IN 1 [IN 1]"),true);
+ assert.equal(sent.filter(x=>x.name==="arMixAction"&&
+  x.payload.action==="routingSourceSwitch").length,commandsBefore,
+  "never invent physical capture when the driver has no enabled input pins");
+});
 test("P0 native hardware IN remains selectable after ChannelId ownership, failed ACK drains the other channel",()=>{
  const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[];
  let ordinal=100,wireId=400;
