@@ -171,6 +171,22 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(builder,/type==='output'/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 physical SOURCE switching rejects fractional and stale native session tokens before PCM",()=>{
+ const main=read("src/Main.cpp");
+ const tokens=read("src/NativeSessionToken.h");
+ const start=main.indexOf('if(action=="routingSourceSwitch")');
+ const end=main.indexOf('if (action == "routingDryApply")',start);
+ assert.ok(start>=0&&end>start);
+ const source=main.slice(start,end);
+ assert.match(source,/nativeSessionTokenMatches\(/);
+ assert.match(source,/nativeSessionTokenValue\(ep\)/);
+ assert.match(source,/nativeSessionTokenValue\(rv\)/);
+ assert.match(source,/channel>=0&&channel<LiveDryRoutingLab::count&&tokens/);
+ assert.doesNotMatch(source,/!ep\.isVoid\(\)&&!rv\.isVoid\(\)/);
+ assert.doesNotMatch(source,/static_cast<juce::int64>\(ep\)/);
+ assert.match(tokens,/std::isfinite\(n\)/);
+ assert.match(tokens,/std::floor\(n\)==n/);
+});
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const native=read("src/Main.cpp");

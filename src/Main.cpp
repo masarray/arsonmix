@@ -1785,13 +1785,24 @@ private:
             const auto rv=args.getProperty("revision",juce::var());
             const int left=static_cast<int>(args.getProperty("left",-1));
             const int right=static_cast<int>(args.getProperty("right",-1));
-            const juce::String error=requestId>0&&!ep.isVoid()&&!rv.isVoid()&&
+            // SOURCE uses the SAME exact native session authority as FX,
+            // OUT and M4. A JUCE JSON double may be an exact integer, but
+            // fractional/NaN/rounded or stale tokens must never be cast to
+            // a valid active epoch/revision before changing physical PCM.
+            const auto nativeRoute=engine_.status().getProperty("dryRoutingLab",{});
+            const bool tokens=
+                armix::console::nativeSessionTokenMatches(
+                    ep,nativeRoute.getProperty("epoch",{})) &&
+                armix::console::nativeSessionTokenMatches(
+                    rv,nativeRoute.getProperty("revision",{}));
+            const juce::String error=requestId>0 &&
+                channel>=0&&channel<LiveDryRoutingLab::count&&tokens&&
                 !nativeShowBusy_&&!studioBackupBusy_?
                 engine_.switchDryRoutingLabSource(channel,
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
                     mode,left,right):
-                juce::String("SOURCE SWITCH: stale request or Show/backup busy");
+                juce::String("SOURCE SWITCH: stale native epoch/revision, channel or Show/backup busy");
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
             ack->setProperty("channel",channel);
