@@ -223,7 +223,15 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
  assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to:main,/);
  assert.match(bridge,/change=\{op:"REMOVE",from:channelId,edgeId:edge\.edgeId\}/);
- assert.match(bridge,/e\.primaryOutput!==false/);
+ // Only the accepted PRIMARY edge may be detached. A parallel SEND to
+ // MAIN must not be misclassified as a physical OUT.
+ assert.match(bridge,/e\\.primaryOutput===true/);
+ assert.doesNotMatch(bridge,/e\\.primaryOutput!==false/);
+ const roster=read("engine/core/DynamicChannelRoster.h");
+ const translator=read("integration/ApprovedNativeControlIntent.h");
+ assert.match(roster,/target->primaryOutput=true/);
+ assert.match(roster,/s\\.primaryOutput &&/);
+ assert.doesNotMatch(translator,/WIRE_MAIN_PRIMARY_REQUIRED/);
  assert.match(bridge,/const channel=m4Index\(t\)/);
  // A native-owned MAIN WIRE never triggers the legacy routingChannelPatch.
  const primary=bridge.slice(bridge.indexOf("function requestPrimaryOut(t,target)"),
