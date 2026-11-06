@@ -245,7 +245,7 @@ static void controlIntentTranslationCases(const juce::var& canonical,
 
 // P1 WIRE gateway regression: all ChannelId/EdgeId conversion is validated
 // on the CONTROL thread. A test probe is not a hardware PCM producer.
-struct NativeWireProbe {
+struct NativeWireProbe : NativeControlProbe {
     std::uint64_t epoch=0,pcmRevision=0,rosterRevision=0;
     std::vector<armix::mixer::WireChange> applied;
     // Match the actual LiveDryRoutingLab::NativeBusResult ABI.
