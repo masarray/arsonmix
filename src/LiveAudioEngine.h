@@ -313,7 +313,11 @@ public:
     // verifies the existing destination/route even when every source is NONE:
     // silence is safe and the user must not have to re-press MONITOR after
     // NONE -> STEREO on the same device. Epoch/feedback/STREAM fences remain.
-    juce::String liveOutputArmFault(bool requirePhysicalSource=true)
+    // Manual MONITOR arming always requires a verified source. An already
+    // authorized MAIN may remain safely armed while an input is temporarily
+    // NONE; this overload NEVER relaxes the explicit arm safety contract.
+    juce::String liveOutputArmFault() { return liveOutputArmFault(true); }
+    juce::String liveOutputArmFault(bool requirePhysicalSource)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
         if (!device || !device->isOpen() || !directFence_.permitted()
