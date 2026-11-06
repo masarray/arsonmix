@@ -293,6 +293,14 @@ private:
     std::array<std::array<armix::builtin_fx::Band,8>,14> eqAccepted_{};
     std::array<bool,14> eqInstalled_{},eqBypassed_{};
     std::uint64_t eqCacheEpoch_=0;
+    // The existing native Show v4 records VST3 but NOT these EQ coefficients.
+    // Fail closed until a transactional Show format and DSP recall are shipped.
+    bool uncapturedBuiltInEq() const noexcept {
+        return std::any_of(eqInstalled_.begin(),eqInstalled_.end(),
+                           [](bool installed){return installed;}) ||
+               std::any_of(eqPending_.begin(),eqPending_.end(),
+                           [](const EqPending& p){return p.active;});
+    }
     void syncEqEpoch(std::uint64_t ep) {
         if(eqCacheEpoch_==ep)return;
         eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
@@ -1890,6 +1898,9 @@ private:
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
                 return reject("Finish the current Studio task before capturing a native Show.");
+            if(uncapturedBuiltInEq())
+                return reject("Native Show v4 cannot save Built-in Channel EQ bands. "
+                              "Save blocked to avoid silently losing live EQ state.");
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -2041,6 +2052,9 @@ private:
             };
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
+            if(uncapturedBuiltInEq())
+                return reject("Native Show recall cannot replace an active Built-in EQ "
+                              "until EQ state is included in transactional Show recall.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
                 return reject("Mute native output and finish ongoing Studio work.");

@@ -15,6 +15,11 @@ assert.ok(component.includes('data-action="openBuiltinEq"'));
 assert.ok(component.includes('BUILT-IN FX')&&component.includes('VST3 PLUGINS'));
 assert.ok(component.includes('RACK_ROWS_HOOK')&&component.includes('PICKER_CLICK_HOOK'));
 assert.ok(js.includes('slotMarkup(track')&&js.includes('builtinEqSetGate'));
+assert.ok(js.includes('lastGraphEqSweep')&&js.includes('otherTrack'),
+ 'Reproject actual native ChannelId EQ state after structural graph revision');
+const main=fs.readFileSync('src/Main.cpp','utf8');
+assert.ok(main.includes('uncapturedBuiltInEq()'),
+ 'Do not persist/show-recall EQ state via legacy schema v4');
 assert.ok(component.includes('window.ArSonMixBuiltinEq?.open(t)'));
 assert.match(native,/__ARMIX_BUILTIN_EQ_CHANNEL__/);
 assert.match(js,/arMixBuiltinEqAck/);

@@ -41,6 +41,7 @@
  const nativeBackend=()=>window.__JUCE__?.backend;
  const nativeRoute=()=>window.__ARMIX_BUILTIN_EQ_CHANNEL__;
  const demoStates=new Map(),nativeStates=new Map();
+ let lastGraphEqSweep='';
  const sameGraph=(v,n)=>v&&n&&v.epoch===n.device?.epoch&&v.revision===n.graph?.revision;
  const stateFor=t=>{
   if(!t||t.kind==='master')return null;
@@ -192,6 +193,27 @@
    // A historical EQ snapshot must never stay editable after hotplug,
    // device restart, graph replacement or channel removal.
    backend.addEventListener('arMixConsoleSnapshot',s=>{
+     // The approved native graph projection may install strips after this
+     // listener in the same browser turn. Request each actual ChannelId once
+     // per admitted epoch/revision, after its projection has settled.
+     const requery=()=>{
+       const n=nativeRoute()?.state?.();
+       if(!n?.admitted||!s?.admitted||
+          s.device?.epoch!==n.device?.epoch||
+          s.graph?.revision!==n.graph?.revision||
+          !Array.isArray(n.graph?.channels))return;
+       const key=String(n.device.epoch)+'/'+String(n.graph.revision);
+       if(key===lastGraphEqSweep)return;
+       lastGraphEqSweep=key;
+       for(const ch of n.graph.channels) {
+         const t=window.__ARMIX_BUILTIN_EQ_FIND_CHANNEL__?.(ch.id);
+         if(t&&t.kind!=='master')
+           backend.emitEvent('arMixAction',{action:'builtinEqSnapshot',
+                                           channelId:ch.id});
+       }
+     };
+     if(typeof window.setTimeout==='function')window.setTimeout(requery,0);
+     else requery();
      if(!isOpen()||demonstration||!channelId)return;
      const accepted=s?.admitted===true&&s.device?.epoch===epoch&&
        s.graph?.revision===revision&&Array.isArray(s.graph.channels)&&
@@ -200,7 +222,25 @@
    });
    backend.addEventListener('arMixBuiltinEqQueue',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='REJECTED'){pending=null;setStatus('NATIVE: EDIT REJECTED; STATE UNCHANGED','warn');render();}else setStatus('QUEUED · WAITING FOR DSP APPLY ACK','warn');});
    backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');render();}});
-   backend.addEventListener('arMixBuiltinEqSnapshot',s=>{if(demonstration||!validateSnap(s))return;
+   backend.addEventListener('arMixBuiltinEqSnapshot',s=>{
+     const n=nativeRoute()?.state?.();
+     const validIdentity=s?.schemaVersion===1&&
+       typeof s.channelId==='string'&&typeof s.installed==='boolean'&&
+       typeof s.bypassed==='boolean'&&s.deviceEpoch===n?.device?.epoch&&
+       s.graphRevision===n?.graph?.revision;
+     const otherTrack=validIdentity?
+       window.__ARMIX_BUILTIN_EQ_FIND_CHANNEL__?.(s.channelId):null;
+     const hasUnconfirmedCurrent=pending&&pending.channelId===s?.channelId&&
+       (!waitingAck||s.appliedRequestId!==pending.id);
+     if(otherTrack&&!hasUnconfirmedCurrent) {
+       const prior=nativeStates.get(s.channelId);
+       nativeStates.set(s.channelId,{installed:s.installed,bypassed:s.bypassed,
+                                    epoch:s.deviceEpoch,revision:s.graphRevision});
+       if(!prior||prior.installed!==s.installed||prior.bypassed!==s.bypassed||
+          prior.revision!==s.graphRevision||prior.epoch!==s.deviceEpoch)
+          refresh(otherTrack);
+     }
+     if(demonstration||!validateSnap(s))return;
      if(pending&&(!waitingAck||s.appliedRequestId!==pending.id))return;
      bands=s.bands.map(b=>({...b}));epoch=s.deviceEpoch;revision=s.graphRevision;
       sampleRate=Number(s.sampleRate)||48000;pending=null;waitingAck=false;snapshotReady=true;

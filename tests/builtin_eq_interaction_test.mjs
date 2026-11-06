@@ -179,4 +179,27 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',del.requestId,defaults(),false,false));
   assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'');
 }
+{
+  const h=start(true),track={id:42,name:'Vocal',kind:'audio',fxOn:true};
+  let paints=0;
+  h.window.__ARMIX_BUILTIN_EQ_FIND_CHANNEL__=id=>id==='101'?track:null;
+  h.window.__ARMIX_BUILTIN_EQ_REFRESH__=()=>{paints++;};
+  h.fire('arMixConsoleSnapshot',{admitted:true,device:{epoch:'9'},
+    graph:{revision:'3',channels:[{id:'101'}]}});
+  assert.equal(lastAction(h)?.action,'builtinEqSnapshot',
+    'Accepted graph must requery exact ChannelId EQ readback');
+  h.fire('arMixBuiltinEqSnapshot',snapshot('9','3','0',defaults(),true,false));
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(track,()=>''),/Channel EQ/,
+    'Unopened editor still restores authoritative rack presence');
+  assert.ok(paints>0);
+  h.session('10','4');
+  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(track,()=>''),'',
+    'Device/graph change revokes stale EQ rack state');
+  h.fire('arMixConsoleSnapshot',{admitted:true,device:{epoch:'10'},
+    graph:{revision:'4',channels:[{id:'101'}]}});
+  assert.equal(lastAction(h)?.action,'builtinEqSnapshot');
+  h.fire('arMixBuiltinEqSnapshot',snapshot('10','4','0',defaults(),false,false));
+  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(track,()=>''),'',
+    'New session flat EQ does not borrow prior device state');
+}
 console.log('PASS: Built-in EQ insert/bypass/remove after native ACK + readback; no fake PCM');

@@ -16,6 +16,11 @@ RACK_HOOK = """window.__ARMIX_BUILTIN_EQ_REFRESH__=function(uiId){
  const t=tracks.concat(master).find(x=>x.id===Number(uiId));
  if(t)refreshStrip(t);
 };
+window.__ARMIX_BUILTIN_EQ_FIND_CHANNEL__=function(nativeChannelId){
+ return tracks.concat(master).find(t=>
+    window.__ARMIX_BUILTIN_EQ_CHANNEL__?.resolve?.(t.id)===nativeChannelId
+ )||null;
+};
 function sectionFx(t){"""
 RACK_ROWS = " for(const {name,i} of rows){"
 RACK_ROWS_HOOK = """ out+=window.ArSonMixBuiltinEq?.slotMarkup?.(t,materialIcon)||'';
