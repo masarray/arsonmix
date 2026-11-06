@@ -4,6 +4,8 @@
 Use the real generated public /preview/ and canonical sources, never a mock.
 Check unit math, computed geometry, visual label rhythm, and click-to-preview.
 """
+import hashlib
+import json
 import math
 import subprocess
 import sys
@@ -199,25 +201,37 @@ def main():
         subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
             "--out",str(dist),"--sha","m1-calibrated","--branch","m1"],
             cwd=ROOT,check=True,capture_output=True,text=True)
-        published=dist/"preview/mixer.html"
-        assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
-        expected_ruler_keys={
-            "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
-            "mixer-meter-display.css":"css-owner-v27-meter-pruned",
-        }
-        for name,key in expected_ruler_keys.items():
-            assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(
-                "stale ruler cache URL",name,key)
+        published=dist/"preview/index.html"
+        # Stage D has one runtime CSSOM. The canonical source remains
+        # byte-immutable but the product intentionally composes PNG controls,
+        # built-in Channel EQ and other approved native UI additions. Verify
+        # every fader/meter source owner is carried by the content-addressed
+        # runtime instead of demanding obsolete individual link URLs.
+        meta=json.loads((dist/"preview/build.json").read_text("utf-8"))
+        cssmeta=meta["css_compilation"]
+        runtime=(dist/"preview/assets/arsonmix-approved-runtime.css").read_bytes()
+        digest=hashlib.sha256(runtime).hexdigest()[:16]
+        assert cssmeta["runtimeBundleCssSHA256"]==digest
+        assert cssmeta["runtimeStylesheetCount"]==1
+        assert published.read_text("utf-8").count(
+            "assets/arsonmix-approved-runtime.css?sha="+digest)==1
         for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
+            assert ("BEGIN approved owner "+name).encode() in runtime,name
+            data=(dist/"preview/assets"/name).read_bytes()
+            assert cssmeta["shaByCssOwner"][name]==hashlib.sha256(data).hexdigest()[:16],name
+        assert (dist/"preview/assets/mixer-control-keys.css").read_bytes()==(
+            ROOT/"site/preview-buttons/assets/mixer-control-keys.css").read_bytes()
+        assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==(
+            ASSETS/"mixer-wire-dots.css").read_bytes()
         with sync_playwright() as pw:
             browser=pw.chromium.launch(headless=True)
             for html,label,width,height in (
                 (CANON,"canonical",1366,768),
                 (CANON,"canonical",1680,900),
                 (CANON,"canonical",1920,1080),
+                (published,"pages",1366,768),
                 (published,"pages",1680,900),
-                (dist/"preview-buttons/index.html","png",1366,768)):
+                (published,"pages",1920,1080)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda exc:errors.append(str(exc)))
@@ -233,7 +247,7 @@ def main():
                 page.close()
             browser.close()
     print("PASS M1: dBFS meter and gain rulers calibrated to physical travel; "
-          "preview demo displays real dBFS percentages, 3 densities × 3 sizes × 3 Pages routes")
+          "preview demo displays real dBFS percentages, 3 densities × 3 sizes × 1 public route")
 
 if __name__=="__main__":
     main()

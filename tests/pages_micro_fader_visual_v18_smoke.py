@@ -88,7 +88,7 @@ def check(page,path,label):
             label,density,"printed scale numbers collide",tick)
         assert tick["value"]=="0",(label,density,"fader numeric value changed",tick)
         assert abs(tick["panHeight"]-40)<.6,(label,density,"PAN input hitbox moved",tick["panHeight"])
-        if density=="comfort" and label=="png":
+        if density=="comfort" and label=="public":
             page.locator(channel+" .fader-section").screenshot(path="pages-v18-fader-scale-1680.png")
             page.locator(channel+" .fx-section").screenshot(path="pages-v18-fx-micro-1680.png")
     assert not errors,(label,errors)
@@ -110,14 +110,15 @@ def main():
                        cwd=ROOT,check=True,capture_output=True,text=True)
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
+            # The approved PNG surface is /preview/index.html. The two
+            # legacy paths are redirects, not independent mixer renderers.
             for path,label in ((SOURCE,"canonical"),
-                               (dist/"preview/mixer.html","public"),
-                               (dist/"preview-buttons/index.html","png")):
+                               (dist/"preview/index.html","public")):
                 page=browser.new_page(viewport={"width":1680,"height":900},device_scale_factor=1)
                 check(page,path,label)
             browser.close()
     print("PASS V18: Material delete+phase, 17px square buttons, calibrated rulers,")
-    print("no label overlaps across densities, PNG preserved, 3 real preview routes")
+    print("no label overlaps across densities, approved PNG in one public preview")
 
 if __name__=="__main__":
     main()
