@@ -6,6 +6,7 @@ No mocking mixer state, no alternate UI renderer and no CSS screenshot assets.
 from pathlib import Path
 import subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 OWNER='mixer-contextual-buttons.css'
@@ -113,24 +114,23 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
                         '--out',str(dist),'--sha','v6-ci','--branch','main'],
                        cwd=ROOT,check=True,capture_output=True,text=True)
-        for target in ('preview','preview-v2','preview-buttons'):
-            assets=dist/target/'assets'
-            assert (assets/OWNER).read_bytes()==(ROOT/'site/preview-v2/assets'/OWNER).read_bytes(),target
-            assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes(),target
+        published=published_console(dist)
+        assets=published.parent/'assets'
+        assert (assets/OWNER).read_bytes()==(ROOT/'site/preview-v2/assets'/OWNER).read_bytes()
+        assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes()
         png_src=ROOT/'site/preview-buttons/assets'
-        png_pub=dist/'preview-buttons/assets'
+        png_pub=assets
         for file in ('mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'):
             assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for file,label in (
                 (CANON,'canonical'),
-                (dist/'preview/mixer.html','public'),
-                (dist/'preview-buttons/index.html','png')
+                (published,'png')
             ):
                 check_page(browser,file,label)
             browser.close()
-    print('PASS V6 OTHER buttons: 3 routes, PNG protected, action release, native latches,')
+    print('PASS V6 OTHER buttons: authoring source + sole approved /preview/, PNG protected, action release, native latches,')
     print('micro geometry, fixed MAIN size, no pointer-focus or layout scroll')
 
 

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/"site/preview-v2/index.html"
@@ -111,13 +112,12 @@ def main():
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
             for path,label in ((SOURCE,"canonical"),
-                               (dist/"preview/mixer.html","public"),
-                               (dist/"preview-buttons/index.html","png")):
+                               (published_console(dist),"png")):
                 page=browser.new_page(viewport={"width":1680,"height":900},device_scale_factor=1)
                 check(page,path,label)
             browser.close()
     print("PASS V18: Material delete+phase, 17px square buttons, calibrated rulers,")
-    print("no label overlaps across densities, PNG preserved, 3 real preview routes")
+    print("no label overlaps across densities, PNG preserved, source + sole approved /preview/")
 
 if __name__=="__main__":
     main()

@@ -10,6 +10,7 @@ Actual canonical/public/PNG pages in headless Chromium; verifies:
 from pathlib import Path
 import subprocess, sys, tempfile
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 PAGE=ROOT/"site/preview-v2/index.html"
@@ -116,14 +117,13 @@ def main():
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for path,label in ((PAGE,"canonical"),
-                               (dst/"preview/mixer.html","published-mixer"),
-                               (dst/"preview-buttons/index.html","approved-png")):
+                               (published_console(dst),"approved-png")):
                 page=browser.new_page(viewport={"width":1680,"height":900})
                 verify(page,label,path)
                 page.close()
             browser.close()
     print("PASS arrow OFF/ON icon contrast, unchanged geometry, Route to Bus dark microcopy,")
-    print("WIRE linked/legacy semantic contrast, and PNG reference route 3/3")
+    print("WIRE linked/legacy semantic contrast, authoring source + approved PNG /preview/")
 
 
 if __name__=="__main__":

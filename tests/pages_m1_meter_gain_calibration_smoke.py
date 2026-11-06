@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT = Path(__file__).resolve().parents[1]
 CANON = ROOT / "site/preview-v2/index.html"
@@ -199,17 +200,9 @@ def main():
         subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
             "--out",str(dist),"--sha","m1-calibrated","--branch","m1"],
             cwd=ROOT,check=True,capture_output=True,text=True)
-        published=dist/"preview/mixer.html"
-        assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
-        expected_ruler_keys={
-            "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
-            "mixer-meter-display.css":"css-owner-v27-meter-pruned",
-        }
-        for name,key in expected_ruler_keys.items():
-            assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(
-                "stale ruler cache URL",name,key)
-        for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
+        # The shared provenance gate verifies every compiled ruler owner and
+        # its content-addressed runtime bundle against the exact source.
+        published=published_console(dist)
         with sync_playwright() as pw:
             browser=pw.chromium.launch(headless=True)
             for html,label,width,height in (
@@ -217,7 +210,7 @@ def main():
                 (CANON,"canonical",1680,900),
                 (CANON,"canonical",1920,1080),
                 (published,"pages",1680,900),
-                (dist/"preview-buttons/index.html","png",1366,768)):
+                (published,"png",1366,768)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda exc:errors.append(str(exc)))
@@ -233,7 +226,7 @@ def main():
                 page.close()
             browser.close()
     print("PASS M1: dBFS meter and gain rulers calibrated to physical travel; "
-          "preview demo displays real dBFS percentages, 3 densities × 3 sizes × 3 Pages routes")
+          "preview demo displays real dBFS percentages, 3 densities × 3 sizes, source + sole approved /preview/")
 
 if __name__=="__main__":
     main()
