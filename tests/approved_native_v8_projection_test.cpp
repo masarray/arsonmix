@@ -248,12 +248,13 @@ static void controlIntentTranslationCases(const juce::var& canonical,
 struct NativeWireProbe {
     std::uint64_t epoch=0,pcmRevision=0,rosterRevision=0;
     std::vector<armix::mixer::WireChange> applied;
-    struct Result { bool accepted=false; juce::String error; };
+    // Match the actual LiveDryRoutingLab::NativeBusResult ABI.
+    struct Result { bool accepted=false; const char* error="NATIVE_REJECTED"; };
     Result applyNativeWireTransaction(std::uint64_t ep,std::uint64_t rev,
         std::uint64_t roster,std::span<const armix::mixer::WireChange> edits) {
         epoch=ep;pcmRevision=rev;rosterRevision=roster;
         applied.assign(edits.begin(),edits.end());
-        return {true,{}};
+        return {true,""};
     }
 };
 static void approvedWireTranslationRegression(const juce::var& canonical,

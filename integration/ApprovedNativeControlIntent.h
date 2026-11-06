@@ -354,7 +354,11 @@ inline bool executeApprovedNativeControl(Engine& engine,
             const auto applied=engine.applyNativeWireTransaction(
                 epoch,revision,roster,
                 std::span<const armix::mixer::WireChange>(changes));
-            return applied.accepted && applied.error.isEmpty();
+            // NativeBusResult.error is const char*, not juce::String.
+            // The compiler and regression probe must share the exact native
+            // error ABI. Never claim ACK for a contradictory accepted/error pair.
+            return applied.accepted && applied.error != nullptr &&
+                   applied.error[0] == '\0';
         } else return false;
     }
     if(operation=="NATIVE_SET_CHANNEL_MIX" ||
