@@ -23,6 +23,9 @@ on:
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
+      - 'scripts/chat_ci_dispatch.mjs'
+      - 'tests/chat_ci_dispatch_contract.test.mjs'
+      - '.github/workflows/chat-ci-milestone.yml'
   # Only user-facing GUI/bridge files are relevant. No PR metadata API gate.
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
@@ -43,6 +46,9 @@ on:
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
+      - 'scripts/chat_ci_dispatch.mjs'
+      - 'tests/chat_ci_dispatch_contract.test.mjs'
+      - '.github/workflows/chat-ci-milestone.yml'
   # Manually run full Chromium (including immutable historical tests) on a
   # specific development branch whenever a milestone needs visual qualification.
   workflow_dispatch:
@@ -98,7 +104,7 @@ jobs:
           python tests/gui_baseline_lock_test.py
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
         run: |
-          node --test tests/workstream_coordination_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/workstream_coordination_contract.test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
           node tests/builtin_eq_gui_contract_test.mjs
           node tests/wire_graph_canonical_model.test.cjs
           node tests/wire_main_native_handoff_contract.test.cjs
@@ -147,7 +153,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
-          node --test tests/workstream_coordination_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/workstream_coordination_contract.test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: CSS V28 zero-regression source-order recovery (every GUI CI run)
