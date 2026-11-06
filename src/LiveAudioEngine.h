@@ -1145,7 +1145,11 @@ public:
         try {
             error=edit([&] {
                 enteredPublication=true;
-                if(wasMonitoring)setOutputMuted(true);
+                // A topology publication is NOT an operator MONITOR OFF.
+                // Preserve the authorized MAIN decision across NONE -> STEREO.
+                // Only gate the physical render for this short commit window.
+                if(wasMonitoring)
+                    topologyPublicationMute_.store(true,std::memory_order_release);
             });
         }
         catch(const std::exception& ex) {
@@ -1167,14 +1171,18 @@ public:
             (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
                 graphOwned_->count,frames,true,currentOriginalCh1Lease());
         const bool sameEpoch=expectedEpoch==dryRoutingLab_.epoch();
-        if(wasMonitoring && sameEpoch &&
-           armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
-               // The destination was previously authorized by the operator.
-               // The accepted graph may now be silent (all sources NONE).
-               // Requiring another source here loses MAIN state permanently.
-               wasMonitoring,sameEpoch,liveOutputArmFault(false).isEmpty(),
-               secondaryOutput_.armed()))
-            setMonitorEnabled(true);
+        const bool safeToResume=wasMonitoring && sameEpoch &&
+            armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
+                // An accepted NONE source is silent, but never removes the
+                // user's previously authorized output destination.
+                wasMonitoring,sameEpoch,liveOutputArmFault(false).isEmpty(),
+                secondaryOutput_.armed());
+        // When a device/handoff/output fence fails, revoke authorization
+        // instead of accidentally reopening a changed or unsafe endpoint.
+        // For a safe same-device edit, do NOT rewrite the user's MONITOR bit:
+        // the temporary publication gate is a separate realtime control.
+        if(wasMonitoring && !safeToResume)setOutputMuted(true);
+        topologyPublicationMute_.store(false,std::memory_order_release);
         return error;
     }
     juce::String switchDryRoutingLabSource(int strip,std::uint64_t epoch,
@@ -1908,6 +1916,9 @@ private:
     std::atomic<bool> routeReconfiguring_ {false};
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
+    // Temporary publication silence never changes operator MONITOR or MAIN MUTE.
+    // The DIRECT device fence and physical-output verification remain separate.
+    std::atomic<bool> topologyPublicationMute_ { false };
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
@@ -2249,7 +2260,8 @@ private:
                 activeDiagnosticRoute == armix::diagnostics::Route::normal,
                 !routeReconfiguring_.load(std::memory_order_acquire),
                 !masterMute_.load(std::memory_order_relaxed),
-                monitor_.load(std::memory_order_relaxed),
+                monitor_.load(std::memory_order_relaxed) &&
+                    !topologyPublicationMute_.load(std::memory_order_acquire),
                 secondaryOutput_.armed());
             const bool outputPermitted=outputGate.renderMain;
             // Native input PCM must remain observable even with safe output MUTE.
@@ -2368,6 +2380,7 @@ private:
         jassert(armix::mixer::NativeRenderAuthority::mayRunDiagnostic(
             renderOwner));
         const bool enabled = monitor_.load (std::memory_order_relaxed)
+                          && !topologyPublicationMute_.load (std::memory_order_acquire)
                           && !routeReconfiguring_.load (std::memory_order_acquire);
         const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
         const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;

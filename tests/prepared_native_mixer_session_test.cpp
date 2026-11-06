@@ -59,6 +59,40 @@ static void multiChannelGoldenPcm() {
     cfg.stripsAndMaster.strips[9].mute=false;
     cfg.stripsAndMaster.strips[0].inputA=2;
     publish();check(.21f,.15f); // source switch, retained lane controls
+    // Production PCM regression: connected input -> NONE -> same input.
+    // Every control/other channel stays attached; silence never changes
+    // physical MAIN authorization, which belongs to LiveAudioEngine.
+    const auto ch1=cfg.stripsAndMaster.strips[0];
+    const auto ch5=cfg.stripsAndMaster.strips[4];
+    const auto ch10=cfg.stripsAndMaster.strips[9];
+    cfg.stripsAndMaster.strips[0].source=SourceMode::disconnected;
+    cfg.stripsAndMaster.strips[0].inputA=-1;
+    cfg.stripsAndMaster.strips[0].inputB=-1;
+    publish();check(.05f,.15f); // CH5+CH10 still sound
+    cfg.stripsAndMaster.strips[0]=ch1;
+    publish();check(.21f,.15f); // CH1 resumes without resetting gain
+    cfg.stripsAndMaster.strips[4].source=SourceMode::disconnected;
+    cfg.stripsAndMaster.strips[4].inputA=-1;
+    cfg.stripsAndMaster.strips[4].inputB=-1;
+    publish();check(.16f,.05f); // CH5 stereo->NONE, others still sound
+    cfg.stripsAndMaster.strips[4]=ch5;
+    publish();check(.21f,.15f); // CH5 stereo resumes
+    cfg.stripsAndMaster.strips[9].source=SourceMode::disconnected;
+    cfg.stripsAndMaster.strips[9].inputA=-1;
+    cfg.stripsAndMaster.strips[9].inputB=-1;
+    publish();check(.21f,.10f); // CH10 mono->NONE
+    cfg.stripsAndMaster.strips[9]=ch10;
+    publish();check(.21f,.15f); // CH10 mono resumes
+    // An explicitly muted MAIN remains silent through both graph edits.
+    cfg.stripsAndMaster.master.mute=true;
+    cfg.stripsAndMaster.strips[4].source=SourceMode::disconnected;
+    cfg.stripsAndMaster.strips[4].inputA=-1;
+    cfg.stripsAndMaster.strips[4].inputB=-1;
+    publish();check(0.f,0.f);
+    cfg.stripsAndMaster.strips[4]=ch5;
+    publish();check(0.f,0.f);
+    cfg.stripsAndMaster.master.mute=false;
+    publish();check(.21f,.15f);
     auto stale=PreparedNativeMixerSession::prepare(
         cfg,sends,inputsMask,outputsMask,77,revision+1,64,result);
     assert(stale);
