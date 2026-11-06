@@ -31,3 +31,6 @@ assert.ok(js.includes('s.deviceEpoch===epoch&&s.graphRevision===revision'),
   'Reject stale samples and stale graph revisions');
 assert.ok(js.includes('RELEASE TO REQUEST AUDIO CHANGE'), 'Drag must be preview-only until release');
 assert.ok(js.includes('BigInt(Date.now())'), 'Request IDs must survive a WebView restart without accidental replay');
+
+// Verify real editor JS behavior, not just substring presence.
+await import('./builtin_eq_interaction_test.mjs');

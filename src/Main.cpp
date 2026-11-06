@@ -296,7 +296,7 @@ private:
         if(eqCacheEpoch_==ep)return;
         eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
         for(auto& pending:eqPending_)pending={};
-        const auto* hardware=engine_.devices().getCurrentAudioDevice();
+        auto* hardware=engine_.devices().getCurrentAudioDevice();
         const float safeHz=hardware?
             static_cast<float>(std::min(20000.0,hardware->getCurrentSampleRate()*.45)):
             20000.f;
