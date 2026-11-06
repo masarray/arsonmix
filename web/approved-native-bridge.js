@@ -468,35 +468,78 @@
       safeNativeCounter(m.routingRevision)!==null;
   };
 
-  // One verified control path for original 10 channels and MAIN, whether
-  // the callback currently renders M4 or its admitted ChannelId mirror.
-  // Browser holds only transient gesture feedback; engine remains SSOT.
-  const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":m4Index(t));
-  function streamFaderControl(parameter,t,value,final){
-    if(!m4Verified())return false;
-    const key=controlKey(parameter,t),now=performance.now();
-    const last=lastNativeControlSent.get(key)||0;
-    if(!final&&now-last<30){
-      pendingNativeControl.set(key,{parameter,t,value});
-      return true;
-    }
-    pendingNativeControl.delete(key);
-    lastNativeControlSent.set(key,now);
-    return sendM4Control(parameter,t,value);
+  // Live gestures choose the installed PCM authority. The M4 ordinal is
+  // NEVER a native ChannelId: a ChannelId graph uses its exact admitted id
+  // and its existing ACK + later readback contract. MAIN is a physical host
+  // scalar and retains its guarded routingM4Control gateway.
+  const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":t?.id);
+  const channelIdScalarReady=(parameter,t)=>{
+    const current=controller?.state()?.current;
+    return t?.kind!=="master" &&
+      mixerSession()?.authority==="CHANNEL_ID" &&
+      flags.acceptedGraphConnected && current?.admitted===true &&
+      !!nativeIdFor(t) &&
+      current.graph.capabilities.supportedOps.includes(
+        parameter==="faderDb"?"SET_FADER":"SET_PAN");
+  };
+  function liveScalarReady(parameter,t) {
+    if(t?.kind==="master")return parameter==="masterGain" &&
+      (m4Verified()||nativeMasterReady());
+    if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
+    return channelIdScalarReady(parameter,t);
   }
-  // A quiet trailing flush guarantees final PCM value, even if the pointer
-  // stops between two 30ms live-control ticks or a keyboard commits instantly.
+  const nativeEditIdentity=(t)=>({
+    epoch:String(hardware?.device?.epoch),
+    authority:mixerSession()?.authority,
+    channelId:t?.kind==="master"?null:nativeIdFor(t)
+  });
+  function sameNativeEditIdentity(edit) {
+    const now=nativeEditIdentity(edit.t);
+    return edit.epoch===now.epoch &&
+      edit.authority===now.authority &&
+      edit.channelId===now.channelId;
+  }
+  // null means an admitted ChannelId intent is already awaiting its ACK /
+  // producer readback. Keep ONLY the newest dB target, never drop release.
+  function dispatchLiveScalar(edit) {
+    if(!sameNativeEditIdentity(edit) ||
+       !liveScalarReady(edit.parameter,edit.t))return false;
+    if(edit.t?.kind==="master" || m4ControlIsOwner())
+      return sendM4Control(edit.parameter,edit.t,edit.value);
+    if(controller?.state()?.pending)return null;
+    return intent(edit.parameter==="faderDb"?"SET_FADER":"SET_PAN",
+      edit.t,edit.parameter==="faderDb"?
+        {valueDb:edit.value}:{value:edit.value/100});
+  }
+  function flushLiveScalars() {
+    for(const [key,edit] of pendingNativeControl) {
+      const result=dispatchLiveScalar(edit);
+      if(result===null)continue;
+      pendingNativeControl.delete(key);
+      if(result)lastNativeControlSent.set(key,performance.now());
+      else status("LIVE PCM scalar rejected · native identity changed");
+    }
+  }
+  function streamFaderControl(parameter,t,value,final){
+    if(!liveScalarReady(parameter,t))return false;
+    const key=controlKey(parameter,t),now=performance.now();
+    const edit={parameter,t,value,...nativeEditIdentity(t)};
+    pendingNativeControl.set(key,edit); // coalesce: last writer always wins
+    const last=lastNativeControlSent.get(key);
+    if(final||last===undefined||now-last>=30)
+      flushLiveScalars(); // pointermove publishes BEFORE pointerup
+    if(pendingNativeControl.has(key))queueLiveControlFlush();
+    return true;
+  }
+  // A queued ChannelId target is retried only after its real ACK/readback
+  // completes (see onStatus), not by a second timer polling the audio engine.
   let nativeControlFlushQueued=false;
   function queueLiveControlFlush(){
     if(nativeControlFlushQueued)return;
     nativeControlFlushQueued=true;
     window.setTimeout(()=>{
       nativeControlFlushQueued=false;
-      for(const [key,edit] of pendingNativeControl) {
-        pendingNativeControl.delete(key);
-        lastNativeControlSent.set(key,performance.now());
-        sendM4Control(edit.parameter,edit.t,edit.value);
-      }
+      flushLiveScalars();
     },32);
   }
   function previewFaderWithoutModelMutation(t,db){
@@ -1267,6 +1310,15 @@
       onStatus:state=>{
         if(state.lastError==="PENDING_NATIVE_ACK"||state.lastError==="PENDING_ACCEPTED_SNAPSHOT")
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
+        if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
+           pendingNativeControl.size)queueLiveControlFlush();
+        if(!state.pending && state.lastError!=="ACCEPTED_READBACK" &&
+           state.lastError!=="NONE" && state.lastError!=="NATIVE_NOT_SUBSCRIBED"){
+          // A rejected/stale ChannelId edit must not automatically re-arm a
+          // superseded gesture command on an unverified graph.
+          for(const [key,edit] of pendingNativeControl)
+            if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
+        }
         else if(state.lastError!=="ACCEPTED_READBACK"&&state.lastError!=="NONE"&&
                 state.lastError!=="NATIVE_NOT_SUBSCRIBED") {
           lastNativeError=state.lastError;
@@ -1560,8 +1612,8 @@
       // regardless of whether the admitted ChannelId callback or M4 renders.
       // <=33 commands/s/control while dragging; always flush on release.
       if((field==="level"||field==="pan") &&
-         ((t.kind==="master"&&(m4Verified()||nativeMasterReady())) ||
-          (m4ControlIsOwner()&&m4Verified()&&m4Index(t)>=0))){
+         liveScalarReady(field==="level"?
+           (t.kind==="master"?"masterGain":"faderDb"):"pan",t)){
         const numeric=Number(el.value);
         if(!Number.isFinite(numeric))return true;
         const normalized=field==="pan"?
@@ -1570,9 +1622,8 @@
         const key=field==="level"?
           (t.kind==="master"?"masterGain":"faderDb"):"pan";
         if(field==="level")previewFaderWithoutModelMutation(t,numeric);
-        if(streamFaderControl(key,t,normalized,event.type==="change"))
-          queueLiveControlFlush();
-        else status("LIVE PCM control rejected; checking route identity");
+        if(!streamFaderControl(key,t,normalized,event.type==="change"))
+          status("LIVE PCM control rejected; checking route identity");
         return true;
       }
       if (!flags.acceptedGraphConnected) {
