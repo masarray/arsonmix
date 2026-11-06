@@ -64,7 +64,10 @@ def main():
                 assert editor.is_hidden()
                 row.locator('[data-action="openBuiltinEq"]').click()
                 assert editor.is_visible()
+                # Editor starts on P1 each time; recall the previously edited P2.
+                editor.locator('.mx-eq-band[data-slot="3"]').click()
                 assert editor.get_by_label('FREQUENCY · Hz').input_value()=="735"
+                assert editor.get_by_label('GAIN · dB').input_value()=="4.0"
                 editor.locator('.mx-eq-close').click()
                 row.locator('[data-action="builtinEqRemove"]').click()
                 assert strip.locator('.fxslot-row.is-builtin').count()==0
