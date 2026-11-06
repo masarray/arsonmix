@@ -21,6 +21,34 @@ and independently witnessed hardware FAT remain binding. No forced merge,
 no uncontrolled callbacks, no silent auto-arm or output reroute. If real
 hardware is unavailable, mark physical audio FAT **PENDING**.
 
+## Smart CI milestones — GitHub connector is the default trigger
+
+Never make the user click GitHub Actions to run a development milestone.
+On every PR commit, fast path-scoped Linux contracts run automatically;
+neither Chromium nor Windows MSVC/CTest is launched by ordinary PR
+synchronization (even when the PR is no longer Draft). Only main promotion
+and explicit exact-SHA milestone dispatch run expensive qualification.
+
+After a **meaningful** verified GUI or native development milestone, use the
+connected GitHub app to fetch the current PR HEAD and fast CI results, choose
+exactly one relevant lane, and post **one top-level PR Conversation comment**:
+
+```text
+/arsonmix-ci ui <exact current PR HEAD SHA>
+/arsonmix-ci native <exact current PR HEAD SHA>
+/arsonmix-ci fat <exact current PR HEAD SHA>
+```
+
+`ui` requests full browser visual/interaction verification, `native`
+requests MSVC + realtime CTest, and `fat` additionally packages/independently
+verifies an **UNQUALIFIED** Windows hardware FAT ZIP. The default-branch
+owner-only dispatcher refuses stale, foreign or duplicate commands and known
+failed quick checks; it pins `expected_sha` throughout checkout/build.
+Do not emit more commands for the same lane+SHA. Inspect the resulting run and
+artifact through the connector, repair genuine failures instead of blindly
+rerunning, and never call a CI artifact physical-ASIO-audio-qualified.
+Read [the CI workflow contract](docs/SMART_CI_RUNNER_WORKFLOW.md).
+
 ## Verified current published GUI implementation
 `site/preview/index.html` was merely a wrapper/iframe pointing at a generated `/preview-buttons/index.html`. `scripts/build_pages.py` generates that **approved PNG hardware-button variant** using current `site/preview-v2/index.html` as an INTERNAL HTML/WIRE/FX/fader source, with specifically `site/preview-buttons/assets/mixer-control-keys.css`, `mixer-control-keys.js` and `mute-solo-pfl-56x37.png` as approved button source. **The assembled result behind /preview/ is the visual authority, not /preview-v2/ in isolation.** There must be exactly ONE deterministic assembled output and no independent published variant. Internal source files may survive only as build inputs until safely consolidated; they are NOT alternate product GUIs. **Current approved visual including PNG keys must never be silently replaced by the base variant.**
 
