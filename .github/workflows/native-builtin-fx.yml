@@ -1,0 +1,29 @@
+name: Native Built-in FX DSP
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/**'
+      - 'tests/builtin_channel_eq_test.cpp'
+      - '.github/workflows/native-builtin-fx.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-builtinfx-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  standalone-dsp:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure no-JUCE native built-in FX
+        run: cmake -S engine/builtin_fx -B build-builtin-fx -DCMAKE_BUILD_TYPE=Release
+      - name: Compile native DSP test
+        run: cmake --build build-builtin-fx --config Release --parallel 2
+      - name: Verify native DSP + zero heap test
+        run: ctest --test-dir build-builtin-fx -C Release --output-on-failure
