@@ -70,6 +70,34 @@ static juce::var realBusReadbackFixture() {
       ]
     })JSON");
 }
+static void nativeInsertCatalogInstanceProjectionRegression() {
+    auto source=realBusReadbackFixture();
+    auto item=std::make_unique<juce::DynamicObject>();
+    item->setProperty("instanceId","vst3-instance-unique-7");
+    item->setProperty("id","vendor.eq.catalog");
+    item->setProperty("name","Vendor EQ");
+    item->setProperty("bypassed",false);
+    juce::Array<juce::var> inserts;
+    inserts.add(juce::var(item.release()));
+    source.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("inserts",juce::var(inserts));
+    auto snapshot=canonicalSnapshot();
+    assert(projectApprovedNativeV8(snapshot,source,true));
+    const auto live=snapshot.getProperty("graph",{})
+        .getProperty("channels",{})[0].getProperty("inserts",{})[0];
+    assert(live.getProperty("id","").toString()=="vst3-instance-unique-7");
+    assert(live.getProperty("catalogId","").toString()=="vendor.eq.catalog");
+    assert(!static_cast<bool>(live.getProperty("bypassed",true)));
+    // A missing catalog token must not be projected as a verified processor.
+    auto invalid=juce::JSON::parse(juce::JSON::toString(source,false));
+    invalid.getProperty("channels",{})[0].getProperty("inserts",{})[0]
+        .getDynamicObject()->removeProperty("id");
+    auto untouched=canonicalSnapshot();
+    const auto before=juce::JSON::toString(untouched,false);
+    assert(!projectApprovedNativeV8(untouched,invalid,true));
+    assert(juce::JSON::toString(untouched,false)==before);
+}
+
 static void noMutationOnReject(juce::var snapshot,juce::var bus,bool admitted) {
     const auto before=juce::JSON::toString(snapshot,false);
     assert(!projectApprovedNativeV8(snapshot,bus,admitted));
@@ -823,6 +851,7 @@ int main() {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 
     controlIntentTranslationCases(snap,bus);
+    nativeInsertCatalogInstanceProjectionRegression();
     approvedNativeVst3LoadContractRegression(snap,bus);
     approvedWireTranslationRegression(snap,bus);
     installedCallbackAdmissionRegression(bus);

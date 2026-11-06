@@ -1438,7 +1438,10 @@
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
         ?.inserts?.[p.slot];
-      if(inserted?.id===p.id){
+      // The selected catalog key is NOT the live VST3 instance token.
+      // Match catalog against catalog, while requiring a real processor ID.
+      if(inserted?.catalogId===p.id &&
+         typeof inserted.id==="string" && inserted.id.length>0){
         pendingFxInsert=null;
         scope?.closeNativePicker?.();
         status("VST3 loaded · "+inserted.name+" · native PCM readback verified");

@@ -122,7 +122,11 @@
         Number.isInteger(payload.slot)&&payload.slot>=0 &&
         typeof payload.catalogId==="string" &&
         Array.isArray(ch.inserts)&&ch.inserts.length===payload.slot+1 &&
-        ch.inserts[payload.slot]?.id===payload.catalogId;
+        ch.inserts[payload.slot]?.catalogId===payload.catalogId &&
+        typeof ch.inserts[payload.slot]?.id==="string" &&
+        ch.inserts[payload.slot].id.length>0 &&
+        !ch.inserts.slice(0,payload.slot).some(insert=>
+          insert.id===ch.inserts[payload.slot].id);
     if (operation !== "APPLY_WIRE_TRANSACTION" ||
         !Array.isArray(payload.changes) || !payload.changes.length) return false;
     // A structural WIRE transaction must advance the actual PCM graph.

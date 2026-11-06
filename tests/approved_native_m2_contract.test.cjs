@@ -200,12 +200,12 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(bridge,/legacy\(\)\?\.nativeBusStructural===true/);
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
- assert.match(bridge,/inserted\?\.id===p\.id/);
+ assert.match(bridge,/inserted\?\.catalogId===p\.id/);
  assert.match(translate,/if\(op=="LOAD_INSERT"\)/);
  assert.match(snapshot,/available\.add\(juce::String\("LOAD_INSERT"\)\)/);
  assert.match(main,/engine_\.installNativeVst3\(/);
  assert.match(contract,/if \(operation === "LOAD_INSERT"\)/);
- assert.match(contract,/ch\.inserts\[payload\.slot\]\?\.id===payload\.catalogId/);
+ assert.match(contract,/ch\.inserts\[payload\.slot\]\?\.catalogId===payload\.catalogId/);
  assert.match(lab,/epoch\(\),false,std::move\(fx\),false,true\)/);
  assert.match(pub,/verifiedInternalFxOnly/);
  const install=engine.slice(engine.indexOf("installNativeVst3("),
@@ -213,6 +213,43 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.doesNotMatch(install,/!allOutputsDisarmed\(\)/);
  assert.match(install,/secondaryOutput_\.armed\(\)/);
  assert.match(install,/getLatencySamples\(\)!=0/);
+});
+test("Native VST3 insert ACK + readback distinguishes vendor catalog key from live instance token",()=>{
+  const base=acceptedFixture();
+  base.graph.capabilities.supportedOps.push("LOAD_INSERT");
+  const sent=[],accepted=[];
+  const controller=protocol.createController({emit:(name,payload)=>sent.push({name,payload}),
+    onAccepted:s=>accepted.push(s)});
+  assert.equal(controller.onSnapshot(base),true);
+  const source=base.graph.channels[0].id;
+  const cmd=controller.intent("LOAD_INSERT",source,{catalogId:"vendor.eq.catalog",slot:0});
+  assert.equal(cmd.ok,true);
+  const after=clone(base);
+  after.graph.revision="6";after.graph.rosterRevision="8";
+  after.graph.channels[0].inserts=[{id:"vst3-instance-unique-7",
+    catalogId:"vendor.eq.catalog",name:"Vendor EQ",bypassed:false}];
+  const next=protocol.normalizeSnapshot(after);
+  const pending={operation:"LOAD_INSERT",targetChannelId:source,
+    payload:{catalogId:"vendor.eq.catalog",slot:0},
+    baseGraphRevision:"5",baseRosterRevision:"7"};
+  assert.ok(next?.admitted);
+  assert.equal(protocol.readbackProvesIntent(next,pending),true,
+    "live instance token differs from catalog ID but effect is verified");
+  for(const spoof of [
+    {id:"vst3-instance-unique-7",name:"Vendor EQ",bypassed:false},
+    {id:"vst3-instance-unique-7",catalogId:"different.plugin",name:"Vendor EQ",bypassed:false},
+    {id:"",catalogId:"vendor.eq.catalog",name:"Vendor EQ",bypassed:false}
+  ]){
+    const bad=clone(after);bad.graph.channels[0].inserts=[spoof];
+    assert.equal(protocol.readbackProvesIntent(protocol.normalizeSnapshot(bad),pending),false);
+  }
+  assert.equal(controller.onAck({requestId:cmd.requestId,status:"ACCEPTED",
+    deviceEpoch:base.device.epoch,graphRevision:"6",rosterRevision:"8",errorCode:"NONE"}),true);
+  assert.equal(controller.state().lastError,"PENDING_ACCEPTED_SNAPSHOT");
+  assert.equal(controller.onSnapshot(after),true);
+  assert.equal(controller.state().lastError,"ACCEPTED_READBACK");
+  assert.equal(accepted.at(-1).graph.channels[0].inserts[0].id,"vst3-instance-unique-7");
+  assert.ok(sent.some(evt=>evt.name==="arMixConsoleSubscribe"));
 });
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");

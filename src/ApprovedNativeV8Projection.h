@@ -73,11 +73,19 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
         ch->setProperty("controls",juce::var(controls.release()));
         juce::Array<juce::var> fx;
         for(const auto& item:*inserts.getArray()){
+            // Catalog identity selects the vendor binary; instance identity
+            // addresses the live DSP processor and per-slot bypass/editor.
+            // They must NEVER be compared as if they were interchangeable.
             const auto token=item.getProperty("instanceId",{}),label=item.getProperty("name",{});
+            const auto catalog=item.getProperty("id",{});
             const auto bypass=item.getProperty("bypassed",{});
-            if(!token.isString()||!label.isString()||!bypass.isBool())return false;
+            if(!token.isString()||token.toString().isEmpty()||
+               !catalog.isString()||catalog.toString().isEmpty()||
+               catalog.toString().getNumBytesAsUTF8()>256||
+               !label.isString()||!bypass.isBool())return false;
             auto insert=std::make_unique<juce::DynamicObject>();
-            insert->setProperty("id",token);insert->setProperty("name",label);
+            insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
+            insert->setProperty("name",label);
             insert->setProperty("bypassed",bypass);
             fx.add(juce::var(insert.release()));
         }
