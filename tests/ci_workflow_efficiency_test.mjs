@@ -168,10 +168,12 @@ test('M2.6 always-on coordination job has a stable name and skips unrelated Chro
   const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
   assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
   assert.doesNotMatch(prBlock,/^\s+paths:/m);
-  assert.match(ui,/name: PR coordination admission/);
+  assert.match(ui,/name: Changed files only/);
   assert.match(ui,/needs: coordination/);
   assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
-  assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
+  assert.match(ui,/node scripts\/ci_select_changed_paths\.mjs/);
+  assert.doesNotMatch(ui,/scripts\/check_workstream_coordination\.mjs --pr/);
+  assert.doesNotMatch(native,/scripts\/check_workstream_coordination\.mjs --pr/);
 });
 
 test('P0 single product qualification fans in exact scoped native and UI jobs',()=>{

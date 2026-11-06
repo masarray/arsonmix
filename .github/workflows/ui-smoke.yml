@@ -23,7 +23,7 @@ on:
       - 'scripts/build_ui_css.py'
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
-  # All PRs receive fast admission; Chromium is conditional on checked files.
+  # Every PR gets direct test selection; no ownership or PR collision audit.
   pull_request:
     types: [opened, reopened, synchronize, edited, ready_for_review]
   # Manual full suite (including immutable CSS migration tests) or release-integration PR.
@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   coordination:
-    name: PR coordination admission
+    name: Changed files only
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -49,19 +49,21 @@ jobs:
       run_native: ${{ steps.pr_scope.outputs.run_native }}
     steps:
       - uses: actions/checkout@v4
-      - name: Audit PR metadata, file ownership and runtime collisions
+      - name: Select UI and Windows tests from changed files, not owners
         id: pr_scope
         if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/ci_select_changed_paths.mjs "$BASE_SHA"
       - name: Main push retains Chromium verification
         id: push_scope
         if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: echo "run_ui=true" >> "$GITHUB_OUTPUT"
-      - name: Fast offline coordination contract regression
-        run: node --test tests/workstream_coordination_contract.test.mjs
   native:
     needs: coordination
     if: ${{ github.event_name == 'pull_request' && needs.coordination.outputs.run_native == 'true' }}
@@ -140,7 +142,7 @@ jobs:
           node --check web/plugin-ui.js
           node --check web/mixer-io.js
           node --check web/mixer-layout.js
-          node --test tests/workstream_coordination_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
       - name: Validate approved GUI checkpoint and single publisher
         run: python tests/gui_baseline_lock_test.py
       - name: CSS V28 zero-regression source-order recovery (every GUI CI run)
