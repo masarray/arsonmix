@@ -1001,7 +1001,11 @@
   // Never infer readiness from the Pages/demo tracks or the presence of a
   // Windows playback device alone.
   const deviceReady=()=>!!(hardware?.device?.backend &&
-    safeNativeCounter(hardware.device.epoch)!==null &&
+    // ChannelId generation is a full uint64 decimal string and MUST NOT
+    // round through JS Number.MAX_SAFE_INTEGER. M4 numeric event tokens
+    // remain separately range-checked before their actual dispatch.
+    protocol.decimal(hardware.device.epoch)!==null &&
+    hardware.device.epoch!=="0" &&
     hardware.device.sampleRate>0 && hardware.device.bufferFrames>0 &&
     Array.isArray(hardware.device.enabledInputs) &&
     hardware.device.enabledInputs.length>0 &&
