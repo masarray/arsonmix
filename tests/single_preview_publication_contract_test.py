@@ -3,6 +3,7 @@ from pathlib import Path
 import json, re, sys, hashlib
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from compile_approved_css import LINK, optimize_css, compile_runtime_bundle, link_runtime_bundle, RUNTIME_CSS
+from compose_builtin_eq import compose_builtin_eq, SCRIPT, CLICK_AFTER
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -17,7 +18,11 @@ require('id="console"' not in html and 'preview-buttons/index.html' not in html,
 require('console-body' in html and RUNTIME_CSS in html and 'mixer-control-keys.js' in html,'not the actual approved console')
 # The only compiled DOM changes are two hashed approved PNG links and the dormant profiling script.
 revisions=build.get('button_css_js_revisions',{})
-expected=source
+expected=compose_builtin_eq(source)
+require(expected.count(SCRIPT)==1 and expected.count(CLICK_AFTER)==1,
+        'one builtin EQ editor, one accepted FX header action')
+require(source.count('openBuiltinEq')==0,
+        'historical internal source must remain frozen and EQ assembled only once')
 for name in ('mixer-control-keys.css','mixer-control-keys.js'):
     require(name in revisions and re.fullmatch('[0-9a-f]{16}',revisions[name]) is not None,'missing versioned approved key')
     token='assets/'+name
@@ -82,7 +87,7 @@ expected=link_runtime_bundle(expected,digest)
 shipped=list(LINK.finditer(html))
 require(len(shipped)==1 and shipped[0].group(2)==RUNTIME_CSS,
         'Only the single compiled runtime CSS is allowed to load')
-require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + one runtime CSS + nonvisual profiler')
+require(html==expected,'rendered /preview/ DOM differs from approved single-owner assembler + built-in EQ + PNG buttons + runtime CSS + profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
 require((gui/'assets/mute-solo-pfl-56x37.png').read_bytes()==(ROOT/'site/preview-buttons/assets/mute-solo-pfl-56x37.png').read_bytes(),'approved PNG sprite mismatch')
