@@ -1251,7 +1251,7 @@ public:
             std::uint64_t expectedRosterRevision,armix::mixer::ChannelId target,
             const juce::String& catalogId,
             armix::mixer::DynamicChannelFxLeaseBank::Lease processor,
-            bool outputsDisarmed=false) {
+            bool verifiedPreparedLiveInsert=false) {
         using namespace armix::mixer;
         NativeBusResult out{};
         out.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1262,7 +1262,9 @@ public:
            expectedPcmRevision!=nativeAccepted_.pcmRevision||
            expectedRosterRevision!=nativeAccepted_.graph.roster.revision())
             return out;
-        if(!outputsDisarmed) {out.error="OUTPUT_MUST_BE_DISARMED";return out;}
+        if(!verifiedPreparedLiveInsert) {
+            out.error="NATIVE_INSERT_REQUIRES_PREPARED_INTERNAL_FX";return out;
+        }
         const auto* current=nativeAccepted_.graph.roster.find(target);
         if(!current || (current->role!=ChannelRole::input &&
                         current->role!=ChannelRole::group)) {
@@ -1308,7 +1310,7 @@ public:
             fx.graphRevision=expectedPcmRevision+1;
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),false,std::move(fx),false,true);
             if(!published.ok()) {
                 out.error="NATIVE_VST3_PCM_COMMIT_REJECTED";return out;
             }

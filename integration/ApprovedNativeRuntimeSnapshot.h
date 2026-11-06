@@ -282,6 +282,8 @@ inline bool projectInstalledNativeChannelIdGraph(
     // gesture as NOT_ADMITTED. Admit only the actual installed operation.
     if(has("NATIVE_APPLY_WIRE_TRANSACTION"))
         available.add(juce::String("APPLY_WIRE_TRANSACTION"));
+    if(has("NATIVE_LOAD_INSERT"))
+        available.add(juce::String("LOAD_INSERT"));
     if(has("NATIVE_CREATE_GROUP_SELECTED"))
         available.add(juce::String("CREATE_GROUP"));
     const auto graph=snapshot.getProperty("graph",{});

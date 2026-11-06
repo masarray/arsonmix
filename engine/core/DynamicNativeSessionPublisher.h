@@ -68,7 +68,8 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={},bool verifiedInternalWireOnly=false) {
+                        FxPlan fx={},bool verifiedInternalWireOnly=false,
+                        bool verifiedInternalFxOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -83,9 +84,15 @@ public:
            expectedRevision==std::numeric_limits<std::uint64_t>::max()) {
             report.fault=Fault::staleRevision;return report;
         }
-        // Only the canonical native WIRE owner may attest unchanged
-        // physical patch / device epoch. Other structural edits disarm.
-        if(!allOutputsDisarmed && !verifiedInternalWireOnly) {
+        // A zero-latency vendor FX lease can be prepared off-RT and
+        // published on the SAME physical device/patch as the existing
+        // ChannelId graph. Neither WIRE nor this in-place FX edit can
+        // change physical pins. Other structural edits still disarm.
+        if(verifiedInternalFxOnly && !fx.owner) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        if(!allOutputsDisarmed && !verifiedInternalWireOnly &&
+           !verifiedInternalFxOnly) {
             report.fault=Fault::outputArmed;return report;
         }
         auto next=std::make_unique<Publisher::Snapshot>();

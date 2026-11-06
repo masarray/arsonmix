@@ -171,6 +171,50 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         converted->setProperty("payload",juce::var(payload.release()));
         return {juce::var(converted.release()),{}};
     }
+    if(op=="LOAD_INSERT") {
+        // Native-accepted ChannelId + catalog identity + exact next slot.
+        // Device/graph/roster were already independently compared above.
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"LOAD_INSERT") ||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_LOAD_INSERT"))
+            return reject("NATIVE_VST3_NOT_ADMITTED");
+        juce::var ch,nativeCh;
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())ch=row;
+        for(const auto& row:*nativeRows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())nativeCh=row;
+        const auto role=ch.getProperty("role","").toString();
+        if(!ch.isObject()||!nativeCh.isObject()||
+           role!=nativeCh.getProperty("role","").toString()||
+           (role!="INPUT"&&role!="GROUP"))
+            return reject("NATIVE_VST3_TARGET_NOT_ADMITTED");
+        const auto payload=publicIntent.getProperty("payload",{});
+        const auto catalog=payload.getProperty("catalogId",{});
+        const auto slot=payload.getProperty("slot",{});
+        const auto publicFx=ch.getProperty("inserts",{});
+        const auto nativeFx=nativeCh.getProperty("inserts",{});
+        if(!payload.isObject()||!catalog.isString()||
+           catalog.toString().isEmpty()||
+           catalog.toString().getNumBytesAsUTF8()>256||
+           !slot.isInt()||static_cast<int>(slot)<0||
+           static_cast<int>(slot)>=8||
+           !publicFx.isArray()||!nativeFx.isArray()||
+           publicFx.getArray()->size()!=static_cast<int>(slot)||
+           nativeFx.getArray()->size()!=static_cast<int>(slot))
+            return reject("NATIVE_VST3_SLOT_OR_CATALOG_INVALID");
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("catalogId",catalog);
+        args->setProperty("slot",slot);
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);
+        converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);
+        converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);
+        converted->setProperty("operation","NATIVE_LOAD_INSERT");
+        converted->setProperty("payload",juce::var(args.release()));
+        return {juce::var(converted.release()),{}};
+    }
     if(op!="SET_FADER" && op!="SET_PAN" && op!="SET_MUTE" &&
        op!="SET_SOLO")return reject("UNSUPPORTED_APPROVED_CONTROL");
     // Both native *and* GUI-side capabilities must be explicitly advertised

@@ -1442,7 +1442,7 @@ public:
         fail.error="NATIVE_VST3_HOST_UNAVAILABLE";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||!allOutputsDisarmed()||
+           !directFence_.permitted()||secondaryOutput_.armed()||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
