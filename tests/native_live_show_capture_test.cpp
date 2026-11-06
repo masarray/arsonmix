@@ -301,7 +301,7 @@ int main() {
     auto disconnectedLab=disconnected.getProperty("dryRoutingLab",{});
     juce::Array<juce::var> noPorts;
     set(disconnectedLab,"ports",juce::var(noPorts));
-    assert(NativeDryShowRecall::prepare(restoredV4,disconnected,
+    assert(NativeDryShowRecall::prepare(restoredV5,disconnected,
         appliedV2).isNotEmpty());
     assert(juce::JSON::toString(appliedV2,false)==originalV2);
 
