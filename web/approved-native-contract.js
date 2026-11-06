@@ -116,6 +116,13 @@
     if (operation === "SET_MUTE" || operation === "SET_SOLO")
       return typeof payload.value==="boolean" &&
         ch.controls[operation==="SET_MUTE"?"mute":"solo"]===payload.value;
+    if (operation === "LOAD_INSERT")
+      return cmp(next.graph.revision,pending.baseGraphRevision)>0 &&
+        cmp(next.graph.rosterRevision,pending.baseRosterRevision)>0 &&
+        Number.isInteger(payload.slot)&&payload.slot>=0 &&
+        typeof payload.catalogId==="string" &&
+        Array.isArray(ch.inserts)&&ch.inserts.length===payload.slot+1 &&
+        ch.inserts[payload.slot]?.id===payload.catalogId;
     if (operation !== "APPLY_WIRE_TRANSACTION" ||
         !Array.isArray(payload.changes) || !payload.changes.length) return false;
     // A structural WIRE transaction must advance the actual PCM graph.

@@ -187,6 +187,31 @@ test("P0 physical SOURCE switching rejects fractional and stale native session t
  assert.match(tokens,/std::isfinite\(n\)/);
  assert.match(tokens,/std::floor\(n\)==n/);
 });
+test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const main=read("src/Main.cpp");
+ const engine=read("src/LiveAudioEngine.h");
+ const pub=read("engine/core/DynamicNativeSessionPublisher.h");
+ const lab=read("src/LiveDryRoutingLab.h");
+ const contract=read("web/approved-native-contract.js");
+ const translate=read("integration/ApprovedNativeControlIntent.h");
+ const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
+ assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
+ assert.match(bridge,/inserted\?\.id===p\.id/);
+ assert.match(translate,/if\(op==="LOAD_INSERT"\)/);
+ assert.match(snapshot,/available\.add\(juce::String\("LOAD_INSERT"\)\)/);
+ assert.match(main,/engine_\.installNativeVst3\(/);
+ assert.match(contract,/if \(operation === "LOAD_INSERT"\)/);
+ assert.match(contract,/ch\.inserts\[payload\.slot\]\?\.id===payload\.catalogId/);
+ assert.match(lab,/epoch\(\),false,std::move\(fx\),false,true\)/);
+ assert.match(pub,/verifiedInternalFxOnly/);
+ const install=engine.slice(engine.indexOf("installNativeVst3("),
+                            engine.indexOf("bool bypassNativeVst3(",engine.indexOf("installNativeVst3(")));
+ assert.doesNotMatch(install,/!allOutputsDisarmed\(\)/);
+ assert.match(install,/secondaryOutput_\.armed\(\)/);
+ assert.match(install,/getLatencySamples\(\)!=0/);
+});
 test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const native=read("src/Main.cpp");

@@ -1407,6 +1407,16 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    if(pendingFxInsert?.authority==="CHANNEL_ID"){
+      const p=pendingFxInsert;
+      const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
+        ?.inserts?.[p.slot];
+      if(inserted?.id===p.id){
+        pendingFxInsert=null;
+        scope?.closeNativePicker?.();
+        status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
+      }
+    }
     if(pendingNativeFxPower?.acked){
       const p=pendingNativeFxPower;
       const ch=next.graph.channels.find(x=>x.id===p.channelId);
@@ -1434,6 +1444,10 @@
           state.lastError!=="NONE" &&
           state.lastError!=="NATIVE_NOT_SUBSCRIBED";
         if(failed){
+          if(pendingFxInsert?.authority==="CHANNEL_ID"){
+            pendingFxInsert=null;
+            nativeToast("VST3 insert rejected · "+state.lastError);
+          }
           for(const [key,edit] of pendingNativeControl)
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
           for(const [key,edit] of liveFaderVisualTargets)
@@ -1600,7 +1614,8 @@
       else status("Native VST3 editor opened");
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
-      if(!pendingFxInsert||ack?.requestId!==pendingFxInsert.requestId)return;
+      if(!pendingFxInsert||pendingFxInsert.authority==="CHANNEL_ID"||
+         ack?.requestId!==pendingFxInsert.requestId)return;
       const p=pendingFxInsert;pendingFxInsert=null;
       const actual=ack?.state?.fxInstances?.[p.channel]?.[p.slot];
       if(ack?.ok===true && actual?.catalogId===p.id &&
@@ -1968,6 +1983,31 @@
       const plugin=nativeCatalog.get(id);
       const track=scope?.tracks?.find(x=>x.id===target?.channelId);
       const channel=m4Index(track),slot=Number(target?.slot);
+      const accepted=controller?.state().current;
+      const nativeId=nativeIdFor(track);
+      const nativeCh=accepted?.graph?.channels?.find(ch=>ch.id===nativeId);
+      if(accepted?.admitted && nativeCh && channel<0) {
+        if(!plugin || !["INPUT","GROUP"].includes(nativeCh.role) ||
+           !accepted.graph.capabilities.supportedOps.includes("LOAD_INSERT") ||
+           !Number.isInteger(slot)||slot<0||slot>=8 ||
+           !Array.isArray(nativeCh.inserts)||nativeCh.inserts.length!==slot){
+          status("VST3 unavailable · select an empty native ChannelId FX slot");
+          return true;
+        }
+        const request=controller.intent("LOAD_INSERT",nativeId,
+                                        {catalogId:id,slot});
+        if(!request.ok){status("VST3 rejected · "+request.error);return true;}
+        pendingFxInsert={authority:"CHANNEL_ID",requestId:request.requestId,
+                         id,channelId:nativeId,slot};
+        status(track.name+" · preparing VST3 without stopping MAIN");
+        window.setTimeout(()=>{
+          if(pendingFxInsert?.requestId!==request.requestId)return;
+          pendingFxInsert=null;
+          status("Native VST3 timed out · accepted audio left unchanged");
+          controller.subscribe();
+        },15000);
+        return true;
+      }
       const ep=safeNativeCounter(hardware?.device?.epoch);
       const rev=safeNativeCounter(legacy()?.routingRevision);
       const existing=legacy()?.fxInstances?.[channel]||[];

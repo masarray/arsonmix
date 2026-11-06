@@ -890,8 +890,42 @@ private:
         }
         const auto translated=armix::console::translateApprovedNativeControl(
             request,before,installedBus);
-        const bool applied=!replay&&translated.ok()&&
-            armix::console::executeApprovedNativeControl(engine_,translated.translated);
+        bool applied=false;
+        juce::String nativeError;
+        if(!replay&&translated.ok()) {
+            const auto command=translated.translated;
+            if(command.getProperty("operation","").toString()=="NATIVE_LOAD_INSERT") {
+                // Exactly one catalog-resolved vendor processor from the
+                // installed native library. No browser path, ordinal M4
+                // fallback, secondary DSP or user-visible MONITOR ritual.
+                const auto args=command.getProperty("payload",{});
+                const auto catalogId=args.getProperty("catalogId","").toString();
+                const auto* plugin=catalog_.find(catalogId);
+                std::uint64_t ep=0,rev=0,roster=0,target=0;
+                if(!plugin||catalog_.busy()||nativeShowBusy_||
+                   studioBackupBusy_||engine_.isGraphSwitchPending()) {
+                    nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
+                } else if(!armix::console::approvedNativeId(
+                            command.getProperty("deviceEpoch",{}),ep) ||
+                          !armix::console::approvedNativeId(
+                            command.getProperty("baseGraphRevision",{}),rev) ||
+                          !armix::console::approvedNativeId(
+                            command.getProperty("baseRosterRevision",{}),roster) ||
+                          !armix::console::approvedNativeId(
+                            command.getProperty("targetChannelId",{}),target)) {
+                    nativeError="NATIVE_VST3_INVALID_SESSION_ID";
+                } else {
+                    const auto result=engine_.installNativeVst3(
+                        ep,rev,roster,armix::mixer::ChannelId{target},
+                        plugin->path,plugin->uid,plugin->key());
+                    applied=result.accepted && result.error &&
+                            result.error[0]==0;
+                    if(!applied)nativeError=result.error;
+                }
+            } else {
+                applied=armix::console::executeApprovedNativeControl(engine_,command);
+            }
+        }
         // An engine setter ACK is not independent PCM evidence. Re-read the
         // same physical callback authority after mutation before claiming it
         // was accepted; browser then explicitly requests LATER readback.
@@ -909,6 +943,7 @@ private:
         ack->setProperty("errorCode",nativeStillAdmitted?"NONE":
             replay?"DUPLICATE_REQUEST_ID":
             translated.error.isNotEmpty()?translated.error:
+            nativeError.isNotEmpty()?nativeError:
             applied?"NATIVE_CALLBACK_LOST":"NATIVE_PCM_MUTATION_REJECTED");
         ack->setProperty("deviceEpoch",device.getProperty("epoch","0"));
         ack->setProperty("graphRevision",graph.getProperty("revision","0"));
