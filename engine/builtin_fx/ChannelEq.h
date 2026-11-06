@@ -195,7 +195,7 @@ public:
             externalWet_=externalTarget_;externalFadeRemaining_=0;
             return; // exact bitwise bypass
         }
-        if(externalWet_==0.0f && externalFadeRemaining_==0)return;
+
         for (std::size_t i = 0; i < frames; ++i) {
             const float dryL = left[i], dryR = right[i];
             const float wetL = render(current_, 0, dryL), wetR = render(current_, 1, dryR);
@@ -225,7 +225,7 @@ public:
         if(current_.activeCount==0 && fadeRemaining_==0) {
             externalWet_=externalTarget_;externalFadeRemaining_=0;return;
         }
-        if(externalWet_==0.0f && externalFadeRemaining_==0)return;
+
         for (std::size_t i = 0; i < frames; ++i) {
             const float dry = samples[i];
             const float wet = render(current_, 0, dry);
