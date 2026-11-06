@@ -216,6 +216,15 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  const builder=read("scripts/build_approved_native_gui.py");
  const native=read("src/Main.cpp");
  assert.match(bridge,/function requestPrimaryOut\(t,target\)/);
+ assert.match(bridge,/session\?\.authority==="CHANNEL_ID"/);
+ assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
+ assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to:main,/);
+ assert.match(bridge,/change=\{op:"REMOVE",from:channelId,edgeId:edge\.edgeId\}/);
+ assert.match(bridge,/e\.primaryOutput!==false/);
+ assert.match(bridge,/const channel=m4Index\(t\)/);
+ // A native-owned MAIN WIRE never triggers the legacy routingChannelPatch.
+ assert.ok(bridge.indexOf('session?.authority==="CHANNEL_ID"')<
+           bridge.indexOf('backend.emitEvent("arMixAction",{action:"routingChannelPatch"'));
  assert.match(bridge,/const isMainConnect=/);
  assert.match(bridge,/const isMainRemove=/);
  assert.match(bridge,/current\.graph\.edges\.some/);

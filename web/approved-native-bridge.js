@@ -331,6 +331,44 @@
   // One request/ACK/readback path for BOTH the ordinary OUT select and the
   // hardware-like OUT→MAIN WIRE jack. No browser graph mutation on click.
   function requestPrimaryOut(t,target){
+    // Exactly ONE PCM route authority: the admitted ChannelId publisher
+    // owns all MAIN/Group WIRE and OUT mutations, including original CH1-10.
+    // Calling the old M4 structural patch after native WIRE admission would
+    // reject valid routes or attempt to resurrect an incompatible M4 graph.
+    const session=mixerSession(),current=controller?.state()?.current;
+    if(session?.authority==="CHANNEL_ID"){
+      const channelId=nativeIdFor(t);
+      const ch=current?.graph?.channels?.find(row=>row.id===channelId);
+      const main=current?.graph?.mainChannelId;
+      if(!current?.admitted || !channelId || !ch || !main ||
+         !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION") ||
+         !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
+         (target!=="MAIN"&&target!=="NONE"))return false;
+      const dest=ch.primaryOutId||null;
+      if((target==="MAIN"&&dest===main)||(target==="NONE"&&!dest)){
+        controller.subscribe();return true;
+      }
+      let change;
+      if(target==="MAIN"){
+        change={op:"ROUTE_ONLY",from:channelId,to:main,
+                tap:"POST_FADER",gainLinear:1};
+      }else{
+        // Exact EdgeId from the independent native readback; never invent a
+        // disconnect ID or remove an unrelated parallel SEND.
+        const edge=current.graph.edges.find(e=>e.enabled &&
+          e.from===channelId && e.to===dest &&
+          e.primaryOutput!==false);
+        if(!edge)return false;
+        change={op:"REMOVE",from:channelId,edgeId:edge.edgeId};
+      }
+      const accepted=controller.intent("APPLY_WIRE_TRANSACTION",channelId,
+                                     {changes:[change]});
+      if(!accepted.ok){status("Native OUT rejected · "+accepted.error);return false;}
+      window.setTimeout(()=>controller?.expire(accepted.requestId),8000);
+      status(t.name+" OUT → "+(target==="MAIN"?"MAIN":"NONE")+
+             " · native PCM readback pending");
+      return true;
+    }
     const channel=m4Index(t);
     const ep=safeNativeCounter(hardware?.device?.epoch),
       rev=safeNativeCounter(legacy()?.routingRevision);
