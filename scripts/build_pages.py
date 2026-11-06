@@ -14,6 +14,11 @@ dst.mkdir(parents=True,exist_ok=True)
 # Publish only the landing and ONE approved /preview/ GUI. Internal GUI seed
 # folders remain in repo for design tests, never as separate public screens.
 shutil.copy2(ROOT/'site/index.html',dst/'index.html')
+# One logo source, one deterministic build for all web/PWA/favicon resources.
+subprocess.run([sys.executable,str(ROOT/'scripts/generate_brand_icons.py'),
+                '--source',str(ROOT/'assets/icon/brand-source-128.png'),
+                '--out',str(dst)],check=True)
+
 subprocess.run([sys.executable,str(ROOT/'scripts/build_ui_css.py'),'--check'],check=True)
 
 # Build the ONLY owner-approved GUI at /preview/: internal base source plus
@@ -25,6 +30,8 @@ if buttons_dest.exists(): shutil.rmtree(buttons_dest)
 # Public /preview/ is the only compiled GUI. Canonical base and PNG overrides
 # are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
+# Same small icon is shipped into JUCE's approved resource provider.
+shutil.copy2(dst/'favicon-32x32.png',buttons_dest/'assets'/'favicon-32x32.png')
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
 sprite='mute-solo-pfl-56x37.png'

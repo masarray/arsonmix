@@ -37,6 +37,12 @@
 
 namespace
 {
+juce::Image approvedAppIcon()
+{
+    return juce::ImageFileFormat::loadFrom (
+        BinaryData::arsonmix256_png, static_cast<size_t> (BinaryData::arsonmix256_pngSize));
+}
+
 juce::File settingsDirectory()
 {
     return armix::storage::PortableWorkspace::dataRoot();
@@ -130,6 +136,7 @@ public:
         : DocumentWindow (title, juce::Colour (0xff14212a), allButtons)
     {
         setUsingNativeTitleBar (true);
+        setIcon (approvedAppIcon());
         setContentOwned (editor, true);
         setResizable (true, true);
         centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
@@ -148,6 +155,7 @@ public:
           onClosed_ (std::move (onClosed))
     {
         setUsingNativeTitleBar (true);
+        setIcon (approvedAppIcon());
         setResizable (true, true);
         setResizeLimits (580, 430, 1300, 1000);
         // Selector bounds are MAXIMUM enable-able device pins, not the two
@@ -222,6 +230,7 @@ public:
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
         setUsingNativeTitleBar (true);
+        setIcon (approvedAppIcon());
         setResizable (true, true);
         setResizeLimits (1100, 650, 3840, 2160);
         setContentNonOwned (&browser_, false);
