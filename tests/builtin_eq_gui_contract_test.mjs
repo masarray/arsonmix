@@ -18,6 +18,14 @@ assert.ok(js.includes('slotMarkup(track')&&js.includes('builtinEqSetGate'));
 assert.ok(js.includes('lastGraphEqSweep')&&js.includes('otherTrack'),
  'Reproject actual native ChannelId EQ state after structural graph revision');
 const main=fs.readFileSync('src/Main.cpp','utf8');
+const publisher=fs.readFileSync('engine/core/DynamicNativeSessionPublisher.h','utf8');
+assert.ok(publisher.includes('if(fx.builtInEq) {') &&
+          publisher.indexOf('if(fx.builtInEq) {') <
+          publisher.indexOf('else if(prior && prior->builtInEq)'),
+ 'Show V5 supplied EQ must win over a prior native ChannelId graph');
+assert.ok(main.includes('if(!got)continue;') &&
+          !main.includes('now-pending.started<4000u'),
+ 'Never report false EQ rejection while a muted callback has not ACKed');
 assert.ok(main.includes('captureAcceptedEq(')&&
           main.includes('acceptedEqFromShow(')&&
           main.includes('unsettledBuiltInEq()')&&

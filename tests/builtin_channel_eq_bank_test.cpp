@@ -65,6 +65,14 @@ int main() {
   for(int i=0;i<8;++i)bank.render(0,l.data(),r.data(),64);
   CHECK(bank.pollAck(0,a)&&a.applied&&!a.installed);
   CHECK(!bank.queueGateEdit(14,true,false,203,22,9));
+  // Muted/no-output periods do not process an EQ command. It must remain
+  // QUEUED until a real audio owner consumes it, not expire on UI wall time.
+  CHECK(bank.queueGateEdit(12,true,false,204,22,9));
+  CHECK(!bank.pollAck(12,a));
+  CHECK(!bank.pollAck(12,a)); // no callback block, still not applied
+  bank.render(12,l.data(),r.data(),128,22,9);
+  CHECK(bank.pollAck(12,a)&&a.applied&&a.requestId==204&&a.gate);
+  CHECK(!bank.pollAck(12,a));
   // Demonstrate 14 truly independent EQ strips through one common call shape.
   for(std::size_t lane=1;lane<14;++lane){
     auto copy=original;

@@ -1984,6 +1984,35 @@ static void verifyBuiltInEqNativeChannelIdAndRevisionFence() {
     assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
     armix::builtin_fx::ChannelEqBank::Ack ack{};
     assert(native.pollBuiltInEqAck(9,2,ch,ack)&&ack.applied&&ack.requestId==103);
+
+    // Show V5 recall replaces the DSP bank even when the same ChannelId and
+    // epoch already have an admitted native graph. The old wet bank must NOT
+    // overwrite fresh offline-restored bands during the revision-3 commit.
+    auto restored=std::make_shared<armix::builtin_fx::ChannelEqBank>();
+    assert(restored->prepare(48000));
+    auto cut=b;cut.gainDb=-9.f;
+    assert(restored->setBandOffline(0,2,cut));
+    assert(restored->setGateOffline(0,true,false));
+    DynamicNativeSessionPublisher::FxPlan showPlan;
+    showPlan.builtInEq=restored;showPlan.builtInEqIds[0]=ch;
+    assert(native.commit(roster,req,2,9,9,true,showPlan).ok());
+    assert(!native.queueBuiltInEqEdit(9,2,ch,2,b,104)); // superseded graph
+    double recalledPower=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i)
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+                .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block>=48)for(float y:left)recalledPower+=y*y;
+    }
+    // 9 dB boost before recall must become a 9 dB CUT after recall,
+    // proving sound and accepted Show state can no longer diverge.
+    assert(recalledPower>0.001&&recalledPower<power*0.20);
+    assert(native.queueBuiltInEqGate(9,3,ch,true,true,105));
+    assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+    assert(native.pollBuiltInEqAck(9,3,ch,ack)&&ack.applied&&ack.requestId==105);
 }
 
 int main(int argc,char** argv) {

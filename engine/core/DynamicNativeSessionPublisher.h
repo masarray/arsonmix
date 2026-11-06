@@ -110,16 +110,18 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
-        // Preserve the single RT-owned EQ state across native graph changes.
-        // The old/new graph leases hold the same prepared bank; the existing
-        // render gate ensures only one producer can mutate filter histories.
+        // An explicitly supplied EQ bank is authoritative (notably Show V5
+        // recall). Structural edits that do not supply one retain the single
+        // prior RT-owned bank and its histories. Sharing/copying is CONTROL
+        // only; the callback always sees exactly one bank per graph snapshot.
+        // Never silently replace a fresh, restored Show with prior PCM state.
         const auto* prior=publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision);
-        if(prior && prior->builtInEq) {
-            prepared->builtInEq=prior->builtInEq;        // CONTROL refcount only
-            prepared->builtInEqIds=prior->builtInEqIds;  // exact stable IDs
-        } else {
+        if(fx.builtInEq) {
             prepared->builtInEq=fx.builtInEq;
             prepared->builtInEqIds=fx.builtInEqIds;
+        } else if(prior && prior->builtInEq) {
+            prepared->builtInEq=prior->builtInEq;
+            prepared->builtInEqIds=prior->builtInEqIds;
         }
         prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),

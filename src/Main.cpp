@@ -284,7 +284,7 @@ private:
     juce::StringArray acceptedControlRequests_; // bounded request replay fence
     struct EqPending final {
         armix::mixer::ChannelId channel{};
-        std::uint64_t request=0,epoch=0,revision=0,started=0;
+        std::uint64_t request=0,epoch=0,revision=0;
         int slot=-1;bool active=false;
     };
     std::array<EqPending,14> eqPending_{};
@@ -425,7 +425,7 @@ private:
                 const bool install=static_cast<bool>(a.getProperty("installed",{}));
                 const bool bypass=static_cast<bool>(a.getProperty("bypassed",{}));
                 queued=engine_.queueBuiltInEqGate(lane,install,bypass,req,ep,rev);
-                if(queued)pending={ch,req,ep,rev,monotonicMilliseconds(),-1,true};
+                if(queued)pending={ch,req,ep,rev,-1,true};
             } else if(!pending.active&&!gateAction&&
                       eqInstalled_[static_cast<std::size_t>(lane)]&&
                       slot>=0&&slot<8&&b.isObject()&&enabled.isBool()&&
@@ -441,7 +441,7 @@ private:
                                            armix::builtin_fx::Slope::db12;
                 queued=engine_.queueBuiltInEqEdit(lane,static_cast<std::size_t>(slot),
                                                    band,req,ep,rev);
-                if(queued) pending={ch,req,ep,rev,monotonicMilliseconds(),slot,true};
+                if(queued) pending={ch,req,ep,rev,slot,true};
             }
         }
         auto reply=std::make_unique<juce::DynamicObject>();
@@ -458,14 +458,18 @@ private:
             eqSnapshotDue_[static_cast<std::size_t>(lane)]=false;
             emitEqSnapshot(eqPending_[static_cast<std::size_t>(lane)].channel);
         }
-        const auto now=monotonicMilliseconds();
         for(int lane=0;lane<14;++lane) {
             auto& pending=eqPending_[static_cast<std::size_t>(lane)];
             if(!pending.active)continue;
             LiveAudioEngine::BuiltInEqAck ack{};
             const bool got=engine_.pollBuiltInEqAck(lane,pending.epoch,
                                                     pending.revision,ack);
-            if(!got&&now-pending.started<4000u)continue;
+            // Physical output may be muted and no EQ render/ACK occurs.
+            // A wall-clock timeout is NOT cancellation: the SPSC command
+            // remains queued and could apply when output resumes. Retain
+            // ownership until an actual AUDIO ACK, or explicit graph/epoch
+            // teardown, instead of announcing a false REJECTED state.
+            if(!got)continue;
             const bool ok=got&&ack.applied&&ack.requestId==pending.request &&
                            ack.lane==lane&&
                            ((pending.slot<0&&ack.gate)||
