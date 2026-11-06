@@ -27,6 +27,29 @@ def eq_context(s):
             "deviceEpoch":s["device"]["epoch"],
             "graphRevision":s["graph"]["revision"]}
 
+def node_pixel(page,index):
+    """Use the actual SVG user-space->screen transform, not Playwright's
+    bounding_box on a transparent SVG circle (Chromium may return None).
+    Mouse events below remain real browser pointer interactions.
+    """
+    selector=f'.mx-peq-graph circle[data-eq-node="{index}"]'
+    page.locator(selector).last.wait_for(state="attached")
+    position=page.locator(selector).last.evaluate("""el=>{
+      const svg=el.ownerSVGElement,matrix=svg?.getScreenCTM();
+      if(!matrix)return null;
+      const point=svg.createSVGPoint();
+      point.x=Number(el.getAttribute('cx'));
+      point.y=Number(el.getAttribute('cy'));
+      const screen=point.matrixTransform(matrix);
+      const target=document.elementFromPoint(screen.x,screen.y);
+      return {x:screen.x,y:screen.y,
+              hit:target?.getAttribute('data-eq-node')===el.getAttribute('data-eq-node')};
+    }""")
+    assert position and position["x"]>0 and position["y"]>0,position
+    assert position["hit"],"EQ node not actually pointer-targetable: "+str(position)
+    return position["x"],position["y"]
+
+
 def last_action(page,kind):
     all_actions=page.evaluate(
         "kind=>window.__actions.filter(x=>x.action===kind)",kind)
@@ -162,15 +185,12 @@ def main():
                 page.locator(".mx-peq-band").nth(2).locator(".mx-peq-select").click()
                 page.screenshot(path="native-peq-05-three-knobs.png")
                 # Actual operator drag and wheel; first send is PENDING until DSP ACK.
-                node=page.locator('.mx-peq-graph circle[data-eq-node="2"]').last
-                box=node.bounding_box();assert box
-                x=box["x"]+box["width"]/2;y=box["y"]+box["height"]/2
+                x,y=node_pixel(page,2)
                 page.mouse.move(x,y);page.mouse.down()
                 page.mouse.move(x+70,y-24,steps=9);page.mouse.up()
                 flush_edits(page,state,values,handled)
-                node=page.locator('.mx-peq-graph circle[data-eq-node="2"]').last
-                box=node.bounding_box();assert box
-                page.mouse.move(box["x"]+box["width"]/2,box["y"]+box["height"]/2)
+                x,y=node_pixel(page,2)
+                page.mouse.move(x,y)
                 page.mouse.wheel(0,-100)
                 flush_edits(page,state,values,handled)
                 assert values[2]["frequencyHz"]>250,values[2]
