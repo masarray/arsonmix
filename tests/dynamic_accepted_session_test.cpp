@@ -409,6 +409,39 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     assert(findEdge(one,main,13)!=0);
     assert(session.acceptedRouting(epoch,13)->find(one)->primaryOutput==main);
     assert(render() && near(left[11],.3f*center,1e-4f));
+
+    // Installed PCM regression: a deliberate parallel MAIN send must survive
+    // a later exclusive BUS retarget. The GUI used to reject the successful
+    // readback merely because it saw any MAIN edge, even a NON-primary send.
+    a=session.wireTransaction(13,13,hop1,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==14);
+    assert(findEdge(one,two,14) && !findEdge(one,main,14));
+    const std::array<WireChange,1> extraMain{connect(one,main,.25f)};
+    a=session.wireTransaction(14,14,extraMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==15);
+    const auto preservedSend=findEdge(one,main,15);
+    assert(preservedSend && render() &&
+           near(left[11],.3f*1.25f*center,1e-4f));
+    const std::array<WireChange,1> switchBus{routeOnly(one,three)};
+    a=session.wireTransaction(15,15,switchBus,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==16);
+    const auto* preserved=session.acceptedRouting(epoch,16);
+    assert(preserved && preserved->find(one)->primaryOutput==three);
+    assert(!findEdge(one,two,16) && findEdge(one,main,16)==preservedSend);
+    const auto parallelNative=std::find_if(preserved->edges.begin(),
+        preserved->edges.end(),[&](const auto& edge) {
+            return edge.edgeId==preservedSend;
+        });
+    assert(parallelNative!=preserved->edges.end() &&
+           !parallelNative->primaryOutput);
+    assert(render() && near(left[11],.3f*1.25f*center,1e-4f));
+    // Detach the independent parallel MAIN send by the same stable EdgeId,
+    // keeping the BUS primary and returning to exactly one PCM path.
+    const std::array<WireChange,1> removeExtra{remove(one,preservedSend)};
+    a=session.wireTransaction(16,16,removeExtra,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==17);
+    assert(!findEdge(one,main,17) && findEdge(one,three,17));
+    assert(render() && near(left[11],.3f*center,1e-4f));
     session.unpublish();
     session.pollRetirement();
 }
