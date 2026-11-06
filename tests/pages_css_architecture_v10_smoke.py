@@ -57,15 +57,11 @@ def source_gate():
          (HTML.parent / "assets" / n).read_text(encoding="utf-8")) if n else body
         for n, version, tag, body in css_order
     )
-    # Historical V16-V19 reconstructors above already validate their
-    # immutable source ledgers byte-for-byte. The *other* CSS owners are the
-    # continuously maintained canonical files: summing their modern bytes and
-    # comparing with the pre-V20 global fingerprint rejects valid later CSS
-    # work rather than detecting a regression.
-    assert len(all_css)>sum(map(len,styles))>80000, "Missing owned CSS"
+    assert len(all_css) == EXPECTED_CSS_LENGTH, "CSS ownership source bytes missing"
+    assert fingerprint(all_css) == EXPECTED_FNV, "CSS cascade/content drift"
     assert sum(map(len, styles)) == EXPECTED_INLINE_LENGTH
+    assert all_css.count("!important") == 981
     assert sum(body.count("!important") for body in styles) == 763
-    assert all(n in names for n in expected)
     original = (HTML.parent / "assets" / OWNERS[0]).read_text(encoding="utf-8")
     grid = (HTML.parent / "assets" / OWNERS[1]).read_text(encoding="utf-8")
     artwork = (HTML.parent / "assets" / OWNERS[2]).read_text(encoding="utf-8")
@@ -77,16 +73,10 @@ def source_gate():
     assert "wireWsCanJoin" in live
     assert "assets/mixer-wire-dots.css?v=v47-css-v16" in html
     assert "assets/inter-embedded.css" in html
-    # Stage D intentionally uses an enumerated 18-owner compiler and ONE
-    # compiled CSS link. The Pages job delegates its proof to that compiler
-    # and the independent single-preview contract; neither duplicates all
-    # historical CSS filenames inside workflow YAML.
-    assembler=(ROOT/"scripts/build_pages.py").read_text(encoding="utf-8")
-    deploy=(ROOT/".github/workflows/pages-publish.yml").read_text(encoding="utf-8")
-    assert "canonical_html=compose_builtin_eq(canonical_html)" in assembler
-    assert "runtime_bundle=True" in assembler
-    assert "python scripts/build_pages.py --out dist-pages" in deploy
-    assert "python tests/single_preview_publication_contract_test.py dist-pages" in deploy
+    for p in (ROOT / "scripts/build_pages.py", ROOT / ".github/workflows/pages-publish.yml"):
+        source = p.read_text(encoding="utf-8")
+        for name in (*OWNERS, "mixer-wire-dots.css"):
+            assert name in source, (p.name, name, "missing Pages parity manifest")
 
 async def visual(page, width, height):
     errors = []

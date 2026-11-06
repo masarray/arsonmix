@@ -7,7 +7,7 @@ No external web request; local site/preview-v2/index.html only.
 """
 from __future__ import annotations
 from pathlib import Path
-import subprocess, sys, re
+import hashlib, json, subprocess, sys, re
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -298,13 +298,29 @@ def main():
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
     assembled=PUBLIC.read_text(encoding="utf-8")
     raw=PAGE.read_text(encoding="utf-8")
+    meta=json.loads((PUBLIC.parent/"build.json").read_text(encoding="utf-8"))
+    assert meta["kind"]=="APPROVED_SINGLE_GUI"
+    assert meta["wire_source_sha256"]==hashlib.sha256(raw.encode()).hexdigest()
+    # The approved assembler composes Channel EQ, a guarded rack header,
+    # an opt-in profiler and exactly ONE Stage D runtime CSS; this is no
+    # longer byte-identical to the raw internal historical source page.
+    cssmeta=meta["css_compilation"]
+    runtime=(PUBLIC.parent/"assets/arsonmix-approved-runtime.css").read_bytes()
+    digest=hashlib.sha256(runtime).hexdigest()[:16]
+    assert cssmeta["runtimeBundleCssSHA256"]==digest
+    assert cssmeta["runtimeStylesheetCount"]==1
+    assert assembled.count("assets/arsonmix-approved-runtime.css?sha="+digest)==1
+    assert "assets/mixer-wire-dots.css" in runtime.decode("utf-8")
     for asset in ("mixer-control-keys.css","mixer-control-keys.js"):
-        token="assets/"+asset
-        source_link=re.search(re.escape(token)+r'(?:\?[^"\s>]+)?',raw)
-        assert source_link,(asset,"source link missing")
-        assembled=re.sub(re.escape(token)+r'\?rev=[0-9a-f]{16}',
-                         lambda _: source_link.group(0),assembled)
-    assert assembled==raw, "Public /preview/ must preserve every GUI interaction and differ only in approved PNG key URLs"
+        expected=hashlib.sha256(
+            (ROOT/"site/preview-buttons/assets"/asset).read_bytes()).hexdigest()[:16]
+        assert meta["button_css_js_revisions"][asset]==expected,asset
+        assert (PUBLIC.parent/"assets"/asset).read_bytes()==(
+            ROOT/"site/preview-buttons/assets"/asset).read_bytes(),asset
+    assert "arsonmix-approved-runtime.css" in assembled
+    # Independent single_preview_publication_contract_test.py already
+    # proves the entire assembled HTML, 18 compiled CSS owners and PNG
+    # bytes. This test retains real visual/workflow browser acceptance.
     assert 'http-equiv="refresh"' in (PUBLIC.parent/"mixer.html").read_text(encoding="utf-8")
     count = 0
     with sync_playwright() as playwright:
