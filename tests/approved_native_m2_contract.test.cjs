@@ -114,6 +114,29 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
   assert.match(bridge,/protocol\.diagnoseFirstSound/);
 });
+test("DAW-style all-channel IN / M4 fader mute pan use real native control and readback, never mock PCM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  const io=read("web/mixer-io.js");
+  const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
+  const engine=read("src/LiveDryRoutingLab.h");
+  const nativeMain=read("src/Main.cpp");
+  assert.match(bridge,/select\[data-field="input"\]/);
+  assert.match(bridge,/function chooseNativeStripInput\(select\)/);
+  assert.match(bridge,/field==="input"/);
+  assert.match(bridge,/chooseNativeStripInput\(el\)/);
+  assert.match(bridge,/function paintM4Readback\(next\)/);
+  assert.match(bridge,/channelControls/);
+  assert.match(bridge,/parameter,channel:channel\+1,value/);
+  assert.match(bridge,/routeEpoch:safeNativeCounter/);
+  assert.match(bridge,/m4StripIndex\(event\.target\)>=0/);
+  assert.match(producer,/firstSound->setProperty\("channelControls",controls\)/);
+  assert.match(producer,/firstSound->setProperty\("channelPeaksL",levelsL\)/);
+  assert.match(engine,/publisher_\.updateActiveControl\(expectedEpoch,expectedRevision/);
+  assert.match(nativeMain,/engine_\.setDryRoutingLabParameter\(channel-1,epoch,revision/);
+  assert.doesNotMatch(bridge,/const audioContext=new AudioContext/);
+  assert.doesNotMatch(bridge,/function synthesizePCM/);
+  assert.match(bridge,/action:"audioSetup"/);
+});
 test("strict producer rejects JS Number identities, invalid hardware pins and fake LIVE",()=>{
  const cases=[
   s=>{s.device.epoch=69;},
@@ -433,7 +456,9 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/REAL AUDIO · FIRST SOUND/);
- assert.match(js,/action:"audioSetup"/);
+  assert.match(js,/function installNativeIo\(/);
+  assert.match(js,/action:"audioDeviceApply"/);
+ assert.match(js,/backend\.emitEvent\("arMixAction",\{action:"audioSetup"\}\)/);
  assert.match(js,/d\.inputEndpoints\.filter\(p=>/);
  assert.match(js,/d\.enabledInputs\.includes\(p\.port\)/);
  assert.match(js,/action:"routingSourceSwitch",requestId:pendingSourceId/);
@@ -443,8 +468,8 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/expectedEpoch:epoch,expectedRevision:revision/);
  assert.match(js,/arMixSourceSwitchAck/);
  assert.match(js,/arMixAudioArmAck/);
- assert.match(js,/if\(ack\.ok===true\)/);
- assert.match(js,/NATIVE PATCH REJECTED:/);
+  assert.match(js,/ack\?\.ok===true/);
+  assert.match(js,/INPUT REJECTED/);
  assert.match(js,/NO VERIFIED AUDIO DEVICE/);
  assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
  assert.match(js,/MAIN ARMED · PCM NOT YET ADMITTED/);

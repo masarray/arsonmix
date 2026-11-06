@@ -82,6 +82,70 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         boolIs(route,"hasAcceptedRoute",true));
     firstSound->setProperty("routingRevision",physicalReady
         ?juce::String(static_cast<juce::int64>(revision)):juce::String("0"));
+    // The default GUI IN selector must reflect the ACTUAL accepted or
+    // verified prepared M4 topology, never the Pages demo route string.
+    // All ten lanes are independently selectable (including sparse ASIO pins).
+    if(physicalReady) {
+        const auto topology=boolIs(route,"hasAcceptedRoute",true)
+            ?route.getProperty("acceptedRoute",{})
+            :route.getProperty("preparedM4Route",{});
+        const auto sourceRows=topology.getProperty("channels",{});
+        const auto* entries=sourceRows.getArray();
+        bool valid=entries && entries->size()==10;
+        if(valid)for(const auto& row:*entries) {
+            const auto mode=row.getProperty("mode",{}).toString();
+            if(!row.isObject()||
+               (mode!="NONE"&&mode!="MONO"&&mode!="STEREO"&&mode!="BUS")) {
+                valid=false;break;
+            }
+            if(mode=="MONO"||mode=="STEREO") {
+                const auto left=row.getProperty("left",{}),right=row.getProperty("right",{});
+                if(!left.isInt() && !left.isInt64()){valid=false;break;}
+                if(mode=="STEREO" && !right.isInt() && !right.isInt64()) {
+                    valid=false;break;
+                }
+            }
+        }
+        if(valid)firstSound->setProperty("channelSources",sourceRows);
+    }
+    // G0 may still have the genuine 10-strip M4 DSP callback. Export its
+    // existing atomic control readback without falsely admitting ChannelId.
+    // A fresh/unpatched device must NEVER display pseudo-active controls.
+    if(physicalReady && boolIs(route,"hasAcceptedRoute",true) &&
+       !boolIs(route,"nativeChannelIdPcmActive",true)) {
+        const auto controls=route.getProperty("channelControls",{});
+        const auto levelsL=route.getProperty("channelPeaksL",{});
+        const auto levelsR=route.getProperty("channelPeaksR",{});
+        const auto* ctl=controls.getArray();
+        const auto* left=levelsL.getArray();
+        const auto* right=levelsR.getArray();
+        bool valid=ctl && left && right && ctl->size()==10 &&
+                   left->size()==10 && right->size()==10;
+        if(valid)for(int i=0;i<10;++i) {
+            const auto c=ctl->getReference(i);
+            double db=0.,pan=0.,peakL=0.,peakR=0.;
+            if(!c.isObject()||
+               !nativeV8Number(c.getProperty("db",{}),db) ||
+               !nativeV8Number(c.getProperty("pan",{}),pan) ||
+               !nativeV8Number(left->getReference(i),peakL) ||
+               !nativeV8Number(right->getReference(i),peakR) ||
+               db < -60.01 || db > 10.01 || pan < -100.01 || pan > 100.01 ||
+               peakL < 0. || peakR < 0. ||
+               !c.getProperty("mute",{}).isBool() ||
+               !c.getProperty("solo",{}).isBool()) {valid=false;break;}
+        }
+        if(valid) {
+            firstSound->setProperty("channelControls",controls);
+            firstSound->setProperty("channelPeaksL",levelsL);
+            firstSound->setProperty("channelPeaksR",levelsR);
+            double masterDb=0.;
+            if(nativeV8Number(live.getProperty("masterDb",{}),masterDb) &&
+               masterDb>=-60.01 && masterDb<=12.01)
+                firstSound->setProperty("masterDb",masterDb);
+            const auto muted=live.getProperty("masterMute",{});
+            if(muted.isBool())firstSound->setProperty("masterMute",muted);
+        }
+    }
     // Do not write the route to the graph or change native capability flags.
     snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(firstSound.release()));
     return physicalReady;

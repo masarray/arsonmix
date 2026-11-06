@@ -457,6 +457,61 @@ static void firstSoundMeasuredSignalEvidenceRegression() {
     assert(!static_cast<bool>(signal(live,true,true).getProperty("captureObserved",true)));
 }
  
+// G0 must expose actual installed M4 controls (not imaginary ChannelId)
+// only while a verified direct, routed ten-channel callback exists.
+static void firstSoundM4ConsoleControlsRegression() {
+    auto snap=canonicalSnapshot();
+    auto* dev=snap.getProperty("device",{}).getDynamicObject();
+    dev->setProperty("epoch","7");
+    dev->setProperty("sampleRate",48000.0);
+    dev->setProperty("bufferFrames",128);
+    juce::Array<juce::var> in,out;
+    in.add(0);out.add(0);out.add(1);
+    dev->setProperty("enabledInputs",juce::var(in));
+    dev->setProperty("enabledOutputs",juce::var(out));
+    auto live=parse(R"JSON({
+       "connected":true,"directRouteAuthorized":true,"adaptiveClockActive":false,
+       "masterDb":-6.0,"masterMute":false,
+       "dryRoutingLab":{"active":true,"ready":true,"topologyFault":false,
+         "hasAcceptedRoute":true,"nativeChannelIdPcmActive":false,
+         "epoch":7,"revision":12,"channelControls":[],
+         "channelPeaksL":[],"channelPeaksR":[]}
+    })JSON");
+    auto route=live.getProperty("dryRoutingLab",{});
+    juce::Array<juce::var> controls,left,right;
+    for(int i=0;i<10;++i) {
+        auto* c=new juce::DynamicObject;
+        c->setProperty("db",i==4?-12.0:0.0);
+        c->setProperty("pan",0.0);
+        c->setProperty("mute",false);
+        c->setProperty("solo",false);
+        controls.add(juce::var(c));left.add(0.2);right.add(0.1);
+    }
+    route.getDynamicObject()->setProperty("channelControls",juce::var(controls));
+    route.getDynamicObject()->setProperty("channelPeaksL",juce::var(left));
+    route.getDynamicObject()->setProperty("channelPeaksR",juce::var(right));
+    assert(publishVerifiedFirstSoundState(snap,live));
+    auto m4=snap.getProperty("legacyM4",{});
+    assert(m4.getProperty("channelControls",{}).getArray()->size()==10);
+    assert(static_cast<double>(m4.getProperty("channelControls",{})[4]
+        .getProperty("db",{}))==-12.0);
+    assert(static_cast<double>(m4.getProperty("masterDb",{}))==-6.0);
+    assert(!static_cast<bool>(snap.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("callbackOwnsChannelIds",true)));
+    // Bad controls are not published despite a prepared device.
+    controls.removeLast();
+    route.getDynamicObject()->setProperty("channelControls",juce::var(controls));
+    assert(publishVerifiedFirstSoundState(snap,live));
+    assert(snap.getProperty("legacyM4",{})
+        .getProperty("channelControls",{}).isVoid());
+    // Hotplug/stale epoch removes all previously displayed live controls.
+    controls.add(juce::var(new juce::DynamicObject));
+    route.getDynamicObject()->setProperty("epoch",8);
+    assert(!publishVerifiedFirstSoundState(snap,live));
+    assert(snap.getProperty("legacyM4",{})
+        .getProperty("channelControls",{}).isVoid());
+}
+
 int main() {
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
@@ -490,6 +545,7 @@ int main() {
     controlIntentTranslationCases(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
+    firstSoundM4ConsoleControlsRegression();
     firstSoundMeasuredSignalEvidenceRegression();
 
     auto missingMain=realBusReadbackFixture();
