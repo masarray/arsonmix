@@ -10,15 +10,15 @@ class Node {
     this.tagName=tag;this.children=[];this.dataset={};this.attributes={};
     this.className='';this.style={setProperty(){}};this.textContent='';
     this.listeners=new Map();this.hidden=false;this.disabled=false;
-    this.value='';this.isConnected=true;
+    this.value='';this.isConnected=false;
     this.classList={toggle:(name,on)=>{
       const parts=new Set(this.className.split(/\s+/).filter(Boolean));
       if(on)parts.add(name);else parts.delete(name);
       this.className=[...parts].join(' ');
     }};
   }
-  append(...nodes){this.children.push(...nodes);}
-  prepend(...nodes){this.children.unshift(...nodes);}
+  append(...nodes){for(const node of nodes)node.isConnected=true;this.children.push(...nodes);}
+  prepend(...nodes){for(const node of nodes)node.isConnected=true;this.children.unshift(...nodes);}
   setAttribute(name,value){this.attributes[name]=String(value);}
   getAttribute(name){return this.attributes[name];}
   addEventListener(name,fn){
