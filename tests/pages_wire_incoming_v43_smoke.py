@@ -1,12 +1,41 @@
 #!/usr/bin/env python3
 """V43: generated public /preview/ parity, persistent incoming cables, and physical socket impact."""
 from pathlib import Path
-import math,re,subprocess,sys,tempfile
+import hashlib,json,math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
 CANONICAL=ROOT/"site/preview-v2/index.html"
 WIRE_CSS=ROOT/"site/preview-v2/assets/mixer-wire-dots.css"
+
+
+def verify_approved_wire_bundle(dist, *, extra_owners=()):
+ """Prove one public /preview/ with the approved WIRE owners.
+
+ The assembler legitimately adds EQ, PNG keys, rack controls, a profiler,
+ and one Stage D runtime CSS. Internal historical HTML is not public HTML.
+ The separate single-preview contract checks complete source-derived bytes.
+ """
+ public=dist/"preview/index.html"
+ html=public.read_text("utf-8")
+ meta=json.loads((dist/"preview/build.json").read_text("utf-8"))
+ assert meta["kind"]=="APPROVED_SINGLE_GUI" and meta["live_audio"] is False
+ assert meta["wire_source_sha256"]==hashlib.sha256(
+    (ROOT/"site/preview-v2/index.html").read_bytes()).hexdigest()
+ assert "<iframe" not in html and "console-body" in html
+ cssmeta=meta["css_compilation"]
+ runtime=(dist/"preview/assets/arsonmix-approved-runtime.css").read_bytes()
+ digest=hashlib.sha256(runtime).hexdigest()[:16]
+ assert cssmeta["runtimeBundleCssSHA256"]==digest
+ assert cssmeta["runtimeStylesheetCount"]==1
+ assert cssmeta["removedStylesheetRequests"]==17
+ assert html.count("assets/arsonmix-approved-runtime.css?sha="+digest)==1
+ assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==WIRE_CSS.read_bytes()
+ for owner in ("mixer-wire-dots.css",*extra_owners):
+  assert ("BEGIN approved owner "+owner).encode() in runtime,owner
+  data=(dist/"preview/assets"/owner).read_bytes()
+  assert cssmeta["shaByCssOwner"][owner]==hashlib.sha256(data).hexdigest()[:16],owner
+ return public
 
 def center(el):
  r=el.bounding_box()
@@ -55,9 +84,21 @@ def main():
                  cwd=ROOT,capture_output=True,text=True)
   public=dst/"preview/index.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
+  # Stage D deliberately replaces 18 CSS links with one content-addressed
+  # runtime stylesheet. Verify that the two locked physical component owners
+  # remain present and byte-exact, rather than requiring obsolete link URLs.
+  manifest=json.loads((dst/"preview/build.json").read_text("utf-8"))
+  assert re.fullmatch(r"[0-9a-f]{16}",
+         manifest["button_css_js_revisions"]["mixer-control-keys.css"])
+  keys=dst/"preview/assets/mixer-control-keys.css"
+  assert keys.read_bytes()==(ROOT/"site/preview-buttons/assets/mixer-control-keys.css").read_bytes()
   assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
+  published=public.read_text("utf-8")
+  runtime=dst/"preview/assets/arsonmix-approved-runtime.css"
+  assert 'href="assets/arsonmix-approved-runtime.css?sha=' in published
+  bundled=runtime.read_text("utf-8")
+  assert "BEGIN approved owner mixer-control-keys.css" in bundled
+  assert "BEGIN approved owner mixer-wire-dots.css" in bundled
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):

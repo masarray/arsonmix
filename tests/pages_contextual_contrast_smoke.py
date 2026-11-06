@@ -98,7 +98,7 @@ def verify(page,label,path):
     assert contrast("#f5f8ff","#405b7f")>=5.5
     # The bank-changing arrow has already been exercised; CH 01 need not
     # remain rendered after moving to the next bank.
-    if label=="approved-png":
+    if label=="public":
         page.locator(".command-bar").screenshot(path="pages-v6-arrow-contrast-1680.png")
 
 def main():
@@ -115,15 +115,15 @@ def main():
                         check=True,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
+            # One actual public mixer; historical preview URLs redirect only.
             for path,label in ((PAGE,"canonical"),
-                               (dst/"preview/mixer.html","published-mixer"),
-                               (dst/"preview-buttons/index.html","approved-png")):
+                               (dst/"preview/index.html","public")):
                 page=browser.new_page(viewport={"width":1680,"height":900})
                 verify(page,label,path)
                 page.close()
             browser.close()
     print("PASS arrow OFF/ON icon contrast, unchanged geometry, Route to Bus dark microcopy,")
-    print("WIRE linked/legacy semantic contrast, and PNG reference route 3/3")
+    print("WIRE linked/legacy semantic contrast, source and one public PNG route")
 
 
 if __name__=="__main__":

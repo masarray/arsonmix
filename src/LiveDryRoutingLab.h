@@ -57,6 +57,11 @@ public:
         const juce::MemoryBlock* binary=nullptr;
     };
     using FxRestores=std::array<std::array<FxRestore,maxFxPerLane>,fxSlots>;
+    struct EqRestore final {
+        bool installed=false,bypassed=false;
+        std::array<armix::builtin_fx::Band,8> bands{};
+    };
+    using EqRestores=std::array<EqRestore,fxSlots>;
     struct ChannelEdit {
         float linear=1.f, pan=0.f;
         bool mute=false, solo=false, mono=false;
@@ -174,7 +179,8 @@ public:
                         const FxSelections& selections,
                         juce::AudioPluginFormatManager& formats,
                         double sampleRate,int deviceFrames,bool explicitSelection=true,
-                        const FxRestores* restores=nullptr) {
+                        const FxRestores* restores=nullptr,
+        const EqRestores* eqRestores=nullptr) {
         // E5: the M4 compiler cannot encode an admitted native GROUP/FX RETURN.
         // An M4 APPLY, Show recall or structural SOURCE/AUX edit must not
         // erase native BUS PCM while its ChannelId graph owns the callback.
@@ -308,6 +314,10 @@ public:
              juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
+        // Must use verified active hardware rate, never assume 48k.
+        if(!next->prepared->prepareBuiltInEq(sampleRate))
+            return "Invalid native channel EQ device sample rate";
+        next->prepared->setBuiltInEqSession(currentEpoch,revision);
         if(!next->prepared->setMainOutputPair(
               mainLeft,mainRight,callbackOutputCount_.load(std::memory_order_acquire)))
             return "MAIN output patch references invalid callback channels";
@@ -337,6 +347,30 @@ public:
         // and FxInstance has an atomic try-enter to guard against overlap.
         // Never reuse across a device epoch or changed device quantum.
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
+        // Show recall must publish ONE fresh, fully prepared DSP bank.
+        // Never edit a prior LIVE EQ owner or borrow its histories for recall.
+        if(eqRestores) {
+            for(int lane=0;lane<fxSlots;++lane) {
+                const auto& saved=(*eqRestores)[static_cast<std::size_t>(lane)];
+                if(!saved.installed && saved.bypassed)
+                    return "Invalid Show EQ: bypass without insert";
+                for(std::size_t slot=0;slot<saved.bands.size();++slot) {
+                    auto band=saved.bands[slot];
+                    // Disabled filter frequency is inert; clamp it to the
+                    // CURRENT device Nyquist limit on legacy V2-V4 recalls.
+                    // Enabled out-of-Nyquist settings still fail CLOSED.
+                    if(!band.enabled)band.frequencyHz=std::min(
+                        band.frequencyHz,static_cast<float>(
+                            std::min(20000.0,sampleRate*.45)));
+                    if((!saved.installed&&band.enabled)||
+                       !next->prepared->setBuiltInEqOffline(lane,slot,band))
+                        return "Show EQ filter not valid for current audio device rate";
+                }
+                if(!next->prepared->setBuiltInEqGateOffline(lane,
+                         saved.installed,saved.bypassed))
+                    return "Cannot prepare native Show EQ gate";
+            }
+        } else if(prior)next->prepared->inheritBuiltInEqFrom(*prior);
         int insertCount=0,reusedCount=0;
         for(int lane=0;lane<fxSlots;++lane) {
             // FX ownership is independent of assigned hardware PCM.
@@ -946,6 +980,16 @@ public:
             });
     }
 
+    // Master rack gate is a single RT-visible atomic per lane; never overwrite
+    // stored individual insert bypass flags. Safe under current epoch/revision.
+    bool setFxRackBypass(int lane,std::uint64_t expectedEpoch,
+                         std::uint64_t expectedRevision,bool bypass) noexcept {
+        if(lane<0||lane>=fxSlots||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {return fx.setRackBypass(lane,bypass);});
+    }
+
     // Quiescent message-thread identity lease for the vendor's native GUI.
     // Shared lifetime is independent of route reorder, but not authority:
     // an editor request MUST match the current accepted route.
@@ -1196,6 +1240,23 @@ public:
             const juce::String& token,bool bypass) noexcept {
         return nativeAccepted_.setFxBypass(nativePublisher_,epochAtEdit,
             pcmRevision,target,slot,token,bypass);
+    }
+    bool nativeChannelIsOriginalCh1(armix::mixer::ChannelId target) const noexcept {
+        return nativeAccepted_.fxOwners &&
+               nativeAccepted_.fxOwners->externalChannel()==target &&
+               target==nativeAccepted_.graph.ids.inputs[0];
+    }
+    bool bypassNativeRack(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
+                          armix::mixer::ChannelId target,bool bypass) noexcept {
+        if(!nativeAccepted_.setFxRackBypass(nativePublisher_,epochAtEdit,
+                                              pcmRevision,target,bypass))
+            return false;
+        // 10 CH + 4 AUX share the actual EQ bank; extra native buses
+        // without EQ retain their native VST-only master override.
+        if(nativeAccepted_.graph.ids.legacyFxIndex(target)>=0)
+            return nativePublisher_.setBuiltInEqRackBypass(
+                epochAtEdit,pcmRevision,target,bypass);
+        return true;
     }
     armix::mixer::DynamicChannelFxLeaseBank::Lease leaseNativeInsertEditor(
             std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
@@ -1720,6 +1781,8 @@ public:
                 liveInserts.add(juce::var(item.release()));
             }
             row->setProperty("inserts",juce::var(liveInserts));
+            row->setProperty("fxRackBypassed",
+                nativeAccepted_.fxOwners->rackBypassed(ch.id));
             if(pcmMeterValid && meterIndex<nativeMeterCapacity) {
                 row->setProperty("peakL",static_cast<double>(
                     nativeMeterPeaksL_[meterIndex].load(std::memory_order_relaxed)));
@@ -1842,7 +1905,71 @@ public:
     }
     // Status / control thread only. An empty prepared graph is ready, but
     // cannot be advertised as a LIVE patched route or a savable Show.
-    bool hasExplicitRoute() const noexcept {
+    using BuiltInEqAck=FxGraph::BuiltInEqAck;
+    // Native ChannelId to the 14 original hardware/aux EQ owners only.
+    bool builtInEqIdentity(armix::mixer::ChannelId id,int& lane,
+                           std::uint64_t& ep,std::uint64_t& rev) const noexcept {
+        if(!id.value||!ready()||!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epoch())return false;
+        const auto index=nativeAccepted_.graph.ids.legacyFxIndex(id);
+        if(index<0||index>=fxSlots)return false;
+        lane=index;ep=epoch();rev=nativeAccepted_.pcmRevision;return true;
+    }
+    // CONTROL enqueue via the existing published graph lease, never change
+    // live coefficients from UI; one SPSC producer and one audio consumer.
+    bool queueBuiltInEqEdit(int lane,std::size_t slot,
+                            const armix::builtin_fx::Band& band,
+                            std::uint64_t requestId,std::uint64_t expectedEpoch,
+                            std::uint64_t expectedRevision) noexcept {
+        if(!ready()||!hasExplicitRoute()||requestId==0||lane<0||lane>=fxSlots||
+           expectedEpoch!=epoch())return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(expectedRevision!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.queueBuiltInEqEdit(expectedEpoch,expectedRevision,
+                                                       id,slot,band,requestId);
+        }
+        if(expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& graph) noexcept {return graph.queueBuiltInEqEdit(
+                lane,slot,band,requestId,expectedEpoch,expectedRevision);});
+    }
+    bool queueBuiltInEqGate(int lane,bool installed,bool bypassed,
+                            std::uint64_t req,std::uint64_t ep,std::uint64_t rev) noexcept {
+        if(!ready()||!hasExplicitRoute()||!req||lane<0||lane>=fxSlots||ep!=epoch())
+            return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(rev!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.queueBuiltInEqGate(ep,rev,id,installed,bypassed,req);
+        }
+        if(rev!=revision())return false;
+        return publisher_.updateActiveControl(ep,rev,
+          [&](FxGraph& graph) noexcept {
+              return graph.queueBuiltInEqGate(lane,installed,bypassed,req,ep,rev);
+          });
+    }
+    bool pollBuiltInEqAck(int lane,std::uint64_t expectedEpoch,
+                          std::uint64_t expectedRevision,BuiltInEqAck& ack) noexcept {
+        if(!ready()||lane<0||lane>=fxSlots||
+           expectedEpoch!=epoch())return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(expectedRevision!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.pollBuiltInEqAck(expectedEpoch,expectedRevision,id,ack);
+        }
+        if(expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& graph) noexcept {return graph.pollBuiltInEqAck(lane,ack);}) &&
+            ack.deviceEpoch==expectedEpoch&&ack.graphRevision==expectedRevision;
+    }
+        bool hasExplicitRoute() const noexcept {
         return ready() && acceptedRoute_.isObject();
     }
     std::uint64_t epoch() const noexcept {
@@ -2169,6 +2296,10 @@ public:
             liveFxInstances.add(juce::var(slots));
         }
         out->setProperty("fxInstances",juce::var(liveFxInstances));
+        juce::Array<juce::var> rackFlags;
+        for(int lane=0;lane<fxSlots;++lane)
+            rackFlags.add(prepared?prepared->rackBypassed(lane):false);
+        out->setProperty("fxRackBypassed",juce::var(rackFlags));
         juce::Array<juce::var> controls,fxNames;
         for(int i=0;i<count;++i) {
             const auto& st=channelEdits_[i];

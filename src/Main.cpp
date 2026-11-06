@@ -282,6 +282,240 @@ private:
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
     juce::StringArray acceptedControlRequests_; // bounded request replay fence
+    struct EqPending final {
+        armix::mixer::ChannelId channel{};
+        std::uint64_t request=0,epoch=0,revision=0;
+        int slot=-1;bool active=false;
+    };
+    std::array<EqPending,14> eqPending_{};
+    std::array<bool,14> eqSnapshotDue_{};
+    std::array<std::uint64_t,14> eqLastApplied_{};
+    std::array<std::array<armix::builtin_fx::Band,8>,14> eqAccepted_{};
+    std::array<bool,14> eqInstalled_{},eqBypassed_{};
+    std::uint64_t eqCacheEpoch_=0;
+    // Never serialize an unacknowledged command, even if output is muted.
+    bool unsettledBuiltInEq() const noexcept {
+        return std::any_of(eqPending_.begin(),eqPending_.end(),
+                           [](const EqPending& p){return p.active;});
+    }
+    void captureAcceptedEq(armix::shows::SnapshotV2& show) const noexcept {
+        for(std::size_t lane=0;lane<eqAccepted_.size();++lane){
+            auto& target=lane<10?show.strips[lane].eq:show.aux[lane-10].eq;
+            target.installed=eqInstalled_[lane];
+            target.bypassed=eqBypassed_[lane];
+            target.bands=eqAccepted_[lane];
+        }
+    }
+    void acceptedEqFromShow(const armix::shows::SnapshotV2& show,
+                             std::uint64_t epoch) {
+        eqCacheEpoch_=0;
+        syncEqEpoch(epoch); // clears all stale requests and readback IDs
+        for(std::size_t lane=0;lane<eqAccepted_.size();++lane){
+            const auto& saved=lane<10?show.strips[lane].eq:show.aux[lane-10].eq;
+            eqInstalled_[lane]=saved.installed;
+            eqBypassed_[lane]=saved.bypassed;
+            eqAccepted_[lane]=saved.bands;
+            if(auto* device=engine_.devices().getCurrentAudioDevice()) {
+                const auto safeHz=static_cast<float>(std::min(
+                    20000.0,device->getCurrentSampleRate()*.45));
+                for(auto& band:eqAccepted_[lane])
+                    if(!band.enabled)band.frequencyHz=std::min(
+                        band.frequencyHz,safeHz);
+            }
+            // No fabricated DSP acknowledgement; the new graph contains
+            // accepted offline state and UI requests a fresh native snapshot.
+        }
+    }
+    void syncEqEpoch(std::uint64_t ep) {
+        if(eqCacheEpoch_==ep)return;
+        eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
+        eqInstalled_.fill(false);eqBypassed_.fill(false);
+        for(auto& pending:eqPending_)pending={};
+        auto* hardware=engine_.devices().getCurrentAudioDevice();
+        const float safeHz=hardware?
+            static_cast<float>(std::min(20000.0,hardware->getCurrentSampleRate()*.45)):
+            20000.f;
+        for(auto& lane:eqAccepted_)
+            for(std::size_t i=0;i<lane.size();++i) {
+                lane[i]={};
+                // DSP prepare() clamps disabled defaults at low device rates.
+                // Mirror the REAL prepared band, not a 48k-only UI fiction.
+                lane[i].frequencyHz=std::min(
+                    armix::builtin_fx::channelEqSlots[i].defaultHz,safeHz);
+                lane[i].q=armix::builtin_fx::channelEqSlots[i].kind==
+                    armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
+            }
+    }
+    static bool eqUInt(const juce::var& v,std::uint64_t& result) noexcept {
+        if(!v.isString())return false;
+        const auto s=v.toString();
+        if(s.isEmpty()||s.length()>20)return false;
+        std::uint64_t n=0;
+        for(int i=0;i<s.length();++i) {
+            const auto c=s[i];
+            if(c<'0'||c>'9')return false;
+            const auto digit=static_cast<std::uint64_t>(c-'0');
+            if(n>(UINT64_MAX-digit)/10u)return false;
+            n=n*10u+digit;
+        }
+        result=n;return n>0;
+    }
+    static bool eqFloat(const juce::var& v,float& out) noexcept {
+        if(!(v.isInt()||v.isInt64()||v.isDouble()))return false;
+        const auto n=static_cast<double>(v);
+        if(!std::isfinite(n)||std::abs(n)>1000000.)return false;
+        out=static_cast<float>(n);return true;
+    }
+    void emitEqSnapshot(armix::mixer::ChannelId id) {
+        int lane=-1;std::uint64_t ep=0,rev=0;
+        if(!browser_.loaded || !engine_.builtInEqIdentity(id,lane,ep,rev))return;
+        syncEqEpoch(ep);
+        auto out=std::make_unique<juce::DynamicObject>();
+        out->setProperty("schemaVersion",1);
+        out->setProperty("channelId",juce::String(std::to_string(id.value)));
+        out->setProperty("deviceEpoch",juce::String(std::to_string(ep)));
+        out->setProperty("graphRevision",juce::String(std::to_string(rev)));
+        out->setProperty("appliedRequestId",juce::String(
+            std::to_string(eqLastApplied_[static_cast<std::size_t>(lane)])));
+        if(auto* device=engine_.devices().getCurrentAudioDevice())
+            out->setProperty("sampleRate",device->getCurrentSampleRate());
+        juce::Array<juce::var> bands;
+        for(const auto& band:eqAccepted_[static_cast<std::size_t>(lane)]) {
+            auto row=std::make_unique<juce::DynamicObject>();
+            row->setProperty("enabled",band.enabled);
+            row->setProperty("frequencyHz",band.frequencyHz);
+            row->setProperty("gainDb",band.gainDb);
+            row->setProperty("q",band.q);
+            row->setProperty("slope",static_cast<int>(band.slope));
+            bands.add(juce::var(row.release()));
+        }
+        out->setProperty("bands",juce::var(bands));
+        out->setProperty("installed",eqInstalled_[static_cast<std::size_t>(lane)]);
+        out->setProperty("bypassed",eqBypassed_[static_cast<std::size_t>(lane)]);
+        browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqSnapshot",
+                                             juce::var(out.release()));
+    }
+    void onEqAction(const juce::var& a) {
+        std::uint64_t number=0,ep=0,rev=0,req=0;
+        const auto hasId=eqUInt(a.getProperty("channelId",{}),number);
+        const armix::mixer::ChannelId ch{number};
+        int lane=-1;std::uint64_t liveEp=0,liveRev=0;
+        const bool available=hasId&&engine_.builtInEqIdentity(ch,lane,liveEp,liveRev);
+        const bool gateAction=a.getProperty("action",{}).toString()=="builtinEqSetGate";
+        if(a.getProperty("action",{}).toString()=="builtinEqSnapshot") {
+            if(available)emitEqSnapshot(ch);
+            return;
+        }
+        bool queued=false;
+        if(available&&eqUInt(a.getProperty("deviceEpoch",{}),ep)&&
+           eqUInt(a.getProperty("graphRevision",{}),rev)&&
+           eqUInt(a.getProperty("requestId",{}),req)&&
+           ep==liveEp&&rev==liveRev&&!studioBackupBusy_&&!nativeShowBusy_ &&
+           (gateAction||a.getProperty("slot",{}).isInt()||
+            a.getProperty("slot",{}).isInt64())) {
+            syncEqEpoch(ep);
+            const auto slot=static_cast<int>(a.getProperty("slot",-1));
+            const auto b=a.getProperty("band",{});
+            const auto enabled=b.getProperty("enabled",{});
+            float freq=0,gain=0,q=0,slope=0;
+            auto& pending=eqPending_[static_cast<std::size_t>(lane)];
+            if(!pending.active&&gateAction&&
+               a.getProperty("installed",{}).isBool()&&
+               a.getProperty("bypassed",{}).isBool()) {
+                const bool install=static_cast<bool>(a.getProperty("installed",{}));
+                const bool bypass=static_cast<bool>(a.getProperty("bypassed",{}));
+                queued=engine_.queueBuiltInEqGate(lane,install,bypass,req,ep,rev);
+                if(queued)pending={ch,req,ep,rev,-1,true};
+            } else if(!pending.active&&!gateAction&&
+                      eqInstalled_[static_cast<std::size_t>(lane)]&&
+                      slot>=0&&slot<8&&b.isObject()&&enabled.isBool()&&
+               eqFloat(b.getProperty("frequencyHz",{}),freq)&&
+               eqFloat(b.getProperty("gainDb",{}),gain)&&
+               eqFloat(b.getProperty("q",{}),q)&&
+               eqFloat(b.getProperty("slope",{}),slope)&&
+               (slope==12.f||slope==24.f)) {
+                armix::builtin_fx::Band band{};
+                band.enabled=static_cast<bool>(enabled);
+                band.frequencyHz=freq;band.gainDb=gain;band.q=q;
+                band.slope=slope==24.f?armix::builtin_fx::Slope::db24:
+                                           armix::builtin_fx::Slope::db12;
+                queued=engine_.queueBuiltInEqEdit(lane,static_cast<std::size_t>(slot),
+                                                   band,req,ep,rev);
+                if(queued) pending={ch,req,ep,rev,slot,true};
+            }
+        }
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("requestId",juce::String(std::to_string(req)));
+        reply->setProperty("channelId",juce::String(std::to_string(number)));
+        reply->setProperty("status",queued?"QUEUED":"REJECTED");
+        browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqQueue",
+                                             juce::var(reply.release()));
+    }
+    void serviceEqAck() {
+        if(!browser_.loaded)return;
+        for(int lane=0;lane<14;++lane)if(eqSnapshotDue_[static_cast<std::size_t>(lane)]) {
+            eqSnapshotDue_[static_cast<std::size_t>(lane)]=false;
+            emitEqSnapshot(eqPending_[static_cast<std::size_t>(lane)].channel);
+        }
+        for(int lane=0;lane<14;++lane) {
+            auto& pending=eqPending_[static_cast<std::size_t>(lane)];
+            if(!pending.active)continue;
+            // A graph rebuild or device reconnect invalidates the old EQ
+            // authority. Such a command cannot be ACKed by the new graph:
+            // the bank rejects its old revision at the next callback. Do
+            // not let it indefinitely block Show SAVE/RECALL.
+            int currentLane=-1;
+            std::uint64_t currentEpoch=0,currentRevision=0;
+            const bool sameSession=engine_.builtInEqIdentity(
+                pending.channel,currentLane,currentEpoch,currentRevision) &&
+                currentLane==lane && currentEpoch==pending.epoch &&
+                currentRevision==pending.revision;
+            LiveAudioEngine::BuiltInEqAck ack{};
+            const bool got=sameSession &&
+                engine_.pollBuiltInEqAck(lane,pending.epoch,pending.revision,ack);
+            // No audio callback while muted is NOT a rejected command.
+            // Only real AUDIO ACK or invalidated graph authority settles it.
+            if(sameSession&&!got)continue;
+            const bool ok=got&&ack.applied&&ack.requestId==pending.request &&
+                           ack.lane==lane&&
+                           ((pending.slot<0&&ack.gate)||
+                            (pending.slot>=0&&!ack.gate&&ack.slot==pending.slot));
+            auto reply=std::make_unique<juce::DynamicObject>();
+            reply->setProperty("schemaVersion",1);
+            reply->setProperty("requestId",juce::String(std::to_string(pending.request)));
+            reply->setProperty("channelId",juce::String(std::to_string(pending.channel.value)));
+            reply->setProperty("deviceEpoch",juce::String(std::to_string(pending.epoch)));
+            reply->setProperty("graphRevision",juce::String(std::to_string(pending.revision)));
+            reply->setProperty("status",ok?"APPLIED":"REJECTED");
+            if(ok) {
+                const auto index=static_cast<std::size_t>(lane);
+                if(pending.slot<0) {
+                    eqInstalled_[index]=ack.installed;
+                    eqBypassed_[index]=ack.bypassed;
+                    if(!ack.installed) {
+                        auto* device=engine_.devices().getCurrentAudioDevice();
+                        const float safeHz=device?static_cast<float>(
+                            std::min(20000.0,device->getCurrentSampleRate()*.45)):20000.f;
+                        for(std::size_t i=0;i<eqAccepted_[index].size();++i) {
+                            eqAccepted_[index][i]={};
+                            eqAccepted_[index][i].frequencyHz=std::min(
+                                armix::builtin_fx::channelEqSlots[i].defaultHz,safeHz);
+                            eqAccepted_[index][i].q=
+                                armix::builtin_fx::channelEqSlots[i].kind==
+                                armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
+                        }
+                    }
+                } else eqAccepted_[index][static_cast<std::size_t>(pending.slot)]=ack.accepted;
+                eqLastApplied_[index]=pending.request;
+                eqSnapshotDue_[static_cast<std::size_t>(lane)]=true;
+            }
+            browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqAck",
+                                                 juce::var(reply.release()));
+            pending.active=false;
+        }
+    }
+
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -1404,6 +1638,10 @@ private:
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
+        if(action=="builtinEqSetBand"||action=="builtinEqSetGate"||
+           action=="builtinEqSnapshot") {
+            onEqAction(args);return;
+        }
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         // User may adjust live levels, but cannot alter the persisted VST
@@ -1412,7 +1650,9 @@ private:
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
             action == "scanVst3" || action == "routingDryApply" ||
-            action == "routingFxBypass"))
+            action == "routingFxBypass" ||
+            action == "routingNativeFxRackBypass" ||
+            action == "routingNativeFxInsertBypass"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -1429,6 +1669,15 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     action=="routingDryApply"?"arMixRoutingLabAck":"arMixRoutingFxBypassAck",
                     juce::var(ack.release()));
+            }
+            if((action=="routingNativeFxRackBypass" ||
+                action=="routingNativeFxInsertBypass") && browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeFxPowerAck",juce::var(ack.release()));
             }
             return emitNotice(reason,true);
         }
@@ -1614,6 +1863,65 @@ private:
             if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
             return;
         }
+        // Accepted ChannelId FX power. A rack master is an additive gate,
+        // not a rewrite of the eight saved individual bypass preferences.
+        // Both gestures are fenced to the actual device epoch + PCM revision
+        // and reply with an ACK; the WebView re-reads the producer snapshot.
+        if(action=="routingNativeFxRackBypass" ||
+           action=="routingNativeFxInsertBypass") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawId=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("revision",{});
+            const auto parse=[](const juce::var& wire,std::uint64_t& out) -> bool {
+                if(!wire.isString())return false;
+                const auto text=wire.toString().toStdString();
+                if(text.empty()||text.size()>20||
+                   text[0]=='0'||text.find_first_not_of("0123456789")!=std::string::npos)
+                    return false;
+                try {
+                    const auto decoded=std::stoull(text);
+                    if(!decoded||std::to_string(decoded)!=text)return false;
+                    out=decoded;return true;
+                } catch(...) {return false;}
+            };
+            std::uint64_t channel=0,ep=0,rev=0;
+            const bool valid=request.isNotEmpty()&&request.length()<=128 &&
+                parse(rawId,channel)&&parse(rawEpoch,ep)&&
+                parse(rawRevision,rev)&&value.isBool() &&
+                !studioBackupBusy_&&!nativeShowBusy_&&
+                !engine_.independentClockActive();
+            bool applied=false;
+            if(valid && !acceptedControlRequests_.contains(request)) {
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId id{channel};
+                if(action=="routingNativeFxRackBypass")
+                    applied=engine_.bypassNativeFxRack(ep,rev,id,static_cast<bool>(value));
+                else {
+                    const auto token=args.getProperty("insertId",{}).toString();
+                    applied=slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
+                        token.isNotEmpty()&&
+                        engine_.bypassNativeVst3(ep,rev,id,
+                            static_cast<std::size_t>(slot),token,static_cast<bool>(value));
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("ok",applied);
+            ack->setProperty("channelId",rawId);
+            ack->setProperty("bypassed",value);
+            ack->setProperty("error",applied?juce::String():
+                "Native FX power rejected: stale device/revision, Show busy or instance mismatch");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixNativeFxPowerAck",juce::var(ack.release()));
+            if(applied)diagnostics_.record("NATIVE_FX_POWER",
+                rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
+                (static_cast<bool>(value)?" BYPASS":" ENABLE"));
+            return;
+        }
+
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {
@@ -1696,6 +2004,8 @@ private:
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
                 return reject("Finish the current Studio task before capturing a native Show.");
+            if(unsettledBuiltInEq())
+                return reject("Wait for the pending native EQ AUDIO ACK before Show SAVE.");
             // Never save the unacknowledged JS draft. Message-thread capture
             // reads the accepted LIVE graph, updated faders and exact device epoch.
             // VST3 is fail-closed until a quiescent vendor state capture gate exists.
@@ -1709,6 +2019,11 @@ private:
                 static_cast<juce::int64>(lab.getProperty("revision",juce::var(0))));
             auto error=armix::shows::NativeLiveShowCapture::captureDry(
                 nativeStatus,name,captured,true);
+            if(error.isEmpty()) {
+                syncEqEpoch(epoch);
+                if(unsettledBuiltInEq())error="Native EQ changed during Show capture";
+                else captureAcceptedEq(captured); // exact ACK-accepted 10 CH + 4 AUX
+            }
             std::vector<armix::shows::BinaryState> blobs;
             if(error.isEmpty()) {
                 // Do not read vendor parameters while an editor is open.
@@ -1750,7 +2065,7 @@ private:
                             }
                         }
                         if(error.isEmpty()) {
-                            captured.sourceBuild="G5E_NATIVE_FX_SHOW_CAPTURE";
+                            captured.sourceBuild="BUILTIN_EQ_V5_PLUS_G5E_VST3_SHOW_CAPTURE";
                             armix::shows::SnapshotV2 verified;
                             if(!armix::shows::Codec::decode(
                                 armix::shows::Codec::encode(captured),verified))
@@ -1847,6 +2162,8 @@ private:
             };
             if(!armix::shows::detail::uuid(id))
                 return reject("Select a native Show UUID from the saved list.");
+            if(unsettledBuiltInEq())
+                return reject("Wait for pending native EQ AUDIO ACK before Show RECALL.");
             if(nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                engine_.isGraphSwitchPending() || !engine_.allOutputsDisarmed())
                 return reject("Mute native output and finish ongoing Studio work.");
@@ -1884,6 +2201,17 @@ private:
                             try {
                                 LiveDryRoutingLab::FxSelections selections{};
                                 LiveDryRoutingLab::FxRestores restores{};
+                                LiveDryRoutingLab::EqRestores eqRestores{};
+                                for(int lane=0;lane<LiveDryRoutingLab::fxSlots;++lane) {
+                                    const auto& eqSaved=lane<LiveDryRoutingLab::count
+                                        ?result.loaded.strips[static_cast<size_t>(lane)].eq
+                                        :result.loaded.aux[static_cast<size_t>(
+                                            lane-LiveDryRoutingLab::count)].eq;
+                                    auto& eq=eqRestores[static_cast<size_t>(lane)];
+                                    eq.installed=eqSaved.installed;
+                                    eq.bypassed=eqSaved.bypassed;
+                                    eq.bands=eqSaved.bands;
+                                }
                                 const auto attach=[&](int lane,
                                     const std::vector<armix::shows::FxRef>& refs)
                                       ->juce::String {
@@ -1926,7 +2254,15 @@ private:
                                 if(error.isEmpty()) {
                                     safe->closePluginEditor();
                                     error=safe->engine_.applyDryRoutingLab(
-                                        command,selections,&restores);
+                                        command,selections,&restores,&eqRestores);
+                                    if(error.isEmpty()) {
+                                        // Only after all VST3 AND built-in EQ
+                                        // state is accepted in one new native graph.
+                                        const auto epochNow=static_cast<std::uint64_t>(
+                                            static_cast<juce::int64>(
+                                                lab.getProperty("epoch",juce::var(0))));
+                                        safe->acceptedEqFromShow(result.loaded,epochNow);
+                                    }
                                 }
                             } catch(const std::exception& ex) {
                                 error="Native VST3 Show preflight exception: "+
@@ -2668,6 +3004,7 @@ private:
             }
         }
         if (!browser_.loaded) return;
+        serviceEqAck(); // exact DSP-apply ACK, deferred readback, no new poll thread
         if (!initialStateSent_)
         {
             initialStateSent_ = true;

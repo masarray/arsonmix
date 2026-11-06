@@ -2,6 +2,8 @@
 from pathlib import Path
 import argparse,os,json,shutil,subprocess,sys
 from compile_approved_css import optimize_assets
+from compose_builtin_eq import compose_builtin_eq
+from approved_fx_rack_power import apply_authoritative_fx_power
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -26,6 +28,12 @@ if buttons_dest.exists(): shutil.rmtree(buttons_dest)
 # are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
+# Compose the OPTIONAL built-in EQ operator control into the approved assembled
+# /preview/ only. Preserve historical internal seed HTML byte-for-byte: V28
+# baseline recovery must remain possible. Both public Pages and the JUCE native
+# binary use this SAME deterministic assembled output; no second mixer UI.
+canonical_html=compose_builtin_eq(canonical_html)
+
 special=('mixer-control-keys.css','mixer-control-keys.js')
 sprite='mute-solo-pfl-56x37.png'
 for src in sorted((canonical/'assets').iterdir()):
@@ -59,6 +67,7 @@ probe_tag='<script defer src="assets/gui-perf-probe.js?v=p0-stage-a-v1"></script
 if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
     raise SystemExit('Approved Pages profiler injection must have exactly one body')
 canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
+canonical_html=apply_authoritative_fx_power(canonical_html)
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets',runtime_bundle=True)

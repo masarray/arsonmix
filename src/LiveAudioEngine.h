@@ -91,6 +91,7 @@ public:
         }
         std::array<Slot, maxFx> slots {};
         std::array<std::atomic<bool>, maxFx> bypassFlags {};
+        std::atomic<bool> rackBypassed{false}; // does not overwrite per-slot flags
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
@@ -1059,7 +1060,8 @@ public:
     juce::String applyDryRoutingLab (
         const juce::var& command,
         const LiveDryRoutingLab::FxSelections& fx,
-        const LiveDryRoutingLab::FxRestores* restored=nullptr) {
+        const LiveDryRoutingLab::FxRestores* restored=nullptr,
+        const LiveDryRoutingLab::EqRestores* restoredEq=nullptr) {
         if (dryRoutingLab_.nativeBusTopologyLive())
             return "REMOVE native GROUP/FX RETURN buses before applying an M4 route";
         if (!allOutputsDisarmed()) return "MUTE hardware output and DISARM STREAM before APPLY routing";
@@ -1084,7 +1086,7 @@ public:
         const auto result=dryRoutingLab_.apply(
             command,directFence_.permitted(),independent_.active(),
             graphOwned_->count,fx,formats_,device->getCurrentSampleRate(),
-            frames,true,restored);
+            frames,true,restored,restoredEq);
         // Same original PCM callback/hardware gate; a failed ChannelId
         // admission retains the last accepted M4 with original Orbit/Show.
         if(result.isEmpty())
@@ -1229,6 +1231,16 @@ public:
                !=armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setFxBypass(lane,slot,epoch,revision,instanceId,bypass);
     }
+    bool setDryRoutingLabFxRackBypass(int lane,std::uint64_t epoch,
+             std::uint64_t revision,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        if(!dryRoutingLab_.setFxRackBypass(lane,epoch,revision,bypass))return false;
+        if(lane==0 && graphOwned_)
+            graphOwned_->rackBypassed.store(bypass,std::memory_order_release);
+        return true;
+    }
     armix::mixer::LiveChannelFxGraph::InstanceLease leaseRoutedFxForEditor(
             int lane,int slot,std::uint64_t epoch,std::uint64_t revision,
             const juce::String& instanceId) const noexcept {
@@ -1333,6 +1345,18 @@ public:
         return dryRoutingLab_.bypassNativeInsert(epoch,revision,id,slot,
                                                  token,bypass);
     }
+    bool bypassNativeFxRack(std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId id,bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        if(!dryRoutingLab_.bypassNativeRack(epoch,revision,id,bypass))return false;
+        // The original CH1 VST3 instance can be external-leased into the
+        // native ChannelId publisher. Its own crossfade gate must agree.
+        if(graphOwned_ && dryRoutingLab_.nativeChannelIsOriginalCh1(id))
+            graphOwned_->rackBypassed.store(bypass,std::memory_order_release);
+        return true;
+    }
     armix::mixer::LiveChannelFxGraph::InstanceLease leaseNativeVst3Editor(
             std::uint64_t epoch,std::uint64_t revision,
             armix::mixer::ChannelId id,std::size_t slot,
@@ -1432,6 +1456,39 @@ public:
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeBusMix(epoch,revision,id,gain,pan);
+    }
+    using BuiltInEqAck=LiveDryRoutingLab::BuiltInEqAck;
+    bool builtInEqIdentity(armix::mixer::ChannelId id,int& lane,
+                           std::uint64_t& ep,std::uint64_t& rev) const noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.builtInEqIdentity(id,lane,ep,rev);
+    }
+    bool queueBuiltInEqEdit(int lane,std::size_t slot,
+                            const armix::builtin_fx::Band& b,
+                            std::uint64_t requestId,std::uint64_t ep,
+                            std::uint64_t rev) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.queueBuiltInEqEdit(lane,slot,b,requestId,ep,rev);
+    }
+    bool queueBuiltInEqGate(int lane,bool installed,bool bypassed,
+                            std::uint64_t requestId,std::uint64_t ep,
+                            std::uint64_t rev) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.queueBuiltInEqGate(lane,installed,bypassed,
+                                                requestId,ep,rev);
+    }
+    bool pollBuiltInEqAck(int lane,std::uint64_t ep,
+                           std::uint64_t rev,BuiltInEqAck& ack) noexcept {
+        return dryRoutingLab_.pollBuiltInEqAck(lane,ep,rev,ack);
     }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
@@ -1935,7 +1992,8 @@ private:
             auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
             auto& bypass=graph.bypassEnvelope[physical];
-            bypass.request(graph.bypassFlags[physical].load(std::memory_order_acquire));
+            bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
+                           graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
             {

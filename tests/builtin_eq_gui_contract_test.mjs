@@ -1,0 +1,67 @@
+// The built-in EQ editor is an independent component inside the ONE
+// approved ArSonMix /preview/ renderer. No duplicate audio or route UI.
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync('site/preview-v2/index.html','utf8');
+const assembler=fs.readFileSync('scripts/build_pages.py','utf8');
+const component=fs.readFileSync('scripts/compose_builtin_eq.py','utf8');
+const js=fs.readFileSync('site/preview-v2/assets/mixer-builtin-eq.js','utf8');
+const css=fs.readFileSync('site/preview-v2/assets/mixer-fx-rack.css','utf8');
+const native=fs.readFileSync('web/approved-native-bridge.js','utf8');
+assert.ok(assembler.includes('compose_builtin_eq(canonical_html)'));
+assert.ok(component.includes('assets/mixer-builtin-eq.js'));
+assert.ok(!html.includes('assets/mixer-builtin-eq.js'), 'V28 source HTML stays byte-frozen');
+assert.ok(js.includes('data-action="openBuiltinEq"'), 'Only the rack insert opens editor');
+assert.ok(!component.includes('mx-eq-open'), 'No redundant header EQ popup launcher');
+assert.ok(component.includes('insertChosenBuiltinEq') &&
+          component.includes('PICKER_ENTER_HOOK'), 'Picker click and Enter use same insert workflow');
+assert.ok(component.includes('BUILT-IN FX')&&component.includes('VST3 PLUGINS'));
+assert.ok(component.includes('RACK_ROWS_HOOK')&&component.includes('PICKER_CLICK_HOOK'));
+assert.ok(js.includes('slotMarkup(track')&&js.includes('builtinEqSetGate'));
+assert.ok(js.includes('lastGraphEqSweep')&&js.includes('otherTrack'),
+ 'Reproject actual native ChannelId EQ state after structural graph revision');
+const main=fs.readFileSync('src/Main.cpp','utf8');
+const publisher=fs.readFileSync('engine/core/DynamicNativeSessionPublisher.h','utf8');
+assert.ok(publisher.includes('if(fx.builtInEq) {') &&
+          publisher.indexOf('if(fx.builtInEq) {') <
+          publisher.indexOf('else if(prior && prior->builtInEq)'),
+ 'Show V5 supplied EQ must win over a prior native ChannelId graph');
+assert.ok(main.includes('if(sameSession&&!got)continue;') &&
+          main.includes('currentRevision==pending.revision') &&
+          !main.includes('now-pending.started<4000u'),
+ 'Never report a false timeout; invalidate outstanding EQ only on structural session loss');
+assert.ok(main.includes('captureAcceptedEq(')&&
+          main.includes('acceptedEqFromShow(')&&
+          main.includes('unsettledBuiltInEq()')&&
+          main.includes('EqRestores eqRestores'),
+ 'Show V5 must save accepted EQ, build fresh DSP on recall and fence pending ACK');
+const showSchema=fs.readFileSync('src/NativeShowSchema.h','utf8');
+assert.ok(showSchema.includes('schemaVersion",5')&&
+          showSchema.includes('encodeEq(')&&showSchema.includes('decodeEq('),
+ 'Native Show V5 must preserve all 8 bands; old V2-V4 decode to default off');
+assert.ok(component.includes('window.ArSonMixBuiltinEq?.open(t)'));
+assert.match(native,/__ARMIX_BUILTIN_EQ_CHANNEL__/);
+assert.match(js,/arMixBuiltinEqAck/);
+assert.match(js,/arMixBuiltinEqSnapshot/);
+assert.match(js,/DESIGN DEMO · NO AUDIO/);
+assert.match(js,/snapshotReady/);
+assert.ok(!['AudioContext','webkitAudioContext','createScriptProcessor','new Worker('].some(s=>js.includes(s)), 'Browser EQ must not own audio callback');
+assert.ok(css.includes('#mxBuiltinEq[hidden]'));
+const eqBank=fs.readFileSync('engine/builtin_fx/ChannelEqBank.h','utf8');
+assert.ok(eqBank.includes('rackBypassed_[lane].load')&&
+          eqBank.includes('insertBypassed_[lane]||rackOff'),
+ 'FX header OFF must override native EQ PCM without losing insert preference');
+console.log('Built-in Parametric EQ DAW GUI contract: PASS (isolated from VST3 and alt mixer)');
+
+assert.ok(!html.includes('assets/mixer-builtin-eq.css'), 'No second CSS cascade owner');
+
+assert.ok(!js.includes('hz/48000'), 'Spectrum display must use accepted device sample rate');
+assert.ok(js.includes('compiledSections(displayBands)'), 'Coefficient design once per paint, not each frequency pixel');
+assert.ok(js.includes('arMixConsoleSnapshot'), 'Device/graph invalidation listener required');
+assert.ok(js.includes('s.deviceEpoch===epoch&&s.graphRevision===revision'),
+  'Reject stale samples and stale graph revisions');
+assert.ok(js.includes('RELEASE TO REQUEST AUDIO CHANGE'), 'Drag must be preview-only until release');
+assert.ok(js.includes('BigInt(Date.now())'), 'Request IDs must survive a WebView restart without accidental replay');
+
+// Verify real editor JS behavior, not just substring presence.
+await import('./builtin_eq_interaction_test.mjs');

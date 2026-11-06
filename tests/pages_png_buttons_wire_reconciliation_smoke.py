@@ -37,27 +37,49 @@ def verify_bundle(dist):
     assert "url=../preview/" in (dist/"preview-buttons/index.html").read_text(encoding="utf-8")
     assert 'http-equiv="refresh"' in (dist/"preview/mixer.html").read_text(encoding="utf-8")
 
-    # Strip only the two deliberate fingerprinted CSS/JS URLs. Everything
-    # else, including the V46+ WIRE model and channel events, must be 1:1.
-    stripped=html
+    # The current approved assembler adds native EQ/Fx controls and Stage D
+    # combines 18 source-owned CSS stylesheets into one content-addressed
+    # runtime stylesheet. A removed per-owner CSS URL is intentional, NOT a
+    # missing hardware key. Verify source bytes, digest, and the exact owner
+    # inside the runtime CSS rather than restoring obsolete HTML parity.
+    revisions=meta["button_css_js_revisions"]
     for name in SPECIAL:
-        path="assets/"+name
-        original_url=re.search(re.escape(path)+r'(?:\?[^"\s>]+)?',original)
-        current_url=re.search(re.escape(path)+r'\?rev=([0-9a-f]{16})',stripped)
-        assert original_url and current_url,(name,"missing cache-safe URL")
         expected=hashlib.sha256((OWNER/name).read_bytes()).hexdigest()[:16]
-        assert current_url.group(1)==expected,(name,"wrong asset revision")
-        stripped=stripped[:current_url.start()]+original_url.group(0)+stripped[current_url.end():]
+        assert revisions.get(name)==expected,(name,"wrong button asset digest")
         assert (generated/"assets"/name).read_bytes()==(OWNER/name).read_bytes(),name
-    assert stripped==original,"User-approved button variant modified the real WIRE mixer"
+    assert f'assets/{SPECIAL[1]}?rev={revisions[SPECIAL[1]]}' in html, (
+        "approved PNG control JS not versioned")
+    runtime="arsonmix-approved-runtime.css"
+    cssmeta=meta["css_compilation"]
+    csssha=cssmeta["runtimeBundleCssSHA256"]
+    assert re.fullmatch(r"[0-9a-f]{16}",csssha)
+    assert html.count(f'assets/{runtime}?sha={csssha}')==1, (
+        "single compiled CSS owner not loaded exactly once")
+    compiled=(generated/"assets"/runtime).read_bytes()
+    assert hashlib.sha256(compiled).hexdigest()[:16]==csssha, (
+        "compiled CSS runtime digest drift")
+    assert b"BEGIN approved owner mixer-control-keys.css" in compiled
+    assert b"BEGIN approved owner mixer-wire-dots.css" in compiled
+    assert cssmeta["runtimeStylesheetCount"]==1
+    assert cssmeta["removedStylesheetRequests"]==17
 
-    # Removing old snapshots makes every extra asset a current-source
-    # dependency, never a cloned V45 file frozen across future WIRE updates.
+    # Never publish a cloned mixer or extra asset. Only the generated runtime
+    # CSS is added; CSS source owners remain available for provenance. Stage C
+    # legitimately compiles ordinary CSS declarations, so demand byte parity
+    # of non-CSS assets and separately verify the two locked CSS owners.
     canonical={f.name for f in (REFERENCE/"assets").iterdir() if f.is_file()}
     published={f.name for f in (generated/"assets").iterdir() if f.is_file()}
-    assert published==canonical|{SPRITE},("asset set drift",published^canonical)
+    assert published==canonical|{SPRITE,runtime},("asset set drift",published^canonical)
     for name in canonical-set(SPECIAL):
-        assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
+        if not name.endswith(".css"):
+            assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
+    assert (generated/"assets/mixer-wire-dots.css").read_bytes()==(
+        REFERENCE/"assets/mixer-wire-dots.css").read_bytes()
+    assert (generated/"assets/mixer-control-keys.css").read_bytes()==(
+        OWNER/"mixer-control-keys.css").read_bytes()
+    # The independent single-preview publication contract checks the entire
+    # generated DOM and all 18 compiled CSS owners byte-for-byte. This test
+    # additionally exercises real browser control, geometry and WIRE state.
 
     png=(generated/"assets"/SPRITE).read_bytes()
     assert png==(ROOT/"site/preview-v34/assets"/SPRITE).read_bytes()
@@ -150,7 +172,7 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         verify_bundle(dist)
         verify_browser(dist)
-    print("PASS: approved PNG buttons track latest canonical WIRE, asset byte parity, 3 viewports, ON/OFF stable")
+    print("PASS: one Stage D runtime CSS, locked PNG/WIRE assets, 3 Chromium viewports, ON/OFF stable")
 
 if __name__=="__main__":
     main()

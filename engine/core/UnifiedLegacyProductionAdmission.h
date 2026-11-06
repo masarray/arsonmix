@@ -59,6 +59,12 @@ struct UnifiedLegacyAccepted final {
                fxOwners->setInsertBypass(epoch,revision,id,slot,
                                          instanceId,bypass);
     }
+    bool setFxRackBypass(const DynamicNativeSessionPublisher& publisher,
+                         std::uint64_t epoch,std::uint64_t revision,
+                         ChannelId id,bool bypass) const noexcept {
+        return matches(publisher,epoch,revision) &&
+               fxOwners->setRackBypass(epoch,revision,id,bypass);
+    }
     DynamicChannelFxLeaseBank::Lease leaseFxEditor(
             const DynamicNativeSessionPublisher& publisher,
             std::uint64_t epoch,std::uint64_t revision,ChannelId id,
@@ -181,6 +187,13 @@ public:
             (*static_cast<Bank*>(ctx))(id,l,r,n);
         };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
+        // One shared lightweight native DSP owner across M4→ChannelId
+        // cutover. Do NOT instantiate ArSonEQ/VST3 or reset user curves.
+        plan.builtInEq=acceptedM4Fx.builtInEqLease();
+        for(int i=0;i<stripCount;++i)
+            plan.builtInEqIds[static_cast<std::size_t>(i)]=candidate.ids.inputs[i];
+        for(int b=0;b<auxBusCount;++b)
+            plan.builtInEqIds[static_cast<std::size_t>(stripCount+b)]=candidate.ids.aux[b];
         result.native=publisher.commit(candidate.roster,candidate.request,
             expectedPcmRevision,deviceEpoch,currentHardwareEpoch,
             allOutputsDisarmed,std::move(plan));

@@ -3,7 +3,7 @@
 from pathlib import Path
 import subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
-from pages_wire_incoming_v43_smoke import center, impact_peak
+from pages_wire_incoming_v43_smoke import center, impact_peak, verify_approved_wire_bundle
 
 ROOT=Path(__file__).resolve().parents[1]
 SRC=ROOT/"site/preview-v2/index.html"
@@ -20,10 +20,7 @@ def main():
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
                   "--out",str(dst),"--sha","v44-ui-smoke","--branch","gui-v44"],
                  cwd=ROOT,capture_output=True,text=True,check=True)
-  public=dst/"preview/mixer.html"
-  assert public.read_bytes()==SRC.read_bytes(),"published /preview/ differs from canonical GUI"
-  assert (dst/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"published WIRE style missing"
-  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
+  public=verify_approved_wire_bundle(dst)
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):

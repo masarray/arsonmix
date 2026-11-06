@@ -178,7 +178,18 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     auto second=newFx(1.25f,"ch11-second-vst3");
     assert(Bank::appendOwned(epoch,3,bank,ch11,ProcessingFormat::mono,
                              second,expanded)==Bank::Fault::none);
+    // Rack OFF applies to the new plugin too; old per-plugin OFF remains
+    // untouched and native append carries the same authoritative override.
+    assert(bank.setRackBypass(epoch,2,ch11,true));
+    assert(bank.rackBypassed(ch11));
     assert(expanded.insertCount(ch11)==2);
+    // expanded was already created before the OFF gesture. Its revision
+    // holds the same shared rack gate, so it observes the control live.
+    assert(expanded.rackBypassed(ch11));
+    assert(!expanded.setRackBypass(epoch,2,ch11,false)); // stale version
+    assert(expanded.setRackBypass(epoch,3,ch11,false));
+    assert(!bank.rackBypassed(ch11));
+    assert(!expanded.rackBypassed(ch11));
     assert(expanded.insertCount(ch1)==bank.insertCount(ch1));
     assert((*expanded.ownerForControl(ch11,0))->instanceId==
            (*bank.ownerForControl(ch11,0))->instanceId);
@@ -1874,6 +1885,152 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+
+static void verifyBuiltInEqRealPcmHook() {
+    constexpr std::array physicalPorts{2,5};
+    ChannelRoutingConfig config;
+    config.stripsAndMaster.strips[0]={SourceMode::mono,2,-1,1.f,0.f,false,false};
+    SendRequest sends;
+    PreparedRenderGraph plan;RenderError error;
+    assert(PreparedRenderGraph::compile(config,physicalPorts,sends,plan,error));
+    auto wet=std::make_unique<LiveChannelFxGraph>(plan,128,128);
+    auto dry=std::make_unique<LiveChannelFxGraph>(plan,128,128);
+    assert(wet->prepareBuiltInEq(48000)&&dry->prepareBuiltInEq(48000));
+    armix::builtin_fx::Band b{};
+    b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1;
+    assert(!wet->queueBuiltInEqEdit(0,2,b,0,7,2));
+    assert(wet->queueBuiltInEqEdit(0,2,b,101,7,2));
+    // Insertion is a separate ACK-backed AUDIO command, not implicit in edits.
+    assert(wet->queueBuiltInEqGate(0,true,false,102,7,2));
+    std::array<float,128> pcm{},silent{},wl{},wr{},dl{},dr{};
+    const float* pins[]{pcm.data(),silent.data()};
+    double dryPower=0,wetPower=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i) {
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+              .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        }
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(wet->process(pins,2,wl.data(),wr.data(),128));
+        assert(dry->process(pins,2,dl.data(),dr.data(),128));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block==0) {
+            LiveChannelFxGraph::BuiltInEqAck ack{};
+            assert(wet->pollBuiltInEqAck(0,ack));
+            assert(ack.applied&&ack.requestId==101&&ack.deviceEpoch==7&&
+                   ack.graphRevision==2&&ack.slot==2&&!ack.gate);
+        }
+        if(block==4) {
+            LiveChannelFxGraph::BuiltInEqAck ack{};
+            assert(wet->pollBuiltInEqAck(0,ack));
+            assert(ack.applied&&ack.gate&&ack.installed&&!ack.bypassed&&
+                   ack.requestId==102&&ack.deviceEpoch==7&&ack.graphRevision==2);
+        }
+        if(block>=48)for(int i=0;i<128;++i) {
+            dryPower+=dl[static_cast<std::size_t>(i)]*dl[static_cast<std::size_t>(i)];
+            wetPower+=wl[static_cast<std::size_t>(i)]*wl[static_cast<std::size_t>(i)];
+        }
+    }
+    assert(dryPower>0.001&&wetPower>dryPower*4);
+}
+
+
+static void verifyBuiltInEqNativeChannelIdAndRevisionFence() {
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,2> adds{};
+    adds[0].kind=ChannelEdit::Kind::add;adds[0].role=ChannelRole::input;
+    adds[0].position=0;adds[0].format=ProcessingFormat::mono;
+    adds[1].kind=ChannelEdit::Kind::add;adds[1].role=ChannelRole::main;
+    adds[1].position=1;adds[1].format=ProcessingFormat::stereo;
+    const auto made=roster.edit(0,adds);
+    assert(made.ok() && made.createdIds.size()==2);
+    const auto ch=made.createdIds[0],main=made.createdIds[1];
+    ChannelEdit link;
+    link.kind=ChannelEdit::Kind::addSendReference;
+    link.id=ch;link.target=main;link.value=1.f;link.primaryOutput=true;
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&link,1)).ok());
+    DynamicGraphRequest req;
+    req.physicalInputs=1;req.maxFrames=128;req.sources={{ch,0,-1,false}};
+    auto eq=std::make_shared<armix::builtin_fx::ChannelEqBank>();
+    assert(eq->prepare(48000));
+    DynamicNativeSessionPublisher::FxPlan plan;
+    plan.builtInEq=eq;plan.builtInEqIds[0]=ch;
+    DynamicNativeSessionPublisher native;
+    assert(native.commit(roster,req,0,9,9,true,plan).ok());
+    armix::builtin_fx::Band b{};
+    b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1.f;
+    assert(!native.queueBuiltInEqEdit(9,1,main,2,b,101));
+    assert(native.queueBuiltInEqEdit(9,1,ch,2,b,101));
+    assert(!native.queueBuiltInEqGate(9,1,main,true,false,102)); // wrong ChannelId
+    assert(native.queueBuiltInEqGate(9,1,ch,true,false,102));
+    std::array<float,128> pcm{},left{},right{};
+    const float* pins[]{pcm.data()};
+    auto noFx=[](ChannelId,float*,float*,int) noexcept {};
+    double power=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i)
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+                 .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block==0) {
+            armix::builtin_fx::ChannelEqBank::Ack ack{};
+            assert(native.pollBuiltInEqAck(9,1,ch,ack));
+            assert(ack.applied&&ack.requestId==101&&ack.slot==2&&!ack.gate);
+        }
+        if(block==4) {
+            armix::builtin_fx::ChannelEqBank::Ack ack{};
+            assert(native.pollBuiltInEqAck(9,1,ch,ack));
+            assert(ack.applied&&ack.gate&&ack.installed&&ack.requestId==102);
+        }
+        if(block>=48)for(float y:left)power+=y*y;
+    }
+    // Mono input uses equal-power route; 9 dB bell must boost 1 kHz
+    // regardless of whether a native VST owner is present.
+    assert(power>1.0);
+    // Native publisher revision swaps retain the ONE EQ owner and history.
+    assert(native.commit(roster,req,1,9,9,true).ok());
+    assert(native.queueBuiltInEqEdit(9,2,ch,2,b,103));
+    assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+    armix::builtin_fx::ChannelEqBank::Ack ack{};
+    assert(native.pollBuiltInEqAck(9,2,ch,ack)&&ack.applied&&ack.requestId==103);
+
+    // Show V5 recall replaces the DSP bank even when the same ChannelId and
+    // epoch already have an admitted native graph. The old wet bank must NOT
+    // overwrite fresh offline-restored bands during the revision-3 commit.
+    auto restored=std::make_shared<armix::builtin_fx::ChannelEqBank>();
+    assert(restored->prepare(48000));
+    auto cut=b;cut.gainDb=-9.f;
+    assert(restored->setBandOffline(0,2,cut));
+    assert(restored->setGateOffline(0,true,false));
+    DynamicNativeSessionPublisher::FxPlan showPlan;
+    showPlan.builtInEq=restored;showPlan.builtInEqIds[0]=ch;
+    assert(native.commit(roster,req,2,9,9,true,showPlan).ok());
+    assert(!native.queueBuiltInEqEdit(9,2,ch,2,b,104)); // superseded graph
+    double recalledPower=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i)
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+                .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block>=48)for(float y:left)recalledPower+=y*y;
+    }
+    // 9 dB boost before recall must become a 9 dB CUT after recall,
+    // proving sound and accepted Show state can no longer diverge.
+    assert(recalledPower>0.001&&recalledPower<power*0.20);
+    assert(native.queueBuiltInEqGate(9,3,ch,true,true,105));
+    assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+    assert(native.pollBuiltInEqAck(9,3,ch,ack)&&ack.applied&&ack.requestId==105);
+    assert(native.setBuiltInEqRackBypass(9,3,ch,true));
+    assert(restored->rackBypassed(0));
+    assert(!native.setBuiltInEqRackBypass(9,2,ch,false)); // stale revision
+    assert(native.setBuiltInEqRackBypass(9,3,ch,false));
+    assert(!restored->rackBypassed(0));
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2246,10 +2403,39 @@ int main(int argc,char** argv) {
         assert(heapCalls.load(std::memory_order_relaxed)==beforeNextProcess);
         assert(left[0]>.3f);
     }
+    // FX RACK POWER: one atomic master overrides effective processing,
+    // without destroying the ON/OFF preferences of individual inserts.
+    {
+        auto graph=makeGraph(2.f,3.f);
+        const auto token=graph->insertInstanceId(0);
+        assert(!graph->rackBypassed(0));
+        assert(graph->setInsertBypass(0,0,token,true)); // individual OFF
+        assert(graph->insertBypassed(0,0));
+        assert(graph->setRackBypass(0,true));           // master OFF
+        assert(graph->rackBypassed(0)&&graph->insertBypassed(0,0));
+        assert(graph->setRackBypass(0,false));          // master ON
+        assert(!graph->rackBypassed(0));
+        assert(graph->insertBypassed(0,0));             // stays OFF
+        assert(graph->setInsertBypass(0,0,token,false));
+        assert(graph->setRackBypass(0,true));
+        assert(graph->setRackBypass(0,false));
+        assert(!graph->insertBypassed(0,0));            // returns to ON
+        assert(!graph->setRackBypass(-1,true));
+        assert(!graph->setRackBypass(LiveChannelFxGraph::fxSlots,true));
+        auto moved=makeGraph(1.f,1.f,false);
+        assert(graph->setRackBypass(0,true));
+        assert(moved->reuse(0,*graph,"vst3-ch1-id"));
+        assert(moved->rackBypassed(0));                 // graph retirement retains gate
+        assert(moved->insertBypassed(0,0)==graph->insertBypassed(0,0));
+        assert(moved->setRackBypass(0,false));
+        assert(!moved->insertBypassed(0,0));           // saved ON restored
+    }
     // Run M5 AFTER the legacy suite: older M4 tests use absolute global
     // GainFx::living/released counters as their own lifetime oracle. Running
     // M5 before them changes those historical baseline counts, not DSP.
     // M5 additionally asserts zero heap and valid vendor leases itself.
+    verifyBuiltInEqRealPcmHook();
+    verifyBuiltInEqNativeChannelIdAndRevisionFence();
     verifyUniversalChannelIdFxLeaseAndLivePcm();
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     verifyOccupiedExternalCh1Owner();

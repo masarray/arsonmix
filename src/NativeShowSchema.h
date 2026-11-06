@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "../engine/builtin_fx/ChannelEq.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -24,6 +25,19 @@ struct FxRef final {
     juce::String stateSha256; // external, separately verified immutable blob
     bool bypass = false;
 };
+// v5: Compact CONTROL-only 8-band EQ record per fixed channel/AUX.
+// Never stores a vendor plugin, UI ordinal, device pointer or PCM state.
+struct EqState final {
+    bool installed=false,bypassed=false;
+    std::array<armix::builtin_fx::Band,8> bands{};
+    EqState() noexcept {
+        for(std::size_t i=0;i<bands.size();++i){
+            bands[i].frequencyHz=armix::builtin_fx::channelEqSlots[i].defaultHz;
+            bands[i].q=armix::builtin_fx::channelEqSlots[i].kind==
+                armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
+        }
+    }
+};
 struct Send final {
     int destination = 0; // stable zero-based strip index; never GUI row order
     bool preFader = false;
@@ -40,6 +54,7 @@ struct Strip final {
     bool mute = false, solo = false, toMaster = true;
     bool busReturn = false; // disconnected BUS return distinct from NONE
     std::vector<FxRef> fx;
+    EqState eq;
     std::vector<Send> sends;
 };
 // AUX is an extra, one-way stereo FX return, not INPUT CH9/10 or hardware I/O.
@@ -47,6 +62,7 @@ struct AuxReturn final {
     bool enabled = false, toMaster = true, mute = false;
     double gain = 1.0;
     std::vector<FxRef> fx;
+    EqState eq;
 };
 struct AuxSend final {
     int source = -1;      // physical logical INPUT 0..9
@@ -165,9 +181,9 @@ public:
     static juce::String encode(const SnapshotV2& s) {
         auto v=detail::object();
         detail::commonWrite(v,s.id,s.name,s.createdMs,s.modifiedMs);
-        // V4 records the independent channel processing width; V3 lacked
-        // this field and V2 also lacked AUX returns. Old readers fail closed.
-        detail::put(v,"schemaVersion",4);
+        // V5 adds real native Channel EQ with an exact 8-band record per
+        // original CH/AUX; V2-V4 remain readable only as EQ-not-installed.
+        detail::put(v,"schemaVersion",5);
         detail::put(v,"format","arsonmix.native.snapshot");
         detail::put(v,"sourceBuild",s.sourceBuild);
         auto master=detail::object();
@@ -197,6 +213,7 @@ public:
                 sends.add(p);
             }
             detail::put(c,"fx",juce::var(fx));detail::put(c,"sends",juce::var(sends));
+            detail::put(c,"builtinEq",encodeEq(ch.eq));
             strips.add(c);
         }
         detail::put(v,"strips",juce::var(strips));
@@ -210,6 +227,7 @@ public:
             detail::put(rec,"mute",bus.mute);
             detail::put(rec,"gain",bus.gain);
             detail::put(rec,"fx",juce::var(encodeFx(bus.fx)));
+            detail::put(rec,"builtinEq",encodeEq(bus.eq));
             aux.add(rec);
         }
         for(const auto& send:s.auxSends) {
@@ -241,9 +259,9 @@ public:
     static bool decode(const juce::String& json,SnapshotV2& out) {
         if(json.getNumBytesAsUTF8()>maxJsonBytes) return false;
         const auto v=juce::JSON::parse(json);
-        if(!detail::header(v,"arsonmix.native.snapshot",2,4)) return false;
+        if(!detail::header(v,"arsonmix.native.snapshot",2,5)) return false;
         int version=0;
-        if(!detail::integer(detail::get(v,"schemaVersion"),version,2,4))
+        if(!detail::integer(detail::get(v,"schemaVersion"),version,2,5))
             return false;
         SnapshotV2 next;
         if(!detail::common(v,next.id,next.name,next.createdMs,next.modifiedMs) ||
@@ -284,7 +302,7 @@ public:
             // V2/V3 migration infers exactly the original native v1 format.
             // Never silently discard a new typed width from a downgraded file.
             const auto width=detail::get(rec,"channelFormat");
-            if(version==4){
+            if(version>=4){
                 if(!detail::integer(width,ch.channelFormat,1,2))return false;
             } else {
                 if(!width.isVoid())return false;
@@ -294,6 +312,10 @@ public:
                (ch.source==1 && (ch.inputA<0||ch.inputB!=-1)) ||
                (ch.source==2 && (ch.inputA<0||ch.inputB<0||ch.inputA==ch.inputB)))
                 return false;
+            const auto eqRecord=detail::get(rec,"builtinEq");
+            if(version>=5) {
+                if(!decodeEq(eqRecord,ch.eq)) return false;
+            } else if(!eqRecord.isVoid()) return false; // no silent EQ downgrade
             const auto fxv=detail::get(rec,"fx"), sv=detail::get(rec,"sends");
             const auto* sends=sv.getArray();
             if(!sends || (totalSends+=sends->size())>maxSendsPerSnapshot ||
@@ -334,6 +356,10 @@ public:
                !detail::flag(detail::get(rec,"mute"),bus.mute) ||
                !detail::real(detail::get(rec,"gain"),bus.gain,0.0,4.0) ||
                !decodeFx(detail::get(rec,"fx"),bus.fx)) return false;
+            const auto eqRecord=detail::get(rec,"builtinEq");
+            if(version>=5) {
+                if(!decodeEq(eqRecord,bus.eq))return false;
+            } else if(!eqRecord.isVoid())return false;
         }
         for(const auto& rec:*sends) {
             AuxSend send;
@@ -353,6 +379,53 @@ public:
         out=std::move(next); return true;
     }
 private:
+    static juce::var encodeEq(const EqState& state) {
+        auto rec=detail::object();
+        detail::put(rec,"installed",state.installed);
+        detail::put(rec,"bypassed",state.bypassed);
+        juce::Array<juce::var> rows;
+        for(const auto& band:state.bands) {
+            auto b=detail::object();
+            detail::put(b,"enabled",band.enabled);
+            detail::put(b,"frequencyHz",static_cast<double>(band.frequencyHz));
+            detail::put(b,"gainDb",static_cast<double>(band.gainDb));
+            detail::put(b,"q",static_cast<double>(band.q));
+            detail::put(b,"slope",static_cast<int>(band.slope));
+            rows.add(b);
+        }
+        detail::put(rec,"bands",juce::var(rows));
+        return rec;
+    }
+    static bool decodeEq(const juce::var& rec,EqState& result) {
+        if(!rec.isObject())return false;
+        EqState next;
+        if(!detail::flag(detail::get(rec,"installed"),next.installed)||
+           !detail::flag(detail::get(rec,"bypassed"),next.bypassed)||
+           (!next.installed&&next.bypassed))return false;
+        const auto bandsValue=detail::get(rec,"bands");
+        const auto* rows=bandsValue.getArray();
+        if(!rows||rows->size()!=static_cast<int>(next.bands.size()))return false;
+        for(std::size_t i=0;i<next.bands.size();++i){
+            const auto& b=rows->getReference(static_cast<int>(i));
+            auto& band=next.bands[i];
+            int slope=0;
+            double freq=0,gain=0,q=0;
+            if(!b.isObject()||
+               !detail::flag(detail::get(b,"enabled"),band.enabled)||
+               !detail::real(detail::get(b,"frequencyHz"),freq,20.,20000.)||
+               !detail::real(detail::get(b,"gainDb"),gain,-18.,18.)||
+               !detail::real(detail::get(b,"q"),q,.2,12.)||
+               !detail::integer(detail::get(b,"slope"),slope,12,24)||
+               (slope!=12&&slope!=24)||
+               (!next.installed&&band.enabled))return false;
+            band.frequencyHz=static_cast<float>(freq);
+            band.gainDb=static_cast<float>(gain);
+            band.q=static_cast<float>(q);
+            band.slope=static_cast<armix::builtin_fx::Slope>(slope);
+        }
+        result=next;
+        return true;
+    }
     static juce::Array<juce::var> encodeFx(const std::vector<FxRef>& fx) {
         juce::Array<juce::var> encoded;
         for(const auto& f:fx) {
