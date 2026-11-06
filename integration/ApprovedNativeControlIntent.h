@@ -143,10 +143,9 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
                 if(!nativeFound ||
                    (role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN"))
                     return reject("WIRE_UNSUPPORTED_DESTINATION");
-                // The roster's ROUTE_ONLY decoder explicitly forbids MAIN;
-                // choosing MAIN requires a native primary-output operation.
-                if(kind=="ROUTE_ONLY"&&role=="MAIN")
-                    return reject("WIRE_MAIN_PRIMARY_REQUIRED");
+                // MAIN is a supported ROUTE_ONLY target: the roster makes
+                // exactly one serial unity-gain primary edge, no double dry.
+
                 item->setProperty("to",to);
             }
             if(kind=="CONNECT" || kind=="ROUTE_ONLY") {

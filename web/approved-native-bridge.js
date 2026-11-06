@@ -357,7 +357,7 @@
         // disconnect ID or remove an unrelated parallel SEND.
         const edge=current.graph.edges.find(e=>e.enabled &&
           e.from===channelId && e.to===dest &&
-          e.primaryOutput!==false);
+          e.primaryOutput===true);
         if(!edge)return false;
         change={op:"REMOVE",from:channelId,edgeId:edge.edgeId};
       }
@@ -1835,7 +1835,8 @@
         const graphMainRemove=op.type==="REMOVE" && sourceId &&
           current?.admitted===true &&
           current.graph.edges.some(e=>e.enabled&&e.edgeId===edgeId&&
-            e.from===sourceId&&e.to===current.graph.mainChannelId);
+            e.from===sourceId&&e.to===current.graph.mainChannelId&&
+            e.primaryOutput===true);
         // The approved M4 renderer remains the accepted First Sound owner
         // if ChannelId projection was not admitted. Verify BOTH an exact UI
         // PRIMARY edge and the producer's real MAIN readback before removing.
@@ -1849,10 +1850,12 @@
             e.id===op.edgeId&&e.sourceId===op.sourceId&&
             e.destId===scope?.master?.id);
         const isMainRemove=graphMainRemove||m4MainRemove;
-        if(t&&lane>=0&&(isMainConnect||isMainRemove)){
+        // Admitted new ChannelIds after CH10 have no M4 lane ordinal.
+        if(t&&(lane>=0||(current?.admitted===true&&sourceId))&&
+           (isMainConnect||isMainRemove)){
           const target=isMainRemove?"NONE":"MAIN";
           if(requestPrimaryOut(t,target))
-            status("CH "+(m4Index(t)+1)+" WIRE → "+
+            status(t.name+" WIRE → "+
               (target==="MAIN"?"MAIN":"SOURCE ONLY")+
               " · native ACK/readback required");
           else nativeToast("WIRE MAIN unavailable · verify channel and routing state");

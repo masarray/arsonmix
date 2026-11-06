@@ -355,6 +355,40 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     assert(a.ok() && a.graphRevision==7);
     assert(findEdge(one,main,7)==chainId && !findEdge(one,two,7));
     assert(render() && near(left[11],.3f*center));
+
+    // MAIN is a valid ROUTE_ONLY destination while the physical output is
+    // armed. GROUP -> MAIN is one exclusive path, never double dry PCM.
+    a=session.wireTransaction(7,7,hop1,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==8);
+    assert(!findEdge(one,main,8) && findEdge(one,two,8));
+    assert(render() && near(left[11],.3f*center));
+    // Deliberately connect an independent 40%-gain parallel send to MAIN.
+    const std::array<WireChange,1> parallelMain{connect(one,main,.4f)};
+    a=session.wireTransaction(8,8,parallelMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==9);
+    const auto parallelEdge=findEdge(one,main,9);
+    assert(parallelEdge && findEdge(one,two,9));
+    assert(render() && near(left[11],.3f*1.4f*center,1e-4f));
+    // ROUTE_ONLY to MAIN promotes that same EdgeId, removes only the
+    // previous primary to GROUP, and forces unity post-fader output.
+    const std::array<WireChange,1> backToMain{routeOnly(one,main)};
+    a=session.wireTransaction(9,9,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==10);
+    const auto* afterMain=session.acceptedRouting(epoch,10);
+    assert(afterMain && afterMain->find(one)->primaryOutput==main);
+    assert(!findEdge(one,two,10) && findEdge(one,main,10)==parallelEdge);
+    assert(std::count_if(afterMain->edges.begin(),afterMain->edges.end(),
+        [&](const auto& edge){return edge.from==one;})==1);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+    a=session.wireTransaction(10,10,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==11);
+    assert(findEdge(one,main,11)==parallelEdge);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+    auto staleMain=session.wireTransaction(10,10,backToMain,
+                                           physical,epoch,epoch,false);
+    assert(staleMain.fault==DynamicAcceptedSession::Fault::staleRoster);
+    assert(session.acceptedGraphRevision()==11);
+    assert(render() && near(left[11],.3f*center,1e-4f));
     session.unpublish();
     session.pollRetirement();
 }

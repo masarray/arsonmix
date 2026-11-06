@@ -296,6 +296,25 @@ static void approvedWireTranslationRegression(const juce::var& canonical,
     assert(native.applied[0].kind==armix::mixer::WireChange::Kind::remove);
     assert(native.applied[0].from.value==9007199254740993ULL);
     assert(native.applied[0].edgeId==9223372036854775808ULL);
+    // The accepted ChannelId MAIN is a valid ROUTE_ONLY target from a
+    // real UI OUT gesture (even though the decoder formerly rejected it).
+    auto reconnect=juce::JSON::parse(juce::JSON::toString(original,false));
+    auto wire=std::make_unique<juce::DynamicObject>();
+    wire->setProperty("op","ROUTE_ONLY");
+    wire->setProperty("from",id);
+    wire->setProperty("to","18446744073709551615");
+    wire->setProperty("tap","POST_FADER");
+    wire->setProperty("gainLinear",1.0);
+    juce::Array<juce::var> reconnectChanges;
+    reconnectChanges.add(juce::var(wire.release()));
+    reconnect.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("changes",juce::var(reconnectChanges));
+    auto back=translateApprovedNativeControl(reconnect,accepted,bus);
+    assert(back.ok());
+    assert(executeApprovedNativeControl(native,back.translated));
+    assert(native.applied.size()==1);
+    assert(native.applied.front().kind==armix::mixer::WireChange::Kind::routeOnly);
+    assert(native.applied.front().to.value==18446744073709551615ULL);
 
     auto fail=[&](juce::var intent,juce::var acceptedState,juce::var nativeState){
         const auto before=juce::JSON::toString(nativeState,false);
@@ -319,6 +338,10 @@ static void approvedWireTranslationRegression(const juce::var& canonical,
     noNative.getDynamicObject()->setProperty("supportedOps",
                                               juce::var(juce::Array<juce::var>{}));
     assert(fail(original,accepted,noNative)=="NATIVE_WIRE_NOT_ADMITTED");
+    auto fractionalMain=juce::JSON::parse(juce::JSON::toString(reconnect,false));
+    fractionalMain.getProperty("payload",{}).getProperty("changes",{})[0]
+        .getDynamicObject()->setProperty("gainLinear",0.8);
+    assert(fail(fractionalMain,accepted,bus)=="WIRE_UNSUPPORTED_TAP_OR_GAIN");
     auto invalidTap=juce::JSON::parse(juce::JSON::toString(original,false));
     auto edit=invalidTap.getProperty("payload",{}).getProperty("changes",{})[0];
     edit.getDynamicObject()->setProperty("op","CONNECT");

@@ -390,19 +390,31 @@ public:
             }
             if(!op.to.value || op.to==op.from || !std::isfinite(op.gain) ||
                op.gain<0.f || op.gain>4.f ||
-               (op.kind==WireChange::Kind::routeOnly && op.to==mainId)){
+               (op.kind==WireChange::Kind::routeOnly && op.gain!=1.f)){
                 result.fault=ChannelEditFault::invalidValue;break;
             }
-            const bool already=std::any_of(sends.begin(),sends.end(),
+            const auto existing=std::find_if(sends.begin(),sends.end(),
                 [&](const auto& s){return s.destination==op.to;});
-            if(already && op.kind==WireChange::Kind::connect){
+            if(existing!=sends.end() && op.kind==WireChange::Kind::connect){
                 result.fault=ChannelEditFault::duplicateSend;break;
             }
             if(op.kind==WireChange::Kind::routeOnly){
+                // ROUTE_ONLY is an exclusive primary OUT choice, including
+                // MAIN. Replace the previous primary destination (MAIN or
+                // GROUP), but preserve other deliberate parallel SENDs.
                 sends.erase(std::remove_if(sends.begin(),sends.end(),
-                    [&](const auto& s){return s.destination==mainId;}),
+                    [&](const auto& s){return s.primaryOutput &&
+                                                   s.destination!=op.to;}),
                     sends.end());
-                if(already)continue; // retain original edgeId/gain
+                const auto target=std::find_if(sends.begin(),sends.end(),
+                    [&](const auto& s){return s.destination==op.to;});
+                if(target!=sends.end()){
+                    // Promote the EXACT existing EdgeId to primary instead
+                    // of doubling a parallel SEND in the accepted PCM.
+                    target->primaryOutput=true;
+                    target->gain=1.f;target->preFader=false;target->pan=0.f;
+                    continue;
+                }
             }
             if(sends.size()>=budget_.maximumSendsPerChannel){
                 result.fault=ChannelEditFault::budgetExceeded;break;
