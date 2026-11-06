@@ -470,6 +470,29 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     assert(graph.getProperty("channels",{}).getArray()->size()==2);
     assert(graph.getProperty("capabilities",{})
                  .getProperty("supportedOps",{}).getArray()->isEmpty());
+    // Only a real installed callback may advertise WIRE; G0 and producer
+    // snapshots without the corresponding capability remain fail-closed.
+    auto wiredBus=juce::JSON::parse(juce::JSON::toString(rawBus,false));
+    juce::Array<juce::var> nativeWireOps;
+    nativeWireOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    wiredBus.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(nativeWireOps));
+    auto wiredLive=juce::JSON::parse(juce::JSON::toString(live,false));
+    wiredLive.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeBus",wiredBus);
+    auto wiredSnap=canonicalSnapshot();
+    auto* wiredDevice=wiredSnap.getProperty("device",{}).getDynamicObject();
+    wiredDevice->setProperty("sampleRate",48000.0);
+    wiredDevice->setProperty("bufferFrames",256);
+    wiredDevice->setProperty("enabledInputs",juce::var(inputs));
+    wiredDevice->setProperty("enabledOutputs",juce::var(outputs));
+    assert(synchronizeApprovedRouteDeviceEpoch(wiredSnap,wiredLive));
+    assert(projectInstalledNativeChannelIdGraph(wiredSnap,wiredLive));
+    const auto wireCaps=wiredSnap.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("supportedOps",{});
+    assert(wireCaps.getArray()&&
+           wireCaps.getArray()->contains("APPLY_WIRE_TRANSACTION"));
+    assert(!static_cast<bool>(wiredSnap.getProperty("productionCallbackLive",false)));
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 }
 

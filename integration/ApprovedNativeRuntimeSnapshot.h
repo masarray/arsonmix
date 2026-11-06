@@ -261,8 +261,8 @@ inline bool projectInstalledNativeChannelIdGraph(
     // Advertise only controls provided by the currently installed and
     // positively admitted native callback (never inferred from a JSON shape
     // or the browser). Both the native and public capability are required by
-    // the stateless control translator. WIRE remains explicitly disabled
-    // until the native structural dispatcher is independently admitted.
+    // the stateless control translator. Never invent a WIRE capability; it
+    // is enabled only by positive native ChannelId PCM readback.
     juce::Array<juce::var> available;
     const auto nativeOps=bus.getProperty("supportedOps",{});
     const auto* actual=nativeOps.getArray();
@@ -277,6 +277,11 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("SET_MUTE"));
         available.add(juce::String("SET_SOLO"));
     }
+    // The installed native publisher already supported WIRE, but the host
+    // projection discarded it. The GUI then rejected every real BUS/WIRE
+    // gesture as NOT_ADMITTED. Admit only the actual installed operation.
+    if(has("NATIVE_APPLY_WIRE_TRANSACTION"))
+        available.add(juce::String("APPLY_WIRE_TRANSACTION"));
     const auto graph=snapshot.getProperty("graph",{});
     const auto caps=graph.getProperty("capabilities",{});
     if (auto* props=caps.getDynamicObject())

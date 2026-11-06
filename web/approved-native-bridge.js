@@ -119,11 +119,12 @@
       const source=accepted.channels.find(ch=>ch.id===edge.from);
       const isMain=edge.to===accepted.mainChannelId;
       const isPrimary=source?.primaryOutId===edge.to;
-      const kind=isMain||isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
+      // An independent SEND to MAIN is not the source's primary OUT.
+      const kind=isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
       const mode=isMain?"postFader":kind==="primary"?"routeOnly":
         kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
-      if (isMain && edge.gainLinear!==1) return false;
-      const gainDb=isMain?0:Math.round(Math.max(-60,Math.min(6,
+      if (isPrimary && edge.gainLinear!==1) return false;
+      const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
         edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
       let uiId=uiByWireId.get(edge.edgeId);
       if (uiId===undefined) uiId=scope.allocateWireId();

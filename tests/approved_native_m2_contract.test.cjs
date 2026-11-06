@@ -230,6 +230,17 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
 });
 
+test("P0 installed ChannelId WIRE capability reaches the GUI",()=>{
+ const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ const native=read("src/LiveDryRoutingLab.h");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(native,/NATIVE_APPLY_WIRE_TRANSACTION/);
+ assert.match(projection,/if\(has\("NATIVE_APPLY_WIRE_TRANSACTION"\)\)/);
+ assert.match(projection,/available\.add\(juce::String\("APPLY_WIRE_TRANSACTION"\)\)/);
+ assert.match(bridge,/const kind=isPrimary\?"primary"/);
+ assert.match(bridge,/if \(isPrimary && edge\.gainLinear!==1\)/);
+ assert.doesNotMatch(bridge,/if \(isMain && edge\.gainLinear!==1\)/);
+});
 test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");
