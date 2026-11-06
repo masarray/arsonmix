@@ -1045,11 +1045,18 @@
       (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
     if(label && label.textContent!==transport)label.textContent=transport;
     const warning=document.querySelector?.(".status-bar .warning");
+    // A silent first-sound session is not an operator failure and does
+    // not require Patch CH1 / Arm / Start controls. The real IN dropdown
+    // initiates native source publication; only its correlated ACK may
+    // request a safe first MONITOR. If the driver exposes no physical IN,
+    // guide the operator to the existing Audio I/O panel instead.
     const warningText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
-        "MAIN ARMED · PCM NOT YET ADMITTED"):
-      legacy()?.routeAccepted?"INPUT PATCHED · OUTPUT MUTED":
-      "NO AUDIBLE OUTPUT · PATCH INPUT + ARM";
+        "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
+      !d.enabledInputs?.length?"NO CAPTURE INPUT · OPEN AUDIO I/O":
+      legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
+      deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
+      "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
     if(warning && warning.textContent!==warningText)warning.textContent=warningText;
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
