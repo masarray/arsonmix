@@ -80,6 +80,25 @@ int main() {
     assert(loaded.strips[0].channelFormat==1 && loaded.strips[1].channelFormat==2);
     assert(loaded.strips[2].busReturn && loaded.strips[2].channelFormat==1);
     assert(loaded.strips[0].fx[0].stateSha256==juce::String::repeatedString("a",64));
+    // V5 EQ is mandatory and fixed-width: never accept a partial 7-band
+    // preset that could silently change the realtime DSP routing.
+    auto missingEq=juce::JSON::parse(encoded);
+    auto* eqRows=missingEq.getProperty("strips",{}).getArray();
+    eqRows->getReference(0).getDynamicObject()->removeProperty("builtinEq");
+    SnapshotV2 invalidEq{};
+    assert(!Codec::decode(juce::JSON::toString(missingEq),invalidEq));
+    auto shortEq=juce::JSON::parse(encoded);
+    auto* eqStrips=shortEq.getProperty("strips",{}).getArray();
+    auto* eqBands=eqStrips->getReference(0).getProperty(
+        "builtinEq",{}).getProperty("bands",{}).getArray();
+    assert(eqBands&&eqBands->size()==8);
+    eqBands->removeLast();
+    assert(!Codec::decode(juce::JSON::toString(shortEq),invalidEq));
+    auto missingAuxEq=juce::JSON::parse(encoded);
+    auto* eqAux=missingAuxEq.getProperty("auxReturns",{}).getArray();
+    eqAux->getReference(0).getDynamicObject()->removeProperty("builtinEq");
+    assert(!Codec::decode(juce::JSON::toString(missingAuxEq),invalidEq));
+
     assert(loaded.strips[0].eq.installed&&!loaded.strips[0].eq.bypassed);
     assert(loaded.strips[0].eq.bands[2].enabled&&
            loaded.strips[0].eq.bands[2].gainDb==4.5f);
