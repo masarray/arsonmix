@@ -109,6 +109,8 @@ test("held ChannelId drag publishes first gain and coalesces latest BEFORE relea
  assert.equal(h.scope.tracks[4].level,-6);
  old.graph.channels[4].controls.faderDb=-12;
  h.listeners.get("arMixConsoleSnapshot")(old);
+ assert.equal(h.visual.at(-1).db,-24,
+   "old native ACK/readback may update model, never snap the visual fader backwards");
  h.tick();
  const second=h.sent.filter(e=>e.name==="arMixConsoleIntent").at(-1).payload;
  assert.equal(second.payload.valueDb,-24,
@@ -125,6 +127,10 @@ test("held ChannelId drag publishes first gain and coalesces latest BEFORE relea
  assert.equal(h.scope.tracks[4].level,-24);
  move(-30); // final mouse pointerup will commit this new value
  h.window.__ARMIX_NATIVE_M2__.consumeField({target:fader,type:"change"});
+ // Pointer capture has ended. A delayed old native snapshot is NOT permission
+ // to replace the final target that is still in flight.
+ h.listeners.get("arMixConsoleSnapshot")(clone(updated));
+ assert.equal(h.visual.at(-1).db,-30,"released cap holds final latest target");
  const final=h.sent.filter(e=>e.name==="arMixConsoleIntent").at(-1).payload;
  assert.equal(final.payload.valueDb,-30,"release flushes final value");
  assert.equal(h.scope.tracks[4].level,-24,"no optimistic native readback");

@@ -164,14 +164,16 @@
       const c=ch.controls;
       const db=c.faderDb,pan=c.pan*100;
       const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
+      const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
       if(faderChanged)t.level=db;
       if(Number.isFinite(pan))t.pan=pan;
       t.mute=c.mute;t.solo=c.solo;
-      if(switchChanged){
+      if(switchChanged && scope.activeFaderId!==t.id){
         scope.refreshStrip?.(t);
+        if(visualDb!==null)scope.syncFaderVisual?.({...t,level:visualDb});
         meterElements.delete(t.id);
-      }else if(faderChanged&&scope.activeFaderId!==t.id)
+      }else if(faderChanged&&scope.activeFaderId!==t.id&&visualDb===null)
         scope.syncFaderVisual?.(t);
       const root=document.querySelector('.strip[data-id="'+t.id+'"]');
       const knob=root?.querySelector('.center-pan');
@@ -499,6 +501,23 @@
       edit.authority===now.authority &&
       edit.channelId===now.channelId;
   }
+  // Only the last gesture target owns the visual fader cap until the
+  // producer independently reads that SAME target back. Earlier ACKs and
+  // snapshot ticks must not move the cap backwards after pointer release.
+  // The track model always remains native-owned (not optimistically edited).
+  const liveFaderVisualTargets=new Map();
+  function pendingFaderVisualDb(t,actualDb){
+    const key=controlKey(t?.kind==="master"?"masterGain":"faderDb",t);
+    const pending=liveFaderVisualTargets.get(key);
+    if(!pending)return null;
+    if(!sameNativeEditIdentity(pending)){
+      liveFaderVisualTargets.delete(key);return null;
+    }
+    if(Math.abs(actualDb-pending.value)<=.11){
+      liveFaderVisualTargets.delete(key);return null;
+    }
+    return pending.value;
+  }
   // null means an admitted ChannelId intent is already awaiting its ACK /
   // producer readback. Keep ONLY the newest dB target, never drop release.
   function dispatchLiveScalar(edit) {
@@ -517,7 +536,11 @@
       if(result===null)continue;
       pendingNativeControl.delete(key);
       if(result)lastNativeControlSent.set(key,performance.now());
-      else status("LIVE PCM scalar rejected · native identity changed");
+      else {
+        if(liveFaderVisualTargets.get(key)===edit)
+          liveFaderVisualTargets.delete(key);
+        status("LIVE PCM scalar rejected · native identity changed");
+      }
     }
   }
   function streamFaderControl(parameter,t,value,final){
@@ -525,6 +548,8 @@
     const key=controlKey(parameter,t),now=performance.now();
     const edit={parameter,t,value,...nativeEditIdentity(t)};
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
+    if(parameter==="faderDb"||parameter==="masterGain")
+      liveFaderVisualTargets.set(key,edit);
     const last=lastNativeControlSent.get(key);
     if(final||last===undefined||now-last>=30)
       flushLiveScalars(); // pointermove publishes BEFORE pointerup
@@ -645,13 +670,15 @@
         if(!t||!c||!Number.isFinite(db)||!Number.isFinite(pan)||
            typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
         const oldDb=t.level;
+        const visualDb=pendingFaderVisualDb(t,db);
         const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
         t.level=db;t.pan=pan;t.mute=c.mute;t.solo=c.solo;
         if(switchChanged && scope.activeFaderId!==t.id){
           scope.refreshStrip?.(t);
+          if(visualDb!==null)scope.syncFaderVisual?.({...t,level:visualDb});
           m4Meters.delete(t.id);
         }else if(Math.abs(oldDb-db)>.015 &&
-                 scope.activeFaderId!==t.id)
+                 scope.activeFaderId!==t.id&&visualDb===null)
           scope.syncFaderVisual?.(t);
         const panKnob=document.querySelector(
           '.strip[data-id="'+t.id+'"] .center-pan');
@@ -660,8 +687,9 @@
       }
       if(scope.master && Number.isFinite(session.main?.db) &&
          Math.abs(scope.master.level-session.main.db)>.015){
+        const visualDb=pendingFaderVisualDb(scope.master,session.main.db);
         scope.master.level=session.main.db;
-        if(scope.activeFaderId!==scope.master.id)
+        if(scope.activeFaderId!==scope.master.id && visualDb===null)
           scope.syncFaderVisual?.(scope.master);
       }
       if(scope.master && typeof session.main?.mute==="boolean" &&
@@ -1321,6 +1349,8 @@
         if(failed){
           for(const [key,edit] of pendingNativeControl)
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
+          for(const [key,edit] of liveFaderVisualTargets)
+            if(edit.authority==="CHANNEL_ID")liveFaderVisualTargets.delete(key);
           lastNativeError=state.lastError;
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
@@ -1419,6 +1449,9 @@
         ack.channel===p.channel && ack.parameter===p.parameter;
       if(!accepted) {
         pendingM4Controls.delete(key);
+        if(p.parameter==="masterGain")liveFaderVisualTargets.delete("masterGain:main");
+        else if(p.parameter==="faderDb")
+          liveFaderVisualTargets.delete("faderDb:"+m4TrackIds[p.channel]);
         status("NATIVE M4 REJECTED · "+(ack?.error||"stale control token"));
       } else p.acked=true;
       controller.subscribe(); // request later independent producer readback
