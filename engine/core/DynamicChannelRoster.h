@@ -355,7 +355,6 @@ public:
         const auto main=std::find_if(candidate.begin(),candidate.end(),
             [](const auto& ch){return ch.role==ChannelRole::main;});
         if(main==candidate.end()){result.fault=ChannelEditFault::invalidAction;return result;}
-        const ChannelId mainId=main->id;
         std::uint64_t stagedNextEdge=nextEdgeId_;
         if(!assignMissingEdgeIds(candidate,stagedNextEdge)){
             result.fault=ChannelEditFault::idExhausted;return result;

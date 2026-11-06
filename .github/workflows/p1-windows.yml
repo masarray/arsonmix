@@ -59,7 +59,23 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
+      # PR builds must package the exact branch HEAD, not GitHub's synthetic
+      # pull/418/merge checkout. BUILD_PROVENANCE.json records this SHA and the
+      # artifact verifier compares the embedded EXE, files and source tree.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Verify FAT checkout matches exact PR source HEAD
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'integration/daw-direct-hardware-input-20261105' }}
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SOURCE_SHA) {
+            throw "FAT_SOURCE_HEAD_MISMATCH expected=$env:EXPECTED_SOURCE_SHA actual=$actual"
+          }
+          Write-Host "FAT_EXACT_PR_HEAD_CHECKOUT=$actual"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
