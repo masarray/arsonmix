@@ -193,14 +193,18 @@ public:
         return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
     using BuiltInEqAck=armix::builtin_fx::ChannelEqBank::Ack;
-    bool prepareBuiltInEq(double rate) noexcept {return builtinEq_.prepare(rate);}
+    bool prepareBuiltInEq(double rate) noexcept {return builtinEq_ && builtinEq_->prepare(rate);}
+    // CONTROL-only lease for migration to the accepted native ChannelId
+    // renderer. Lifetime pinned by BOTH graph publishers, not the GUI.
+    std::shared_ptr<armix::builtin_fx::ChannelEqBank>
+    builtInEqLease() const noexcept {return builtinEq_;}
     bool queueBuiltInEqEdit(int lane,std::size_t slot,const armix::builtin_fx::Band& b,
                             std::uint64_t req,std::uint64_t epoch,std::uint64_t rev) noexcept {
-        return lane>=0&&lane<fxSlots&&builtinEq_.queueBandEdit(
+        return lane>=0&&lane<fxSlots&&builtinEq_->queueBandEdit(
                  static_cast<std::size_t>(lane),slot,b,req,epoch,rev);
     } // producer on control; success = queued, not applied
     bool pollBuiltInEqAck(int lane,BuiltInEqAck& ack) noexcept {
-        return lane>=0&&lane<fxSlots&&builtinEq_.pollAck(static_cast<std::size_t>(lane),ack);
+        return lane>=0&&lane<fxSlots&&builtinEq_->pollAck(static_cast<std::size_t>(lane),ack);
     } // control-only, validate epoch/rev before UI use
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,
@@ -307,7 +311,7 @@ public:
             if(strip<0||strip>=fxSlots)return;
             // In-place channel EQ before existing vendor VST3 inserts/PRE sends.
             // Default OFF is bitwise-transparent; no second callback.
-            builtinEq_.render(static_cast<std::size_t>(strip),l,r,
+            builtinEq_->render(static_cast<std::size_t>(strip),l,r,
                               static_cast<std::size_t>(samples));
             const int count=counts_[strip]; // immutable, prepared OFF RT
             if(count>0) {
@@ -326,7 +330,8 @@ public:
     }
 
 private:
-    armix::builtin_fx::ChannelEqBank builtinEq_{};
+    std::shared_ptr<armix::builtin_fx::ChannelEqBank> builtinEq_{
+        std::make_shared<armix::builtin_fx::ChannelEqBank>()};
     std::unique_ptr<PreparedMixerBlock> block_;
     RealtimeStripControls controls_ {};
     FxBank processors_ {};

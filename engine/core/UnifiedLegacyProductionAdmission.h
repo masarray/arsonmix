@@ -181,6 +181,13 @@ public:
             (*static_cast<Bank*>(ctx))(id,l,r,n);
         };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
+        // One shared lightweight native DSP owner across M4→ChannelId
+        // cutover. Do NOT instantiate ArSonEQ/VST3 or reset user curves.
+        plan.builtInEq=acceptedM4Fx.builtInEqLease();
+        for(int i=0;i<stripCount;++i)
+            plan.builtInEqIds[static_cast<std::size_t>(i)]=candidate.ids.inputs[i];
+        for(int b=0;b<auxBusCount;++b)
+            plan.builtInEqIds[static_cast<std::size_t>(stripCount+b)]=candidate.ids.aux[b];
         result.native=publisher.commit(candidate.roster,candidate.request,
             expectedPcmRevision,deviceEpoch,currentHardwareEpoch,
             allOutputsDisarmed,std::move(plan));

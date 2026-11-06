@@ -4,6 +4,8 @@
 #include "DynamicConsoleRoutingView.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
+#include "../builtin_fx/ChannelEqBank.h"
+#include <array>
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -28,6 +30,10 @@ public:
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
         void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
         std::uint64_t deviceEpoch=0,graphRevision=0;
+        // Built-in native EQ is independent of the vendor VST3 plan.
+        // Populated on initial M4→ChannelId admission, never on callback.
+        std::shared_ptr<armix::builtin_fx::ChannelEqBank> builtInEq;
+        std::array<ChannelId,armix::builtin_fx::ChannelEqBank::laneCount> builtInEqIds{};
         bool valid() const noexcept {
             return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision) ||
                    (owner&&context==owner.get()&&render&&
@@ -39,6 +45,8 @@ private:
         DynamicPreparedMixerBlock graph;
         DynamicConsoleRoutingView routing;
         FxPlan fx; // SAME lifetime and revision as native PCM graph
+        std::shared_ptr<armix::builtin_fx::ChannelEqBank> builtInEq;
+        std::array<ChannelId,armix::builtin_fx::ChannelEqBank::laneCount> builtInEqIds{};
         int physicalInputs=0;
         bool monitor=false;
     };
@@ -102,6 +110,17 @@ public:
             report.fault=Fault::invalidGraph;return report;
         }
         prepared->physicalInputs=request.physicalInputs;
+        // Preserve the single RT-owned EQ state across native graph changes.
+        // The old/new graph leases hold the same prepared bank; the existing
+        // render gate ensures only one producer can mutate filter histories.
+        const auto* prior=publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision);
+        if(prior && prior->builtInEq) {
+            prepared->builtInEq=prior->builtInEq;        // CONTROL refcount only
+            prepared->builtInEqIds=prior->builtInEqIds;  // exact stable IDs
+        } else {
+            prepared->builtInEq=fx.builtInEq;
+            prepared->builtInEqIds=fx.builtInEqIds;
+        }
         prepared->fx=std::move(fx); // one accepted control-plane publication
         prepared->monitor=std::any_of(roster.channels().begin(),
           roster.channels().end(),[](const ChannelStripDefinition& row) {
@@ -178,6 +197,17 @@ public:
         // Snapshot ownership pins the M4 instance throughout this callback;
         // only control-thread retirement releases the shared owner.
         const auto dispatch=[&](ChannelId id,float* l,float* r,int n) noexcept {
+            // Independent minimum-phase EQ BEFORE vendor inserts, exactly
+            // once per native ChannelId strip. Unmapped extra native buses
+            // pass through flat; never guess their identity by strip index.
+            if(auto* eq=snap->prepared->builtInEq.get()) {
+                for(std::size_t lane=0;lane<snap->prepared->builtInEqIds.size();++lane) {
+                    if(snap->prepared->builtInEqIds[lane]==id) {
+                        eq->render(lane,l,r,static_cast<std::size_t>(n));
+                        break;
+                    }
+                }
+            }
             const auto& acceptedFx=snap->prepared->fx;
             if(acceptedFx.render)
                 acceptedFx.render(acceptedFx.context,id,l,r,n);
@@ -199,7 +229,36 @@ public:
         return current?&current->routing:nullptr;
     }
 
-    // M3C realtime parameters on the accepted ChannelId graph ONLY.
+    // CONTROL APIs: actual native ChannelId identity, no ordinal fallback.
+    // success = queued only; ACK is generated exclusively by AUDIO render.
+    bool queueBuiltInEqEdit(std::uint64_t epoch,std::uint64_t revision,ChannelId id,
+                            std::size_t slot,const armix::builtin_fx::Band& band,
+                            std::uint64_t requestId) noexcept {
+        if(!requestId||!id.value)return false;
+        return publisher_.updateActiveControl(epoch,revision,
+          [&](Prepared& p) noexcept {
+            if(!p.builtInEq)return false;
+            for(std::size_t lane=0;lane<p.builtInEqIds.size();++lane)
+                if(p.builtInEqIds[lane]==id)
+                    return p.builtInEq->queueBandEdit(lane,slot,band,
+                                                      requestId,epoch,revision);
+            return false;
+          });
+    }
+    bool pollBuiltInEqAck(std::uint64_t epoch,std::uint64_t revision,ChannelId id,
+                          armix::builtin_fx::ChannelEqBank::Ack& ack) noexcept {
+        if(!id.value)return false;
+        return publisher_.updateActiveControl(epoch,revision,
+          [&](Prepared& p) noexcept {
+            if(!p.builtInEq)return false;
+            for(std::size_t lane=0;lane<p.builtInEqIds.size();++lane)
+                if(p.builtInEqIds[lane]==id)
+                    return p.builtInEq->pollAck(lane,ack);
+            return false;
+          }) && ack.deviceEpoch==epoch && ack.graphRevision==revision;
+    }
+
+        // M3C realtime parameters on the accepted ChannelId graph ONLY.
     // Caller must propagate the real device epoch and native ACK revision.
     // Rejected/stale edits leave the last accepted PCM unchanged.
     bool setPhysicalSource(std::uint64_t epoch,std::uint64_t revision,

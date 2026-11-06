@@ -1853,7 +1853,16 @@ public:
                             std::uint64_t requestId,std::uint64_t expectedEpoch,
                             std::uint64_t expectedRevision) noexcept {
         if(!ready()||!hasExplicitRoute()||requestId==0||lane<0||lane>=fxSlots||
-           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+           expectedEpoch!=epoch())return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(expectedRevision!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.queueBuiltInEqEdit(expectedEpoch,expectedRevision,
+                                                       id,slot,band,requestId);
+        }
+        if(expectedRevision!=revision())return false;
         return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
             [&](FxGraph& graph) noexcept {return graph.queueBuiltInEqEdit(
                 lane,slot,band,requestId,expectedEpoch,expectedRevision);});
@@ -1861,7 +1870,15 @@ public:
     bool pollBuiltInEqAck(int lane,std::uint64_t expectedEpoch,
                           std::uint64_t expectedRevision,BuiltInEqAck& ack) noexcept {
         if(!ready()||lane<0||lane>=fxSlots||
-           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+           expectedEpoch!=epoch())return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(expectedRevision!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.pollBuiltInEqAck(expectedEpoch,expectedRevision,id,ack);
+        }
+        if(expectedRevision!=revision())return false;
         return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
             [&](FxGraph& graph) noexcept {return graph.pollBuiltInEqAck(lane,ack);}) &&
             ack.deviceEpoch==expectedEpoch&&ack.graphRevision==expectedRevision;
