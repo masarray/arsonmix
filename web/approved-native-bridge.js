@@ -855,6 +855,9 @@
     scope?.syncFaderVisual?.({...t,level:db});
   }
   function paintM4FxInstances(m) {
+    // Catalog refresh is metadata, never permission to replace a native
+    // rack with an inactive compatibility graph's old/empty FX inventory.
+    if(mixerSession()?.authority==="CHANNEL_ID")return;
     if(!Array.isArray(m?.fxInstances)||!scope?.tracks)return;
     for(let lane=0;lane<10;lane++){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[lane]);

@@ -21,7 +21,12 @@ previously working OUT-dropdown transaction.
 4. Clicking an admitted native insert still queried M4's FX array. Editor
    acquisition now uses exact ChannelId, native PCM revision, slot and opaque
    instance token. The existing JUCE editor window retains the real owner.
-5. A first drag could reach the bridge while SOURCE admission or another
+5. Catalog refresh called the M4 FX painter even while ChannelId owned PCM.
+   Its stale/empty FX array could erase an installed native rack in the GUI,
+   and equal-revision telemetry would not rebuild it. The M4 painter now
+   refuses to paint over native authority; a catalog-refresh regression
+   verifies the accepted name/token survives.
+6. A first drag could reach the bridge while SOURCE admission or another
    native intent was pending. One bounded latest CONNECT/ROUTE_ONLY gesture
    is retained, requests independent readback and dispatches only after native
    projection is ready. Epoch changes, changed mapped endpoint identities,

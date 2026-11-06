@@ -86,6 +86,10 @@ def main():
             ack(page,state,fx)
             emit(page,'arMixConsoleSnapshot',state)
             page.wait_for_function("()=>document.getElementById('fastPicker').hidden")
+            emit(page,'arMixCatalog',{'items':[{'id':'test-vst-64','name':'Latency VST','vendor':'Fixture',
+                'category':'EQ','favorite':True}],'scanning':False})
+            assert page.locator('#tracks .strip[data-id="1"] .fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST', 'catalog refresh overwrote the accepted native rack'
+
             page.locator('#tracks .strip[data-id="1"] .fx-section [data-action="openPlugin"]').first.click()
             editor=page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='routingFxEditor').at(-1)?.payload")
             assert editor and editor['channelId']==SOURCE and editor['instanceId']=='g5c-actual'
