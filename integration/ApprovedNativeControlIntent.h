@@ -70,6 +70,44 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         return reject("STALE_NATIVE_CONTROL_REVISION");
     if(!request.isString() || request.toString().isEmpty() ||
        request.toString().length()>128)return reject("INVALID_REQUEST_ID");
+    // A true ChannelId processing M/ST edit is structural PCM, never an
+    // M4 ordinal patch. Check both independent producer and public contracts
+    // before passing device/graph/roster-fenced native identities.
+    if(op=="SET_PROCESSING_FORMAT") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),
+                                 "SET_PROCESSING_FORMAT") ||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_SET_PROCESSING_FORMAT"))
+            return reject("NATIVE_PROCESSING_FORMAT_NOT_ADMITTED");
+        juce::var owner,producer;
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())owner=row;
+        for(const auto& row:*nativeRows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())producer=row;
+        if(!owner.isObject()||!producer.isObject()||
+           owner.getProperty("role","").toString()!="INPUT" ||
+           producer.getProperty("role","").toString()!="INPUT" ||
+           owner.getProperty("processingFormat","").toString()!=
+               producer.getProperty("format","").toString())
+            return reject("PROCESSING_FORMAT_SOURCE_NOT_ADMITTED");
+        const auto payload=publicIntent.getProperty("payload",{});
+        const auto fmt=payload.getProperty("format",{});
+        if(!payload.isObject()||!fmt.isString()||
+           (fmt.toString()!="MONO"&&fmt.toString()!="STEREO")||
+           fmt.toString()==producer.getProperty("format","").toString())
+            return reject("INVALID_NATIVE_PROCESSING_FORMAT");
+        auto checked=std::make_unique<juce::DynamicObject>();
+        checked->setProperty("format",fmt);
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);
+        converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);
+        converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);
+        converted->setProperty("operation","NATIVE_SET_PROCESSING_FORMAT");
+        converted->setProperty("payload",juce::var(checked.release()));
+        return {juce::var(converted.release()),{}};
+    }
     // P1 WIRE: the previous GUI emitted APPLY_WIRE_TRANSACTION, but this
     // translator accepted only fader/pan/mute/solo and silently left native
     // BUS routing unavailable. Validate the exact accepted ChannelId/EdgeId
@@ -351,6 +389,23 @@ inline bool executeApprovedNativeControl(Engine& engine,
     if(!payload.isObject())return false;
     const auto operation=translated.getProperty("operation","").toString();
     const auto channel=armix::mixer::ChannelId{id};
+    if(operation=="NATIVE_SET_PROCESSING_FORMAT") {
+        const auto format=payload.getProperty("format",{});
+        if(!format.isString()||
+           (format.toString()!="MONO"&&format.toString()!="STEREO"))
+            return false;
+        const auto mode=format.toString()=="MONO"?
+            armix::mixer::ProcessingFormat::mono:
+            armix::mixer::ProcessingFormat::stereo;
+        if constexpr(requires(Engine& e,armix::mixer::ProcessingFormat width) {
+            e.editNativeProcessingFormat(epoch,revision,roster,channel,width);
+        }) {
+            const auto changed=engine.editNativeProcessingFormat(
+                epoch,revision,roster,channel,mode);
+            return changed.accepted && changed.error!=nullptr &&
+                   changed.error[0]=='\\0';
+        } else return false;
+    }
     if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
         const auto raw=payload.getProperty("changes",{});
         const auto* edits=raw.getArray();
