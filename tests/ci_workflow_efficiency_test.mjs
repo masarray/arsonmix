@@ -124,7 +124,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
 
 test('ordinary GUI PR and main use current targeted checks; full history is explicit', () => {
   assert.match(ui, /group: ui-smoke-/);
-  assert.match(ui, /cancel-in-progress: \\$\\{\\{ github\\.event_name != 'workflow_dispatch' \\$\\}\\}/);
+  assert.match(ui, /cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
   assert.match(ui, /python tests\/pages_wire_first_canonical_main_smoke.py/);
   assert.match(ui, /python tests\/pages_v55_context_wire_fader_smoke.py/);
   assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
