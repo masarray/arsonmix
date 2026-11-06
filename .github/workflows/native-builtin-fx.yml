@@ -15,11 +15,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   standalone-dsp:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # Fast Linux DSP; canonical Windows MSVC only on full milestone review.
+    runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
