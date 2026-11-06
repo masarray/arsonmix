@@ -139,6 +139,9 @@ def main():
                 page.locator(".mx-peq-band").nth(4).locator(".mx-peq-band-power").click()
                 flush_edits(page,state,values,handled)
                 assert all(values[i]["enabled"] for i in (2,3,4)),values
+                # The three power clicks leave band 4 selected. Explicitly
+                # select bell 2 before checking its independent gain edit.
+                page.locator(".mx-peq-band").nth(2).locator(".mx-peq-select").click()
                 gain=page.locator('.mx-peq-knob[data-kind="gainDb"] .mx-peq-value')
                 gain.fill("5.5");gain.press("Tab")
                 flush_edits(page,state,values,handled)
