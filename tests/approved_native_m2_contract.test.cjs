@@ -257,6 +257,21 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
 });
 
+test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const host=read("src/Main.cpp");
+ const engine=read("src/LiveAudioEngine.h");
+ const lab=read("src/LiveDryRoutingLab.h");
+ assert.match(bridge,/function dispatchNativeSource\(\)/);
+ assert.match(bridge,/action:"routingNativeSourcePatch"/);
+ assert.match(bridge,/arMixNativeSourceAck/);
+ assert.match(bridge,/pendingNativeSources.set\(id,choice\)/);
+ assert.match(host,/if\(action=="routingNativeSourcePatch"\)/);
+ assert.match(host,/engine_\.patchNativeInputSource\(ep,rev,roster,/);
+ assert.match(lab,/const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1/);
+ assert.match(lab,/nativeStructureLive_=true; \/\/ M4 source roster no longer authoritative/);
+ assert.match(engine,/NATIVE_SOURCE_PUBLICATION_EXCEPTION/);
+});
 test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");

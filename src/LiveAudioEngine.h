@@ -1533,16 +1533,42 @@ public:
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
             int left,int right,bool stereo) {
         LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="HARDWARE_NOT_DISARMED";
+        fail.error="NATIVE_SOURCE_DEVICE_UNAVAILABLE";
         if(independent_.active()||!attached_||!directFence_.permitted()||
+           secondaryOutput_.armed()||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal ||
-           !allOutputsDisarmed()||handoff_.busy()||
-           fxMovePhase_.load(std::memory_order_acquire)!=0)
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
             return fail;
-        return dryRoutingLab_.patchNativeInputSource(
-            epoch,pcmRevision,rosterRevision,channel,left,right,stereo,true);
+        const bool wasMonitoring=isMonitorEnabled();
+        bool publishing=false;
+        try{
+            const auto result=dryRoutingLab_.patchNativeInputSource(
+                epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
+                true,[&]{
+                    publishing=true;
+                    if(wasMonitoring)topologyPublicationMute_.store(
+                        true,std::memory_order_release);
+                });
+            if(publishing){
+                if(wasMonitoring &&
+                   !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
+                       wasMonitoring,epoch==dryRoutingLab_.epoch(),
+                       liveOutputArmFault(false).isEmpty(),
+                       secondaryOutput_.armed()))
+                    setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            return result;
+        }catch(...){
+            if(publishing){
+                setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            fail.error="NATIVE_SOURCE_PUBLICATION_EXCEPTION";
+            return fail;
+        }
     }
     LiveDryRoutingLab::NativeBusResult setNativePrimaryOutput(
             std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,

@@ -1543,7 +1543,8 @@ public:
     NativeBusResult patchNativeInputSource(std::uint64_t expectedEpoch,
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             armix::mixer::ChannelId channel,int physicalLeft,
-            int physicalRight,bool stereo,bool outputsDisarmed=false) {
+            int physicalRight,bool stereo,bool outputsDisarmed=false,
+            const std::function<void()>& beforePublish={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1556,28 +1557,32 @@ public:
            expectedRosterRevision!=nativeAccepted_.graph.roster.revision())
             return reply;
         const auto* target=nativeAccepted_.graph.roster.find(channel);
-        if(!target||target->role!=ChannelRole::input||!nativeStructureLive_) {
-            reply.error="NOT_DYNAMIC_INPUT";return reply;
+        if(!target||target->role!=ChannelRole::input){
+            reply.error="NATIVE_INPUT_ID_UNAVAILABLE";return reply;
         }
-        for(const auto id:nativeAccepted_.graph.ids.inputs)
-            if(channel==id) {reply.error="M4_INPUT_NOT_DYNAMIC";return reply;}
+        const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1;
         int l=-1,r=-1;
-        for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
-            const int actual=enabledPorts_[i].load(std::memory_order_relaxed);
-            if(actual==physicalLeft)l=i;
-            if(actual==physicalRight)r=i;
-        }
-        if(l<0 || (stereo&&(r<0||r==l))) {
-            reply.error="INPUT_NOT_IN_VERIFIED_HARDWARE_MASK";return reply;
+        if(!disconnect){
+            for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
+                const int physical=enabledPorts_[i].load(std::memory_order_relaxed);
+                if(physical==physicalLeft)l=i;
+                if(physical==physicalRight)r=i;
+            }
+            if(l<0||(stereo&&(r<0||r==l))||
+               (!stereo&&physicalRight!=-1)){
+                reply.error="INPUT_NOT_IN_VERIFIED_HARDWARE_MASK";return reply;
+            }
         }
         try {
             auto request=nativeAccepted_.graph.request;
             auto& inputs=request.sources;
             inputs.erase(std::remove_if(inputs.begin(),inputs.end(),
                 [channel](const auto& p){return p.id==channel;}),inputs.end());
-            DynamicSourcePatch patch;
-            patch.id=channel;patch.inputL=l;patch.inputR=stereo?r:-1;
-            patch.stereo=stereo;inputs.push_back(patch);
+            if(!disconnect){
+                DynamicSourcePatch patch;
+                patch.id=channel;patch.inputL=l;patch.inputR=stereo?r:-1;
+                patch.stereo=stereo;inputs.push_back(patch);
+            }
             DynamicChannelFxLeaseBank bank;
             if(DynamicChannelFxLeaseBank::reuseRevision(
                     expectedEpoch,expectedPcmRevision+1,
@@ -1593,6 +1598,7 @@ public:
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,left,right,n);
             };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
+            if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
                 nativeAccepted_.graph.roster,request,expectedPcmRevision,
                 expectedEpoch,epoch(),true,std::move(fx));
@@ -1602,6 +1608,8 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true; // M4 source roster no longer authoritative
+            nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
             reply.pcmRevision=published.revision;
             reply.rosterRevision=nativeAccepted_.graph.roster.revision();

@@ -406,6 +406,31 @@
     },8000);
     return true;
   }
+  const pendingNativeSources=new Map();
+  let activeNativeSource=null,nativeSourceSerial=0;
+  function dispatchNativeSource(){
+    if(activeNativeSource||!pendingNativeSources.size)return;
+    const current=controller?.state()?.current;
+    if(!current?.admitted||mixerSession()?.authority!=="CHANNEL_ID")return;
+    const [id,choice]=pendingNativeSources.entries().next().value;
+    pendingNativeSources.delete(id);
+    if(!current.graph.channels.some(ch=>ch.id===id&&ch.role==="INPUT"))
+      return nativeToast("Source identity changed · refresh native mixer");
+    const requestId="source-native-"+(++nativeSourceSerial);
+    activeNativeSource={requestId,id,choice};
+    backend.emitEvent("arMixAction",{
+      action:"routingNativeSourcePatch",requestId,channelId:id,
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+      rosterRevision:current.graph.rosterRevision,
+      mode:choice.mode,left:choice.left,right:choice.right});
+    status("Input "+choice.label+" · native PCM readback pending");
+    window.setTimeout(()=>{
+      if(activeNativeSource?.requestId!==requestId)return;
+      activeNativeSource=null;
+      nativeToast("Source ACK timed out · previous PCM preserved");
+      controller?.subscribe();
+    },8000);
+  }
   let pendingBusCreate=null,busRequestSerial=0;
   function requestNativeBusCreate(){
     const accepted=controller?.state()?.current;
@@ -1407,6 +1432,8 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    if(!activeNativeSource&&pendingNativeSources.size)
+      window.queueMicrotask(dispatchNativeSource);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
@@ -1473,6 +1500,14 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixNativeSourceAck",ack=>{
+      if(!activeNativeSource||activeNativeSource.requestId!==ack?.requestId)return;
+      activeNativeSource=null;
+      if(ack.ok!==true)
+        nativeToast("Native input rejected · "+(ack?.error||"stale PCM"));
+      else status("Native input accepted · checking subsequent PCM readback");
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixNativeBusAck",ack=>{
       if(!pendingBusCreate||pendingBusCreate.requestId!==ack?.requestId)return;
       pendingBusCreate=null;
@@ -1721,6 +1756,22 @@
         if(event.type!=="change")return true;
         const channel=m4Index(t);
         const choice=inputChoicesFor().find(x=>x.label===el.value);
+        // After BUS/WIRE the installed ChannelId graph is sole PCM owner.
+        // Original ten channels must not send source edits to stale M4.
+        if(mixerSession()?.authority==="CHANNEL_ID"){
+          const current=controller?.state()?.current;
+          const id=nativeIdFor(t);
+          if(!choice||!id||!current?.admitted||!deviceReady()){
+            nativeToast("Select a verified physical input");
+            el.value=t.input;return true;
+          }
+          if(choice.label!==t.input){
+            pendingNativeSources.set(id,choice);
+            dispatchNativeSource();
+          }
+          el.value=t.input; // no optimistic browser patch
+          return true;
+        }
         const ep=safeNativeCounter(hardware?.device?.epoch);
         const rev=safeNativeCounter(legacy()?.routingRevision);
         if(channel<0||channel>=10||!choice||!deviceReady()||

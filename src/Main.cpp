@@ -2045,6 +2045,65 @@ private:
         // Real DAW + BUS from the approved Windows GUI. The engine creates
         // and publishes a stereo GROUP directly in its sole ChannelId PCM
         // owner; no browser-only track or legacy M4 shadow is created.
+        // Normal GUI physical IN remains available after a native BUS/WIRE
+        // publication. The ChannelId producer, not stale M4, owns the patch.
+        if(action=="routingNativeSourcePatch"){
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawId=args.getProperty("channelId",{});
+            const auto rawEp=args.getProperty("deviceEpoch",{});
+            const auto rawRev=args.getProperty("graphRevision",{});
+            const auto rawRoster=args.getProperty("rosterRevision",{});
+            const auto mode=args.getProperty("mode",{}).toString();
+            const int left=static_cast<int>(args.getProperty("left",-1));
+            const int right=static_cast<int>(args.getProperty("right",-1));
+            std::uint64_t id=0,ep=0,rev=0,roster=0;
+            const auto snap=approvedNativeSnapshot();
+            const auto graph=snap.getProperty("graph",{});
+            bool input=false;
+            const auto channels=graph.getProperty("channels",{});
+            if(const auto* rows=channels.getArray())
+                for(const auto& row:*rows)
+                    if(row.getProperty("id","").toString()==rawId.toString()&&
+                       row.getProperty("role","").toString()=="INPUT")
+                        input=true;
+            const bool valid=request.startsWith("source-native-")&&
+                request.length()<=64&&!acceptedControlRequests_.contains(request)&&
+                armix::console::approvedNativeId(rawId,id)&&
+                armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                (mode=="NONE"||mode=="MONO"||mode=="STEREO")&&
+                (mode!="NONE"||(left==-1&&right==-1))&&
+                (mode!="MONO"||right==-1)&&input&&
+                snap.getProperty("device",{}).getProperty("epoch","").toString()==rawEp.toString()&&
+                graph.getProperty("revision","").toString()==rawRev.toString()&&
+                graph.getProperty("rosterRevision","").toString()==rawRoster.toString()&&
+                !nativeShowBusy_&&!studioBackupBusy_;
+            LiveDryRoutingLab::NativeBusResult result;
+            result.error="NATIVE_SOURCE_NOT_ADMITTED_OR_STALE";
+            if(valid){
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                result=engine_.patchNativeInputSource(ep,rev,roster,
+                    armix::mixer::ChannelId{id},left,right,mode=="STEREO");
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("channelId",rawId);
+            ack->setProperty("ok",valid&&result.accepted);
+            ack->setProperty("error",result.error?result.error:"NATIVE_SOURCE_UNKNOWN");
+            ack->setProperty("graphRevision",
+                juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixNativeSourceAck",juce::var(ack.release()));
+            if(valid&&result.accepted)
+                diagnostics_.record("DAW_NATIVE_SOURCE",
+                    "ChannelId "+rawId.toString()+" → "+mode);
+            else emitNotice("Channel IN rejected: "+
+                juce::String(result.error?result.error:"native error"),true);
+            return;
+        }
         if(action=="routingNativeBusCreate") {
             const auto request=args.getProperty("requestId",{}).toString();
             const auto rawEp=args.getProperty("deviceEpoch",{});
