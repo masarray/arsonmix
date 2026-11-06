@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Run headless real-Chromium physical geometry and workflow audit for Pages V7.
 
-This is an independent review of the published /preview-v2/ snapshot in main,
-NOT a validation of native ASIO/VST3 audio. Screenshots are uploaded by UI smoke.
-No external web request; local site/preview-v2/index.html only.
+Review both the internal authoring source and the sole published /preview/.
+This does not validate native ASIO/VST3 audio. Screenshots are uploaded by UI
+smoke. All browser pages are local deterministic build outputs.
 """
 from __future__ import annotations
 from pathlib import Path
-import subprocess, sys, re
+import subprocess, sys
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = (ROOT / "site/preview-v2/index.html").resolve()
@@ -296,15 +297,9 @@ def main():
                     "--out", str(ROOT / "_preview-public-qa"), "--sha", "qa"],
                    check=True)
     assert PAGE.exists() and PUBLIC.exists(), (PAGE, PUBLIC)
-    assembled=PUBLIC.read_text(encoding="utf-8")
-    raw=PAGE.read_text(encoding="utf-8")
-    for asset in ("mixer-control-keys.css","mixer-control-keys.js"):
-        token="assets/"+asset
-        source_link=re.search(re.escape(token)+r'(?:\?[^"\s>]+)?',raw)
-        assert source_link,(asset,"source link missing")
-        assembled=re.sub(re.escape(token)+r'\?rev=[0-9a-f]{16}',
-                         lambda _: source_link.group(0),assembled)
-    assert assembled==raw, "Public /preview/ must preserve every GUI interaction and differ only in approved PNG key URLs"
+    # Verify the exact current assembler (approved PNG, FX semantics and
+    # compiled CSS), not a comparison against the unassembled authoring HTML.
+    assert published_console(PUBLIC.parent.parent)==PUBLIC
     assert 'http-equiv="refresh"' in (PUBLIC.parent/"mixer.html").read_text(encoding="utf-8")
     count = 0
     with sync_playwright() as playwright:
