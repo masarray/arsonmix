@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {requiresUiSmoke, requiresNativeQualification} from '../scripts/check_workstream_coordination.mjs';
+// Native Actions path filters (not a legacy PR owner classifier) select lanes.
 
 const read = path => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const native = read('.github/workflows/p1-windows.yml');
@@ -36,13 +36,13 @@ function globMatches(pattern, filename) {
   return new RegExp(regex + '$').test(filename);
 }
 
-const windowsPush = pathsFor(native, 'push', 'workflow_call');
-// Pull requests are always admitted; this exact classifier decides whether to call reusable MSVC.
-const nativePrSelected = filename => requiresNativeQualification([filename]);
+const windowsPush = pathsFor(native, 'push', 'pull_request');
+const windowsPR = pathsFor(native, 'pull_request', 'workflow_dispatch');
 const uiPush = pathsFor(ui, 'push', 'pull_request');
-// Unfiltered PR entry runs cheap admission; only UI-relevant paths run browser.
-const uiPRSelected = filename => requiresUiSmoke([filename]);
+const uiPR = pathsFor(ui, 'pull_request', 'workflow_dispatch');
 const selected = (paths, file) => paths.some(p => globMatches(p, file));
+const nativePrSelected = filename => selected(windowsPR, filename);
+const uiPRSelected = filename => selected(uiPR, filename);
 
 test('visual GUI changes never consume Windows native runner on a PR or on main', () => {
   for (const filename of [
@@ -135,13 +135,17 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /retention-days: 3/);
 });
 
-test('Windows runs native realtime CTest; packaging is for main, manual and release branches only', () => {
-  assert.match(native, /branches: \[main\]/);
-  assert.match(native, /workflow_dispatch:/);
-  assert.match(native, /cancel-in-progress: true/);
-  const packageGates = [...native.matchAll(/^\s{8}if: .*integration\/product-.*milestone\/m4-/gm)].length;
-  assert.equal(packageGates, 3, 'All 3 packaging/staging/ZIP steps must be gated');
-  assert.match(native, /scripts\/verify_native_windows_artifact.ps1/);
+test('Windows realtime CTest is automatic only for reviewed PRs; packaging requires explicit manual opt-in',()=>{
+  assert.match(native,/branches: \[main\]/);
+  assert.match(native,/^  workflow_dispatch:\n    inputs:\n      package_fat:/m);
+  assert.match(native,/default: false/);
+  assert.match(native,/^  quick:\n    name: Fast native contracts/m);
+  assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
+  assert.match(native,/github\.event\.pull_request\.draft == false/);
+  const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
+  assert.equal(fatOnly,4,'Packaging, FactoryFX stage, ZIP verify and upload require manual FAT');
+  assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
+  assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
   assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <
             native.indexOf('uses: actions/upload-artifact@v4'));
 });
@@ -164,33 +168,30 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.doesNotMatch(factory, /^\s{2}push:/m);
 });
 
-test('M2.6 always-on coordination job has a stable name and skips unrelated Chromium', () => {
-  const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
-  assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
-  assert.doesNotMatch(prBlock,/^\s+paths:/m);
-  assert.match(ui,/name: PR coordination admission/);
-  assert.match(ui,/needs: coordination/);
-  assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
-  assert.match(ui,/node --test tests\/workstream_coordination_contract\.test\.mjs/);
+test('Draft PR commits run inexpensive filtered contract checks without queued MSVC/Chromium',()=>{
+  assert.match(ui,/^  pull_request:\n    types: \[opened, reopened, synchronize, ready_for_review, converted_to_draft\]\n    paths:/m);
+  assert.match(native,/^  pull_request:\n    types: \[opened, reopened, synchronize, ready_for_review, converted_to_draft\]\n    paths:/m);
+  assert.match(ui,/^  quick:\n    name: Fast UI contracts/m);
+  assert.match(native,/^  quick:\n    name: Fast native contracts/m);
+  assert.match(ui,/^  frontend:[\s\S]*?needs: quick[\s\S]*?github\.event\.pull_request\.draft == false/m);
+  assert.match(native,/^  windows-build:[\s\S]*?needs: quick[\s\S]*?github\.event\.pull_request\.draft == false/m);
+  assert.doesNotMatch(ui,/^  coordination:|^  qualification:|name: PR coordination admission|name: Product Qualification/m);
+  assert.doesNotMatch(native,/^  workflow_call:|check_workstream_coordination\.mjs --pr/m);
+  assert.doesNotMatch(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
+  assert.equal(uiPRSelected('src/LiveAudioEngine.h'),false);
+  assert.equal(nativePrSelected('site/preview-v2/index.html'),false);
+  assert.ok(uiPRSelected('web/approved-native-bridge.js'));
+  assert.ok(nativePrSelected('web/approved-native-bridge.js'));
+  assert.ok(nativePrSelected('integration/ApprovedNativeV8Projection.h'));
+  assert.ok(nativePrSelected('tests/channel_routing_contract_test.cpp'));
+  assert.equal(nativePrSelected('README.md'),false);
+  assert.equal(uiPRSelected('README.md'),false);
 });
 
-test('P0 single product qualification fans in exact scoped native and UI jobs',()=>{
-  assert.match(native,/^  workflow_call:/m);
-  assert.doesNotMatch(native,/^  pull_request:/m);
-  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
-  assert.match(ui,/name: Product Qualification/);
-  assert.match(ui,/needs: \[coordination, frontend, native\]/);
-  assert.match(ui,/NATIVE_RESULT.*needs\.native\.result/);
-  assert.match(ui,/UI_RESULT.*needs\.frontend\.result/);
-  assert.match(ui,/if: \$\{\{ always\(\) && github\.event_name == 'pull_request' \}\}/);
-  for(const path of [
-    'integration/ApprovedNativeRuntimeSnapshot.h',
-    'integration/ApprovedNativeV8Projection.h',
-    'integration/ApprovedNativeControlIntent.h',
-    'scripts/check_console_puzzle.mjs',
-    'scripts/check_approved_native_gui_release.mjs'
-  ]) assert.ok(nativePrSelected(path),path+' bypassed native build');
-  for(const path of ['docs/workstreams/MULTI_AGENT_COORDINATION.md',
-    'site/preview/assets/mixer-fader-assembly.css'])
-    assert.equal(nativePrSelected(path),false,path+' wrongly launches Windows');
+test('Manual FAT and visual qualification survive simultaneous commit pushes without cancellation',()=>{
+  for(const workflow of [native,ui]) {
+    assert.match(workflow,/github\.event_name == 'workflow_dispatch' && github\.run_id/);
+    assert.match(workflow,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
+  }
+  assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
 });

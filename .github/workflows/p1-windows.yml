@@ -40,31 +40,106 @@ on:
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
-  # PR native compile is called ONLY by UI smoke's Product Qualification fan-in.
-  # GUI/docs-only PRs skip Windows entirely; main and manual release stay here.
-  # Called by the all-PR quality workflow. No duplicate Windows PR run.
-  workflow_call:
+  # Direct path scoped native qualification, without a second Windows call
+  # from the UI workflow or historical multi-agent coordination.
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+    paths:
+      - 'CMakeLists.txt'
+      - 'integration/console-v6/**'
+      - 'integration/*.h'
+      - 'integration/*.hpp'
+      - 'integration/*.cpp'
+      - 'integration/**/*.h'
+      - 'integration/**/*.hpp'
+      - 'integration/**/*.cpp'
+      - 'src/**'
+      - 'web/approved-native-bridge.js'
+      - 'web/approved-native-contract.js'
+      - 'tests/approved_native_m2_contract.test.cjs'
+      - 'scripts/build_approved_native_gui.py'
+      - 'tests/approved_native_gui_bundle_test.py'
+      - 'engine/**'
+      - 'web/bridge.js'
+      - 'web/monitor.js'
+      - 'tests/*.cpp'
+      - 'scripts/package_native_windows.ps1'
+      - 'scripts/verify_native_windows_artifact.ps1'
+      - 'scripts/collect_hardware_fat_windows.ps1'
+      - 'scripts/console_v6_fat_gate.mjs'
+      - 'scripts/verify_console_s0_native_fixture.mjs'
+      - 'scripts/run_console_native_s0.mjs'
+      - 'scripts/check_console_puzzle.mjs'
+      - 'scripts/check_approved_native_gui_release.mjs'
+      - 'scripts/check_pr278_console_authority.mjs'
+      - 'scripts/m3e_fat_evidence_gate.mjs'
+      - 'scripts/factoryfx_release_bundle.py'
+      - 'config/factoryfx-approved-releases.json'
+      - 'config/factoryfx-notices/**'
+      - 'scripts/tests/test_factoryfx_release_bundle.py'
+      - '.github/workflows/p1-windows.yml'
+      - 'tests/live_graph_contract_test.mjs'
+      - 'tests/*native*contract*.mjs'
   workflow_dispatch:
+    inputs:
+      package_fat:
+        description: "Package, verify and upload experimental Windows FAT ZIP"
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
-  group: windows-vst3-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  # Never cancel a deliberately requested, exact-SHA FAT build. For normal
+  # PR updates only the latest commit is eligible for expensive MSVC.
+  group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
+
+  quick:
+    name: Fast native contracts (no Windows / JUCE checkout)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Catch broken native UI / CI contracts before a paid Windows runner
+        run: |
+          node scripts/check_console_puzzle.mjs
+          node --check web/approved-native-bridge.js
+          node --check web/approved-native-contract.js
+          node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/live_graph_contract_test.mjs
+          python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
+          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
   windows-build:
+    name: Windows MSVC / realtime CTest
+    needs: quick
+    # Draft commits never reserve expensive Windows runners. Non-draft PR
+    # synchronizations re-test latest HEAD. Main push and manual always run.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
-      - name: Cheap one-owner / overlapping-PR preflight (read-only)
-        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          # Package the actual PR branch commit, NOT the synthetic PR merge.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source SHA before native CTest / optional FAT ZIP
+        shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/check_workstream_coordination.mjs --pr ${{ github.event.pull_request.number }}
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SOURCE_SHA) {
+            throw "FAT_SOURCE_HEAD_MISMATCH expected=$env:EXPECTED_SOURCE_SHA actual=$actual"
+          }
+          Write-Host "FAT_EXACT_PR_HEAD_CHECKOUT=$actual"
       - name: Cheap canonical Console v6 puzzle socket gate (no JUCE)
         run: node scripts/check_console_puzzle.mjs
       - name: Stop incomplete integrated product promotion before JUCE checkout
@@ -139,33 +214,29 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'perf/p0-stage-a-approved-gui-profiling-20261105' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'perf/p0-stage-a-approved-gui-profiling-20261105' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'integration/product-') || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'perf/p0-stage-a-approved-gui-profiling-20261105' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # P0 PR #414 is the ONLY additional FAT candidate: physical mouse/GPU
-      # proof requires its exact Windows EXE, never a stable release.
-      # Ordinary engine PRs compile/CTest without wasting package/ZIP work.
-      # Release-integration PRs and main/manual runs package and verify, but never silently publish a stable release.
-      # This single M4 FAT branch is explicitly allowed to upload an
-      # UNQUALIFIED experimental ZIP for real physical hardware testing.
+      # Optional manual FAT only: never churn experimental ZIPs per commit.
+      # The unqualified artifact is NOT a stable release or physical audio proof.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name != 'pull_request' || github.head_ref == 'milestone/m4-unified-native-multichannel-fx-20261101' || github.head_ref == 'perf/p0-stage-a-approved-gui-profiling-20261105' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
-          name: ${{ github.event_name == 'pull_request' && github.head_ref == 'perf/p0-stage-a-approved-gui-profiling-20261105' && 'ArSonMix-P0-EXPERIMENTAL-Pointer-Latency-FAT-Windows-x64' || github.event_name == 'pull_request' && 'ArSonMix-M4-EXPERIMENTAL-Hardware-FAT-Windows-x64' || 'ArSonMix-GUI10CH-P012-Verified-Hardware-FAT-Windows-x64' }}
+          name: ArSonMix-Windows-FAT-UNQUALIFIED-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
