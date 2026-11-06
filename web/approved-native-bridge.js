@@ -1463,7 +1463,7 @@
       if(!pendingBusCreate||pendingBusCreate.requestId!==ack?.requestId)return;
       pendingBusCreate=null;
       if(ack.ok===true && typeof ack.createdId==="string" &&
-         /^[1-9]\\d*$/.test(ack.createdId))
+         /^[1-9]\d*$/.test(ack.createdId))
         status("BUS accepted by native PCM · verifying later graph readback");
       else nativeToast("Add BUS rejected · "+(ack?.error||"native graph error"));
       controller?.subscribe();

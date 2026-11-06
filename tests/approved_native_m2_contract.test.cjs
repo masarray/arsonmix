@@ -265,7 +265,8 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(bridge,/function requestPrimaryOut\(t,target\)/);
  assert.match(bridge,/session\?\.authority==="CHANNEL_ID"/);
  assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
- assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to:main,/);
+ assert.match(bridge,/const to=target==="MAIN"\?main:group\?\.id\|\|null/);
+ assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to,/);
  assert.match(bridge,/change=\{op:"REMOVE",from:channelId,edgeId:edge\.edgeId\}/);
  // Only the accepted PRIMARY edge may be detached. A parallel SEND to
  // MAIN must not be misclassified as a physical OUT.
