@@ -24,8 +24,26 @@ on:
       - '.github/workflows/ui-smoke.yml'
       - '.github/workflows/pages-publish.yml'
   # Every PR gets direct test selection; no ownership or PR collision audit.
+  # Direct changed-path admission; no serialized coordination/fan-in.
   pull_request:
-    types: [opened, reopened, synchronize, edited, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'web/**'
+      - 'integration/console-v6/**'
+      - 'site/**'
+      - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
+      - 'scripts/build_pages.py'
+      - 'tests/*.py'
+      - 'tests/gui_workflow_contract_test.mjs'
+      - 'tests/*gui*contract*.mjs'
+      - 'tests/native_ui_contract_test.mjs'
+      - 'tests/wire_graph_canonical_model.test.cjs'
+      - 'tests/wire_main_native_handoff_contract.test.cjs'
+      - 'tests/ci_workflow_efficiency_test.mjs'
+      - 'tests/approved_native_m2_contract.test.cjs'
+      - 'scripts/build_ui_css.py'
+      - '.github/workflows/ui-smoke.yml'
+      - '.github/workflows/pages-publish.yml'
   # Manual full suite (including immutable CSS migration tests) or release-integration PR.
   workflow_dispatch:
 
@@ -40,78 +58,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  coordination:
-    name: Changed files only
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      run_ui: ${{ steps.pr_scope.outputs.run_ui || steps.push_scope.outputs.run_ui }}
-      run_native: ${{ steps.pr_scope.outputs.run_native }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select UI and Windows tests from changed files, not owners
-        id: pr_scope
-        if: ${{ github.event_name == 'pull_request' }}
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          node scripts/ci_select_changed_paths.mjs "$BASE_SHA"
-      - name: Main push retains Chromium verification
-        id: push_scope
-        if: ${{ github.event_name != 'pull_request' }}
-        shell: bash
-        run: echo "run_ui=true" >> "$GITHUB_OUTPUT"
-  native:
-    needs: coordination
-    if: ${{ github.event_name == 'pull_request' && needs.coordination.outputs.run_native == 'true' }}
-    uses: ./.github/workflows/p1-windows.yml
-    permissions:
-      contents: read
-      pull-requests: read
-
-  qualification:
-    name: Product Qualification
-    needs: [coordination, frontend, native]
-    if: ${{ always() && github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - name: Enforce actual outcomes for every selected test lane
-        shell: bash
-        env:
-          COORD_RESULT: ${{ needs.coordination.result }}
-          UI_RESULT: ${{ needs.frontend.result }}
-          NATIVE_RESULT: ${{ needs.native.result }}
-          RUN_UI: ${{ needs.coordination.outputs.run_ui }}
-          RUN_NATIVE: ${{ needs.coordination.outputs.run_native }}
-        run: |
-          set -euo pipefail
-          echo "Coordination: $COORD_RESULT, Chromium: $UI_RESULT ($RUN_UI), Windows: $NATIVE_RESULT ($RUN_NATIVE)"
-          if [[ "$COORD_RESULT" != "success" ]]; then
-            echo "::error::Coordination must PASS."
-            exit 1
-          fi
-          if [[ "$RUN_UI" != "true" && "$RUN_UI" != "false" ]] ||
-             [[ "$RUN_NATIVE" != "true" && "$RUN_NATIVE" != "false" ]]; then
-            echo "::error::Missing/malformed PR qualification scope."
-            exit 1
-          fi
-          if [[ "$RUN_UI" == "true" && "$UI_RESULT" != "success" ]]; then
-            echo "::error::Required Chromium UI smoke did not PASS."
-            exit 1
-          fi
-          if [[ "$RUN_NATIVE" == "true" && "$NATIVE_RESULT" != "success" ]]; then
-            echo "::error::Required Windows native CTest did not PASS."
-            exit 1
-          fi
-          echo "Product Qualification PASS for selected lanes at this PR revision."
-
   frontend:
-    needs: coordination
-    if: ${{ github.event_name != 'pull_request' || needs.coordination.outputs.run_ui == 'true' }}
     name: Standalone UI and geometry
     runs-on: ubuntu-latest
     timeout-minutes: 20

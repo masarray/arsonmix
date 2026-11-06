@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {requiresUiSmoke, requiresNativeQualification} from '../scripts/check_workstream_coordination.mjs';
+// PR workflow paths, not deprecated multi-agent classifications, own CI routing.
 
 const read = path => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const native = read('.github/workflows/p1-windows.yml');
@@ -36,13 +36,13 @@ function globMatches(pattern, filename) {
   return new RegExp(regex + '$').test(filename);
 }
 
-const windowsPush = pathsFor(native, 'push', 'workflow_call');
-// Pull requests are always admitted; this exact classifier decides whether to call reusable MSVC.
-const nativePrSelected = filename => requiresNativeQualification([filename]);
+const windowsPush = pathsFor(native, 'push', 'pull_request');
+const windowsPR = pathsFor(native, 'pull_request', 'workflow_dispatch');
 const uiPush = pathsFor(ui, 'push', 'pull_request');
-// Unfiltered PR entry runs cheap admission; only UI-relevant paths run browser.
-const uiPRSelected = filename => requiresUiSmoke([filename]);
+const uiPR = pathsFor(ui, 'pull_request', 'workflow_dispatch');
 const selected = (paths, file) => paths.some(p => globMatches(p, file));
+const nativePrSelected = filename => selected(windowsPR,filename);
+const uiPRSelected = filename => selected(uiPR,filename);
 
 test('visual GUI changes never consume Windows native runner on a PR or on main', () => {
   for (const filename of [
@@ -164,35 +164,22 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.doesNotMatch(factory, /^\s{2}push:/m);
 });
 
-test('M2.6 always-on coordination job has a stable name and skips unrelated Chromium', () => {
-  const prBlock=ui.split('\n  pull_request:\n')[1]?.split('\n  # Manual full suite')[0] || '';
-  assert.match(prBlock,/types: \[opened, reopened, synchronize, edited, ready_for_review\]/);
-  assert.doesNotMatch(prBlock,/^\s+paths:/m);
-  assert.match(ui,/name: Changed files only/);
-  assert.match(ui,/needs: coordination/);
-  assert.match(ui,/needs\.coordination\.outputs\.run_ui == 'true'/);
-  assert.match(ui,/node scripts\/ci_select_changed_paths\.mjs/);
-  assert.doesNotMatch(ui,/scripts\/check_workstream_coordination\.mjs --pr/);
-  assert.doesNotMatch(native,/scripts\/check_workstream_coordination\.mjs --pr/);
-});
-
-test('P0 single product qualification fans in exact scoped native and UI jobs',()=>{
-  assert.match(native,/^  workflow_call:/m);
-  assert.doesNotMatch(native,/^  pull_request:/m);
-  assert.match(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
-  assert.match(ui,/name: Product Qualification/);
-  assert.match(ui,/needs: \[coordination, frontend, native\]/);
-  assert.match(ui,/NATIVE_RESULT.*needs\.native\.result/);
-  assert.match(ui,/UI_RESULT.*needs\.frontend\.result/);
-  assert.match(ui,/if: \$\{\{ always\(\) && github\.event_name == 'pull_request' \}\}/);
-  for(const path of [
-    'integration/ApprovedNativeRuntimeSnapshot.h',
-    'integration/ApprovedNativeV8Projection.h',
-    'integration/ApprovedNativeControlIntent.h',
-    'scripts/check_console_puzzle.mjs',
-    'scripts/check_approved_native_gui_release.mjs'
-  ]) assert.ok(nativePrSelected(path),path+' bypassed native build');
-  for(const path of ['docs/workstreams/MULTI_AGENT_COORDINATION.md',
-    'site/preview/assets/mixer-fader-assembly.css'])
-    assert.equal(nativePrSelected(path),false,path+' wrongly launches Windows');
+test('P0 standalone changed-path PR runners have no coordination or synthetic fan-in',()=>{
+  assert.match(ui,/^  pull_request:$/m);
+  assert.match(native,/^  pull_request:$/m);
+  assert.doesNotMatch(ui,/^  coordination:$/m);
+  assert.doesNotMatch(ui,/^  qualification:$/m);
+  assert.doesNotMatch(ui,/needs: coordination|Product Qualification/);
+  assert.doesNotMatch(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
+  assert.doesNotMatch(native,/^  workflow_call:$/m);
+  assert.ok(uiPRSelected('web/approved-native-bridge.js'));
+  assert.ok(nativePrSelected('web/approved-native-bridge.js'));
+  assert.ok(nativePrSelected('integration/ApprovedNativeV8Projection.h'));
+  assert.ok(nativePrSelected('tests/dynamic_accepted_session_test.cpp'));
+  assert.ok(uiPRSelected('site/preview-v2/assets/wire-graph-model.js'));
+  assert.equal(nativePrSelected('site/preview-v2/assets/mixer-fader-assembly.css'),false);
+  assert.equal(uiPRSelected('src/LiveDryRoutingLab.h'),false);
+  assert.equal(nativePrSelected('docs/workstreams/MULTI_AGENT_COORDINATION.md'),false);
+  assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
+  assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
 });
