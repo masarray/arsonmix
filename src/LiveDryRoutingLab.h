@@ -1494,11 +1494,13 @@ public:
         }
         try {
             auto roster=nativeAccepted_.graph.roster;
-            ChannelEdit edit;
-            edit.kind=ChannelEdit::Kind::setFormat;
+            // LiveDryRoutingLab has an unrelated legacy M4 ChannelEdit.
+            // Select the ChannelId roster's native edit ABI explicitly.
+            armix::mixer::ChannelEdit edit;
+            edit.kind=armix::mixer::ChannelEdit::Kind::setFormat;
             edit.id=channel;
             edit.format=format;
-            const std::array<ChannelEdit,1> edits{edit};
+            const std::array<armix::mixer::ChannelEdit,1> edits{edit};
             if(!roster.edit(expectedRosterRevision,edits).ok()) {
                 reply.error="NATIVE_PROCESSING_ROSTER_REJECTED";return reply;
             }
