@@ -171,6 +171,22 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(builder,/type==='output'/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
+test("P0 first Add FX discovers real local VST3 lazily without an audio-thread scan",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const native=read("src/Main.cpp");
+ const catalog=read("src/PluginCatalog.h");
+ assert.match(bridge,/function discoverFxOnFirstPickerOpen\(\)/);
+ assert.match(bridge,/nativeFxDiscoveryRequested=true;/);
+ assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:"scanVst3"\}\)/);
+ assert.match(bridge,/discoverFxOnFirstPickerOpen\(\);[\s\S]*?scope\?\.openFastPicker/);
+ assert.match(native,/action == "scanVst3"[\s\S]*?catalog_\.scanDefaults\(\)/);
+ assert.match(catalog,/struct Scanner final : juce::Thread/);
+ assert.match(bridge,/scope\?\.setNativeCatalog\?\.\(\[\.\.\.nativeCatalog\.values\(\)\]\)/);
+ // Neither startup nor audio callback can trigger a surprise system scan.
+ assert.doesNotMatch(bridge.slice(0,bridge.indexOf("function discoverFxOnFirstPickerOpen")),
+   /action:"scanVst3"/);
+});
+
 test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const host=read("src/Main.cpp");

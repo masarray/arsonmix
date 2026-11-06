@@ -364,6 +364,17 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  let nativeFxDiscoveryRequested=false,nativeFxCatalogScanning=false;
+  // Lazy USER-triggered discovery: the first Add FX opens immediately and
+  // starts real JUCE VST3 scanning on its dedicated non-audio worker. Never
+  // scan during cold device startup, on a timer, or on the RT callback.
+  function discoverFxOnFirstPickerOpen(){
+    if(!connected||nativeCatalog.size||nativeFxDiscoveryRequested||
+       nativeFxCatalogScanning)return;
+    nativeFxDiscoveryRequested=true;
+    backend.emitEvent("arMixAction",{action:"scanVst3"});
+    status("FX · scanning installed VST3 on background worker; picker updates automatically");
+  }
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
   // The rack header restores exact prior per-insert state, including
   // deliberately bypassed plugins; it never blindly turns ALL FX on.
@@ -1522,10 +1533,13 @@
     });
     backend.addEventListener("arMixCatalog",catalog=>{
       if(!Array.isArray(catalog?.items))return;
+      nativeFxCatalogScanning=catalog.scanning===true;
       nativeCatalog=new Map(catalog.items.filter(p=>
         p&&typeof p.id==="string"&&p.id.length>0&&
         typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
       scope?.setNativeCatalog?.([...nativeCatalog.values()]);
+      if(nativeFxDiscoveryRequested&&!nativeFxCatalogScanning&&nativeCatalog.size===0)
+        status("No installed VST3 discovered · use Import VST3 in Plugin Manager");
       if(hardware?.raw?.legacyM4)paintM4FxInstances(hardware.raw.legacyM4);
       const count=document.getElementById("pluginCount");
       if(count)count.title="Verified JUCE native VST3 catalog";
@@ -1707,7 +1721,10 @@
               channel:instance.lane,slot,
               instanceId:instance.live.instanceId,deviceEpoch:ep,revision:rev});
           else nativeToast("VST3 editor · refresh native device and FX instance");
-        }else scope?.openFastPicker?.(t,slot,btn);
+        }else {
+          discoverFxOnFirstPickerOpen();
+          scope?.openFastPicker?.(t,slot,btn);
+        }
         return true;
       }
       if(action==="slotPower"){
