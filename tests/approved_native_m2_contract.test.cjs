@@ -200,9 +200,12 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.match(engine,/if \(!physicalSource && requirePhysicalSource\)/);
  assert.match(engine,/knownVirtualCableFeedbackPair\(currentSetup\.inputDeviceName,/);
  assert.match(host,/fault=engine_\.liveOutputArmFault\(\)/);
- // Structural SOURCE changes briefly close MAIN at publish, then restore the
- // previously verified destination on the SAME epoch, including silent NONE.
- assert.match(engine,/if\(wasMonitoring\)setOutputMuted\(true\)/);
+ // Structural SOURCE changes gate physical output only at publication.
+ // The user's MONITOR decision persists on the same safe device/route.
+ assert.match(engine,/if\(wasMonitoring\)\s*topologyPublicationMute_\.store\(true,std::memory_order_release\)/);
+ assert.match(engine,/if\(wasMonitoring && !safeToResume\)setOutputMuted\(true\)/);
+ assert.match(engine,/topologyPublicationMute_\.store\(false,std::memory_order_release\)/);
+ assert.match(engine,/monitor_\.load\(std::memory_order_relaxed\) &&\s*!topologyPublicationMute_\.load\(std::memory_order_acquire\)/);
  assert.match(engine,/wasMonitoring,sameEpoch,liveOutputArmFault\(false\)\.isEmpty\(\),/);
  assert.match(guard,/return previouslyArmed && sameDeviceEpoch && outputArmSafe && !streamArmed/);
  assert.match(bridge,/action:"routingSourceSwitch"/);
@@ -299,7 +302,7 @@ test("P0 VST3 preparation runs with old live PCM; monitor closes only at publica
  assert.match(lab,/const auto epochAtPublish=deviceEpoch_\.load/);
  assert.match(lab,/next,formats,sampleRate,deviceFrames,true,nullptr,\s*beforePublish/);
  assert.match(engine,/bool enteredPublication=false/);
- assert.match(engine,/enteredPublication=true;\s*if\(wasMonitoring\)setOutputMuted\(true\)/);
+ assert.match(engine,/enteredPublication=true;[\s\S]*?if\(wasMonitoring\)\s*topologyPublicationMute_\.store\(true,std::memory_order_release\)/);
  assert.match(engine,/if\(!enteredPublication\)return error/);
  assert.match(engine,/return finishGuardedDryTopology\(/);
  assert.match(engine,/return applyGuardedDryTopology\(epoch,frames,\[&\]\(const auto& beforePublish\)/);
