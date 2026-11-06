@@ -19,19 +19,40 @@ A Windows-first **live performance digital mixing console** for stage, karaoke, 
 Choose device once, then directly from the console:
 `interface IN1 → CH07 own native VST3` and `interface IN2 → CH02 own native VST3` → `real Vocal GROUP → MAIN to user-chosen output`, plus `parallel wet FX RETURN`, independent `MONITOR`, real `+CH11`, Show round-trip, stable faders, true native LEDs. No compulsory routing wizard/advanced matrix or manual multi-step STAGE/MUTE/APPLY/START for routine mixing.
 
-## Active work and GitHub ownership
-- Native publisher/full-fidelity callback/CH1 FX migration: [draft PR #266](https://github.com/masarray/arsonmix/pull/266).
-- Approved GUI/UX visual authority: [PR #278](https://github.com/masarray/arsonmix/pull/278). Its browser demo is not native audio; [GUI #271](https://github.com/masarray/arsonmix/pull/271) owns the real native-state-driven production adaptation.
-- Unified product acceptance/reconciliation: [epic #192](https://github.com/masarray/arsonmix/issues/192).
-- Physical sound/crackle blocker: [#15](https://github.com/masarray/arsonmix/issues/15).
-- Product integration owner: [FAT #270](https://github.com/masarray/arsonmix/pull/270), enforcing exact SHA + PR #278 visual authority without replacing DSP.
+## Agent onboarding and active integration — single source of truth
 
-One accepted stable-ChannelId graph, one JUCE realtime callback, one native VST3 owner, one request/ACK truth. Continuous controls do not trigger device restart; structural edits prepare safely off callback. Native accepted capability gates UI; **no fake CH11/FX/PCM**. Operator-selected legal I/O only; correct device buffering and plugin latency disclosures, not '0ms' guarantees.
+**Every new ChatGPT thread with GitHub connector access must first read
+[AGENTS.md](AGENTS.md) and
+[Smart CI Runner Workflow](docs/SMART_CI_RUNNER_WORKFLOW.md).**
+Treat live GitHub `main`, open PRs and their current exact HEAD as authority,
+not stale PR labels or past-thread summaries. At the 2026-11-06 checkpoint
+[PR #418](https://github.com/masarray/arsonmix/pull/418) is the canonical P0
+DAW direct-input integration candidate; **verify its latest status before
+continuing**. Earlier #266/#278/#271/#270 are historical inputs, not mandatory
+parallel-agent approval gates.
+
+The ChatGPT agent **works in GitHub itself**: reconcile current code,
+continue one appropriate PR, run targeted checks, and choose meaningful
+milestone CI via a single owner-authenticated PR comment using the connector:
+`/arsonmix-ci ui <SHA>`, `/arsonmix-ci native <SHA>`, or
+`/arsonmix-ci fat <SHA>`. The default-branch dispatcher launches the selected
+workflow; no manual GitHub Actions button is expected from the owner.
+Every relevant PR commit gets **cheap Linux fast contracts**; Chromium,
+Windows MSVC/CTest and experimental ZIP are reserved for selected milestones
+(and relevant `main` qualification), **not every commit**. `fat` includes
+`native` build/CTest, so never request both for the same SHA without a
+specific new reason. Avoid duplicate/obsolete PRs, cancelled runner churn,
+repeated packaging, hidden status assumptions, and unproven audio claims.
+
+Preserve the sole approved `/preview/`, real accepted ChannelId/EdgeId
+routing, one realtime callback, genuine VST3 host, live readback and safe
+device control. Physical ASIO sound/crackle evidence remains a separate
+stop-ship criterion even when CI is green. See [issue #15](https://github.com/masarray/arsonmix/issues/15).
 
 ## Browser preview, native builds and QA
 **ONLY approved GUI:** https://masarray.github.io/arsonmix/preview/ (visual UI reference, **NO REAL AUDIO**). Old `/preview-v2/`, `/preview-buttons/` and `/preview/mixer.html` redirect to this one approved screen. Source: https://github.com/masarray/arsonmix. Windows x64 native packages: [Windows Actions workflow](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download only a successful exact-source-SHA artifact; verify `BUILD_PROVENANCE.json` and EXE SHA-256, install WebView2/real device driver, test at safe headphone volume.
 
-Use owner CSS `web/styles-src/**` and deterministic `scripts/build_ui_css.py` regeneration; avoid manual generated HTML drift. Read full failing CI logs, run targeted tests, then one Windows/CTest and Chromium gate at meaningful vertical checkpoints. For physical clicks use SIGNAL CHECK → MARK CRACKLE → COPY FULL REPORT. Real-device 0FX and loaded-FX performance must be signed off before release.
+Use owner CSS `web/styles-src/**` and deterministic `scripts/build_ui_css.py` regeneration; avoid manual generated HTML drift. Read the current `AGENTS.md` and smart CI runbook, run targeted tests, then trigger only the required Windows/CTest, Chromium or FAT lane **from the connected GitHub connector** at meaningful checkpoints. For physical clicks use SIGNAL CHECK → MARK CRACKLE → COPY FULL REPORT. Real-device 0FX and loaded-FX performance must be signed off before release.
 
 ## Licenses and distribution
 Respect source/SDK licenses. Third-party VST3 files remain in user-controlled private Studio vault; do not bundle unlicensed commercial plugins. FactoryFX requires signed/provenance-approved host-qualified packages. Reference workflows, never copy proprietary Audition/Studio One/LV1 artwork.
