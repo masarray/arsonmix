@@ -4,12 +4,12 @@
 
 A Windows-first **live performance digital mixing console** for stage, karaoke, podcast/radio and flexible physical/virtual output, using the *console workflows* of Studio One / Adobe Audition and *live banking/routing* concepts of Waves eMotion LV1. Not a timeline/DAW audio editor, recorder or OBS-only utility.
 
-## One source of truth
+## Engineering references (historical designs are not current agent authority)
 - [Approved PR #278 V8 GUI design](https://github.com/masarray/arsonmix/pull/278) and [isolated study](https://github.com/masarray/arsonmix/blob/design/audition-mixer-reference-isolated-20261101/design-references/audition-mixer-study/index.html) — visual reference only
 - [PRD v5.2 — Operator-first live mixer](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md)
 - [ARD v5.2 — Native Console and realtime safety](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md)
 - [Puzzle Socket v8 — one native source ABI](docs/PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md)
-- [Current owner packets: ENGINE](docs/workstreams/ENGINE_PUZZLE_V8.md) · [GUI](docs/workstreams/GUI_PUZZLE_V8.md) · [INTEGRATION/FAT](docs/workstreams/FAT_PUZZLE_V8.md)
+- **Current agent authority:** [AGENTS.md](AGENTS.md) and [Smart CI runbook](docs/SMART_CI_RUNNER_WORKFLOW.md). Historical [ENGINE](docs/workstreams/ENGINE_PUZZLE_V8.md), [GUI](docs/workstreams/GUI_PUZZLE_V8.md), and [FAT](docs/workstreams/FAT_PUZZLE_V8.md) packets are references, not approval gates.
 - [AGENTS.md](AGENTS.md) is mandatory for active contributors. Prior G1/G2/R5/L2 dated plans remain in Git history, not current execution authority.
 
 ## Historical verified M4 audio boundary (2026-11-01 snapshot; NOT a claim of current universal release)
@@ -49,6 +49,8 @@ routing, one realtime callback, genuine VST3 host, live readback and safe
 device control. Physical ASIO sound/crackle evidence remains a separate
 stop-ship criterion even when CI is green. See [issue #15](https://github.com/masarray/arsonmix/issues/15).
 
+One accepted ChannelId graph, one JUCE realtime callback, one native VST3 owner, and one request/ACK truth. Continuous controls must not restart the audio device; structural edits prepare safely off callback. Accepted native capabilities gate UI: no fake channel/FX/PCM. Preserve operator-selected I/O and report actual buffer/latency behavior.
+
 ## Browser preview, native builds and QA
 **ONLY approved GUI:** https://masarray.github.io/arsonmix/preview/ (visual UI reference, **NO REAL AUDIO**). Old `/preview-v2/`, `/preview-buttons/` and `/preview/mixer.html` redirect to this one approved screen. Source: https://github.com/masarray/arsonmix. Windows x64 native packages: [Windows Actions workflow](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download only a successful exact-source-SHA artifact; verify `BUILD_PROVENANCE.json` and EXE SHA-256, install WebView2/real device driver, test at safe headphone volume.
 
@@ -64,4 +66,4 @@ Retained for traceable physical hardware diagnostics under [#15](https://github.
 - [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
 - [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
 
-These explain prior device-clock evidence and fader/LED design. For **current feature architecture, priority and execution**, the PRD/ARD v5 and execution lock v6 at the top of this document take precedence. The historical specs do not override native ChannelId admission or justify an extra render callback.
+These explain prior device-clock evidence and fader/LED design. For **current implementation and workflow authority**, read `AGENTS.md`, the live GitHub code/PR state, and the Smart CI runbook first. Earlier PRD/ARD versions are historical design references, not current operational instructions. The historical specs do not override native ChannelId admission or justify an extra render callback.
