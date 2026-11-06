@@ -34,6 +34,10 @@ public:
         return write_.load(std::memory_order_relaxed)-
             read_.load(std::memory_order_acquire)<Capacity;
     }
+    bool empty() const noexcept {
+        return read_.load(std::memory_order_acquire)==
+               write_.load(std::memory_order_acquire);
+    }
 private:
     alignas(64) std::atomic<std::uint32_t> write_{0};
     alignas(64) std::atomic<std::uint32_t> read_{0};
@@ -131,6 +135,12 @@ public:
     }
     double acceptedSampleRate() const noexcept {return rate_;}
     bool isReady() const noexcept {return ready_;}
+    void sealForRealtime() noexcept override {published_=true;}
+    bool stateSnapshotQuiescent() const noexcept override {
+        // CONTROL only; the caller owns FxInstance's non-blocking capture
+        // gate, so it cannot race the consumer inside processBlock.
+        return queued_.empty()&&completion_.empty();
+    }
 
     // The native Show's vendor-state lease already serializes state on the
     // control thread. Built-in DSP uses that same per-insert lease and schema,
@@ -147,29 +157,47 @@ public:
             output.writeByte(static_cast<char>(b.slope));
         }
     }
-    void setStateInformation(const void* data,int size) override {
-        if(!data||size!=8+static_cast<int>(ChannelEq::bandCount)*14)return;
+    // Only a NEW, unpublished processor is permitted to receive a binary
+    // Show restore. Mutating a live published DSP would race its callback.
+    // The Show builder may call this before OR after prepareToPlay; both
+    // restore the complete bank, and the next audio block starts settled.
+    // For future ChannelId Show preflight, use the bool-returning method
+    // rather than JUCE's legacy void setter so errors are not hidden.
+    bool restoreUnpublishedState(const void* data,int size) {
+        if(published_||!data||
+           size!=8+static_cast<int>(ChannelEq::bandCount)*14 ||
+           !queued_.empty()||!completion_.empty())return false;
         juce::MemoryInputStream input(data,static_cast<std::size_t>(size),false);
-        if(input.readInt()!=0x41504551||input.readInt()!=1)return;
+        if(input.readInt()!=0x41504551||input.readInt()!=1)return false;
         std::array<Band,ChannelEq::bandCount> next{};
-        for(auto& b:next){
-            b.enabled=input.readByte()!=0;
-            b.frequencyHz=input.readFloat();b.gainDb=input.readFloat();
+        for(auto& b:next) {
+            const int enabled=input.readByte();
+            if(enabled!=0&&enabled!=1)return false;
+            b.enabled=enabled!=0;
+            b.frequencyHz=input.readFloat();
+            b.gainDb=input.readFloat();
             b.q=input.readFloat();
-            const auto slope=input.readByte();
-            if(slope!=12&&slope!=24)return;
+            const int slope=input.readByte();
+            if(slope!=12&&slope!=24)return false;
             b.slope=slope==24?Slope::db24:Slope::db12;
         }
-        const double rate=rate_>0.?rate_:48000.;
-        for(std::size_t i=0;i<next.size();++i){
-            ChannelEq::PreparedBandEdit validated;
-            if(!ChannelEq::prepareBandEdit(i,next[i],rate,validated))return;
+        if(!input.isExhausted())return false;
+        const double validationRate=ready_?rate_:48000.;
+        for(std::size_t i=0;i<next.size();++i) {
+            ChannelEq::PreparedBandEdit prepared{};
+            if(!ChannelEq::prepareBandEdit(i,next[i],validationRate,prepared))
+                return false; // all-or-nothing preflight
         }
-        if(!ready_){accepted_=next;return;}
-        // A live Show recall must use the same bounded audio-owned handoff.
-        // Reject when it cannot be fully queued instead of half-applying.
-        // Current Show recall creates/replaces an unpublished processor.
-        // Never mutate the published EQ DSP from the GUI/control thread.
+        if(ready_) {
+            for(std::size_t i=0;i<next.size();++i)
+                if(!eq_.setBand(i,next[i]))return false;
+            if(!eq_.prepare(rate_))return false; // start without stale ramp
+        }
+        accepted_=next;
+        return true;
+    }
+    void setStateInformation(const void* data,int size) override {
+        (void)restoreUnpublishedState(data,size);
     }
 
 private:
@@ -180,5 +208,6 @@ private:
     std::array<Band,ChannelEq::bandCount> accepted_{};
     double rate_=0.; // control-owned immutable after prepare
     bool ready_=false; // prepared before graph publication
+    bool published_=false; // CONTROL-only, sealed by FxInstance off callback
 };
 } // namespace armix::builtin_fx

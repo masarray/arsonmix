@@ -2048,6 +2048,68 @@ static void verifyNativeBuiltinEqOrderedPcmAndBypassAck() {
     assert(moved.leaseEditor(ep,revision+1,ch,1,token).get()==eqLease.get());
 }
 
+// Binary EQ state is captured only when the audio mailbox has settled.
+// The verifier covers the pending/ACK window, state fidelity and the
+// pre-publication restore rule without touching live device or worker threads.
+static void verifyNativeEqCaptureRequiresAcceptedDspAndOfflineRestore() {
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    auto processor=std::make_unique<Eq>();
+    processor->prepareToPlay(48000.0,64);
+    assert(processor->isReady());
+    Eq* live=processor.get();
+    auto owner=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(processor),Eq::catalogIdentity,"Parametric EQ",64);
+    armix::builtin_fx::Band b{};
+    b.enabled=true;b.frequencyHz=2500.f;b.gainDb=5.f;b.q=1.2f;
+    b.slope=armix::builtin_fx::Slope::db12;
+    assert(live->queueBand(2,b,501));
+    juce::MemoryBlock saved;
+    assert(!owner->tryCaptureState(saved)); // queued, not audio-owned
+    std::array<float,64> left{},right{};
+    left.fill(.1f);right.fill(.1f);
+    const auto heapBefore=heapCalls.load(std::memory_order_relaxed);
+    owner->render(left.data(),right.data(),64);
+    assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
+    assert(!owner->tryCaptureState(saved)); // applied but not ACK-consumed
+    Eq::Completion ack{};
+    assert(live->pollCompletion(ack)&&ack.applied&&ack.requestId==501);
+    assert(ack.bandIndex==2&&ack.band.gainDb==5.f);
+    assert(owner->tryCaptureState(saved)); // control state now stable
+    assert(saved.getSize()==8+8*14);
+    assert(!live->restoreUnpublishedState(saved.getData(),
+        static_cast<int>(saved.getSize()))); // published LIVE = immutable
+
+    // A newly built Show candidate may restore before preparation.
+    Eq restored;
+    assert(restored.restoreUnpublishedState(saved.getData(),
+                                            static_cast<int>(saved.getSize())));
+    assert(restored.acceptedBands()[2].enabled);
+    assert(restored.acceptedBands()[2].frequencyHz==2500.f);
+    assert(restored.acceptedBands()[2].gainDb==5.f);
+    restored.prepareToPlay(44100.0,64);
+    assert(restored.isReady());
+    assert(restored.acceptedBands()[2].q==1.2f);
+
+    // The existing Show pipeline restores vendor states after preparation.
+    // That must work too, but only while the candidate is NOT published.
+    auto prepared=std::make_unique<Eq>();
+    prepared->prepareToPlay(96000.0,128);
+    assert(prepared->restoreUnpublishedState(saved.getData(),
+                              static_cast<int>(saved.getSize())));
+    assert(prepared->acceptedBands()[2].gainDb==5.f);
+    juce::MemoryBlock bad(saved);
+    static_cast<unsigned char*>(bad.getData())[0]^=0x5f;
+    assert(!prepared->restoreUnpublishedState(bad.getData(),
+        static_cast<int>(bad.getSize())));
+    assert(prepared->acceptedBands()[2].gainDb==5.f);
+    auto sealed=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(prepared),Eq::catalogIdentity,"Restored EQ",128);
+    auto* sealedEq=dynamic_cast<Eq*>(sealed->processor.get());
+    assert(sealedEq&&!sealedEq->restoreUnpublishedState(saved.getData(),
+        static_cast<int>(saved.getSize())));
+    assert(sealed->tryCaptureState(bad)); // restored bank is quiescent
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2462,6 +2524,7 @@ int main(int argc,char** argv) {
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();
+    verifyNativeEqCaptureRequiresAcceptedDspAndOfflineRestore();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

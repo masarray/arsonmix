@@ -61,6 +61,7 @@ public:
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
+                if(nativeControl)nativeControl->sealForRealtime();
                 processor->addListener(this);
             }
         }
@@ -89,6 +90,13 @@ public:
                 return false;
             bool ok=false;
             try {
+                // Even under the exclusive processor gate, async EQ edits
+                // can still be QUEUED or have an unconsumed completion.
+                // Never serialize a stale binary state into a native Show.
+                if(nativeControl && !nativeControl->stateSnapshotQuiescent()) {
+                    processing.clear(std::memory_order_release);
+                    return false;
+                }
                 juce::MemoryBlock candidate;
                 processor->getStateInformation(candidate);
                 if(candidate.getSize()<=8U*1024U*1024U) {
