@@ -96,7 +96,7 @@ def check_page(browser,path,label):
     assert page.locator('#tracks .strip[data-id="1"] .wire-node-out').count()==1
     assert page.locator('#tracks .strip[data-id="1"] .wire-node-in').count()==1
     assert not errors,(label,'page errors',errors)
-    if label=='png':
+    if label=='public':
         page.screenshot(path='pages-v6-contextual-buttons-1440.png')
     page.close()
 
@@ -113,24 +113,24 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
                         '--out',str(dist),'--sha','v6-ci','--branch','main'],
                        cwd=ROOT,check=True,capture_output=True,text=True)
-        for target in ('preview','preview-v2','preview-buttons'):
-            assets=dist/target/'assets'
-            assert (assets/OWNER).read_bytes()==(ROOT/'site/preview-v2/assets'/OWNER).read_bytes(),target
-            assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes(),target
+        # The one canonical Pages/JUCE output is /preview/. Historical
+        # source seeds are fixtures, NOT additional public HTML routes.
+        assets=dist/'preview/assets'
+        assert (assets/OWNER).read_bytes()==(ROOT/'site/preview-v2/assets'/OWNER).read_bytes()
+        assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes()
         png_src=ROOT/'site/preview-buttons/assets'
-        png_pub=dist/'preview-buttons/assets'
+        png_pub=assets
         for file in ('mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'):
             assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
             for file,label in (
                 (CANON,'canonical'),
-                (dist/'preview/mixer.html','public'),
-                (dist/'preview-buttons/index.html','png')
+                (dist/'preview/index.html','public')
             ):
                 check_page(browser,file,label)
             browser.close()
-    print('PASS V6 OTHER buttons: 3 routes, PNG protected, action release, native latches,')
+    print('PASS V6 OTHER buttons: approved /preview/ and source fixture, PNG protected,')
     print('micro geometry, fixed MAIN size, no pointer-focus or layout scroll')
 
 
