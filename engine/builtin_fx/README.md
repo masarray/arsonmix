@@ -13,8 +13,10 @@ scan/packaging flows.
 - `ChannelEq.h`: minimal portable C++20, eight fixed slots, max ten IIR biquad
   sections, active-slot fast path, 12/24 dB/oct HPF/LPF, +/-18 dB PEQ/shelves,
   frequency/Q validation, per-instance stereo filter memories, 5ms old/new
-  bank crossfade. No analyzer, dynamic EQ, M/S, oversampling, WebView, JUCE,
-  VST3 loader, heap allocations, mutexes, FFT or additional sample buffering.
+  bank crossfade. Live `prepareBandEdit()` computes coefficients on CONTROL;
+  `applyPreparedBand()` applies them on AUDIO without trigonometry. No analyzer,
+  dynamic EQ, M/S, oversampling, WebView, JUCE, VST3 loader, heap allocations,
+  mutexes, FFT or additional sample buffering.
 - `CMakeLists.txt`: self-contained standalone headless native CTest using the
   same `tests/builtin_channel_eq_test.cpp` as the main project; no JUCE needed.
 
@@ -23,9 +25,14 @@ scan/packaging flows.
 One `ChannelEq` per **accepted ChannelId** and audio epoch, initialized at the
 actual device sample rate. The existing **single** native audio callback owns
 `processMono/processStereo` in-place on its existing prepared channel PCM. An
-accepted control command is scheduled at an **audio block boundary**; call
-`setBand`/`resetToFlat` only on that exclusive owner. **Never call those from a
-WebView/UI/control thread while processing**. DSP has no independent callback or
+accepted control command is first compiled using
+`ChannelEq::prepareBandEdit()` **off callback**. Its small immutable packet is
+handed to the existing bounded control queue and then
+`applyPreparedBand()` is invoked on the exclusive audio owner **at a block
+boundary**. `setBand()` is an offline / unpublished-graph convenience only,
+never invoke it in the live callback (it computes trig). The audio owner can
+also call the cheap `resetToFlat()` at a safe block boundary. **Never mutate
+the live instance from the WebView/UI/control thread while processing**. DSP has no independent callback or
 worker and cannot obtain an audio input device.
 
 Typical chain is verified hardware IN -> trim -> channel EQ -> existing vendor

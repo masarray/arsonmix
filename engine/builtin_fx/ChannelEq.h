@@ -11,8 +11,10 @@
 
 // Channel strip EQ for the main native mixer ONLY. Deliberately no JUCE,
 // VST3, ArSonEQ, FFT, WebView2, heap allocation or audio callback ownership.
-// prepare() and setBand()/resetToFlat() must be called by the SAME exclusive
-// audio/graph owner at safe block boundaries, never concurrently with process().
+// prepare()/setBand() operate on UNPUBLISHED instances (or in offline tests).
+// For live edits, prepareBandEdit() performs all trig on CONTROL; applyPreparedBand()
+// performs only bounded copies on the exclusive audio owner at a block boundary.
+// No state mutation may race process(), and no UI thread reads live histories.
 namespace armix::builtin_fx {
 struct Band {
     bool enabled = false;
@@ -34,6 +36,79 @@ public:
             current_.settings[i].frequencyHz = channelEqSlots[i].defaultHz;
             current_.settings[i].q = channelEqSlots[i].kind == FilterKind::bell ? 1.0f : 0.70710678f;
         }
+    }
+
+    // CONTROL creates a precomputed change without accessing a live EQ.
+    // A bounded queue/immutable handoff outside this module transports it to
+    // the audio owner. sampleRate acts as a device-epoch-independent fence;
+    // the mixer adapter must ALSO validate ChannelId, epoch, and revision.
+    struct PreparedBandEdit final {
+        Band band{};
+        std::size_t index=bandCount;
+        double sampleRate=0.0;
+        std::array<std::array<double,5>,2> coefficients{}; // b0,b1,b2,a1,a2
+        std::uint8_t sections=0;
+        bool valid=false;
+    };
+
+    static bool prepareBandEdit(std::size_t index, const Band& band,
+                                double sampleRate, PreparedBandEdit& output) noexcept {
+        if (!std::isfinite(sampleRate) || sampleRate < 8000.0 ||
+            sampleRate > 384000.0 ||
+            !validBand(index,band,static_cast<float>(std::min(20000.0,sampleRate*0.45))))
+            return false;
+        Slot compiled{};
+        if (band.enabled && !makeSlot(channelEqSlots[index].kind,band,sampleRate,compiled))
+            return false;
+        PreparedBandEdit candidate{};
+        candidate.band=band;
+        candidate.index=index;
+        candidate.sampleRate=sampleRate;
+        candidate.sections=compiled.count;
+        for (std::uint8_t i=0;i<compiled.count;++i) {
+            const auto& s=compiled.section[i];
+            candidate.coefficients[i]={s.b0,s.b1,s.b2,s.a1,s.a2};
+        }
+        candidate.valid=true;
+        output=candidate;
+        return true;
+    }
+
+    // AUDIO OWNER: no trig, allocations, locks, plugin work or OS calls.
+    // Apply only one prevalidated control packet at a real block boundary.
+    bool applyPreparedBand(const PreparedBandEdit& edit) noexcept {
+        if (!prepared_ || !edit.valid || edit.index>=bandCount ||
+            edit.sampleRate!=sampleRate_ ||
+            !validBand(edit.index,edit.band,maxFrequencyHz())) return false;
+        const auto kind=channelEqSlots[edit.index].kind;
+        const bool cut=kind==FilterKind::highPass||kind==FilterKind::lowPass;
+        const std::uint8_t expected=edit.band.enabled ?
+            static_cast<std::uint8_t>(cut && edit.band.slope==Slope::db24 ? 2 : 1) : 0;
+        if (edit.sections!=expected) return false;
+        Slot newSlot{};
+        newSlot.count=expected;
+        for(std::uint8_t i=0;i<expected;++i) {
+            const auto& values=edit.coefficients[i];
+            for(double v:values) if(!std::isfinite(v))return false;
+            auto& c=newSlot.section[i];
+            c.b0=values[0];c.b1=values[1];c.b2=values[2];
+            c.a1=values[3];c.a2=values[4];
+        }
+        const auto& old=current_.settings[edit.index];
+        if (old.enabled==edit.band.enabled && old.frequencyHz==edit.band.frequencyHz &&
+            old.gainDb==edit.band.gainDb && old.q==edit.band.q &&
+            old.slope==edit.band.slope) return true;
+        Bank next=current_;
+        next.settings[edit.index]=edit.band;
+        next.slots[edit.index]=newSlot;
+        next.activeCount=0;
+        for (std::size_t i=0;i<bandCount;++i)
+            if(next.settings[i].enabled)
+                next.active[next.activeCount++]=static_cast<std::uint8_t>(i);
+        previous_=current_;
+        current_=next;
+        fadeRemaining_=fadeLength_;
+        return true;
     }
 
     // Prepares without allocating. Enabled filters above the new Nyquist guard
@@ -66,25 +141,13 @@ public:
         return true;
     }
 
+    // Offline/unpublished convenience, NOT for the live audio callback:
+    // this computes trigonometric coefficients. Use prepareBandEdit() on the
+    // CONTROL thread and applyPreparedBand() on AUDIO for live automation.
     bool setBand(std::size_t index, const Band& band) noexcept {
-        if (!prepared_ || index >= bandCount ||
-            !validBand(index, band, maxFrequencyHz())) return false;
-        const auto& old = current_.settings[index];
-        if (old.enabled == band.enabled && old.frequencyHz == band.frequencyHz &&
-            old.gainDb == band.gainDb && old.q == band.q && old.slope == band.slope) return true;
-        Bank next = current_; // bounded stack copy, no allocation
-        next.settings[index] = band;
-        next.slots[index] = Slot{};
-        if (band.enabled && !makeSlot(channelEqSlots[index].kind, band, sampleRate_, next.slots[index]))
-            return false; // existing DSP and settings remain untouched
-        next.activeCount = 0;
-        for (std::size_t i = 0; i < bandCount; ++i)
-            if (next.settings[i].enabled)
-                next.active[next.activeCount++] = static_cast<std::uint8_t>(i);
-        previous_ = current_; // old path retains its filter state during crossfade
-        current_ = next;
-        fadeRemaining_ = fadeLength_;
-        return true;
+        if(!prepared_)return false;
+        PreparedBandEdit edit{};
+        return prepareBandEdit(index,band,sampleRate_,edit) && applyPreparedBand(edit);
     }
 
     bool resetToFlat() noexcept {

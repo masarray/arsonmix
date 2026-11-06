@@ -207,6 +207,39 @@ static void testFourteenIndependentChannels() {
     check(lanes[1].activeBands()==0 && lanes[0].activeBands()==1 &&
           lanes[13].activeBands()==1,"stable per-channel configuration state");
 }
+static void testPrecomputedControlToAudioBoundary() {
+    ChannelEq eq;
+    check(eq.prepare(48000),"precompute destination prepared");
+    auto band=eq.band(4);
+    band.enabled=true;band.frequencyHz=2000;band.gainDb=7.0f;band.q=1.2f;
+    ChannelEq::PreparedBandEdit packet{};
+    check(ChannelEq::prepareBandEdit(4,band,48000,packet),"precompute control packet");
+    check(packet.valid&&packet.sections==1,"precomputed one PEQ biquad");
+    std::array<float,128> l{},r{};
+    l[0]=1.f;
+    noHeap.store(true,std::memory_order_release);
+    const bool accepted=eq.applyPreparedBand(packet);
+    if(accepted)eq.processStereo(l.data(),r.data(),l.size());
+    noHeap.store(false,std::memory_order_release);
+    check(accepted,"audio owner applies precomputed packet");
+    check(eq.activeBands()==1&&eq.band(4).gainDb==7.0f,"accepted DSP readback");
+    check(l[0]>0.0f,"precomputed audio sample delivered");
+
+    ChannelEq changedRate;
+    check(changedRate.prepare(44100),"changed rate instance");
+    check(!changedRate.applyPreparedBand(packet),"stale sample rate packet rejected");
+    check(changedRate.activeBands()==0,"stale packet no partial application");
+    ChannelEq::PreparedBandEdit invalidPacket=packet;
+    invalidPacket.sections=99;
+    check(!eq.applyPreparedBand(invalidPacket),"untrusted section count rejected");
+    invalidPacket=packet;
+    invalidPacket.coefficients[0][0]=std::numeric_limits<double>::quiet_NaN();
+    // Force meaningful change so duplicate same-state shortcut cannot conceal
+    // a malformed coefficient payload.
+    invalidPacket.band.gainDb=8.0f;
+    check(!eq.applyPreparedBand(invalidPacket),"malformed filter coefficient rejected");
+    check(eq.band(4).gainDb==7.0f,"rejected packet does not replace DSP state");
+}
 static void testNoHeapAndVariableQuantum() {
     ChannelEq eq;
     check(eq.prepare(48000),"prepare");
@@ -215,8 +248,10 @@ static void testNoHeapAndVariableQuantum() {
         l.fill(0.12f);r.fill(-0.07f);
         auto hp=eq.band(0);hp.enabled=true;hp.frequencyHz=90+static_cast<float>(count)/10.f;
         hp.slope=Slope::db24;
+        ChannelEq::PreparedBandEdit prepared{};
+        check(ChannelEq::prepareBandEdit(0,hp,48000,prepared),"control precomputes HPF");
         noHeap.store(true,std::memory_order_release);
-        const bool ok=eq.setBand(0,hp);
+        const bool ok=eq.applyPreparedBand(prepared);
         if(ok)eq.processStereo(l.data(),r.data(),count);
         noHeap.store(false,std::memory_order_release);
         check(ok,"parameter writes without allocation");
@@ -229,6 +264,7 @@ int main() {
     testResponse();
     testValidationAndReset();
     testAudibleProcessingAndIndependence();
+    testPrecomputedControlToAudioBoundary();
     testNoHeapAndVariableQuantum();
     testFourteenIndependentChannels();
     std::puts("PASS: ArSonMix built-in 8-slot native Channel EQ; no ArSonEQ/VST3 dependency");
