@@ -477,6 +477,17 @@
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;
+  // Narrow, read-only adapter: the EQ editor must never guess the native
+  // ChannelId from a UI strip ordinal. The accepted console projection
+  // supplies exact identity; this adapter does NOT publish audio data.
+  Object.defineProperty(window,"__ARMIX_BUILTIN_EQ_CHANNEL__",{
+    configurable:false,writable:false,
+    value:Object.freeze({
+      resolve(uiId){return connected&&flags.acceptedGraphConnected?
+                      nativeByUiId.get(Number(uiId))||null:null;},
+      state(){return connected?controller?.state().current||null:null;}
+    })
+  });
   const descriptor = Object.freeze({
     source:"site/preview-v2 + site/preview-buttons",
     pagesRoute:"/preview/",

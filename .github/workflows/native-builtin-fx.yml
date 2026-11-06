@@ -2,6 +2,8 @@ name: Native Built-in FX DSP
 on:
   pull_request:
     paths:
+      - 'site/preview-v2/assets/mixer-builtin-eq.*'
+      - 'tests/builtin_eq_gui_contract_test.mjs'
       - 'engine/builtin_fx/**'
       - 'tests/builtin_channel_eq_test.cpp'
       - '.github/workflows/native-builtin-fx.yml'
@@ -21,6 +23,10 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - name: Console EQ GUI syntax and ownership contract
+        run: |
+          node --check site/preview-v2/assets/mixer-builtin-eq.js
+          node tests/builtin_eq_gui_contract_test.mjs
       - name: Configure no-JUCE native built-in FX
         run: cmake -S engine/builtin_fx -B build-builtin-fx -DCMAKE_BUILD_TYPE=Release
       - name: Compile native DSP test

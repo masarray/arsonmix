@@ -14,6 +14,8 @@
 <link rel="stylesheet" href="assets/mixer-chrome-material.css?v=css-v28-inline-physical-console">
 <link rel="stylesheet" href="assets/mixer-control-keys.css?v=css-v26-retired-socket-pruned">
 <link rel="stylesheet" href="assets/mixer-fx-rack.css?v=fx-owner-v8-m3-inserts-v54-independent-bypass">
+<link rel="stylesheet" href="assets/mixer-builtin-eq.css?v=channel-eq-native-1">
+<script defer src="assets/mixer-builtin-eq.js?v=channel-eq-native-1"></script>
 <link rel="stylesheet" href="assets/mixer-plugin-browser.css?v=css-plugin-owner-v27-cascade-pruned">
 <link rel="stylesheet" href="assets/mixer-pan-controls.css?v=css-owner-v27-pan-pruned">
 <link rel="stylesheet" href="assets/mixer-fader-assembly.css?v=css-owner-v27-fader-rollback-pre-v52-tail">
@@ -323,7 +325,7 @@ function sectionFx(t){
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
- let out='<div class="section fx-section'+(t.fxOn?'':' is-chain-bypassed')+'" data-fx-chain-enabled="'+Boolean(t.fxOn)+'"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="'+(t.fxOn?'Bypass':'Enable')+' all channel FX" aria-label="'+(t.fxOn?'Bypass':'Enable')+' entire FX chain in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
+ let out='<div class="section fx-section'+(t.fxOn?'':' is-chain-bypassed')+'" data-fx-chain-enabled="'+Boolean(t.fxOn)+'"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span>'+(t.kind==='master'?'':'<button type="button" class="mx-eq-open" data-action="openBuiltinEq" title="Open lightweight built-in channel EQ (not a VST3 insert)" aria-label="Edit built-in EQ for '+escapeHtml(t.name)+'">EQ</button>')+'<span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="'+(t.fxOn?'Bypass':'Enable')+' all channel FX" aria-label="'+(t.fxOn?'Bypass':'Enable')+' entire FX chain in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
   out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" data-fx-slot-enabled="'+Boolean(name!=='None'&&!t.slotBypass[i])+'" data-fx-effective="'+Boolean(name!=='None'&&t.fxOn&&!t.slotBypass[i])+'" title="Insert '+(i+1)+' · GUI reference">'+
    (name==='None'?'<span class="fx-slot-placeholder" aria-hidden="true"></span>':
@@ -1998,6 +2000,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  }
  if(a==='rename'||a==='editIdentity')return; // double-click edits; single-click selects
  if(a==='format'&&t.kind==='audio'){t.format=t.format==='mono'?'stereo':'mono';refreshStrip(t);say(t.name+' processing → '+t.format.toUpperCase()+' · physical source '+t.input+' unchanged (reference only)');return;}
+ if(a==='openBuiltinEq'){window.ArSonMixBuiltinEq?.open(t);return;}
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
