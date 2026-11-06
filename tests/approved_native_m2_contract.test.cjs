@@ -197,6 +197,8 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  const translate=read("integration/ApprovedNativeControlIntent.h");
  const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
  assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
+ assert.match(bridge,/legacy\(\)\?\.nativeBusStructural===true/);
+ assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
  assert.match(bridge,/inserted\?\.id===p\.id/);
  assert.match(translate,/if\(op==="LOAD_INSERT"\)/);

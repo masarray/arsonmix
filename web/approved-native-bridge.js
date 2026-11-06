@@ -1986,7 +1986,8 @@
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
       const nativeCh=accepted?.graph?.channels?.find(ch=>ch.id===nativeId);
-      if(accepted?.admitted && nativeCh && channel<0) {
+      if(accepted?.admitted && nativeCh &&
+         (channel<0 || legacy()?.nativeBusStructural===true)) {
         if(!plugin || !["INPUT","GROUP"].includes(nativeCh.role) ||
            !accepted.graph.capabilities.supportedOps.includes("LOAD_INSERT") ||
            !Number.isInteger(slot)||slot<0||slot>=8 ||

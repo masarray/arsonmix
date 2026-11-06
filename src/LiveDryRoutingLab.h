@@ -1270,10 +1270,17 @@ public:
                         current->role!=ChannelRole::group)) {
             out.error="NATIVE_INSERT_TARGET_UNAVAILABLE";return out;
         }
-        // The fixed 10 CH/4 AUX rack remains owned by M4/Show while migrating.
-        // Never replace or double-render one of its vendor instances.
+        // Original ten strips use their existing M4 VST rack until native
+        // BUS/WIRE makes the ChannelId graph structurally authoritative.
+        // Thereafter new native inserts must attach to the SAME prepared
+        // ChannelId lease (not to an inactive M4 graph). Special CH1 external
+        // vendor chain stays isolated until an explicit combined-chain gate:
+        // appending there would otherwise double-render or hide the old FX.
         for(const auto id:nativeAccepted_.graph.ids.inputs)
-            if(id==target){out.error="M4_INSERT_USE_EXISTING_RACK";return out;}
+            if(id==target && (!nativeStructureLive_ ||
+                nativeAccepted_.fxOwners->externalChannel()==target)) {
+                out.error="M4_INSERT_USE_EXISTING_RACK";return out;
+            }
         if(originalM4Aux(target)){
             out.error="M4_INSERT_USE_EXISTING_RACK";return out;
         }
