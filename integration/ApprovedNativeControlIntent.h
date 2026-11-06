@@ -308,7 +308,7 @@ inline bool executeApprovedNativeControl(Engine& engine,
     const auto operation=translated.getProperty("operation","").toString();
     const auto channel=armix::mixer::ChannelId{id};
     if(operation=="NATIVE_APPLY_WIRE_TRANSACTION") {
-        const raw=payload.getProperty("changes",{});
+        const auto raw=payload.getProperty("changes",{});
         const auto* edits=raw.getArray();
         if(!edits||edits->isEmpty()||edits->size()>64)return false;
         std::vector<armix::mixer::WireChange> changes;
