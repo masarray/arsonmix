@@ -108,7 +108,7 @@ jobs:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
     needs: quick
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
