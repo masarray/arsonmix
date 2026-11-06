@@ -133,7 +133,12 @@ def main():
                 page.screenshot(path="native-peq-02-open-editor.png")
                 # Enable bell band with an acknowledged native write.
                 page.locator(".mx-peq-band").nth(2).locator(".mx-peq-band-power").click()
+                # Rapid independent band changes must not overwrite one
+                # another while the FIRST DSP ACK is still outstanding.
+                page.locator(".mx-peq-band").nth(3).locator(".mx-peq-band-power").click()
+                page.locator(".mx-peq-band").nth(4).locator(".mx-peq-band-power").click()
                 flush_edits(page,state,values,handled)
+                assert all(values[i]["enabled"] for i in (2,3,4)),values
                 gain=page.locator('.mx-peq-knob[data-kind="gainDb"] .mx-peq-value')
                 gain.fill("5.5");gain.press("Tab")
                 flush_edits(page,state,values,handled)

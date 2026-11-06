@@ -61,7 +61,10 @@ function response(freq,ss){
  return clamp(total,-160,80);
 }
 let sampleRate=48000,bands=fresh(),selected=2,current=null,gesture=null,draft=null,pending=null,
- latest=null,raf=0,lastSend=0,seq=1,readbackRequest="",mode="";
+ raf=0,lastSend=0,seq=1,readbackRequest="",mode="";
+// Preserve the FINAL edit for EACH band while one audio ACK is in flight.
+// A scalar 'latest' loses changes when the user switches bands rapidly.
+const latest=new Map();
 const demos=new Map();
 const root=dom("section","mx-peq");root.id="mxNativePeq";root.hidden=true;root.setAttribute("role","dialog");
 root.setAttribute("aria-label","ArSonMix Parametric EQ");root.setAttribute("aria-modal","false");
@@ -193,7 +196,7 @@ function requestSnapshot(){
 }
 function send(i,value){
  const c=context();if(!c)return;
- if(pending){latest={index:i,band:value};hint("DSP · APPLYING · FINAL EDIT HELD");return;}
+ if(pending){latest.set(i,value);hint("DSP · APPLYING · EDITS HELD UNTIL ACK");return;}
  const id="eq-"+String(Date.now()*1000+(seq++%1000));
  pending={id,index:i,band:value,context:c,ack:false};
  backend().emitEvent("arMixAction",{action:"nativeEqSetBand",requestId:id, ...c,
@@ -212,7 +215,7 @@ function change(i,patch,preview=false){
   hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");draw();return;}
  const now=performance.now();
  if(!preview||now-lastSend>90){lastSend=now;send(i,next);}
- else latest={index:i,band:next};
+ else latest.set(i,next);
 }
 function movePoint(e){
  const r=svg.getBoundingClientRect();
@@ -343,7 +346,7 @@ const api={
   return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));
  },
  open(track,slot){
-  current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest=null;draft=null;
+  current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest.clear();draft=null;
   const n=state();const nativeId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===nativeId);
   if(native()&&n?.admitted&&ch?.inserts?.[slot]?.catalogId===ID){
@@ -362,12 +365,12 @@ const api={
 window.ArSonMixNativeEq=Object.freeze(api);
 backend()?.addEventListener?.("arMixBuiltinEqQueue",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status==="REJECTED"){pending=null;latest=null;draft=null;
+ if(ack.status==="REJECTED"){pending=null;latest.clear();draft=null;
   hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();}
 });
 backend()?.addEventListener?.("arMixBuiltinEqAck",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status!=="APPLIED"){pending=null;latest=null;draft=null;
+ if(ack.status!=="APPLIED"){pending=null;latest.clear();draft=null;
   hint("DSP DID NOT APPLY · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();return;}
  pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot();
 });
@@ -384,14 +387,16 @@ backend()?.addEventListener?.("arMixBuiltinEqSnapshot",s=>{
  if(!s.bands.every((b,i)=>valid(i,b))){sampleRate=rate;hint("NATIVE EQ PARAMETER READBACK INVALID");return;}
  if(pending&&(!pending.ack||s.appliedRequestId!==pending.id))return;
  bands=s.bands.map(b=>({...b}));pending=null;
- if(latest){const update=latest;latest=null;send(update.index,update.band);}
- else draft=null;
+ if(latest.size){
+  const [index,value]=latest.entries().next().value;
+  latest.delete(index);send(index,value);
+ }else draft=null;
  hint("NATIVE DSP ACCEPTED · "+c.instanceId);
  draw();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
- queueMicrotask(()=>{if(!context()){pending=null;latest=null;draft=null;
+ queueMicrotask(()=>{if(!context()){pending=null;latest.clear();draft=null;
   hint("DEVICE/GRAPH CHANGED · REOPEN ACCEPTED FX");draw();}});
 });
 })();
