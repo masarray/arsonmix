@@ -1813,6 +1813,28 @@ public:
         return nativeAccepted_.graph.roster.rememberLiveMix(id,gain,pan);
     }
 
+    // Realtime GROUP/FX_RETURN mute and solo have the same verified
+    // ChannelId PCM target as INPUT, but NEVER mutate an original M4 AUX.
+    bool setNativeBusMuteSolo(std::uint64_t epochAtEdit,
+                              std::uint64_t expectedPcmRevision,
+                              armix::mixer::ChannelId id,
+                              bool mute,bool solo) noexcept {
+        if(!channelIdPhysicalPcmActive()||epochAtEdit!=epoch()||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel || (channel->role!=armix::mixer::ChannelRole::group &&
+                        channel->role!=armix::mixer::ChannelRole::fxReturn) ||
+           originalM4Aux(id))return false;
+        if(!nativePublisher_.setChannelMuteSolo(
+             epochAtEdit,expectedPcmRevision,id,mute,solo))return false;
+        if(!nativeAccepted_.graph.roster.rememberLiveMuteSolo(id,mute,solo)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false;
+        }
+        nativeControlDirty_=true;
+        return true;
+    }
+
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
     juce::var nativeBusStatus() const {
@@ -1837,6 +1859,7 @@ public:
                              "NATIVE_APPLY_WIRE_TRANSACTION",
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
+                             "NATIVE_SET_BUS_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_SET_INSERT_BYPASS",
                              "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));

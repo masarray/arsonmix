@@ -723,7 +723,49 @@ static void verifySourceOnlyParallelMainVsExclusivePrimaryPcm() {
     assert(render()&&near(l[9],.25f*center));
 }
 
+// Actual GROUP post-insert PCM must be silenced by its own realtime MUTE,
+// with no graph rebuild, physical source reset or lost monitor state.
+static void verifyGroupMuteAffectsRealNativePcm() {
+    constexpr std::uint64_t ep=99222;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest io;io.physicalInputs=1;io.maxFrames=64;
+    const std::array<ChannelEdit,3> created{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::group,"BUS A",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto state=pcm.edit(0,0,created,io,ep,ep,true);
+    assert(state.ok()&&state.edit.createdIds.size()==3);
+    const auto voice=state.edit.createdIds[0];
+    const auto bus=state.edit.createdIds[1];
+    const auto main=state.edit.createdIds[2];
+    io.sources={{voice,0,-1,false}};
+    const std::array<ChannelEdit,2> serial{output(voice,bus),output(bus,main)};
+    state=pcm.edit(1,1,serial,io,ep,ep,true);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==2);
+    std::array<float,64> mono{},l{},r{};
+    mono.fill(.25f);
+    const float* pins[]{mono.data()};
+    const auto render=[&]{
+        return pcm.render(ep,pins,1,l.data(),r.data(),64,false,
+            +[](ChannelId,float*,float*,int) noexcept {});
+    };
+    assert(render());
+    const float audible=l[63];
+    assert(audible>.05f&&near(r[63],audible));
+    assert(pcm.setLiveMuteSolo(ep,2,bus,true,false));
+    assert(render()&&near(l[63],0.f,1e-4f)&&near(r[63],0.f,1e-4f));
+    assert(pcm.acceptedRoster().find(bus)->mute);
+    assert(pcm.setLiveMuteSolo(ep,2,bus,false,false));
+    assert(render()&&near(l[63],audible,1e-4f)&&near(r[63],audible,1e-4f));
+    assert(!pcm.setLiveMuteSolo(ep-1,2,bus,true,false));
+    assert(!pcm.setLiveMuteSolo(ep,1,bus,true,false));
+    assert(pcm.acceptedGraphRevision()==2);
+    assert(render()&&near(l[63],audible,1e-4f));
+}
+
 int main() {
+    verifyGroupMuteAffectsRealNativePcm();
     verifySourceOnlyParallelMainVsExclusivePrimaryPcm();
     verifyHeldDragIntermediatePcmOnOriginalChannels();
     verifyOriginalAndAddedInputsShareNativePcmControls();

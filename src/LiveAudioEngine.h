@@ -1618,6 +1618,15 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeInputMuteSolo(epoch,rev,id,mute,solo);
     }
+    bool setNativeBusMuteSolo(std::uint64_t epoch,std::uint64_t rev,
+                              armix::mixer::ChannelId id,
+                              bool mute,bool solo) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeBusMuteSolo(epoch,rev,id,mute,solo);
+    }
     bool nativeBusTopologyLive() const noexcept {
         return dryRoutingLab_.nativeBusTopologyLive();
     }

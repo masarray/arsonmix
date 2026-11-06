@@ -33,6 +33,10 @@ struct NativeControlProbe {
         lastEpoch=e;lastRevision=r;lastId=id.value;
         lastMute=m;lastSolo=s;return true;
     }
+    bool setNativeBusMuteSolo(std::uint64_t e,std::uint64_t r,
+                              armix::mixer::ChannelId id,bool m,bool s) {
+        return setNativeInputMuteSolo(e,r,id,m,s);
+    }
 };
 static juce::var parse(const char* bytes) {
     auto json=juce::JSON::parse(juce::String::fromUTF8(bytes));
@@ -285,6 +289,63 @@ struct NativeWireProbe : NativeControlProbe {
         return {true,""};
     }
 };
+static void approvedNativeGroupMuteSoloRegression() {
+    auto installed=realBusReadbackFixture();
+    auto group=std::make_unique<juce::DynamicObject>();
+    group->setProperty("id","9007199254740994");
+    group->setProperty("name","Bus A");
+    group->setProperty("role","GROUP");
+    group->setProperty("format","STEREO");
+    group->setProperty("primaryOutput","0");
+    group->setProperty("fader",1.0);
+    group->setProperty("pan",0.0);
+    group->setProperty("mute",false);
+    group->setProperty("solo",false);
+    group->setProperty("inserts",juce::var(juce::Array<juce::var>{}));
+    installed.getProperty("channels",{}).getArray()->add(
+        juce::var(group.release()));
+    juce::Array<juce::var> nativeOps;nativeOps.add("NATIVE_SET_BUS_MUTE_SOLO");
+    installed.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto publicSnapshot=canonicalSnapshot();
+    assert(projectApprovedNativeV8(publicSnapshot,installed,true));
+    juce::Array<juce::var> publicOps;
+    publicOps.add("SET_MUTE");publicOps.add("SET_SOLO");
+    publicSnapshot.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    auto makeRequest=[&](const char* op,bool newValue,const char* id){
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("value",newValue);
+        auto request=std::make_unique<juce::DynamicObject>();
+        request->setProperty("requestId","group-control-1");
+        request->setProperty("deviceEpoch","91");
+        request->setProperty("baseGraphRevision","25");
+        request->setProperty("baseRosterRevision","9");
+        request->setProperty("targetChannelId",id);
+        request->setProperty("operation",op);
+        request->setProperty("payload",juce::var(payload.release()));
+        return juce::var(request.release());
+    };
+    NativeControlProbe probe;
+    const auto busId="9007199254740994";
+    auto muted=translateApprovedNativeControl(
+        makeRequest("SET_MUTE",true,busId),publicSnapshot,installed);
+    assert(muted.ok());
+    assert(muted.translated.getProperty("operation","").toString()==
+           "NATIVE_SET_BUS_MUTE_SOLO");
+    assert(executeApprovedNativeControl(probe,muted.translated));
+    assert(probe.lastId==9007199254740994ULL&&probe.lastMute&&!probe.lastSolo);
+    auto solo=translateApprovedNativeControl(
+        makeRequest("SET_SOLO",true,busId),publicSnapshot,installed);
+    assert(solo.ok());
+    assert(executeApprovedNativeControl(probe,solo.translated));
+    assert(probe.lastSolo&&!probe.lastMute);
+    // MAIN remains immutable through the BUS-specific control gate.
+    auto denied=translateApprovedNativeControl(
+        makeRequest("SET_MUTE",true,"18446744073709551615"),
+        publicSnapshot,installed);
+    assert(!denied.ok());
+}
+
 static void approvedNativeVst3LoadContractRegression(
         const juce::var& canonical,const juce::var& producer) {
     // Native VST3 command admission is independent of a fabricated vendor
@@ -852,6 +913,7 @@ int main() {
 
     controlIntentTranslationCases(snap,bus);
     nativeInsertCatalogInstanceProjectionRegression();
+    approvedNativeGroupMuteSoloRegression();
     approvedNativeVst3LoadContractRegression(snap,bus);
     approvedWireTranslationRegression(snap,bus);
     installedCallbackAdmissionRegression(bus);

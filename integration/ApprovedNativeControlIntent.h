@@ -242,8 +242,8 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
     const bool input=role=="INPUT";
     const bool bus=role=="GROUP" || role=="FX_RETURN";
     if(!input && !bus)return reject("CHANNEL_ROLE_NOT_MUTABLE");
-    if(bus && (op=="SET_MUTE" || op=="SET_SOLO"))
-        return reject("BUS_MUTE_SOLO_NOT_ADMITTED");
+    // A native GROUP has exactly the same ChannelId mute/solo atomics as
+    // an INPUT. Keep the legacy AUX distinction in the engine role gate.
     const auto controls=channel.getProperty("controls",{});
     if(!controls.isObject())return reject("INVALID_NATIVE_CONTROLS");
     const auto fader=controls.getProperty("faderDb",{});
@@ -302,7 +302,8 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         translatedPayload->setProperty("pan",acceptedPan);
     } else {
         if(!value.isBool())return reject("INVALID_MUTE_SOLO_VALUE");
-        nativeOperation="NATIVE_SET_CHANNEL_MUTE_SOLO";
+        nativeOperation=bus?"NATIVE_SET_BUS_MUTE_SOLO":
+                            "NATIVE_SET_CHANNEL_MUTE_SOLO";
         translatedPayload->setProperty("mute",op=="SET_MUTE"?value:mute);
         translatedPayload->setProperty("solo",op=="SET_SOLO"?value:solo);
     }
@@ -419,13 +420,22 @@ inline bool executeApprovedNativeControl(Engine& engine,
         return engine.setNativeBusMix(epoch,revision,channel,
                     static_cast<float>(gain),static_cast<float>(pan));
     }
-    if(operation=="NATIVE_SET_CHANNEL_MUTE_SOLO") {
+    if(operation=="NATIVE_SET_CHANNEL_MUTE_SOLO" ||
+       operation=="NATIVE_SET_BUS_MUTE_SOLO") {
         const auto mute=payload.getProperty("mute",{});
         const auto solo=payload.getProperty("solo",{});
         if(!mute.isBool()||!solo.isBool())return false;
-        return engine.setNativeInputMuteSolo(epoch,revision,channel,
-                                            static_cast<bool>(mute),
-                                            static_cast<bool>(solo));
+        if(operation=="NATIVE_SET_CHANNEL_MUTE_SOLO")
+            return engine.setNativeInputMuteSolo(epoch,revision,channel,
+                                                static_cast<bool>(mute),
+                                                static_cast<bool>(solo));
+        if constexpr(requires(Engine& e){
+           e.setNativeBusMuteSolo(epoch,revision,channel,true,false);
+        })
+            return engine.setNativeBusMuteSolo(epoch,revision,channel,
+                                              static_cast<bool>(mute),
+                                              static_cast<bool>(solo));
+        return false;
     }
     return false;
 }
