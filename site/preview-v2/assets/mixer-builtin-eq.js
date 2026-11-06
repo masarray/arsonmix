@@ -1,4 +1,4 @@
-/* ArSonMix Built-in Channel EQ: small operator overlay in the ONLY /preview/.
+/* ArSonMix Built-in Parametric EQ: small operator overlay in the ONLY /preview/.
  * Browser renders RESPONSE FROM ACCEPTED PARAMETERS, never audio/FFT/WebAudio.
  * Static Pages is explicitly a visual DESIGN DEMO. Native uses ACK + LATER
  * authoritative snapshot; browser drafts never enter the mixer graph. */
@@ -18,8 +18,8 @@
  const isCut=i=>i===0||i===7;
  const gainEnabled=i=>i!==0&&i!==7;
  const mk=(tag,cl,text)=>{const el=document.createElement(tag);if(cl)el.className=cl;if(text!==undefined)el.textContent=text;return el;};
- const root=mk('section');root.id='mxBuiltinEq';root.hidden=true;root.setAttribute('role','dialog');root.setAttribute('aria-modal','false');root.setAttribute('aria-label','Built-in channel equalizer');
- const head=mk('header','mx-eq-top'),mark=mk('i','mx-eq-mark'),brand=mk('strong','', 'ArSonMix · Channel EQ');
+ const root=mk('section');root.id='mxBuiltinEq';root.hidden=true;root.setAttribute('role','dialog');root.setAttribute('aria-modal','false');root.setAttribute('aria-label','Built-in parametric equalizer');
+ const head=mk('header','mx-eq-top'),mark=mk('i','mx-eq-mark'),brand=mk('strong','', 'ArSonMix · Parametric EQ');
  const channelLabel=mk('span','mx-eq-channel'),spacer=mk('span','mx-eq-spacer'),mode=mk('span','mx-eq-mode');
  const close=mk('button','mx-eq-close','×');close.type='button';close.title='Close channel EQ';head.append(mark,brand,channelLabel,spacer,mode,close);
  const workspace=mk('div','mx-eq-workspace');
@@ -35,6 +35,27 @@
  workspace.append(graph,rail,controls,footer);root.append(head,workspace);
  const attach=()=>{if(!root.isConnected)document.body.append(root);};
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',attach,{once:true});else attach();
+ // Real modeless title-bar dragging, isolated from frequency-node gestures.
+ let windowGesture=null;
+ const stopDrag=e=>{
+   if(!windowGesture||windowGesture.id!==e.pointerId)return;
+   windowGesture=null;head.releasePointerCapture?.(e.pointerId);
+ };
+ head.addEventListener('pointerdown',e=>{
+   if(e.button!==0||e.target.closest?.('button'))return;
+   const r=root.getBoundingClientRect();
+   windowGesture={id:e.pointerId,offsetX:e.clientX-r.left,offsetY:e.clientY-r.top};
+   head.setPointerCapture?.(e.pointerId);e.preventDefault();
+ });
+ head.addEventListener('pointermove',e=>{
+   if(!windowGesture||e.pointerId!==windowGesture.id)return;
+   const r=root.getBoundingClientRect();
+   root.style.left=clamp(e.clientX-windowGesture.offsetX,0,Math.max(0,(window.innerWidth||1024)-r.width))+'px';
+   root.style.top=clamp(e.clientY-windowGesture.offsetY,0,Math.max(0,(window.innerHeight||768)-r.height))+'px';
+   root.style.transform='none';e.preventDefault();
+ });
+ head.addEventListener('pointerup',stopDrag);
+ head.addEventListener('pointercancel',stopDrag);
  const ctx=canvas.getContext('2d',{alpha:false});
  let current=null,channelId=null,epoch=null,revision=null,bands=empty(),slot=2,sampleRate=48000;
  let pending=null,waitingAck=false,snapshotReady=false,reqSeq=1,activeGesture=null,demonstration=true;
@@ -50,6 +71,7 @@
   const accepted=nativeStates.get(id);return sameGraph(accepted,n)?accepted:null;
  };
  const refresh=t=>window.__ARMIX_BUILTIN_EQ_REFRESH__?.(t?.id);
+ const notify=message=>window.__ARMIX_BUILTIN_EQ_NOTIFY__?.(message);
  const safeName=t=>String(t?.name||'Channel').replace(/[&<>"']/g,c=>({
    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
  })[c]);
@@ -220,8 +242,8 @@
        s.graph.channels.some(ch=>ch.id===channelId);
      if(!accepted){mode.textContent='NATIVE · ROUTE CHANGED';resetNative();}
    });
-   backend.addEventListener('arMixBuiltinEqQueue',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='REJECTED'){pending=null;setStatus('NATIVE: EDIT REJECTED; STATE UNCHANGED','warn');render();}else setStatus('QUEUED · WAITING FOR DSP APPLY ACK','warn');});
-   backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');render();}});
+   backend.addEventListener('arMixBuiltinEqQueue',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='REJECTED'){const t=current;pending=null;setStatus('NATIVE: EQ REJECTED; STATE UNCHANGED','warn');notify('Parametric EQ insert/edit rejected by native engine');refresh(t);render();}else setStatus('QUEUED · WAITING FOR DSP APPLY ACK','warn');});
+   backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {const t=current;pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');notify('Parametric EQ change not applied');refresh(t);render();}});
    backend.addEventListener('arMixBuiltinEqSnapshot',s=>{
      const n=nativeRoute()?.state?.();
      const validIdentity=s?.schemaVersion===1&&
@@ -266,35 +288,42 @@
   current=track;channelId=id;epoch=n.device.epoch;revision=n.graph.revision;
   snapshotReady=false;
   const requestId=nextRequestId();
-  pending={id:requestId,channelId:id,epoch,revision,slot:-1,kind:'gate'};
+  pending={id:requestId,channelId:id,epoch,revision,slot:-1,kind:'gate',trackId:track.id,installRequested:installed};
   waitingAck=false;
   setStatus('NATIVE · GATE QUEUED · WAITING FOR AUDIO ACK','warn');
   nativeBackend().emitEvent('arMixAction',{action:'builtinEqSetGate',channelId:id,
     deviceEpoch:epoch,graphRevision:revision,requestId,installed,bypassed});
-  render();return true;
+  refresh(track);render();return true;
  };
  window.ArSonMixBuiltinEq=Object.freeze({
+  installed(track){return Boolean(stateFor(track)?.installed||(pending?.kind==='gate'&&pending.installRequested&&pending.trackId===track?.id));},
   slotMarkup(track,materialIcon){
-   const st=stateFor(track);if(!st?.installed)return '';
+   const st=stateFor(track);
+   const installing=!st?.installed&&pending?.kind==='gate'&&pending.installRequested&&pending.trackId===track?.id;
+   if(!st?.installed&&!installing)return '';
+   if(installing)return '<div class="fxslot-row is-builtin is-pending" data-builtin-eq="pending" data-fx-effective="false" aria-label="Parametric EQ insertion pending native audio readback"><span class="fx-slot-placeholder" aria-hidden="true"></span><span class="fx-pick">Parametric EQ · APPLYING…</span></div>';
    const enabled=track.fxOn!==false&&!st.bypassed;
    const power=materialIcon?.('power_settings_new')||'⏻';
    const remove=materialIcon?.('delete_forever')||'×';
    const label=safeName(track);
    return '<div class="fxslot-row is-builtin '+(enabled?'is-active':'is-bypassed')+
      '" data-builtin-eq="true" data-fx-effective="'+enabled+
-     '" title="Native Channel EQ · PRE VST3">'+
+     '" title="Native Parametric EQ · PRE VST3">'+
      '<button class="mx-util-key" data-util-kind="fx-slot" data-action="builtinEqPower" title="'+
-     (st.bypassed?'Enable':'Bypass')+' Channel EQ" aria-label="Toggle Channel EQ on '+
+     (st.bypassed?'Enable':'Bypass')+' Parametric EQ" aria-label="Toggle Parametric EQ on '+
      label+'" aria-pressed="'+enabled+'">'+power+'</button>'+
-     '<button class="fx-pick" data-action="openBuiltinEq" aria-label="Open Channel EQ for '+
-     label+'">Channel EQ <small>PRE</small></button>'+
+     '<button class="fx-pick" data-action="openBuiltinEq" aria-label="Open Parametric EQ for '+
+     label+'">Parametric EQ <small>PRE</small></button>'+
      '<button class="mx-util-key" data-util-kind="fx-remove" data-action="builtinEqRemove" '+
-     'title="Remove built-in EQ" aria-label="Remove Channel EQ">'+remove+'</button></div>';
+     'title="Remove built-in EQ" aria-label="Remove Parametric EQ">'+remove+'</button></div>';
   },
   insert(track){
-   if(!track||track.kind==='master')return;
-   this.open(track);
-   if(!setGate(track,true,false))setStatus('NATIVE · EQ INSERT REJECTED','warn');
+   if(!track||track.kind==='master'||this.installed(track))return false;
+   // Selecting in the picker ONLY inserts. Clicking the accepted rack row
+   // is the sole editor-opening action (DAW-style modeless FX workflow).
+   const accepted=setGate(track,true,false);
+   if(!accepted)notify('Parametric EQ insert rejected · channel unchanged');
+   return accepted;
   },
   power(track){const st=stateFor(track);if(st?.installed)setGate(track,true,!st.bypassed);},
   remove(track){const st=stateFor(track);if(st?.installed)setGate(track,false,false);},

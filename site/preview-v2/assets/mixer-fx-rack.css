@@ -173,13 +173,11 @@
 /* ArSonMix: one optional BUILT-IN CHANNEL EQ overlay, never a second mixer.
  * Material palette is scoped and derived from the approved /preview/ hardware
  * chassis and FX glass. All sizes are compact, no blur/spectrum GPU loop. */
-.mx-eq-open{height:17px;min-width:30px;padding:0 5px;border:1px solid #56717b;border-radius:2px;background:linear-gradient(#3e555f,#283c46);color:#bce0e8;font:600 9px/15px "Segoe UI",Arial,sans-serif;letter-spacing:.3px;cursor:pointer}
-.mx-eq-open:hover{border-color:#77afbd;color:#e7fcff}.mx-eq-open:focus-visible{outline:2px solid #9bd9e8;outline-offset:1px}
 #mxBuiltinEq[hidden]{display:none!important}
-#mxBuiltinEq{--eq-cyan:#60c8df;--eq-ink:#d9e7ed;--eq-mute:#93a5af;position:fixed;z-index:90;left:50%;top:50%;transform:translate(-50%,-50%);width:min(770px,calc(100vw - 18px));height:min(465px,calc(100dvh - 18px));min-width:0;min-height:325px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;border:1px solid #566a78;border-radius:6px;background:#18232c;color:var(--eq-ink);box-shadow:0 14px 40px #000c,0 0 0 1px #0a151a,inset 0 1px #73838e;font:11px/1.25 "Segoe UI",Arial,sans-serif}
+#mxBuiltinEq{--eq-cyan:#60c8df;--eq-ink:#d9e7ed;--eq-mute:#93a5af;position:fixed;z-index:120;left:50%;top:50%;transform:translate(-50%,-50%);width:min(770px,calc(100vw - 18px));height:min(465px,calc(100dvh - 18px));min-width:0;min-height:325px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;border:1px solid #566a78;border-radius:6px;background:#18232c;color:var(--eq-ink);box-shadow:0 14px 40px #000c,0 0 0 1px #0a151a,inset 0 1px #73838e;font:11px/1.25 "Segoe UI",Arial,sans-serif}
 #mxBuiltinEq button,#mxBuiltinEq input,#mxBuiltinEq select{font:inherit}#mxBuiltinEq button{cursor:pointer}#mxBuiltinEq button:disabled,#mxBuiltinEq input:disabled,#mxBuiltinEq select:disabled{opacity:.55;cursor:default}
 #mxBuiltinEq button:focus-visible,#mxBuiltinEq input:focus-visible,#mxBuiltinEq select:focus-visible{outline:2px solid #85d1e6;outline-offset:1px}
-.mx-eq-top{height:30px;flex:0 0 30px;display:flex;align-items:center;gap:10px;padding:0 10px;background:linear-gradient(#575d62,#393f46 54%,#292f35 54%,#333c44);border-bottom:1px solid #101820;box-shadow:inset 0 1px #92999d}
+.mx-eq-top{cursor:move;touch-action:none;user-select:none;height:30px;flex:0 0 30px;display:flex;align-items:center;gap:10px;padding:0 10px;background:linear-gradient(#575d62,#393f46 54%,#292f35 54%,#333c44);border-bottom:1px solid #101820;box-shadow:inset 0 1px #92999d}
 .mx-eq-top .mx-eq-mark{width:4px;height:14px;background:#5fc6da}.mx-eq-top strong{font-size:12px;font-weight:600;letter-spacing:.3px;color:#eff4f6}.mx-eq-top .mx-eq-channel{color:#b9c9d0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
 .mx-eq-top .mx-eq-spacer{flex:1}.mx-eq-top .mx-eq-mode{font:9px/1 Consolas,monospace;color:#aad3df;white-space:nowrap}.mx-eq-close{border:1px solid #1a3039;border-radius:2px;background:linear-gradient(#64737e,#394c58);color:#f3f8fa;height:22px;width:25px;font:16px/19px Arial!important;padding:0}
 .mx-eq-workspace{flex:1;min-height:0;display:flex;flex-direction:column;background:#101a22}
@@ -209,3 +207,4 @@
 .fxslot-row.is-builtin .fx-pick{color:#c3ecf1}
 .fxslot-row.is-builtin .fx-pick small{font:8px/1 Consolas,monospace;letter-spacing:.25px;color:#86a7b4;margin-left:5px}
 .fxslot-row.is-builtin.is-bypassed .fx-pick{color:#8b9aa3}
+.fxslot-row.is-builtin.is-pending .fx-pick{color:#b7a67f;cursor:progress;font-size:10px}

@@ -183,6 +183,8 @@ jobs:
         run: python tests/approved_preview_mobile_navigation_smoke.py
       - name: FX rack master bypass preserves each insert state (real Chromium)
         run: python tests/approved_fx_rack_master_power_smoke.py
+      - name: Parametric EQ picker to rack and draggable editor (real Chromium)
+        run: python tests/approved_builtin_peq_picker_smoke.py
       - name: Stage D one runtime CSSOM and actual stylesheet network count
         run: python tests/approved_css_stage_d_single_bundle_smoke.py
       - name: Stage C rendered CSS parity (original vs compiled, three viewports + hover)

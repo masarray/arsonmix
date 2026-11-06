@@ -96,6 +96,13 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   const h=start(false);
   h.window.ArSonMixBuiltinEq.open({id:42,name:'Vocal',kind:'audio'});
   h.find('.mx-eq-switch').fire('click');
+  const title=h.find('.mx-eq-top');
+  title.fire('pointerdown',{pointerId:11,clientX:250,clientY:160});
+  title.fire('pointermove',{pointerId:11,clientX:290,clientY:195});
+  title.fire('pointerup',{pointerId:11});
+  assert.equal(h.dialog.style.transform,'none');
+  assert.equal(h.dialog.style.left,'40px');
+  assert.equal(h.dialog.style.top,'35px');
   assert.equal(h.sent.length,0,'Static Pages EQ must never issue a PCM command');
   assert.match(h.find('.mx-eq-status').textContent,/NO AUDIO/);
 }
@@ -151,7 +158,10 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
 }
 {
   const h=start(true),t={id:42,name:'Mic 1',kind:'audio'};
-  h.window.ArSonMixBuiltinEq.insert(t);
+  const installed=h.window.ArSonMixBuiltinEq.insert(t);
+  assert.equal(installed,true);
+  assert.equal(h.dialog.hidden,true,'Picker insert does not open a blocking editor');
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/APPLYING/);
   const add=lastAction(h);
   assert.equal(add.action,'builtinEqSetGate');
   assert.equal(add.installed,true);
@@ -163,7 +173,9 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'',
     'AUDIO ACK without later snapshot does not paint an insert');
   h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',add.requestId));
-  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/Channel EQ/);
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/Parametric EQ/);
+  h.window.ArSonMixBuiltinEq.open(t);
+  assert.equal(h.dialog.hidden,false,'Clicking accepted rack row opens editor');
   h.window.ArSonMixBuiltinEq.power(t);
   const bypass=lastAction(h);
   assert.equal(bypass.action,'builtinEqSetGate');assert.equal(bypass.bypassed,true);
@@ -189,7 +201,7 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   assert.equal(lastAction(h)?.action,'builtinEqSnapshot',
     'Accepted graph must requery exact ChannelId EQ readback');
   h.fire('arMixBuiltinEqSnapshot',snapshot('9','3','0',defaults(),true,false));
-  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(track,()=>''),/Channel EQ/,
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(track,()=>''),/Parametric EQ/,
     'Unopened editor still restores authoritative rack presence');
   assert.ok(paints>0);
   h.session('10','4');
