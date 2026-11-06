@@ -258,7 +258,14 @@ public:
             found|=row.id==target;
             retained.push_back(std::move(item));
         }
-        if(!found)return Fault::emptyId;
+        // Newly created ChannelIds can be insert-free and absent from the
+        // original fixed M4 vendor lease inventory. Such a channel is still
+        // a valid PCM lane; create an EMPTY lease row for its new width.
+        if(!found) {
+            Assignment empty;
+            empty.id=target;empty.format=format;
+            retained.push_back(std::move(empty));
+        }
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
