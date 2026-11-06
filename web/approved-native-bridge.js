@@ -1312,23 +1312,19 @@
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
            pendingNativeControl.size)queueLiveControlFlush();
-        if(!state.pending && state.lastError!=="ACCEPTED_READBACK" &&
-           state.lastError!=="NONE" && state.lastError!=="NATIVE_NOT_SUBSCRIBED"){
-          // A rejected/stale ChannelId edit must not automatically re-arm a
-          // superseded gesture command on an unverified graph.
+        // Rejection cleanup and native rollback must BOTH run.
+        // Former else-if was unreachable after the cleanup branch matched.
+        const failed=!state.pending &&
+          state.lastError!=="ACCEPTED_READBACK" &&
+          state.lastError!=="NONE" &&
+          state.lastError!=="NATIVE_NOT_SUBSCRIBED";
+        if(failed){
           for(const [key,edit] of pendingNativeControl)
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
-        }
-        else if(state.lastError!=="ACCEPTED_READBACK"&&state.lastError!=="NONE"&&
-                state.lastError!=="NATIVE_NOT_SUBSCRIBED") {
           lastNativeError=state.lastError;
-          // Native REJECTED / STALE / timeout must roll back a temporary fader
-          // cap and every input value; no optimistic GUI state survives.
-          if (!state.pending && flags.acceptedGraphConnected &&
-              (scope.activeFaderId??-1)<0){
-            // A rejected edit MUST restore the visual model immediately,
-            // but never unmount an open hardware selector. This also keeps
-            // existing native transaction rollback semantics testable.
+          // Never destroy an active pointer capture. Once the user releases,
+          // restore only the last independently accepted native controls.
+          if(flags.acceptedGraphConnected && (scope.activeFaderId??-1)<0){
             if(!document.activeElement?.matches?.(".strip select"))
               scope.render?.();
             controller.subscribe();

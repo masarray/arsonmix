@@ -62,13 +62,20 @@ function harness(){
  const window={
    __JUCE__:{backend},ArSonApprovedNativeContract:protocol,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
-   setTimeout(fn){timers.push(fn);return timers.length;}
+   setTimeout(fn,delay=0){timers.push({fn,at:now+Math.max(0,Number(delay)||0)});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
    window,document,performance:{now:()=>now},console
  },{timeout:2500});
  return {scope,window,backend,sent,listeners,timers,visual,
-   tick(ms=40){now+=ms;const due=timers.splice(0);for(const fn of due)fn();}
+   tick(ms=40){
+      now+=ms;
+      for(let i=0;i<timers.length;){
+        const timer=timers[i];
+        if(timer.at>now){i++;continue;}
+        timers.splice(i,1);timer.fn();
+      }
+    }
  };
 }
 test("held ChannelId drag publishes first gain and coalesces latest BEFORE release",()=>{
@@ -89,6 +96,8 @@ test("held ChannelId drag publishes first gain and coalesces latest BEFORE relea
  assert.equal(first.targetChannelId,s.graph.channels[4].id,"CH5 exact native ChannelId");
  assert.equal(first.payload.valueDb,-12,"native target emitted without pointerup");
  move(-18);move(-24);h.tick();
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.state().pending?.operation,"SET_FADER",
+   "a 40ms UI tick must NEVER execute the native 8000ms timeout");
  assert.equal(h.sent.filter(e=>e.name==="arMixConsoleIntent").length,1,
    "one in-flight native ACK: latest queued, no unbounded event storm");
  assert.equal(h.visual.at(-1).db,-24,"CH5 readout updates during mouse hold");
@@ -173,6 +182,6 @@ test("all CH1/CH2/CH5/CH10 and MAIN pointermove use native scalar path",()=>{
  assert.equal(main.payload.channel,-1);
  assert.equal(main.payload.parameter,"masterGain");
  assert.equal(main.payload.controlValue,-9);
- assert.match(bridge,/t\\?\\.kind==="master"\\s*\\|\\|\\s*m4ControlIsOwner\\(\\)/,
+ assert.match(bridge,/edit\.t\?\.kind==="master"\s*\|\|\s*m4ControlIsOwner\(\)/,
    "MAIN scalar uses guarded native host gain");
 });
