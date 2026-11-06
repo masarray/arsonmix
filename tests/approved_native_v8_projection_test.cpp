@@ -257,6 +257,62 @@ struct NativeWireProbe : NativeControlProbe {
         return {true,""};
     }
 };
+static void approvedNativeVst3LoadContractRegression(
+        const juce::var& canonical,const juce::var& producer) {
+    // Native VST3 command admission is independent of a fabricated vendor
+    // fixture. No processor is created here: the real JUCE host resolves
+    // the opaque catalog key and the live publisher proves PCM after ACK.
+    auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
+    auto bus=juce::JSON::parse(juce::JSON::toString(producer,false));
+    juce::Array<juce::var> pubOps,nativeOps;
+    pubOps.add("LOAD_INSERT");
+    nativeOps.add("NATIVE_LOAD_INSERT");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(pubOps));
+    bus.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("catalogId","test.vendor.vst3");
+    payload->setProperty("slot",0);
+    auto intent=std::make_unique<juce::DynamicObject>();
+    intent->setProperty("operation","LOAD_INSERT");
+    intent->setProperty("requestId","fx-canonical-test");
+    intent->setProperty("targetChannelId","9007199254740993");
+    intent->setProperty("deviceEpoch","91");
+    intent->setProperty("baseGraphRevision","25");
+    intent->setProperty("baseRosterRevision","9");
+    intent->setProperty("payload",juce::var(payload.release()));
+    const juce::var request(intent.release());
+    const auto translated=translateApprovedNativeControl(request,accepted,bus);
+    assert(translated.ok());
+    assert(translated.translated.getProperty("operation","").toString()
+           =="NATIVE_LOAD_INSERT");
+    assert(translated.translated.getProperty("payload",{})
+           .getProperty("catalogId","").toString()=="test.vendor.vst3");
+    const auto noChange=[&](juce::var cmd,juce::var live,juce::var native){
+        const auto before=juce::JSON::toString(native,false);
+        const auto result=translateApprovedNativeControl(cmd,live,native);
+        assert(!result.ok()&&!result.translated.isObject());
+        assert(juce::JSON::toString(native,false)==before);
+    };
+    auto stale=juce::JSON::parse(juce::JSON::toString(request,false));
+    stale.getDynamicObject()->setProperty("baseGraphRevision","24");
+    noChange(stale,accepted,bus);
+    auto gap=juce::JSON::parse(juce::JSON::toString(request,false));
+    gap.getProperty("payload",{}).getDynamicObject()->setProperty("slot",1);
+    noChange(gap,accepted,bus);
+    auto empty=juce::JSON::parse(juce::JSON::toString(request,false));
+    empty.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("catalogId","");
+    noChange(empty,accepted,bus);
+    auto unsupported=juce::JSON::parse(juce::JSON::toString(bus,false));
+    unsupported.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(juce::Array<juce::var>{}));
+    noChange(request,accepted,unsupported);
+    auto falseRole=juce::JSON::parse(juce::JSON::toString(accepted,false));
+    falseRole.getProperty("graph",{}).getProperty("channels",{})[0]
+             .getDynamicObject()->setProperty("role","MAIN");
+    noChange(request,falseRole,bus);
+}
 static void approvedWireTranslationRegression(const juce::var& canonical,
                                                 const juce::var& producer) {
     auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
@@ -767,6 +823,7 @@ int main() {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 
     controlIntentTranslationCases(snap,bus);
+    approvedNativeVst3LoadContractRegression(snap,bus);
     approvedWireTranslationRegression(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
