@@ -35,10 +35,10 @@
  const attach=()=>{if(!root.isConnected)document.body.append(root);};
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',attach,{once:true});else attach();
  const ctx=canvas.getContext('2d',{alpha:false});
- let current=null,channelId=null,epoch=null,revision=null,bands=empty(),slot=2;
+ let current=null,channelId=null,epoch=null,revision=null,bands=empty(),slot=2,sampleRate=48000;
  let pending=null,waitingAck=false,snapshotReady=false,reqSeq=1,activeGesture=null,demonstration=true;
  const nativeBackend=()=>window.__JUCE__?.backend;
- const nativeRoute=()=>window.__ARMIX_BUILTIN_EQ_CHANNEL;
+ const nativeRoute=()=>window.__ARMIX_BUILTIN_EQ_CHANNEL__;
  const setStatus=(message,kind='')=>{status.textContent=message;status.className='mx-eq-status '+kind;};
  const isOpen=()=>!root.hidden;
  const isEditable=()=>demonstration||Boolean(channelId&&snapshotReady&&!pending);
@@ -68,7 +68,7 @@
    let result=0;
    for(let i=0;i<8;++i){const b=bands[i];if(!b.enabled)continue;
      const cut=isCut(i),qs=cut&&b.slope===24?[.541196100146197,1.306562964876377]:[cut?Math.SQRT1_2:b.q];
-     for(const q of qs){const c=coeff(TYPES[i],b,48000,q),w=2*Math.PI*hz/48000,cos=Math.cos(w),sin=Math.sin(w),cos2=Math.cos(2*w),sin2=Math.sin(2*w);
+     for(const q of qs){const c=coeff(TYPES[i],b,sampleRate,q),w=2*Math.PI*hz/48000,cos=Math.cos(w),sin=Math.sin(w),cos2=Math.cos(2*w),sin2=Math.sin(2*w);
        const nr=c[0]+c[1]*cos+c[2]*cos2,ni=-(c[1]*sin+c[2]*sin2),dr=1+c[4]*cos+c[5]*cos2,di=-(c[4]*sin+c[5]*sin2);
        result+=10*Math.log10(Math.max(1e-24,(nr*nr+ni*ni)/Math.max(1e-24,dr*dr+di*di)));
      }
@@ -109,7 +109,7 @@
  const update=(patch)=>apply({...selected(),...patch});
  power.addEventListener('click',()=>update({enabled:!selected().enabled}));
  flat.addEventListener('click',()=>update({...empty()[slot]}));
- freq.v.addEventListener('change',()=>update({frequencyHz:clamp(num(freq.v.value,selected().frequencyHz),20,20000)}));
+ freq.v.addEventListener('change',()=>update({frequencyHz:clamp(num(freq.v.value,selected().frequencyHz),20,Math.min(20000,Math.floor(sampleRate*.45)))}));
  gain.v.addEventListener('change',()=>update({gainDb:clamp(num(gain.v.value,selected().gainDb),-18,18)}));
  q.v.addEventListener('change',()=>update({q:clamp(num(q.v.value,selected().q),.2,12)}));
  slope.v.addEventListener('change',()=>update({slope:num(slope.v.value,12)===24?24:12}));
@@ -131,7 +131,7 @@
    backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');render();}});
    backend.addEventListener('arMixBuiltinEqSnapshot',s=>{if(!isOpen()||demonstration||!validateSnap(s))return;
      if(pending&&(!waitingAck||s.appliedRequestId!==pending.id))return;
-     bands=s.bands.map(b=>({...b}));epoch=s.deviceEpoch;revision=s.graphRevision;pending=null;waitingAck=false;snapshotReady=true;
+     bands=s.bands.map(b=>({...b}));epoch=s.deviceEpoch;revision=s.graphRevision;sampleRate=Number(s.sampleRate)||48000;pending=null;waitingAck=false;snapshotReady=true;
      setStatus('NATIVE · ACK + ACCEPTED PARAMETER READBACK','good');render();
    });
  }

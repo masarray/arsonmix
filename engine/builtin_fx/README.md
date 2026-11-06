@@ -88,3 +88,17 @@ See `tests/builtin_channel_eq_bank_test.cpp` for bounded queue / ACK fixtures.
 Reference mathematics: W3C Audio EQ Cookbook (RBJ), 2021,
 https://www.w3.org/TR/audio-eq-cookbook/ . Interaction inspiration: FL Studio
 Fruity Parametric EQ, **not a copy of its source code, icons, or artwork**.
+
+## Built-in EQ native product adapter — PR #423
+
+The DSP is owned by this ArSonMix repository; no code, build product, CI or plugin identity in `masarray/arson-eq` is modified. It is **not a VST3 module** and does not appear in the user-owned plugin scanner or FactoryFX.
+
+The 8 fixed slots (HPF/LOW/PEQ1–4/HIGH/LPF) are processed in-place before vendor inserts on the original M4 10CH+4AUX graph and the admitted ChannelId native graph. M4→ChannelId and structural native revisions retain one shared EQ bank and correct stable input/aux ChannelIds. Extra dynamic channels, MAIN and MONITOR are **not** mapped to the 14 legacy EQ lanes; the controls fail closed rather than borrowing a strip's EQ. Structural changes inherit the bank only for the same hardware clock; stale revisions are rejected at the actual DSP apply boundary. Never insert a second callback, FFT, latency buffer or ArSonEQ 24-band engine.
+
+### Operator UI
+
+The approved `/preview/` mixer has a small **EQ** button beside each supported channel FX rack header; the separate compact EQ overlay is implemented in `site/preview-v2/assets/mixer-builtin-eq.{js,css}` as an INTERNAL source of the approved deterministic Pages/JUCE renderer. The `/preview/` page marks controls as **UI DEMO / NO AUDIO**. The native JUCE bridge resolves the actual accepted decimal-string `ChannelId`, current epoch and PCM graph revision; no browser-inferred lane or active VST insert. A control command is `builtinEqSetBand` through the existing `arMixAction` bridge, returning QUEUED (not applied). Only the audio callback ACK plus a subsequent native parameter snapshot updates the browser's accepted EQ state. A failed/stale/busy/unsupported edit leaves accepted parameters unchanged, and hardware routing is never activated by opening the EQ editor.
+
+### Remaining release qualification
+
+Native Windows exact-SHA executable, CTest, visual equivalence against the user-approved deployed `/preview/`, no-allocation xrun stress, device reconnect, scenario/Show restoration, and real ASIO hardware ears-on FAT must all be independently verified. These gates are **not** inferred from native DSP unit success or from a static browser rendering. Draft PR is not a production release; no merge without accepting multi-PR conflict with the active product integration owner.

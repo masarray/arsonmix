@@ -16,6 +16,6 @@ assert.match(js,/arMixBuiltinEqAck/);
 assert.match(js,/arMixBuiltinEqSnapshot/);
 assert.match(js,/DESIGN DEMO · NO AUDIO/);
 assert.match(js,/snapshotReady/);
-assert.doesNotMatch(js,/AudioContext|webkitAudioContext|createScriptProcessor|new Worker\\(/);
+assert.ok(!['AudioContext','webkitAudioContext','createScriptProcessor','new Worker('].some(s=>js.includes(s)), 'Browser EQ must not own audio callback');
 assert.match(css,/#mxBuiltinEq\\[hidden\\]/);
 console.log('Built-in Channel EQ GUI contract: PASS (isolated from VST3 and alt mixer)');

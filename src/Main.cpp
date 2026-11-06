@@ -335,6 +335,8 @@ private:
         out->setProperty("graphRevision",juce::String(std::to_string(rev)));
         out->setProperty("appliedRequestId",juce::String(
             std::to_string(eqLastApplied_[static_cast<std::size_t>(lane)])));
+        if(auto* device=engine_.devices().getCurrentAudioDevice())
+            out->setProperty("sampleRate",device->getCurrentSampleRate());
         juce::Array<juce::var> bands;
         for(const auto& band:eqAccepted_[static_cast<std::size_t>(lane)]) {
             auto row=std::make_unique<juce::DynamicObject>();
