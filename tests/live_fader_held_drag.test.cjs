@@ -36,15 +36,27 @@ function nativeChannelIdFixture(){
  };
  return s;
 }
-function harness(){
- const sent=[],listeners=new Map(),timers=[],visual=[];
+function harness({m4=false}={}){
+ const sent=[],listeners=new Map(),timers=[],visual=[],meters=[];
+ const m4Tracks=m4?Array.from({length:10},(_,i)=>({
+   id:1000+i,name:"CH"+(i+1),kind:"audio",format:"mono",level:-6,
+   pan:0,mute:false,solo:false,input:"None",output:"Master",fxOn:true,
+   fx:Array(8).fill("None"),slotBypass:Array(8).fill(false)
+ })):[];
+ const roots=new Map(m4Tracks.map(t=>[t.id,{
+   isConnected:true,
+   querySelector:q=>q===".meter-fill.left"?{lane:t.id,side:"L"}:
+     q===".meter-fill.right"?{lane:t.id,side:"R"}:null
+ }]));
  let now=1000,nextId=100;
  const scope={
-   tracks:[],master:{id:1,name:"MAIN"},colors:["#568ead"],
+   tracks:m4Tracks,master:{id:1,name:"MAIN",kind:"master",level:0,
+   pan:0,mute:false,output:"Realtek"},colors:["#568ead"],
    wireGraph:{validateCandidateGraph:()=>({ok:true})},
    make:(name,kind,color)=>({id:nextId++,name,kind,color,selected:false}),
    render(){},findTrack(el){return this.tracks[el.lane||0];},
-   displayMeterDbfs(){},allocateWireId(){return nextId++;},
+   displayMeterDbfs(fill,db){meters.push({fill,db});},
+   refreshStrip(){},allocateWireId(){return nextId++;},
    installGraph(channels,master,edges){this.tracks=channels;this.master=master;this.edges=edges;},
    syncFaderVisual(t){visual.push({id:t.id,db:t.level});},
    stopDemo(){}
@@ -57,7 +69,10 @@ function harness(){
    readyState:"complete",documentElement:{dataset:{}},
    getElementById:id=>id==="info"?{textContent:""}:
      id==="preview"?{disabled:false,setAttribute(){}}:null,
-   querySelector:()=>null,addEventListener(){}
+   querySelector:q=>{
+     const match=/\.strip\[data-id="(\d+)"\]/.exec(q);
+     return match?roots.get(Number(match[1]))||null:null;
+   },addEventListener(){}
  };
  const window={
    __JUCE__:{backend},ArSonApprovedNativeContract:protocol,
@@ -67,7 +82,7 @@ function harness(){
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
    window,document,performance:{now:()=>now},console
  },{timeout:2500});
- return {scope,window,backend,sent,listeners,timers,visual,
+ return {scope,window,backend,sent,listeners,timers,visual,meters,
    tick(ms=40){
       now+=ms;
       for(let i=0;i<timers.length;){
@@ -190,4 +205,60 @@ test("all CH1/CH2/CH5/CH10 and MAIN pointermove use native scalar path",()=>{
  assert.equal(main.payload.controlValue,-9);
  assert.match(bridge,/edit\.t\?\.kind==="master"\s*\|\|\s*m4ControlIsOwner\(\)/,
    "MAIN scalar uses guarded native host gain");
+});
+
+test("pending M4 fader ACK never stalls independently accepted meters, FX rack or mute",()=>{
+ const h=harness({m4:true}),s=clone(fixture),rev="3";
+ const controls=()=>({faderDb:-6,pan:0,mute:false,solo:false});
+ const source=()=>({mode:"MONO",left:0,right:-1,main:true,channelFormat:"MONO"});
+ s.legacyM4={
+   active:true,routeAccepted:true,routingRevision:rev,
+   channelControls:Array.from({length:10},controls),
+   channels:Array.from({length:10},source),
+   fxInstances:Array.from({length:10},()=>Array(8).fill(null))
+ };
+ s.mixerSession={
+   authority:"M4",deviceEpoch:s.device.epoch,routeRevision:rev,
+   channels:Array.from({length:10},()=>({
+     source:source(),main:true,channelFormat:"MONO",controls:controls(),
+     fxRackBypassed:false,peakL:0.1,peakR:0.1
+   })),main:{db:0,mute:false}
+ };
+ const snapshot=h.listeners.get("arMixConsoleSnapshot");
+ snapshot(s);
+ assert.equal(h.meters.length,20,"ten-channel hardware meters are live");
+ const ch5={dataset:{field:"level"},lane:4,value:"-12",min:"-60",max:"10"};
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeField({
+   target:ch5,type:"input"
+ }),true);
+ const command=h.sent.findLast(e=>
+   e.name==="arMixAction"&&e.payload.action==="routingM4Control")?.payload;
+ assert.equal(command?.channel,4);
+ assert.equal(command.parameter,"faderDb");
+ assert.equal(command.controlValue,-12);
+ const next=clone(s);
+ next.mixerSession.channels[0].fxRackBypassed=true;
+ next.mixerSession.channels[3].controls.mute=true;
+ next.mixerSession.channels[4].peakL=0.45;
+ snapshot(next);
+ assert.equal(h.meters.length,40,
+   "pending CH5 gain must not freeze all 20 physical meter taps");
+ assert.equal(h.scope.tracks[0].fxOn,false,
+   "CH1 real rack state stays independent of CH5 pending gain");
+ assert.equal(h.scope.tracks[3].mute,true,
+   "CH4 accepted mute stays independent of CH5 pending gain");
+ assert.equal(h.scope.tracks[4].level,-6,
+   "unacknowledged CH5 gain must not appear as accepted PCM");
+ assert.equal(h.visual.at(-1)?.db,-12,
+   "the CH5 held fader cap keeps the latest unacknowledged target");
+ h.listeners.get("arMixM4ControlAck")({
+   requestId:command.requestId,ok:true,deviceEpoch:s.device.epoch,
+   routingRevision:rev,channel:4,parameter:"faderDb"
+ });
+ const accepted=clone(next);
+ accepted.mixerSession.channels[4].controls.faderDb=-12;
+ accepted.legacyM4.channelControls[4].faderDb=-12;
+ snapshot(accepted);
+ assert.equal(h.scope.tracks[4].level,-12);
+ assert.equal(h.meters.length,60);
 });

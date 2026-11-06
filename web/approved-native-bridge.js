@@ -1483,8 +1483,11 @@
       status("NATIVE SESSION UNAVAILABLE · controls unchanged");
       return;
     }
-    // Never paint unacknowledged or still-unproven M4 scalar edits.
-    if(reconcileM4ControlReadback(next))return;
+    // Never paint unacknowledged controls; pending slider caps are kept
+    // separately by pendingFaderVisualDb while accepted telemetry continues.
+    // A pending scalar ACK is not a global snapshot gate. Only accepted producer
+    // data can update controls; independent meters and FX racks keep moving.
+    reconcileM4ControlReadback(next);
     reconcileM4RackReadback(next);
     if(session.authority==="M4" && m4Verified()) {
       paintM4Fallback(next);
