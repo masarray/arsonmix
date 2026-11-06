@@ -34,3 +34,32 @@ during draft iteration, not from sleeps, fake success, silenced CTest, or
 removing critical audio safety tests. Path-only changes to docs do not
 start UI/native workflows. The main Pages publisher remains gated on the
 successful full GUI push and checks the exact current main SHA.
+
+
+## Autonomous ChatGPT GitHub connector CI trigger
+
+You do not need to open the GitHub Actions page. ChatGPT posts one
+owner-authenticated **PR Conversation** comment using the connected GitHub app:
+
+```text
+/arsonmix-ci ui <exact 40-character PR HEAD SHA>
+/arsonmix-ci native <exact 40-character PR HEAD SHA>
+/arsonmix-ci fat <exact 40-character PR HEAD SHA>
+```
+
+The main-branch `ChatGPT CI Milestone Dispatcher` verifies that the comment
+comes from the repository owner, the PR is open and belongs to this repository,
+the SHA is its actual current HEAD, and fast checks have not already failed.
+Requests for the same lane+SHA are deduplicated; previously qualified or
+running manual UI/native dispatches are not restarted. The assistant picks
+the required lane only for a meaningful milestone, not for every commit.
+
+`ui` requests full Chromium interaction/visual tests; `native` requests
+Windows MSVC and realtime CTest; `fat` requests Windows MSVC/CTest followed
+by independently verified **UNQUALIFIED** Windows hardware FAT ZIP.
+The dispatched workflow checks out the exact authorized source SHA. PR
+comments cannot supply arbitrary workflows or secrets.
+
+Older branches created before these `expected_sha` workflow inputs were
+introduced must first reconcile the new main CI workflow files. Manual Actions
+buttons remain an optional fallback only, not the user-facing process.
