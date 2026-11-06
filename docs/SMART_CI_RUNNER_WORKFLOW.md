@@ -28,6 +28,14 @@ for physical audio-interface listening, ASIO timing or glitch measurements.
 Draft checks deliberately do not certify a release. A PR's latest commit must
 pass the applicable full checks before merge.
 
+Current product Chromium qualification always retains approved GUI provenance,
+CSS visual parity, live-control/WIRE/FX/meter/fader interaction and viewport
+checks. Archived V8–V27 CSS migrations compare historical source bytes and
+mount old fixtures; they run only with `historical_css: true` for explicit CSS
+maintenance. The normal connector `ui` lane leaves this option false, so an
+audio milestone never replaces the current console with an archival skin.
+All 28 historical test/mount/restore steps remain available independently.
+
 The runner economy comes from *not scheduling* paid Windows or Playwright
 during PR iteration, not from sleeps, fake success, silenced CTest, or
 removing critical audio safety tests. Path-only changes to docs do not
