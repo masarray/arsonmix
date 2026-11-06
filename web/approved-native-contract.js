@@ -177,10 +177,17 @@
           if (pending.originalPrimaryOutId &&
               pending.originalPrimaryOutId!==edit.to &&
               edges.some(e=>e.from===edit.from&&
-                e.to===pending.originalPrimaryOutId))
+                e.to===pending.originalPrimaryOutId&&
+                // A remembered parallel send is NOT the former primary.
+                // Unknown/legacy edge identity stays fail-closed.
+                e.primaryOutput!==false))
             return false;
           if (edit.to!==next.graph.mainChannelId &&
-              edges.some(e=>e.from===edit.from&&e.to===next.graph.mainChannelId))
+              edges.some(e=>e.from===edit.from&&
+                e.to===next.graph.mainChannelId&&
+                // ROUTE_ONLY replaces only the primary. A deliberate
+                // independent parallel MAIN send must remain audible.
+                e.primaryOutput!==false))
             return false;
         }
         return true;
