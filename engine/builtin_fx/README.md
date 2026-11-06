@@ -102,3 +102,16 @@ The approved `/preview/` mixer has a small **EQ** button beside each supported c
 ### Remaining release qualification
 
 Native Windows exact-SHA executable, CTest, visual equivalence against the user-approved deployed `/preview/`, no-allocation xrun stress, device reconnect, scenario/Show restoration, and real ASIO hardware ears-on FAT must all be independently verified. These gates are **not** inferred from native DSP unit success or from a static browser rendering. Draft PR is not a production release; no merge without accepting multi-PR conflict with the active product integration owner.
+
+### Channel EQ lifecycle and plotting regression (2026-11-06)
+
+Native control readback clamps disabled default cutoff frequencies to the exact
+DSP preparation limit min(20 kHz, 45% negotiated device rate), including 8/16/32
+kHz devices. The editor uses the actual native sample rate for the complete
+display response computation, preparing filter coefficients once per redraw
+instead of once per frequency pixel. Touch/mouse pointer drags display a dashed,
+**not yet applied** response; user release sends only one bounded control
+intent. Graph/device hotplug, migration or channel disappearance invalidates
+the editor until a new authoritative native snapshot is requested. A matching
+epoch, PCM revision and exact native ChannelId are required before the editor
+accepts a parameter snapshot. No visual gesture starts a new callback.

@@ -23,3 +23,11 @@ assert.ok(css.includes('#mxBuiltinEq[hidden]'));
 console.log('Built-in Channel EQ GUI contract: PASS (isolated from VST3 and alt mixer)');
 
 assert.ok(!html.includes('assets/mixer-builtin-eq.css'), 'No second CSS cascade owner');
+
+assert.ok(!js.includes('hz/48000'), 'Spectrum display must use accepted device sample rate');
+assert.ok(js.includes('compiledSections(displayBands)'), 'Coefficient design once per paint, not each frequency pixel');
+assert.ok(js.includes('arMixConsoleSnapshot'), 'Device/graph invalidation listener required');
+assert.ok(js.includes('s.deviceEpoch===epoch&&s.graphRevision===revision'),
+  'Reject stale samples and stale graph revisions');
+assert.ok(js.includes('RELEASE TO REQUEST AUDIO CHANGE'), 'Drag must be preview-only until release');
+assert.ok(js.includes('BigInt(Date.now())'), 'Request IDs must survive a WebView restart without accidental replay');

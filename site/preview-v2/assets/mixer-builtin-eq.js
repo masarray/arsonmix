@@ -10,6 +10,7 @@
  const COLORS=['#9dc7ff','#eabb80','#e0a5db','#8eace8','#86d4ac','#e0b67c','#d99da8','#86cfe4'];
  const empty=()=>DEFAULT.map((f,i)=>({enabled:false,frequencyHz:f,gainDb:0,q:i>=2&&i<=5?1:.70710678,slope:12}));
  const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+ const maxHz=()=>Math.min(20000,Math.floor(sampleRate*.45));
  const hzToX=(hz,w)=>28+Math.log(clamp(hz,20,20000)/20)/Math.log(1000)*(w-58);
  const xToHz=(x,w)=>20*Math.pow(1000,clamp((x-28)/(w-58),0,1));
  const dbToY=(db,h)=>h/2-clamp(db,-18,18)*(h-39)/36;
@@ -46,14 +47,14 @@
  const updateInputs=()=>{
    const b=bands[slot];
    buttons.forEach((node,i)=>{node.classList.toggle('selected',slot===i);node.classList.toggle('on',bands[i].enabled);node.setAttribute('aria-pressed',String(bands[i].enabled));});
-   power.setAttribute('aria-pressed',String(b.enabled));power.textContent=b.enabled?'ENABLED':'ENABLE';
+   power.setAttribute('aria-pressed',String(b.enabled));power.textContent=b.enabled?'BAND ON':'BAND OFF';
    freq.v.value=String(Math.round(b.frequencyHz));gain.v.value=b.gainDb.toFixed(1);q.v.value=b.q.toFixed(2);slope.v.value=String(b.slope);
-   typeName.textContent=LABELS[slot];gain.v.disabled=isCut(slot)||!isEditable();q.v.disabled=isCut(slot)||!isEditable();
+   typeName.textContent=LABELS[slot];gain.v.disabled=isCut(slot)||!isEditable();q.v.disabled=isCut(slot)||slot===1||slot===6||!isEditable();
    slope.v.disabled=!isCut(slot)||!isEditable();freq.v.disabled=!isEditable();power.disabled=!isEditable();flat.disabled=!isEditable();
    buttons.forEach(x=>{x.disabled=false;});
  };
  const num=(x,d)=>Number.isFinite(Number(x))?Number(x):d;
- const validBand=(i,b)=>Boolean(b)&&typeof b.enabled==='boolean'&&Number.isFinite(b.frequencyHz)&&b.frequencyHz>=20&&b.frequencyHz<=20000&&Number.isFinite(b.gainDb)&&Math.abs(b.gainDb)<=18&&Number.isFinite(b.q)&&b.q>=.2&&b.q<=12&&(b.slope===12||b.slope===24);
+ const validBand=(i,b)=>Boolean(b)&&typeof b.enabled==='boolean'&&Number.isFinite(b.frequencyHz)&&b.frequencyHz>=20&&b.frequencyHz<=(b.enabled?maxHz():20000)&&Number.isFinite(b.gainDb)&&Math.abs(b.gainDb)<=18&&Number.isFinite(b.q)&&b.q>=.2&&b.q<=12&&(b.slope===12||b.slope===24);
  const coeff=(type,b,sr,q)=>{
    const w=2*Math.PI*b.frequencyHz/sr,c=Math.cos(w),sin=Math.sin(w),a=Math.pow(10,b.gainDb/40),al=sin/(2*q),edge=sin*Math.sqrt(a)*Math.SQRT2;
    let v;
@@ -64,14 +65,25 @@
    else v=[a*((a+1)+(a-1)*c+edge),-2*a*((a-1)+(a+1)*c),a*((a+1)+(a-1)*c-edge),(a+1)-(a-1)*c+edge,2*((a-1)-(a+1)*c),(a+1)-(a-1)*c-edge];
    const a0=v[3];return [v[0]/a0,v[1]/a0,v[2]/a0,1,v[4]/a0,v[5]/a0];
  };
- const responseDb=(hz)=>{
-   let result=0;
-   for(let i=0;i<8;++i){const b=bands[i];if(!b.enabled)continue;
+ // Coefficients depend on settings and sample rate, NOT on graph X pixels.
+ // Build once per animation frame; no 8x redundant trig/pow coefficient work.
+ const compiledSections=src=>{
+   const sections=[];
+   for(let i=0;i<src.length;i++){
+     const b=src[i];if(!b.enabled)continue;
      const cut=isCut(i),qs=cut&&b.slope===24?[.541196100146197,1.306562964876377]:[cut?Math.SQRT1_2:b.q];
-     for(const q of qs){const c=coeff(TYPES[i],b,sampleRate,q),w=2*Math.PI*hz/48000,cos=Math.cos(w),sin=Math.sin(w),cos2=Math.cos(2*w),sin2=Math.sin(2*w);
-       const nr=c[0]+c[1]*cos+c[2]*cos2,ni=-(c[1]*sin+c[2]*sin2),dr=1+c[4]*cos+c[5]*cos2,di=-(c[4]*sin+c[5]*sin2);
-       result+=10*Math.log10(Math.max(1e-24,(nr*nr+ni*ni)/Math.max(1e-24,dr*dr+di*di)));
-     }
+     for(const q of qs)sections.push(coeff(TYPES[i],b,sampleRate,q));
+   }return sections;
+ };
+ const responseDb=(hz,sections)=>{
+   if(!sections.length)return 0;
+   const w=2*Math.PI*hz/sampleRate,cos=Math.cos(w),sin=Math.sin(w);
+   const cos2=Math.cos(2*w),sin2=Math.sin(2*w);
+   let result=0;
+   for(const c of sections){
+     const nr=c[0]+c[1]*cos+c[2]*cos2,ni=-(c[1]*sin+c[2]*sin2);
+     const dr=1+c[4]*cos+c[5]*cos2,di=-(c[4]*sin+c[5]*sin2);
+     result+=10*Math.log10(Math.max(1e-24,(nr*nr+ni*ni)/Math.max(1e-24,dr*dr+di*di)));
    }return result;
  };
  const draw=()=>{
@@ -87,12 +99,16 @@
    for(const db of [-18,-12,-6,0,6,12,18]){
      const y=dbToY(db,h);ctx.strokeStyle=db===0?'#587581':'#2b3b45';ctx.lineWidth=db===0?1.2:.7;ctx.beginPath();ctx.moveTo(23,y);ctx.lineTo(w-28,y);ctx.stroke();ctx.fillStyle='#8ca5b3';ctx.fillText(db>0?'+'+db:String(db),3,y-5);
    }
+   const displayBands=activeGesture?.draft ?
+     bands.map((band,i)=>i===activeGesture.slot?activeGesture.draft:band):bands;
+   const sections=compiledSections(displayBands);
    const steps=Math.max(80,Math.floor(w-58)),points=[];
-   for(let i=0;i<=steps;i++){const f=xToHz(28+(w-58)*i/steps,w);points.push([hzToX(f,w),dbToY(responseDb(f),h)]);}
+   for(let i=0;i<=steps;i++){const f=xToHz(28+(w-58)*i/steps,w);points.push([hzToX(f,w),dbToY(responseDb(f,sections),h)]);}
    ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.lineTo(w-28,y0);ctx.lineTo(28,y0);ctx.closePath();ctx.fillStyle='rgba(79,174,207,.09)';ctx.fill();
-   ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle='#67d3e5';ctx.lineWidth=2;ctx.stroke();
-   for(let i=0;i<bands.length;i++){
-      const b=bands[i],x=hzToX(b.frequencyHz,w),y=dbToY(isCut(i)?0:b.gainDb,h),r=i===slot?7:5;
+   ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.strokeStyle=activeGesture?.draft?'#9ae9f3':'#67d3e5';
+   ctx.lineWidth=2;ctx.setLineDash(activeGesture?.draft?[5,3]:[]);ctx.stroke();ctx.setLineDash([]);
+   for(let i=0;i<displayBands.length;i++){
+      const b=displayBands[i],x=hzToX(b.frequencyHz,w),y=dbToY(isCut(i)?0:b.gainDb,h),r=i===slot?7:5;
       ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=b.enabled?COLORS[i]:'#293844';ctx.fill();ctx.lineWidth=i===slot?2:1;ctx.strokeStyle=i===slot?'#e7f9fb':COLORS[i];ctx.stroke();
    }
  };
@@ -101,32 +117,63 @@
    if(!isEditable()||!validBand(slot,candidate))return;
    if(demonstration){bands[slot]={...candidate};setStatus('DESIGN DEMO · VISUAL ONLY · NO AUDIO','warn');render();return;}
    if(!nativeBackend()?.emitEvent||!channelId||!epoch||!revision)return;
-   const id=String(reqSeq++),command={action:'builtinEqSetBand',channelId,deviceEpoch:epoch,graphRevision:revision,requestId:id,slot,band:candidate};
+   const id=(BigInt(Date.now())*10000n+BigInt(reqSeq++%10000)).toString(),command={action:'builtinEqSetBand',channelId,deviceEpoch:epoch,graphRevision:revision,requestId:id,slot,band:candidate};
    pending={id,channelId,epoch,revision,slot};waitingAck=false;
    setStatus('NATIVE: REQUEST SENT · WAITING FOR AUDIO CALLBACK','warn');render();nativeBackend().emitEvent('arMixAction',command);
  };
  const selected=()=>bands[slot];
  const update=(patch)=>apply({...selected(),...patch});
- power.addEventListener('click',()=>update({enabled:!selected().enabled}));
+ power.addEventListener('click',()=>update({enabled:!selected().enabled,frequencyHz:Math.min(selected().frequencyHz,maxHz())}));
  flat.addEventListener('click',()=>update({...empty()[slot]}));
- freq.v.addEventListener('change',()=>update({frequencyHz:clamp(num(freq.v.value,selected().frequencyHz),20,Math.min(20000,Math.floor(sampleRate*.45)))}));
+ freq.v.addEventListener('change',()=>update({frequencyHz:clamp(num(freq.v.value,selected().frequencyHz),20,maxHz())}));
  gain.v.addEventListener('change',()=>update({gainDb:clamp(num(gain.v.value,selected().gainDb),-18,18)}));
  q.v.addEventListener('change',()=>update({q:clamp(num(q.v.value,selected().q),.2,12)}));
  slope.v.addEventListener('change',()=>update({slope:num(slope.v.value,12)===24?24:12}));
  rail.addEventListener('click',e=>{const btn=e.target.closest('[data-slot]');if(!btn)return;slot=Number(btn.dataset.slot);render();});
  const locate=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top,w:r.width,h:r.height};};
  const pick=(p)=>{let index=-1,d=17*17;bands.forEach((b,i)=>{const x=hzToX(b.frequencyHz,p.w),y=dbToY(isCut(i)?0:b.gainDb,p.h),dist=(x-p.x)**2+(y-p.y)**2;if(dist<d){d=dist;index=i;}});return index;};
- canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;const p=locate(e),i=pick(p);if(i<0)return;slot=i;activeGesture={id:e.pointerId,slot:i,original:bands[i],p};canvas.setPointerCapture?.(e.pointerId);render();});
- canvas.addEventListener('pointerup',e=>{if(!activeGesture||activeGesture.id!==e.pointerId)return;const gesture=activeGesture;activeGesture=null;const p=locate(e);if(!isEditable())return;const changedHz=Math.round(xToHz(p.x,p.w)),changedDb=isCut(slot)?0:Math.round(yToDb(p.y,p.h)*10)/10;
-   update({enabled:true,frequencyHz:clamp(changedHz,20,20000),gainDb:changedDb});});
- canvas.addEventListener('pointercancel',()=>{activeGesture=null;});
+ canvas.addEventListener('pointerdown',e=>{
+   if(e.button!==0||!isEditable())return;
+   const p=locate(e),i=pick(p);if(i<0)return;
+   slot=i;activeGesture={id:e.pointerId,slot:i,draft:null};
+   canvas.setPointerCapture?.(e.pointerId);render();
+ });
+ canvas.addEventListener('pointermove',e=>{
+   const g=activeGesture;if(!g||g.id!==e.pointerId||!isEditable())return;
+   const p=locate(e),selectedBand=bands[g.slot];
+   g.draft={...selectedBand,enabled:true,
+      frequencyHz:clamp(Math.round(xToHz(p.x,p.w)),20,maxHz()),
+      gainDb:isCut(g.slot)?0:Math.round(yToDb(p.y,p.h)*10)/10};
+   setStatus('DRAG PREVIEW · RELEASE TO REQUEST AUDIO CHANGE','warn');
+   render(); // dashed preview only; the accepted band stays unchanged
+ });
+ canvas.addEventListener('pointerup',e=>{
+   const g=activeGesture;if(!g||g.id!==e.pointerId)return;
+   activeGesture=null;slot=g.slot;
+   const p=locate(e),old=bands[g.slot];
+   const candidate=g.draft||{...old,enabled:true,
+     frequencyHz:clamp(Math.round(xToHz(p.x,p.w)),20,maxHz()),
+     gainDb:isCut(g.slot)?0:Math.round(yToDb(p.y,p.h)*10)/10};
+   if(isEditable())apply(candidate);
+   else render();
+ });
+ canvas.addEventListener('pointercancel',()=>{activeGesture=null;render();});
  canvas.addEventListener('wheel',e=>{const p=locate(e),i=pick(p);if(i<0||!isEditable())return;e.preventDefault();slot=i;const b=bands[i];if(isCut(i))update({slope:b.slope===12?24:12,enabled:true});else update({q:clamp(Math.round((b.q+(e.deltaY<0?.08:-.08))*100)/100,.2,12),enabled:true});},{passive:false});
  close.addEventListener('click',()=>{root.hidden=true;activeGesture=null;});
  root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();root.hidden=true;}});
  if(typeof ResizeObserver!=='undefined'){new ResizeObserver(()=>{if(isOpen())render();}).observe(graph);}else window.addEventListener('resize',()=>{if(isOpen())render();},{passive:true});
- const validateSnap=s=>s?.schemaVersion===1&&s.channelId===channelId&&/^\d+$/.test(String(s.deviceEpoch||''))&&/^\d+$/.test(String(s.graphRevision||''))&&Array.isArray(s.bands)&&s.bands.length===8&&s.bands.every((b,i)=>validBand(i,b));
+ const validateSnap=s=>s?.schemaVersion===1&&s.channelId===channelId&&s.deviceEpoch===epoch&&s.graphRevision===revision&&/^\d+$/.test(String(s.deviceEpoch||''))&&/^\d+$/.test(String(s.graphRevision||''))&&Array.isArray(s.bands)&&s.bands.length===8&&s.bands.every((b,i)=>validBand(i,b));
  const backend=nativeBackend();
  if(backend?.addEventListener){
+   // A historical EQ snapshot must never stay editable after hotplug,
+   // device restart, graph replacement or channel removal.
+   backend.addEventListener('arMixConsoleSnapshot',s=>{
+     if(!isOpen()||demonstration||!channelId)return;
+     const accepted=s?.admitted===true&&s.device?.epoch===epoch&&
+       s.graph?.revision===revision&&Array.isArray(s.graph.channels)&&
+       s.graph.channels.some(ch=>ch.id===channelId);
+     if(!accepted){mode.textContent='NATIVE · ROUTE CHANGED';resetNative();}
+   });
    backend.addEventListener('arMixBuiltinEqQueue',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='REJECTED'){pending=null;setStatus('NATIVE: EDIT REJECTED; STATE UNCHANGED','warn');render();}else setStatus('QUEUED · WAITING FOR DSP APPLY ACK','warn');});
    backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');render();}});
    backend.addEventListener('arMixBuiltinEqSnapshot',s=>{if(!isOpen()||demonstration||!validateSnap(s))return;
@@ -140,7 +187,7 @@
    current=track;channelLabel.textContent=String(track.name||'Channel');root.hidden=false;slot=2;pending=null;waitingAck=false;
    const host=nativeRoute(),resolved=host?.resolve?.(track.id),s=host?.state?.();
    demonstration=!nativeBackend();
-   if(demonstration){channelId=null;snapshotReady=false;bands=empty();mode.textContent='UI DEMO · NO AUDIO';setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');}
+   if(demonstration){channelId=null;snapshotReady=false;bands=empty();sampleRate=48000;mode.textContent='UI DEMO · NO AUDIO';setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');}
    else if(resolved&&s?.admitted){channelId=resolved;epoch=s.device?.epoch;revision=s.graph?.revision;bands=empty();pending=null;snapshotReady=false;
      // Control disabled until real native snapshot arrives; never pretend
      // that a screenshot/browser fixture is already loaded as channel state.

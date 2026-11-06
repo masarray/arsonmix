@@ -296,10 +296,17 @@ private:
         if(eqCacheEpoch_==ep)return;
         eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
         for(auto& pending:eqPending_)pending={};
+        const auto* hardware=engine_.devices().getCurrentAudioDevice();
+        const float safeHz=hardware?
+            static_cast<float>(std::min(20000.0,hardware->getCurrentSampleRate()*.45)):
+            20000.f;
         for(auto& lane:eqAccepted_)
             for(std::size_t i=0;i<lane.size();++i) {
                 lane[i]={};
-                lane[i].frequencyHz=armix::builtin_fx::channelEqSlots[i].defaultHz;
+                // DSP prepare() clamps disabled defaults at low device rates.
+                // Mirror the REAL prepared band, not a 48k-only UI fiction.
+                lane[i].frequencyHz=std::min(
+                    armix::builtin_fx::channelEqSlots[i].defaultHz,safeHz);
                 lane[i].q=armix::builtin_fx::channelEqSlots[i].kind==
                     armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
             }
