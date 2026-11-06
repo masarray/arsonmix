@@ -12,11 +12,11 @@ PICKER_FN="""function insertChosenNativeEq(){
    say('Parametric EQ · choose an empty FX insert');return false;
  }
  if(window.__JUCE__?.backend?.emitEvent){
-   const bridge=window.__ARMIX_NATIVE_M2__;
-   if(!bridge?.insertPlugin){
+   const host=window.ArSonMixNativeEq;
+   if(!host?.insert){
      say('Native FX host not ready · audio unchanged');return false;
    }
-   bridge.insertPlugin('armix.builtin.channel-eq.v1',activeFxTarget);
+   host.insert(activeFxTarget);
    // The existing native ACK + subsequent accepted snapshot will replace the
    // empty slot. Do not optimistically draw an ACTIVE effect or open editor.
    return true;

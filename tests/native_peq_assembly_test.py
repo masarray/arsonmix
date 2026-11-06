@@ -24,7 +24,8 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph1"'),1)
 
     def test_native_rack_uses_regular_insert_slot(self):
-        self.assertIn("bridge.insertPlugin('armix.builtin.channel-eq.v1',activeFxTarget)",self.assembled)
+        self.assertIn("host.insert(activeFxTarget)",self.assembled)
+        self.assertNotIn("__ARMIX_NATIVE_M2__",self.assembled)
         self.assertIn("if(t.fx[index]==='Parametric EQ')",self.assembled)
         # Does not fabricate a second EQ rack row or a special before-VST bank.
         self.assertNotIn("builtinEq.slotMarkup",self.assembled)

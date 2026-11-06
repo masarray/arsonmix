@@ -5,6 +5,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from compile_approved_css import LINK, optimize_css, compile_runtime_bundle, link_runtime_bundle, RUNTIME_CSS
 from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
+from compose_native_peq import apply_native_peq
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -40,6 +41,7 @@ require((gui/'assets/gui-perf-probe.js').read_bytes()==
         'opt-in performance probe was not copied byte-for-byte')
 expected=apply_authoritative_fx_power(expected)
 expected=apply_fx_rack_interaction(expected)
+expected=apply_native_peq(expected)
 # Stage C: the source HTML remains byte-exact, but the 18 deployed CSS files
 # contain only proven cascade winners. Verify every *generated* byte and query
 # hash; never approve an extra stylesheet, different owner or PNG mutation.

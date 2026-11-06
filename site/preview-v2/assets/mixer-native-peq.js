@@ -337,6 +337,11 @@ window.addEventListener("resize",()=>{
 });
 const api={
  id:ID,
+ // Public catalog delegates insertion to this one native-only bridge method.
+ // The public Pages HTML contains no native authority or private bridge name.
+ insert(target){
+  return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));
+ },
  open(track,slot){
   current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest=null;draft=null;
   const n=state();const nativeId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
