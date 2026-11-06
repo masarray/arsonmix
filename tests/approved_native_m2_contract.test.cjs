@@ -177,7 +177,10 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  const bridge=read("web/approved-native-bridge.js");
  const guard=read("src/NativeTopologyEditSafety.h");
  // First ARM remains strict, including inactive hardware and known VB-Cable loops.
- assert.match(engine,/liveOutputArmFault\(bool requirePhysicalSource=true\)/);
+ assert.match(engine,/juce::String liveOutputArmFault\(\)\s*\{\s*return liveOutputArmFault\(true\);\s*\}/,
+   "manual MONITOR always uses strict source verification");
+ assert.match(engine,/juce::String liveOutputArmFault\(bool requirePhysicalSource\)/,
+   "previously-authorized silent MAIN may resume without a physical IN");
  assert.match(engine,/if \(!physicalSource && requirePhysicalSource\)/);
  assert.match(engine,/knownVirtualCableFeedbackPair\(currentSetup\.inputDeviceName,/);
  assert.match(host,/fault=engine_\.liveOutputArmFault\(\)/);
