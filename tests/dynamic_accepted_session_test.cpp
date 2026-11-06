@@ -449,6 +449,83 @@ static void verifyPrimaryOutKeepsCanonicalEdgeIdentity() {
     session.pollRetirement();
 }
 
+// Real PCM golden regression for a HELD operator fader, not a mouse-up-only
+// scalar. Between each input move, the installed native DSP renders another
+// callback block and must audibly change the waveform. Structural revision
+// stays constant; there is no second callback or graph compilation.
+static void verifyHeldDragIntermediatePcmOnOriginalChannels() {
+    constexpr std::uint64_t epoch=94021;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=4;
+    physical.maxFrames=64;
+    std::vector<ChannelEdit> initial;
+    for(int i=0;i<10;++i)
+        initial.push_back(add(static_cast<std::size_t>(i),
+                              ChannelRole::input,"HELD ORIGINAL CH"));
+    initial.push_back(add(10,ChannelRole::main,"MAIN",
+                          ProcessingFormat::stereo));
+    const auto accepted=pcm.edit(0,0,initial,physical,epoch,epoch,true);
+    assert(accepted.ok() && accepted.edit.createdIds.size()==11);
+    const auto& ids=accepted.edit.createdIds;
+    const auto main=ids[10];
+    const std::array<ChannelId,4> channels{ids[0],ids[1],ids[4],ids[9]};
+    const std::array<ChannelEdit,4> links{
+        output(channels[0],main),output(channels[1],main),
+        output(channels[2],main),output(channels[3],main)};
+    for(std::size_t i=0;i<channels.size();++i)
+        physical.sources.push_back(
+            {channels[i],static_cast<int>(i),-1,false});
+    const auto patched=pcm.edit(1,1,links,physical,epoch,epoch,true);
+    assert(patched.ok() && pcm.acceptedGraphRevision()==2);
+    std::array<float,64> a{},b{},c{},d{},left{},right{};
+    a.fill(.1f);b.fill(.2f);c.fill(.3f);d.fill(.4f);
+    const float* pins[]{a.data(),b.data(),c.data(),d.data()};
+    const std::array<float,4> signal{.1f,.2f,.3f,.4f};
+    std::array<float,4> levels{1.f,1.f,1.f,1.f};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto renderAndCheck=[&] {
+        assert(pcm.render(epoch,pins,4,left.data(),right.data(),64,
+                          false,noFx));
+        float sum=0.f;
+        for(std::size_t i=0;i<levels.size();++i)
+            sum+=signal[i]*levels[i];
+        assert(near(left[63],sum*center));
+        assert(near(right[63],sum*center));
+        return left[63];
+    };
+    assert(near(renderAndCheck(),center));
+    // These are successive pointermove gain targets with NO pointerup.
+    // Assert actual PCM changes on EACH intermediate value, for every
+    // original input strip whose stable ChannelId is independent of GUI order.
+    for(std::size_t i=0;i<channels.size();++i) {
+        float previous=center;
+        for(const float db:{-6.f,-12.f,-24.f}) {
+            const float linear=std::pow(10.f,db/20.f);
+            assert(pcm.setLiveMix(epoch,2,channels[i],linear,0.f));
+            levels[i]=linear;
+            const float audible=renderAndCheck();
+            assert(audible<previous);
+            previous=audible;
+            assert(near(pcm.acceptedRoster().find(channels[i])->faderLinear,
+                        linear));
+            assert(pcm.acceptedGraphRevision()==2);
+        }
+        // Release is merely the last target: no structural commit and no
+        // newly armed audio path is required to restore the baseline.
+        assert(pcm.setLiveMix(epoch,2,channels[i],1.f,0.f));
+        levels[i]=1.f;
+        assert(near(renderAndCheck(),center));
+    }
+    // A stale epoch/revision cannot mutate an otherwise live fader or PCM.
+    assert(!pcm.setLiveMix(epoch-1,2,channels[2],0.f,0.f));
+    assert(!pcm.setLiveMix(epoch,1,channels[2],0.f,0.f));
+    assert(near(renderAndCheck(),center));
+    pcm.unpublish();
+    pcm.pollRetirement();
+}
+
 // Original CH1-10 do not get a different fader/solo DSP owner from CH11.
 // This is an actual accepted native publisher PCM test, not a mock GUI reducer.
 static void verifyOriginalAndAddedInputsShareNativePcmControls() {
@@ -523,6 +600,7 @@ static void verifyOriginalAndAddedInputsShareNativePcmControls() {
 }
 
 int main() {
+    verifyHeldDragIntermediatePcmOnOriginalChannels();
     verifyOriginalAndAddedInputsShareNativePcmControls();
     verifyPrimaryOutKeepsCanonicalEdgeIdentity();
     verifyDefaultNativeMainEdgeAndDisconnectedRestore();
