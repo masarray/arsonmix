@@ -3,7 +3,6 @@ No alternate GUI, pseudo FX row, fixed pre-VST DSP bank or demo audio engine.
 An accepted EQ uses the same rack slot, ChannelId, and FX control as VST3.
 """
 CATALOG="armix.builtin.channel-eq.v1"
-STYLE='<link rel="stylesheet" href="assets/mixer-native-peq.css?v=eq-graph1">'
 SCRIPT='<script defer src="assets/mixer-native-peq.js?v=eq-graph1"></script>'
 PICKER_HEAD="function renderFastPicker(){"
 PICKER_FN="""function insertChosenNativeEq(){
@@ -59,12 +58,11 @@ def apply_native_peq(html: str)->str:
              (PICKER_ENTER,PICKER_ENTER_NEW),
              (OPEN,OPEN_NEW))
     if html.count('</head>')!=1 or html.count('</body>')!=1 or \
-       STYLE in html or SCRIPT in html or 'insertChosenNativeEq' in html:
+       SCRIPT in html or 'insertChosenNativeEq' in html:
         raise ValueError("Parametric EQ requires one pristine approved compiled GUI")
     for before,after in anchors:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</head>',STYLE+'\n</head>',1)
     html=html.replace('</body>',SCRIPT+'\n</body>',1)
     return html

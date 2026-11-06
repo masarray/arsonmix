@@ -32,8 +32,10 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('data-fast-native-eq="1"'),1)
 
     def test_single_style_owner(self):
-        self.assertEqual(self.assembled.count('href="assets/mixer-native-peq.css?v=eq-graph1"'),1)
-        css=(ROOT/"site/preview-v2/assets/mixer-native-peq.css").read_text("utf-8")
+        # The approved CSS compiler requires exactly 18 component-owner links.
+        # Native EQ styles live within the existing FX rack owner, not a 19th link.
+        self.assertNotIn('href="assets/mixer-native-peq.css',self.assembled)
+        css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text("utf-8")
         self.assertIn(".mx-peq[hidden]{display:none}",css)
         self.assertIn("grid-template-columns:minmax(0,1fr) 143px",css)
         script=(ROOT/"site/preview-v2/assets/mixer-native-peq.js").read_text("utf-8")
