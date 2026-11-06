@@ -46,6 +46,12 @@ on:
   # Manually run full Chromium (including immutable historical tests) on a
   # specific development branch whenever a milestone needs visual qualification.
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Immutable source SHA for ChatGPT Chromium milestone"
+        type: string
+        required: false
+        default: ""
 
 # New PR commits supersede old UI checks. The production Pages dispatcher
 # only reacts to a completed successful main push, never cancelled checks.
@@ -66,6 +72,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -86,7 +94,7 @@ jobs:
           node tests/wire_main_native_handoff_contract.test.cjs
       - name: Verify single published /preview/ source offline
         run: |
-          python scripts/build_pages.py --out dist-pages --sha "${{ github.sha }}" --branch main
+          python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
           python tests/single_preview_publication_contract_test.py dist-pages
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
@@ -102,6 +110,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -134,7 +144,7 @@ jobs:
         run: python tests/css_v28_restore.py
       - name: Verify ONLY approved public GUI /preview/ with PNG hardware keys
         run: |
-          python scripts/build_pages.py --out dist-pages --sha "${{ github.sha }}" --branch main
+          python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
           python tests/single_preview_publication_contract_test.py dist-pages
       - name: Validate smart audio architecture handoff contract
         run: node --test tests/smart_audio_ard_contract_test.mjs
