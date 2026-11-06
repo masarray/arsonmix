@@ -63,3 +63,28 @@ benchmarks, physical ASIO/driver FAT and accepted GUI integration are separate
 release gates. `addedLatencySamples()==0` means no DSP buffering/lookahead;
 minimum-phase IIR still has frequency-dependent group delay, and hardware
 roundtrip latency is not zero.
+
+## Live PCM seam (P1 integration on the PR branch only)
+
+The existing `LiveChannelFxGraph` is the ONLY native audio owner. The graph
+prepares a `ChannelEqBank` using the ACTUAL negotiated sample rate on its
+control thread, then calls `render(strip,L,R,frames)` immediately before the
+existing vendor FX racks in the SAME `PreparedMixerBlock::process` channel
+callback. All 14 lanes are flat and bitwise transparent on first launch.
+A new SPSC control-to-audio queue accepts precomputed immutable edits and
+an independent bounded ACK ring communicates actual applied settings back
+to the message thread, with request ID + original device epoch + graph
+revision.  When a previous 5ms fade is running, the next edit waits for the
+next block; queue saturation rejects without mutating DSP. Never treat a
+QUEUED command as applied, or ACK from an old epoch as a new accepted state.
+
+The isolated graph seam is **not an operator feature** until a host command
+adapter, stable ChannelId lookup, state preservation across topology changes,
+Show recall and the sole approved `/preview/` control with matching accepted
+ACK/snapshot have been proven. This PR must not be merged as a finished EQ
+plugin or released as an audible operator feature before those gates pass.
+See `tests/builtin_channel_eq_bank_test.cpp` for bounded queue / ACK fixtures.
+
+Reference mathematics: W3C Audio EQ Cookbook (RBJ), 2021,
+https://www.w3.org/TR/audio-eq-cookbook/ . Interaction inspiration: FL Studio
+Fruity Parametric EQ, **not a copy of its source code, icons, or artwork**.

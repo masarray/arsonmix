@@ -308,6 +308,9 @@ public:
              juce::jlimit(32,Block::hardFrameLimit,deviceFrames));
         if(!next->prepared || next->prepared->capacity()==0)
             return "Cannot allocate routing workspace";
+        // Must use verified active hardware rate, never assume 48k.
+        if(!next->prepared->prepareBuiltInEq(sampleRate))
+            return "Invalid native channel EQ device sample rate";
         if(!next->prepared->setMainOutputPair(
               mainLeft,mainRight,callbackOutputCount_.load(std::memory_order_acquire)))
             return "MAIN output patch references invalid callback channels";
@@ -1842,7 +1845,28 @@ public:
     }
     // Status / control thread only. An empty prepared graph is ready, but
     // cannot be advertised as a LIVE patched route or a savable Show.
-    bool hasExplicitRoute() const noexcept {
+    using BuiltInEqAck=FxGraph::BuiltInEqAck;
+    // CONTROL enqueue via the existing published graph lease, never change
+    // live coefficients from UI; one SPSC producer and one audio consumer.
+    bool queueBuiltInEqEdit(int lane,std::size_t slot,
+                            const armix::builtin_fx::Band& band,
+                            std::uint64_t requestId,std::uint64_t expectedEpoch,
+                            std::uint64_t expectedRevision) noexcept {
+        if(!ready()||!hasExplicitRoute()||requestId==0||lane<0||lane>=fxSlots||
+           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& graph) noexcept {return graph.queueBuiltInEqEdit(
+                lane,slot,band,requestId,expectedEpoch,expectedRevision);});
+    }
+    bool pollBuiltInEqAck(int lane,std::uint64_t expectedEpoch,
+                          std::uint64_t expectedRevision,BuiltInEqAck& ack) noexcept {
+        if(!ready()||lane<0||lane>=fxSlots||
+           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& graph) noexcept {return graph.pollBuiltInEqAck(lane,ack);}) &&
+            ack.deviceEpoch==expectedEpoch&&ack.graphRevision==expectedRevision;
+    }
+        bool hasExplicitRoute() const noexcept {
         return ready() && acceptedRoute_.isObject();
     }
     std::uint64_t epoch() const noexcept {

@@ -2,6 +2,7 @@
 #pragma once
 #include "PreparedMixerBlock.h"
 #include "FxBypassEnvelope.h"
+#include "../builtin_fx/ChannelEqBank.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
 #include <array>
@@ -191,6 +192,16 @@ public:
     bool setAuxSendGain(int source,int bus,float gain) noexcept {
         return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
+    using BuiltInEqAck=armix::builtin_fx::ChannelEqBank::Ack;
+    bool prepareBuiltInEq(double rate) noexcept {return builtinEq_.prepare(rate);}
+    bool queueBuiltInEqEdit(int lane,std::size_t slot,const armix::builtin_fx::Band& b,
+                            std::uint64_t req,std::uint64_t epoch,std::uint64_t rev) noexcept {
+        return lane>=0&&lane<fxSlots&&builtinEq_.queueBandEdit(
+                 static_cast<std::size_t>(lane),slot,b,req,epoch,rev);
+    } // producer on control; success = queued, not applied
+    bool pollBuiltInEqAck(int lane,BuiltInEqAck& ack) noexcept {
+        return lane>=0&&lane<fxSlots&&builtinEq_.pollAck(static_cast<std::size_t>(lane),ack);
+    } // control-only, validate epoch/rev before UI use
     int activeInserts() const noexcept{return activeInserts_;}
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
@@ -294,6 +305,10 @@ public:
         auto channelFx=[this,externalContext,externalFx]
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
+            // In-place channel EQ before existing vendor VST3 inserts/PRE sends.
+            // Default OFF is bitwise-transparent; no second callback.
+            builtinEq_.render(static_cast<std::size_t>(strip),l,r,
+                              static_cast<std::size_t>(samples));
             const int count=counts_[strip]; // immutable, prepared OFF RT
             if(count>0) {
                 for(int slot=0;slot<count;++slot) {
@@ -311,6 +326,7 @@ public:
     }
 
 private:
+    armix::builtin_fx::ChannelEqBank builtinEq_{};
     std::unique_ptr<PreparedMixerBlock> block_;
     RealtimeStripControls controls_ {};
     FxBank processors_ {};

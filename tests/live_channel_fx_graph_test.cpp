@@ -1874,6 +1874,47 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+
+static void verifyBuiltInEqRealPcmHook() {
+    constexpr std::array physicalPorts{2,5};
+    ChannelRoutingConfig config;
+    config.stripsAndMaster.strips[0]={SourceMode::mono,2,-1,1.f,0.f,false,false};
+    SendRequest sends;
+    PreparedRenderGraph plan;RenderError error;
+    assert(PreparedRenderGraph::compile(config,physicalPorts,sends,plan,error));
+    auto wet=std::make_unique<LiveChannelFxGraph>(plan,128,128);
+    auto dry=std::make_unique<LiveChannelFxGraph>(plan,128,128);
+    assert(wet->prepareBuiltInEq(48000)&&dry->prepareBuiltInEq(48000));
+    armix::builtin_fx::Band b{};
+    b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1;
+    assert(!wet->queueBuiltInEqEdit(0,2,b,0,7,2));
+    assert(wet->queueBuiltInEqEdit(0,2,b,101,7,2));
+    std::array<float,128> pcm{},silent{},wl{},wr{},dl{},dr{};
+    const float* pins[]{pcm.data(),silent.data()};
+    double dryPower=0,wetPower=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i) {
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+              .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        }
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(wet->process(pins,2,wl.data(),wr.data(),128));
+        assert(dry->process(pins,2,dl.data(),dr.data(),128));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block==0) {
+            LiveChannelFxGraph::BuiltInEqAck ack{};
+            assert(wet->pollBuiltInEqAck(0,ack));
+            assert(ack.applied&&ack.requestId==101&&ack.deviceEpoch==7&&
+                   ack.graphRevision==2&&ack.slot==2);
+        }
+        if(block>=48)for(int i=0;i<128;++i) {
+            dryPower+=dl[static_cast<std::size_t>(i)]*dl[static_cast<std::size_t>(i)];
+            wetPower+=wl[static_cast<std::size_t>(i)]*wl[static_cast<std::size_t>(i)];
+        }
+    }
+    assert(dryPower>0.001&&wetPower>dryPower*4);
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2250,6 +2291,7 @@ int main(int argc,char** argv) {
     // GainFx::living/released counters as their own lifetime oracle. Running
     // M5 before them changes those historical baseline counts, not DSP.
     // M5 additionally asserts zero heap and valid vendor leases itself.
+    verifyBuiltInEqRealPcmHook();
     verifyUniversalChannelIdFxLeaseAndLivePcm();
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     verifyOccupiedExternalCh1Owner();
