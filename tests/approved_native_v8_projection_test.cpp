@@ -492,6 +492,12 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
         .getProperty("capabilities",{}).getProperty("supportedOps",{});
     assert(wireCaps.getArray()&&
            wireCaps.getArray()->contains("APPLY_WIRE_TRANSACTION"));
+    nativeWireOps.add("NATIVE_CREATE_GROUP_SELECTED");
+    wiredBus.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(nativeWireOps));
+    assert(projectInstalledNativeChannelIdGraph(wiredSnap,wiredLive));
+    assert(wiredSnap.getProperty("graph",{}).getProperty("capabilities",{})
+        .getProperty("supportedOps",{}).getArray()->contains("CREATE_GROUP"));
     assert(!static_cast<bool>(wiredSnap.getProperty("productionCallbackLive",false)));
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 }

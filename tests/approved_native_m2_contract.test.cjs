@@ -230,6 +230,23 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
 });
 
+test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const host=read("src/Main.cpp");
+ const engine=read("src/LiveAudioEngine.h");
+ const lab=read("src/LiveDryRoutingLab.h");
+ const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ assert.match(bridge,/function requestNativeBusCreate\(\)/);
+ assert.match(bridge,/action:"routingNativeBusCreate"/);
+ assert.match(bridge,/target.id==="addBus"/);
+ assert.match(bridge,/arMixNativeBusAck/);
+ assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
+ assert.match(host,/if\(action=="routingNativeBusCreate"\)/);
+ assert.match(host,/engine_\.editNativeBus\(ep,rev,roster,/);
+ assert.match(engine,/topologyPublicationMute_\.store\(/);
+ assert.match(lab,/if\(beforePublish\)beforePublish\(\)/);
+ assert.match(projection,/available\.add\(juce::String\("CREATE_GROUP"\)\)/);
+});
 test("P0 installed ChannelId WIRE capability reaches the GUI",()=>{
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
  const native=read("src/LiveDryRoutingLab.h");

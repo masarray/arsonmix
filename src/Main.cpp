@@ -2007,6 +2007,68 @@ private:
             return;
         }
 
+        // Real DAW + BUS from the approved Windows GUI. The engine creates
+        // and publishes a stereo GROUP directly in its sole ChannelId PCM
+        // owner; no browser-only track or legacy M4 shadow is created.
+        if(action=="routingNativeBusCreate") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawEp=args.getProperty("deviceEpoch",{});
+            const auto rawRev=args.getProperty("graphRevision",{});
+            const auto rawRoster=args.getProperty("rosterRevision",{});
+            std::uint64_t ep=0,rev=0,roster=0;
+            const auto live=engine_.status();
+            const auto lab=live.getProperty("dryRoutingLab",{});
+            const auto native=lab.getProperty("nativeBus",{});
+            const auto before=approvedNativeSnapshot(live);
+            const auto caps=before.getProperty("graph",{})
+                .getProperty("capabilities",{}).getProperty("supportedOps",{});
+            const bool admitted=caps.isArray()&&
+                caps.getArray()->contains("CREATE_GROUP");
+            const bool valid=request.startsWith("bus-")&&
+                request.length()<=64 &&
+                !acceptedControlRequests_.contains(request)&&
+                armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                ep==engine_.dryRoutingLabEpoch() &&
+                native.getProperty("graphRevision","").toString()==rawRev.toString() &&
+                native.getProperty("rosterRevision","").toString()==rawRoster.toString() &&
+                admitted && !nativeShowBusy_ && !studioBackupBusy_;
+            LiveDryRoutingLab::NativeBusResult result;
+            result.error="NATIVE_BUS_NOT_ADMITTED_OR_STALE";
+            if(valid) {
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                int count=0;
+                const auto channels=native.getProperty("channels",{});
+                if(const auto* rows=channels.getArray())
+                    for(const auto& row:*rows)
+                        if(row.getProperty("role","").toString()=="GROUP")++count;
+                const std::string name="Bus "+std::to_string(count+1);
+                result=engine_.editNativeBus(ep,rev,roster,
+                    armix::mixer::ChannelRole::group,
+                    std::span<const armix::mixer::ChannelId>{},name,1.f);
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("ok",valid&&result.accepted);
+            ack->setProperty("error",result.error?result.error:"NATIVE_BUS_UNKNOWN");
+            ack->setProperty("createdId",result.accepted?
+                juce::String(std::to_string(result.created.value)):juce::String());
+            ack->setProperty("graphRevision",
+                juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeBusAck",juce::var(ack.release()));
+            if(valid&&result.accepted)
+                diagnostics_.record("NATIVE_DAW_BUS",
+                    "Created real ChannelId GROUP with MAIN output");
+            else emitNotice("Add BUS rejected: "+
+                juce::String(result.error?result.error:"native error"),true);
+            return;
+        }
+
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {

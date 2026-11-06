@@ -1393,18 +1393,44 @@ public:
            const std::string& name,float gain,
            armix::mixer::ChannelId remove={}) {
         LiveDryRoutingLab::NativeBusResult rejected;
-        rejected.error="HARDWARE_NOT_DISARMED";
-        if(independent_.active() || !attached_ ||
+        rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        if(independent_.active() || !attached_ || secondaryOutput_.armed() ||
            !directFence_.permitted() ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal ||
-           !allOutputsDisarmed() || handoff_.busy() ||
-           fxMovePhase_.load(std::memory_order_acquire)!=0)
+           handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0)
             return rejected;
-        return dryRoutingLab_.editNativeBus(
-            epoch,pcmRevision,rosterRevision,role,selected,
-            name,gain,remove,true);
+        const bool wasMonitoring=isMonitorEnabled();
+        bool publishing=false;
+        try {
+            const auto result=dryRoutingLab_.editNativeBus(
+                epoch,pcmRevision,rosterRevision,role,selected,
+                name,gain,remove,true,[&] {
+                    publishing=true;
+                    // User must not have to toggle MONITOR for an ordinary
+                    // Add BUS. A late output gate covers only publication.
+                    if(wasMonitoring)topologyPublicationMute_.store(
+                        true,std::memory_order_release);
+                });
+            if(publishing) {
+                if(wasMonitoring &&
+                   !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
+                       wasMonitoring,epoch==dryRoutingLab_.epoch(),
+                       liveOutputArmFault(false).isEmpty(),
+                       secondaryOutput_.armed()))
+                    setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            return result;
+        } catch(...) {
+            if(publishing) {
+                setOutputMuted(true);
+                topologyPublicationMute_.store(false,std::memory_order_release);
+            }
+            rejected.error="NATIVE_BUS_PUBLICATION_EXCEPTION";
+            return rejected;
+        }
     }
     // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout
     // work is CONTROL only; the callback receives an immutable fx lease.

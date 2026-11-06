@@ -344,14 +344,18 @@
       if(!current?.admitted || !channelId || !ch || !main ||
          !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION") ||
          !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
-         (target!=="MAIN"&&target!=="NONE"))return false;
+         !target)return false;
+      const group=current.graph.channels.find(row=>
+        row.role==="GROUP"&&row.name===target);
+      const to=target==="MAIN"?main:group?.id||null;
+      if(target!=="NONE"&&!to)return false;
       const dest=ch.primaryOutId||null;
-      if((target==="MAIN"&&dest===main)||(target==="NONE"&&!dest)){
+      if((to&&dest===to)||(target==="NONE"&&!dest)){
         controller.subscribe();return true;
       }
       let change;
-      if(target==="MAIN"){
-        change={op:"ROUTE_ONLY",from:channelId,to:main,
+      if(to){
+        change={op:"ROUTE_ONLY",from:channelId,to,
                 tap:"POST_FADER",gainLinear:1};
       }else{
         // Exact EdgeId from the independent native readback; never invent a
@@ -366,7 +370,7 @@
                                      {changes:[change]});
       if(!accepted.ok){status("Native OUT rejected · "+accepted.error);return false;}
       window.setTimeout(()=>controller?.expire(accepted.requestId),8000);
-      status(t.name+" OUT → "+(target==="MAIN"?"MAIN":"NONE")+
+      status(t.name+" OUT → "+(target==="NONE"?"SOURCE ONLY":target)+
              " · native PCM readback pending");
       return true;
     }
@@ -398,6 +402,33 @@
       if(pendingOutputPatch?.requestId!==requestId)return;
       pendingOutputPatch=null;
       status("CH "+(channel+1)+" OUT timed out · restoring verified native route");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+  let pendingBusCreate=null,busRequestSerial=0;
+  function requestNativeBusCreate(){
+    const accepted=controller?.state()?.current;
+    const session=mixerSession();
+    const capabilities=accepted?.graph?.capabilities?.supportedOps;
+    if(pendingBusCreate||session?.authority!=="CHANNEL_ID"||
+       !accepted?.admitted||!Array.isArray(capabilities)||
+       !capabilities.includes("CREATE_GROUP")){
+      nativeToast("BUS needs the verified native ChannelId graph");
+      return false;
+    }
+    const requestId="bus-"+(++busRequestSerial);
+    pendingBusCreate={requestId};
+    backend.emitEvent("arMixAction",{
+      action:"routingNativeBusCreate",requestId,
+      deviceEpoch:accepted.device.epoch,
+      graphRevision:accepted.graph.revision,
+      rosterRevision:accepted.graph.rosterRevision});
+    status("Adding a real stereo BUS → MAIN · native PCM pending");
+    window.setTimeout(()=>{
+      if(pendingBusCreate?.requestId!==requestId)return;
+      pendingBusCreate=null;
+      status("Add BUS timed out · old PCM kept");
       controller?.subscribe();
     },8000);
     return true;
@@ -1345,6 +1376,12 @@
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=session.authority==="CHANNEL_ID" &&
       next.admitted && caps?.callbackOwnsChannelIds===true;
+    const addBus=document.getElementById("addBus");
+    if(addBus){
+      addBus.hidden=!nativeAdmitted ||
+        !caps?.supportedOps?.includes("CREATE_GROUP");
+      addBus.disabled=!!pendingBusCreate;
+    }
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
@@ -1422,6 +1459,15 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixNativeBusAck",ack=>{
+      if(!pendingBusCreate||pendingBusCreate.requestId!==ack?.requestId)return;
+      pendingBusCreate=null;
+      if(ack.ok===true && typeof ack.createdId==="string" &&
+         /^[1-9]\\d*$/.test(ack.createdId))
+        status("BUS accepted by native PCM · verifying later graph readback");
+      else nativeToast("Add BUS rejected · "+(ack?.error||"native graph error"));
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
       const p=pendingNativeFxPower;
       if(!p||ack?.requestId!==p.requestId)return;
@@ -1637,7 +1683,12 @@
         // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
         // never pretend the demo's other destinations have native PCM.
         const options=["Master","SOURCE ONLY (No Main)"];
-        if(t.output && !options.includes(t.output))options.push(t.output);
+        const graph=controller?.state()?.current?.graph;
+        if(mixerSession()?.authority==="CHANNEL_ID"&&graph?.channels)
+          for(const bus of graph.channels)
+            if(bus.role==="GROUP"&&bus.name &&
+               !options.includes(bus.name))options.push(bus.name);
+        if(t.output&&!options.includes(t.output))options.push(t.output);
         return options;
       }
       return [t?.output||"None"];
@@ -1679,8 +1730,12 @@
         if(t.kind==="master"){
           el.value=t.output;openNativeAudioIO();return true;
         }
+        const graph=controller?.state()?.current?.graph;
+        const bus=graph?.channels?.find(ch=>
+          ch.role==="GROUP"&&ch.name===el.value);
         const target=el.value==="Master"?"MAIN":
-          el.value==="SOURCE ONLY (No Main)"?"NONE":null;
+          el.value==="SOURCE ONLY (No Main)"?"NONE":
+          bus?bus.name:null;
         // No optimistic GUI state. Both this menu and the WIRE jack use
         // the same ID/epoch-guarded, acknowledged native route transaction.
         if(el.value!==t.output && !requestPrimaryOut(t,target)){
@@ -1990,6 +2045,9 @@
       backend.emitEvent("arMixAction",{action});
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
+    }
+    if(target.id==="addBus"){
+      requestNativeBusCreate();return;
     }
     status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);

@@ -1357,7 +1357,8 @@ public:
                   std::span<const armix::mixer::ChannelId> selection,
                   const std::string& name,float sendGain,
                   armix::mixer::ChannelId remove={},
-                  bool outputsDisarmed=false) {
+                  bool outputsDisarmed=false,
+                  const std::function<void()>& beforePublish={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1419,6 +1420,9 @@ public:
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
+            // Keep old PCM running throughout candidate validation/FX lease
+            // reuse, and briefly gate hardware only at native publication.
+            if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
                 expectedEpoch,epoch(),true,std::move(fx));
