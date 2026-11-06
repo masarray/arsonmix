@@ -1458,6 +1458,88 @@ public:
         }
     }
 
+    // User-facing M/ST toggle after ChannelId takes over. This changes
+    // processing width and pan semantics, NOT physical source pins, OUT
+    // routing or the operator's MONITOR state. Reuse vendor leases and
+    // publish the complete accepted PCM DAG atomically from CONTROL.
+    NativeBusResult editNativeProcessingFormat(
+            std::uint64_t expectedEpoch,std::uint64_t expectedPcmRevision,
+            std::uint64_t expectedRosterRevision,armix::mixer::ChannelId channel,
+            armix::mixer::ProcessingFormat format,bool outputsDisarmed=false,
+            const std::function<void()>& beforePublish={}) {
+        using namespace armix::mixer;
+        NativeBusResult reply{};
+        reply.pcmRevision=nativeAccepted_.pcmRevision;
+        reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed){
+            reply.error="PROCESSING_FORMAT_REQUIRES_PUBLICATION_GATE";return reply;
+        }
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           !nativeAccepted_.fxOwners||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision||
+           expectedRosterRevision!=nativeAccepted_.graph.roster.revision()) {
+            reply.error="STALE_NATIVE_PROCESSING_GRAPH";return reply;
+        }
+        const auto* current=nativeAccepted_.graph.roster.find(channel);
+        if(!current || current->role!=ChannelRole::input ||
+           (format!=ProcessingFormat::mono && format!=ProcessingFormat::stereo) ||
+           current->format==format) {
+            reply.error="INVALID_NATIVE_PROCESSING_FORMAT";return reply;
+        }
+        // CH1 may have an externally leased vendor graph. Its width needs
+        // an explicit combined VST contract; do not reassign that owner here.
+        if(nativeAccepted_.fxOwners->externalChannel()==channel) {
+            reply.error="EXTERNAL_VST_LAYOUT_NOT_ADMITTED";return reply;
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            ChannelEdit edit;
+            edit.kind=ChannelEdit::Kind::setFormat;
+            edit.id=channel;
+            edit.format=format;
+            const std::array<ChannelEdit,1> edits{edit};
+            if(!roster.edit(expectedRosterRevision,edits).ok()) {
+                reply.error="NATIVE_PROCESSING_ROSTER_REJECTED";return reply;
+            }
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseWithProcessingFormat(
+                   expectedEpoch,expectedPcmRevision+1,
+                   *nativeAccepted_.fxOwners,channel,format,bank)!=
+               DynamicChannelFxLeaseBank::Fault::none) {
+                reply.error="NATIVE_PROCESSING_FX_REBIND_REJECTED";return reply;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
+                std::move(bank));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+            };
+            fx.deviceEpoch=expectedEpoch;
+            fx.graphRevision=expectedPcmRevision+1;
+            if(beforePublish)beforePublish(); // no hardware mute during prepare
+            const auto published=nativePublisher_.commit(
+                roster,nativeAccepted_.graph.request,expectedPcmRevision,
+                expectedEpoch,epoch(),true,std::move(fx));
+            if(!published.ok()) {
+                reply.error="NATIVE_PROCESSING_PCM_COMMIT_REJECTED";return reply;
+            }
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true; // never restore stale M4 width
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            reply.accepted=true;reply.error="";
+            reply.pcmRevision=published.revision;
+            reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+            return reply;
+        } catch(...) {
+            reply.error="NATIVE_PROCESSING_PREPARE_FAILED";return reply;
+        }
+    }
+
     // Product Console: a NEW stable ChannelId input, not a fixed M4 ordinal
     // or an unowned JS strip. Starts unpatched and silent. Structural graph,
     // old vendor FX leases and MAIN routing publish as ONE control transaction.
