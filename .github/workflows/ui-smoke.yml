@@ -92,6 +92,7 @@ jobs:
           node --check site/preview-v2/assets/gui-perf-probe.js
           python scripts/build_ui_css.py --check
           python tests/gui_baseline_lock_test.py
+          python tests/brand_icon_contract_test.py
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
         run: |
           node --test tests/workstream_coordination_contract.test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
