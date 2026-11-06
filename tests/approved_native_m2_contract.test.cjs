@@ -961,6 +961,36 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  const unwired=clone(updated);unwired.graph.revision="6";unwired.graph.edges=[];
  listeners.get("arMixConsoleSnapshot")(unwired);
  assert.equal(scope.edges.length,0,"accepted snapshot replaces reference wire");
+ // A receiver is an ordinary INPUT channel with no physical source. Its
+ // native ChannelId, never its visual ordinal, must receive the WIRE intent.
+ const receiver=clone(unwired.graph.channels[0]);
+ receiver.id="9007199254740995";receiver.name="CH04";
+ delete receiver.primaryOutId;
+ const ready=clone(unwired);ready.graph.revision="7";
+ delete ready.graph.channels[0].primaryOutId;
+ ready.graph.channels.splice(1,0,receiver);
+ ready.graph.destinations.push({id:receiver.id,role:"INPUT"});
+ listeners.get("arMixConsoleSnapshot")(ready);
+ const receiverUi=scope.tracks.find(t=>t.name==="CH04").id;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([
+   {type:"CONNECT",sourceId:sourceUi,destId:receiverUi,mode:"send"}
+ ]),true);
+ const send=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(send.payload.changes[0].to,receiver.id);
+ assert.equal(scope.edges.length,0,"INPUT WIRE stays pending until native readback");
+ listeners.get("arMixConsoleAck")({
+   requestId:send.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:ready.device.epoch,graphRevision:"8",rosterRevision:"8"
+ });
+ assert.equal(scope.edges.length,0,"INPUT WIRE ACK alone never paints a cable");
+ const routed=clone(ready);routed.graph.revision="8";routed.graph.rosterRevision="8";
+ routed.graph.edges=[{edgeId:"9223372036854775810",from:send.targetChannelId,
+   to:receiver.id,tap:"POST_FADER",gainLinear:1,enabled:true,
+   primaryOutput:false,signalKind:"AUDIO"}];
+ listeners.get("arMixConsoleSnapshot")(routed);
+ assert.equal(scope.edges.length,1);
+ assert.equal(scope.edges[0].destId,receiverUi);
+ assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
 });
 
 test("P0 native FX rack and per-slot readback update mounted strip without replacing fader DOM",()=>{

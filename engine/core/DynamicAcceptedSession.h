@@ -252,9 +252,12 @@ public:
     template<class Fx>
     bool render(std::uint64_t epoch,const float* const* inputs,int inputCount,
                 float* mainL,float* mainR,int frames,bool muted,Fx&& fx,
-                float* monitorL=nullptr,float* monitorR=nullptr) noexcept {
+                float* monitorL=nullptr,float* monitorR=nullptr,
+                std::span<float> channelPeaksL={},
+                std::span<float> channelPeaksR={}) noexcept {
         return publisher_.render(epoch,inputs,inputCount,mainL,mainR,frames,
-                                 muted,std::forward<Fx>(fx),monitorL,monitorR);
+                                 muted,std::forward<Fx>(fx),monitorL,monitorR,
+                                 channelPeaksL,channelPeaksR);
     }
     void unpublish() noexcept {publisher_.unpublish();hasHostedFx_=false;}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

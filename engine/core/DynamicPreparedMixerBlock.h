@@ -368,22 +368,11 @@ public:
                 !rows[i].mute && (!anySolo||solos[i]!=0));
         next.topologicalOrder_=order; // control-prepared, never RT sorted
 
-        // One immutable render schedule serves BOTH logical output sinks.
-        // Active monitor-only channels must not vanish merely because they
-        // do not route to MAIN. Disconnected descriptors remain scratch-free.
-        std::vector<unsigned char> reachesOutput(rows.size(),0);
-        if(next.lanes_[main].enabled)reachesOutput[main]=1;
-        if(monitor!=notScheduled && next.lanes_[monitor].enabled)
-            reachesOutput[monitor]=1;
-        for(auto k=order.rbegin();k!=order.rend();++k)
-            if(next.lanes_[*k].enabled)
-                for(const auto& edge:outgoing[*k])
-                    if(next.lanes_[edge.destination].enabled &&
-                       reachesOutput[edge.destination])
-                        reachesOutput[*k]=1;
-        // Reverse reachability alone would schedule 128 silent lanes with
-        // sends to MAIN. Include only actual capture sources, explicit FX
-        // generator lanes, and descendants; preserve empty MAIN for mute.
+        // Capture/FX lifetime is independent of output routing. SOURCE ONLY
+        // must still run inserts and publish its local post-fader meters.
+        // Schedule signal roots and descendants even with NO path to a sink;
+        // unpatched empty descriptors remain scratch-free. Keep empty sinks
+        // so MAIN/MONITOR silence is always rendered deterministically.
         std::vector<unsigned char> hasSignal(rows.size(),0);
         for(std::size_t i=0;i<rows.size();++i)
             hasSignal[i]=static_cast<unsigned char>(
@@ -395,7 +384,7 @@ public:
                     hasSignal[edge.destination]=1;
         }
         for(const auto i:order)
-            if(reachesOutput[i] && (hasSignal[i] || i==main || i==monitor))
+            if(hasSignal[i] || i==main || i==monitor)
                 next.renderOrder_.push_back(i);
         // Edges must only target retained scratch lanes. This is distinct
         // from "reachable from MAIN": a silent incoming lane has no slot.
@@ -407,7 +396,7 @@ public:
         if(frame>0 && active>req.maxScratchBytes/(2*sizeof(float)*frame)) {
             error.fault=DynamicGraphFault::scratchBudget;return false;
         }
-        // One immutable CSR adjacency; only main-reachable edges retained.
+        // One immutable CSR adjacency over the retained processing lanes.
         for(std::size_t i=0;i<rows.size();++i) {
             auto& lane=next.lanes_[i];
             lane.first=next.edges_.size();

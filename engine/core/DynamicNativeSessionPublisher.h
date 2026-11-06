@@ -68,7 +68,7 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={},bool verifiedInternalWireOnly=false,
+                        FxPlan fx={nullptr,nullptr,nullptr,0,0},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||

@@ -105,7 +105,7 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
             ch->setProperty("fxRackBypassed",rackBypassed);
         }
         ch->setProperty("sends",juce::var(juce::Array<juce::var>{}));
-        if(role!="INPUT"){
+        { // INPUT channels can receive WIRE PCM as well as physical capture.
             auto dst=std::make_unique<juce::DynamicObject>();
             dst->setProperty("id",id);dst->setProperty("name",name);
             dst->setProperty("role",role);

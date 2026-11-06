@@ -171,15 +171,19 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
                 if(!nativeV8Decimal(to) || to.toString()==ids.toString())
                     return reject("WIRE_INVALID_DESTINATION");
                 juce::String role;
-                bool nativeFound=false;
+                juce::String nativeRole;
                 for(const auto& row:*rows.getArray())
                     if(row.getProperty("id","").toString()==to.toString())
                         role=row.getProperty("role","").toString();
                 for(const auto& row:*nativeRows.getArray())
                     if(row.getProperty("id","").toString()==to.toString())
-                        nativeFound=true;
-                if(!nativeFound ||
-                   (role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN"))
+                        nativeRole=row.getProperty("role","").toString();
+                // INPUT describes a channel's hardware-source capability,
+                // not an exclusive source selector. The same channel also
+                // receives internal PCM, summed before its inserts/fader.
+                // Require matching native roles, not a GUI-only destination.
+                if(nativeRole!=role ||
+                   (role!="INPUT"&&role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN"))
                     return reject("WIRE_UNSUPPORTED_DESTINATION");
                 // MAIN is a supported ROUTE_ONLY target: the roster makes
                 // exactly one serial unity-gain primary edge, no double dry.
@@ -377,7 +381,8 @@ inline bool approvedNativeId(const juce::var& value,std::uint64_t& result) {
 // No fallback to ordinal-only M4 or synthetic JS/DSP is permitted.
 template<class Engine>
 inline bool executeApprovedNativeControl(Engine& engine,
-                                         const juce::var& translated) {
+                                         const juce::var& translated,
+                                         juce::String* nativeError=nullptr) {
     if(!translated.isObject())return false;
     std::uint64_t epoch=0,revision=0,roster=0,id=0;
     if(!approvedNativeId(translated.getProperty("deviceEpoch",{}),epoch) ||
@@ -453,6 +458,8 @@ inline bool executeApprovedNativeControl(Engine& engine,
             const auto applied=engine.applyNativeWireTransaction(
                 epoch,revision,roster,
                 std::span<const armix::mixer::WireChange>(changes));
+            if(!applied.accepted && nativeError && applied.error)
+                *nativeError=applied.error;
             // NativeBusResult.error is const char*, not juce::String.
             // The compiler and regression probe must share the exact native
             // error ABI. Never claim ACK for a contradictory accepted/error pair.

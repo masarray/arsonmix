@@ -923,7 +923,7 @@ private:
                     if(!applied)nativeError=result.error;
                 }
             } else {
-                applied=armix::console::executeApprovedNativeControl(engine_,command);
+                applied=armix::console::executeApprovedNativeControl(engine_,command,&nativeError);
             }
         }
         // An engine setter ACK is not independent PCM evidence. Re-read the

@@ -1800,7 +1800,11 @@ public:
             auto roster=nativeAccepted_.graph.roster;
             const auto changed=roster.wireTransaction(expectedRosterRev,changes);
             if(!changed.ok()){
-                r.error="NATIVE_WIRE_TRANSACTION_REJECTED";return r;
+                r.error=changed.fault==ChannelEditFault::missingEdge
+                    ?"NATIVE_WIRE_STALE_EDGE":
+                    changed.fault==ChannelEditFault::duplicateSend
+                    ?"NATIVE_WIRE_DUPLICATE_ROUTE":"NATIVE_WIRE_TRANSACTION_REJECTED";
+                return r;
             }
             DynamicChannelFxLeaseBank bank;
             if(DynamicChannelFxLeaseBank::reuseRevision(
@@ -1821,7 +1825,9 @@ public:
                 roster,nativeAccepted_.graph.request,expectedPcmRev,
                 ep,epoch(),false,std::move(fx),true);
             if(!published.ok()){
-                r.error="NATIVE_WIRE_PCM_GRAPH_REJECTED";return r;
+                r.error=published.graphError.fault==DynamicGraphFault::cycle
+                    ?"NATIVE_WIRE_FEEDBACK_CYCLE":"NATIVE_WIRE_PCM_GRAPH_REJECTED";
+                return r;
             }
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.fxOwners=std::move(owner);
