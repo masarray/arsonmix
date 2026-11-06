@@ -291,10 +291,12 @@ private:
     std::array<bool,14> eqSnapshotDue_{};
     std::array<std::uint64_t,14> eqLastApplied_{};
     std::array<std::array<armix::builtin_fx::Band,8>,14> eqAccepted_{};
+    std::array<bool,14> eqInstalled_{},eqBypassed_{};
     std::uint64_t eqCacheEpoch_=0;
     void syncEqEpoch(std::uint64_t ep) {
         if(eqCacheEpoch_==ep)return;
         eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
+        eqInstalled_.fill(false);eqBypassed_.fill(false);
         for(auto& pending:eqPending_)pending={};
         auto* hardware=engine_.devices().getCurrentAudioDevice();
         const float safeHz=hardware?
@@ -355,6 +357,8 @@ private:
             bands.add(juce::var(row.release()));
         }
         out->setProperty("bands",juce::var(bands));
+        out->setProperty("installed",eqInstalled_[static_cast<std::size_t>(lane)]);
+        out->setProperty("bypassed",eqBypassed_[static_cast<std::size_t>(lane)]);
         browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqSnapshot",
                                              juce::var(out.release()));
     }
@@ -364,6 +368,7 @@ private:
         const armix::mixer::ChannelId ch{number};
         int lane=-1;std::uint64_t liveEp=0,liveRev=0;
         const bool available=hasId&&engine_.builtInEqIdentity(ch,lane,liveEp,liveRev);
+        const bool gateAction=a.getProperty("action",{}).toString()=="builtinEqSetGate";
         if(a.getProperty("action",{}).toString()=="builtinEqSnapshot") {
             if(available)emitEqSnapshot(ch);
             return;
@@ -373,14 +378,24 @@ private:
            eqUInt(a.getProperty("graphRevision",{}),rev)&&
            eqUInt(a.getProperty("requestId",{}),req)&&
            ep==liveEp&&rev==liveRev&&!studioBackupBusy_&&!nativeShowBusy_ &&
-           (a.getProperty("slot",{}).isInt()||a.getProperty("slot",{}).isInt64())) {
+           (gateAction||a.getProperty("slot",{}).isInt()||
+            a.getProperty("slot",{}).isInt64())) {
             syncEqEpoch(ep);
             const auto slot=static_cast<int>(a.getProperty("slot",-1));
             const auto b=a.getProperty("band",{});
             const auto enabled=b.getProperty("enabled",{});
             float freq=0,gain=0,q=0,slope=0;
             auto& pending=eqPending_[static_cast<std::size_t>(lane)];
-            if(!pending.active&&slot>=0&&slot<8&&b.isObject()&&enabled.isBool()&&
+            if(!pending.active&&gateAction&&
+               a.getProperty("installed",{}).isBool()&&
+               a.getProperty("bypassed",{}).isBool()) {
+                const bool install=static_cast<bool>(a.getProperty("installed",{}));
+                const bool bypass=static_cast<bool>(a.getProperty("bypassed",{}));
+                queued=engine_.queueBuiltInEqGate(lane,install,bypass,req,ep,rev);
+                if(queued)pending={ch,req,ep,rev,monotonicMilliseconds(),-1,true};
+            } else if(!pending.active&&!gateAction&&
+                      eqInstalled_[static_cast<std::size_t>(lane)]&&
+                      slot>=0&&slot<8&&b.isObject()&&enabled.isBool()&&
                eqFloat(b.getProperty("frequencyHz",{}),freq)&&
                eqFloat(b.getProperty("gainDb",{}),gain)&&
                eqFloat(b.getProperty("q",{}),q)&&
@@ -419,7 +434,9 @@ private:
                                                     pending.revision,ack);
             if(!got&&now-pending.started<4000u)continue;
             const bool ok=got&&ack.applied&&ack.requestId==pending.request &&
-                          ack.slot==pending.slot && ack.lane==lane;
+                           ack.lane==lane&&
+                           ((pending.slot<0&&ack.gate)||
+                            (pending.slot>=0&&!ack.gate&&ack.slot==pending.slot));
             auto reply=std::make_unique<juce::DynamicObject>();
             reply->setProperty("schemaVersion",1);
             reply->setProperty("requestId",juce::String(std::to_string(pending.request)));
@@ -428,9 +445,25 @@ private:
             reply->setProperty("graphRevision",juce::String(std::to_string(pending.revision)));
             reply->setProperty("status",ok?"APPLIED":"REJECTED");
             if(ok) {
-                eqAccepted_[static_cast<std::size_t>(lane)]
-                           [static_cast<std::size_t>(pending.slot)]=ack.accepted;
-                eqLastApplied_[static_cast<std::size_t>(lane)]=pending.request;
+                const auto index=static_cast<std::size_t>(lane);
+                if(pending.slot<0) {
+                    eqInstalled_[index]=ack.installed;
+                    eqBypassed_[index]=ack.bypassed;
+                    if(!ack.installed) {
+                        auto* device=engine_.devices().getCurrentAudioDevice();
+                        const float safeHz=device?static_cast<float>(
+                            std::min(20000.0,device->getCurrentSampleRate()*.45)):20000.f;
+                        for(std::size_t i=0;i<eqAccepted_[index].size();++i) {
+                            eqAccepted_[index][i]={};
+                            eqAccepted_[index][i].frequencyHz=std::min(
+                                armix::builtin_fx::channelEqSlots[i].defaultHz,safeHz);
+                            eqAccepted_[index][i].q=
+                                armix::builtin_fx::channelEqSlots[i].kind==
+                                armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
+                        }
+                    }
+                } else eqAccepted_[index][static_cast<std::size_t>(pending.slot)]=ack.accepted;
+                eqLastApplied_[index]=pending.request;
                 eqSnapshotDue_[static_cast<std::size_t>(lane)]=true;
             }
             browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqAck",
@@ -1561,7 +1594,8 @@ private:
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
-        if(action=="builtinEqSetBand"||action=="builtinEqSnapshot") {
+        if(action=="builtinEqSetBand"||action=="builtinEqSetGate"||
+           action=="builtinEqSnapshot") {
             onEqAction(args);return;
         }
         const auto value = args.getProperty ("value", {});

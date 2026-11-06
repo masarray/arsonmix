@@ -53,9 +53,9 @@ class Node {
 const defaults=()=>[80,160,250,500,1500,4500,9500,18000].map((hz,i)=>({
   enabled:false,frequencyHz:hz,gainDb:0,q:i>=2&&i<=5?1:0.70710678,slope:12
 }));
-const snapshot=(epoch='9',revision='3',id='0',bands=defaults())=>({
+const snapshot=(epoch='9',revision='3',id='0',bands=defaults(),installed=true,bypassed=false)=>({
   schemaVersion:1,channelId:'101',deviceEpoch:epoch,graphRevision:revision,
-  sampleRate:44100,appliedRequestId:id,bands
+  sampleRate:44100,appliedRequestId:id,bands,installed,bypassed
 });
 function start(native) {
   const listeners=new Map(),sent=[];
@@ -149,4 +149,34 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   assert.ok(drag.band.frequencyHz>250);
   assert.equal(power.getAttribute('aria-pressed'),'false','Drag UI stays accepted-only');
 }
-console.log('PASS: Built-in EQ runtime UI events, audio ACK, stale-graph fence, Pages isolation');
+{
+  const h=start(true),t={id:42,name:'Mic 1',kind:'audio'};
+  h.window.ArSonMixBuiltinEq.insert(t);
+  const add=lastAction(h);
+  assert.equal(add.action,'builtinEqSetGate');
+  assert.equal(add.installed,true);
+  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'',
+    'No optimistic FX insert before AUDIO ACK');
+  h.fire('arMixBuiltinEqQueue',{requestId:add.requestId,channelId:'101',status:'QUEUED'});
+  h.fire('arMixBuiltinEqAck',{requestId:add.requestId,channelId:'101',
+    deviceEpoch:'9',graphRevision:'3',status:'APPLIED'});
+  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'',
+    'AUDIO ACK without later snapshot does not paint an insert');
+  h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',add.requestId));
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/Channel EQ/);
+  h.window.ArSonMixBuiltinEq.power(t);
+  const bypass=lastAction(h);
+  assert.equal(bypass.action,'builtinEqSetGate');assert.equal(bypass.bypassed,true);
+  h.fire('arMixBuiltinEqAck',{requestId:bypass.requestId,channelId:'101',
+    deviceEpoch:'9',graphRevision:'3',status:'APPLIED'});
+  h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',bypass.requestId,defaults(),true,true));
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/is-bypassed/);
+  h.window.ArSonMixBuiltinEq.remove(t);
+  const del=lastAction(h);
+  assert.equal(del.installed,false);
+  h.fire('arMixBuiltinEqAck',{requestId:del.requestId,channelId:'101',
+    deviceEpoch:'9',graphRevision:'3',status:'APPLIED'});
+  h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',del.requestId,defaults(),false,false));
+  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'');
+}
+console.log('PASS: Built-in EQ insert/bypass/remove after native ACK + readback; no fake PCM');

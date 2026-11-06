@@ -1878,6 +1878,23 @@ public:
             [&](FxGraph& graph) noexcept {return graph.queueBuiltInEqEdit(
                 lane,slot,band,requestId,expectedEpoch,expectedRevision);});
     }
+    bool queueBuiltInEqGate(int lane,bool installed,bool bypassed,
+                            std::uint64_t req,std::uint64_t ep,std::uint64_t rev) noexcept {
+        if(!ready()||!hasExplicitRoute()||!req||lane<0||lane>=fxSlots||ep!=epoch())
+            return false;
+        if(channelIdPhysicalPcmActive()) {
+            if(rev!=nativeAccepted_.pcmRevision)return false;
+            const auto id=lane<count
+                ?nativeAccepted_.graph.ids.inputs[static_cast<std::size_t>(lane)]
+                :nativeAccepted_.graph.ids.aux[static_cast<std::size_t>(lane-count)];
+            return nativePublisher_.queueBuiltInEqGate(ep,rev,id,installed,bypassed,req);
+        }
+        if(rev!=revision())return false;
+        return publisher_.updateActiveControl(ep,rev,
+          [&](FxGraph& graph) noexcept {
+              return graph.queueBuiltInEqGate(lane,installed,bypassed,req,ep,rev);
+          });
+    }
     bool pollBuiltInEqAck(int lane,std::uint64_t expectedEpoch,
                           std::uint64_t expectedRevision,BuiltInEqAck& ack) noexcept {
         if(!ready()||lane<0||lane>=fxSlots||

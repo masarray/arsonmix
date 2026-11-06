@@ -246,6 +246,19 @@ public:
             return false;
           });
     }
+    bool queueBuiltInEqGate(std::uint64_t epoch,std::uint64_t revision,ChannelId id,
+                            bool installed,bool bypassed,std::uint64_t requestId) noexcept {
+        if(!requestId||!id.value)return false;
+        return publisher_.updateActiveControl(epoch,revision,
+          [&](Prepared& p) noexcept {
+            if(!p.builtInEq)return false;
+            for(std::size_t lane=0;lane<p.builtInEqIds.size();++lane)
+                if(p.builtInEqIds[lane]==id)
+                    return p.builtInEq->queueGateEdit(lane,installed,bypassed,
+                                                      requestId,epoch,revision);
+            return false;
+          });
+    }
     bool pollBuiltInEqAck(std::uint64_t epoch,std::uint64_t revision,ChannelId id,
                           armix::builtin_fx::ChannelEqBank::Ack& ack) noexcept {
         if(!id.value)return false;

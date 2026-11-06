@@ -40,9 +40,23 @@
  let pending=null,waitingAck=false,snapshotReady=false,reqSeq=1,activeGesture=null,demonstration=true;
  const nativeBackend=()=>window.__JUCE__?.backend;
  const nativeRoute=()=>window.__ARMIX_BUILTIN_EQ_CHANNEL__;
+ const demoStates=new Map(),nativeStates=new Map();
+ const sameGraph=(v,n)=>v&&n&&v.epoch===n.device?.epoch&&v.revision===n.graph?.revision;
+ const stateFor=t=>{
+  if(!t||t.kind==='master')return null;
+  if(!nativeBackend())return demoStates.get(t.id)||null;
+  const id=nativeRoute()?.resolve?.(t.id),n=nativeRoute()?.state?.();
+  const accepted=nativeStates.get(id);return sameGraph(accepted,n)?accepted:null;
+ };
+ const refresh=t=>window.__ARMIX_BUILTIN_EQ_REFRESH__?.(t?.id);
+ const safeName=t=>String(t?.name||'Channel').replace(/[&<>"']/g,c=>({
+   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+ })[c]);
+ const nextRequestId=()=> (BigInt(Date.now())*10000n+BigInt(reqSeq++%10000)).toString();
  const setStatus=(message,kind='')=>{status.textContent=message;status.className='mx-eq-status '+kind;};
  const isOpen=()=>!root.hidden;
- const isEditable=()=>demonstration||Boolean(channelId&&snapshotReady&&!pending);
+ const isEditable=()=>demonstration||Boolean(channelId&&snapshotReady&&!pending&&
+                     current&&stateFor(current)?.installed);
  const resetNative=()=>{channelId=null;epoch=null;revision=null;pending=null;waitingAck=false;snapshotReady=false;bands=empty();setStatus('NATIVE: WAITING FOR ACCEPTED CHANNEL', 'warn');render();};
  const updateInputs=()=>{
    const b=bands[slot];
@@ -115,9 +129,15 @@
  let frame=0;const render=()=>{updateInputs();if(frame)cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{frame=0;draw();});};
  const apply=(candidate)=>{
    if(!isEditable()||!validBand(slot,candidate))return;
-   if(demonstration){bands[slot]={...candidate};setStatus('DESIGN DEMO · VISUAL ONLY · NO AUDIO','warn');render();return;}
+   if(demonstration){
+   bands[slot]={...candidate};
+   if(current)demoStates.set(current.id,{
+      ...(demoStates.get(current.id)||{installed:false,bypassed:false}),
+      bands:bands.map(b=>({...b}))});
+   setStatus('DESIGN DEMO · VISUAL ONLY · NO AUDIO','warn');render();return;
+ }
    if(!nativeBackend()?.emitEvent||!channelId||!epoch||!revision)return;
-   const id=(BigInt(Date.now())*10000n+BigInt(reqSeq++%10000)).toString(),command={action:'builtinEqSetBand',channelId,deviceEpoch:epoch,graphRevision:revision,requestId:id,slot,band:candidate};
+   const id=nextRequestId(),command={action:'builtinEqSetBand',channelId,deviceEpoch:epoch,graphRevision:revision,requestId:id,slot,band:candidate};
    pending={id,channelId,epoch,revision,slot};waitingAck=false;
    setStatus('NATIVE: REQUEST SENT · WAITING FOR AUDIO CALLBACK','warn');render();nativeBackend().emitEvent('arMixAction',command);
  };
@@ -162,7 +182,11 @@
  close.addEventListener('click',()=>{root.hidden=true;activeGesture=null;});
  root.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();root.hidden=true;}});
  if(typeof ResizeObserver!=='undefined'){new ResizeObserver(()=>{if(isOpen())render();}).observe(graph);}else window.addEventListener('resize',()=>{if(isOpen())render();},{passive:true});
- const validateSnap=s=>s?.schemaVersion===1&&s.channelId===channelId&&s.deviceEpoch===epoch&&s.graphRevision===revision&&/^\d+$/.test(String(s.deviceEpoch||''))&&/^\d+$/.test(String(s.graphRevision||''))&&Array.isArray(s.bands)&&s.bands.length===8&&s.bands.every((b,i)=>validBand(i,b));
+ const validateSnap=s=>s?.schemaVersion===1&&s.channelId===channelId&&
+ s.deviceEpoch===epoch&&s.graphRevision===revision&&
+ typeof s.installed==='boolean'&&typeof s.bypassed==='boolean'&&
+ /^\d+$/.test(String(s.deviceEpoch||''))&&/^\d+$/.test(String(s.graphRevision||''))&&
+ Array.isArray(s.bands)&&s.bands.length===8&&s.bands.every((b,i)=>validBand(i,b));
  const backend=nativeBackend();
  if(backend?.addEventListener){
    // A historical EQ snapshot must never stay editable after hotplug,
@@ -176,18 +200,73 @@
    });
    backend.addEventListener('arMixBuiltinEqQueue',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='REJECTED'){pending=null;setStatus('NATIVE: EDIT REJECTED; STATE UNCHANGED','warn');render();}else setStatus('QUEUED · WAITING FOR DSP APPLY ACK','warn');});
    backend.addEventListener('arMixBuiltinEqAck',r=>{if(!pending||r?.requestId!==pending.id||r.channelId!==channelId)return;if(r.status==='APPLIED'&&r.deviceEpoch===pending.epoch&&r.graphRevision===pending.revision){waitingAck=true;setStatus('DSP APPLIED · AWAITING ACCEPTED READBACK','warn');}else {pending=null;waitingAck=false;setStatus('NATIVE: NOT APPLIED; STATE UNCHANGED','warn');render();}});
-   backend.addEventListener('arMixBuiltinEqSnapshot',s=>{if(!isOpen()||demonstration||!validateSnap(s))return;
+   backend.addEventListener('arMixBuiltinEqSnapshot',s=>{if(demonstration||!validateSnap(s))return;
      if(pending&&(!waitingAck||s.appliedRequestId!==pending.id))return;
-     bands=s.bands.map(b=>({...b}));epoch=s.deviceEpoch;revision=s.graphRevision;sampleRate=Number(s.sampleRate)||48000;pending=null;waitingAck=false;snapshotReady=true;
-     setStatus('NATIVE · ACK + ACCEPTED PARAMETER READBACK','good');render();
+     bands=s.bands.map(b=>({...b}));epoch=s.deviceEpoch;revision=s.graphRevision;
+      sampleRate=Number(s.sampleRate)||48000;pending=null;waitingAck=false;snapshotReady=true;
+      nativeStates.set(channelId,{installed:s.installed,bypassed:s.bypassed,
+        epoch:s.deviceEpoch,revision:s.graphRevision});
+      setStatus(s.installed?'NATIVE · DSP ACCEPTED · LIVE PCM':
+        'NATIVE · NOT INSERTED · CHOOSE FROM FX LIST',s.installed?'good':'warn');
+      refresh(current);render();
    });
  }
- window.ArSonMixBuiltinEq=Object.freeze({open(track){
+ const setGate=(track,installed,bypassed)=>{
+  if(!track||track.kind==='master'||pending)return false;
+  if(!nativeBackend()){
+   const previous=demoStates.get(track.id)||{bands:empty()};
+   demoStates.set(track.id,{...previous,installed,bypassed:installed&&bypassed,
+     bands:installed?previous.bands:empty()});
+   if(current?.id===track.id)bands=demoStates.get(track.id).bands.map(b=>({...b}));
+   setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');refresh(track);render();return true;
+  }
+  const id=nativeRoute()?.resolve?.(track.id),n=nativeRoute()?.state?.();
+  if(!id||!n?.admitted||!n?.device?.epoch||!n?.graph?.revision)return false;
+  if(current?.id!==track.id&&isOpen())root.hidden=true;
+  current=track;channelId=id;epoch=n.device.epoch;revision=n.graph.revision;
+  snapshotReady=false;
+  const requestId=nextRequestId();
+  pending={id:requestId,channelId:id,epoch,revision,slot:-1,kind:'gate'};
+  waitingAck=false;
+  setStatus('NATIVE · GATE QUEUED · WAITING FOR AUDIO ACK','warn');
+  nativeBackend().emitEvent('arMixAction',{action:'builtinEqSetGate',channelId:id,
+    deviceEpoch:epoch,graphRevision:revision,requestId,installed,bypassed});
+  render();return true;
+ };
+ window.ArSonMixBuiltinEq=Object.freeze({
+  slotMarkup(track,materialIcon){
+   const st=stateFor(track);if(!st?.installed)return '';
+   const enabled=track.fxOn!==false&&!st.bypassed;
+   const power=materialIcon?.('power_settings_new')||'⏻';
+   const remove=materialIcon?.('delete_forever')||'×';
+   const label=safeName(track);
+   return '<div class="fxslot-row is-builtin '+(enabled?'is-active':'is-bypassed')+
+     '" data-builtin-eq="true" data-fx-effective="'+enabled+
+     '" title="Native Channel EQ · PRE VST3">'+
+     '<button class="mx-util-key" data-util-kind="fx-slot" data-action="builtinEqPower" title="'+
+     (st.bypassed?'Enable':'Bypass')+' Channel EQ" aria-label="Toggle Channel EQ on '+
+     label+'" aria-pressed="'+enabled+'">'+power+'</button>'+
+     '<button class="fx-pick" data-action="openBuiltinEq" aria-label="Open Channel EQ for '+
+     label+'">Channel EQ <small>PRE</small></button>'+
+     '<button class="mx-util-key" data-util-kind="fx-remove" data-action="builtinEqRemove" '+
+     'title="Remove built-in EQ" aria-label="Remove Channel EQ">'+remove+'</button></div>';
+  },
+  insert(track){
+   if(!track||track.kind==='master')return;
+   this.open(track);
+   if(!setGate(track,true,false))setStatus('NATIVE · EQ INSERT REJECTED','warn');
+  },
+  power(track){const st=stateFor(track);if(st?.installed)setGate(track,true,!st.bypassed);},
+  remove(track){const st=stateFor(track);if(st?.installed)setGate(track,false,false);},
+  open(track){
    if(!track||track.kind==='master')return;
    current=track;channelLabel.textContent=String(track.name||'Channel');root.hidden=false;slot=2;pending=null;waitingAck=false;
    const host=nativeRoute(),resolved=host?.resolve?.(track.id),s=host?.state?.();
    demonstration=!nativeBackend();
-   if(demonstration){channelId=null;snapshotReady=false;bands=empty();sampleRate=48000;mode.textContent='UI DEMO · NO AUDIO';setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');}
+   if(demonstration){channelId=null;snapshotReady=false;
+     bands=demoStates.get(track.id)?.bands?.map(b=>({...b}))||empty();
+     sampleRate=48000;mode.textContent='UI DEMO · NO AUDIO';
+     setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');}
    else if(resolved&&s?.admitted){channelId=resolved;epoch=s.device?.epoch;revision=s.graph?.revision;bands=empty();pending=null;snapshotReady=false;
      // Control disabled until real native snapshot arrives; never pretend
      // that a screenshot/browser fixture is already loaded as channel state.

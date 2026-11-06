@@ -1452,6 +1452,16 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.queueBuiltInEqEdit(lane,slot,b,requestId,ep,rev);
     }
+    bool queueBuiltInEqGate(int lane,bool installed,bool bypassed,
+                            std::uint64_t requestId,std::uint64_t ep,
+                            std::uint64_t rev) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.queueBuiltInEqGate(lane,installed,bypassed,
+                                                requestId,ep,rev);
+    }
     bool pollBuiltInEqAck(int lane,std::uint64_t ep,
                            std::uint64_t rev,BuiltInEqAck& ack) noexcept {
         return dryRoutingLab_.pollBuiltInEqAck(lane,ep,rev,ack);

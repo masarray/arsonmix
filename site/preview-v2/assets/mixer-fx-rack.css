@@ -201,3 +201,11 @@
 @media(max-height:440px){html .mx-eq-top{height:25px;flex-basis:25px}html .mx-eq-controls{flex-basis:68px;min-height:68px}html .mx-eq-rail{flex-basis:27px}html .mx-eq-footer{flex-basis:20px}}
 @media(prefers-reduced-motion:reduce){html #mxBuiltinEq *{transition:none!important;animation:none!important}}
 
+
+/* Built-in native PRE insert: follow the existing FX rack visual owner. */
+.fast-fx-category{padding:6px 10px 3px;color:#8bbbc8;font:9px/1.2 "Segoe UI",Arial,sans-serif;letter-spacing:.8px;border-top:1px solid #334651}
+.fast-fx-category:first-child{border-top:0}
+.fxslot-row.is-builtin{border-left:2px solid #6ac4d2;background:linear-gradient(90deg,#28424b40,#25353c18)}
+.fxslot-row.is-builtin .fx-pick{color:#c3ecf1}
+.fxslot-row.is-builtin .fx-pick small{font:8px/1 Consolas,monospace;letter-spacing:.25px;color:#86a7b4;margin-left:5px}
+.fxslot-row.is-builtin.is-bypassed .fx-pick{color:#8b9aa3}

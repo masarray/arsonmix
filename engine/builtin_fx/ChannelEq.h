@@ -173,14 +173,29 @@ public:
     }
     [[nodiscard]] std::size_t activeBands() const noexcept { return current_.activeCount; }
     [[nodiscard]] int addedLatencySamples() const noexcept { return 0; }
-    [[nodiscard]] bool transitioning() const noexcept { return fadeRemaining_ > 0; }
+    [[nodiscard]] bool transitioning() const noexcept {
+        return fadeRemaining_>0 || externalFadeRemaining_>0;
+    }
+    // AUDIO-owner-only smooth gate, preserving individual band settings.
+    void setExternalBypass(bool bypass) noexcept {
+        const float target=bypass?0.0f:1.0f;
+        if(target==externalTarget_)return;
+        externalTarget_=target;
+        if(current_.activeCount==0 && fadeRemaining_==0) {
+            externalWet_=target;externalFadeRemaining_=0;
+        } else externalFadeRemaining_=fadeLength_;
+    }
 
     // Processing and all biquad histories are audio-owner exclusive.
     // left==right is explicitly one mono buffer, never double processed.
     void processStereo(float* left, float* right, std::size_t frames) noexcept {
         if (!prepared_ || !left || !right || frames == 0) return;
         if (left == right) { processMono(left, frames); return; }
-        if (current_.activeCount == 0 && fadeRemaining_ == 0) return; // exact bitwise bypass
+        if (current_.activeCount==0 && fadeRemaining_==0) {
+            externalWet_=externalTarget_;externalFadeRemaining_=0;
+            return; // exact bitwise bypass
+        }
+        if(externalWet_==0.0f && externalFadeRemaining_==0)return;
         for (std::size_t i = 0; i < frames; ++i) {
             const float dryL = left[i], dryR = right[i];
             const float wetL = render(current_, 0, dryL), wetR = render(current_, 1, dryR);
@@ -189,18 +204,28 @@ public:
                 const float oldR = render(previous_, 1, dryR);
                 const float mix = 1.0f - static_cast<float>(fadeRemaining_ - 1) /
                                                static_cast<float>(fadeLength_);
-                left[i] = oldL + (wetL - oldL) * mix;
-                right[i] = oldR + (wetR - oldR) * mix;
+                const float processedL=oldL+(wetL-oldL)*mix;
+                const float processedR=oldR+(wetR-oldR)*mix;
+                const float gate=nextExternalMix();
+                left[i]=dryL+(processedL-dryL)*gate;
+                right[i]=dryR+(processedR-dryR)*gate;
                 --fadeRemaining_;
-            } else { left[i] = wetL; right[i] = wetR; }
+            } else {
+                const float gate=nextExternalMix();
+                left[i]=dryL+(wetL-dryL)*gate;
+                right[i]=dryR+(wetR-dryR)*gate;
+            }
         }
         clearTiny(current_);
         if (fadeRemaining_ != 0) clearTiny(previous_);
     }
 
     void processMono(float* samples, std::size_t frames) noexcept {
-        if (!prepared_ || !samples || frames == 0 ||
-            (current_.activeCount == 0 && fadeRemaining_ == 0)) return;
+        if(!prepared_||!samples||frames==0)return;
+        if(current_.activeCount==0 && fadeRemaining_==0) {
+            externalWet_=externalTarget_;externalFadeRemaining_=0;return;
+        }
+        if(externalWet_==0.0f && externalFadeRemaining_==0)return;
         for (std::size_t i = 0; i < frames; ++i) {
             const float dry = samples[i];
             const float wet = render(current_, 0, dry);
@@ -208,9 +233,14 @@ public:
                 const float old = render(previous_, 0, dry);
                 const float mix = 1.0f - static_cast<float>(fadeRemaining_ - 1) /
                                                static_cast<float>(fadeLength_);
-                samples[i] = old + (wet - old) * mix;
+                const float processed=old+(wet-old)*mix;
+                const float gate=nextExternalMix();
+                samples[i]=dry+(processed-dry)*gate;
                 --fadeRemaining_;
-            } else samples[i] = wet;
+            } else {
+                const float gate=nextExternalMix();
+                samples[i]=dry+(wet-dry)*gate;
+            }
         }
         clearTiny(current_);
         if (fadeRemaining_ != 0) clearTiny(previous_);
@@ -267,7 +297,17 @@ private:
     Bank current_{}, previous_{};
     double sampleRate_ = 0.0;
     int fadeLength_ = 1, fadeRemaining_ = 0;
+    float externalWet_=1.0f,externalTarget_=1.0f;
+    int externalFadeRemaining_=0;
     bool prepared_ = false;
+    float nextExternalMix() noexcept {
+        if(externalFadeRemaining_>0) {
+            externalWet_+=(externalTarget_-externalWet_)/
+                          static_cast<float>(externalFadeRemaining_);
+            if(--externalFadeRemaining_==0)externalWet_=externalTarget_;
+        }
+        return externalWet_;
+    }
 
     static bool validBand(std::size_t i, const Band& b, float maxHz) noexcept {
         if (i >= bandCount || !std::isfinite(b.frequencyHz) ||

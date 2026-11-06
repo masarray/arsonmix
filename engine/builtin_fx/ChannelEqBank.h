@@ -52,6 +52,7 @@ public:
         std::uint8_t slot = 0;
         Band accepted{};
         bool applied = false;
+        bool gate=false,installed=false,bypassed=false;
     };
     ChannelEqBank() = default;
     ChannelEqBank(const ChannelEqBank&) = delete;
@@ -63,7 +64,10 @@ public:
         if (ready_) return false;
         if (!std::isfinite(sampleRate) || sampleRate < 8000.0 || sampleRate > 384000.0)
             return false;
-        for (auto& eq : eqs_) if (!eq.prepare(sampleRate)) return false;
+        for(auto& eq:eqs_) {
+            if(!eq.prepare(sampleRate))return false;
+            eq.setExternalBypass(true); // uninstalled means exact dry PCM
+        }
         sampleRate_ = sampleRate;
         ready_ = true;
         return true;
@@ -83,8 +87,20 @@ public:
             return false;
         ChannelEq::PreparedBandEdit prepared{};
         if (!ChannelEq::prepareBandEdit(slot, band, sampleRate_, prepared)) return false;
-        return pending_[lane].push(Command{requestId,deviceEpoch,graphRevision,
-                      static_cast<std::uint8_t>(lane),static_cast<std::uint8_t>(slot),prepared});
+        Command c{};c.requestId=requestId;c.deviceEpoch=deviceEpoch;
+        c.graphRevision=graphRevision;c.lane=static_cast<std::uint8_t>(lane);
+        c.slot=static_cast<std::uint8_t>(slot);c.edit=prepared;
+        return pending_[lane].push(c);
+    }
+    bool queueGateEdit(std::size_t lane,bool installed,bool bypassed,
+                       std::uint64_t requestId,std::uint64_t deviceEpoch,
+                       std::uint64_t graphRevision) noexcept {
+        if(!ready_||lane>=laneCount||!requestId||!deviceEpoch||
+           !graphRevision||(!installed&&bypassed))return false;
+        Command c{};c.requestId=requestId;c.deviceEpoch=deviceEpoch;
+        c.graphRevision=graphRevision;c.lane=static_cast<std::uint8_t>(lane);
+        c.slot=255;c.gate=true;c.installed=installed;c.bypassed=bypassed;
+        return pending_[lane].push(c);
     }
     // Only on UNPUBLISHED graphs / offline fixtures. No concurrent callback.
     bool setBandOffline(std::size_t lane, std::size_t slot,const Band& band) noexcept {
@@ -108,10 +124,16 @@ public:
                 const bool sessionMatches = (activeEpoch==0 && activeRevision==0) ||
                     (command.deviceEpoch==activeEpoch &&
                      command.graphRevision==activeRevision);
-                const bool applied = sessionMatches &&
-                    eq.applyPreparedBand(command.edit);
+                bool applied=false;
+                if(sessionMatches) {
+                    if(command.gate) {
+                        applied=command.installed||eq.resetToFlat();
+                        if(applied)eq.setExternalBypass(!command.installed||command.bypassed);
+                    } else applied=eq.applyPreparedBand(command.edit);
+                }
                 Ack ack{command.requestId,command.deviceEpoch,command.graphRevision,
-                        command.lane,command.slot,command.edit.band,applied};
+                        command.lane,command.slot,command.edit.band,applied,
+                        command.gate,command.installed,command.bypassed};
                 // Can only fail if another thread illegally writes the same
                 // SPSC consumer ACK ring. The producer cannot fill it.
                 (void)acknowledgements_[lane].push(ack);
@@ -133,6 +155,7 @@ private:
     struct Command final {
         std::uint64_t requestId=0,deviceEpoch=0,graphRevision=0;
         std::uint8_t lane=0,slot=0;
+        bool gate=false,installed=false,bypassed=false;
         ChannelEq::PreparedBandEdit edit{};
     };
     std::array<ChannelEq,laneCount> eqs_{};

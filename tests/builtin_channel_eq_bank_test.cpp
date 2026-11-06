@@ -41,8 +41,18 @@ int main() {
   denyHeap.store(false);
   CHECK(bank.pollAck(0,a));
   CHECK(a.applied&&a.requestId==101&&a.deviceEpoch==22&&a.graphRevision==9);
-  CHECK(a.lane==0&&a.slot==2&&a.accepted.gainDb==9);
+  CHECK(a.lane==0&&a.slot==2&&a.accepted.gainDb==9&&!a.gate);
   CHECK(!bank.pollAck(0,a));
+  CHECK(bank.queueGateEdit(0,true,false,200,22,9));
+  for(int i=0;i<8;++i)bank.render(0,l.data(),r.data(),64);
+  CHECK(bank.pollAck(0,a)&&a.applied&&a.gate&&a.installed&&!a.bypassed);
+  CHECK(bank.queueGateEdit(0,true,true,201,22,9));
+  for(int i=0;i<8;++i)bank.render(0,l.data(),r.data(),64);
+  CHECK(bank.pollAck(0,a)&&a.applied&&a.bypassed);
+  CHECK(bank.queueGateEdit(0,false,false,202,22,9));
+  for(int i=0;i<8;++i)bank.render(0,l.data(),r.data(),64);
+  CHECK(bank.pollAck(0,a)&&a.applied&&!a.installed);
+  CHECK(!bank.queueGateEdit(14,true,false,203,22,9));
   // Queue repeated automation while the previous 5ms transition is running.
   // New coefficients apply only after the old fade, with no RT trigonometry.
   b.gainDb=3;CHECK(bank.queueBandEdit(0,2,b,102,22,9));

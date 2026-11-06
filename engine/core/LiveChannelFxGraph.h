@@ -213,6 +213,11 @@ public:
         return lane>=0&&lane<fxSlots&&builtinEq_->queueBandEdit(
                  static_cast<std::size_t>(lane),slot,b,req,epoch,rev);
     } // producer on control; success = queued, not applied
+    bool queueBuiltInEqGate(int lane,bool installed,bool bypassed,
+                            std::uint64_t req,std::uint64_t ep,std::uint64_t rev) noexcept {
+        return lane>=0&&lane<fxSlots&&builtinEq_->queueGateEdit(
+            static_cast<std::size_t>(lane),installed,bypassed,req,ep,rev);
+    }
     bool pollBuiltInEqAck(int lane,BuiltInEqAck& ack) noexcept {
         return lane>=0&&lane<fxSlots&&builtinEq_->pollAck(static_cast<std::size_t>(lane),ack);
     } // control-only, validate epoch/rev before UI use
