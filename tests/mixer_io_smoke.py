@@ -53,9 +53,18 @@ async def main():
         assert all(abs(a-b)<1 for a,b in zip(sizes,after)),(sizes,after)
         await page.locator('[data-mix-mode="ROUTE"]').click()
         assert "UNPATCHED" in await page.locator('[data-strip="1"] .arBankOutput').inner_text()
-        palette=await page.evaluate("""() => ['FX','ROUTE'].map(x=>getComputedStyle(
-          document.querySelector('[data-mix-mode="'+x+'"]')).backgroundColor)""")
-        assert palette[0]!=palette[1],palette
+        # Physical BTN-180 is a layered gradient. backgroundColor alone is
+        # not the live visual state; verify the actual active token and ARIA.
+        modes=await page.evaluate("""() => ['FX','ROUTE'].map(x=>{
+          const button=document.querySelector('[data-mix-mode="'+x+'"]');
+          const css=getComputedStyle(button);
+          return {active:button.classList.contains('active'),
+                  pressed:button.getAttribute('aria-pressed'),
+                  edge:css.getPropertyValue('--b180-border').trim()};
+        })""")
+        assert modes[0]['active'] is False and modes[0]['pressed']=='false',modes
+        assert modes[1]['active'] is True and modes[1]['pressed']=='true',modes
+        assert modes[0]['edge']!=modes[1]['edge'],modes
         await page.locator('[data-strip="0"] select.arBankSource').select_option("MONO:0")
         assert "PENDING" in await page.locator('[data-strip="0"] .arBankStage').inner_text()
         assert await page.locator('[data-strip="0"] .arBankSource').is_disabled()
