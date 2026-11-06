@@ -15,6 +15,9 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from compile_approved_css import _declarations
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "site/preview-v2/index.html"
@@ -63,29 +66,20 @@ def inspect() -> tuple[list[str], dict[str, list[str]]]:
     return names, dict(sorted(overlap.items()))
 
 
-def count_same_file_repeated_declarations(names: list[str]) -> dict[str, int]:
-    """Conservative same-file stacking counter; CSS context still needs QA.
+def same_context_repeat_count(css: str) -> int:
+    """Reuse the publisher parser: media/support/layer scopes are distinct keys."""
+    keys = [declaration.key for declaration in _declarations(css, "ownership")]
+    return len(keys) - len(set(keys))
 
-    An identical normalized selector + property repeated later in the same
-    owner is debt even if the current cascade intentionally uses it. New debt
-    is not permitted, but removing existing duplicate declarations is.
+
+def count_same_file_repeated_declarations(names: list[str]) -> dict[str, int]:
+    """Reject repeated declarations within the same selector and CSS context.
+
+    Responsive variants are separate conditions, not late unconditional stacks.
+    Existing caps remain upper bounds; no baseline debt is increased.
     """
-    totals: dict[str, int] = {}
-    for name in names:
-        css = COMMENT.sub("", source_path(name).read_text(encoding="utf-8"))
-        seen: set[str] = set()
-        repeated = 0
-        for match in LEAF.finditer(css):
-            selector = " ".join(match.group(1).split())
-            if not selector or selector.startswith("@"):
-                continue
-            for prop in PROP.finditer(match.group(2)):
-                key = selector + "||" + prop.group(1)
-                if key in seen:
-                    repeated += 1
-                seen.add(key)
-        totals[name] = repeated
-    return totals
+    return {name: same_context_repeat_count(source_path(name).read_text(encoding="utf-8"))
+            for name in names}
 
 
 def verify() -> dict:
