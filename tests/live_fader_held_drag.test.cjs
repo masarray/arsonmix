@@ -143,6 +143,9 @@ test("all CH1/CH2/CH5/CH10 and MAIN pointermove use native scalar path",()=>{
  // Valid input faders retain strict ChannelId mapping across a channel reorder.
  // A real callback/PCM FAT is still required; gain math alone is NOT a sound test.
  const h=harness(),s=nativeChannelIdFixture();
+ // The physical-host MAIN gateway uses safe integer transport tokens, while
+ // ChannelId itself deliberately remains an exact uint64 decimal string.
+ s.device.epoch="77";s.mixerSession.deviceEpoch="77";
  h.listeners.get("arMixConsoleSnapshot")(s);
  let accepted=s;
  for(const lane of [0,1,4,9]){
