@@ -4,6 +4,7 @@
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -1332,6 +1333,50 @@ public:
             out.error="NATIVE_VST3_ADMISSION_FAILED";return out;
         }
     }
+    NativeBusResult editNativeFxRack(std::uint64_t ep,std::uint64_t revision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId source,std::size_t slot,
+            const juce::String& token,armix::mixer::ChannelId target,std::size_t position) {
+        using namespace armix::mixer;
+        NativeBusResult reply;reply.error="STALE_NATIVE_FX_RACK";
+        if(!channelIdPhysicalPcmActive()||!ready()||ep!=epoch()||
+           nativeAccepted_.deviceEpoch!=ep||nativeAccepted_.pcmRevision!=revision||
+           !nativeAccepted_.fxOwners)return reply;
+        try {
+            DynamicChannelRoster roster;DynamicChannelFxLeaseBank prepared;
+            if(!prepareNativeFxRackEdit(ep,revision,rosterRevision,
+                   nativeAccepted_.graph.roster,*nativeAccepted_.fxOwners,source,
+                   slot,token,target,position,roster,prepared)) {
+                reply.error="NATIVE_FX_RACK_IDENTITY_OR_POSITION_REJECTED";return reply;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(prepared));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=revision+1;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);
+            };
+            fx.latency=+[](void* p,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
+                revision,ep,epoch(),false,std::move(fx),false,true);
+            if(!committed.ok()){reply.error="NATIVE_FX_RACK_PCM_COMMIT_REJECTED";return reply;}
+            nativeAccepted_.graph.roster=std::move(roster);nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;nativeStructureLive_=true;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            reply.accepted=true;reply.error="";reply.pcmRevision=committed.revision;
+            reply.rosterRevision=nativeAccepted_.graph.roster.revision();return reply;
+        }catch(...){reply.error="NATIVE_FX_RACK_PREPARE_FAILED";return reply;}
+    }
+    bool retainsFxEditor(std::uint64_t ep,const FxGraph::InstanceLease& owner) const noexcept {
+        if(!owner||ep!=epoch()||!ready())return false;
+        if(channelIdPhysicalPcmActive())return nativeAccepted_.fxOwners&&
+            nativeAccepted_.fxOwners->retainsEditor(owner);
+        const auto* prepared=publisher_.controlPrepared(ep,revision());
+        if(prepared)for(int lane=0;lane<fxSlots;++lane)
+            for(int slot=0;slot<prepared->insertsOn(lane);++slot)
+                if(prepared->insertInstanceId(lane,slot)==owner->instanceId)return true;
+        return false;
+    }
     bool bypassNativeInsert(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
             armix::mixer::ChannelId target,std::size_t slot,
             const juce::String& token,bool bypass) noexcept {
@@ -1993,7 +2038,8 @@ public:
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
-                             "NATIVE_LOAD_INSERT","NATIVE_SET_INSERT_BYPASS",
+                             "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
+                             "NATIVE_SET_INSERT_BYPASS",
                              "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));
         state->setProperty("supportedOps",juce::var(allowed));

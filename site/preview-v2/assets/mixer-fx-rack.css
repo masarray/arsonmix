@@ -166,3 +166,10 @@
  color:#849ca7!important;
 }
 .console-body .strip .fx-section.is-chain-bypassed>.subhead [data-util-kind="fx-main"]{opacity:.65}
+
+/* Pointer-owned FX transfer: one row-sized ghost, no extra rack layout. */
+.fxslot-row.fx-drag-ghost{position:fixed;left:0;top:0;z-index:20000;pointer-events:none;opacity:.94;margin:0;box-sizing:border-box;box-shadow:0 5px 14px #0008;will-change:transform;background:#233d49;border:1px solid #78b7c9;}
+.fxslot-row.fx-moving{opacity:.38;}
+.fxslot-row.fx-drag-ghost.fx-drop-invalid{opacity:.55;}
+.fx-drop-marker{position:fixed;height:2px;z-index:19999;pointer-events:none;background:#7bc7dc;box-shadow:0 0 4px #7bc7dc66;}
+.fx-grip{touch-action:none;}

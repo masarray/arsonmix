@@ -3,7 +3,12 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
+import subprocess,sys,tempfile
+from approved_publication_fixture import published_console
+ROOT=Path(__file__).resolve().parents[1]
+_current_gui=tempfile.TemporaryDirectory(prefix="arsonmix-approved-interaction-")
+subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),'--out',_current_gui.name],cwd=ROOT,check=True,capture_output=True)
+PAGE=published_console(Path(_current_gui.name))
 BREAKPOINTS=((1366,768),(1378,911),(1680,900),(1920,1080))
 DENSITIES=("comfort","standard","compact")
 
@@ -99,7 +104,7 @@ def check_transactions(page):
  root.locator('.fx-grip').first.press('Control+z')
  assert model(page)==initial,"grip Ctrl+Z must restore order, bypass and identity"
  # Real pointer Drag&Drop on dedicated grip; non-draggable rows cannot reorder.
- root.locator('.fx-grip[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'))
+ root.locator('.fx-grip[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'),target_position={'x':40,'y':18})
  dragged=model(page)
  # Slot indices are physical positions and MUST remain 0/1 after moving.
  # Compare stable insert payload separately from its new position.
@@ -107,16 +112,20 @@ def check_transactions(page):
  for key in ("id","name","bypassed"):
   assert [r[key] for r in dragged[:2]]==[
    r[key] for r in initial[:2][::-1]],("grip DnD changed "+key,dragged)
- # Cross-channel FX lease cannot become a blind name-only clone.
+ # Cross-channel reference transfer preserves token/bypass and compacts
+ # both chains. Native transfer has separate accepted PCM coverage.
  before=model(page)
  second=model(page,"2")
  other=page.locator('#tracks .strip[data-id="2"]')
  root.locator('.fx-grip[data-slot="0"]').drag_to(other.locator('.fxslot-row[data-slot="0"]'))
- assert model(page)==before,"cross-channel drop corrupted source FX"
- assert model(page,"2")==second,"unsafe cross-channel FX copied"
+ assert len([r for r in model(page) if r['name']!='None'])==len([r for r in before if r['name']!='None'])-1
+ assert len([r for r in model(page,"2") if r['name']!='None'])==len([r for r in second if r['name']!='None'])+1
+ other.locator('.fx-grip').first.focus()
+ other.locator('.fx-grip').first.press('Control+z')
+ assert model(page)==before and model(page,"2")==second,"transfer undo lost native-style identity"
  root.locator('.fx-grip').first.focus()
  root.locator('.fx-grip').first.press('Control+z')
- assert model(page)==initial,"invalid drag erased preceding Undo transaction"
+ assert model(page)==initial,"preceding reorder undo lost"
  # The separate OFF button is never a drag handle; it flips only bypass.
  root.locator('[data-action="slotPower"][data-slot="0"]').click()
  after_power=model(page)

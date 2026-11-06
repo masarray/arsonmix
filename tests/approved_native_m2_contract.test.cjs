@@ -1413,3 +1413,53 @@ test("live WIRE gain requires exact same-revision sample-target readback and unc
  assert.equal(c.state().current.graph.edges[0].gainLinear,.25);
  assert.equal(c.intent("SET_WIRE_GAIN",source,{edgeId:"99999",gainLinear:.5}).ok,false);
 });
+
+test("native FX remove/reorder/transfer requires exact token, ACK and ordered readback",()=>{
+ const setup=()=>{
+  const base=acceptedFixture(),source=base.graph.channels.find(c=>c.role==='INPUT');
+  source.inserts=[{id:'fx-a',catalogId:'a',name:'A',bypassed:false},{id:'fx-b',catalogId:'b',name:'B',bypassed:true}];
+  const dest=clone(source);dest.id='9007199254740997';dest.inserts=[];
+  base.graph.channels.splice(1,0,dest);base.graph.capabilities.supportedOps.push('MOVE_INSERT','REMOVE_INSERT');
+  const emitted=[],controller=protocol.createController({emit:(n,p)=>emitted.push({n,p})});
+  assert.ok(controller.onSnapshot(base));return {base,source,dest,controller,emitted};
+ };
+ const apply=(ctx,op,payload,change)=>{
+  const {base,source,controller:c,emitted}=ctx;
+  assert.ok(c.intent(op,source.id,payload).ok);const request=emitted.findLast(e=>e.n==='arMixConsoleIntent').p;
+  c.onAck({requestId:request.requestId,status:'ACCEPTED',errorCode:'NONE',deviceEpoch:base.device.epoch,
+    graphRevision:'6',rosterRevision:'8'});
+  assert.equal(c.state().current.graph.channels.find(x=>x.id===source.id).inserts.length,2,'ACK alone mutated FX');
+  const next=clone(base);next.graph.revision='6';next.graph.rosterRevision='8';change(next);
+  assert.ok(c.onSnapshot(next));assert.equal(c.state().pending,null);
+ };
+ let t=setup();apply(t,'MOVE_INSERT',{slot:0,instanceId:'fx-a',toChannelId:t.source.id,toSlot:1},
+   s=>s.graph.channels[0].inserts.reverse());
+ assert.deepEqual(t.controller.state().current.graph.channels[0].inserts.map(x=>x.id),['fx-b','fx-a']);
+ t=setup();apply(t,'MOVE_INSERT',{slot:0,instanceId:'fx-a',toChannelId:t.dest.id,toSlot:0},s=>{
+   const moved=s.graph.channels[0].inserts.splice(0,1)[0];s.graph.channels[1].inserts.push(moved);
+ });
+ assert.equal(t.controller.state().current.graph.channels[1].inserts[0].id,'fx-a');
+ t=setup();apply(t,'REMOVE_INSERT',{slot:0,instanceId:'fx-a'},s=>s.graph.channels[0].inserts.splice(0,1));
+ assert.equal(t.controller.state().current.graph.channels[0].inserts[0].id,'fx-b');
+ t=setup();assert.equal(t.controller.intent('REMOVE_INSERT',t.source.id,{slot:0,instanceId:'stale'}).ok,false);
+ t=setup();const c=t.controller;
+ assert.ok(c.intent('MOVE_INSERT',t.source.id,{slot:0,instanceId:'fx-a',toChannelId:t.dest.id,toSlot:0}).ok);
+ const request=t.emitted.findLast(e=>e.n==='arMixConsoleIntent').p;
+ c.onAck({requestId:request.requestId,status:'ACCEPTED',errorCode:'NONE',deviceEpoch:t.base.device.epoch,graphRevision:'6',rosterRevision:'8'});
+ const wrong=clone(t.base);wrong.graph.revision='6';wrong.graph.rosterRevision='8';
+ wrong.graph.channels[1].inserts.push(clone(wrong.graph.channels[0].inserts[0]));
+ assert.equal(c.onSnapshot(wrong),false,'name/token copy cannot masquerade as MOVE');
+ assert.equal(c.state().lastError,'ACK_READBACK_EFFECT_MISMATCH');
+});
+
+test("native vendor editor retention follows current PCM ownership, not inactive M4 slots",()=>{
+ const main=read('src/Main.cpp'),lab=read('src/LiveDryRoutingLab.h');
+ assert.match(main,/engine_\.retainsRoutedFxEditor\(routedEditorEpoch_,routedEditorOwner_\)/);
+ assert.match(main,/routedEditorEpoch_=retainedEpoch/);
+ assert.match(main,/retainedEpoch=ep/);
+ assert.match(lab,/nativeAccepted_\.fxOwners->retainsEditor\(owner\)/);
+ const editor=main.slice(main.indexOf('if(owner && owner->processor)'),main.indexOf('if(owner && owner->processor)')+700);
+ assert.ok(editor.indexOf('closePluginEditor();')<editor.indexOf('createEditorIfNeeded()'),'old window must be destroyed before asking for its editor pointer');
+ const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
+ assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
+});

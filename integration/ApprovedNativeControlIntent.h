@@ -248,6 +248,47 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         converted->setProperty("payload",juce::var(payload.release()));
         return {juce::var(converted.release()),{}};
     }
+    if(op=="REMOVE_INSERT"||op=="MOVE_INSERT") {
+        const bool moving=op=="MOVE_INSERT";
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),moving?"MOVE_INSERT":"REMOVE_INSERT")||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),moving?"NATIVE_MOVE_INSERT":"NATIVE_REMOVE_INSERT"))
+            return reject("NATIVE_FX_RACK_NOT_ADMITTED");
+        const auto payload=publicIntent.getProperty("payload",{});
+        const auto slot=payload.getProperty("slot",{}),token=payload.getProperty("instanceId",{});
+        if(!slot.isInt()||static_cast<int>(slot)<0||static_cast<int>(slot)>=8||
+           !token.isString()||token.toString().isEmpty())return reject("INVALID_FX_INSTANCE");
+        const int index=static_cast<int>(slot);juce::var from,nativeFrom;
+        for(const auto& row:*rows.getArray())if(row.getProperty("id",{})==ids)from=row;
+        for(const auto& row:*nativeRows.getArray())if(row.getProperty("id",{})==ids)nativeFrom=row;
+        const auto pub=from.getProperty("inserts",{}),actual=nativeFrom.getProperty("inserts",{});
+        if(!pub.isArray()||!actual.isArray()||pub.size()!=actual.size()||index>=pub.size()||
+           pub[index].getProperty("id",{})!=token||actual[index].getProperty("instanceId",{})!=token)
+            return reject("STALE_FX_INSTANCE");
+        auto args=std::make_unique<juce::DynamicObject>();args->setProperty("slot",slot);
+        args->setProperty("instanceId",token);
+        if(moving) {
+            const auto target=payload.getProperty("toChannelId",{}),position=payload.getProperty("toSlot",{});
+            if(!nativeV8Decimal(target)||!position.isInt()||static_cast<int>(position)<0)
+                return reject("INVALID_FX_DESTINATION");
+            juce::var to,nativeTo;
+            for(const auto& row:*rows.getArray())if(row.getProperty("id",{})==target)to=row;
+            for(const auto& row:*nativeRows.getArray())if(row.getProperty("id",{})==target)nativeTo=row;
+            const auto fx=to.getProperty("inserts",{}),nfx=nativeTo.getProperty("inserts",{});
+            const auto role=to.getProperty("role",{}).toString();
+            const int count=fx.isArray()?fx.size():-1;
+            if(!to.isObject()||!nativeTo.isObject()||role!=nativeTo.getProperty("role",{}).toString()||
+               (role!="INPUT"&&role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN")||
+               !fx.isArray()||!nfx.isArray()||fx.size()!=nfx.size()||
+               count-(target==ids?1:0)>=8||static_cast<int>(position)>count-(target==ids?1:0))
+                return reject("INVALID_FX_DESTINATION");
+            args->setProperty("toChannelId",target);args->setProperty("toSlot",position);
+        }
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);converted->setProperty("operation",moving?"NATIVE_MOVE_INSERT":"NATIVE_REMOVE_INSERT");
+        converted->setProperty("payload",juce::var(args.release()));return {juce::var(converted.release()),{}};
+    }
     if(op=="LOAD_INSERT") {
         // Native-accepted ChannelId + catalog identity + exact next slot.
         // Device/graph/roster were already independently compared above.
@@ -445,6 +486,24 @@ inline bool executeApprovedNativeControl(Engine& engine,
             return changed.accepted && changed.error!=nullptr &&
                    changed.error[0]==0;
         } else return false;
+    }
+    if(operation=="NATIVE_MOVE_INSERT"||operation=="NATIVE_REMOVE_INSERT") {
+        const auto slot=payload.getProperty("slot",{}),token=payload.getProperty("instanceId",{});
+        if(!slot.isInt()||static_cast<int>(slot)<0||static_cast<int>(slot)>=8||!token.isString())return false;
+        std::uint64_t target=0;int position=0;
+        if(operation=="NATIVE_MOVE_INSERT") {
+            const auto pos=payload.getProperty("toSlot",{});
+            if(!approvedNativeId(payload.getProperty("toChannelId",{}),target)||!pos.isInt())return false;
+            position=static_cast<int>(pos);if(position<0||position>=8)return false;
+        }
+        if constexpr(requires(Engine& e){e.editNativeFxRack(epoch,revision,roster,channel,
+                      std::size_t{},juce::String{},armix::mixer::ChannelId{},std::size_t{});}) {
+            const auto result=engine.editNativeFxRack(epoch,revision,roster,channel,
+                static_cast<std::size_t>(static_cast<int>(slot)),token.toString(),
+                armix::mixer::ChannelId{target},static_cast<std::size_t>(position));
+            if(nativeError&&!result.accepted)*nativeError=result.error;
+            return result.accepted&&result.error&&result.error[0]==0;
+        }else return false;
     }
     if(operation=="NATIVE_SET_WIRE_GAIN") {
         std::uint64_t edge=0;double gain=0.;

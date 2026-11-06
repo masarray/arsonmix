@@ -662,6 +662,22 @@
       live.instanceId && typeof live.catalogId==="string"?
       {lane,slot,live}:null;
   }
+  function editNativeFx(t,slot,target,position,token){
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    const actual=current?.graph?.channels.find(c=>c.id===id)?.inserts?.[slot];
+    const to=target?nativeIdFor(target):null,operation=target?"MOVE_INSERT":"REMOVE_INSERT";
+    if(!current?.admitted||!actual||actual.id!==token||!current.graph.capabilities.supportedOps.includes(operation)){
+      status("FX edit unavailable · refresh accepted native instance");return false;
+    }
+    if(target&&to===id&&slot===position)return false;
+    const payload={slot,instanceId:token};
+    if(target){payload.toChannelId=to;payload.toSlot=position;}
+    const result=controller.intent(operation,id,payload);
+    if(!result.ok){status("FX edit rejected · "+result.error);return false;}
+    window.setTimeout(()=>controller?.expire(result.requestId),8000);
+    status(target?"Moving native FX · awaiting accepted readback":"Removing native FX · awaiting accepted readback");
+    return true;
+  }
   function requestNativeFxPower(t,slot,bypass){
     const picked=verifiedFxFor(t,slot);
     if(!picked||!m4Verified())return false;
@@ -2136,6 +2152,11 @@
       // Selection, WIRE inspection and section presentation are UI-only.
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
+      if(action==="removeFx") {
+        const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
+        const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
+        editNativeFx(t,slot,null,0,token);return true;
+      }
       if(action==="openPlugin"){
         if(mixerSession()?.authority==="CHANNEL_ID") {
           const current=controller?.state()?.current,id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
@@ -2327,6 +2348,11 @@
       return true;
     },
     consumeUndo() {if (!connected)return false;status("NATIVE: WIRE undo requires accepted native transaction");return true;},
+    moveFx(sourceId,slot,destId,position,token){
+      const all=[...(scope?.tracks||[]),scope?.master];
+      const source=all.find(t=>t?.id===sourceId),dest=all.find(t=>t?.id===destId);
+      return !!source&&!!dest&&editNativeFx(source,slot,dest,position,token);
+    },
     insertPlugin(id,target){
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
       const plugin=nativeCatalog.get(id);
@@ -2399,6 +2425,7 @@
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;
+  window.ArSonFxRackAuthority=Object.freeze({move:(...args)=>nativeHooks.moveFx(...args)});
   const descriptor = Object.freeze({
     source:"/preview/ approved compiled Pages GUI",
     pagesRoute:"/preview/",

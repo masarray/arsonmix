@@ -58,11 +58,13 @@ enum class ChannelEditFault : std::uint8_t {
 struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
-        setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput
+        setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
+        removeInsertReference, moveInsertReference
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
     std::size_t position=0;
+    std::size_t insertPosition=0; // final destination position after removal
     ChannelRole role=ChannelRole::input;
     ProcessingFormat format=ProcessingFormat::mono;
     float value=0.f;
@@ -242,6 +244,23 @@ public:
                         result.fault=ChannelEditFault::budgetExceeded;
                     else it->insertCatalogIds.push_back(op.text);
                     break;
+                case ChannelEdit::Kind::removeInsertReference:
+                case ChannelEdit::Kind::moveInsertReference: {
+                    auto& slots=it->insertCatalogIds;
+                    if(op.position>=slots.size()) {result.fault=ChannelEditFault::invalidPosition;break;}
+                    if(op.kind==ChannelEdit::Kind::removeInsertReference) {
+                        slots.erase(slots.begin()+op.position);break;
+                    }
+                    auto target=seek(op.target);
+                    if(target==candidate.end() || target->role==ChannelRole::monitor ||
+                       (target!=it && target->insertCatalogIds.size()>=budget_.maximumInsertSlotsPerChannel) ||
+                       op.insertPosition>target->insertCatalogIds.size()-(target==it?1:0)) {
+                        result.fault=ChannelEditFault::invalidPosition;break;
+                    }
+                    auto catalog=slots[op.position];slots.erase(slots.begin()+op.position);
+                    target->insertCatalogIds.insert(target->insertCatalogIds.begin()+op.insertPosition,std::move(catalog));
+                    break;
+                }
                 case ChannelEdit::Kind::addSendReference:
                     // OUT is a single unity, POST-fader serial route. Its
                     // pan/fader live on the source strip; only SEND may own

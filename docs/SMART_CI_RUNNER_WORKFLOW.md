@@ -1,5 +1,49 @@
 # Smart CI: fast feedback, deliberate expensive qualification
 
+## Mandatory start for a new ChatGPT / Codex thread
+
+1. Open [root AGENTS.md](../AGENTS.md) and this runbook from **current
+   `main`**. Inspect `.github/workflows/chat-ci-milestone.yml`,
+   `scripts/chat_ci_dispatch.mjs`, `ui-smoke.yml` and `p1-windows.yml`
+   before modifying CI.
+2. Query GitHub via the connected connector: live main SHA, active PRs and
+   current PR HEAD, latest commits/changed files, quick CI, manual milestone
+   runs and artifacts. Resume the **existing** integration milestone if it
+   covers the request; do not fork a second PCM/GUI authority or open a
+   redundant PR. A previous chat or a snapshot SHA is not source authority.
+3. Implement one significant, reviewable product increment with the smallest
+   safe diff and deterministic tests. Preserve the approved assembled
+   `/preview/`, native ACK/readback, realtime callback and VST3 state.
+   Frequent small pushes do **not** justify heavyweight runner jobs.
+4. The agent owns the GitHub workflow end to end **in the active chat**:
+   branch/commit or PR update, fast-failure investigation, selective exact-SHA
+   milestone PR comment, downstream job/artifact inspection, and merge when
+   evidence is sufficient. Do not ask the user to open GitHub Actions to
+   manually trigger a run. If connector permissions are missing, report it.
+5. Before finishing or handing off, record the real `main`/PR HEAD SHAs,
+   files changed, which checks passed, which expensive lane actually ran or
+   was skipped, whether the ZIP is still UNQUALIFIED, blockers and next
+   meaningful vertical milestone. **Never imply future background execution.**
+
+**Historical instructions:** `docs/workstreams/MULTI_AGENT_COORDINATION.md`
+was superseded by single-owner integration; old multi-agent admissions,
+required check names, four-lane handoffs and manual Actions instructions do
+not override this policy.
+
+## Cost-aware milestone decision table
+
+| Actual change / evidence required | ChatGPT decision |
+| --- | --- |
+| Docs, agent guidance, prose-only | No Windows/Chromium dispatch; inspect diff and links |
+| Normal in-progress PR commits | Only relevant fast Linux check; repair failures before expensive CI |
+| Visual GUI, CSS, responsive, WIRE mouse behavior | One `ui` request after quick checks; inspect browser evidence |
+| C++, VST3 host, DSP, device, ASIO, IPC/control | One `native` request after quick checks; inspect MSVC + CTest |
+| Physical hardware FAT requires an executable | One `fat` request; MSVC + CTest + verified unqualified ZIP |
+| Mixed GUI and native product milestone | `ui` plus either `native` or `fat`, only if needed and not already qualified |
+| Existing same-SHA success/running request | Reuse its result; do not post another dispatch comment |
+| Any relevant `main` promotion | Normal `main` safety CI / guarded Pages deployment, never skipped to save time |
+
+
 All development PRs use native GitHub path filters. This policy is part of the
 workflow files and does not rely on a multi-agent coordinator, duplicate
 Windows callers, or status-faking.
@@ -17,24 +61,17 @@ Windows callers, or status-faking.
 
 **Workflow:** Every relevant PR commit receives Linux fast contracts regardless
 of Draft/Ready. When the assistant reaches a meaningful milestone, it obtains
-the exact current PR HEAD and posts an owner-authorized `/arsonmix-ci` command
-through the GitHub connector. The dispatcher chooses only the necessary
+the exact current PR HEAD, confirms applicable fast checks and absence of
+a redundant same-SHA run, then posts one owner-authorized `/arsonmix-ci`
+command through the GitHub connector. The dispatcher chooses only the necessary
 Windows/Chromium lane and can package a verified **UNQUALIFIED** Windows FAT
 ZIP. The user never has to press **Run workflow**.
 
-Manual FAT uses the exact selected commit and is insulated from later PR
-synchronizations. The package is not a stable release and cannot substitute
+Connector-dispatched FAT uses the exact selected commit and is insulated from
+later PR synchronizations. The package is not a stable release and cannot substitute
 for physical audio-interface listening, ASIO timing or glitch measurements.
 Draft checks deliberately do not certify a release. A PR's latest commit must
 pass the applicable full checks before merge.
-
-Current product Chromium qualification always retains approved GUI provenance,
-CSS visual parity, live-control/WIRE/FX/meter/fader interaction and viewport
-checks. Archived V8–V27 CSS migrations compare historical source bytes and
-mount old fixtures; they run only with `historical_css: true` for explicit CSS
-maintenance. The normal connector `ui` lane leaves this option false, so an
-audio milestone never replaces the current console with an archival skin.
-All 28 historical test/mount/restore steps remain available independently.
 
 The runner economy comes from *not scheduling* paid Windows or Playwright
 during PR iteration, not from sleeps, fake success, silenced CTest, or
@@ -70,3 +107,56 @@ comments cannot supply arbitrary workflows or secrets.
 Older branches created before these `expected_sha` workflow inputs were
 introduced must first reconcile the new main CI workflow files. Manual Actions
 buttons remain an optional fallback only, not the user-facing process.
+
+## Execution and evidence protocol for agents
+
+The GitHub connector available to ChatGPT does not expose a direct
+`workflow_dispatch` call. Use its **add_comment_to_issue** action targeting
+the **PR number**, producing a top-level PR Conversation comment whose **entire
+body** is one valid command line above. Do not use an issue without a PR,
+an inline review comment, a markdown fenced command, a stale SHA, or an
+unauthenticated caller. GitHub's owner-only `issue_comment` dispatcher makes
+the actual Actions API dispatch. A comment by an agent identity that is not
+authenticated as the repository owner cannot pass the dispatcher. Check the
+connected GitHub login/permission first if uncertain.
+
+Read the latest PR HEAD **immediately** before sending. Verify fast UI/native
+contracts from that HEAD, and look for an earlier owner comment and same-SHA
+`workflow_dispatch` run. If already requested, inspect/reuse; do not spam a
+second command. If the fast check fails, fix the underlying regression and
+push a new revision first. This applies even if the user explicitly wants a
+quick milestone: do not consume expensive runners on a known broken source.
+
+Watch the `ChatGPT CI Milestone Dispatcher` result. A successful dispatcher
+means only **dispatch accepted**, not that Windows/Chromium was successful.
+Follow its downstream run to terminal conclusion and inspect failing steps and
+logs; collect artifact ID + build provenance for a successful `fat` run.
+Differentiate missing artifact, pending, failed and verified-but-unqualified.
+If a later commit moves PR HEAD, never present the previous ZIP as validation
+of the new commit. Only the latest correct SHA may be claimed as qualified.
+
+For a docs/instructions-only PR like this policy handoff, GitHub file path
+filters intentionally do not allocate costly runners; review the diff and
+check that no workflow/runtime files were changed. Merge documentation PRs
+only after branch/main state is reconciled; preserve unrelated active product
+PRs. A successful PR documentation merge does not prove physical audio, VST3
+or hardware reliability.
+
+### New-thread completion format
+
+```text
+Repository: masarray/arsonmix
+Current main: <SHA>
+Product PR / branch / exact HEAD: <PR, branch, SHA; or none>
+Meaningful work performed: <files + behavior, not number of microcommits>
+Fast checks: <run links + success/failure, or not applicable for docs-only>
+Milestone lane: <ui | native | fat | none> / reason / dispatcher + run URLs
+Windows ZIP: <artifact and provenance OR no artifact / FAT PENDING>
+Physical audio FAT: <verified on equipment OR PENDING>
+Unresolved risk and next significant milestone: <specific>
+```
+
+
+## Historical CSS migrations
+
+Full current-product UI qualification keeps archived V8–V27 migration tests disabled unless `historical_css: true` is explicitly requested. Current approved GUI, native interaction, browser and provenance checks remain mandatory.

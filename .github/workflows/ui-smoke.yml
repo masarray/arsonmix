@@ -175,6 +175,8 @@ jobs:
         run: python tests/approved_preview_mobile_navigation_smoke.py
       - name: FX rack master bypass preserves each insert state (real Chromium)
         run: python tests/approved_fx_rack_master_power_smoke.py
+      - name: Native FX pointer transfer, delete and editor identity
+        run: python tests/approved_native_fx_edit_smoke.py
       - name: Cold start first WIRE and original-channel VST3 picker editor
         run: python tests/approved_native_cold_start_smoke.py
       - name: Native WIRE gain and OUT share accepted PCM identity (real Chromium)
@@ -464,5 +466,6 @@ jobs:
             pages-mobile-*.png
             native-wire-gain-*.png
             native-cold-start-*.png
+            native-fx-edit-*.png
           if-no-files-found: ignore
           retention-days: 3

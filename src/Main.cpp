@@ -281,7 +281,7 @@ private:
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
     // retained vendor processor lease. No vendor destructor runs on RT.
     armix::mixer::LiveChannelFxGraph::InstanceLease routedEditorOwner_;
-    juce::int64 routedEditorEpoch_=0;
+    std::uint64_t routedEditorEpoch_=0;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -2201,22 +2201,25 @@ private:
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
                 armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+                std::uint64_t retainedEpoch=epoch;
                 const auto nativeId=args.getProperty("channelId",{});
                 if(!nativeId.isVoid()) {
                     std::uint64_t id=0,ep=0,rev=0;
                     if(armix::console::approvedNativeId(nativeId,id)&&
                        armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)&&
                        armix::console::approvedNativeId(args.getProperty("revision",{}),rev)&&
-                       slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane)
+                       slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane) {
                         owner=engine_.leaseNativeVst3Editor(ep,rev,
                             armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),token);
+                        retainedEpoch=ep;
+                    }
                 } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
                     try {
+                        closePluginEditor();
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {
-                            closePluginEditor();
                             routedEditorOwner_=owner;
-                            routedEditorEpoch_=static_cast<juce::int64>(epoch);
+                            routedEditorEpoch_=retainedEpoch;
                             editorWindow_=std::make_unique<PluginEditorWindow>(
                                 owner->processor->getName(),editor);
                             opened=true;
@@ -3084,7 +3087,7 @@ private:
     {
         // Save device state only after a real change, not on every 3-second tick.
         deviceSettingsDirty_ = true;
-        if(routedEditorOwner_)closePluginEditor();
+        // The retention gate closes only on an actual epoch/owner change.
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
     }
 
@@ -3266,25 +3269,9 @@ private:
             crackleEvidence_.push (makeEvidenceSample (state));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
         }
-        if(routedEditorOwner_) {
-            // Unplug/reopen may bypass normal GUI actions. Never keep a
-            // vendor editor on an invalid device epoch or removed instance.
-            const auto route=state.getProperty("dryRoutingLab",{});
-            bool retained=false;
-            if(static_cast<bool>(route.getProperty("ready",false)) &&
-               static_cast<juce::int64>(route.getProperty("epoch",juce::var(0)))
-                   ==routedEditorEpoch_) {
-                const auto rows=route.getProperty("fxInstances",juce::var());
-                if(const auto* lanes=rows.getArray())
-                    for(const auto& lane:*lanes)
-                        if(const auto* slots=lane.getArray())
-                            for(const auto& slot:*slots)
-                                if(slot.getProperty("instanceId",{}).toString()
-                                      ==routedEditorOwner_->instanceId)
-                                    retained=true;
-            }
-            if(!retained)closePluginEditor();
-        }
+        if(routedEditorOwner_ &&
+           !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
+            closePluginEditor();
         annotateRecovery (state);
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));

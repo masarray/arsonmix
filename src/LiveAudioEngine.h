@@ -1531,6 +1531,21 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
+    LiveDryRoutingLab::NativeBusResult editNativeFxRack(std::uint64_t ep,
+            std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
+            std::size_t slot,const juce::String& token,armix::mixer::ChannelId target,std::size_t position) {
+        LiveDryRoutingLab::NativeBusResult fail;fail.error="NATIVE_FX_RACK_HOST_BUSY";
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute_.load(std::memory_order_acquire)!=armix::diagnostics::Route::normal)
+            return fail;
+        return dryRoutingLab_.editNativeFxRack(ep,revision,roster,source,slot,token,target,position);
+    }
+    bool retainsRoutedFxEditor(std::uint64_t epoch,
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& owner) const noexcept {
+        return dryRoutingLab_.retainsFxEditor(epoch,owner);
+    }
     bool bypassNativeVst3(std::uint64_t epoch,std::uint64_t revision,
             armix::mixer::ChannelId id,std::size_t slot,
             const juce::String& token,bool bypass) noexcept {

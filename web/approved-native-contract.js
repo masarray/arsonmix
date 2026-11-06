@@ -132,6 +132,17 @@
         ch.inserts[payload.slot].id.length>0 &&
         !ch.inserts.slice(0,payload.slot).some(insert=>
           insert.id===ch.inserts[payload.slot].id);
+    if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
+      const expected=pending.fxExpected;
+      if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
+         cmp(next.graph.rosterRevision,pending.baseRosterRevision)<=0)return false;
+      const ids=id=>(next.graph.channels.find(c=>c.id===id)?.inserts||[]).map(x=>x.id);
+      const equal=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
+      if(!equal(ids(targetChannelId),expected.source))return false;
+      if(expected.to&&!equal(ids(expected.to),expected.destination))return false;
+      const copies=next.graph.channels.reduce((n,c)=>n+c.inserts.filter(x=>x.id===payload.instanceId).length,0);
+      return copies===(operation==="REMOVE_INSERT"?0:1);
+    }
     if (operation === "SET_WIRE_GAIN") {
       const before=pending.wireIdentity;
       const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
@@ -321,6 +332,25 @@
         lastError="UNKNOWN_CHANNEL_ID";notify();return {ok:false,error:lastError};
       }
       if (!object(payload)) {lastError="INVALID_PAYLOAD";notify();return {ok:false,error:lastError};}
+      let fxExpected=null;
+      if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
+        const source=current.graph.channels.find(c=>c.id===targetChannelId);
+        const slot=payload.slot,token=payload.instanceId;
+        if(!Number.isInteger(slot)||slot<0||source?.inserts?.[slot]?.id!==token)
+          return {ok:false,error:"STALE_FX_INSTANCE"};
+        const ids=source.inserts.map(x=>x.id);ids.splice(slot,1);
+        fxExpected={source:ids};
+        if(operation==="MOVE_INSERT") {
+          const dest=current.graph.channels.find(c=>c.id===payload.toChannelId),pos=payload.toSlot;
+          const same=dest?.id===targetChannelId;
+          const list=same?ids:dest?.inserts?.map(x=>x.id);
+          if(!dest||!["INPUT","GROUP","FX_RETURN","MAIN"].includes(dest.role)||
+             !list||list.length>=8||!Number.isInteger(pos)||pos<0||pos>list.length)
+            return {ok:false,error:"INVALID_FX_DESTINATION"};
+          list.splice(pos,0,token);
+          if(!same){fxExpected.to=dest.id;fxExpected.destination=list;}
+        }
+      }
       let wireIdentity=null;
       if(operation==="SET_WIRE_GAIN") {
         const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
@@ -335,7 +365,7 @@
         baseGraphRevision:current.graph.revision,
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
-      pending={requestId,operation,targetChannelId,payload,wireIdentity,
+      pending={requestId,operation,targetChannelId,payload,wireIdentity,fxExpected,
         originalPrimaryOutId:current.graph.channels.find(
           ch=>ch.id===targetChannelId)?.primaryOutId||null,
         deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,

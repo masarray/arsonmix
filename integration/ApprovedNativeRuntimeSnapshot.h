@@ -286,6 +286,8 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("SET_WIRE_GAIN"));
     if(has("NATIVE_SET_PROCESSING_FORMAT"))
         available.add(juce::String("SET_PROCESSING_FORMAT"));
+    if(has("NATIVE_REMOVE_INSERT"))available.add(juce::String("REMOVE_INSERT"));
+    if(has("NATIVE_MOVE_INSERT"))available.add(juce::String("MOVE_INSERT"));
     if(has("NATIVE_LOAD_INSERT"))
         available.add(juce::String("LOAD_INSERT"));
     if(has("NATIVE_CREATE_GROUP_SELECTED"))

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
@@ -37,10 +38,10 @@ void operator delete(void* p,std::size_t) noexcept {std::free(p);}
 class GainFx final : public juce::AudioProcessor {
 public:
     static inline int living=0, prepared=0, released=0;
-    explicit GainFx(float gain,int delay=0)
+    explicit GainFx(float gain,int delay=0,float offset=0)
       : AudioProcessor(BusesProperties()
         .withInput("Main",juce::AudioChannelSet::stereo(),true)
-        .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),delaySamples_(delay){++living;setLatencySamples(delay);}
+        .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),offset_(offset),delaySamples_(delay){++living;setLatencySamples(delay);}
     ~GainFx() override{--living;}
     const juce::String getName()const override{return "In-memory gain effect";}
     void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
@@ -48,7 +49,7 @@ public:
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
         for(int c=0;c<buffer.getNumChannels();++c)
             for(int f=0;f<buffer.getNumSamples();++f)
-                buffer.getWritePointer(c)[f]*=gain_;
+                buffer.getWritePointer(c)[f]=buffer.getWritePointer(c)[f]*gain_+offset_;
         for(int f=0;f<buffer.getNumSamples();++f){
             float& l=buffer.getWritePointer(0)[f];float& r=buffer.getWritePointer(1)[f];
             delay_.process(l,r);
@@ -72,7 +73,7 @@ public:
             std::memcpy(&gain_,data,sizeof(gain_));
     }
 private:
-    float gain_;
+    float gain_,offset_=0;
     int delaySamples_=0;
     armix::dsp::StereoLatencyDelay delay_;
 };
@@ -1912,6 +1913,61 @@ static void verifyLatencyAlignedBypass() {
         for(int i=0;i<64;++i)assert(near(l[i],i==7?1.f:0.f));
     }
 }
+static void verifyNativeFxRackTransactions() {
+    DynamicChannelRoster roster;
+    std::vector<ChannelEdit> add;
+    for(int i=0;i<3;++i){ChannelEdit e;e.kind=ChannelEdit::Kind::add;e.position=i;
+        e.role=i==2?ChannelRole::main:ChannelRole::input;e.format=ProcessingFormat::stereo;e.text="channel";add.push_back(e);}
+    const auto created=roster.edit(0,add);assert(created.ok());
+    const auto source=created.createdIds[0],dest=created.createdIds[1],main=created.createdIds[2];
+    std::vector<ChannelEdit> refs;
+    for(auto label:{"gain","offset"}){ChannelEdit e;e.kind=ChannelEdit::Kind::addInsertReference;e.id=source;e.text=label;refs.push_back(e);}
+    for(auto id:{source,dest}){ChannelEdit e;e.kind=ChannelEdit::Kind::setPrimaryOutput;e.id=id;e.target=main;refs.push_back(e);}
+    assert(roster.edit(1,refs).ok());
+    auto gain=std::make_unique<GainFx>(2.f);gain->prepareToPlay(48000,64);
+    auto offset=std::make_unique<GainFx>(1.f,0,1.f);offset->prepareToPlay(48000,64);
+    auto a=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(gain),"gain","gain",64);
+    auto b=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(offset),"offset","offset",64);
+    DynamicChannelFxLeaseBank::Assignment binding;binding.id=source;binding.inserts={a,b};
+    DynamicChannelFxLeaseBank initial;
+    assert(DynamicChannelFxLeaseBank::prepare(11,1,std::span(&binding,1),initial)==DynamicChannelFxLeaseBank::Fault::none);
+    auto bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(initial));
+    DynamicNativeSessionPublisher publisher;DynamicGraphRequest request;
+    request.physicalInputs=4;request.maxFrames=64;request.sources={{source,0,1,true},{dest,2,3,true}};
+    std::uint64_t revision=0;
+    const auto publish=[&](){
+        DynamicNativeSessionPublisher::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=11;fx.graphRevision=revision+1;
+        fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);};
+        fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);};
+        assert(publisher.commit(roster,request,revision,11,11,false,fx,false,true).ok());++revision;
+    };
+    const auto samples=[&](float expected){
+        std::array<float,64> input{},other{},l{},r{};input.fill(.25f);other.fill(.1f);
+        const float* pins[]{input.data(),input.data(),other.data(),other.data()};const auto count=heapCalls.load();
+        assert(publisher.render(11,pins,4,l.data(),r.data(),64,false,[](ChannelId,float*,float*,int) noexcept{}));
+        assert(heapCalls.load()==count);for(int i=0;i<64;++i)assert(near(l[i],expected)&&near(l[i],r[i]));
+    };
+    publish();samples(1.6f);const int prepares=GainFx::prepared;
+    const auto edit=[&](ChannelId from,std::size_t slot,const juce::String& token,ChannelId to,std::size_t pos){
+        DynamicChannelRoster next;DynamicChannelFxLeaseBank owners;
+        assert(prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,from,slot,token,to,pos,next,owners));
+        roster=std::move(next);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(owners));publish();
+        assert(GainFx::prepared==prepares); // no scan, instantiation or prepare/reset
+    };
+    DynamicChannelRoster rejected;DynamicChannelFxLeaseBank rejectedBank;
+    assert(!prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,source,0,"wrong",dest,0,rejected,rejectedBank));
+    assert(!prepareNativeFxRackEdit(12,revision,roster.revision(),roster,*bank,source,0,a->instanceId,dest,0,rejected,rejectedBank));
+    assert(!prepareNativeFxRackEdit(11,revision,roster.revision()-1,roster,*bank,source,0,a->instanceId,dest,0,rejected,rejectedBank));
+    assert(!prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,source,0,a->instanceId,dest,9,rejected,rejectedBank));
+    samples(1.6f);
+    edit(source,0,a->instanceId,source,1);samples(2.6f);assert(bank->retainsEditor(a));
+    edit(source,1,a->instanceId,dest,0);samples(1.45f);
+    assert(bank->retainsEditor(a)&&(*bank->ownerForControl(dest,0)).get()==a.get());
+    assert(roster.find(source)->insertCatalogIds==std::vector<std::string>{"offset"});
+    assert(roster.find(dest)->insertCatalogIds==std::vector<std::string>{"gain"});
+    edit(source,0,b->instanceId,{},0);samples(.45f);assert(!bank->retainsEditor(b));
+    edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
+}
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2324,6 +2380,7 @@ int main(int argc,char** argv) {
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
     verifyLatencyAlignedBypass();
+    verifyNativeFxRackTransactions();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

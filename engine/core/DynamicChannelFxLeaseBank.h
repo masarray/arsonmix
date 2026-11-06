@@ -55,7 +55,7 @@ public:
     enum class Fault : std::uint8_t {
         none,invalidEpoch,emptyId,duplicateChannel,tooManyInserts,
         emptyLease,duplicateInstance,invalidBusLayout,uncompensatedLatency,
-        missingLegacyIdentity,invalidExternalLease
+        missingLegacyIdentity,invalidExternalLease,invalidInsertPosition,staleInstance
     };
     DynamicChannelFxLeaseBank()=default;
     DynamicChannelFxLeaseBank(const DynamicChannelFxLeaseBank&)=delete;
@@ -217,6 +217,44 @@ public:
     }
 
     // CONTROL only: rebind all current vendor leases to a new graph revision.
+    bool retainsEditor(const Lease& owner) const noexcept {
+        if(!owner)return false;
+        for(const auto& row:rows_)
+            for(std::size_t i=0;i<row.count;++i)
+                if(row.raw[i]==owner.get())return true;
+        return false;
+    }
+    // CONTROL only. A zero destination deletes; otherwise MOVE transfers the
+    // exact processor/state/bypass/editor lease, never clones or re-instantiates.
+    static Fault editOwned(std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId source,std::size_t slot,
+            const juce::String& token,ChannelId target,std::size_t position,
+            ProcessingFormat targetFormat,DynamicChannelFxLeaseBank& destination) {
+        if(!epoch||epoch!=prior.epoch_||revision<=prior.revision_)return Fault::invalidEpoch;
+        if(prior.external_.id==source || (target.value&&prior.external_.id==target))
+            return Fault::invalidExternalLease;
+        const auto* lease=prior.ownerForControl(source,slot);
+        if(!lease||!*lease||(*lease)->instanceId!=token)return Fault::staleInstance;
+        std::vector<Assignment> list;
+        for(const auto& row:prior.rows_) {
+            Assignment a;a.id=row.id;a.format=row.format;a.rackBypassed=row.rackBypassed;
+            for(std::size_t i=0;i<row.count;++i)
+                if(row.id!=source||i!=slot)a.inserts.push_back(row.owners[i]);
+            list.push_back(std::move(a));
+        }
+        if(target.value) {
+            auto found=std::find_if(list.begin(),list.end(),[&](const auto& a){return a.id==target;});
+            if(found==list.end()) {
+                Assignment a;a.id=target;a.format=targetFormat;
+                list.push_back(std::move(a));found=list.end()-1;
+            }
+            if(position>found->inserts.size()||found->inserts.size()>=maxInserts)
+                return Fault::invalidInsertPosition;
+            found->inserts.insert(found->inserts.begin()+position,*lease);
+        }
+        return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
     // The same FxInstance keeps editor/state/tail and the audio callback only
     // sees raw prepared pointers. No new plugin or audio pipeline is created.
     static Fault reuseRevision(std::uint64_t epoch,std::uint64_t revision,
