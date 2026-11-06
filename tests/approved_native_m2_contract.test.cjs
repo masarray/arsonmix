@@ -687,3 +687,6 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(engine,/juce::String switchDryRoutingLabSource\(/);
  assert.match(engine,/setOutputMuted\(true\)/);
 });
+
+// Held-pointer native fader regression runs within existing Windows / Chromium test gates.
+require("./live_fader_held_drag.test.cjs");
