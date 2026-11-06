@@ -23,9 +23,10 @@ assert.ok(publisher.includes('if(fx.builtInEq) {') &&
           publisher.indexOf('if(fx.builtInEq) {') <
           publisher.indexOf('else if(prior && prior->builtInEq)'),
  'Show V5 supplied EQ must win over a prior native ChannelId graph');
-assert.ok(main.includes('if(!got)continue;') &&
+assert.ok(main.includes('if(sameSession&&!got)continue;') &&
+          main.includes('currentRevision==pending.revision') &&
           !main.includes('now-pending.started<4000u'),
- 'Never report false EQ rejection while a muted callback has not ACKed');
+ 'Never report a false timeout; invalidate outstanding EQ only on structural session loss');
 assert.ok(main.includes('captureAcceptedEq(')&&
           main.includes('acceptedEqFromShow(')&&
           main.includes('unsettledBuiltInEq()')&&

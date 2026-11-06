@@ -461,15 +461,22 @@ private:
         for(int lane=0;lane<14;++lane) {
             auto& pending=eqPending_[static_cast<std::size_t>(lane)];
             if(!pending.active)continue;
+            // A graph rebuild or device reconnect invalidates the old EQ
+            // authority. Such a command cannot be ACKed by the new graph:
+            // the bank rejects its old revision at the next callback. Do
+            // not let it indefinitely block Show SAVE/RECALL.
+            int currentLane=-1;
+            std::uint64_t currentEpoch=0,currentRevision=0;
+            const bool sameSession=engine_.builtInEqIdentity(
+                pending.channel,currentLane,currentEpoch,currentRevision) &&
+                currentLane==lane && currentEpoch==pending.epoch &&
+                currentRevision==pending.revision;
             LiveAudioEngine::BuiltInEqAck ack{};
-            const bool got=engine_.pollBuiltInEqAck(lane,pending.epoch,
-                                                    pending.revision,ack);
-            // Physical output may be muted and no EQ render/ACK occurs.
-            // A wall-clock timeout is NOT cancellation: the SPSC command
-            // remains queued and could apply when output resumes. Retain
-            // ownership until an actual AUDIO ACK, or explicit graph/epoch
-            // teardown, instead of announcing a false REJECTED state.
-            if(!got)continue;
+            const bool got=sameSession &&
+                engine_.pollBuiltInEqAck(lane,pending.epoch,pending.revision,ack);
+            // No audio callback while muted is NOT a rejected command.
+            // Only real AUDIO ACK or invalidated graph authority settles it.
+            if(sameSession&&!got)continue;
             const bool ok=got&&ack.applied&&ack.requestId==pending.request &&
                            ack.lane==lane&&
                            ((pending.slot<0&&ack.gate)||
