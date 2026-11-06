@@ -58,7 +58,8 @@
  head.addEventListener('pointercancel',stopDrag);
  const ctx=canvas.getContext('2d',{alpha:false});
  let current=null,channelId=null,epoch=null,revision=null,bands=empty(),slot=2,sampleRate=48000;
- let pending=null,waitingAck=false,snapshotReady=false,reqSeq=1,activeGesture=null,demonstration=true;
+ let pending=null,waitingAck=false,snapshotReady=false,reqSeq=1,activeGesture=null,
+     demonstration=!Boolean(window.__JUCE__?.backend); // native readback works even before editor opened
  const nativeBackend=()=>window.__JUCE__?.backend;
  const nativeRoute=()=>window.__ARMIX_BUILTIN_EQ_CHANNEL__;
  const demoStates=new Map(),nativeStates=new Map();
@@ -282,6 +283,7 @@
    if(current?.id===track.id)bands=demoStates.get(track.id).bands.map(b=>({...b}));
    setStatus('DESIGN DEMO · NO AUDIO SIGNAL','warn');refresh(track);render();return true;
   }
+  demonstration=false;
   const id=nativeRoute()?.resolve?.(track.id),n=nativeRoute()?.state?.();
   if(!id||!n?.admitted||!n?.device?.epoch||!n?.graph?.revision)return false;
   if(current?.id!==track.id&&isOpen())root.hidden=true;
