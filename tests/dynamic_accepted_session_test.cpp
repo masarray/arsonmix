@@ -235,7 +235,7 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
         w.from=from;w.edgeId=id;return w;
     };
     const std::array<WireChange,3> initial{
-        connect(one,main),connect(two,main),connect(three,main)
+        routeOnly(one,main),routeOnly(two,main),routeOnly(three,main)
     };
     a=session.wireTransaction(1,1,initial,physical,epoch,epoch,true);
     assert(a.ok()&&a.graphRevision==2&&a.edit.createdEdgeIds.size()==3);
@@ -653,7 +653,78 @@ static void verifyOriginalAndAddedInputsShareNativePcmControls() {
     pcm.pollRetirement();
 }
 
+// Real sample-block regression for DAW semantics: SOURCE ONLY retains its
+// physical input, independent CONNECT to MAIN is a parallel SEND, and the
+// subsequent explicit ROUTE_ONLY promotes that exact edge to primary.
+static void verifySourceOnlyParallelMainVsExclusivePrimaryPcm() {
+    constexpr std::uint64_t ep=99221;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest io;io.physicalInputs=1;io.maxFrames=64;
+    const std::array<ChannelEdit,2> create{
+        add(0,ChannelRole::input,"VOCAL"),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto state=pcm.edit(0,0,create,io,ep,ep,true);
+    assert(state.ok()&&state.edit.createdIds.size()==2);
+    const auto vocal=state.edit.createdIds[0],main=state.edit.createdIds[1];
+    io.sources={{vocal,0,-1,false}};
+    WireChange primary;primary.kind=WireChange::Kind::routeOnly;
+    primary.from=vocal;primary.to=main;primary.gain=1.f;
+    const std::array<WireChange,1> toMain{primary};
+    state=pcm.wireTransaction(1,1,toMain,io,ep,ep,true);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==2);
+    const auto* first=pcm.acceptedRouting(ep,2);
+    assert(first&&first->edges.size()==1);
+    const auto primaryEdge=first->edges[0].edgeId;
+    std::array<float,64> impulse{},l{},r{};
+    impulse[9]=.25f;
+    const float* pins[]{impulse.data()};
+    const auto render=[&]{
+        return pcm.render(ep,pins,1,l.data(),r.data(),64,false,
+            +[](ChannelId,float*,float*,int) noexcept {});
+    };
+    assert(render()&&near(l[9],.25f*center)&&near(r[9],.25f*center));
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;
+    unplug.from=vocal;unplug.edgeId=primaryEdge;
+    const std::array<WireChange,1> remove{unplug};
+    state=pcm.wireTransaction(2,2,remove,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==3);
+    assert(pcm.acceptedRouting(ep,3)->find(vocal)->primaryOutput.value==0);
+    assert(render()&&near(l[9],0.f)&&near(r[9],0.f));
+    // No source deletion: physical impulse remains available after unplug.
+    WireChange parallel;parallel.kind=WireChange::Kind::connect;
+    parallel.from=vocal;parallel.to=main;parallel.gain=.4f;
+    const std::array<WireChange,1> sendToMain{parallel};
+    state=pcm.wireTransaction(3,3,sendToMain,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==4);
+    const auto* withSend=pcm.acceptedRouting(ep,4);
+    assert(withSend&&withSend->find(vocal)->primaryOutput.value==0);
+    assert(withSend->find(vocal)->parallelSends.size()==1);
+    assert(withSend->edges.size()==1&&!withSend->edges[0].primaryOutput);
+    const auto parallelEdge=withSend->edges[0].edgeId;
+    assert(render()&&near(l[9],.25f*.4f*center)&&
+           near(r[9],.25f*.4f*center));
+    // Exclusive routing promotes existing EdgeId; no double dry mix.
+    state=pcm.wireTransaction(4,4,toMain,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==5);
+    const auto* exclusive=pcm.acceptedRouting(ep,5);
+    assert(exclusive&&exclusive->edges.size()==1);
+    assert(exclusive->edges[0].edgeId==parallelEdge);
+    assert(exclusive->edges[0].primaryOutput);
+    assert(exclusive->find(vocal)->parallelSends.empty());
+    assert(exclusive->find(vocal)->primaryOutput==main);
+    assert(render()&&near(l[9],.25f*center)&&near(r[9],.25f*center));
+    // A stale EdgeId must never disconnect the promoted primary.
+    const std::array<WireChange,1> staleRemove{unplug};
+    const auto rejected=pcm.wireTransaction(5,5,staleRemove,io,ep,ep,false);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(pcm.acceptedGraphRevision()==5);
+    assert(render()&&near(l[9],.25f*center));
+}
+
 int main() {
+    verifySourceOnlyParallelMainVsExclusivePrimaryPcm();
     verifyHeldDragIntermediatePcmOnOriginalChannels();
     verifyOriginalAndAddedInputsShareNativePcmControls();
     verifyPrimaryOutKeepsCanonicalEdgeIdentity();

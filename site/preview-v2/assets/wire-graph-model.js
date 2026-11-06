@@ -37,8 +37,11 @@
    const key=edgeKey(e);
    if(unique.has(key))return {ok:false,error:'DUPLICATE_ROUTE'};
    unique.add(key);
+   // MAIN accepts one unity-gain primary and, independently, an explicit
+   // post-fader parallel SEND. An unrequested duplicate edge stays invalid.
    if(e.destId===mainId&&
-      (e.mode!=='postFader'||e.kind!=='primary'||e.levelDb!==0))
+      !((e.kind==='primary'&&e.mode==='postFader'&&e.levelDb===0)||
+        (e.kind==='send'&&e.mode==='send')))
     return {ok:false,error:'INVALID_MAIN_TAP'};
    if(e.kind==='primary'&&e.destId!==mainId&&e.mode!=='routeOnly')
     return {ok:false,error:'INVALID_PRIMARY_TAP'};
@@ -97,10 +100,11 @@
      if(edges.some(e=>e.sourceId===sourceId&&e.destId===op.destId))
       return {ok:false,error:'DUPLICATE_ROUTE'};
      const isMain=op.destId===mainId;
+     const isParallelMain=isMain&&op.mode==='send';
      const isSplit=op.mode==='splitPre'||op.mode==='splitPost';
-     const mode=isMain?'postFader':isSplit?op.mode:op.mode==='split'?'split':'send';
+     const mode=isMain&&!isParallelMain?'postFader':isSplit?op.mode:op.mode==='split'?'split':'send';
      edges.push({id:nextId++,sourceId,destId:op.destId,enabled:true,
-      kind:isMain?'primary':isSplit?'split':'send',mode,levelDb:0});
+      kind:isMain&&!isParallelMain?'primary':isSplit?'split':'send',mode,levelDb:0});
     }
    }else if(op.type==='REMOVE'||op.type==='RETARGET'||op.type==='GAIN'||op.type==='MODE'){
     index=edges.findIndex(e=>e.id===op.edgeId&&e.sourceId===sourceId);

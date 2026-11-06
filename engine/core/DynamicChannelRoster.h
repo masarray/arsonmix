@@ -419,10 +419,11 @@ public:
             if(sends.size()>=budget_.maximumSendsPerChannel){
                 result.fault=ChannelEditFault::budgetExceeded;break;
             }
-            const bool hasPrimary=std::any_of(sends.begin(),sends.end(),
-                [](const auto& s){return s.primaryOutput;});
-            const bool primary=!hasPrimary &&
-                (op.to==mainId || op.kind==WireChange::Kind::routeOnly);
+            // CONNECT means a deliberate parallel POST-fader send, even to
+            // MAIN and even when primary OUT is NONE. Only ROUTE_ONLY may
+            // establish a primary. This prevents silent promotion of a send
+            // into an exclusive route and preserves SOURCE ONLY readback.
+            const bool primary=op.kind==WireChange::Kind::routeOnly;
             sends.push_back({op.to,op.gain,false,0.f,primary,0});
         }
         if(result.ok()){

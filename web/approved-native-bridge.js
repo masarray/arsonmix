@@ -121,7 +121,7 @@
       const isPrimary=source?.primaryOutId===edge.to;
       // An independent SEND to MAIN is not the source's primary OUT.
       const kind=isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
-      const mode=isMain?"postFader":kind==="primary"?"routeOnly":
+      const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
         kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
       if (isPrimary && edge.gainLinear!==1) return false;
       const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
@@ -1950,7 +1950,12 @@
         const op=ops[0];
         const t=scope?.tracks?.find(x=>x.id===op.sourceId);
         const sourceId=t?nativeByUiId.get(t.id):null;
-        const isMainConnect=(op.type==="CONNECT"||op.type==="ROUTE_ONLY") &&
+        // Ordinary MAIN jack is a primary ROUTE_ONLY. An explicitly selected
+        // send mode must pass through native CONNECT instead, preserving the
+        // old primary BUS (or the absence of a primary in SOURCE ONLY).
+        const isMainConnect=(op.type==="ROUTE_ONLY" ||
+          (op.type==="CONNECT" && (!op.mode ||
+            op.mode==="postFader" || op.mode==="routeOnly"))) &&
           op.destId===scope?.master?.id;
         // WIRE gesture carries a UI edge id. wireByUiId is UI→native;
         // uiByWireId is the inverse. The old inverse lookup always returned
