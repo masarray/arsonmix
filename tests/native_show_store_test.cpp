@@ -32,6 +32,11 @@ int main() {
  snap.createdMs=show.createdMs;snap.modifiedMs=show.modifiedMs;
  snap.strips[0].source=2;
  snap.strips[0].inputA=2;snap.strips[0].inputB=5;
+ snap.strips[0].eq.installed=true;
+ snap.strips[0].eq.bands[2].enabled=true;
+ snap.strips[0].eq.bands[2].frequencyHz=1000.f;
+ snap.strips[0].eq.bands[2].gainDb=6.f;
+ snap.strips[0].eq.bands[2].q=.9f;
  BinaryState blob;
  const char bytes[]={'a','r','m','i','x',0,1,2,'\0'};
  blob.bytes.append(bytes,sizeof(bytes));
@@ -43,6 +48,10 @@ int main() {
  auxBlob.bytes.append(auxBytes,sizeof(auxBytes));
  auxBlob.sha256=juce::SHA256(auxBlob.bytes).toHexString();
  snap.aux[0].enabled=true;snap.aux[0].gain=0.6;
+ snap.aux[0].eq.installed=true;snap.aux[0].eq.bypassed=true;
+ snap.aux[0].eq.bands[0].enabled=true;
+ snap.aux[0].eq.bands[0].frequencyHz=120.f;
+ snap.aux[0].eq.bands[0].slope=armix::builtin_fx::Slope::db24;
  snap.aux[0].fx.push_back({"AuxReverb|202",202,auxBlob.sha256,false});
  snap.auxSends.push_back({0,0,true,0.35,0.0});
  std::vector<SnapshotV2> snapshots={snap};
@@ -58,6 +67,13 @@ int main() {
  assert(loaded.channelSafes[3]);
  assert(retrieved.size()==1 && retrieved[0].strips[0].inputB==5);
  assert(retrieved[0].strips[0].fx[0].stateSha256==blob.sha256);
+ assert(retrieved[0].strips[0].eq.installed&&
+        retrieved[0].strips[0].eq.bands[2].enabled&&
+        retrieved[0].strips[0].eq.bands[2].gainDb==6.f);
+ assert(retrieved[0].aux[0].eq.installed&&retrieved[0].aux[0].eq.bypassed&&
+        retrieved[0].aux[0].eq.bands[0].frequencyHz==120.f&&
+        retrieved[0].aux[0].eq.bands[0].slope==
+          armix::builtin_fx::Slope::db24);
  // G5E2: the same immutable generation must deliver the exact vendor
  // binary bytes to the CONTROL thread before any candidate graph exists.
  ShowV2 fxShow;std::vector<SnapshotV2> fxSnaps;
