@@ -293,6 +293,69 @@ struct NativeWireProbe : NativeControlProbe {
         return {true,""};
     }
 };
+// Processing-width intent is an admitted ChannelId operation, not the M4
+// channel ordinal. Probe tests exact 64-bit IDs without claiming hardware.
+struct NativeFormatProbe : NativeControlProbe {
+    std::uint64_t epoch=0,revision=0,rosterRevision=0,id=0;
+    armix::mixer::ProcessingFormat width=armix::mixer::ProcessingFormat::mono;
+    struct Result {bool accepted=false;const char* error="REJECTED";};
+    Result editNativeProcessingFormat(std::uint64_t ep,std::uint64_t rev,
+        std::uint64_t roster,armix::mixer::ChannelId target,
+        armix::mixer::ProcessingFormat next) {
+        epoch=ep;revision=rev;rosterRevision=roster;
+        id=target.value;width=next;
+        return {true,""};
+    }
+};
+static void approvedNativeMstTranslationRegression() {
+    auto installed=realBusReadbackFixture();
+    juce::Array<juce::var> nativeOps;
+    nativeOps.add("NATIVE_SET_PROCESSING_FORMAT");
+    installed.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto accepted=canonicalSnapshot();
+    assert(projectApprovedNativeV8(accepted,installed,true));
+    juce::Array<juce::var> publicOps;
+    publicOps.add("SET_PROCESSING_FORMAT");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("format","STEREO");
+    auto command=std::make_unique<juce::DynamicObject>();
+    command->setProperty("requestId","native-mst-test-1");
+    command->setProperty("deviceEpoch","91");
+    command->setProperty("baseGraphRevision","25");
+    command->setProperty("baseRosterRevision","9");
+    command->setProperty("targetChannelId","9007199254740993");
+    command->setProperty("operation","SET_PROCESSING_FORMAT");
+    command->setProperty("payload",juce::var(payload.release()));
+    auto intent=juce::var(command.release());
+    const auto result=translateApprovedNativeControl(intent,accepted,installed);
+    assert(result.ok());
+    assert(result.translated.getProperty("operation","").toString()
+           =="NATIVE_SET_PROCESSING_FORMAT");
+    NativeFormatProbe probe;
+    assert(executeApprovedNativeControl(probe,result.translated));
+    assert(probe.epoch==91 && probe.revision==25 && probe.rosterRevision==9);
+    assert(probe.id==9007199254740993ULL);
+    assert(probe.width==armix::mixer::ProcessingFormat::stereo);
+
+    auto stale=juce::JSON::parse(juce::JSON::toString(intent,false));
+    stale.getDynamicObject()->setProperty("baseRosterRevision","8");
+    assert(!translateApprovedNativeControl(stale,accepted,installed).ok());
+    auto wrong=juce::JSON::parse(juce::JSON::toString(intent,false));
+    wrong.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("format","MONO");
+    assert(translateApprovedNativeControl(wrong,accepted,installed).error
+           =="INVALID_NATIVE_PROCESSING_FORMAT");
+    auto main=juce::JSON::parse(juce::JSON::toString(intent,false));
+    main.getDynamicObject()->setProperty("targetChannelId","18446744073709551615");
+    assert(!translateApprovedNativeControl(main,accepted,installed).ok());
+    auto noNative=juce::JSON::parse(juce::JSON::toString(installed,false));
+    noNative.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(juce::Array<juce::var>{}));
+    assert(!translateApprovedNativeControl(intent,accepted,noNative).ok());
+}
+
 static void approvedNativeGroupMuteSoloRegression() {
     auto installed=realBusReadbackFixture();
     auto group=std::make_unique<juce::DynamicObject>();
@@ -917,6 +980,7 @@ int main() {
 
     controlIntentTranslationCases(snap,bus);
     nativeInsertCatalogInstanceProjectionRegression();
+    approvedNativeMstTranslationRegression();
     approvedNativeGroupMuteSoloRegression();
     approvedNativeVst3LoadContractRegression(snap,bus);
     approvedWireTranslationRegression(snap,bus);
