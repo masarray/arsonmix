@@ -261,6 +261,20 @@ public:
             return false;
           });
     }
+    // Header bypass of one accepted ChannelId EQ owner, without touching
+    // the remembered individual EQ gate or its eight filter bands.
+    bool setBuiltInEqRackBypass(std::uint64_t epoch,std::uint64_t revision,
+                                ChannelId id,bool bypass) noexcept {
+        if(!id.value)return false;
+        return publisher_.updateActiveControl(epoch,revision,
+          [&](Prepared& p) noexcept {
+            if(!p.builtInEq)return false;
+            for(std::size_t lane=0;lane<p.builtInEqIds.size();++lane)
+                if(p.builtInEqIds[lane]==id)
+                    return p.builtInEq->setRackBypass(lane,bypass);
+            return false;
+          });
+    }
     bool pollBuiltInEqAck(std::uint64_t epoch,std::uint64_t revision,ChannelId id,
                           armix::builtin_fx::ChannelEqBank::Ack& ack) noexcept {
         if(!id.value)return false;

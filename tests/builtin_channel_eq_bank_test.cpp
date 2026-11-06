@@ -126,5 +126,36 @@ int main() {
   }
   CHECK(dryEnergy>0.001&&wetEnergy>dryEnergy*4);
   CHECK(!restored.setGateOffline(14,true,false));
+  // Rack OFF: exact dry PCM once the 5ms fade completes, while the EQ's
+  // own ON preference and eight bands remain unchanged.
+  CHECK(restored.setRackBypass(3,true));
+  for(int block=0;block<10;++block){
+    for(int i=0;i<128;++i)
+      reference[static_cast<std::size_t>(i)]=
+        static_cast<float>(.1*std::sin(6.283185307179586*
+            1000.0*(block*128+i)/48000.0));
+    out=reference;
+    restored.render(3,out.data(),silent.data(),128);
+    if(block>=6)CHECK(out==reference);
+  }
+  CHECK(restored.rackBypassed(3));
+  CHECK(restored.setRackBypass(3,false));
+  double resumedEnergy=0,dryResumed=0;
+  for(int block=0;block<64;++block){
+    for(int i=0;i<128;++i)
+      reference[static_cast<std::size_t>(i)]=
+        static_cast<float>(.1*std::sin(6.283185307179586*
+            1000.0*(block*128+i)/48000.0));
+    out=reference;
+    restored.render(3,out.data(),silent.data(),128);
+    if(block>=48)for(int i=0;i<128;++i){
+      resumedEnergy+=out[static_cast<std::size_t>(i)]*
+                     out[static_cast<std::size_t>(i)];
+      dryResumed+=reference[static_cast<std::size_t>(i)]*
+                  reference[static_cast<std::size_t>(i)];
+    }
+  }
+  CHECK(resumedEnergy>dryResumed*4);
+  CHECK(!restored.rackBypassed(3)&&!restored.setRackBypass(14,true));
   std::puts("PASS: 14-lane EQ, Show V5 offline restore/bypass PCM, SPSC ACK, no RT heap");
 }

@@ -980,6 +980,16 @@ public:
             });
     }
 
+    // Master rack gate is a single RT-visible atomic per lane; never overwrite
+    // stored individual insert bypass flags. Safe under current epoch/revision.
+    bool setFxRackBypass(int lane,std::uint64_t expectedEpoch,
+                         std::uint64_t expectedRevision,bool bypass) noexcept {
+        if(lane<0||lane>=fxSlots||!hasExplicitRoute()||
+           expectedEpoch!=epoch()||expectedRevision!=revision())return false;
+        return publisher_.updateActiveControl(expectedEpoch,expectedRevision,
+            [&](FxGraph& fx) noexcept {return fx.setRackBypass(lane,bypass);});
+    }
+
     // Quiescent message-thread identity lease for the vendor's native GUI.
     // Shared lifetime is independent of route reorder, but not authority:
     // an editor request MUST match the current accepted route.
@@ -1230,6 +1240,23 @@ public:
             const juce::String& token,bool bypass) noexcept {
         return nativeAccepted_.setFxBypass(nativePublisher_,epochAtEdit,
             pcmRevision,target,slot,token,bypass);
+    }
+    bool nativeChannelIsOriginalCh1(armix::mixer::ChannelId target) const noexcept {
+        return nativeAccepted_.fxOwners &&
+               nativeAccepted_.fxOwners->externalChannel()==target &&
+               target==nativeAccepted_.graph.ids.inputs[0];
+    }
+    bool bypassNativeRack(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
+                          armix::mixer::ChannelId target,bool bypass) noexcept {
+        if(!nativeAccepted_.setFxRackBypass(nativePublisher_,epochAtEdit,
+                                              pcmRevision,target,bypass))
+            return false;
+        // 10 CH + 4 AUX share the actual EQ bank; extra native buses
+        // without EQ retain their native VST-only master override.
+        if(nativeAccepted_.graph.ids.legacyFxIndex(target)>=0)
+            return nativePublisher_.setBuiltInEqRackBypass(
+                epochAtEdit,pcmRevision,target,bypass);
+        return true;
     }
     armix::mixer::DynamicChannelFxLeaseBank::Lease leaseNativeInsertEditor(
             std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
@@ -1754,6 +1781,8 @@ public:
                 liveInserts.add(juce::var(item.release()));
             }
             row->setProperty("inserts",juce::var(liveInserts));
+            row->setProperty("fxRackBypassed",
+                nativeAccepted_.fxOwners->rackBypassed(ch.id));
             if(pcmMeterValid && meterIndex<nativeMeterCapacity) {
                 row->setProperty("peakL",static_cast<double>(
                     nativeMeterPeaksL_[meterIndex].load(std::memory_order_relaxed)));
@@ -2267,6 +2296,10 @@ public:
             liveFxInstances.add(juce::var(slots));
         }
         out->setProperty("fxInstances",juce::var(liveFxInstances));
+        juce::Array<juce::var> rackFlags;
+        for(int lane=0;lane<fxSlots;++lane)
+            rackFlags.add(prepared?prepared->rackBypassed(lane):false);
+        out->setProperty("fxRackBypassed",juce::var(rackFlags));
         juce::Array<juce::var> controls,fxNames;
         for(int i=0;i<count;++i) {
             const auto& st=channelEdits_[i];

@@ -43,6 +43,10 @@ assert.match(js,/DESIGN DEMO · NO AUDIO/);
 assert.match(js,/snapshotReady/);
 assert.ok(!['AudioContext','webkitAudioContext','createScriptProcessor','new Worker('].some(s=>js.includes(s)), 'Browser EQ must not own audio callback');
 assert.ok(css.includes('#mxBuiltinEq[hidden]'));
+const eqBank=fs.readFileSync('engine/builtin_fx/ChannelEqBank.h','utf8');
+assert.ok(eqBank.includes('rackBypassed_[lane].load')&&
+          eqBank.includes('insertBypassed_[lane]||rackOff'),
+ 'FX header OFF must override native EQ PCM without losing insert preference');
 console.log('Built-in Channel EQ GUI contract: PASS (isolated from VST3 and alt mixer)');
 
 assert.ok(!html.includes('assets/mixer-builtin-eq.css'), 'No second CSS cascade owner');

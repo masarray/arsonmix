@@ -59,6 +59,12 @@ struct UnifiedLegacyAccepted final {
                fxOwners->setInsertBypass(epoch,revision,id,slot,
                                          instanceId,bypass);
     }
+    bool setFxRackBypass(const DynamicNativeSessionPublisher& publisher,
+                         std::uint64_t epoch,std::uint64_t revision,
+                         ChannelId id,bool bypass) const noexcept {
+        return matches(publisher,epoch,revision) &&
+               fxOwners->setRackBypass(epoch,revision,id,bypass);
+    }
     DynamicChannelFxLeaseBank::Lease leaseFxEditor(
             const DynamicNativeSessionPublisher& publisher,
             std::uint64_t epoch,std::uint64_t revision,ChannelId id,

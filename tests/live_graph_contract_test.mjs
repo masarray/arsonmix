@@ -62,7 +62,10 @@ test('bypass is sample-smoothed by one original CH1 DSP owner for M4 and native 
    'native and M4 must share the original CH1 sample-accurate DSP owner');
  const originalDSP=e.slice(start,legacy);
  const adapters=e.slice(legacy,end);
- assert.match(originalDSP,/bypass\.request\(graph\.bypassFlags/);
+ assert.match(originalDSP,/bypass\.request\(graph\.rackBypassed\.load/);
+ assert.match(originalDSP,/graph\.bypassFlags\[physical\]\.load/);
+ assert.match(originalDSP,/\|\|/, "rack override must OR with individual insert bypass");
+
  assert.match(originalDSP,/slot\.processor->processBlock\(buffer,midi\)/);
  assert.match(originalDSP,/bypass\.transitioning\(\)/);
  assert.match(originalDSP,/graph\.dryScratch\.getWritePointer\(0\)/);

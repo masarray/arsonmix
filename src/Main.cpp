@@ -1643,7 +1643,9 @@ private:
             action.startsWith ("import") || action.startsWith ("fx") ||
             action == "addCatalog" || action == "addScanFolder" ||
             action == "scanVst3" || action == "routingDryApply" ||
-            action == "routingFxBypass"))
+            action == "routingFxBypass" ||
+            action == "routingNativeFxRackBypass" ||
+            action == "routingNativeFxInsertBypass"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -1660,6 +1662,15 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     action=="routingDryApply"?"arMixRoutingLabAck":"arMixRoutingFxBypassAck",
                     juce::var(ack.release()));
+            }
+            if((action=="routingNativeFxRackBypass" ||
+                action=="routingNativeFxInsertBypass") && browser_.loaded) {
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error",reason);
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeFxPowerAck",juce::var(ack.release()));
             }
             return emitNotice(reason,true);
         }
@@ -1845,6 +1856,65 @@ private:
             if(!ok)emitNotice("Live AUX send rejected; refresh accepted routing.",true);
             return;
         }
+        // Accepted ChannelId FX power. A rack master is an additive gate,
+        // not a rewrite of the eight saved individual bypass preferences.
+        // Both gestures are fenced to the actual device epoch + PCM revision
+        // and reply with an ACK; the WebView re-reads the producer snapshot.
+        if(action=="routingNativeFxRackBypass" ||
+           action=="routingNativeFxInsertBypass") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawId=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("revision",{});
+            const auto parse=[](const juce::var& wire,std::uint64_t& out) -> bool {
+                if(!wire.isString())return false;
+                const auto text=wire.toString().toStdString();
+                if(text.empty()||text.size()>20||
+                   text[0]=='0'||text.find_first_not_of("0123456789")!=std::string::npos)
+                    return false;
+                try {
+                    const auto decoded=std::stoull(text);
+                    if(!decoded||std::to_string(decoded)!=text)return false;
+                    out=decoded;return true;
+                } catch(...) {return false;}
+            };
+            std::uint64_t channel=0,ep=0,rev=0;
+            const bool valid=request.isNotEmpty()&&request.length()<=128 &&
+                parse(rawId,channel)&&parse(rawEpoch,ep)&&
+                parse(rawRevision,rev)&&value.isBool() &&
+                !studioBackupBusy_&&!nativeShowBusy_&&
+                !engine_.independentClockActive();
+            bool applied=false;
+            if(valid && !acceptedControlRequests_.contains(request)) {
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId id{channel};
+                if(action=="routingNativeFxRackBypass")
+                    applied=engine_.bypassNativeFxRack(ep,rev,id,static_cast<bool>(value));
+                else {
+                    const auto token=args.getProperty("insertId",{}).toString();
+                    applied=slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
+                        token.isNotEmpty()&&
+                        engine_.bypassNativeVst3(ep,rev,id,
+                            static_cast<std::size_t>(slot),token,static_cast<bool>(value));
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("ok",applied);
+            ack->setProperty("channelId",rawId);
+            ack->setProperty("bypassed",value);
+            ack->setProperty("error",applied?juce::String():
+                "Native FX power rejected: stale device/revision, Show busy or instance mismatch");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixNativeFxPowerAck",juce::var(ack.release()));
+            if(applied)diagnostics_.record("NATIVE_FX_POWER",
+                rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
+                (static_cast<bool>(value)?" BYPASS":" ENABLE"));
+            return;
+        }
+
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {

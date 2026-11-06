@@ -64,9 +64,11 @@ public:
         if (ready_) return false;
         if (!std::isfinite(sampleRate) || sampleRate < 8000.0 || sampleRate > 384000.0)
             return false;
-        for(auto& eq:eqs_) {
+        for(std::size_t lane=0;lane<laneCount;++lane) {
+            auto& eq=eqs_[lane];
             if(!eq.prepare(sampleRate))return false;
-            eq.setExternalBypass(true); // uninstalled means exact dry PCM
+            insertBypassed_[lane]=true; // uninstalled means exact dry PCM
+            eq.setExternalBypass(true);
         }
         sampleRate_ = sampleRate;
         ready_ = true;
@@ -102,6 +104,16 @@ public:
         c.slot=255;c.gate=true;c.installed=installed;c.bypassed=bypassed;
         return pending_[lane].push(c);
     }
+    // CONTROL->AUDIO atomic rack override. User's own EQ bypass is retained.
+    bool setRackBypass(std::size_t lane,bool bypass) noexcept {
+        if(lane>=laneCount)return false;
+        rackBypassed_[lane].store(bypass,std::memory_order_release);
+        return true;
+    }
+    [[nodiscard]] bool rackBypassed(std::size_t lane) const noexcept {
+        return lane<laneCount &&
+            rackBypassed_[lane].load(std::memory_order_acquire);
+    }
     // Only on UNPUBLISHED graphs / offline fixtures. No concurrent callback.
     bool setBandOffline(std::size_t lane, std::size_t slot,const Band& band) noexcept {
         return ready_ && lane < laneCount && eqs_[lane].setBand(slot,band);
@@ -110,7 +122,8 @@ public:
     // a complete EQ before graph publication, not as eight audible UI writes.
     bool setGateOffline(std::size_t lane,bool installed,bool bypassed) noexcept {
         if(!ready_||lane>=laneCount||(!installed&&bypassed))return false;
-        eqs_[lane].setExternalBypass(!installed||bypassed);
+        insertBypassed_[lane]=!installed||bypassed;
+        eqs_[lane].setExternalBypass(insertBypassed_[lane]||rackBypassed(lane));
         return true;
     }
     // AUDIO OWNER ONLY. At most one filter change per strip per block, and
@@ -123,6 +136,8 @@ public:
                 std::uint64_t activeRevision=0) noexcept {
         if (!ready_ || lane >= laneCount || !left || !right || frames == 0) return;
         auto& eq = eqs_[lane];
+        const bool rackOff=rackBypassed_[lane].load(std::memory_order_acquire);
+        eq.setExternalBypass(insertBypassed_[lane]||rackOff);
         if (!eq.transitioning() && acknowledgements_[lane].canPush()) {
             Command command{};
             if (pending_[lane].pop(command)) {
@@ -135,7 +150,10 @@ public:
                 if(sessionMatches) {
                     if(command.gate) {
                         applied=command.installed||eq.resetToFlat();
-                        if(applied)eq.setExternalBypass(!command.installed||command.bypassed);
+                        if(applied) {
+                            insertBypassed_[lane]=!command.installed||command.bypassed;
+                            eq.setExternalBypass(insertBypassed_[lane]||rackOff);
+                        }
                     } else applied=eq.applyPreparedBand(command.edit);
                 }
                 Ack ack{command.requestId,command.deviceEpoch,command.graphRevision,
@@ -166,6 +184,8 @@ private:
         ChannelEq::PreparedBandEdit edit{};
     };
     std::array<ChannelEq,laneCount> eqs_{};
+    std::array<bool,laneCount> insertBypassed_{}; // AUDIO or unpublished CONTROL
+    std::array<std::atomic<bool>,laneCount> rackBypassed_{}; // CONTROL->AUDIO
     std::array<detail::SpscRing<Command,maxPendingPerLane>,laneCount> pending_{};
     std::array<detail::SpscRing<Ack,maxPendingPerLane>,laneCount> acknowledgements_{};
     double sampleRate_=0.0;
