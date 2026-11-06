@@ -209,26 +209,27 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # Explicit FAT milestone only. Manual ZIP is not stable or field-qualified.
+      # Explicit one-time PR #418 review promotion is a user-authorized FAT ZIP opt-in.
+      # No release publication; no package on ordinary PR synchronize or main push.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
         with:
           name: ArSonMix-Windows-FAT-UNQUALIFIED-${{ github.run_id }}
           path: dist/

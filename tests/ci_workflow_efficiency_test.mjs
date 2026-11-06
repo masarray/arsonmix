@@ -150,6 +150,16 @@ test('Windows realtime CTest is automatic only for reviewed PRs; packaging requi
             native.indexOf('uses: actions/upload-artifact@v4'));
 });
 
+test('One-shot experimental FAT package on PR #418 review promotion remains SHA-pinned and non-release',()=>{
+  const gate=/github\.event\.action == 'ready_for_review' && github\.event\.pull_request\.number == 418 && github\.head_ref == 'integration\/daw-direct-hardware-input-20261105'/g;
+  assert.equal([...native.matchAll(gate)].length,4);
+  assert.match(native,/github\.event\.pull_request\.draft == false/);
+  assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
+  assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
+  assert.match(native,/ArSonMix-Windows-FAT-UNQUALIFIED-/);
+  assert.match(native,/retention-days: 14/);
+});
+
 test('Pages is single guarded downstream publisher, never triggered by PR completion', () => {
   assert.match(pages, /workflows: \["UI smoke \(Chromium\)"\]/);
   assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
