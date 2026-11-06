@@ -389,6 +389,26 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     assert(staleMain.fault==DynamicAcceptedSession::Fault::staleRoster);
     assert(session.acceptedGraphRevision()==11);
     assert(render() && near(left[11],.3f*center,1e-4f));
+
+    // GUI SOURCE ONLY: unplug only the actual accepted primary MAIN edge.
+    // The capture source and other channels stay in the same installed
+    // graph; MAIN is silent until a later explicit WIRE reconnect.
+    const std::array<WireChange,1> sourceOnly{remove(one,parallelEdge)};
+    a=session.wireTransaction(11,11,sourceOnly,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==12);
+    assert(!session.acceptedRouting(epoch,12)->find(one)->primaryOutput.value);
+    assert(!findEdge(one,main,12));
+    assert(session.acceptedPhysicalRequest().sources.size()==1);
+    assert(session.acceptedPhysicalRequest().sources.front().id==one);
+    assert(render() && near(left[11],0.f,1e-5f) &&
+           near(right[11],0.f,1e-5f));
+    // Replug MAIN via the same menu/socket. No external monitor ARM or
+    // hardware source patch is required, and exactly one path resumes PCM.
+    a=session.wireTransaction(12,12,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==13);
+    assert(findEdge(one,main,13)!=0);
+    assert(session.acceptedRouting(epoch,13)->find(one)->primaryOutput==main);
+    assert(render() && near(left[11],.3f*center,1e-4f));
     session.unpublish();
     session.pollRetirement();
 }
