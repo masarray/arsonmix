@@ -1889,6 +1889,8 @@ static void verifyBuiltInEqRealPcmHook() {
     b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1;
     assert(!wet->queueBuiltInEqEdit(0,2,b,0,7,2));
     assert(wet->queueBuiltInEqEdit(0,2,b,101,7,2));
+    // Insertion is a separate ACK-backed AUDIO command, not implicit in edits.
+    assert(wet->queueBuiltInEqGate(0,true,false,102,7,2));
     std::array<float,128> pcm{},silent{},wl{},wr{},dl{},dr{};
     const float* pins[]{pcm.data(),silent.data()};
     double dryPower=0,wetPower=0;
@@ -1905,7 +1907,13 @@ static void verifyBuiltInEqRealPcmHook() {
             LiveChannelFxGraph::BuiltInEqAck ack{};
             assert(wet->pollBuiltInEqAck(0,ack));
             assert(ack.applied&&ack.requestId==101&&ack.deviceEpoch==7&&
-                   ack.graphRevision==2&&ack.slot==2);
+                   ack.graphRevision==2&&ack.slot==2&&!ack.gate);
+        }
+        if(block==4) {
+            LiveChannelFxGraph::BuiltInEqAck ack{};
+            assert(wet->pollBuiltInEqAck(0,ack));
+            assert(ack.applied&&ack.gate&&ack.installed&&!ack.bypassed&&
+                   ack.requestId==102&&ack.deviceEpoch==7&&ack.graphRevision==2);
         }
         if(block>=48)for(int i=0;i<128;++i) {
             dryPower+=dl[static_cast<std::size_t>(i)]*dl[static_cast<std::size_t>(i)];
@@ -1942,6 +1950,8 @@ static void verifyBuiltInEqNativeChannelIdAndRevisionFence() {
     b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1.f;
     assert(!native.queueBuiltInEqEdit(9,1,main,2,b,101));
     assert(native.queueBuiltInEqEdit(9,1,ch,2,b,101));
+    assert(!native.queueBuiltInEqGate(9,1,main,true,false,102)); // wrong ChannelId
+    assert(native.queueBuiltInEqGate(9,1,ch,true,false,102));
     std::array<float,128> pcm{},left{},right{};
     const float* pins[]{pcm.data()};
     auto noFx=[](ChannelId,float*,float*,int) noexcept {};
@@ -1956,7 +1966,12 @@ static void verifyBuiltInEqNativeChannelIdAndRevisionFence() {
         if(block==0) {
             armix::builtin_fx::ChannelEqBank::Ack ack{};
             assert(native.pollBuiltInEqAck(9,1,ch,ack));
-            assert(ack.applied&&ack.requestId==101&&ack.slot==2);
+            assert(ack.applied&&ack.requestId==101&&ack.slot==2&&!ack.gate);
+        }
+        if(block==4) {
+            armix::builtin_fx::ChannelEqBank::Ack ack{};
+            assert(native.pollBuiltInEqAck(9,1,ch,ack));
+            assert(ack.applied&&ack.gate&&ack.installed&&ack.requestId==102);
         }
         if(block>=48)for(float y:left)power+=y*y;
     }
