@@ -223,11 +223,11 @@ test('Coordination admission is historical only; native and UI runners have inde
  assert.doesNotMatch(native,/workflow_call:/);
  assert.doesNotMatch(ui,/name: PR coordination admission|name: Product Qualification/);
 });
-test('Draft commits cannot start full Chromium, but matching changes still run quick checks',()=>{
+test('PR commits do not start full Chromium; only connector milestone or main',()=>{
  const workflow=readFileSync('.github/workflows/ui-smoke.yml','utf8');
  assert.match(workflow,/^  quick:/m);
  assert.match(workflow,/^  frontend:/m);
- assert.match(workflow,/github\.event\.pull_request\.draft == false/);
+ assert.match(workflow,/github\.event_name != 'pull_request'/);
  assert.match(workflow,/ready_for_review, converted_to_draft/);
  assert.match(workflow,/^    paths:/m);
  assert.doesNotMatch(workflow,/needs: coordination/);

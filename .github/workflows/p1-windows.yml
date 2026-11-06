@@ -40,7 +40,8 @@ on:
       - 'config/factoryfx-notices/**'
       - 'scripts/tests/test_factoryfx_release_bundle.py'
       - '.github/workflows/p1-windows.yml'
-  # Direct native PR qualification; MSVC never waits on GUI or owner approval.
+  # Direct path scoped native qualification, without a second Windows call
+  # from the UI workflow or historical multi-agent coordination.
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
@@ -86,8 +87,15 @@ on:
         type: boolean
         required: false
         default: false
+      expected_sha:
+        description: "Immutable source SHA for ChatGPT milestone"
+        type: string
+        required: false
+        default: ""
 
 concurrency:
+  # Never cancel a deliberately requested, exact-SHA FAT build. For normal
+  # PR updates only the latest commit is eligible for expensive MSVC.
   group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
@@ -96,12 +104,15 @@ permissions:
   pull-requests: read
 
 jobs:
+
   quick:
     name: Fast native contracts (no Windows / JUCE checkout)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -110,26 +121,26 @@ jobs:
           node scripts/check_console_puzzle.mjs
           node --check web/approved-native-bridge.js
           node --check web/approved-native-contract.js
-          node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/live_graph_contract_test.mjs
+          node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/live_graph_contract_test.mjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
   windows-build:
     name: Windows MSVC / realtime CTest
     needs: quick
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    # Draft commits never reserve expensive Windows runners. Non-draft PR
+    # synchronizations re-test latest HEAD. Main push and manual always run.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
-      # PR builds must package the exact branch HEAD, not GitHub's synthetic
-      # pull/418/merge checkout. BUILD_PROVENANCE.json records this SHA and the
-      # artifact verifier compares the embedded EXE, files and source tree.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Package the actual PR branch commit, NOT the synthetic PR merge.
+          ref: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Verify exact source SHA before native CTest / optional FAT ZIP
         shell: pwsh
         env:
-          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           $actual = (& git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SOURCE_SHA) {
@@ -170,6 +181,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           $contracts = @(
+            'tests/workstream_coordination_contract.test.mjs'
             'tests/gui_workflow_contract_test.mjs'
             'tests/approved_native_m2_contract.test.cjs'
             'tests/native_ui_contract_test.mjs'
@@ -209,27 +221,27 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # Explicit one-time PR #418 review promotion is a user-authorized FAT ZIP opt-in.
-      # No release publication; no package on ordinary PR synchronize or main push.
+      # Optional manual FAT only: never churn experimental ZIPs per commit.
+      # The unqualified artifact is NOT a stable release or physical audio proof.
       - uses: actions/upload-artifact@v4
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.pull_request.number == 418 && github.head_ref == 'integration/daw-direct-hardware-input-20261105' && github.event.pull_request.draft == false) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
           name: ArSonMix-Windows-FAT-UNQUALIFIED-${{ github.run_id }}
           path: dist/

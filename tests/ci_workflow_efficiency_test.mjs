@@ -135,29 +135,19 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /retention-days: 3/);
 });
 
-test('Windows realtime CTest is automatic only for reviewed PRs; packaging requires explicit manual opt-in',()=>{
+test('Windows realtime CTest is explicit for PR milestones; packaging requires deliberate FAT opt-in',()=>{
   assert.match(native,/branches: \[main\]/);
   assert.match(native,/^  workflow_dispatch:\n    inputs:\n      package_fat:/m);
   assert.match(native,/default: false/);
   assert.match(native,/^  quick:\n    name: Fast native contracts/m);
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
-  assert.match(native,/github\.event\.pull_request\.draft == false/);
+  assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
   assert.equal(fatOnly,4,'Packaging, FactoryFX stage, ZIP verify and upload require manual FAT');
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
   assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <
             native.indexOf('uses: actions/upload-artifact@v4'));
-});
-
-test('One-shot experimental FAT package on PR #418 review promotion remains SHA-pinned and non-release',()=>{
-  const gate=/github\.event\.action == 'ready_for_review' && github\.event\.pull_request\.number == 418 && github\.head_ref == 'integration\/daw-direct-hardware-input-20261105'/g;
-  assert.equal([...native.matchAll(gate)].length,4);
-  assert.match(native,/github\.event\.pull_request\.draft == false/);
-  assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
-  assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
-  assert.match(native,/ArSonMix-Windows-FAT-UNQUALIFIED-/);
-  assert.match(native,/retention-days: 14/);
 });
 
 test('Pages is single guarded downstream publisher, never triggered by PR completion', () => {
@@ -178,13 +168,13 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.doesNotMatch(factory, /^\s{2}push:/m);
 });
 
-test('Draft PR commits run inexpensive filtered contract checks without queued MSVC/Chromium',()=>{
+test('All PR commits run inexpensive filtered contracts; expensive CI is dispatched',()=>{
   assert.match(ui,/^  pull_request:\n    types: \[opened, reopened, synchronize, ready_for_review, converted_to_draft\]\n    paths:/m);
   assert.match(native,/^  pull_request:\n    types: \[opened, reopened, synchronize, ready_for_review, converted_to_draft\]\n    paths:/m);
   assert.match(ui,/^  quick:\n    name: Fast UI contracts/m);
   assert.match(native,/^  quick:\n    name: Fast native contracts/m);
-  assert.match(ui,/^  frontend:[\s\S]*?needs: quick[\s\S]*?github\.event\.pull_request\.draft == false/m);
-  assert.match(native,/^  windows-build:[\s\S]*?needs: quick[\s\S]*?github\.event\.pull_request\.draft == false/m);
+  assert.match(ui,/^  frontend:[\s\S]*?needs: quick[\s\S]*?github\.event_name != 'pull_request'/m);
+  assert.match(native,/^  windows-build:[\s\S]*?needs: quick[\s\S]*?github\.event_name != 'pull_request'/m);
   assert.doesNotMatch(ui,/^  coordination:|^  qualification:|name: PR coordination admission|name: Product Qualification/m);
   assert.doesNotMatch(native,/^  workflow_call:|check_workstream_coordination\.mjs --pr/m);
   assert.doesNotMatch(ui,/uses: \.\/\.github\/workflows\/p1-windows\.yml/);
