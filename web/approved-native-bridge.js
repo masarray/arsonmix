@@ -145,10 +145,69 @@
     scope.installGraph(nextTracks,nextMaster,edges);
     return true;
   }
+  // Rack and individual FX power are scalar native DSP controls, NOT a
+  // structural graph change. Updating them must not replace DOM strips,
+  // steal focus, interrupt a fader drag or reallocate WIRE render objects.
+  // The verified individual bypass flag stays distinct from rack bypass.
+  function paintNativeFxPowerReadback(ch,t){
+    if(typeof ch.fxRackBypassed!=="boolean"||!Array.isArray(ch.inserts))
+      return true; // never synthesize missing DSP readback
+    const enabled=!ch.fxRackBypassed;
+    const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
+    const rack=strip?.querySelector(".fx-section");
+    // Virtualized mobile banks may have no mounted strip. The model still
+    // receives verified state; normal bank render creates the right buttons.
+    if(rack){
+      const header=rack.querySelector('[data-action="fxOn"]');
+      const rows=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')];
+      if(!header||rows.length!==ch.inserts.length)return false;
+      for(let slot=0;slot<ch.inserts.length;slot++){
+        const insert=ch.inserts[slot],row=rows.find(r=>
+          r.dataset.slot===String(slot));
+        if(!insert||typeof insert.bypassed!=="boolean"||
+           !row||row.dataset.insertId!==insert.id||
+           !row.querySelector('[data-action="slotPower"]'))
+          return false; // structural re-render, never modify wrong FX owner
+      }
+    }
+    t.fxOn=enabled;
+    if(!Array.isArray(t.slotBypass))t.slotBypass=Array(8).fill(false);
+    for(let slot=0;slot<ch.inserts.length;slot++)
+      t.slotBypass[slot]=ch.inserts[slot].bypassed;
+    if(!rack)return true;
+    rack.dataset.fxChainEnabled=String(enabled);
+    rack.classList.toggle("is-chain-bypassed",!enabled);
+    const header=rack.querySelector('[data-action="fxOn"]');
+    header.setAttribute("aria-pressed",String(enabled));
+    header.title=(enabled?"Bypass":"Enable")+" all channel FX";
+    header.setAttribute("aria-label",
+      (enabled?"Bypass":"Enable")+" entire FX chain in "+t.name);
+    for(let slot=0;slot<ch.inserts.length;slot++){
+      const insert=ch.inserts[slot];
+      const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
+        .find(r=>r.dataset.slot===String(slot));
+      const effective=enabled&&!insert.bypassed;
+      row.dataset.fxSlotEnabled=String(!insert.bypassed);
+      row.dataset.fxEffective=String(effective);
+      row.classList.toggle("is-active",effective);
+      row.classList.toggle("is-bypassed",!effective);
+      const button=row.querySelector('[data-action="slotPower"]');
+      button.setAttribute("aria-pressed",String(effective));
+      button.title=(insert.bypassed?"Enable":"Bypass")+
+        " only insert "+(slot+1);
+      button.setAttribute("aria-label",
+        (insert.bypassed?"Enable":"Bypass")+" only FX insert "+
+        (slot+1)+" in "+t.name);
+    }
+    return true;
+  }
   function projectNativeGraphWithoutFocusLoss(next) {
+    // Only identity, order, processing width, source and edges are structural.
+    // Rack/slot bypass is applied in-place from independent readback below.
     const structure=JSON.stringify([
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
-        ch.processingFormat,ch.source,ch.primaryOutId,ch.inserts,ch.fxRackBypassed]),
+        ch.processingFormat,ch.source,ch.primaryOutId,
+        ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
       next.graph.edges]);
     if(structure!==lastNativeTopologySignature){
       if(!projection(next))return false;
@@ -162,6 +221,13 @@
       const t=id===scope?.master?.id?scope.master:
         scope?.tracks?.find(x=>x.id===id);
       if(!t||!ch.controls)continue;
+      if(!paintNativeFxPowerReadback(ch,t)){
+        // A plugin owner or strip DOM changed under us: do not paint an
+        // unrelated instance. Rebuild from the accepted native graph.
+        if(!projection(next))return false;
+        lastNativeTopologySignature=structure;
+        return true;
+      }
       const c=ch.controls;
       const db=c.faderDb,pan=c.pan*100;
       const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
@@ -913,10 +979,18 @@
     return (capture.includes("vb-audio")||playback.includes("vb-audio")) &&
       capture.includes("cable output") && playback.includes("cable input");
   };
+  // A migrated ChannelId graph is the sole PCM authority. Its physical
+  // input chooser must NOT depend on the legacy M4.active bit after BUS/WIRE
+  // has made M4 structurally obsolete. First-sound M4 still requires its
+  // own verified active renderer; never manufacture hardware readiness.
   const deviceReady=()=>!!(hardware?.device?.backend &&
     hardware.device.sampleRate>0 &&
     hardware.device.enabledInputs.length>0 &&
-    hardware.device.enabledOutputs.length>=2 && legacy()?.active===true);
+    hardware.device.enabledOutputs.length>=2 &&
+    (mixerSession()?.authority==="CHANNEL_ID"
+      ? controller?.state()?.current?.admitted===true &&
+        flags.acceptedGraphConnected
+      : mixerSession()?.authority==="M4" && legacy()?.active===true));
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -1430,6 +1504,12 @@
         !caps?.supportedOps?.includes("CREATE_GROUP");
       addBus.disabled=!!pendingBusCreate;
     }
+    if (nativeAdmitted && !activeNativeSource && pendingNativeSources.size) {
+      // A rejected/timeout source command may leave the graph revision
+      // unchanged. Drain the next distinct channel after this authoritative
+      // snapshot even if the GUI signature is otherwise identical.
+      window.queueMicrotask(dispatchNativeSource);
+    }
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
@@ -1455,8 +1535,6 @@
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
-    if(!activeNativeSource&&pendingNativeSources.size)
-      window.queueMicrotask(dispatchNativeSource);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)

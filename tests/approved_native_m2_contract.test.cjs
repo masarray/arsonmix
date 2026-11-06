@@ -963,6 +963,170 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.equal(scope.edges.length,0,"accepted snapshot replaces reference wire");
 });
 
+test("P0 native FX rack and per-slot readback update mounted strip without replacing fader DOM",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[];
+ let paints=0,serial=100,wire=300,strip=null;
+ const scope={
+  tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
+  wireGraph:{validateCandidateGraph:()=>({ok:true})},
+  make:(name,kind,color)=>({id:serial++,name,kind,color,selected:false}),
+  render(){paints++;},
+  installGraph(tracks,master,edges){
+   this.tracks=tracks;this.master=master;this.edges=edges;this.render();
+  },
+  allocateWireId:()=>wire++,displayMeterDbfs(){},stopDemo(){}
+ };
+ const native={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const info={textContent:""},preview={disabled:false},toast={hidden:true};
+ const doc={
+  readyState:"complete",documentElement:{dataset:{}},
+  getElementById:id=>id==="info"?info:id==="preview"?preview:
+   id==="armixNativeToast"?toast:null,
+  querySelector:selector=>selector.startsWith('.strip[data-id=')?strip:null,
+  addEventListener(){}
+ };
+ const win={__JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
+  __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+  setTimeout(){return 0},clearTimeout(){},queueMicrotask(fn){fn();}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+  {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
+ const base=acceptedFixture();
+ base.graph.channels[0].fxRackBypassed=false;
+ base.graph.channels[0].inserts=[
+  {id:"vst-live-1",catalogId:"eq-a",name:"EQ",bypassed:false},
+  {id:"vst-live-2",catalogId:"comp-b",name:"Compressor",bypassed:true}
+ ];
+ base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
+  routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision,
+  channels:base.graph.channels,main:{db:0,mute:false}};
+ listeners.get("arMixConsoleSnapshot")(base);
+ assert.equal(win.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
+ assert.equal(paints,1);
+ const track=scope.tracks[0];
+ const button=()=>({
+  attributes:new Map(),
+  setAttribute(key,val){this.attributes.set(key,String(val));},
+  getAttribute(key){return this.attributes.get(key)||null;}
+ });
+ const style=()=>({values:new Set(),toggle(name,enabled){
+  if(enabled)this.values.add(name);else this.values.delete(name);
+ },contains(name){return this.values.has(name);}});
+ const header=button(),rows=base.graph.channels[0].inserts.map((entry,i)=>{
+  const power=button();
+  return {dataset:{slot:String(i),insertId:entry.id},classList:style(),
+   querySelector:selector=>selector==='[data-action="slotPower"]'?power:null,
+   power};
+ });
+ const rack={dataset:{},classList:style(),querySelector(selector){
+   return selector==='[data-action="fxOn"]'?header:null;
+  },querySelectorAll:selector=>selector==='.fxslot-row:not(.is-empty)'?rows:[]};
+ const stableStrip={querySelector:selector=>
+  selector===".fx-section"?rack:null};
+ strip=stableStrip;
+ const snapshot=clone(base);
+ snapshot.graph.channels[0].fxRackBypassed=true;
+ listeners.get("arMixConsoleSnapshot")(snapshot);
+ assert.equal(paints,1,"rack bypass must NOT replace the entire GUI channel DOM");
+ assert.equal(strip,stableStrip);
+ assert.equal(track.fxOn,false);
+ assert.deepEqual(Array.from(track.slotBypass.slice(0,2)),[false,true],
+  "header bypass must never overwrite independent insert bypass preferences");
+ assert.equal(rack.dataset.fxChainEnabled,"false");
+ assert.equal(header.getAttribute("aria-pressed"),"false");
+ assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["false","false"]);
+ assert.deepEqual(rows.map(r=>r.dataset.fxSlotEnabled),["true","false"]);
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["false","false"]);
+ assert.ok(rows.every(r=>r.classList.contains("is-bypassed")));
+ const restored=clone(snapshot);
+ restored.graph.channels[0].fxRackBypassed=false;
+ listeners.get("arMixConsoleSnapshot")(restored);
+ assert.equal(paints,1,"re-enabling the FX rack preserves mounted controls");
+ assert.equal(track.fxOn,true);
+ assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["true","false"]);
+ assert.deepEqual(rows.map(r=>r.dataset.fxEffective),["true","false"]);
+ const individual=clone(restored);
+ individual.graph.channels[0].inserts[0].bypassed=true;
+ listeners.get("arMixConsoleSnapshot")(individual);
+ assert.equal(paints,1,"slot power is a realtime scalar, not a topology edit");
+ assert.deepEqual(Array.from(track.slotBypass.slice(0,2)),[true,true]);
+ assert.deepEqual(rows.map(r=>r.power.getAttribute("aria-pressed")),["false","false"]);
+ const replaced=clone(individual);
+ replaced.graph.channels[0].inserts[0].id="new-vst-instance";
+ listeners.get("arMixConsoleSnapshot")(replaced);
+ assert.equal(paints,2,"an actual VST instance identity change MUST re-project");
+});
+
+test("P0 native hardware IN remains selectable after ChannelId ownership, failed ACK drains the other channel",()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],microtasks=[];
+ let ordinal=100,wireId=400;
+ const scope={
+  tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
+  wireGraph:{validateCandidateGraph:()=>({ok:true})},
+  make:(name,kind,color)=>({id:ordinal++,name,kind,color,selected:false}),
+  render(){},
+  installGraph(tracks,main,edges){this.tracks=tracks;this.master=main;this.edges=edges;},
+  allocateWireId:()=>wireId++,displayMeterDbfs(){},stopDemo(){},
+  findTrack(el){return el.track;}
+ };
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+  addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const toast={textContent:"",hidden:true},info={textContent:""};
+ const doc={
+  readyState:"complete",documentElement:{dataset:{}},
+  getElementById:id=>id==="info"?info:id==="armixNativeToast"?toast:
+    id==="preview"?{disabled:true}:null,
+  querySelector:()=>null,addEventListener(){}
+ };
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+  __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
+  setTimeout(){return 0},clearTimeout(){},
+  queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),
+  {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
+ const base=acceptedFixture();
+ const first=base.graph.channels[0],main=base.graph.mainChannelId;
+ const second=clone(first);second.id="9007199254740994";
+ second.name="Harmony";second.primaryOutId=main;
+ base.graph.channels.splice(1,0,second);
+ base.graph.edges.push({...base.graph.edges[0],
+  edgeId:"9223372036854775809",from:second.id});
+ base.device.enabledInputs=[0,1];
+ base.device.inputEndpoints=[
+  {id:"in:0",port:0,callback:0,label:"Mic A",active:true},
+  {id:"in:1",port:1,callback:1,label:"Mic B",active:true}
+ ];
+ // Deliberately stale M4 renderer bit. The accepted ChannelId callback is
+ // the authority for new physical source changes after BUS/WIRE cutover.
+ base.legacyM4={active:false,routeAccepted:false,routingRevision:"9"};
+ base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
+  routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision,
+  channels:base.graph.channels,main:{db:0,mute:false}};
+ listeners.get("arMixConsoleSnapshot")(base);
+ assert.equal(win.__ARMIX_APPROVED_NATIVE_GUI__.acceptedGraphConnected,true);
+ assert.equal(scope.tracks.length,2);
+ const choose=(track,label)=>win.__ARMIX_NATIVE_M2__.consumeField({
+  target:{track,dataset:{field:"input"},value:label},type:"change"});
+ assert.equal(choose(scope.tracks[0],"Mono · Mic A [IN 1]"),true);
+ assert.equal(choose(scope.tracks[1],"Mono · Mic B [IN 2]"),true);
+ const sourceCommands=()=>sent.filter(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingNativeSourcePatch");
+ assert.equal(sourceCommands().length,1,"first source command sent to real JUCE gateway");
+ assert.equal(sourceCommands()[0].payload.channelId,first.id);
+ assert.equal(sourceCommands()[0].payload.left,0);
+ const id=sourceCommands()[0].payload.requestId;
+ listeners.get("arMixNativeSourceAck")({requestId:id,ok:false,error:"STALE_NATIVE_SOURCE"});
+ // Rejected source did not mutate graph; later authoritative readback is
+ // byte-identical. The queued SECOND channel must not be stranded.
+ listeners.get("arMixConsoleSnapshot")(base);
+ assert.ok(microtasks.length>0,"unchanged native graph must still drain queued source");
+ while(microtasks.length)microtasks.shift()();
+ assert.equal(sourceCommands().length,2);
+ assert.equal(sourceCommands()[1].payload.channelId,second.id);
+ assert.equal(sourceCommands()[1].payload.left,1);
+ assert.equal(sourceCommands()[1].payload.graphRevision,base.graph.revision);
+ assert.notEqual(sourceCommands()[1].payload.requestId,id);
+});
 test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
  const builder=read("scripts/build_approved_native_gui.py");
  const bridge=read("web/approved-native-bridge.js");
