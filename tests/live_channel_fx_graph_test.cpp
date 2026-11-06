@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
@@ -1968,6 +1969,85 @@ static void verifyNativeFxRackTransactions() {
     edit(source,0,b->instanceId,{},0);samples(.45f);assert(!bank->retainsEditor(b));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
 }
+
+// Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,
+// not an independent "pre-VST" bank, a JS preview or a second audio callback.
+// Verifies asynchronous audio-owned ACK while the same insert is bypassed,
+// graph revision-safe reorder, and no allocations in the hot render call.
+static void verifyNativeBuiltinEqOrderedPcmAndBypassAck() {
+    using Bank=DynamicChannelFxLeaseBank;
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    constexpr std::uint64_t ep=10997,revision=11;
+    const ChannelId ch{12345678901234ULL};
+    std::unique_ptr<Eq> eq=std::make_unique<Eq>();
+    eq->prepareToPlay(48000.,64);
+    assert(eq->isReady());
+    Eq* live=eq.get();
+    auto eqLease=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(eq),Eq::catalogIdentity,"Parametric EQ",64);
+    auto other=std::make_unique<GainFx>(1.0f,0,.2f);
+    other->prepareToPlay(48000.,64);
+    auto offsetLease=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(other),"nonlinear-order-probe","Offset after EQ",64);
+    Bank::Assignment a;a.id=ch;a.format=ProcessingFormat::stereo;
+    a.inserts={eqLease,offsetLease};
+    std::array<Bank::Assignment,1> assignment{a};
+    Bank graph;
+    assert(Bank::prepare(ep,revision,assignment,graph)==Bank::Fault::none);
+    assert(graph.insertCount(ch)==2 && graph.latencySamples(ch)==0);
+    assert((*graph.ownerForControl(ch,0))->instanceId==eqLease->instanceId);
+    assert((*graph.ownerForControl(ch,1))->instanceId==offsetLease->instanceId);
+    armix::builtin_fx::Band hp{};
+    hp.enabled=true;hp.frequencyHz=1000.f;hp.gainDb=0.f;
+    hp.q=.70710678f;hp.slope=armix::builtin_fx::Slope::db12;
+    assert(live->queueBand(0,hp,1));
+    std::array<float,64> l{},r{};
+    const auto renderBlocks=[&](const Bank& bank,int blocks) {
+        const auto allocations=heapCalls.load(std::memory_order_relaxed);
+        for(int b=0;b<blocks;++b){
+            l.fill(.5f);r.fill(.5f);
+            bank(ch,l.data(),r.data(),64);
+        }
+        assert(heapCalls.load(std::memory_order_relaxed)==allocations);
+        assert(std::isfinite(l.back()) && std::isfinite(r.back()));
+    };
+    renderBlocks(graph,64);
+    Eq::Completion done;
+    assert(live->pollCompletion(done)&&done.applied&&done.requestId==1);
+    assert(done.bandIndex==0&&live->acceptedBands()[0].enabled);
+    // A constant .5 enters HPF, then post-EQ vendor offset +.2 survives.
+    assert(std::abs(l.back()-.2f)<.04f &&std::abs(r.back()-.2f)<.04f);
+    const auto token=eqLease->instanceId;
+    assert(!graph.setInsertBypass(ep,revision-1,ch,0,token,true));
+    assert(!graph.setInsertBypass(ep,revision,ch,0,"wrong",true));
+    assert(graph.setInsertBypass(ep,revision,ch,0,token,true));
+    renderBlocks(graph,64);
+    assert(std::abs(l.back()-.7f)<.04f);
+    // Fully bypassed native EQ still consumes audio-synchronized commands;
+    // no ACK may be fabricated from the control-thread enqueue itself.
+    hp.frequencyHz=1600.f;
+    assert(live->queueBand(0,hp,2));
+    assert(!live->pollCompletion(done));
+    renderBlocks(graph,2);
+    assert(live->pollCompletion(done)&&done.applied&&done.requestId==2);
+    assert(std::abs(live->acceptedBands()[0].frequencyHz-1600.f)<.01f);
+    assert(graph.setInsertBypass(ep,revision,ch,0,token,false));
+    renderBlocks(graph,64);
+    assert(std::abs(l.back()-.2f)<.04f);
+    Bank moved;
+    assert(Bank::editOwned(ep,revision+1,graph,ch,0,token,
+                            ch,1,ProcessingFormat::stereo,moved)==Bank::Fault::none);
+    assert(moved.insertCount(ch)==2);
+    assert((*moved.ownerForControl(ch,1)).get()==eqLease.get());
+    assert((*moved.ownerForControl(ch,0)).get()==offsetLease.get());
+    // Exact EQ now comes AFTER the offset-producing FX, so the HPF removes
+    // DC from both input and offset. This distinguishes true PCM FX ordering.
+    renderBlocks(moved,64);
+    assert(std::abs(l.back())<.04f && std::abs(r.back())<.04f);
+    assert(!moved.setInsertBypass(ep,revision,ch,1,token,true));
+    assert(moved.leaseEditor(ep,revision+1,ch,1,token).get()==eqLease.get());
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2381,6 +2461,7 @@ int main(int argc,char** argv) {
     verifyChannelIdGroupPreservesHostedFx();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
+    verifyNativeBuiltinEqOrderedPcmAndBypassAck();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }
