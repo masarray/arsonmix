@@ -278,6 +278,29 @@
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
   function requestProcessingFormat(t){
+    // Once the native ChannelId callback owns PCM, the old M4 routing
+    // revision is no longer authoritative. Send M/ST through the SAME
+    // admitted epoch/revision/roster transaction as WIRE and SOURCE.
+    if(mixerSession()?.authority==="CHANNEL_ID"){
+      const current=controller?.state()?.current;
+      const channelId=nativeIdFor(t);
+      const source=current?.graph?.channels?.find(ch=>ch.id===channelId);
+      if(!current?.admitted || !channelId || source?.role!=="INPUT" ||
+         !current.graph.capabilities.supportedOps.includes("SET_PROCESSING_FORMAT")){
+        status("M/ST unavailable · native processing format not admitted");
+        return false;
+      }
+      const target=source.processingFormat==="MONO"?"STEREO":"MONO";
+      const request=controller.intent("SET_PROCESSING_FORMAT",channelId,
+                                      {format:target});
+      if(!request.ok){
+        status("M/ST rejected · "+request.error);
+        return false;
+      }
+      window.setTimeout(()=>controller?.expire(request.requestId),8000);
+      status(t.name+" M/ST → "+target+" · verifying native PCM readback");
+      return true;
+    }
     const channel=m4Index(t);
     const ep=safeNativeCounter(hardware?.device?.epoch),
       rev=safeNativeCounter(legacy()?.routingRevision);
