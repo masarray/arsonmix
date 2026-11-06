@@ -132,6 +132,14 @@
         ch.inserts[payload.slot].id.length>0 &&
         !ch.inserts.slice(0,payload.slot).some(insert=>
           insert.id===ch.inserts[payload.slot].id);
+    if (operation === "SET_WIRE_GAIN") {
+      const before=pending.wireIdentity;
+      const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+      return !!before && !!edge && edge.primaryOutput===false &&
+        edge.to===before.to && edge.tap===before.tap &&
+        Number.isFinite(payload.gainLinear)&&Number.isFinite(edge.gainLinear)&&
+        Math.abs(edge.gainLinear-payload.gainLinear)<=0.0001;
+    }
     if (operation !== "APPLY_WIRE_TRANSACTION" ||
         !Array.isArray(payload.changes) || !payload.changes.length) return false;
     // A structural WIRE transaction must advance the actual PCM graph.
@@ -313,12 +321,21 @@
         lastError="UNKNOWN_CHANNEL_ID";notify();return {ok:false,error:lastError};
       }
       if (!object(payload)) {lastError="INVALID_PAYLOAD";notify();return {ok:false,error:lastError};}
+      let wireIdentity=null;
+      if(operation==="SET_WIRE_GAIN") {
+        const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+        if(!edge||edge.primaryOutput!==false||!Number.isFinite(payload.gainLinear)||
+           payload.gainLinear<0||payload.gainLinear>4) {
+          lastError="INVALID_WIRE_GAIN_TARGET";notify();return {ok:false,error:lastError};
+        }
+        wireIdentity={to:edge.to,tap:edge.tap};
+      }
       const requestId=session+"-"+(++lastRequest);
       const msg={requestId,deviceEpoch:current.device.epoch,
         baseGraphRevision:current.graph.revision,
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
-      pending={requestId,operation,targetChannelId,payload,
+      pending={requestId,operation,targetChannelId,payload,wireIdentity,
         originalPrimaryOutId:current.graph.channels.find(
           ch=>ch.id===targetChannelId)?.primaryOutId||null,
         deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,

@@ -204,6 +204,12 @@ public:
     bool contains(ChannelId id) const noexcept {
         return controlIndex_.find(id.value)!=controlIndex_.end();
     }
+    // CONTROL only. Empty unpatched lanes deliberately have no PCM scratch.
+    bool channelScheduled(ChannelId id) const noexcept {
+        const auto found=controlIndex_.find(id.value);
+        return found!=controlIndex_.end()&&
+            std::find(renderOrder_.begin(),renderOrder_.end(),found->second)!=renderOrder_.end();
+    }
 
     // Control thread only. Rejection leaves the previous prepared object
     // byte-for-byte usable; caller must publish with epoch/revision MUTE/ACK.

@@ -16,6 +16,8 @@
   const uiByNativeId = new Map();       // EXACT uint64 string -> local view-only ordinal
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
+  const pendingWireGains=new Map();
+  let wireGainFlushQueued=false;
   let lastPaintedSignature = "",lastNativeTopologySignature = "",
       lastNativeError = "NATIVE_NOT_SUBSCRIBED";
   // B-stage: attached-node-only meter caches; a structural render invalidates
@@ -45,6 +47,43 @@
       document.documentElement.dataset.armixNativeAuthority = authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
+  function queueWireGainFlush(){
+    if(wireGainFlushQueued)return;
+    wireGainFlushQueued=true;
+    window.setTimeout(()=>{wireGainFlushQueued=false;flushWireGains();},32);
+  }
+  function flushWireGains(){
+    const state=controller?.state(),current=state?.current;
+    if(state?.pending||!current?.admitted)return;
+    for(const [edgeId,edit] of pendingWireGains){
+      pendingWireGains.delete(edgeId);
+      if(current.identity!==edit.identity)continue; // never replay into a new graph/device
+      const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
+      if(!edge||edge.primaryOutput!==false)continue;
+      if(Math.abs(edge.gainLinear-edit.gain)<.00001)continue;
+      const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
+      if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
+      else status("WIRE gain rejected · "+result.error);
+      return; // next coalesced target follows ACK + independent readback
+    }
+  }
+  function requestWireGain(op){
+    const current=controller?.state()?.current;
+    const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    const db=Number(op.levelDb);
+    if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")||
+       !Number.isFinite(db)||db< -60||db>6)return false;
+    const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===source);
+    if(!edge||edge.primaryOutput!==false)return false;
+    pendingWireGains.set(edgeId,{source,gain:Math.pow(10,db/20),identity:current.identity});
+    queueWireGainFlush();return true;
+  }
+  function nativeOutputTargets(t,channels=controller?.state()?.current?.graph?.channels||[]){
+    const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
+    return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
+      .map(ch=>({id:ch.id,label:reserved.includes(ch.name)||
+        channels.filter(other=>other.name===ch.name).length>1?ch.name+" ["+ch.id+"]":ch.name}));
+  }
   const intent = (operation,t,payload) => {
     if (!flags.acceptedGraphConnected) {
       status("NATIVE: accepted graph not projected; control unchanged");
@@ -95,10 +134,12 @@
           r=/^in:(\d+)$/.exec(src.portIdRight||"");
         t.input=l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
           left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
-        const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
-        t.output=out?.role==="MAIN"?"Master":
-          (out?.name||"SOURCE ONLY (No Main)");
       }
+      const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
+      // Identity-safe labels also handle duplicate names and reserved labels.
+      const target=out&&nativeOutputTargets(t,accepted.channels).find(x=>x.id===out.id);
+      if(ch.role!=="MAIN")t.output=out?.role==="MAIN"?"Master":
+        (target?.label||"SOURCE ONLY (No Main)");
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
@@ -208,12 +249,15 @@
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
         ch.processingFormat,ch.source,ch.primaryOutId,
         ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
-      next.graph.edges]);
+      next.graph.edges.map(e=>[e.edgeId,e.from,e.to,e.tap,e.enabled,e.primaryOutput])]);
     if(structure!==lastNativeTopologySignature){
       if(!projection(next))return false;
       lastNativeTopologySignature=structure;
       return true;
     }
+    scope?.syncNativeWireGains?.(next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)
+      .map(e=>({id:uiByWireId.get(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
+        e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10})));
     // Immutable graph topology is identical: update actual scalar controls
     // only. Never detach the active HTML select or the captured fader pointer.
     for(const ch of next.graph.channels){
@@ -253,6 +297,16 @@
   // Native telemetry owns the physical meter. When no measured per-channel
   // samples are published, leave the meter dark; never use Pages sine demo.
   function paintNativeMeters(next) {
+    for(const edge of next.graph.edges||[]){
+      const ui=uiByWireId.get(edge.edgeId);
+      if(ui===undefined)continue;
+      for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
+        const fixed=edge.primaryOutput===true;
+        if(input.disabled!==fixed)input.disabled=fixed;
+        const title="Primary OUT is unity gain · use the destination fader";
+        if(fixed&&input.title!==title)input.title=title;
+      }
+    }
     if (!scope?.displayMeterDbfs)return;
     const data=next.telemetry?.channelMeterRmsPeak;
     if (!data || typeof data!=="object")return;
@@ -434,9 +488,8 @@
          !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION") ||
          !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
          !target)return false;
-      const group=current.graph.channels.find(row=>
-        row.role==="GROUP"&&row.name===target);
-      const to=target==="MAIN"?main:group?.id||null;
+      const destination=nativeOutputTargets(t).find(row=>row.label===target);
+      const to=target==="MAIN"?main:destination?.id||null;
       if(target!=="NONE"&&!to)return false;
       const dest=ch.primaryOutId||null;
       if((to&&dest===to)||(target==="NONE"&&!dest)){
@@ -1509,6 +1562,7 @@
     },8000);
   }
   function onNativeReadback(next) {
+    scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     updateHardwarePanel(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
@@ -1609,6 +1663,8 @@
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
            pendingNativeControl.size)queueLiveControlFlush();
+        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&pendingWireGains.size)
+          queueWireGainFlush();
         // Rejection cleanup and native rollback must BOTH run.
         // Former else-if was unreachable after the cleanup branch matched.
         const failed=!state.pending &&
@@ -1616,6 +1672,7 @@
           state.lastError!=="NONE" &&
           state.lastError!=="NATIVE_NOT_SUBSCRIBED";
         if(failed){
+          pendingWireGains.clear();
           if(pendingFxInsert?.authority==="CHANNEL_ID"){
             pendingFxInsert=null;
             nativeToast("VST3 insert rejected · "+state.lastError);
@@ -1874,15 +1931,13 @@
     outputChoices(t) {
       if(t?.kind==="master")
         return [String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
-      if(t?.kind==="audio"){
+      if(t?.kind!=="master"){
         // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
         // never pretend the demo's other destinations have native PCM.
         const options=["Master","SOURCE ONLY (No Main)"];
         const graph=controller?.state()?.current?.graph;
         if(mixerSession()?.authority==="CHANNEL_ID"&&graph?.channels)
-          for(const bus of graph.channels)
-            if(bus.role==="GROUP"&&bus.name &&
-               !options.includes(bus.name))options.push(bus.name);
+          for(const target of nativeOutputTargets(t))options.push(target.label);
         if(t.output&&!options.includes(t.output))options.push(t.output);
         return options;
       }
@@ -1894,6 +1949,12 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      if(field==="wireGain"){
+        const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
+        if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
+          status("WIRE gain unavailable · accepted parallel send required");
+        return true;
+      }
       if(field==="input"){
         // Input selection is independent of Record Arm, transport START and
         // ChannelId admission. A physical mixer strip can receive ANY active
@@ -1942,11 +2003,10 @@
           el.value=t.output;openNativeAudioIO();return true;
         }
         const graph=controller?.state()?.current?.graph;
-        const bus=graph?.channels?.find(ch=>
-          ch.role==="GROUP"&&ch.name===el.value);
+        const destination=nativeOutputTargets(t).find(ch=>ch.label===el.value);
         const target=el.value==="Master"?"MAIN":
           el.value==="SOURCE ONLY (No Main)"?"NONE":
-          bus?bus.name:null;
+          destination?destination.label:null;
         // No optimistic GUI state. Both this menu and the WIRE jack use
         // the same ID/epoch-guarded, acknowledged native route transaction.
         if(el.value!==t.output && !requestPrimaryOut(t,target)){
@@ -2083,6 +2143,16 @@
     },
     consumeWire(ops) {
       if (!connected)return false;
+      if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="GAIN"){
+        if(!requestWireGain(ops[0]))status("WIRE gain unavailable · accepted parallel send required");
+        return true;
+      }
+      // Sends-on-faders creates a new send plus its initial gain atomically;
+      // its draft UI EdgeId must never be sent as an accepted native EdgeId.
+      if(Array.isArray(ops)&&ops.length===2&&ops[0].type==="CONNECT"&&
+         ops[1].type==="GAIN"&&ops[0].sourceId===ops[1].sourceId&&
+         !wireByUiId.has(ops[1].edgeId)&&Number.isFinite(ops[1].levelDb))
+        ops=[{...ops[0],mode:"send",levelDb:ops[1].levelDb}];
       const current=controller?.state().current;
       // P0 first-sound WIRE to MAIN is the very same native M4 PRIMARY_OUT
       // transaction as the ordinary OUT drop-down. Do not reject a real

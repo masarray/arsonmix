@@ -172,10 +172,22 @@ NATIVE_EVENT_HOOKS = (
     # Native WebView2 only: expose the original Pages IIFE model to the thin
     # bridge. No second renderer/state reducer, no change to public /preview/.
     ("restorePluginPreferences();init();\n})();",
-     "let verifiedM4WireSignature='',verifiedM4WireDirty=false;\n"
+     "let verifiedM4WireSignature='',verifiedM4WireDirty=false,nativeWireGainDirty=false;\n"
      "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
      " get tracks(){return tracks;},get master(){return master;},\n"
      " get wireEdges(){return wireEdges;}, // native read-only UI edge identity\n"
+     " syncNativeWireGains(rows){\n"
+     "  for(const row of rows){\n"
+     "   const edge=wireEdges.find(e=>e.id===row.id&&e.kind!=='primary');\n"
+     "   if(edge&&Number.isFinite(row.levelDb)&&edge.levelDb!==row.levelDb){\n"
+     "    edge.levelDb=row.levelDb;nativeWireGainDirty=true;\n"
+     "   }\n"
+     "  }\n"
+     "  if(nativeWireGainDirty&&!wireGesture&&!faderGesture&&\n"
+     "     !document.activeElement?.matches?.('.wire-gain,#wireWsGain')){\n"
+     "   nativeWireGainDirty=false;refreshWireRoutingNodes();\n"
+     "  }\n"
+     " },\n"
      " syncVerifiedM4Wires(rows,ids){\n"
      "  if(!Array.isArray(rows)||rows.length!==10||!Array.isArray(ids)||ids.length!==10)\n"
      "   return false;\n"

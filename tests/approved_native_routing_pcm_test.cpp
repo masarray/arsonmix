@@ -86,6 +86,11 @@ struct PcmHost {
         last=pcm.wireTransaction(roster,rev,edits,io,ep,epoch,false);
         return {last.ok(),last.ok()?"":"PCM_REJECTED"};
     }
+    bool setNativeWireGain(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+                           ChannelId source,std::uint64_t edgeId,float gain) {
+        return roster==pcm.acceptedRosterRevision()&&
+            pcm.setLiveWireGain(ep,rev,source,edgeId,gain);
+    }
     bool setNativeInputMix(std::uint64_t ep,std::uint64_t rev,
                            ChannelId id,float gain,float pan) {
         return pcm.setLiveMix(ep,rev,id,gain,pan);
@@ -108,6 +113,7 @@ struct PcmHost {
         put(result,"rosterRevision",textId(pcm.acceptedRosterRevision()));
         juce::Array<juce::var> rows,edges,ops;
         ops.add("NATIVE_APPLY_WIRE_TRANSACTION");
+        ops.add("NATIVE_SET_WIRE_GAIN");
         for(std::size_t i=0;i<view->channels.size();++i) {
             const auto& ch=view->channels[i];
             const auto* def=pcm.acceptedRoster().find(ch.id);assert(def);
@@ -153,6 +159,22 @@ struct PcmHost {
         const bool result=executeApprovedNativeControl(*this,decoded.translated,&lastError);
         pcm.pollRetirement();return result;
     }
+    juce::var gainRequest(ChannelId source,std::uint64_t edge,float gain) {
+        auto edit=object();put(edit,"from",textId(source.value));
+        auto r=request(edit);put(r,"operation","SET_WIRE_GAIN");
+        auto payload=object();put(payload,"edgeId",textId(edge));put(payload,"gainLinear",gain);
+        put(r,"payload",payload);return r;
+    }
+    std::uint64_t sendEdge(ChannelId source,ChannelId destination) const {
+        for(const auto& edge:pcm.acceptedRoster().find(source)->sends)
+            if(edge.destination==destination)return edge.edgeId;
+        assert(false);return 0;
+    }
+    bool gain(ChannelId source,std::uint64_t edge,float value) {
+        const auto native=readback();
+        const auto decoded=translateApprovedNativeControl(gainRequest(source,edge,value),snapshot(native),native);
+        assert(decoded.ok());return executeApprovedNativeControl(*this,decoded.translated);
+    }
     void render() {
         const float* pins[]{a.data(),b.data(),mic.data()};calls.fill(0);
         const auto fx=[&](ChannelId id,float* l,float* r,int n) noexcept {
@@ -190,6 +212,25 @@ int main() {
     assert(h.apply(link("CONNECT",ch3,ch4)));
     h.render();assert(near(h.peaksL[3],.0625f));
     assert(near(h.left[63],.3125f+mono)); // deliberate parallel path
+    const auto send=h.sendEdge(ch3,ch4),sameGraph=h.pcm.acceptedGraphRevision(),
+               sameRoster=h.pcm.acceptedRosterRevision();
+    assert(h.gain(ch3,send,.5f));
+    h.render();assert(h.left[0]>h.left[63]); // actual 64-sample gain slew
+    h.render();assert(near(h.peaksL[3],.03125f)&&near(h.left[63],.28125f+mono));
+    assert(h.pcm.acceptedGraphRevision()==sameGraph&&h.pcm.acceptedRosterRevision()==sameRoster);
+    const auto* gainView=h.pcm.acceptedRouting(h.epoch,sameGraph);
+    assert(near(gainView->find(ch3)->parallelSends[0].gain,.5f));
+    assert(near(h.pcm.acceptedRoster().find(ch3)->sends.back().gain,.5f));
+    const auto gainNative=h.readback(),gainPublic=h.snapshot(gainNative);
+    assert(translateApprovedNativeControl(h.gainRequest(ch3,h.sendEdge(ch3,h.main),.5f),
+        gainPublic,gainNative).error=="WIRE_PRIMARY_GAIN_FIXED");
+    assert(translateApprovedNativeControl(h.gainRequest(ch4,send,.5f),
+        gainPublic,gainNative).error=="WIRE_STALE_EDGE");
+    assert(translateApprovedNativeControl(h.gainRequest(ch3,send,5.f),
+        gainPublic,gainNative).error=="INVALID_NATIVE_WIRE_GAIN");
+    assert(!h.setNativeWireGain(h.epoch+1,sameGraph,sameRoster,ch3,send,.5f));
+    assert(!h.setNativeWireGain(h.epoch,sameGraph,sameRoster-1,ch3,send,.5f));
+    assert(h.gain(ch3,send,1.f));h.render();h.render();
     auto rb=h.readback();auto s=h.snapshot(rb);
     assert(s.getProperty("graph",{}).getProperty("destinations",{}).size()==12);
     assert(near(static_cast<float>(s.getProperty("telemetry",{})
@@ -272,4 +313,17 @@ int main() {
     assert(h.left[63]==0.f&&h.right[63]==0.f);
     PcmHost reconnected;reconnected.render();
     assert(near(reconnected.left[63],.25f+mono));
+    // Configure a dormant send BEFORE assigning its hardware IN. The
+    // remembered live level must seed its later real PCM preparation.
+    PcmHost dormant;const auto empty=dormant.channels[7],receiver=dormant.channels[3];
+    assert(dormant.apply(link("CONNECT",empty,receiver)));
+    const auto dormantEdge=dormant.sendEdge(empty,receiver);
+    assert(dormant.gain(empty,dormantEdge,.25f));dormant.render();
+    assert(dormant.peaksL[7]==0.f&&near(dormant.left[63],.25f+mono));
+    dormant.io.sources.push_back({empty,0,1,true});
+    width.id=empty;
+    assert(dormant.pcm.edit(dormant.pcm.acceptedRosterRevision(),dormant.pcm.acceptedGraphRevision(),
+        std::span<const ChannelEdit>(&width,1),dormant.io,dormant.epoch,dormant.epoch,true).ok());
+    dormant.render();assert(near(dormant.peaksL[3],.015625f));
+    assert(near(dormant.left[63],.265625f+mono));
 }

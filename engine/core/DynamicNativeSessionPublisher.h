@@ -235,9 +235,37 @@ public:
                              bool preFader,float gain) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setParallelSendGain(
-                    source,destination,preFader,gain);
+                if(!std::isfinite(gain)||gain<0.f||gain>4.f)return false;
+                const bool admitted=std::any_of(active.routing.edges.begin(),active.routing.edges.end(),
+                    [&](const auto& edge){return edge.from==source&&edge.to==destination&&
+                        edge.preFader==preFader&&!edge.primaryOutput;});
+                if(!admitted)return false;
+                if(active.graph.channelScheduled(source)&&!active.graph.setParallelSendGain(
+                    source,destination,preFader,gain))return false;
+                // A dormant send has no scratch/atomic DSP edge yet. Its
+                // accepted gain is still editable and seeds the next source
+                // preparation through the authoritative remembered roster.
+                // Routing readback is CONTROL-only; AUDIO reads only the
+                // graph's atomic gain target and preallocated 64-sample slew.
+                for(auto& edge:active.routing.edges)
+                    if(edge.from==source&&edge.to==destination&&
+                       edge.preFader==preFader&&!edge.primaryOutput)
+                        edge.gainLinear=gain;
+                for(auto& row:active.routing.channels)if(row.id==source)
+                    for(auto& edge:row.parallelSends)
+                        if(edge.destination==destination&&edge.preFader==preFader)
+                            edge.gain=gain;
+                return true;
             });
+    }
+    bool setWireGain(std::uint64_t epoch,std::uint64_t revision,
+                     ChannelId source,std::uint64_t edgeId,float gain) noexcept {
+        const auto* routing=acceptedRouting(epoch,revision);
+        if(!routing||!edgeId)return false;
+        for(const auto& edge:routing->edges)
+            if(edge.edgeId==edgeId&&edge.from==source&&!edge.primaryOutput)
+                return setParallelSendGain(epoch,revision,source,edge.to,edge.preFader,gain);
+        return false;
     }
 
     // CONTROL ONLY; never destroy the last live graph in a callback.

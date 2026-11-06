@@ -1925,6 +1925,27 @@ public:
         return true;
     }
 
+    // EdgeId-keyed live SEND level: no graph compile, VST recreation or
+    // callback handoff. Primary outputs retain their unity-gain contract.
+    bool setNativeWireGain(std::uint64_t ep,std::uint64_t graphRev,
+                           std::uint64_t rosterRev,armix::mixer::ChannelId source,
+                           std::uint64_t edgeId,float gain) noexcept {
+        if(!channelIdPhysicalPcmActive()||!ready()||ep!=epoch()||
+           graphRev!=nativeAccepted_.pcmRevision||
+           rosterRev!=nativeAccepted_.graph.roster.revision()||
+           !std::isfinite(gain)||gain<0.f||gain>4.f)return false;
+        const auto* row=nativeAccepted_.graph.roster.find(source);
+        if(!row||!edgeId)return false;
+        for(const auto& edge:row->sends)
+            if(edge.edgeId==edgeId&&!edge.primaryOutput) {
+                if(!nativePublisher_.setWireGain(ep,graphRev,source,edgeId,gain))return false;
+                if(!nativeAccepted_.graph.roster.rememberLiveParallelSend(
+                       source,edge.destination,edge.preFader,gain))return false;
+                nativeControlDirty_=true;
+                return true;
+            }
+        return false;
+    }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
     juce::var nativeBusStatus() const {
@@ -1947,6 +1968,7 @@ public:
                              "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
                              "NATIVE_SET_PRIMARY_OUT",
                              "NATIVE_APPLY_WIRE_TRANSACTION",
+                             "NATIVE_SET_WIRE_GAIN",
                              "NATIVE_SET_PROCESSING_FORMAT",
                              "NATIVE_SET_CHANNEL_MIX",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",

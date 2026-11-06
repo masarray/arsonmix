@@ -465,13 +465,14 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(bridge,/function requestPrimaryOut\(t,target\)/);
  assert.match(bridge,/session\?\.authority==="CHANNEL_ID"/);
  assert.match(bridge,/controller\.intent\("APPLY_WIRE_TRANSACTION",channelId,/);
- assert.match(bridge,/const to=target==="MAIN"\?main:group\?\.id\|\|null/);
+ assert.match(bridge,/const to=target==="MAIN"\?main:destination\?\.id\|\|null/);
  assert.match(bridge,/change=\{op:"ROUTE_ONLY",from:channelId,to,/);
  assert.match(bridge,/change=\{op:"REMOVE",from:channelId,edgeId:edge\.edgeId\}/);
  // Only the accepted PRIMARY edge may be detached. A parallel SEND to
  // MAIN must not be misclassified as a physical OUT.
  assert.match(bridge,/e\.primaryOutput===true/);
- assert.doesNotMatch(bridge,/e\.primaryOutput!==false/);
+ const primaryOutPath=bridge.slice(bridge.indexOf("function requestPrimaryOut"),bridge.indexOf("const pendingNativeSources"));
+ assert.doesNotMatch(primaryOutPath,/e\.primaryOutput!==false/);
  const roster=read("engine/core/DynamicChannelRoster.h");
  const translator=read("integration/ApprovedNativeControlIntent.h");
  assert.match(roster,/target->primaryOutput=true/);
@@ -865,10 +866,12 @@ test("M2 code edits approved Pages *events* only, not a second native GUI/audio 
 });
 
 test("M3 native-only Pages scope performs real bridge projection, fader intent and ACK readback",()=>{
- const vm=require("node:vm"),sent=[],listeners=new Map();
+ const vm=require("node:vm"),sent=[],listeners=new Map(),timers=[];
  let nextId=100,nextEdgeId=200,paints=0,rollbacks=0;
  const scope={
    tracks:[],master:{id:1,name:"Master"},colors:["#568ead"],
+   get wireEdges(){return this.edges||[];},
+   syncNativeWireGains(rows){for(const r of rows){const e=this.edges?.find(e=>e.id===r.id);if(e)e.levelDb=r.levelDb;}},
    wireGraph:{validateCandidateGraph:()=>({ok:true})},
    make:(name,kind,color)=>({id:nextId++,name,kind,color,selected:false}),
    render(){paints++;},
@@ -892,7 +895,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  };
  const window={
    __JUCE__:{backend:native},ArSonApprovedNativeContract:protocol,
-   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(){return 0;}
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(fn,ms){timers.push({fn,ms});return timers.length;}
  };
  vm.runInNewContext(read("web/approved-native-bridge.js"),{
    window,document,performance:{now:()=>0},console
@@ -991,6 +994,71 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  assert.equal(scope.edges.length,1);
  assert.equal(scope.edges[0].destId,receiverUi);
  assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
+ // Continuous send gain coalesces the latest gesture while the native ACK
+ // is outstanding. Gain-only accepted readback must preserve strip DOM.
+ routed.graph.capabilities.supportedOps.push("SET_WIRE_GAIN");
+ listeners.get("arMixConsoleSnapshot")(routed);
+ const gainUi=scope.edges[0].id,paintBeforeGain=paints;
+ const pump=()=>{const ready=timers.splice(0);for(const t of ready)if(t.ms===32)t.fn();};
+ window.__ARMIX_NATIVE_M2__.consumeWire([{type:"GAIN",sourceId:sourceUi,edgeId:gainUi,levelDb:-6}]);
+ pump();
+ const firstGain=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(firstGain.operation,"SET_WIRE_GAIN");
+ assert.equal(firstGain.payload.edgeId,"9223372036854775810");
+ assert.equal(scope.edges[0].levelDb,0,"no optimistic send gain acceptance");
+ window.__ARMIX_NATIVE_M2__.consumeWire([{type:"GAIN",sourceId:sourceUi,edgeId:gainUi,levelDb:-9}]);
+ window.__ARMIX_NATIVE_M2__.consumeWire([{type:"GAIN",sourceId:sourceUi,edgeId:gainUi,levelDb:-12}]);
+ pump();
+ assert.equal(sent.findLast(x=>x.name==="arMixConsoleIntent").payload.requestId,firstGain.requestId);
+ const ackGain=request=>listeners.get("arMixConsoleAck")({requestId:request.requestId,status:"ACCEPTED",
+   errorCode:"NONE",deviceEpoch:routed.device.epoch,graphRevision:"8",rosterRevision:"8"});
+ ackGain(firstGain);
+ assert.equal(scope.edges[0].levelDb,0,"ACK alone is not PCM gain readback");
+ const gained=clone(routed);gained.graph.edges[0].gainLinear=firstGain.payload.gainLinear;
+ listeners.get("arMixConsoleSnapshot")(gained);
+ assert.equal(scope.edges[0].levelDb,-6);
+ assert.equal(paints,paintBeforeGain,"scalar WIRE gain cannot rebuild mounted strips");
+ pump();
+ const latestGain=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.notEqual(latestGain.requestId,firstGain.requestId);
+ assert.ok(Math.abs(latestGain.payload.gainLinear-Math.pow(10,-12/20))<1e-9);
+ ackGain(latestGain);gained.graph.edges[0].gainLinear=latestGain.payload.gainLinear;
+ listeners.get("arMixConsoleSnapshot")(gained);
+ assert.equal(scope.edges[0].levelDb,-12);
+ assert.equal(paints,paintBeforeGain);
+ // OUT uses the same actual INPUT destination as WIRE, not a name-only
+ // GROUP lookup. An exclusive route promotes the existing native edge.
+ const hooks=window.__ARMIX_NATIVE_M2__,sourceTrack=scope.tracks[0];
+ assert.ok(hooks.outputChoices(sourceTrack).includes("CH04"));
+ const output={dataset:{field:"output"},value:"CH04",closest:()=>null};
+ hooks.consumeField({target:output,type:"change"});
+ const outRequest=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(outRequest.operation,"APPLY_WIRE_TRANSACTION");
+ assert.equal(outRequest.payload.changes[0].op,"ROUTE_ONLY");
+ assert.equal(outRequest.payload.changes[0].to,receiver.id);
+ listeners.get("arMixConsoleAck")({requestId:outRequest.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:gained.device.epoch,graphRevision:"9",rosterRevision:"9"});
+ const primary=clone(gained);primary.graph.revision="9";primary.graph.rosterRevision="9";
+ primary.graph.channels[0].primaryOutId=receiver.id;
+ primary.graph.edges[0].primaryOutput=true;primary.graph.edges[0].gainLinear=1;
+ listeners.get("arMixConsoleSnapshot")(primary);
+ assert.equal(scope.tracks[0].output,"CH04");
+ const duplicate=clone(primary),other=clone(receiver);
+ other.id="9007199254740997";duplicate.graph.channels.splice(2,0,other);
+ const reserved=clone(receiver);reserved.id="9007199254740999";reserved.name="NONE";
+ duplicate.graph.channels.splice(3,0,reserved);
+ duplicate.graph.revision="10";duplicate.graph.rosterRevision="10";
+ listeners.get("arMixConsoleSnapshot")(duplicate);
+ const choices=hooks.outputChoices(scope.tracks[0]);
+ assert.ok(choices.includes("CH04 ["+receiver.id+"]"));
+ assert.ok(choices.includes("CH04 ["+other.id+"]"));
+ assert.ok(!choices.includes("CH04"),"duplicate names cannot address the wrong native channel");
+ assert.ok(!choices.includes("NONE"),"a channel name cannot alias SOURCE ONLY");
+ assert.ok(choices.includes("NONE ["+reserved.id+"]"));
+ output.value="CH04";hooks.consumeField({target:output,type:"change"});
+ assert.equal(sent.findLast(x=>x.name==="arMixConsoleIntent").payload.requestId,outRequest.requestId);
+ output.value="CH04 ["+other.id+"]";hooks.consumeField({target:output,type:"change"});
+ assert.equal(sent.findLast(x=>x.name==="arMixConsoleIntent").payload.payload.changes[0].to,other.id);
 });
 
 test("P0 native FX rack and per-slot readback update mounted strip without replacing fader DOM",()=>{
@@ -1303,3 +1371,30 @@ test("native Windows operator can explicitly patch first physical input, arm and
 
 // Held-pointer native fader regression runs within existing Windows / Chromium test gates.
 require("./live_fader_held_drag.test.cjs");
+
+test("live WIRE gain requires exact same-revision sample-target readback and unchanged edge identity",()=>{
+ const base=acceptedFixture();delete base.graph.channels[0].primaryOutId;
+ base.graph.edges[0].primaryOutput=false;base.graph.edges[0].tap="POST_FADER";
+ base.graph.capabilities.supportedOps.push("SET_WIRE_GAIN");
+ const source=base.graph.channels[0].id,edge=base.graph.edges[0].edgeId;
+ const create=()=>{const sent=[];const c=protocol.createController({emit:(name,payload)=>sent.push({name,payload})});
+   c.onSnapshot(clone(base));return {c,sent};};
+ const accept=(c,r)=>c.onAck({requestId:r.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:base.device.epoch,graphRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision});
+ for(const corrupt of [s=>{s.graph.edges[0].gainLinear=.5;},s=>{s.graph.edges[0].tap="PRE_FADER";},
+   s=>{s.graph.edges[0].primaryOutput=true;}]){
+   const {c}=create();const r=c.intent("SET_WIRE_GAIN",source,{edgeId:edge,gainLinear:.25});
+   assert.ok(r.ok);accept(c,r);
+   const bad=clone(base);bad.graph.edges[0].gainLinear=.25;corrupt(bad);
+   assert.equal(c.onSnapshot(bad),false);
+   assert.equal(c.state().lastError,"ACK_READBACK_EFFECT_MISMATCH");
+   assert.equal(c.state().current.graph.edges[0].gainLinear,1);
+ }
+ const {c}=create();const r=c.intent("SET_WIRE_GAIN",source,{edgeId:edge,gainLinear:.25});
+ accept(c,r);assert.equal(c.state().current.graph.edges[0].gainLinear,1);
+ const good=clone(base);good.graph.edges[0].gainLinear=.25;
+ assert.ok(c.onSnapshot(good));assert.equal(c.state().pending,null);
+ assert.equal(c.state().current.graph.revision,base.graph.revision);
+ assert.equal(c.state().current.graph.edges[0].gainLinear,.25);
+ assert.equal(c.intent("SET_WIRE_GAIN",source,{edgeId:"99999",gainLinear:.5}).ok,false);
+});

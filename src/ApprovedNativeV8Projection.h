@@ -160,6 +160,9 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
     if(auto* caps=graph.getProperty("capabilities",{}).getDynamicObject()){
         caps->setProperty("callbackOwnsChannelIds",true);
         juce::Array<juce::var> ops;ops.add("APPLY_WIRE_TRANSACTION");
+        const auto actual=bus.getProperty("supportedOps",{});
+        if(const auto* list=actual.getArray())
+            if(list->contains(juce::var("NATIVE_SET_WIRE_GAIN")))ops.add("SET_WIRE_GAIN");
         caps->setProperty("supportedOps",juce::var(ops));
     }
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));

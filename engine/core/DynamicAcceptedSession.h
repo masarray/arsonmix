@@ -246,6 +246,15 @@ public:
             source,destination,preFader,linear);
     }
 
+    bool setLiveWireGain(std::uint64_t epoch,std::uint64_t revision,
+                         ChannelId source,std::uint64_t edgeId,float gain) noexcept {
+        const auto* row=accepted_.find(source);
+        if(!row||!edgeId)return false;
+        for(const auto& edge:row->sends)
+            if(edge.edgeId==edgeId&&!edge.primaryOutput)
+                return setLiveParallelSend(epoch,revision,source,edge.destination,edge.preFader,gain);
+        return false;
+    }
     // This is a callback-ready DELEGATE, not an additional audio renderer.
     // M3D does not attach it to the production JUCE device until VST/Show
     // ownership and native output-port parity have been migrated.
