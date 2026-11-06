@@ -18,8 +18,15 @@ assert.ok(js.includes('slotMarkup(track')&&js.includes('builtinEqSetGate'));
 assert.ok(js.includes('lastGraphEqSweep')&&js.includes('otherTrack'),
  'Reproject actual native ChannelId EQ state after structural graph revision');
 const main=fs.readFileSync('src/Main.cpp','utf8');
-assert.ok(main.includes('uncapturedBuiltInEq()'),
- 'Do not persist/show-recall EQ state via legacy schema v4');
+assert.ok(main.includes('captureAcceptedEq(')&&
+          main.includes('acceptedEqFromShow(')&&
+          main.includes('unsettledBuiltInEq()')&&
+          main.includes('EqRestores eqRestores'),
+ 'Show V5 must save accepted EQ, build fresh DSP on recall and fence pending ACK');
+const showSchema=fs.readFileSync('src/NativeShowSchema.h','utf8');
+assert.ok(showSchema.includes('schemaVersion",5')&&
+          showSchema.includes('encodeEq(')&&showSchema.includes('decodeEq('),
+ 'Native Show V5 must preserve all 8 bands; old V2-V4 decode to default off');
 assert.ok(component.includes('window.ArSonMixBuiltinEq?.open(t)'));
 assert.match(native,/__ARMIX_BUILTIN_EQ_CHANNEL__/);
 assert.match(js,/arMixBuiltinEqAck/);

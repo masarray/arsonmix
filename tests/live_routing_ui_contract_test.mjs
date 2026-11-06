@@ -295,7 +295,10 @@ test("G5E native Shows browse and hash-verified FX recall are worker-backed and 
   assert.match(main,/nativeShowWorker_\.read\(/);
   assert.match(main,/result\.requestEpoch/);
   assert.match(main,/result\.requestRevision/);
-  assert.match(main,/applyDryRoutingLab\(\s*command,selections,&restores\)/);
+  assert.match(main,/applyDryRoutingLab\(\s*command,selections,&restores,&eqRestores\)/);
+  assert.match(main,/acceptedEqFromShow\(result.loaded,epochNow\)/);
+  assert.match(lab,/if\(eqRestores\)/);
+  assert.match(lab,/setBuiltInEqOffline\(lane,slot,band\)/);
   assert.match(main,/result\.loadedStates/);
   assert.match(main,/entry->uid!=ref\.uid/);
   assert.match(main,/safe->closePluginEditor\(\)/);
