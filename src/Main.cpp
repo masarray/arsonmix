@@ -2200,8 +2200,17 @@ private:
             bool opened=false;
             juce::String error="FX editor unavailable: device, revision or instance changed";
             if(!nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
-                const auto owner=engine_.leaseRoutedFxForEditor(
-                    lane,slot,epoch,revision,token);
+                armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+                const auto nativeId=args.getProperty("channelId",{});
+                if(!nativeId.isVoid()) {
+                    std::uint64_t id=0,ep=0,rev=0;
+                    if(armix::console::approvedNativeId(nativeId,id)&&
+                       armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)&&
+                       armix::console::approvedNativeId(args.getProperty("revision",{}),rev)&&
+                       slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane)
+                        owner=engine_.leaseNativeVst3Editor(ep,rev,
+                            armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),token);
+                } else owner=engine_.leaseRoutedFxForEditor(lane,slot,epoch,revision,token);
                 if(owner && owner->processor) {
                     try {
                         if(auto* editor=owner->processor->createEditorIfNeeded()) {

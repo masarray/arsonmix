@@ -186,6 +186,9 @@ public:
         plan.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
             (*static_cast<Bank*>(ctx))(id,l,r,n);
         };
+        plan.latency=+[](void* ctx,ChannelId id) noexcept {
+            return static_cast<Bank*>(ctx)->latencySamples(id);
+        };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
         result.native=publisher.commit(candidate.roster,candidate.request,
             expectedPcmRevision,deviceEpoch,currentHardwareEpoch,

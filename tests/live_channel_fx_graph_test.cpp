@@ -37,18 +37,22 @@ void operator delete(void* p,std::size_t) noexcept {std::free(p);}
 class GainFx final : public juce::AudioProcessor {
 public:
     static inline int living=0, prepared=0, released=0;
-    explicit GainFx(float gain)
+    explicit GainFx(float gain,int delay=0)
       : AudioProcessor(BusesProperties()
         .withInput("Main",juce::AudioChannelSet::stereo(),true)
-        .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain){++living;}
+        .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),delaySamples_(delay){++living;setLatencySamples(delay);}
     ~GainFx() override{--living;}
     const juce::String getName()const override{return "In-memory gain effect";}
-    void prepareToPlay(double,int)override{++prepared;}
+    void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
     void releaseResources()override{++released;}
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
         for(int c=0;c<buffer.getNumChannels();++c)
             for(int f=0;f<buffer.getNumSamples();++f)
                 buffer.getWritePointer(c)[f]*=gain_;
+        for(int f=0;f<buffer.getNumSamples();++f){
+            float& l=buffer.getWritePointer(0)[f];float& r=buffer.getWritePointer(1)[f];
+            delay_.process(l,r);
+        }
     }
     double getTailLengthSeconds()const override{return 0;}
     bool acceptsMidi()const override{return false;}
@@ -69,6 +73,8 @@ public:
     }
 private:
     float gain_;
+    int delaySamples_=0;
+    armix::dsp::StereoLatencyDelay delay_;
 };
 static bool near(float x,float y){return std::abs(x-y)<0.0001f;}
 static std::unique_ptr<LiveChannelFxGraph> makeGraph(float firstFx,float returnFx,bool withFx=true) {
@@ -210,9 +216,8 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     alias[1].inserts=first.inserts; // same native processor twice
     assert(Bank::prepare(epoch,2,alias,blocked)==Bank::Fault::duplicateInstance);
     assert(blocked.lanes()==0);
-    // Native PDC is not yet installed. A real JUCE AudioProcessor reporting
-    // 64 samples of plugin delay must be rejected BEFORE accepted PCM/lease
-    // publication; mixing uncompensated Return with MAIN is phase-unsafe.
+    // A fixed-latency VST lease is admitted; the PCM publisher consumes its
+    // exact inventory to prepare fan-in compensation before publication.
     auto latentProcessor=std::make_unique<GainFx>(1.5f);
     latentProcessor->setLatencySamples(64);
     latentProcessor->prepareToPlay(48000.0,64);
@@ -222,8 +227,8 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
         std::move(latentProcessor),"latent-vst","latency-64",64));
     const std::array<Bank::Assignment,1> latentScene{latent};
     assert(Bank::prepare(epoch,2,latentScene,blocked)==
-           Bank::Fault::uncompensatedLatency);
-    assert(blocked.lanes()==0); // failed admission cannot mutate previous bank
+           Bank::Fault::none);
+    assert(blocked.latencySamples(ch11)==64);
     assert(Bank::prepare(epoch,2,assignments,blocked)==Bank::Fault::none);
     const auto token=original->insertInstanceId(0,0);
     auto migrated=*bank.ownerForControl(ch1,0);
@@ -1885,6 +1890,28 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+static void verifyLatencyAlignedBypass() {
+    // Real JUCE processing (not merely reporting a latency value): an impulse
+    // remains at sample 7 through wet, individual bypass and rack bypass.
+    for(int mode=0;mode<3;++mode){
+        auto p=std::make_unique<GainFx>(1.f,7);p->prepareToPlay(48000,64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"delayed","7 samples",64);
+        fx.bypassRequested.store(mode==1);
+        std::array<float,64> l{},r{};
+        // Reach the bypass envelope's steady state first.
+        for(int block=0;block<10;++block){l.fill(0);r.fill(0);fx.render(l.data(),r.data(),64,mode==2);}
+        l.fill(0);r.fill(0);l[0]=r[0]=1;
+        const auto before=heapCalls.load();
+        fx.render(l.data(),r.data(),64,mode==2);
+        assert(heapCalls.load()==before);
+        for(int i=0;i<64;++i)assert(near(l[i],i==7?1.f:0.f)&&near(l[i],r[i]));
+        fx.processor->setLatencySamples(8);
+        assert(fx.latencyChanged.load()); // no unaligned wet enters accepted PCM
+        l.fill(0);r.fill(0);l[0]=r[0]=1;
+        fx.render(l.data(),r.data(),64,mode==2);
+        for(int i=0;i<64;++i)assert(near(l[i],i==7?1.f:0.f));
+    }
+}
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2296,6 +2323,7 @@ int main(int argc,char** argv) {
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
+    verifyLatencyAlignedBypass();
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

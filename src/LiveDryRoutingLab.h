@@ -282,6 +282,8 @@ public:
             static_cast<juce::int64>(command.getProperty("revision",juce::var(0))));
         if(currentEpoch==0 || expectedEpoch!=currentEpoch)
             return "Audio device changed: reopen ROUTING to remap physical ports";
+        if(expectedRevision!=revision())
+            return "Routing revision changed before preparation; refresh accepted state";
         armix::mixer::NativeDryRouteCommand decoded;
         juce::String validationError;
         if(!armix::mixer::NativeDryRouteCommand::decode(
@@ -569,6 +571,8 @@ public:
             juce::JSON::toString(sourceTemplate_,false));
         if(!command.isObject())
             return "FX INSERT: accepted source template cannot be cloned";
+        command.getDynamicObject()->setProperty("deviceEpoch",static_cast<juce::int64>(expectedEpoch));
+        command.getDynamicObject()->setProperty("revision",static_cast<juce::int64>(expectedRevision));
         // A vendor plugin prepare happens AFTER live native fader/PAN edits.
         // Recompile from the last accepted operator controls, not the stale
         // pre-fader sourceTemplate_ values. Rejection keeps the old PCM live.
@@ -1266,23 +1270,13 @@ public:
             out.error="NATIVE_INSERT_REQUIRES_PREPARED_INTERNAL_FX";return out;
         }
         const auto* current=nativeAccepted_.graph.roster.find(target);
-        if(!current || (current->role!=ChannelRole::input &&
-                        current->role!=ChannelRole::group)) {
+        if(!current || current->role==ChannelRole::monitor) {
             out.error="NATIVE_INSERT_TARGET_UNAVAILABLE";return out;
         }
-        // Original ten strips use their existing M4 VST rack until native
-        // BUS/WIRE makes the ChannelId graph structurally authoritative.
-        // Thereafter new native inserts must attach to the SAME prepared
-        // ChannelId lease (not to an inactive M4 graph). Special CH1 external
-        // vendor chain stays isolated until an explicit combined-chain gate:
-        // appending there would otherwise double-render or hide the old FX.
-        for(const auto id:nativeAccepted_.graph.ids.inputs)
-            if(id==target && (!nativeStructureLive_ ||
-                nativeAccepted_.fxOwners->externalChannel()==target)) {
-                out.error="M4_INSERT_USE_EXISTING_RACK";return out;
-            }
-        if(originalM4Aux(target)){
-            out.error="M4_INSERT_USE_EXISTING_RACK";return out;
+        // PCM authority, not historical strip ordinal, owns every new FX.
+        // An occupied external CH1 chain still needs a combined lease contract.
+        if(nativeAccepted_.fxOwners->externalChannel()==target) {
+            out.error="EXTERNAL_CH1_INSERT_CHAIN_ALREADY_OWNED";return out;
         }
         if(catalogId.isEmpty()||catalogId.getNumBytesAsUTF8()>256) {
             out.error="INVALID_VST3_CATALOG_ID";return out;
@@ -1312,6 +1306,9 @@ public:
             fx.context=owner.get();
             fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept{
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -1427,6 +1424,9 @@ public:
             fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
             };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             // Keep old PCM running throughout candidate validation/FX lease
@@ -1519,6 +1519,9 @@ public:
             fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
             };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish(); // no hardware mute during prepare
@@ -1597,6 +1600,9 @@ public:
             fx.context=owner.get();
             fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -1681,6 +1687,9 @@ public:
             fx.render=+[](void* ctx,ChannelId id,float* left,float* right,int n) noexcept {
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,left,right,n);
             };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
@@ -1751,6 +1760,9 @@ public:
             fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept{
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
             };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
             fx.deviceEpoch=ep;fx.graphRevision=expectedPcmRev+1;
             const auto published=nativePublisher_.commit(
                  roster,nativeAccepted_.graph.request,expectedPcmRev,
@@ -1818,6 +1830,9 @@ public:
             fx.context=owner.get();
             fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept {
                 (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             fx.deviceEpoch=ep;
             fx.graphRevision=expectedPcmRev+1;
@@ -1946,6 +1961,10 @@ public:
             }
         return false;
     }
+    int nativePcmLatencySamples() const noexcept {
+        return channelIdPhysicalPcmActive()?
+            nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision):0;
+    }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
     juce::var nativeBusStatus() const {
@@ -1959,6 +1978,7 @@ public:
         state->setProperty("rosterRevision",juce::String(
             std::to_string(routing->rosterRevision)));
         state->setProperty("structural",nativeStructureLive_);
+        state->setProperty("latencySamples",nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision));
         juce::Array<juce::var> allowed;
         // Only expose operations backed by a real DSP lease. Dynamic
         // FX_RETURN insertion is not available until a native VST3 owner
@@ -2017,6 +2037,8 @@ public:
                 item->setProperty("instanceId",(*lease)->instanceId);
                 item->setProperty("id",(*lease)->catalogId);
                 item->setProperty("name",(*lease)->name);
+                item->setProperty("latencySamples",(*lease)->latencySamples);
+                item->setProperty("latencyChanged",(*lease)->latencyChanged.load(std::memory_order_acquire));
                 item->setProperty("bypassed",(*lease)->bypassRequested.load(
                     std::memory_order_relaxed));
                 liveInserts.add(juce::var(item.release()));

@@ -263,7 +263,7 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         const auto role=ch.getProperty("role","").toString();
         if(!ch.isObject()||!nativeCh.isObject()||
            role!=nativeCh.getProperty("role","").toString()||
-           (role!="INPUT"&&role!="GROUP"))
+           (role!="INPUT"&&role!="GROUP"&&role!="FX_RETURN"&&role!="MAIN"))
             return reject("NATIVE_VST3_TARGET_NOT_ADMITTED");
         const auto payload=publicIntent.getProperty("payload",{});
         const auto catalog=payload.getProperty("catalogId",{});

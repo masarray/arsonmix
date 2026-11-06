@@ -118,13 +118,11 @@ public:
                 if(owner->processor->getTotalNumInputChannels()!=2 ||
                    owner->processor->getTotalNumOutputChannels()!=2)
                     return Fault::invalidBusLayout;
-                // Global live-mixer architecture (Waves LV1/Ableton):
-                // parallel PRE/POST paths with unequal VST latency require
-                // true graph-aware PDC. Until that engine exists, never
-                // admit a plugin that would produce misaligned MAIN/MONITOR,
-                // AUX/Group or parallel FX Return PCM. This is a CONTROL-only
-                // processor inspection, NEVER called from realtime.
-                if(owner->processor->getLatencySamples()!=0)
+                // Latency is captured once at prepared instance creation.
+                // The publisher builds graph-aware fan-in delay from it.
+                if(owner->latencySamples<0 ||
+                   owner->latencySamples>armix::dsp::StereoLatencyDelay::maximumSamples ||
+                   owner->latencyChanged.load(std::memory_order_acquire))
                     return Fault::uncompensatedLatency;
                 for(const auto& existing:candidate.rows_)
                     for(std::size_t k=0;k<existing.count;++k)
@@ -153,6 +151,15 @@ public:
         return Fault::none;
     }
 
+    int latencySamples(ChannelId id) const noexcept {
+        const auto* row=find(id);int total=0;
+        if(row)for(std::size_t i=0;i<row->count;++i) {
+            const int n=row->raw[i]->latencySamples;
+            if(n>armix::dsp::StereoLatencyDelay::maximumSamples-total)return -1;
+            total+=n;
+        }
+        return total;
+    }
     std::uint64_t epoch() const noexcept{return epoch_;}
     std::uint64_t revision() const noexcept{return revision_;}
     std::size_t lanes() const noexcept{return rows_.size();}

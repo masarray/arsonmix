@@ -28,8 +28,9 @@ public:
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
         void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
         std::uint64_t deviceEpoch=0,graphRevision=0;
+        int (*latency)(void*,ChannelId) noexcept=nullptr;
         bool valid() const noexcept {
-            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision) ||
+            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision&&!latency) ||
                    (owner&&context==owner.get()&&render&&
                     deviceEpoch>0&&graphRevision>0);
         }
@@ -68,7 +69,7 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={nullptr,nullptr,nullptr,0,0},bool verifiedInternalWireOnly=false,
+                        FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
@@ -84,7 +85,7 @@ public:
            expectedRevision==std::numeric_limits<std::uint64_t>::max()) {
             report.fault=Fault::staleRevision;return report;
         }
-        // A zero-latency vendor FX lease can be prepared off-RT and
+        // A latency-budgeted vendor FX lease can be prepared off-RT and
         // published on the SAME physical device/patch as the existing
         // ChannelId graph. Neither WIRE nor this in-place FX edit can
         // change physical pins. Other structural edits still disarm.
@@ -101,6 +102,11 @@ public:
         auto prepared=std::make_unique<Prepared>();
         if(!DynamicPreparedMixerBlock::compile(
               roster,request,prepared->graph,report.graphError)) {
+            report.fault=Fault::invalidGraph;return report;
+        }
+        if(!prepared->graph.prepareLatency([&](ChannelId id) noexcept {
+               return fx.latency?fx.latency(fx.context,id):0;
+           },request.maxScratchBytes,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
         }
         // The Console data and PCM schedule must originate from one and the
@@ -269,6 +275,10 @@ public:
     }
 
     // CONTROL ONLY; never destroy the last live graph in a callback.
+    int latencySamples(std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.latencySamples():0;
+    }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {

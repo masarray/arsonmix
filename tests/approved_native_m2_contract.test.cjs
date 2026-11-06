@@ -200,7 +200,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(activeProjection,/insert->setProperty\("catalogId",catalog\)/);
  assert.match(activeProjection,/ch->setProperty\("fxRackBypassed",rackBypassed\)/);
  assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
- assert.match(bridge,/legacy\(\)\?\.nativeBusStructural===true/);
+ assert.match(bridge,/if\(accepted\?\.admitted && nativeCh\)/);
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
  assert.match(bridge,/pendingFxInsert=\{authority:"CHANNEL_ID"/);
  assert.match(bridge,/inserted\?\.catalogId===p\.id/);
@@ -215,7 +215,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
                             engine.indexOf("bool bypassNativeVst3(",engine.indexOf("installNativeVst3(")));
  assert.doesNotMatch(install,/!allOutputsDisarmed\(\)/);
  assert.match(install,/secondaryOutput_\.armed\(\)/);
- assert.match(install,/getLatencySamples\(\)!=0/);
+ assert.match(install,/getLatencySamples\(\)>armix::dsp::StereoLatencyDelay::maximumSamples/);
 });
 test("Native VST3 insert ACK + readback distinguishes vendor catalog key from live instance token",()=>{
   const base=acceptedFixture();

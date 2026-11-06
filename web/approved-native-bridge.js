@@ -18,6 +18,37 @@
   const uiByWireId = new Map();
   const pendingWireGains=new Map();
   let wireGainFlushQueued=false;
+  let startupWire=null, startupWireSerial=0;
+  function deferStartupWire(ops){
+    if(!Array.isArray(ops)||ops.length!==1||
+       !["CONNECT","ROUTE_ONLY"].includes(ops[0].type)||!deviceReady())return false;
+    const current=controller?.state()?.current,op=ops[0];
+    const epoch=current?.device?.epoch||String(hardware?.device?.epoch||"");
+    if(!/^[1-9][0-9]*$/.test(epoch))return false;
+    const token=++startupWireSerial;
+    startupWire={ops:ops.map(x=>({...x})),epoch,token,
+      source:nativeByUiId.get(op.sourceId),destination:nativeByUiId.get(op.destId)};
+    status("WIRE · completing initial native input admission");
+    controller?.subscribe();
+    window.setTimeout(()=>{
+      if(startupWire?.token!==token)return;
+      startupWire=null;status("WIRE not applied · native admission timed out; previous audio preserved");
+    },8000);
+    return true;
+  }
+  function flushStartupWire(){
+    if(!startupWire)return;
+    const state=controller?.state(),current=state?.current,p=startupWire,op=p.ops[0];
+    if(current?.device?.epoch!==p.epoch){startupWire=null;return;}
+    if(state.pending||activeNativeSource||nativeUiSourcePending||
+       pendingNativeSources.size||pendingSourceQueue.size||
+       !flags.acceptedGraphConnected||!current.admitted)return;
+    startupWire=null;
+    if((p.source&&nativeByUiId.get(op.sourceId)!==p.source)||
+       (p.destination&&nativeByUiId.get(op.destId)!==p.destination))return;
+    nativeHooks.consumeWire(p.ops);
+  }
+
   let lastPaintedSignature = "",lastNativeTopologySignature = "",
       lastNativeError = "NATIVE_NOT_SUBSCRIBED";
   // B-stage: attached-node-only meter caches; a structural render invalidates
@@ -228,6 +259,10 @@
       const row=[...rack.querySelectorAll('.fxslot-row:not(.is-empty)')]
         .find(r=>r.dataset.slot===String(slot));
       const effective=enabled&&!insert.bypassed;
+      if(insert.latencyChanged===true)
+        row.title="Plugin delay changed · aligned dry signal retained; reload the plugin before using its new delay";
+      else if(Number.isInteger(insert.latencySamples))
+        row.title="Plugin delay: "+insert.latencySamples+" samples · compensated";
       row.dataset.fxSlotEnabled=String(!insert.bypassed);
       row.dataset.fxEffective=String(effective);
       row.classList.toggle("is-active",effective);
@@ -1621,6 +1656,7 @@
     if (signature===lastPaintedSignature) {
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
+      if(startupWire)window.queueMicrotask(flushStartupWire);
       return;
     }
     if (!projectNativeGraphWithoutFocusLoss(next)) {
@@ -1650,6 +1686,7 @@
         ch?.inserts?.find(x=>x.id===p.insertId)?.bypassed;
       if(actual===p.bypassed)pendingNativeFxPower=null;
     }
+    if(startupWire)window.queueMicrotask(flushStartupWire);
     status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
       " · device "+next.device.epoch+
       " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
@@ -1671,7 +1708,10 @@
           state.lastError!=="ACCEPTED_READBACK" &&
           state.lastError!=="NONE" &&
           state.lastError!=="NATIVE_NOT_SUBSCRIBED";
+        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&startupWire)
+          window.queueMicrotask(flushStartupWire);
         if(failed){
+          startupWire=null;
           pendingWireGains.clear();
           if(pendingFxInsert?.authority==="CHANNEL_ID"){
             pendingFxInsert=null;
@@ -2077,6 +2117,15 @@
       if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
         return !["wireExpand","wireSource","wireRoute"].includes(action);
       if(action==="openPlugin"){
+        if(mixerSession()?.authority==="CHANNEL_ID") {
+          const current=controller?.state()?.current,id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
+          const insert=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot];
+          if(current?.admitted&&insert?.id&&Number.isInteger(slot)&&slot>=0&&slot<8) {
+            backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
+              instanceId:insert.id,deviceEpoch:current.device.epoch,revision:current.graph.revision});
+          } else {discoverFxOnFirstPickerOpen();scope?.openFastPicker?.(t,slot,btn);}
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
         if(instance){
           const ep=safeNativeCounter(hardware?.device?.epoch),
@@ -2143,6 +2192,13 @@
     },
     consumeWire(ops) {
       if (!connected)return false;
+      const state=controller?.state();
+      // A first drag may arrive before SOURCE's later accepted snapshot.
+      // Preserve that one operator intent; resolve only against fresh native
+      // identities, never require a hidden OUT-dropdown priming operation.
+      if((!flags.acceptedGraphConnected||!state?.current?.admitted||state.pending||
+          activeNativeSource||nativeUiSourcePending||pendingNativeSources.size||pendingSourceQueue.size)&&
+         deferStartupWire(ops))return true;
       if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="GAIN"){
         if(!requestWireGain(ops[0]))status("WIRE gain unavailable · accepted parallel send required");
         return true;
@@ -2252,14 +2308,14 @@
     insertPlugin(id,target){
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
       const plugin=nativeCatalog.get(id);
-      const track=scope?.tracks?.find(x=>x.id===target?.channelId);
+      const track=scope?.tracks?.find(x=>x.id===target?.channelId)||
+        (scope?.master?.id===target?.channelId?scope.master:null);
       const channel=m4Index(track),slot=Number(target?.slot);
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
       const nativeCh=accepted?.graph?.channels?.find(ch=>ch.id===nativeId);
-      if(accepted?.admitted && nativeCh &&
-         (channel<0 || legacy()?.nativeBusStructural===true)) {
-        if(!plugin || !["INPUT","GROUP"].includes(nativeCh.role) ||
+      if(accepted?.admitted && nativeCh) {
+        if(!plugin || !["INPUT","GROUP","FX_RETURN","MAIN"].includes(nativeCh.role) ||
            !accepted.graph.capabilities.supportedOps.includes("LOAD_INSERT") ||
            !Number.isInteger(slot)||slot<0||slot>=8 ||
            !Array.isArray(nativeCh.inserts)||nativeCh.inserts.length!==slot){

@@ -2,6 +2,8 @@
 #pragma once
 #include "PreparedMixerBlock.h"
 #include "FxBypassEnvelope.h"
+#include "StereoLatencyDelay.h"
+#include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
 #include <array>
@@ -27,12 +29,15 @@ public:
     static constexpr int maxInsertsPerStrip=8; // fixed capacity, no RT allocation
     using Processor=juce::AudioProcessor;
 
-    struct FxInstance final {
+    struct FxInstance final : juce::AudioProcessorListener {
         std::unique_ptr<Processor> processor;
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
         const juce::String instanceId; // stable through MOVE; never a slot index
+        const int latencySamples;
+        std::atomic<bool> latencyChanged{false};
+        armix::dsp::StereoLatencyDelay dryDelay;
         std::atomic<bool> bypassRequested{false};
         armix::dsp::FxBypassEnvelope bypassFade; // RT exclusive state
         std::vector<float> dryLeft,dryRight; // CONTROL allocation
@@ -46,10 +51,13 @@ public:
             : processor(std::move(p)),catalogId(std::move(id)),name(std::move(label)),
               instanceId("g5c-"+juce::String(static_cast<juce::int64>(
                   nextId.fetch_add(1,std::memory_order_relaxed)))),
+              latencySamples(processor?processor->getLatencySamples():0),
               dryLeft(static_cast<std::size_t>(maxSamples)),
               dryRight(static_cast<std::size_t>(maxSamples)) {
+            if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
+            if(processor)processor->addListener(this);
         }
         FxInstance(const FxInstance&)=delete;
         FxInstance& operator=(const FxInstance&)=delete;
@@ -57,9 +65,16 @@ public:
             // Shared by old/new immutable snapshots; last owner drops ONLY on
             // control-thread retirement after the final RT reader exits.
             if(processor) {
+                processor->removeListener(this);
                 try { processor->releaseResources(); }
                 catch(...) { /* vendor cleanup cannot unwind graph retirement */ }
             }
+        }
+        void audioProcessorParameterChanged(juce::AudioProcessor*,int,float) override {}
+        void audioProcessorChanged(juce::AudioProcessor* p,
+                const juce::AudioProcessorListener::ChangeDetails& details) override {
+            if(details.latencyChanged && p && p->getLatencySamples()!=latencySamples)
+                latencyChanged.store(true,std::memory_order_release);
         }
         // G5E: vendor binary state capture is CONTROL only. This is the same
         // fail-closed gate used by realtime processBlock. While control owns
@@ -89,21 +104,25 @@ public:
             // G5C: atomic request from control; fade and scratch RT-owned.
             // Master rack bypass affects the WET/DRY envelope, never the remembered insert preference.
             bypassFade.request(rackBypassed || bypassRequested.load(std::memory_order_relaxed));
-            if(bypassFade.fullyBypassed()) {
-                processing.clear(std::memory_order_release);
-                return;
-            }
             if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
                 juce::FloatVectorOperations::clear(left,std::max(0,samples));
                 juce::FloatVectorOperations::clear(right,std::max(0,samples));
                 processing.clear(std::memory_order_release);
                 return;
             }
-            const bool fading=bypassFade.transitioning();
-            if(fading) {
-                juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
-                juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
+            // Keep bypass at the SAME declared latency as wet, including
+            // rack bypass and disabled slots. PDC never changes on a scalar.
+            for(int i=0;i<samples;++i) {
+                float l=left[i],r=right[i];dryDelay.process(l,r);
+                dryLeft[static_cast<std::size_t>(i)]=l;
+                dryRight[static_cast<std::size_t>(i)]=r;
             }
+            if(bypassFade.fullyBypassed()||latencyChanged.load(std::memory_order_acquire)) {
+                juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
+                juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+                processing.clear(std::memory_order_release);return;
+            }
+            const bool fading=bypassFade.transitioning();
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);

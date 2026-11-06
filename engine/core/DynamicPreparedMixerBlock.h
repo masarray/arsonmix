@@ -2,6 +2,7 @@
 #pragma once
 #include "DynamicChannelRoster.h"
 #include "RealtimeSlew64.h"
+#include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
 #include <algorithm>
 #include <atomic>
@@ -210,6 +211,55 @@ public:
         return found!=controlIndex_.end()&&
             std::find(renderOrder_.begin(),renderOrder_.end(),found->second)!=renderOrder_.end();
     }
+
+    // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
+    // including a destination's own hardware capture and PRE-fader sends.
+    // A failure discards the unpublished candidate; the old graph stays live.
+    template<class Latency>
+    bool prepareLatency(Latency&& latency,std::size_t budget,DynamicGraphError& error) {
+        std::vector<int> arrival(lanes_.size(),0),output(lanes_.size(),0);
+        std::size_t bytes=scratch_.size()*sizeof(float);
+        edgeDelays_.resize(edges_.size());physicalDelays_.resize(lanes_.size());
+        sinkDelays_.resize(lanes_.size());
+        const auto allocate=[&](armix::dsp::StereoLatencyDelay& delay,int samples) {
+            if(samples<0||samples>armix::dsp::StereoLatencyDelay::maximumSamples)return false;
+            const auto need=static_cast<std::size_t>(samples)*2*sizeof(float);
+            if(bytes>budget||need>budget-bytes)return false;
+            bytes+=need;return delay.prepare(samples);
+        };
+        for(const auto i:renderOrder_) {
+            const int own=latency(lanes_[i].id);
+            if(own<0||own>armix::dsp::StereoLatencyDelay::maximumSamples||
+               arrival[i]>armix::dsp::StereoLatencyDelay::maximumSamples-own) {
+                error={DynamicGraphFault::overflow,lanes_[i].id};return false;
+            }
+            const auto dryBytes=static_cast<std::size_t>(own)*2*sizeof(float);
+            if(bytes>budget||dryBytes>budget-bytes) {
+                error={DynamicGraphFault::scratchBudget,lanes_[i].id};return false;
+            }
+            bytes+=dryBytes; // prepared VST bypass delay is part of PDC budget
+            output[i]=arrival[i]+own;
+            for(std::size_t e=lanes_[i].first;e<lanes_[i].last;++e)
+                arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
+        }
+        int terminal=0;
+        for(const auto i:renderOrder_)if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
+        for(const auto i:renderOrder_) {
+            const auto& lane=lanes_[i];
+            if(lane.inputL>=0&&!allocate(physicalDelays_[i],arrival[i])) {
+                error={DynamicGraphFault::scratchBudget,lane.id};return false;
+            }
+            for(std::size_t e=lane.first;e<lane.last;++e)
+                if(!allocate(edgeDelays_[e],arrival[edges_[e].destination]-output[i])) {
+                    error={DynamicGraphFault::scratchBudget,lane.id};return false;
+                }
+            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],terminal-output[i])) {
+                error={DynamicGraphFault::scratchBudget,lane.id};return false;
+            }
+        }
+        latencySamples_=terminal;return true;
+    }
+    int latencySamples() const noexcept {return latencySamples_;}
 
     // Control thread only. Rejection leaves the previous prepared object
     // byte-for-byte usable; caller must publish with epoch/revision MUTE/ACK.
@@ -554,31 +604,17 @@ public:
                 const float* oldR=resolve(fade.current,1);
                 const float* newL=fade.remaining?resolve(fade.next,0):oldL;
                 const float* newR=fade.remaining?resolve(fade.next,1):oldR;
-                if(fade.remaining==0) {
-                    if(oldL&&oldR)
-                        for(int f=0;f<frames;++f){l[f]+=oldL[f];r[f]+=oldR[f];}
-                } else {
-                    for(int f=0;f<frames;++f) {
-                        const float alpha=1.f-
-                            static_cast<float>(fade.remaining-1)*
-                            (1.f/static_cast<float>(armix::dsp::RealtimeSlew64::samples));
-                        const float beforeL=oldL?oldL[f]:0.f;
-                        const float beforeR=oldR?oldR[f]:0.f;
-                        const float afterL=newL?newL[f]:0.f;
-                        const float afterR=newR?newR[f]:0.f;
-                        l[f]+=beforeL+(afterL-beforeL)*alpha;
-                        r[f]+=beforeR+(afterR-beforeR)*alpha;
-                        --fade.remaining;
-                        if(fade.remaining==0){
-                            fade.current=fade.next;
-                            // New CONTROL requests are consumed next block;
-                            // never change the source mid-sample.
-                            oldL=newL;oldR=newR;
-                            for(int k=f+1;k<frames;++k)
-                                if(oldL&&oldR){l[k]+=oldL[k];r[k]+=oldR[k];}
-                            break;
-                        }
+                for(int f=0;f<frames;++f) {
+                    float vl=oldL?oldL[f]:0.f,vr=oldR?oldR[f]:0.f;
+                    if(fade.remaining>0) {
+                        const float alpha=1.f-static_cast<float>(fade.remaining-1)/
+                            static_cast<float>(armix::dsp::RealtimeSlew64::samples);
+                        vl+=((newL?newL[f]:0.f)-vl)*alpha;
+                        vr+=((newR?newR[f]:0.f)-vr)*alpha;
+                        if(--fade.remaining==0){fade.current=fade.next;oldL=newL;oldR=newR;}
                     }
+                    if(!physicalDelays_.empty())physicalDelays_[i].process(vl,vr);
+                    l[f]+=vl;r[f]+=vr;
                 }
             }
             if(lane.format==ProcessingFormat::mono)
@@ -605,8 +641,9 @@ public:
                 target.applied.retarget(goal);
                 for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
-                    dl[f]+=l[f]*applied*edge.panL;
-                    dr[f]+=r[f]*applied*edge.panR;
+                    float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
+                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    dl[f]+=vl;dr[f]+=vr;
                 }
             }
             auto& controls=channelTargets_[i];
@@ -640,8 +677,9 @@ public:
                 target.applied.retarget(goal);
                 for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
-                    dl[f]+=l[f]*applied*edge.panL;
-                    dr[f]+=r[f]*applied*edge.panR;
+                    float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
+                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    dl[f]+=vl;dr[f]+=vr;
                 }
             }
         }
@@ -665,6 +703,7 @@ public:
             const float* const source=scratch_.data()+slot*2*block;
             std::copy_n(source,frames,l);
             std::copy_n(source+block,frames,r);
+            if(!sinkDelays_.empty())for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
         };
         copySink(main_,outputL,outputR);
         if(mainMonoAfterFx_) {
@@ -686,6 +725,8 @@ private:
     std::vector<unsigned char> initialAudible_,soloAncestors_,soloDescendants_;
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
+    std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_;
+    int latencySamples_=0;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;

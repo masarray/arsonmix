@@ -87,6 +87,10 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
             insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
             insert->setProperty("name",label);
             insert->setProperty("bypassed",bypass);
+            const auto latency=item.getProperty("latencySamples",{});
+            if(latency.isInt())insert->setProperty("latencySamples",latency);
+            const auto changed=item.getProperty("latencyChanged",{});
+            if(changed.isBool())insert->setProperty("latencyChanged",changed);
             fx.add(juce::var(insert.release()));
         }
         ch->setProperty("inserts",juce::var(fx));
@@ -153,6 +157,8 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
     if(!g||!t)return false;
     // All validation completed before anything becomes authoritative.
     g->setProperty("revision",rev);g->setProperty("rosterRevision",roster);
+    const auto latency=bus.getProperty("latencySamples",{});
+    if(latency.isInt())g->setProperty("latencySamples",latency);
     g->setProperty("mainChannelId",mainId);
     g->setProperty("channels",juce::var(channels));
     g->setProperty("destinations",juce::var(destinations));

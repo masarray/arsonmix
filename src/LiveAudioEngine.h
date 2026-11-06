@@ -1491,7 +1491,7 @@ public:
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal)return fail;
-        if(ep!=deviceStartCount_.load(std::memory_order_acquire))
+        if(ep!=dryRoutingLab_.epoch())
             {fail.error="NATIVE_VST3_DEVICE_CHANGED";return fail;}
         const auto rate=device->getCurrentSampleRate();
         const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
@@ -1517,8 +1517,9 @@ public:
                 fail.error="NATIVE_VST3_INCOMPATIBLE_STEREO_LAYOUT";return fail;
             }
             instance->prepareToPlay(rate,frames);
-            if(instance->getLatencySamples()!=0) {
-                fail.error="NATIVE_VST3_REQUIRES_PDC";return fail;
+            if(instance->getLatencySamples()<0 ||
+               instance->getLatencySamples()>armix::dsp::StereoLatencyDelay::maximumSamples) {
+                fail.error="NATIVE_VST3_LATENCY_EXCEEDS_BUDGET";return fail;
             }
             auto lease=std::make_shared<
                 armix::mixer::LiveChannelFxGraph::FxInstance>(
@@ -1883,7 +1884,8 @@ public:
             o->setProperty ("masterLufs", loudness.integratedLufs);
         if (measuredDirect && loudness.truePeakValid)
             o->setProperty ("masterDbtp", loudness.dbtp);
-        o->setProperty ("latencySamples", totalLatency_.load());
+        o->setProperty ("latencySamples", dryRoutingLab_.channelIdPhysicalPcmActive()?
+            dryRoutingLab_.nativePcmLatencySamples():totalLatency_.load());
         o->setProperty ("chainCount", graphOwned_->count);
         o->setProperty ("graphSwitchPending", handoff_.busy());
         o->setProperty ("completedGraphSwaps", static_cast<double> (completedSwaps_.load()));
