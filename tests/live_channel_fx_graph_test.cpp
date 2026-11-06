@@ -1915,6 +1915,62 @@ static void verifyBuiltInEqRealPcmHook() {
     assert(dryPower>0.001&&wetPower>dryPower*4);
 }
 
+
+static void verifyBuiltInEqNativeChannelIdAndRevisionFence() {
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,2> adds{};
+    adds[0].kind=ChannelEdit::Kind::add;adds[0].role=ChannelRole::input;
+    adds[0].position=0;adds[0].format=ProcessingFormat::mono;
+    adds[1].kind=ChannelEdit::Kind::add;adds[1].role=ChannelRole::main;
+    adds[1].position=1;adds[1].format=ProcessingFormat::stereo;
+    const auto made=roster.edit(0,adds);
+    assert(made.ok() && made.createdIds.size()==2);
+    const auto ch=made.createdIds[0],main=made.createdIds[1];
+    ChannelEdit link;
+    link.kind=ChannelEdit::Kind::addSendReference;
+    link.id=ch;link.target=main;link.value=1.f;link.primaryOutput=true;
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&link,1)).ok());
+    DynamicGraphRequest req;
+    req.physicalInputs=1;req.maxFrames=128;req.sources={{ch,0,-1,false}};
+    auto eq=std::make_shared<armix::builtin_fx::ChannelEqBank>();
+    assert(eq->prepare(48000));
+    DynamicNativeSessionPublisher::FxPlan plan;
+    plan.builtInEq=eq;plan.builtInEqIds[0]=ch;
+    DynamicNativeSessionPublisher native;
+    assert(native.commit(roster,req,0,9,9,true,plan).ok());
+    armix::builtin_fx::Band b{};
+    b.enabled=true;b.frequencyHz=1000;b.gainDb=9;b.q=1.f;
+    assert(!native.queueBuiltInEqEdit(9,1,main,2,b,101));
+    assert(native.queueBuiltInEqEdit(9,1,ch,2,b,101));
+    std::array<float,128> pcm{},left{},right{};
+    const float* pins[]{pcm.data()};
+    auto noFx=[](ChannelId,float*,float*,int) noexcept {};
+    double power=0;
+    for(int block=0;block<64;++block) {
+        for(int i=0;i<128;++i)
+            pcm[static_cast<std::size_t>(i)]=static_cast<float>(
+                 .1*std::sin(6.283185307179586*1000*(block*128+i)/48000.0));
+        const auto before=heapCalls.load(std::memory_order_relaxed);
+        assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+        assert(heapCalls.load(std::memory_order_relaxed)==before);
+        if(block==0) {
+            armix::builtin_fx::ChannelEqBank::Ack ack{};
+            assert(native.pollBuiltInEqAck(9,1,ch,ack));
+            assert(ack.applied&&ack.requestId==101&&ack.slot==2);
+        }
+        if(block>=48)for(float y:left)power+=y*y;
+    }
+    // Mono input uses equal-power route; 9 dB bell must boost 1 kHz
+    // regardless of whether a native VST owner is present.
+    assert(power>1.0);
+    // Native publisher revision swaps retain the ONE EQ owner and history.
+    assert(native.commit(roster,req,1,9,9,true).ok());
+    assert(native.queueBuiltInEqEdit(9,2,ch,2,b,103));
+    assert(native.render(9,pins,1,left.data(),right.data(),128,false,noFx));
+    armix::builtin_fx::ChannelEqBank::Ack ack{};
+    assert(native.pollBuiltInEqAck(9,2,ch,ack)&&ack.applied&&ack.requestId==103);
+}
+
 int main(int argc,char** argv) {
     if(argc==2 && std::string(argv[1])=="--emit-console-s0-json") {
         verifyNativePuzzleV8FixtureAndWire();
@@ -2292,6 +2348,7 @@ int main(int argc,char** argv) {
     // M5 before them changes those historical baseline counts, not DSP.
     // M5 additionally asserts zero heap and valid vendor leases itself.
     verifyBuiltInEqRealPcmHook();
+    verifyBuiltInEqNativeChannelIdAndRevisionFence();
     verifyUniversalChannelIdFxLeaseAndLivePcm();
     verifyMU1LegacyM4FxFullMigrationAndMonitorPcm();
     verifyOccupiedExternalCh1Owner();

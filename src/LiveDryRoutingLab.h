@@ -311,6 +311,7 @@ public:
         // Must use verified active hardware rate, never assume 48k.
         if(!next->prepared->prepareBuiltInEq(sampleRate))
             return "Invalid native channel EQ device sample rate";
+        next->prepared->setBuiltInEqSession(currentEpoch,revision);
         if(!next->prepared->setMainOutputPair(
               mainLeft,mainRight,callbackOutputCount_.load(std::memory_order_acquire)))
             return "MAIN output patch references invalid callback channels";
@@ -340,6 +341,7 @@ public:
         // and FxInstance has an atomic try-enter to guard against overlap.
         // Never reuse across a device epoch or changed device quantum.
         const auto* prior=publisher_.controlPrepared(currentEpoch,expectedRevision);
+        if(prior)next->prepared->inheritBuiltInEqFrom(*prior);
         int insertCount=0,reusedCount=0;
         for(int lane=0;lane<fxSlots;++lane) {
             // FX ownership is independent of assigned hardware PCM.

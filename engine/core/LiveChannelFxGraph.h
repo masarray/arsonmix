@@ -198,6 +198,16 @@ public:
     // renderer. Lifetime pinned by BOTH graph publishers, not the GUI.
     std::shared_ptr<armix::builtin_fx::ChannelEqBank>
     builtInEqLease() const noexcept {return builtinEq_;}
+    // CONTROL on an UNPUBLISHED candidate only. Share the same RT histories
+    // across same-rate routing revisions, not an independent EQ sound.
+    void inheritBuiltInEqFrom(const LiveChannelFxGraph& prior) noexcept {
+        if(builtinEq_ && prior.builtinEq_ &&
+           builtinEq_->sampleRate()==prior.builtinEq_->sampleRate())
+            builtinEq_=prior.builtinEq_;
+    }
+    void setBuiltInEqSession(std::uint64_t ep,std::uint64_t rev) noexcept {
+        builtinEqEpoch_=ep;builtinEqRevision_=rev;
+    }
     bool queueBuiltInEqEdit(int lane,std::size_t slot,const armix::builtin_fx::Band& b,
                             std::uint64_t req,std::uint64_t epoch,std::uint64_t rev) noexcept {
         return lane>=0&&lane<fxSlots&&builtinEq_->queueBandEdit(
@@ -312,7 +322,8 @@ public:
             // In-place channel EQ before existing vendor VST3 inserts/PRE sends.
             // Default OFF is bitwise-transparent; no second callback.
             builtinEq_->render(static_cast<std::size_t>(strip),l,r,
-                              static_cast<std::size_t>(samples));
+                              static_cast<std::size_t>(samples),
+                              builtinEqEpoch_,builtinEqRevision_);
             const int count=counts_[strip]; // immutable, prepared OFF RT
             if(count>0) {
                 for(int slot=0;slot<count;++slot) {
@@ -332,6 +343,7 @@ public:
 private:
     std::shared_ptr<armix::builtin_fx::ChannelEqBank> builtinEq_{
         std::make_shared<armix::builtin_fx::ChannelEqBank>()};
+    std::uint64_t builtinEqEpoch_=0,builtinEqRevision_=0; // set BEFORE publishing
     std::unique_ptr<PreparedMixerBlock> block_;
     RealtimeStripControls controls_ {};
     FxBank processors_ {};

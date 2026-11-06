@@ -95,13 +95,21 @@ public:
     // A full acknowledgement ring BACKPRESSURES the request queue; it must
     // never silently apply a command whose ACK was lost.
     void render(std::size_t lane, float* left, float* right,
-                std::size_t frames) noexcept {
+                std::size_t frames,
+                std::uint64_t activeEpoch=0,
+                std::uint64_t activeRevision=0) noexcept {
         if (!ready_ || lane >= laneCount || !left || !right || frames == 0) return;
         auto& eq = eqs_[lane];
         if (!eq.transitioning() && acknowledgements_[lane].canPush()) {
             Command command{};
             if (pending_[lane].pop(command)) {
-                const bool applied = eq.applyPreparedBand(command.edit);
+                // Structural re-publication may inherit this bank. Do not
+                // apply a queued edit from a superseded epoch/revision.
+                const bool sessionMatches = (activeEpoch==0 && activeRevision==0) ||
+                    (command.deviceEpoch==activeEpoch &&
+                     command.graphRevision==activeRevision);
+                const bool applied = sessionMatches &&
+                    eq.applyPreparedBand(command.edit);
                 Ack ack{command.requestId,command.deviceEpoch,command.graphRevision,
                         command.lane,command.slot,command.edit.band,applied};
                 // Can only fail if another thread illegally writes the same

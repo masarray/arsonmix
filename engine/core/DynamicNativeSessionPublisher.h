@@ -203,7 +203,8 @@ public:
             if(auto* eq=snap->prepared->builtInEq.get()) {
                 for(std::size_t lane=0;lane<snap->prepared->builtInEqIds.size();++lane) {
                     if(snap->prepared->builtInEqIds[lane]==id) {
-                        eq->render(lane,l,r,static_cast<std::size_t>(n));
+                        eq->render(lane,l,r,static_cast<std::size_t>(n),
+                                   snap->deviceEpoch,snap->graphRevision);
                         break;
                     }
                 }
