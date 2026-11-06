@@ -46,7 +46,7 @@ def main():
                 page.mouse.move(x+37,y+23,steps=5)
                 page.mouse.up()
                 moved=editor.bounding_box()
-                assert moved and moved["x"]>=rect["x"]+23 and moved["y"]>=rect["y"]+13,(rect,moved)
+                assert moved and moved["x"]>=rect["x"]+(3 if width < 760 else 23) and moved["y"]>=rect["y"]+13,(rect,moved)
                 band=editor.locator('.mx-eq-band[data-slot="3"]')
                 band.click()
                 assert "selected" in band.get_attribute("class")

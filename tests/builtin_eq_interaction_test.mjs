@@ -165,13 +165,13 @@ const lastAction=h=>h.sent.filter(x=>x.name==='arMixAction').at(-1)?.payload;
   const add=lastAction(h);
   assert.equal(add.action,'builtinEqSetGate');
   assert.equal(add.installed,true);
-  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'',
-    'No optimistic FX insert before AUDIO ACK');
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/data-builtin-eq="pending"/,
+    'Provisional label only, never claim accepted native FX before AUDIO ACK');
   h.fire('arMixBuiltinEqQueue',{requestId:add.requestId,channelId:'101',status:'QUEUED'});
   h.fire('arMixBuiltinEqAck',{requestId:add.requestId,channelId:'101',
     deviceEpoch:'9',graphRevision:'3',status:'APPLIED'});
-  assert.equal(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),'',
-    'AUDIO ACK without later snapshot does not paint an insert');
+  assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/data-builtin-eq="pending"/,
+    'AUDIO ACK alone must retain provisional row until producer snapshot');
   h.fire('arMixBuiltinEqSnapshot',snapshot('9','3',add.requestId));
   assert.match(h.window.ArSonMixBuiltinEq.slotMarkup(t,()=>''),/Parametric EQ/);
   h.window.ArSonMixBuiltinEq.open(t);
