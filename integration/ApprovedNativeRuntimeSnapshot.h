@@ -282,6 +282,8 @@ inline bool projectInstalledNativeChannelIdGraph(
     // gesture as NOT_ADMITTED. Admit only the actual installed operation.
     if(has("NATIVE_APPLY_WIRE_TRANSACTION"))
         available.add(juce::String("APPLY_WIRE_TRANSACTION"));
+    if(has("NATIVE_SET_PROCESSING_FORMAT"))
+        available.add(juce::String("SET_PROCESSING_FORMAT"));
     if(has("NATIVE_LOAD_INSERT"))
         available.add(juce::String("LOAD_INSERT"));
     if(has("NATIVE_CREATE_GROUP_SELECTED"))
