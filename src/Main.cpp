@@ -282,6 +282,154 @@ private:
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
     juce::StringArray acceptedControlRequests_; // bounded request replay fence
+    struct EqPending final {
+        armix::mixer::ChannelId channel{};
+        std::uint64_t request=0,epoch=0,revision=0,started=0;
+        int slot=-1;bool active=false;
+    };
+    std::array<EqPending,14> eqPending_{};
+    std::array<bool,14> eqSnapshotDue_{};
+    std::array<std::uint64_t,14> eqLastApplied_{};
+    std::array<std::array<armix::builtin_fx::Band,8>,14> eqAccepted_{};
+    std::uint64_t eqCacheEpoch_=0;
+    void syncEqEpoch(std::uint64_t ep) {
+        if(eqCacheEpoch_==ep)return;
+        eqCacheEpoch_=ep;eqSnapshotDue_.fill(false);eqLastApplied_.fill(0);
+        for(auto& pending:eqPending_)pending={};
+        for(auto& lane:eqAccepted_)
+            for(std::size_t i=0;i<lane.size();++i) {
+                lane[i]={};
+                lane[i].frequencyHz=armix::builtin_fx::channelEqSlots[i].defaultHz;
+                lane[i].q=armix::builtin_fx::channelEqSlots[i].kind==
+                    armix::builtin_fx::FilterKind::bell?1.f:.70710678f;
+            }
+    }
+    static bool eqUInt(const juce::var& v,std::uint64_t& result) noexcept {
+        if(!v.isString())return false;
+        const auto s=v.toString();
+        if(s.isEmpty()||s.length()>20)return false;
+        std::uint64_t n=0;
+        for(int i=0;i<s.length();++i) {
+            const auto c=s[i];
+            if(c<'0'||c>'9')return false;
+            const auto digit=static_cast<std::uint64_t>(c-'0');
+            if(n>(UINT64_MAX-digit)/10u)return false;
+            n=n*10u+digit;
+        }
+        result=n;return n>0;
+    }
+    static bool eqFloat(const juce::var& v,float& out) noexcept {
+        if(!(v.isInt()||v.isInt64()||v.isDouble()))return false;
+        const auto n=static_cast<double>(v);
+        if(!std::isfinite(n)||std::abs(n)>1000000.)return false;
+        out=static_cast<float>(n);return true;
+    }
+    void emitEqSnapshot(armix::mixer::ChannelId id) {
+        int lane=-1;std::uint64_t ep=0,rev=0;
+        if(!browser_.loaded || !engine_.builtInEqIdentity(id,lane,ep,rev))return;
+        syncEqEpoch(ep);
+        auto out=std::make_unique<juce::DynamicObject>();
+        out->setProperty("schemaVersion",1);
+        out->setProperty("channelId",juce::String(std::to_string(id.value)));
+        out->setProperty("deviceEpoch",juce::String(std::to_string(ep)));
+        out->setProperty("graphRevision",juce::String(std::to_string(rev)));
+        out->setProperty("appliedRequestId",juce::String(
+            std::to_string(eqLastApplied_[static_cast<std::size_t>(lane)])));
+        juce::Array<juce::var> bands;
+        for(const auto& band:eqAccepted_[static_cast<std::size_t>(lane)]) {
+            auto row=std::make_unique<juce::DynamicObject>();
+            row->setProperty("enabled",band.enabled);
+            row->setProperty("frequencyHz",band.frequencyHz);
+            row->setProperty("gainDb",band.gainDb);
+            row->setProperty("q",band.q);
+            row->setProperty("slope",static_cast<int>(band.slope));
+            bands.add(juce::var(row.release()));
+        }
+        out->setProperty("bands",juce::var(bands));
+        browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqSnapshot",
+                                             juce::var(out.release()));
+    }
+    void onEqAction(const juce::var& a) {
+        std::uint64_t number=0,ep=0,rev=0,req=0;
+        const auto hasId=eqUInt(a.getProperty("channelId",{}),number);
+        const armix::mixer::ChannelId ch{number};
+        int lane=-1;std::uint64_t liveEp=0,liveRev=0;
+        const bool available=hasId&&engine_.builtInEqIdentity(ch,lane,liveEp,liveRev);
+        if(a.getProperty("action",{}).toString()=="builtinEqSnapshot") {
+            if(available)emitEqSnapshot(ch);
+            return;
+        }
+        bool queued=false;
+        if(available&&eqUInt(a.getProperty("deviceEpoch",{}),ep)&&
+           eqUInt(a.getProperty("graphRevision",{}),rev)&&
+           eqUInt(a.getProperty("requestId",{}),req)&&
+           ep==liveEp&&rev==liveRev&&!studioBackupBusy_&&!nativeShowBusy_ &&
+           (a.getProperty("slot",{}).isInt()||a.getProperty("slot",{}).isInt64())) {
+            syncEqEpoch(ep);
+            const auto slot=static_cast<int>(a.getProperty("slot",-1));
+            const auto b=a.getProperty("band",{});
+            const auto enabled=b.getProperty("enabled",{});
+            float freq=0,gain=0,q=0,slope=0;
+            auto& pending=eqPending_[static_cast<std::size_t>(lane)];
+            if(!pending.active&&slot>=0&&slot<8&&b.isObject()&&enabled.isBool()&&
+               eqFloat(b.getProperty("frequencyHz",{}),freq)&&
+               eqFloat(b.getProperty("gainDb",{}),gain)&&
+               eqFloat(b.getProperty("q",{}),q)&&
+               eqFloat(b.getProperty("slope",{}),slope)&&
+               (slope==12.f||slope==24.f)) {
+                armix::builtin_fx::Band band{};
+                band.enabled=static_cast<bool>(enabled);
+                band.frequencyHz=freq;band.gainDb=gain;band.q=q;
+                band.slope=slope==24.f?armix::builtin_fx::Slope::db24:
+                                           armix::builtin_fx::Slope::db12;
+                queued=engine_.queueBuiltInEqEdit(lane,static_cast<std::size_t>(slot),
+                                                   band,req,ep,rev);
+                if(queued) pending={ch,req,ep,rev,monotonicMilliseconds(),slot,true};
+            }
+        }
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("requestId",juce::String(std::to_string(req)));
+        reply->setProperty("channelId",juce::String(std::to_string(number)));
+        reply->setProperty("status",queued?"QUEUED":"REJECTED");
+        browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqQueue",
+                                             juce::var(reply.release()));
+    }
+    void serviceEqAck() {
+        if(!browser_.loaded)return;
+        for(int lane=0;lane<14;++lane)if(eqSnapshotDue_[static_cast<std::size_t>(lane)]) {
+            eqSnapshotDue_[static_cast<std::size_t>(lane)]=false;
+            emitEqSnapshot(eqPending_[static_cast<std::size_t>(lane)].channel);
+        }
+        const auto now=monotonicMilliseconds();
+        for(int lane=0;lane<14;++lane) {
+            auto& pending=eqPending_[static_cast<std::size_t>(lane)];
+            if(!pending.active)continue;
+            LiveAudioEngine::BuiltInEqAck ack{};
+            const bool got=engine_.pollBuiltInEqAck(lane,pending.epoch,
+                                                    pending.revision,ack);
+            if(!got&&now-pending.started<4000u)continue;
+            const bool ok=got&&ack.applied&&ack.requestId==pending.request &&
+                          ack.slot==pending.slot && ack.lane==lane;
+            auto reply=std::make_unique<juce::DynamicObject>();
+            reply->setProperty("schemaVersion",1);
+            reply->setProperty("requestId",juce::String(std::to_string(pending.request)));
+            reply->setProperty("channelId",juce::String(std::to_string(pending.channel.value)));
+            reply->setProperty("deviceEpoch",juce::String(std::to_string(pending.epoch)));
+            reply->setProperty("graphRevision",juce::String(std::to_string(pending.revision)));
+            reply->setProperty("status",ok?"APPLIED":"REJECTED");
+            if(ok) {
+                eqAccepted_[static_cast<std::size_t>(lane)]
+                           [static_cast<std::size_t>(pending.slot)]=ack.accepted;
+                eqLastApplied_[static_cast<std::size_t>(lane)]=pending.request;
+                eqSnapshotDue_[static_cast<std::size_t>(lane)]=true;
+            }
+            browser_.emitEventIfBrowserIsVisible("arMixBuiltinEqAck",
+                                                 juce::var(reply.release()));
+            pending.active=false;
+        }
+    }
+
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -1404,6 +1552,9 @@ private:
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
+        if(action=="builtinEqSetBand"||action=="builtinEqSnapshot") {
+            onEqAction(args);return;
+        }
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         // User may adjust live levels, but cannot alter the persisted VST
@@ -2668,6 +2819,7 @@ private:
             }
         }
         if (!browser_.loaded) return;
+        serviceEqAck(); // exact DSP-apply ACK, deferred readback, no new poll thread
         if (!initialStateSent_)
         {
             initialStateSent_ = true;

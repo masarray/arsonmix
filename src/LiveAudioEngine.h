@@ -1433,6 +1433,29 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeBusMix(epoch,revision,id,gain,pan);
     }
+    using BuiltInEqAck=LiveDryRoutingLab::BuiltInEqAck;
+    bool builtInEqIdentity(armix::mixer::ChannelId id,int& lane,
+                           std::uint64_t& ep,std::uint64_t& rev) const noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.builtInEqIdentity(id,lane,ep,rev);
+    }
+    bool queueBuiltInEqEdit(int lane,std::size_t slot,
+                            const armix::builtin_fx::Band& b,
+                            std::uint64_t requestId,std::uint64_t ep,
+                            std::uint64_t rev) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.queueBuiltInEqEdit(lane,slot,b,requestId,ep,rev);
+    }
+    bool pollBuiltInEqAck(int lane,std::uint64_t ep,
+                           std::uint64_t rev,BuiltInEqAck& ack) noexcept {
+        return dryRoutingLab_.pollBuiltInEqAck(lane,ep,rev,ack);
+    }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 

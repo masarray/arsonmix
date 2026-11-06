@@ -1848,6 +1848,15 @@ public:
     // Status / control thread only. An empty prepared graph is ready, but
     // cannot be advertised as a LIVE patched route or a savable Show.
     using BuiltInEqAck=FxGraph::BuiltInEqAck;
+    // Native ChannelId to the 14 original hardware/aux EQ owners only.
+    bool builtInEqIdentity(armix::mixer::ChannelId id,int& lane,
+                           std::uint64_t& ep,std::uint64_t& rev) const noexcept {
+        if(!id.value||!ready()||!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epoch())return false;
+        const auto index=nativeAccepted_.graph.ids.legacyFxIndex(id);
+        if(index<0||index>=fxSlots)return false;
+        lane=index;ep=epoch();rev=nativeAccepted_.pcmRevision;return true;
+    }
     // CONTROL enqueue via the existing published graph lease, never change
     // live coefficients from UI; one SPSC producer and one audio consumer.
     bool queueBuiltInEqEdit(int lane,std::size_t slot,
