@@ -468,5 +468,7 @@ jobs:
             pages-v55-*.png
             pages-v28-physical-console-owner-v59-*.png
             pages-mobile-*.png
+            parametric-eq-mixer-*.png
+            parametric-eq-editor-*.png
           if-no-files-found: ignore
           retention-days: 3

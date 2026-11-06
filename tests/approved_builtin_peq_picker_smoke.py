@@ -60,6 +60,10 @@ def main():
                 gain.fill("4.0")
                 gain.press("Tab")
                 assert gain.input_value()=="4.0"
+                # Capture the EXACT approved GUI actually rendered by Chromium.
+                # These are screenshots of an interactive UI DEMO, NOT audio PCM.
+                page.screenshot(path=f"parametric-eq-mixer-{width}x{height}.png",animations="disabled")
+                editor.screenshot(path=f"parametric-eq-editor-{width}x{height}.png",animations="disabled")
                 editor.locator('.mx-eq-close').click()
                 assert editor.is_hidden()
                 row.locator('[data-action="openBuiltinEq"]').click()
