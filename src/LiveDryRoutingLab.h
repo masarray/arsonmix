@@ -510,6 +510,48 @@ public:
         return {};
     }
 
+    // SINGLE CONTROL-thread control-state inheritance used by BOTH SOURCE/
+    // OUT edits and vendor VST3 insertion. An FX add must not recompile an
+    // earlier APPLY's fader/PAN/MUTE/SOLO into the already-audible PCM.
+    // This copies authoritative M4 controls, or the actual ChannelId roster
+    // while ChannelId owns PCM; it never borrows a browser/demo state.
+    juce::String inheritLiveControlsForRecompile(juce::var& staged,
+                                                 std::uint64_t expectedEpoch) const {
+        auto stagedRows=staged.getProperty("channels",juce::var());
+        auto* editable=stagedRows.getArray();
+        if(!editable||editable->size()!=count)
+            return "malformed accepted native channel topology";
+        const bool nativeControls=channelIdPhysicalPcmActive();
+        if(nativeControls && (nativeStructureLive_ ||
+           nativeAccepted_.deviceEpoch!=expectedEpoch))
+            return "incompatible ChannelId roster or stale device epoch";
+        for(int i=0;i<count;++i) {
+            auto* row=editable->getReference(i).getDynamicObject();
+            if(!row)return "missing accepted native channel";
+            const auto& c=channelEdits_[i];
+            const auto* accepted=nativeControls
+                ?nativeAccepted_.graph.roster.find(nativeAccepted_.graph.ids.inputs[i])
+                :nullptr;
+            if(nativeControls && (!accepted ||
+                accepted->role!=armix::mixer::ChannelRole::input))
+                return "admitted input channel roster is stale";
+            const armix::mixer::NativeTopologyEditSafety::MixSnapshot legacy{
+                c.linear,c.pan,c.mute,c.solo};
+            const armix::mixer::NativeTopologyEditSafety::MixSnapshot native{
+                accepted?accepted->faderLinear:c.linear,
+                accepted?accepted->pan:c.pan,
+                accepted?accepted->mute:c.mute,
+                accepted?accepted->solo:c.solo};
+            const auto kept=armix::mixer::NativeTopologyEditSafety::preserveAcceptedMix(
+                legacy,native,nativeControls);
+            row->setProperty("gain",static_cast<double>(kept.linear));
+            row->setProperty("pan",static_cast<double>(kept.pan));
+            row->setProperty("mute",kept.mute);
+            row->setProperty("solo",kept.solo);
+        }
+        return {};
+    }
+
     // Native /preview/ FX picker: append one catalog-verified stereo VST3 to
     // the SAME accepted ten-channel/4AUX renderer. This is a prepared graph
     // transaction on JUCE CONTROL, never a JS plugin or RT instantiation.
@@ -527,6 +569,12 @@ public:
             juce::JSON::toString(sourceTemplate_,false));
         if(!command.isObject())
             return "FX INSERT: accepted source template cannot be cloned";
+        // A vendor plugin prepare happens AFTER live native fader/PAN edits.
+        // Recompile from the last accepted operator controls, not the stale
+        // pre-fader sourceTemplate_ values. Rejection keeps the old PCM live.
+        const auto inherited=inheritLiveControlsForRecompile(
+            command,expectedEpoch);
+        if(inherited.isNotEmpty())return "FX INSERT: "+inherited;
         auto next=acceptedFxSelections_;
         next[lane][slot]=chosen;
         return apply(command,directPermitted,independentClock,occupiedCh1Fx,
@@ -799,42 +847,9 @@ public:
             juce::AudioPluginFormatManager& formats,double sampleRate,
             int deviceFrames,
             const std::function<void()>& beforePublish={}) {
-        auto stagedRows=staged.getProperty("channels",juce::var());
-        auto* editable=stagedRows.getArray();
-        if(!editable||editable->size()!=count)
-            return "CHANNEL PATCH: malformed native topology";
-        // ChannelId gestures are authoritative once admitted. M4's saved
-        // channelEdits_ may be older; copy ACTUAL accepted roster controls
-        // into the recompiled M4 fallback so a SOURCE/OUT edit never changes
-        // a singer's last fader, pan, mute or solo setting.
-        const bool nativeControls=channelIdPhysicalPcmActive();
-        if(nativeControls && (nativeStructureLive_ ||
-           nativeAccepted_.deviceEpoch!=expectedEpoch))
-            return "CHANNEL PATCH: incompatible native roster";
-        for(int i=0;i<count;++i) {
-            auto* row=editable->getReference(i).getDynamicObject();
-            if(!row)return "CHANNEL PATCH: missing native channel";
-            const auto& c=channelEdits_[i];
-            const auto* accepted=nativeControls
-                ?nativeAccepted_.graph.roster.find(nativeAccepted_.graph.ids.inputs[i])
-                :nullptr;
-            if(nativeControls && (!accepted ||
-                accepted->role!=armix::mixer::ChannelRole::input))
-                return "CHANNEL PATCH: admitted input roster is stale";
-            const armix::mixer::NativeTopologyEditSafety::MixSnapshot legacy{
-                c.linear,c.pan,c.mute,c.solo};
-            const armix::mixer::NativeTopologyEditSafety::MixSnapshot native{
-                accepted?accepted->faderLinear:c.linear,
-                accepted?accepted->pan:c.pan,
-                accepted?accepted->mute:c.mute,
-                accepted?accepted->solo:c.solo};
-            const auto preserved=armix::mixer::NativeTopologyEditSafety::preserveAcceptedMix(
-                legacy,native,nativeControls);
-            row->setProperty("gain",static_cast<double>(preserved.linear));
-            row->setProperty("pan",static_cast<double>(preserved.pan));
-            row->setProperty("mute",preserved.mute);
-            row->setProperty("solo",preserved.solo);
-        }
+        const auto inherited=inheritLiveControlsForRecompile(
+            staged,expectedEpoch);
+        if(inherited.isNotEmpty())return "CHANNEL PATCH: "+inherited;
         if(expectedEpoch!=epoch()||expectedRevision!=revision()||
            !registryValid_.load(std::memory_order_acquire))
             return "CHANNEL PATCH: device changed; previous mix preserved";

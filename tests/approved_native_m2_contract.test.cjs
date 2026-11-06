@@ -314,6 +314,13 @@ test("P0 VST3 preparation runs with old live PCM; monitor closes only at publica
  assert.match(engine,/if\(!enteredPublication\)return error/);
  assert.match(engine,/return finishGuardedDryTopology\(/);
  assert.match(engine,/return applyGuardedDryTopology\(epoch,frames,\[&\]\(const auto& beforePublish\)/);
+ // FX and SOURCE recompiles must inherit the SAME real active fader, pan,
+ // mute and solo from native ChannelId or M4 before replacing a graph.
+ assert.match(lab,/juce::String inheritLiveControlsForRecompile\(/);
+ assert.match(lab,/juce::String insertCatalogFx[\s\S]*?const auto inherited=inheritLiveControlsForRecompile\(\s*command,expectedEpoch\)/);
+ assert.match(lab,/juce::String publishRevisedTopology[\s\S]*?const auto inherited=inheritLiveControlsForRecompile\(\s*staged,expectedEpoch\)/);
+ assert.match(lab,/NativeTopologyEditSafety::preserveAcceptedMix\(/);
+ assert.match(lab,/case Publisher::Result::applied:[\s\S]*?nativeControlDirty_=false/);
 });
 test("P0 SOURCE, OUT, M-ST and FX share late-gated graph publication",()=>{
  const lab=read("src/LiveDryRoutingLab.h");
