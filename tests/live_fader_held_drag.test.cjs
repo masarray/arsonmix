@@ -17,7 +17,7 @@ function nativeChannelIdFixture(){
  s.graph.mainChannelId=main;
  s.graph.capabilities.callbackOwnsChannelIds=true;
  s.graph.capabilities.supportedOps=["SET_FADER","SET_PAN","SET_MUTE","APPLY_WIRE_TRANSACTION"];
- const ids=Array.from({length:10},(_,i)=>String(9007199254740994+i));
+ const ids=Array.from({length:10},(_,i)=>String(9007199254740994n+BigInt(i)));
  s.graph.channels=ids.map((id,i)=>({
    id,role:"INPUT",name:"CH"+(i+1),processingFormat:"MONO",
    primaryOutId:main,
@@ -28,6 +28,7 @@ function nativeChannelIdFixture(){
    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]
  });
  s.graph.destinations=[{id:main}];s.graph.edges=[];
+ s.legacyM4={routingRevision:"3"};
  s.mixerSession={
    authority:"CHANNEL_ID",deviceEpoch:s.device.epoch,
    routeRevision:s.graph.revision,rosterRevision:s.graph.rosterRevision,
@@ -143,13 +144,32 @@ test("all CH1/CH2/CH5/CH10 and MAIN pointermove use native scalar path",()=>{
  // A real callback/PCM FAT is still required; gain math alone is NOT a sound test.
  const h=harness(),s=nativeChannelIdFixture();
  h.listeners.get("arMixConsoleSnapshot")(s);
+ let accepted=s;
  for(const lane of [0,1,4,9]){
-   const fader={dataset:{field:"level"},lane,value:String(-8-lane)};
-   h.window.__ARMIX_NATIVE_M2__.consumeField({target:fader,type:"input"});
-   // Without ACK, the single native contract allows only one active edit.
-   const first=h.sent.find(e=>e.name==="arMixConsoleIntent");
-   assert.equal(first.payload.targetChannelId,s.graph.channels[0].id);
+   const value=-8-lane;
+   const fader={dataset:{field:"level"},lane,value:String(value)};
+   assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeField({target:fader,type:"input"}),true);
+   const cmd=h.sent.filter(e=>e.name==="arMixConsoleIntent").at(-1).payload;
+   assert.equal(cmd.targetChannelId,accepted.graph.channels[lane].id,
+     "CH"+(lane+1)+" exact ChannelId before pointerup");
+   assert.equal(cmd.payload.valueDb,value);
+   h.listeners.get("arMixConsoleAck")({
+     requestId:cmd.requestId,status:"ACCEPTED",errorCode:"NONE",
+     deviceEpoch:accepted.device.epoch,graphRevision:"5",rosterRevision:"7"
+   });
+   const next=clone(accepted);next.graph.channels[lane].controls.faderDb=value;
+   h.listeners.get("arMixConsoleSnapshot")(next);
+   assert.equal(h.scope.tracks[lane].level,value);
+   accepted=next;h.tick();
  }
- assert.match(bridge,/t\?\.kind==="master"\|\|m4ControlIsOwner\(\)/,
-   "MAIN physical host scalar remains routed through existing atomic gain");
+ const master={dataset:{field:"level"},lane:10,value:"-9"};
+ h.scope.findTrack=el=>el.lane===10?h.scope.master:h.scope.tracks[el.lane||0];
+ assert.equal(h.window.__ARMIX_NATIVE_M2__.consumeField({target:master,type:"input"}),true);
+ const main=h.sent.filter(e=>e.name==="arMixAction").at(-1);
+ assert.equal(main.payload.action,"routingM4Control");
+ assert.equal(main.payload.channel,-1);
+ assert.equal(main.payload.parameter,"masterGain");
+ assert.equal(main.payload.controlValue,-9);
+ assert.match(bridge,/t\\?\\.kind==="master"\\s*\\|\\|\\s*m4ControlIsOwner\\(\\)/,
+   "MAIN scalar uses guarded native host gain");
 });
