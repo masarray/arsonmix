@@ -81,15 +81,29 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
         ch->setProperty("controls",juce::var(controls.release()));
         juce::Array<juce::var> fx;
         for(const auto& item:*inserts.getArray()){
+            // This integration/ header is the one included by the live native
+            // runtime snapshot. The src/ counterpart is NOT its replacement.
+            // id is the installed processor token; catalogId is the vendor
+            // identity used for the command and subsequent ACK/readback.
             const auto token=item.getProperty("instanceId",{}),label=item.getProperty("name",{});
+            const auto catalog=item.getProperty("id",{});
             const auto bypass=item.getProperty("bypassed",{});
-            if(!token.isString()||!label.isString()||!bypass.isBool())return false;
+            if(!token.isString()||token.toString().isEmpty()||
+               !catalog.isString()||catalog.toString().isEmpty()||
+               catalog.toString().getNumBytesAsUTF8()>256||
+               !label.isString()||!bypass.isBool())return false;
             auto insert=std::make_unique<juce::DynamicObject>();
-            insert->setProperty("id",token);insert->setProperty("name",label);
+            insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
+            insert->setProperty("name",label);
             insert->setProperty("bypassed",bypass);
             fx.add(juce::var(insert.release()));
         }
         ch->setProperty("inserts",juce::var(fx));
+        const auto rackBypassed=row.getProperty("fxRackBypassed",{});
+        if(!rackBypassed.isVoid()) {
+            if(!rackBypassed.isBool())return false;
+            ch->setProperty("fxRackBypassed",rackBypassed);
+        }
         ch->setProperty("sends",juce::var(juce::Array<juce::var>{}));
         if(role!="INPUT"){
             auto dst=std::make_unique<juce::DynamicObject>();

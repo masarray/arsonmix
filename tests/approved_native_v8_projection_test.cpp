@@ -85,6 +85,8 @@ static void nativeInsertCatalogInstanceProjectionRegression() {
     inserts.add(juce::var(item.release()));
     source.getProperty("channels",{})[0].getDynamicObject()
         ->setProperty("inserts",juce::var(inserts));
+    source.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("fxRackBypassed",true);
     auto snapshot=canonicalSnapshot();
     assert(projectApprovedNativeV8(snapshot,source,true));
     const auto live=snapshot.getProperty("graph",{})
@@ -92,6 +94,8 @@ static void nativeInsertCatalogInstanceProjectionRegression() {
     assert(live.getProperty("id","").toString()=="vst3-instance-unique-7");
     assert(live.getProperty("catalogId","").toString()=="vendor.eq.catalog");
     assert(!static_cast<bool>(live.getProperty("bypassed",true)));
+    assert(static_cast<bool>(snapshot.getProperty("graph",{})
+        .getProperty("channels",{})[0].getProperty("fxRackBypassed",false)));
     // A missing catalog token must not be projected as a verified processor.
     auto invalid=juce::JSON::parse(juce::JSON::toString(source,false));
     invalid.getProperty("channels",{})[0].getProperty("inserts",{})[0]

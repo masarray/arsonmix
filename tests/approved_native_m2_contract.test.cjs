@@ -196,6 +196,9 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  const contract=read("web/approved-native-contract.js");
  const translate=read("integration/ApprovedNativeControlIntent.h");
  const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ const activeProjection=read("integration/ApprovedNativeV8Projection.h");
+ assert.match(activeProjection,/insert->setProperty\("catalogId",catalog\)/);
+ assert.match(activeProjection,/ch->setProperty\("fxRackBypassed",rackBypassed\)/);
  assert.match(bridge,/controller\.intent\("LOAD_INSERT",nativeId,/);
  assert.match(bridge,/legacy\(\)\?\.nativeBusStructural===true/);
  assert.match(lab,/nativeAccepted_\.fxOwners->externalChannel\(\)==target/);
