@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """V43: generated public /preview/ parity, persistent incoming cables, and physical socket impact."""
 from pathlib import Path
-import math,re,subprocess,sys,tempfile
+import json,math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -55,9 +55,21 @@ def main():
                  cwd=ROOT,capture_output=True,text=True)
   public=dst/"preview/index.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
+  # Stage D deliberately replaces 18 CSS links with one content-addressed
+  # runtime stylesheet. Verify that the two locked physical component owners
+  # remain present and byte-exact, rather than requiring obsolete link URLs.
+  manifest=json.loads((dst/"preview/build.json").read_text("utf-8"))
+  assert re.fullmatch(r"[0-9a-f]{16}",
+         manifest["button_css_js_revisions"]["mixer-control-keys.css"])
+  keys=dst/"preview/assets/mixer-control-keys.css"
+  assert keys.read_bytes()==(ROOT/"site/preview-buttons/assets/mixer-control-keys.css").read_bytes()
   assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
+  published=public.read_text("utf-8")
+  runtime=dst/"preview/assets/arsonmix-approved-runtime.css"
+  assert 'href="assets/arsonmix-approved-runtime.css?sha=' in published
+  bundled=runtime.read_text("utf-8")
+  assert "BEGIN approved owner mixer-control-keys.css" in bundled
+  assert "BEGIN approved owner mixer-wire-dots.css" in bundled
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
