@@ -18,6 +18,12 @@ $which=Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $iscc=if($which){$which.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
 if(-not (Test-Path -LiteralPath $iscc -PathType Leaf)){throw "Inno Setup 6 compiler missing"}
 $root=(Resolve-Path .).Path
+# One authoritative product version: CMake native app and Inno Add/Remove Programs.
+$cmake=(Get-Content -LiteralPath (Join-Path $root "CMakeLists.txt") -Raw -Encoding UTF8)
+if($cmake -notmatch '(?m)^project\(ARMixConsole VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES'){
+    throw "Installer version does not match the native CMake project"
+}
+$appVersion=$Matches[1]
 $out=Join-Path $root $InstallerOutput
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $stage=Join-Path $env:RUNNER_TEMP ("arsonmix-install-stage-"+[guid]::NewGuid().ToString("N"))
@@ -40,7 +46,7 @@ try {
     if(Test-Path -LiteralPath $factory -PathType Container){
         Copy-Item -LiteralPath $factory -Destination (Join-Path $stage "FactoryFX") -Recurse
     }
-    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "installer/ArSonMix.iss"
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "installer/ArSonMix.iss"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-UNQUALIFIED.exe"
     if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
        (Get-Item -LiteralPath $setup).Length -lt 2MB){throw "ISCC failed to build installer RC"}
@@ -110,7 +116,7 @@ try {
         throw "Uninstaller failed or erased user Studio data"
     }
     [ordered]@{
-        sourceCommit=$sha;guiSha256=$appHash
+        sourceCommit=$sha;appVersion=$appVersion;guiSha256=$appHash
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         certification="UNSIGNED_HARDWARE_FAT_PENDING";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
