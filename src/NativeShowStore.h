@@ -112,21 +112,56 @@ public:
         const auto committed=versions.getChildFile(generation);
         if(committed.exists()||!stage.moveFileTo(committed))
             return "Unable to publish immutable generation directory";
+        // Promote the former verified HEAD into a separate durable recovery
+        // pointer BEFORE replacing HEAD. If power is lost at any boundary,
+        // the old HEAD still works or an explicit recovery candidate survives.
+        // PREVIOUS never changes the active Show automatically.
+        const auto head=showRoot.getChildFile("HEAD");
+        if(head.existsAsFile()) {
+            if(head.getSize()<1 || head.getSize()>128)
+                return "Existing Show HEAD invalid: refuse to discard recovery history";
+            const auto previousId=head.loadFileAsString().trim();
+            if(!detail::uuid(previousId))
+                return "Existing Show HEAD invalid: refuse to discard recovery history";
+            ShowV2 priorShow;
+            std::vector<SnapshotV2> priorSnapshots;
+            const auto priorError=readFolder(
+                versions.getChildFile(previousId),priorShow,priorSnapshots);
+            if(priorError.isNotEmpty() || !priorShow.id.equalsIgnoreCase(show.id))
+                return "Existing Show generation invalid: recover explicitly before overwrite";
+            const auto backupError=writePointer(showRoot.getChildFile("PREVIOUS"),previousId);
+            if(backupError.isNotEmpty())return "Cannot preserve prior Show HEAD: "+backupError;
+        }
         // A failed HEAD write leaves previous generation intact; a new version
         // may remain orphaned but will never be loaded without its HEAD.
-        juce::TemporaryFile temp(showRoot.getChildFile("HEAD"));
-        auto stream=temp.getFile().createOutputStream();
-        if(!stream) return "Cannot open temporary Show pointer";
-        if(!stream->writeText(generation+"\n",false,false,"\n"))
-            return "Cannot write temporary Show pointer";
-        stream->flush();
-        if(stream->getStatus().failed())return "Failed to flush Show pointer";
-        stream.reset();
-        if(!temp.overwriteTargetFileWithTemporary())
-            return "Cannot atomically commit Show pointer";
-        return {};
+        return writePointer(head,generation);
     }
 
+    // Explicit operator-directed disaster recovery. NEVER silently substitute
+    // PREVIOUS on normal load: that would turn a corrupted latest performance
+    // into an apparently successful, but stale, recalled Show.
+    // Verify the entire old generation including FX hashes BEFORE switching.
+    // After success, existing loadWithStates() can restore every verified blob.
+    juce::String recoverPrevious(const juce::String& requestedId) const {
+        if(!detail::uuid(requestedId))return "Invalid Show ID";
+        const auto dir=root_.getChildFile(requestedId.toLowerCase());
+        const auto backup=dir.getChildFile("PREVIOUS");
+        if(!backup.existsAsFile() || backup.getSize()<1 || backup.getSize()>128)
+            return "Previous Show generation missing";
+        const auto priorId=backup.loadFileAsString().trim();
+        if(!detail::uuid(priorId))return "Unsafe previous Show pointer";
+        ShowV2 recovered;
+        std::vector<SnapshotV2> snapshots;
+        const auto error=readFolder(dir.getChildFile("versions").getChildFile(priorId),
+                                    recovered,snapshots);
+        if(error.isNotEmpty())return "Previous Show cannot be verified: "+error;
+        if(!recovered.id.equalsIgnoreCase(requestedId))
+            return "Previous Show identity mismatch";
+        // Pointer recovery is an explicit IO transaction, not PCM publication.
+        return writePointer(dir.getChildFile("HEAD"),priorId);
+    }
+
+    // Read-and-verify entire generation before changing either output value.
     // Read-and-verify entire generation before changing either output value.
     juce::String load(const juce::String& requestedId,ShowV2& show,
                       std::vector<SnapshotV2>& snapshots) const {
@@ -198,6 +233,20 @@ public:
     }
 private:
     juce::File root_;
+    static juce::String writePointer(const juce::File& target,const juce::String& id) {
+        if(!detail::uuid(id))return "Unsafe Show generation pointer";
+        juce::TemporaryFile temp(target);
+        auto output=temp.getFile().createOutputStream();
+        if(!output)return "Cannot open temporary Show pointer";
+        if(!output->writeText(id+"\n",false,false,"\n"))
+            return "Cannot write temporary Show pointer";
+        output->flush();
+        if(output->getStatus().failed())return "Failed to flush Show pointer";
+        output.reset();
+        if(!temp.overwriteTargetFileWithTemporary())
+            return "Cannot atomically replace Show pointer";
+        return {};
+    }
     static bool validHash(const juce::String& s) {
         if(s.length()!=64) return false;
         for(const auto ch:s.toStdString())

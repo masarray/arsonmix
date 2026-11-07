@@ -112,13 +112,31 @@ int main() {
  assert(store.load(show.id,loaded,retrieved).isNotEmpty());
  assert(retrieved.size()==1&&retrieved[0].name=="Performance Ready");
 
- // Bad HEAD rejected before using unsafe path; backup remains intact.
+ // Explicit recovery validates prior JSON and BOTH vendor state hashes.
+ // A corrupt latest blob is not silently accepted by normal load.
+ const auto priorPointer=workspace.getChildFile("Shows").getChildFile(show.id)
+     .getChildFile("PREVIOUS");
+ assert(priorPointer.existsAsFile());
+ assert(priorPointer.loadFileAsString().trim()==first.getFileName());
+ assert(store.recoverPrevious(show.id).isEmpty());
+ assert(store.currentGeneration(show.id)==first);
+ restoredStates.clear();
+ assert(store.loadWithStates(show.id,fxShow,fxSnaps,restoredStates).isEmpty());
+ assert(restoredStates.size()==2 && fxSnaps[0].name=="Soundcheck");
+
+ // Bad HEAD rejected before using unsafe path; recovery must remain possible.
  auto head=workspace.getChildFile("Shows").getChildFile(show.id).getChildFile("HEAD");
  assert(head.replaceWithText("../unsafe"));
  assert(store.load(show.id,loaded,retrieved).isNotEmpty());
  assert(store.currentGeneration(show.id)==juce::File{});
  assert(first.isDirectory());
+ assert(store.recoverPrevious(show.id).isEmpty());
+ assert(store.currentGeneration(show.id)==first);
+ // Corrupt PREVIOUS must never clobber the last accepted HEAD.
+ assert(priorPointer.replaceWithText("../../outside"));
+ assert(store.recoverPrevious(show.id).isNotEmpty());
+ assert(store.currentGeneration(show.id)==first);
  base.deleteRecursively();
- std::cout<<"PASS: immutable Shows generation, staged VST3 hash, atomic HEAD, no partial recovery\n";
+ std::cout<<"PASS: immutable Shows, staged VST3 hashes, explicit last-known-good recovery\n";
  return 0;
 }
