@@ -43,11 +43,13 @@
       current.graph?.channels?.some(ch=>ch.id===id)?id:null;
   };
   const identityEligible=t=>Boolean(identityChannelFor(t));
+  let lastEditedChannelId=null;
   function openNativeIdentity(t,anchor){
     if(!identityEligible(t)){
       nativeToast("Channel identity unavailable until its native channel is loaded");
       return false;
     }
+    lastEditedChannelId=t.id;
     scope?.openChannelIdentity?.(t,anchor);
     return true;
   }
@@ -2808,11 +2810,16 @@
       openNativeIdentity(track,focused);return;
     }
     if(event.key!=="F2")return;
-    const selected=scope?.tracks?.concat(scope.master||[])?.find(t=>t.selected);
+    const tracks=scope?.tracks?.concat(scope.master||[])||[];
+    const focusedTrack=target?.closest?.(".strip")?.dataset.id;
+    const selected=tracks.find(t=>t.id===Number(focusedTrack))||
+      tracks.find(t=>t.selected && identityEligible(t))||
+      tracks.find(t=>t.id===lastEditedChannelId && identityEligible(t));
     if(!selected)return;
     event.preventDefault();event.stopImmediatePropagation();
-    openNativeIdentity(selected,document.querySelector('.strip.selected .footer-label')||
-      document.querySelector('.strip.selected .strip-identity-top'));
+    const anchor=document.querySelector('.strip[data-id="'+selected.id+'"] .footer-label')||
+      document.querySelector('.strip[data-id="'+selected.id+'"] .strip-identity-top');
+    openNativeIdentity(selected,anchor);
   },true);
 
   // Pages' reference-only controls must not masquerade as working native
