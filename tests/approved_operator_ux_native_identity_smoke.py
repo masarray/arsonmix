@@ -50,7 +50,7 @@ def main():
         page.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
         editor=page.locator('#channelIdentity')
         assert editor.is_visible(),"single-click native identity editor did not open"
-        assert page.locator('#identityName').is_focused()
+        assert page.locator('#identityName').evaluate("el=>el===document.activeElement")
         page.locator('#identityName').fill("Discard this")
         page.locator('#identityCancel').click()
         assert editor.is_hidden(),"Cancel must dismiss without modifying the channel"
