@@ -175,7 +175,7 @@
     return result.ok;
   };
   function projection(native) {
-    if (!native?.admitted || !Array.isArray(native.graph.edges) ||
+    if ((!native?.admitted && !native?.retained) || !Array.isArray(native.graph.edges) ||
         !scope?.make || !scope?.render || !scope?.wireGraph ||
         !scope?.installGraph || !scope?.allocateWireId) return false;
     const accepted = native.graph;
@@ -214,8 +214,9 @@
       if(ch.role==="INPUT"){
         const src=ch.source||{},l=/^in:(\d+)$/.exec(src.portId||""),
           r=/^in:(\d+)$/.exec(src.portIdRight||"");
-        t.input=l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
-          left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
+        t.input=native.retained && src.bindingState==="NEEDS_REMAP"?
+          NEEDS_REMAP:l?inputLabelFor({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
+            left:Number(l[1]),right:r?Number(r[1]):-1}):"None";
       }
       const out=accepted.channels.find(dest=>dest.id===ch.primaryOutId);
       // Identity-safe labels also handle duplicate names and reserved labels.
@@ -388,7 +389,8 @@
       if(ui===undefined)continue;
       for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
         const fixed=edge.primaryOutput===true;
-        if(input.disabled!==fixed)input.disabled=fixed;
+        const disabled=fixed || next.retained;
+        if(input.disabled!==disabled)input.disabled=disabled;
         const title="Primary OUT is unity gain · use the destination fader";
         if(fixed&&input.title!==title)input.title=title;
       }
@@ -454,6 +456,7 @@
       Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
   // BUS is verified engine state, not an available hardware input choice.
   const INTERNAL_BUS="Internal BUS (read-only)";
+  const NEEDS_REMAP="NEEDS REMAP";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   const inputChoicesFor=()=>{
@@ -1193,12 +1196,13 @@
       monitorButton.disabled=!d?.outputArmed && !deviceReady();
       monitorButton.dataset.armed=String(!!d?.outputArmed);
     }
-    if(scope?.master && deviceOpen &&
-       scope.master.output!==playback){
-      scope.master.output=playback;
-      if(!next?.admitted)scope.render?.();
+    const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
+    if(scope?.master && mainOutput && scope.master.output!==mainOutput){
+      scope.master.output=mainOutput;
+      if(!next?.admitted && !next?.retained)scope.render?.();
     }
-    const transport=!deviceOpen?"Audio device not ready":
+    const transport=next?.retained?"MONITOR OFF · OUT NEEDS REMAP":
+      !deviceOpen?"Audio device not ready":
       (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
       (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
     if(label && label.textContent!==transport)label.textContent=transport;
@@ -1208,7 +1212,8 @@
     // initiates native source publication; only its correlated ACK may
     // request a safe first MONITOR. If the driver exposes no physical IN,
     // guide the operator to the existing Audio I/O panel instead.
-    const warningText=!deviceOpen?"NO VERIFIED AUDIO DEVICE":
+    const warningText=next?.retained?"NEEDS REMAP · MIXER RETAINED · OUTPUT MUTED":
+      !deviceOpen?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
       !d.enabledInputs?.length?"NO CAPTURE INPUT · OPEN AUDIO I/O":
@@ -1716,6 +1721,21 @@
       // snapshot even if the GUI signature is otherwise identical.
       window.queueMicrotask(dispatchNativeSource);
     }
+    if (next.retained && !nativeAdmitted) {
+      flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
+      pendingNativeSources.clear();pendingSourceQueue.clear();
+      activeNativeSource=null;nativeUiSourcePending=null;
+      pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
+      pendingFxInsert=null;startupWire=null;activeWireAttempt=null;
+      pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
+      const signature="retained|"+next.identity;
+      if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next))
+        lastPaintedSignature=signature;
+      stopDemo();
+      paintNativeMeters(next);
+      status("NEEDS REMAP · mixer retained · output muted");
+      return;
+    }
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
@@ -2054,6 +2074,7 @@
     enabled:connected,
     inputChoices(t) {
       if(t?.kind!=="audio")return ["None"];
+      if(controller?.state()?.current?.retained)return [t.input||"None"];
       const choices=inputChoicesFor().map(x=>x.label);
       // The native BUS lane is selectable only for display: never invent a
       // hardware pin or promote the internal BUS to a writable physical IN.
@@ -2062,7 +2083,8 @@
     },
     outputChoices(t) {
       if(t?.kind==="master")
-        return [String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
+        return [hardware?.retained?NEEDS_REMAP:
+          String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
       if(t?.kind!=="master"){
         // M4 accepts MAIN or source-only. Bus routing is via native WIRE,
         // never pretend the demo's other destinations have native PCM.
@@ -2081,6 +2103,13 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      if(controller?.state()?.current?.retained){
+        if(field==="output" && t.kind==="master" && event.type==="change")
+          openNativeAudioIO();
+        if(field==="level" || field==="pan" || field==="input" || field==="output")
+          el.value=String(t[field]);
+        return true;
+      }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))

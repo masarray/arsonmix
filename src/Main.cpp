@@ -869,8 +869,8 @@ private:
         // Actual prepared M4 epoch/revision enables the native First Sound
         // hardware PATCH/ARM workflow before full ChannelId admission.
         (void) armix::console::publishVerifiedFirstSoundState (accepted, live);
-        (void) armix::console::projectInstalledNativeChannelIdGraph (
-            accepted, live);
+        if (!armix::console::projectInstalledNativeChannelIdGraph (accepted, live))
+            (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         // Sole control-thread SessionSnapshot from the installed PCM publisher.
         armix::console::publishAuthoritativeMixerSession(accepted);
         return accepted;

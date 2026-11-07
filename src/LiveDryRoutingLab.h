@@ -2012,10 +2012,11 @@ public:
     }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
-    juce::var nativeBusStatus() const {
-        if(!channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners)return {};
+    juce::var nativeBusStatus(bool retained=false) const {
+        if(!nativeAccepted_.fxOwners ||
+           (!retained && !channelIdPhysicalPcmActive()))return {};
         const auto* routing=nativePublisher_.acceptedRouting(
-            epoch(),nativeAccepted_.pcmRevision);
+            nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision);
         if(!routing)return {};
         auto state=std::make_unique<juce::DynamicObject>();
         state->setProperty("graphRevision",juce::String(
@@ -2023,12 +2024,14 @@ public:
         state->setProperty("rosterRevision",juce::String(
             std::to_string(routing->rosterRevision)));
         state->setProperty("structural",nativeStructureLive_);
-        state->setProperty("latencySamples",nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision));
+        if(!retained)
+            state->setProperty("latencySamples",nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision));
         juce::Array<juce::var> allowed;
         // Only expose operations backed by a real DSP lease. Dynamic
         // FX_RETURN insertion is not available until a native VST3 owner
         // can be prepared for its new ChannelId; do not advertise it.
-        for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
+        if(!retained)
+          for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
                              "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
                              "NATIVE_SET_PRIMARY_OUT",
@@ -2046,7 +2049,8 @@ public:
         juce::Array<juce::var> rows;
         // Meter taps come from the SAME realtime ChannelId renderer, in
         // accepted roster order. No JS guesses or second DSP render.
-        const bool pcmMeterValid=nativeMeterEpoch_.load(std::memory_order_acquire)==epoch();
+        const bool pcmMeterValid=!retained &&
+            nativeMeterEpoch_.load(std::memory_order_acquire)==epoch();
         std::size_t meterIndex=0;
         for(const auto& ch:routing->channels) {
             auto row=std::make_unique<juce::DynamicObject>();
@@ -2107,13 +2111,15 @@ public:
             for(const auto& source:nativeAccepted_.graph.request.sources) {
                 if(source.id!=ch.id)continue;
                 auto physical=std::make_unique<juce::DynamicObject>();
-                if(source.inputL>=0&&source.inputL<portCount_.load(std::memory_order_acquire)) {
+                if(retained)physical->setProperty("bindingState","NEEDS_REMAP");
+                if(!retained && source.inputL>=0 &&
+                   source.inputL<portCount_.load(std::memory_order_acquire)) {
                     const auto pin=enabledPorts_[source.inputL].load(std::memory_order_relaxed);
                     physical->setProperty("portId","in:"+juce::String(pin));
                 }
                 // Preserve BOTH actual physical pins on native readback, not
                 // just the left pin. The GUI may not invent the right channel.
-                if(source.stereo && source.inputR>=0 &&
+                if(!retained && source.stereo && source.inputR>=0 &&
                    source.inputR<portCount_.load(std::memory_order_acquire)) {
                     const auto right=enabledPorts_[source.inputR].load(std::memory_order_relaxed);
                     physical->setProperty("portIdRight","in:"+juce::String(right));
@@ -2507,6 +2513,11 @@ public:
         // silent so SAVE/RECALL cannot silently discard audible topology.
         out->setProperty("nativeBusStructural",nativeStructureLive_);
         if(nativePcm)out->setProperty("nativeBus",nativeBusStatus());
+        else if(nativeAccepted_.deviceEpoch!=epoch() && hasAuthoredMixerContent()) {
+            auto retained=nativeBusStatus(true);
+            if(retained.isObject())
+                out->setProperty("retainedNativeBus",std::move(retained));
+        }
         // This exact original vendor Graph owner is retained by the native
         // accepted snapshot, NOT merely a catalog name or M4 CH1 label.
         // Message-thread diagnostic only; no false universal capabilities.

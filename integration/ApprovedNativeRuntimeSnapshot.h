@@ -188,6 +188,49 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
     return physicalReady;
 }
 
+inline void publishNativeMasterControls(juce::var& snapshot,const juce::var& live)
+{
+    // The physical MAIN gain/mute is
+    // applied by the single LiveAudioEngine host after that render. The
+    // generic ChannelId roster's default MAIN fader is not this physical
+    // gain. Publish the real host readback, or the visible master will
+    // snap back to 0 dB after every accepted native scalar snapshot.
+    double physicalMasterDb=0.;
+    const auto physicalMasterMute=live.getProperty("masterMute",{});
+    if(nativeV8Number(live.getProperty("masterDb",{}),physicalMasterDb) &&
+       physicalMasterDb>=-60.01 && physicalMasterDb<=10.01 &&
+       physicalMasterMute.isBool()) {
+        const auto installedGraph=snapshot.getProperty("graph",{});
+        const auto channels=installedGraph.getProperty("channels",{});
+        if(auto* rows=channels.getArray())
+            for(auto& row:*rows)
+                if(row.getProperty("role",{}).toString()=="MAIN") {
+                    const auto controls=row.getProperty("controls",{});
+                    if(auto* obj=controls.getDynamicObject()) {
+                        obj->setProperty("faderDb",physicalMasterDb);
+                        obj->setProperty("mute",physicalMasterMute);
+                    }
+                }
+    }
+}
+
+inline bool projectRetainedNativeChannelIdGraph(juce::var& snapshot,const juce::var& live)
+{
+    const auto route=live.getProperty("dryRoutingLab",{});
+    const auto retained=route.getProperty("retainedNativeBus",{});
+    const auto pcm=route.getProperty("nativeChannelIdPcmActive",{});
+    const auto device=snapshot.getProperty("device",{});
+    const auto armed=device.getProperty("outputArmed",{});
+    if(!retained.isObject() || !pcm.isBool() || static_cast<bool>(pcm) ||
+       !armed.isBool() || static_cast<bool>(armed) ||
+       !projectNativeGraph(snapshot,retained,NativeGraphProjection::retained))
+        return false;
+    snapshot.getProperty("graph",{}).getDynamicObject()
+        ->setProperty("bindingState","NEEDS_REMAP");
+    publishNativeMasterControls(snapshot,live);
+    return true;
+}
+
 inline bool projectInstalledNativeChannelIdGraph(
     juce::var& snapshot, const juce::var& live)
 {
@@ -236,28 +279,7 @@ inline bool projectInstalledNativeChannelIdGraph(
     // comes from the verified installed ENGINE status above, not the caller.
     if (!projectApprovedNativeV8(snapshot,bus,true))
         return false;
-    // ChannelId owns channel PCM, but the physical MAIN gain/mute is
-    // applied by the single LiveAudioEngine host after that render. The
-    // generic ChannelId roster's default MAIN fader is not this physical
-    // gain. Publish the real host readback, or the visible master will
-    // snap back to 0 dB after every accepted native scalar snapshot.
-    double physicalMasterDb=0.;
-    const auto physicalMasterMute=live.getProperty("masterMute",{});
-    if(nativeV8Number(live.getProperty("masterDb",{}),physicalMasterDb) &&
-       physicalMasterDb>=-60.01 && physicalMasterDb<=10.01 &&
-       physicalMasterMute.isBool()) {
-        const auto installedGraph=snapshot.getProperty("graph",{});
-        const auto channels=installedGraph.getProperty("channels",{});
-        if(auto* rows=channels.getArray())
-            for(auto& row:*rows)
-                if(row.getProperty("role",{}).toString()=="MAIN") {
-                    const auto controls=row.getProperty("controls",{});
-                    if(auto* obj=controls.getDynamicObject()) {
-                        obj->setProperty("faderDb",physicalMasterDb);
-                        obj->setProperty("mute",physicalMasterMute);
-                    }
-                }
-    }
+    publishNativeMasterControls(snapshot,live);
     // Advertise only controls provided by the currently installed and
     // positively admitted native callback (never inferred from a JSON shape
     // or the browser). Both the native and public capability are required by
@@ -320,12 +342,15 @@ inline void publishAuthoritativeMixerSession(juce::var& snapshot)
         nativeV8Decimal(epoch) && epoch!="0" &&
         nativeV8Decimal(graph.getProperty("revision",{})) &&
         graphRows.isArray() && graphRows.getArray()->size()>0;
+    const bool channelIdRetained=!channelIdReady &&
+        graph.getProperty("bindingState",{}).toString()=="NEEDS_REMAP";
+    const bool hasChannelId=channelIdReady || channelIdRetained;
     const auto sources=m4.getProperty("channels",{});
     const auto controls=m4.getProperty("channelControls",{});
     const auto peakL=m4.getProperty("channelPeaksL",{});
     const auto peakR=m4.getProperty("channelPeaksR",{});
     const auto rackFlags=m4.getProperty("fxRackBypassed",{});
-    const bool preparedM4=!channelIdReady && m4.isObject() &&
+    const bool preparedM4=!hasChannelId && m4.isObject() &&
         static_cast<bool>(m4.getProperty("active",false)) &&
         static_cast<bool>(m4.getProperty("routeAccepted",false)) &&
         !static_cast<bool>(m4.getProperty("nativeBusStructural",true)) &&
@@ -373,21 +398,22 @@ inline void publishAuthoritativeMixerSession(juce::var& snapshot)
         if(!validM4)rows.clear();
     }
     auto session=std::make_unique<juce::DynamicObject>();
-    const auto authority=channelIdReady?"CHANNEL_ID":validM4?"M4":"NONE";
+    const auto authority=hasChannelId?"CHANNEL_ID":validM4?"M4":"NONE";
+    if(channelIdRetained)session->setProperty("bindingState","NEEDS_REMAP");
     session->setProperty("authority",authority);
     session->setProperty("deviceEpoch",epoch);
-    session->setProperty("routeRevision",channelIdReady?
+    session->setProperty("routeRevision",hasChannelId?
         graph.getProperty("revision","0"):validM4?
         m4.getProperty("routingRevision","0"):juce::var("0"));
-    session->setProperty("rosterRevision",channelIdReady?
+    session->setProperty("rosterRevision",hasChannelId?
         graph.getProperty("rosterRevision","0"):juce::var("0"));
-    session->setProperty("channels",channelIdReady?graphRows:juce::var(rows));
+    session->setProperty("channels",hasChannelId?graphRows:juce::var(rows));
     session->setProperty("supportedOps",channelIdReady?
         caps.getProperty("supportedOps",juce::var(juce::Array<juce::var>{})):
         juce::var(juce::Array<juce::var>{}));
     // Actual physical post-mixer MAIN is not a second audio graph.
     auto master=std::make_unique<juce::DynamicObject>();
-    if(channelIdReady) {
+    if(hasChannelId) {
         for(const auto& ch:*graphRows.getArray())
             if(ch.getProperty("role","").toString()=="MAIN") {
                 const auto c=ch.getProperty("controls",{});

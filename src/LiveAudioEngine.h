@@ -2256,6 +2256,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        setOutputMuted(true);
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();

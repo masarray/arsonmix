@@ -79,11 +79,9 @@
     // FAT. Never equate an installed PCM graph with a release-ready product.
     // Conversely, callbackOwnsChannelIds is ONLY advertised by the real
     // installed callback; the legacy M4/Pages demo must remain unadmitted.
-    const admitted = caps.callbackOwnsChannelIds === true &&
+    const hasAcceptedGraph =
       cmp(d.epoch,"0") > 0 && cmp(g.revision,"0") > 0 &&
-      d.sampleRate > 0 && d.bufferFrames > 0 &&
-      d.enabledOutputs.length > 0 && d.outputEndpoints.length > 0 &&
-      Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
+      cmp(g.rosterRevision,"0") > 0 && Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
       typeof g.mainChannelId === "string" &&
       g.channels.some(ch => ch.id === g.mainChannelId && ch.role === "MAIN") &&
       g.channels.every(ch => fields(ch,["controls","inserts","sends"]) &&
@@ -92,11 +90,20 @@
         Number.isFinite(ch.controls.pan) && isBool(ch.controls.mute) &&
         isBool(ch.controls.solo) && Array.isArray(ch.inserts) &&
         Array.isArray(ch.sends));
+    const retained = g.bindingState === "NEEDS_REMAP";
+    if (retained && (!hasAcceptedGraph || caps.callbackOwnsChannelIds ||
+        caps.supportedOps.length !== 0 || d.outputArmed ||
+        raw.mixerSession?.authority !== "CHANNEL_ID" ||
+        raw.mixerSession?.bindingState !== "NEEDS_REMAP" ||
+        raw.mixerSession?.deviceEpoch !== d.epoch)) return null;
+    const admitted = caps.callbackOwnsChannelIds === true && hasAcceptedGraph &&
+      d.sampleRate > 0 && d.bufferFrames > 0 &&
+      d.enabledOutputs.length > 0 && d.outputEndpoints.length > 0;
     // A producer may stage PCM without claiming full release/UAT. A producer
     // must NEVER claim product LIVE without an admitted PCM graph.
     if (raw.productionCallbackLive && !admitted) return null;
     if (caps.callbackOwnsChannelIds && !admitted) return null;
-    return { raw, device:d, graph:g, telemetry:t, admitted,
+    return { raw, device:d, graph:g, telemetry:t, admitted, retained,
       productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
   }
@@ -284,7 +291,7 @@
               cmp(next.graph.rosterRevision,current.graph.rosterRevision) < 0))) {
           lastError="OLD_NATIVE_REVISION";notify();return false;
         }
-        if (pending && epochCompare !== 0) {
+        if (pending && (epochCompare !== 0 || next.retained)) {
           pending=null;lastError="STALE_DEVICE";
         }
       }

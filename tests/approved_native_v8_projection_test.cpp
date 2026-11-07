@@ -948,7 +948,39 @@ static void firstSoundMeasuredSignalEvidenceRegression() {
     assert(!static_cast<bool>(signal(live,true,true).getProperty("captureObserved",true)));
 }
  
+static void retainedDocumentDoesNotAdmitPcm() {
+    auto snapshot=canonicalSnapshot();
+    snapshot.getProperty("device",{}).getDynamicObject()
+        ->setProperty("outputArmed",false);
+    auto bus=realBusReadbackFixture();
+    auto live=parse(R"JSON({
+      "masterDb":-9.0,"masterMute":true,
+      "dryRoutingLab":{"nativeChannelIdPcmActive":false}
+    })JSON");
+    auto* route=live.getProperty("dryRoutingLab",{}).getDynamicObject();
+    route->setProperty("nativeBus",bus);
+    assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
+    route->setProperty("retainedNativeBus",bus);
+    assert(projectRetainedNativeChannelIdGraph(snapshot,live));
+    publishAuthoritativeMixerSession(snapshot);
+    const auto graph=snapshot.getProperty("graph",{});
+    const auto caps=graph.getProperty("capabilities",{});
+    assert(graph.getProperty("bindingState",{}).toString()=="NEEDS_REMAP");
+    assert(graph.getProperty("channels",{})[0].getProperty("id",{}).toString()=="9007199254740993");
+    assert(graph.getProperty("edges",{})[0].getProperty("edgeId",{}).toString()=="9223372036854775808");
+    assert(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",true)));
+    assert(caps.getProperty("supportedOps",{}).getArray()->isEmpty());
+    assert(snapshot.getProperty("telemetry",{}).getProperty("channelMeterRmsPeak",{})
+        .getDynamicObject()->getProperties().size()==0);
+    const auto session=snapshot.getProperty("mixerSession",{});
+    assert(session.getProperty("bindingState",{}).toString()=="NEEDS_REMAP");
+    assert(static_cast<double>(session.getProperty("main",{}).getProperty("db",0.0))==-9.0);
+    route->setProperty("nativeChannelIdPcmActive",true);
+    assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
+}
+
 int main() {
+    retainedDocumentDoesNotAdmitPcm();
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
     // Merely having matching native-shaped JSON cannot enable fake LIVE.

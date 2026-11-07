@@ -8,7 +8,7 @@ test("only installed callback determines GUI channel control authority",()=>{
  const producer=read("integration/ApprovedNativeRuntimeSnapshot.h");
  const host=read("src/Main.cpp"),adapter=read("web/approved-native-bridge.js");
  assert.match(host,/publishAuthoritativeMixerSession\(accepted\)/);
- assert.match(producer,/const auto authority=channelIdReady\?"CHANNEL_ID":validM4\?"M4":"NONE"/);
+ assert.match(producer,/const auto authority=hasChannelId\?"CHANNEL_ID":validM4\?"M4":"NONE"/);
  assert.match(producer,/row->setProperty\("id","m4:"/);
  assert.match(adapter,/if\(session\.authority==="M4" && m4Verified\(\)\)/);
  assert.match(adapter,/const nativeAdmitted=session\.authority==="CHANNEL_ID"/);
