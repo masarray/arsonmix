@@ -25,6 +25,7 @@ def run(check: bool) -> None:
                         "--source", str(SOURCE), "--out", str(stage)], check=True)
         destinations = [(name, ICON_DIR / name) for name in BUNDLE]
         destinations += [("favicon.ico", ICON_DIR / "arsonmix-app.ico")]
+        destinations += [("arsonmix-48.png", SITE_DIR / "arsonmix-48.png")]
         destinations += [(name, SITE_DIR / name) for name in WEB]
         problems = []
         for generated, destination in destinations:
