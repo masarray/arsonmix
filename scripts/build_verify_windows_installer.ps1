@@ -9,15 +9,21 @@ $manifest=Get-Content -LiteralPath (Join-Path $dist "BUILD_PROVENANCE.json") -Ra
 $exe=Join-Path $dist "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $appHash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 if($LASTEXITCODE -ne 0 -or $manifest.sourceCommit -ne $sha -or
-   $manifest.exeSha256 -ne $appHash -or $manifest.fatStatus -ne "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED" -or
+   $manifest.exeSha256 -ne $appHash -or $manifest.fatStatus -ne "SOFTWARE_VERIFIED_PREVIEW_CANDIDATE" -or
    (Get-Item -LiteralPath $exe).Length -ne $manifest.guiExeBytes -or
    (Test-Path -LiteralPath (Join-Path $dist "Studio"))) {
-    throw "Installer requires the exact already verified and hardware-unqualified FAT PE"
+    throw "Installer requires an exact source-SHA software-verified Preview GUI PE"
 }
 $which=Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $iscc=if($which){$which.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
 if(-not (Test-Path -LiteralPath $iscc -PathType Leaf)){throw "Inno Setup 6 compiler missing"}
 $root=(Resolve-Path .).Path
+# One authoritative product version: CMake native app and Inno Add/Remove Programs.
+$cmake=(Get-Content -LiteralPath (Join-Path $root "CMakeLists.txt") -Raw -Encoding UTF8)
+if($cmake -notmatch '(?m)^project\(ARMixConsole VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES'){
+    throw "Installer version does not match the native CMake project"
+}
+$appVersion=$Matches[1]
 $out=Join-Path $root $InstallerOutput
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $stage=Join-Path $env:RUNNER_TEMP ("arsonmix-install-stage-"+[guid]::NewGuid().ToString("N"))
@@ -26,6 +32,9 @@ $studio=Join-Path $env:APPDATA "AR-MIX-Studio"
 New-Item -ItemType Directory -Force -Path $studio | Out-Null
 $sentinel=Join-Path $studio ("installer-test-"+[guid]::NewGuid().ToString("N")+".keep")
 "persistent-private-data" | Set-Content -LiteralPath $sentinel
+$fixtureReady=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-ready-"+[guid]::NewGuid().ToString("N"))
+$fixtureClosed=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-closed-"+[guid]::NewGuid().ToString("N"))
+$fixtureProcess=$null
 try {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "verified-gui.exe")
@@ -37,8 +46,8 @@ try {
     if(Test-Path -LiteralPath $factory -PathType Container){
         Copy-Item -LiteralPath $factory -Destination (Join-Path $stage "FactoryFX") -Recurse
     }
-    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "installer/ArSonMix.iss"
-    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-UNQUALIFIED.exe"
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "installer/ArSonMix.iss"
+    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
        (Get-Item -LiteralPath $setup).Length -lt 2MB){throw "ISCC failed to build installer RC"}
     $start=Start-Process -FilePath $setup -ArgumentList @(
@@ -53,6 +62,61 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    # REAL Windows in-place UPDATE test: replace the *test-installed* PE
+    # with a harmless WinForms window. Installer must ask it to WM_CLOSE,
+    # observe the graceful close marker, replace its running .exe with the
+    # verified FAT PE and preserve private Studio plus unknown user files.
+    # This never replaces the source FAT executable or touches a user install.
+    $csc=Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
+    $fixtureSource=Join-Path $root "tests\fixtures\installer_graceful_close.cs"
+    if(-not (Test-Path -LiteralPath $csc -PathType Leaf) -or
+       -not (Test-Path -LiteralPath $fixtureSource -PathType Leaf)){
+        throw "Windows Framework C# compiler or WM_CLOSE fixture missing"
+    }
+    & $csc "/nologo" "/target:winexe" "/reference:System.Windows.Forms.dll" "/out:$installedExe" $fixtureSource
+    if($LASTEXITCODE -ne 0){throw "Cannot prepare graceful-close test window"}
+    $fixtureProcess=Start-Process -FilePath $installedExe -ArgumentList @(
+        ('"' + $fixtureReady + '"'), ('"' + $fixtureClosed + '"')
+    ) -PassThru
+    for($i=0;$i -lt 75 -and -not (Test-Path -LiteralPath $fixtureReady);$i++){
+        $fixtureProcess.Refresh()
+        if($fixtureProcess.HasExited){break}
+        Start-Sleep -Milliseconds 200
+    }
+    if(-not (Test-Path -LiteralPath $fixtureReady)){
+        throw "Installed upgrade fixture did not show its Windows message-loop window"
+    }
+    $installSentinel=Join-Path $install "arsonmix-user-file.keep"
+    "preserve-user-files-across-upgrade" | Set-Content -LiteralPath $installSentinel
+    $upgradeLog=Join-Path $env:RUNNER_TEMP ("arsonmix-upgrade-"+[guid]::NewGuid().ToString("N")+".log")
+    $upgrade=Start-Process -FilePath $setup -ArgumentList @(
+        "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER",
+        "/NOCLOSEAPPLICATIONS",
+        "/DIR=$install",('/LOG="' + $upgradeLog + '"')
+    ) -Wait -PassThru
+    $fixtureProcess.Refresh()
+    $closeMarker=Test-Path -LiteralPath $fixtureClosed
+    $closeText=if($closeMarker){(Get-Content -LiteralPath $fixtureClosed -Raw).Trim()}else{"MISSING"}
+    $installedAfter=(Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host "INNO_UPGRADE_DIAG: installerExit=$($upgrade.ExitCode) oldProcessExited=$($fixtureProcess.HasExited) gracefulMarker=$closeText restoredExeShaOk=$($installedAfter -eq $appHash)"
+    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED","INSTALLER_HANDSHAKE_SAVED")
+    if($upgrade.ExitCode -ne 0 -or -not $fixtureProcess.HasExited -or
+       -not $closeMarker -or -not ($acceptedSaves -contains $closeText)){
+        if(Test-Path -LiteralPath $upgradeLog){
+            Get-Content -LiteralPath $upgradeLog |
+              Select-String -Pattern 'Restart Manager|close application|closing application|file in use|ArSonMix|error|installing' |
+              Select-Object -Last 45 |
+              ForEach-Object {Write-Host "INNO_RESTART_MANAGER_LOG: $($_.Line)"}
+        }
+        throw "In-place update did not gracefully close the running ArSonMix fixture (see $upgradeLog)"
+    }
+    if((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $appHash -or
+       -not (Test-Path -LiteralPath $installSentinel) -or
+       -not (Test-Path -LiteralPath $sentinel) -or
+       (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
+        throw "In-place update failed verified EXE replacement or data preservation"
+    }
+    Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"
     if(-not (Test-Path -LiteralPath $uninstall -PathType Leaf)){throw "Uninstaller missing"}
     $stop=Start-Process -FilePath $uninstall -ArgumentList @(
@@ -62,14 +126,29 @@ try {
         throw "Uninstaller failed or erased user Studio data"
     }
     [ordered]@{
-        sourceCommit=$sha;guiSha256=$appHash
+        sourceCommit=$sha;appVersion=$appVersion;guiSha256=$appHash
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-        certification="UNSIGNED_HARDWARE_FAT_PENDING";mode="PER_USER_NO_AUTOARM"
+        certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
+        updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
-    Write-Host "INSTALLER_RC_VERIFIED: SHA-matched PE, install/uninstall, private Studio intact"
-    Write-Host "PHYSICAL_FAT_PENDING"
+    Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
+    Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }
 finally {
+    # Only a failing *test fixture* may be terminated in CI teardown.
+    # Production Inno Setup never force-kills the user's audio application.
+    if($null -ne $fixtureProcess){
+        try{
+            $fixtureProcess.Refresh()
+            if(-not $fixtureProcess.HasExited){
+                Stop-Process -Id $fixtureProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+        }catch{}
+        $fixtureProcess.Dispose()
+    }
+    foreach($marker in @($fixtureReady,$fixtureClosed)){
+        if(Test-Path -LiteralPath $marker){Remove-Item -LiteralPath $marker -Force}
+    }
     if(Test-Path -LiteralPath $sentinel){Remove-Item -LiteralPath $sentinel -Force}
     if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Recurse -Force}
     if(Test-Path -LiteralPath $install){Remove-Item -LiteralPath $install -Recurse -Force -ErrorAction SilentlyContinue}
