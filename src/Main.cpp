@@ -33,6 +33,7 @@
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
+#include "NativeMixerSessionSaveWorker.h"
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -322,6 +323,10 @@ private:
     Browser browser_;
     armix::storage::StudioBackup::Worker studioBackupWorker_;
     armix::shows::NativeShowSaveWorker nativeShowWorker_;
+    armix::session::NativeMixerSessionSaveWorker mixerSessionWorker_;
+    juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
+    juce::String mixerSessionError_,lastMixerSessionFingerprint_;
+    bool mixerSessionStartupInspected_=false;
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
@@ -1768,6 +1773,126 @@ private:
             "arMixBuiltinEqAck",juce::var(ack.release()));
     }
 
+
+    // Never confuse durable logical ChannelId state with a physical device
+    // authorization. This message-thread report is status only, not PCM.
+    void emitMixerSessionAck(const juce::String& operation,
+                             const juce::String& error={}) {
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("operation",operation);
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        ack->setProperty("state",mixerSessionStatus_);
+        ack->setProperty("saved",mixerSessionId_.isNotEmpty());
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixNativeSessionAck",
+                juce::var(ack.release()));
+    }
+
+    // Called once immediately after startup and again only on user-directed
+    // restore. No implicit mapping to a different soundcard or active output.
+    juce::String restoreSavedMixerSession() {
+        if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() ||
+           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
+            return "MUTE output and finish Studio IO before restoring mixer";
+        armix::session::NativeMixerSessionStore store(settingsDirectory());
+        if(!store.exists()) {
+            mixerSessionStatus_="NO_SAVED_SESSION";
+            return "No saved dynamic mixer session";
+        }
+        armix::session::MixerSessionDocument doc;
+        std::vector<armix::shows::BinaryState> states;
+        auto error=store.load(doc,states);
+        if(error.isNotEmpty()) {
+            mixerSessionStatus_="DAMAGED_SESSION";
+            mixerSessionError_=error;
+            diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",error);
+            return error;
+        }
+        mixerSessionId_=doc.id;
+        // Existing live graphs cannot be replaced by startup autosave or
+        // a stale More-button click. Never demote the true native renderer.
+        const auto live=engine_.status().getProperty("dryRoutingLab",{});
+        if(static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
+            mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
+            return "Live native mixer already active; refusing to replace it";
+        }
+        error=engine_.restoreNativeMixerSession(std::move(doc),states);
+        if(error.isNotEmpty()) {
+            mixerSessionStatus_=error.contains("NEEDS_REMAP")
+                ?"NEEDS_REMAP":"RESTORE_REJECTED";
+            mixerSessionError_=error;
+            diagnostics_.record("DYNAMIC_MIXER_RESTORE_REJECTED",error);
+            return error;
+        }
+        mixerSessionStatus_="RESTORED_MUTED";
+        mixerSessionError_.clear();
+        diagnostics_.record("DYNAMIC_MIXER_RESTORED",
+            "Exact native ChannelId/WIRE/VST3; outputs remain DISARMED");
+        emitApprovedNativeSnapshot();
+        return {};
+    }
+
+    // Explicit user SAVE and bounded checkpoint autosave share the same
+    // transaction. Native owner state only; no browser WIRE or demo scene.
+    juce::String saveMixerSession(bool automatic=false) {
+        if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
+           catalog_.busy()||engine_.isGraphSwitchPending()||
+           !engine_.allOutputsDisarmed())
+            return "Mixer session save requires MUTED output and idle Studio IO";
+        armix::session::MixerSessionDocument doc;
+        std::vector<armix::shows::BinaryState> states;
+        auto error=engine_.captureNativeMixerSession(doc,states);
+        if(error.isNotEmpty())return error;
+        doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
+            juce::Uuid().toDashedString().toLowerCase();
+        // Use the verified installed vendor identity; never load using a
+        // browser-provided plugin name or relocate an arbitrary VST3 path.
+        for(auto& fx:doc.inserts) {
+            if(fx.catalogId==
+                  armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+                fx.path={};fx.uid=0;continue;
+            }
+            const auto* catalog=catalog_.find(fx.catalogId);
+            if(!catalog)return "Session VST3 no longer in verified native catalog: "+fx.catalogId;
+            fx.path=catalog->path;fx.uid=catalog->uid;
+            fx.name=catalog->name;
+        }
+        doc.savedMs=1; // signature excludes wall time; includes FX state hashes
+        const auto canonical=armix::session::Codec::encode(doc);
+        armix::session::MixerSessionDocument verified;
+        if(!armix::session::Codec::decode(canonical,verified))
+            return "Mixer session document validation rejected";
+        const auto fingerprint=juce::SHA256(canonical.toRawUTF8(),
+            canonical.getNumBytesAsUTF8()).toHexString();
+        if(automatic&&fingerprint==lastMixerSessionFingerprint_)
+            return {};
+        doc.savedMs=juce::Time::currentTimeMillis();
+        const auto pendingId=doc.id;
+        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        if(!mixerSessionWorker_.save(settingsDirectory(),std::move(doc),
+                  std::move(states),
+                  [safe,pendingId,fingerprint,automatic](juce::String failure){
+            if(safe==nullptr)return;
+            if(failure.isEmpty()) {
+                safe->mixerSessionId_=pendingId;
+                safe->lastMixerSessionFingerprint_=fingerprint;
+                safe->mixerSessionStatus_="SAVED_VERIFIED_MUTED";
+                safe->mixerSessionError_.clear();
+                safe->diagnostics_.record("DYNAMIC_MIXER_SAVED",
+                    automatic?"AUTO_CHECKPOINT":"OPERATOR_SAVE");
+            }else{
+                safe->mixerSessionStatus_="SAVE_REJECTED";
+                safe->mixerSessionError_=failure;
+                safe->diagnostics_.record("DYNAMIC_MIXER_SAVE_REJECTED",failure);
+                if(!automatic)safe->emitNotice("Mixer session not saved: "+failure,true);
+            }
+            if(!automatic)safe->emitMixerSessionAck("SAVE",failure);
+        }))return "Mixer session IO worker unavailable";
+        mixerSessionStatus_="SAVING";
+        return {};
+    }
+
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
@@ -2548,6 +2673,38 @@ private:
             if(opened)diagnostics_.record("ROUTED_FX_EDITOR_OPENED",
                 "lane="+juce::String(lane)+" slot="+juce::String(slot));
             else emitNotice(error,true);
+            return;
+        }
+
+        if(action=="nativeSessionInspect") {
+            emitMixerSessionAck("INSPECT",
+                mixerSessionStatus_=="DAMAGED_SESSION"?mixerSessionError_:juce::String{});
+            return;
+        }
+        if(action=="nativeSessionSave" || action=="nativeSessionRestore" ||
+           action=="nativeSessionRecover") {
+            juce::String result;
+            if(action=="nativeSessionSave")result=saveMixerSession(false);
+            else if(action=="nativeSessionRestore")
+                result=restoreSavedMixerSession();
+            else {
+                if(!engine_.allOutputsDisarmed()||mixerSessionWorker_.busy()||
+                   nativeShowBusy_||studioBackupBusy_)
+                    result="MUTE output and finish IO before last-good recovery";
+                else {
+                    armix::session::NativeMixerSessionStore store(settingsDirectory());
+                    result=store.recoverPrevious();
+                    if(result.isEmpty()) {
+                        mixerSessionStatus_="RECOVERED_ON_DISK_MUTED";
+                        mixerSessionError_.clear();
+                        diagnostics_.record("DYNAMIC_MIXER_LAST_GOOD_RECOVERED",
+                            "Disk pointer restored; manual load still required");
+                    }
+                }
+            }
+            if(result.isNotEmpty())emitNotice("MIXER SESSION: "+result,true);
+            emitMixerSessionAck(action=="nativeSessionSave"?"SAVE":
+                action=="nativeSessionRestore"?"RESTORE":"RECOVER",result);
             return;
         }
         if (action == "routingDryShowSave")
@@ -3497,6 +3654,14 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+            if(!mixerSessionStartupInspected_) {
+                mixerSessionStartupInspected_=true;
+                if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
+                    const auto error=restoreSavedMixerSession();
+                    if(error.isNotEmpty())
+                        emitNotice("Saved mixer retained; "+error,true);
+                }
+            }
             if (onStartupStage_) onStartupStage_ (2);
         }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
@@ -3518,6 +3683,15 @@ private:
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
+        // Autosave only while ALL outputs are muted. Vendor-state reads
+        // happen on CONTROL; disk commits run on ONE serialized IO worker.
+        // A performance with armed speakers/stream is never interrupted for
+        // snapshot capture. One bounded attempt per 60 seconds of idle UI.
+        if(audioEngineStarted_ && timerTicks_%720==0 &&
+           engine_.allOutputsDisarmed() && !mixerSessionWorker_.busy() &&
+           !nativeShowBusy_ && !studioBackupBusy_ && !catalog_.busy() &&
+           !engine_.isGraphSwitchPending() && !engine_.hasTemporaryDiagnosticDevice())
+            (void)saveMixerSession(true);
         if (engine_.finalizeGraphSwitch())
         {
             ++fxGraphRevision_;
@@ -3630,6 +3804,9 @@ private:
            !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
             closePluginEditor();
         annotateRecovery (state);
+        state.getDynamicObject()->setProperty("mixerSessionStatus",mixerSessionStatus_);
+        if(mixerSessionError_.isNotEmpty())
+            state.getDynamicObject()->setProperty("mixerSessionError",mixerSessionError_);
         state.getDynamicObject()->setProperty ("diagnosticsDropped",
             static_cast<double> (diagnostics_.lostRecords()));
         state.getDynamicObject()->setProperty ("diagnosticsTruncated",

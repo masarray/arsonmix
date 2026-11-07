@@ -336,17 +336,17 @@ public:
         // attach to a different processor or channel.
         for(const auto& ch:doc.roster.channels()) {
             std::size_t slot=0;
+            const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
+                ch.insertCatalogIds[0]=="legacy:aux-rack";
             for(const auto& fxRow:doc.inserts)
                 if(fxRow.channel==ch.id) {
                     if(fxRow.slot!=slot++)return false;
-                    if(!ch.insertCatalogIds.empty() &&
+                    if(!legacyMarker && !ch.insertCatalogIds.empty() &&
                        ch.insertCatalogIds[fxRow.slot]!=fxRow.catalogId.toStdString())
                         return false;
                 }
             // The old four AUX are declared as legacy:aux-rack placeholders
             // even when no plugin is installed. They are NOT vendor leases.
-            const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
-                ch.insertCatalogIds[0]=="legacy:aux-rack";
             if(!legacyMarker&&!ch.insertCatalogIds.empty()&&
                slot!=ch.insertCatalogIds.size())return false;
         }
