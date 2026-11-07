@@ -205,7 +205,7 @@ jobs:
         run: python tests/approved_native_meter_dirty_stage_b_smoke.py
       - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
         run: python tests/approved_stage_c_css_visual_parity_smoke.py
-      - name: V29 operator WebView: five geometry sizes, floating controls, and native channel identity
+      - name: V29 operator WebView - five geometry sizes, floating controls, and native channel identity
         run: |
           python tests/approved_operator_ux_chromium_fat.py
           python tests/approved_operator_ux_native_identity_smoke.py
