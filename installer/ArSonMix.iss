@@ -25,8 +25,17 @@ SetupIconFile={#SourceRoot}\arsonmix-app.ico
 UninstallDisplayIcon={app}\ArSonMix.exe
 Compression=lzma2
 SolidCompression=yes
-CloseApplications=no
+; Windows Restart Manager asks the running mixer to shut down gracefully before
+; replacing its EXE. The JUCE shutdown persists the accepted mixer document.
+; Never use CloseApplications=force / taskkill: unsaved state must survive.
+CloseApplications=yes
+CloseApplicationsFilter=ArSonMix.exe,*.dll,*.vst3
+; An install owns the ONE post-setup launch; Restart Manager must not also
+; restore the old process (duplicate/old-version instance race).
 RestartApplications=no
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
+DirExistsWarning=no
 [Files]
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -34,5 +43,10 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
-; No Run or UninstallDelete: do not auto-activate live audio or erase
-; AppData Studio. Do not install portable_mode.txt.
+; Once files and shortcuts have been committed, offer a checked launch on
+; the ordinary Finish screen. Never start an audio device on silent CI installs
+; or background updates. Run with the original (not elevated) user context.
+[Run]
+Filename: "{app}\ArSonMix.exe"; Description: "Launch ArSonMix"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; No UninstallDelete: AppData Studio, .smix, plug-in preferences and recovery
+; documents belong to the user. Do not install portable_mode.txt.
