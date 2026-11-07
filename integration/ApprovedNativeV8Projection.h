@@ -33,9 +33,11 @@ inline bool nativeV8Number(const juce::var& value,double& n) {
 // A structurally correct bus is NOT proof that its IDs own the installed
 // JUCE callback. The real PCM owner must explicitly admit the producer.
 // G0 must pass false and keep the accepted GUI graph unmodified.
-inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
-                                    bool installedChannelIdCallbackAdmitted) {
-    if(!installedChannelIdCallbackAdmitted)return false;
+enum class NativeGraphProjection { installed, retained };
+
+inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
+                               NativeGraphProjection mode) {
+    const bool installed=mode==NativeGraphProjection::installed;
     const auto device=snapshot.getProperty("device",{});
     if(!nativeV8Decimal(device.getProperty("epoch",{})))return false;
     const auto rawRows=bus.getProperty("channels",{}),rawEdges=bus.getProperty("edges",{});
@@ -116,7 +118,7 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
             destinations.add(juce::var(dst.release()));
         }
         double left=0.,right=0.;
-        if(nativeV8Number(row.getProperty("peakL",{}),left) &&
+        if(installed && nativeV8Number(row.getProperty("peakL",{}),left) &&
            nativeV8Number(row.getProperty("peakR",{}),right) &&
            left>=0.&&right>=0.){
             auto peak=std::make_unique<juce::DynamicObject>();
@@ -173,9 +175,10 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
     g->setProperty("destinations",juce::var(destinations));
     g->setProperty("edges",juce::var(wires));
     if(auto* caps=graph.getProperty("capabilities",{}).getDynamicObject()){
-        caps->setProperty("callbackOwnsChannelIds",true);
-        juce::Array<juce::var> ops;ops.add("APPLY_WIRE_TRANSACTION");
-        const auto actual=bus.getProperty("supportedOps",{});
+        caps->setProperty("callbackOwnsChannelIds",installed);
+        juce::Array<juce::var> ops;
+        if(installed)ops.add("APPLY_WIRE_TRANSACTION");
+        const auto actual=installed?bus.getProperty("supportedOps",{}):juce::var{};
         if(const auto* list=actual.getArray())
             if(list->contains(juce::var("NATIVE_SET_WIRE_GAIN")))ops.add("SET_WIRE_GAIN");
         caps->setProperty("supportedOps",juce::var(ops));
@@ -183,5 +186,10 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));
     // productionCallbackLive deliberately stays FALSE until full FAT.
     return true;
+}
+inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
+                                    bool installedChannelIdCallbackAdmitted) {
+    return installedChannelIdCallbackAdmitted &&
+           projectNativeGraph(snapshot,bus,NativeGraphProjection::installed);
 }
 } // namespace armix::console

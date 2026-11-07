@@ -53,6 +53,13 @@ def main():
             state=snapshot()
             state['graph']['edges'].pop(1)  # genuinely no existing channel send
             state['graph']['capabilities']['supportedOps'] += ['LOAD_INSERT']
+            for ident, role, name in [('101','GROUP','Vocal Group'),
+                                      ('102','FX_RETURN','Reverb Return')]:
+                state['graph']['channels'].insert(-1, {
+                    'id':ident,'role':role,'name':name,'processingFormat':'STEREO',
+                    'controls':{'faderDb':-5,'pan':0,'mute':False,'solo':False},
+                    'inserts':[],'sends':[]})
+                state['graph']['destinations'].append({'id':ident,'role':role,'name':name})
             state['legacyM4']={'active':True,'routeAccepted':True,'routingRevision':'77',
                 'nativeBusStructural':False,'fxInstances':[[] for _ in range(14)]}
             emit(page,'arMixConsoleSnapshot',state)
@@ -107,11 +114,44 @@ def main():
             editor=page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='routingFxEditor').at(-1)?.payload")
             assert editor and editor['channelId']==SOURCE and editor['instanceId']=='g5c-actual'
             assert editor['revision']=='5' and 'channel' not in editor
+            # A new device epoch publishes the same document without a
+            # callback, port assignment, meter evidence or write capability.
+            retained=copy.deepcopy(state)
+            retained['device'].update(epoch='92',outputArmed=False,sampleRate=0,
+                bufferFrames=0,inputEndpoints=[],outputEndpoints=[],
+                enabledInputs=[],enabledOutputs=[])
+            retained['graph']['bindingState']='NEEDS_REMAP'
+            retained['graph']['capabilities'].update(callbackOwnsChannelIds=False,supportedOps=[])
+            retained['graph']['channels'][0]['source']={
+                'bindingState':'NEEDS_REMAP','sourceFormat':'MONO'}
+            retained['telemetry']['channelMeterRmsPeak']={}
+            retained['legacyM4']={'active':False,'routeAccepted':False,'routingRevision':'0'}
+            retained['mixerSession'].update(deviceEpoch='92',bindingState='NEEDS_REMAP',
+                channels=copy.deepcopy(retained['graph']['channels']))
+            emit(page,'arMixConsoleSnapshot',retained)
+            page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
+            assert page.locator('.status-bar .warning').inner_text().startswith('NEEDS REMAP')
+            assert page.locator('[data-native-monitor]').is_disabled()
+            assert page.locator('#tracks .strip').count()==4
+            assert 'OUT NEEDS REMAP' in page.locator('#transport').inner_text()
+            page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
+            emit(page,'arMixConsoleSnapshot',retained)
+            assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()
+            strip=page.locator('#tracks .strip[data-id="1"]')
+            assert strip.locator('select[data-field="input"]').input_value()=='NEEDS REMAP'
+            assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
+            before=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')
+            strip.locator('.fx-section [data-action="openPlugin"]').first.click()
+            assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')==before
+            assert page.evaluate('()=>window.__nativeIntents.length')==3
+            # Late readback from the disconnected epoch cannot re-admit audio.
+            emit(page,'arMixConsoleSnapshot',state)
+            assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()
         browser.close()
-    print('PASS G0 first drag without OUT priming; original-channel native FX insert/editor; 3 sizes (UI isolation)')
+    print('PASS G0 first drag without OUT priming; original-channel FX/editor; retained GROUP/FX/WIRE and disarm; 3 sizes (UI isolation)')
 
 
 if __name__=='__main__':
