@@ -32,21 +32,19 @@ def node_pixel(page,index):
     bounding_box on a transparent SVG circle (Chromium may return None).
     Mouse events below remain real browser pointer interactions.
     """
-    selector=f'.mx-peq-graph circle[data-eq-node="{index}"]'
-    page.locator(selector).last.wait_for(state="attached")
-    position=page.locator(selector).last.evaluate("""el=>{
-      const svg=el.ownerSVGElement,matrix=svg?.getScreenCTM();
+    selector=f'.mx-peq-graph circle[data-eq-node="{index}"][role="slider"]'
+    # The graph replaces its SVG children on rAF. Resolve the current
+    # node and measure it in the same browser turn, then require a real hit.
+    position=page.wait_for_function("""selector=>{
+      const el=document.querySelector(selector);
+      const svg=el?.ownerSVGElement,matrix=svg?.getScreenCTM();
       if(!matrix)return null;
       const point=svg.createSVGPoint();
       point.x=Number(el.getAttribute('cx'));
       point.y=Number(el.getAttribute('cy'));
-      const screen=point.matrixTransform(matrix);
-      const target=document.elementFromPoint(screen.x,screen.y);
-      return {x:screen.x,y:screen.y,
-              hit:target?.getAttribute('data-eq-node')===el.getAttribute('data-eq-node')};
-    }""")
-    assert position and position["x"]>0 and position["y"]>0,position
-    assert position["hit"],"EQ node not actually pointer-targetable: "+str(position)
+      const {x,y}=point.matrixTransform(matrix);
+      return x>0 && y>0 && document.elementFromPoint(x,y)===el ? {x,y} : null;
+    }""",arg=selector).json_value()
     return position["x"],position["y"]
 
 
@@ -170,6 +168,7 @@ def main():
                 # The three power clicks leave band 4 selected. Explicitly
                 # select bell 2 before checking its independent gain edit.
                 page.locator(".mx-peq-band").nth(2).locator(".mx-peq-select").click()
+                page.wait_for_function("()=>document.querySelectorAll('.mx-peq-band')[2].classList.contains('active')")
                 gain=page.locator('.mx-peq-knob[data-kind="gainDb"] .mx-peq-value')
                 gain.fill("5.5");gain.press("Tab")
                 flush_edits(page,state,values,handled)
@@ -182,6 +181,7 @@ def main():
                     band.locator(".mx-peq-band-power").click()
                     flush_edits(page,state,values,handled)
                     if gain_value is not None:
+                        band.locator('.mx-peq-band-power[aria-pressed="true"]').wait_for()
                         knob=page.locator('.mx-peq-knob[data-kind="gainDb"] .mx-peq-value')
                         knob.fill(str(gain_value));knob.press("Tab")
                         flush_edits(page,state,values,handled)
