@@ -220,9 +220,13 @@ private:
             juce::StringArray allCandidates;
             juce::String importErrors;
             const auto factory = factoryOnly_
-                ? armix::factory::Registry::discover (armix::factory::Registry::executableRoot())
+                ? armix::factory::Registry::discover (armix::factory::Registry::executableRoot(), true)
                 : armix::factory::Discovery{};
-            if (factoryOnly_ && ! factory.ok()) importErrors = factory.error;
+            if (factoryOnly_)
+            {
+                if (! factory.ok()) importErrors = factory.error;
+                else importErrors = factory.warnings.joinIntoString (" | ");
+            }
             // The cache is metadata ONLY. Verified binaries/resources are rehashed
             // first by Registry on this worker; a cache file cannot authorise FX.
             juce::var cachedFactory;
@@ -332,16 +336,15 @@ private:
                 owner_.found_.store (static_cast<int> (found.size()), std::memory_order_relaxed);
                 owner_.completed_.store (n + 1, std::memory_order_release);
             }
-            if (factoryOnly_ && importErrors.isEmpty())
+            if (factoryOnly_ && factory.ok())
             {
                 for (const auto& approved : factory.candidates)
                     if (std::none_of (found.begin(), found.end(),
                         [&approved] (const CatalogEntry& e)
                         { return e.factory && e.factoryProductId == approved.productId; }))
                     {
-                        importErrors = approved.productId + ": declared VST3 host UID not found";
-                        found.clear(); // All-or-nothing factory verification, never partial success.
-                        break;
+                        importErrors << (importErrors.isNotEmpty() ? " | " : "")
+                                     << approved.productId << ": VST3 host UID not found";
                     }
             }
             {
