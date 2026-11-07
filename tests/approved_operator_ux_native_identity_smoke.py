@@ -89,14 +89,6 @@ def main():
         appearance["revision"]="1"
         appearance["entries"]=[{"id":SOURCE,"name":"Studio Vox","color":color,"icon":icon}]
         emit(page,"arMixConsoleSnapshot",copy.deepcopy(state))
-        print("IDENTITY_READBACK_DIAGNOSTIC",page.evaluate("""()=>({
-          info:document.querySelector('#info')?.textContent,
-          editorHidden:document.querySelector('#channelIdentity')?.hidden,
-          label:document.querySelector('#tracks .strip[data-id="1"]')?.textContent.slice(0,140),
-          stored:window.__ARMIX_NATIVE_M2__?.state()?.current?.raw?.channelAppearance,
-          nativeStatus:window.__ARMIX_NATIVE_M2__?.state()?.lastError,
-          events:window.__nativeEvents.filter(e=>/ChannelIdentity|ConsoleSubscribe/.test(e.name)).slice(-8)
-        })"""),flush=True)
         page.wait_for_function("""()=>document.querySelector('#channelIdentity').hidden &&
           document.querySelector('#tracks .strip[data-id="1"]').textContent.includes('Studio Vox')""",timeout=5000)
         assert page.evaluate("()=>window.__nativeIntents.length")==0

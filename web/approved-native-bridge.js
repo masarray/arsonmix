@@ -386,6 +386,7 @@
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
     const structure=JSON.stringify([
+      appearanceRevision, // an ACK-backed cosmetic edit MUST re-render labels/icons/colors
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
         ch.processingFormat,ch.source,ch.primaryOutId,
         ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
