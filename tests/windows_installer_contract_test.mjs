@@ -17,7 +17,8 @@ test('installer only derives from verified FAT PE and tests uninstall safely',()
     'assets/icon/arsonmix-app.ico','FactoryFX','Start-Process -FilePath $setup',
     'Start-Process -FilePath $uninstall','Test-Path -LiteralPath $sentinel',
     'PHYSICAL_FAT_PENDING','INSTALLER_PROVENANCE.json'])assert.ok(ps.includes(item),item);
-  assert.ok(ci.indexOf('scripts/verify_native_windows_artifact.ps1')<
-            ci.indexOf('scripts/build_verify_windows_installer.ps1'));
+  const verifyStep=ci.indexOf('      - name: Independently verify release ZIP and embedded GUI/engine before upload');
+  const installerStep=ci.indexOf('      - name: Compile and validate per-user Windows RC installer from exact FAT PE');
+  assert.ok(verifyStep>=0 && installerStep>verifyStep);
   assert.match(ci,/ArSonMix-Windows-Installer-UNQUALIFIED/);
 });
