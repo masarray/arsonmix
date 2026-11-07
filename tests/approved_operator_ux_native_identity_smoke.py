@@ -10,6 +10,7 @@ import sys
 import copy
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, RECEIVER
+from approved_operator_ux_chromium_fat import IDENTITY_GEOMETRY, assert_still
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
@@ -51,10 +52,12 @@ def main():
         strip.wait_for(state="visible")
         # Native DAW convention: one click selects, double-click opens editor.
         strip.locator(".strip-identity-top").click()
+        before_editor=page.evaluate(IDENTITY_GEOMETRY)
         editor=page.locator("#channelIdentity")
         assert editor.is_hidden(),"single click should only select"
         strip.locator(".strip-identity-top").dblclick()
         assert editor.is_visible(),"double-click header should edit"
+        assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native double-click")
         page.locator("#identityName").fill("Studio Vox")
         color="#c32974"
         page.locator(f'#identityColors [data-identity-color="{color}"]').click()
@@ -78,6 +81,7 @@ def main():
         assert editor.is_visible()
         assert page.locator("#identitySave").is_enabled()
         assert "Studio Vox" not in strip.inner_text()
+        assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native negative ACK")
         # Retry after a fresh accepted snapshot.
         emit(page,"arMixConsoleSnapshot",state)
         page.locator("#identitySave").click()
@@ -119,14 +123,21 @@ def main():
         page.wait_for_selector('#tracks .strip[data-id="1"]')
         assert "Studio Vox" in page.locator('#tracks .strip[data-id="1"]').inner_text()
         page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+        before_f2=page.evaluate(IDENTITY_GEOMETRY)
         page.keyboard.press('F2')
         assert editor.is_visible(),"F2 should open editor"
+        assert_still(before_f2,page.evaluate(IDENTITY_GEOMETRY),"native F2")
         page.locator('#identityCancel').click()
+        page.evaluate("() => new Promise(done => requestAnimationFrame(done))")
+        assert_still(before_f2,page.evaluate(IDENTITY_GEOMETRY),"native F2 Cancel")
         page.locator('#tracks .strip[data-id="2"] .footer-label .name').focus()
+        before_enter=page.evaluate(IDENTITY_GEOMETRY)
         page.keyboard.press('Enter')
         assert editor.is_visible(),"Enter should open editor"
+        assert_still(before_enter,page.evaluate(IDENTITY_GEOMETRY),"native Enter")
         page.keyboard.press('Escape')
         assert editor.is_hidden()
+        assert_still(before_enter,page.evaluate(IDENTITY_GEOMETRY),"native Escape")
         assert page.evaluate("()=>window.__nativeIntents.length")==0
         # Upgrade old WebView cache exactly once; no optimistic local rename.
         # The emulated host starts with a clean native workspace and accepts
