@@ -26,6 +26,7 @@ def run(check: bool) -> None:
         destinations = [(name, ICON_DIR / name) for name in BUNDLE]
         destinations += [("favicon.ico", ICON_DIR / "arsonmix-app.ico")]
         destinations += [("arsonmix-48.png", SITE_DIR / "arsonmix-48.png")]
+        destinations += [("arsonmix-128.png", SITE_DIR / "arsonmix-128.png")]
         destinations += [(name, SITE_DIR / name) for name in WEB]
         problems = []
         for generated, destination in destinations:
@@ -36,6 +37,15 @@ def run(check: bool) -> None:
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
+        # The large display logo comes from the original 1254px master,
+        # never by upscaling 128px taskbar art.
+        hero_source = ICON_DIR / "brand-512.png"
+        hero_target = SITE_DIR / "brand-512.png"
+        if check:
+            if not hero_source.is_file() or not hero_target.is_file() or not filecmp.cmp(hero_source, hero_target, shallow=False):
+                problems.append("site/brand-512.png")
+        else:
+            shutil.copyfile(hero_source, hero_target)
         if problems:
             raise SystemExit("Icon package missing or stale: " + ", ".join(problems))
         print("ARSONMIX_ICON_PACKAGE_" + ("VERIFIED" if check else "MATERIALIZED"),

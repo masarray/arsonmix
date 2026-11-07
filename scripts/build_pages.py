@@ -18,6 +18,8 @@ shutil.copy2(ROOT/'site/index.html',dst/'index.html')
 subprocess.run([sys.executable,str(ROOT/'scripts/generate_brand_icons.py'),
                 '--source',str(ROOT/'assets/icon/brand-source-128.png'),
                 '--out',str(dst)],check=True)
+# High-quality 512px asset from the actual uploaded 1254px original.
+shutil.copy2(ROOT/'assets/icon/brand-512.png',dst/'brand-512.png')
 
 subprocess.run([sys.executable,str(ROOT/'scripts/build_ui_css.py'),'--check'],check=True)
 

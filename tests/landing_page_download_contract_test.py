@@ -12,10 +12,12 @@ class LandingReleaseContract(unittest.TestCase):
             html = (base / "index.html").read_text("utf-8")
             js = (base / "downloads.js").read_text("utf-8")
             css = (base / "landing.css").read_text("utf-8")
-            self.assertIn('<link rel="icon" href="./favicon.ico"', html)
+            self.assertIn('<link rel="icon" href="./favicon.ico?v=brand-20261107"', html)
             self.assertIn("apple-touch-icon.png", html)
             self.assertIn("site.webmanifest", html)
-            self.assertIn('src="arsonmix-48.png"', html)
+            self.assertIn('src="./arsonmix-128.png"', html)
+            self.assertIn('src="./brand-512.png"', html)
+            self.assertIn("hero-brand-lockup", css)
             self.assertIn('href="./preview/"', html)
             self.assertIn('id="download"', html)
             self.assertIn("media/console-overview.jpg", html)
@@ -31,7 +33,7 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertFalse(bool(re.search(r'<iframe\b', html, re.I)),
                              "Landing should not embed a second, independently rendered GUI")
             for name in ("favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
-                         "apple-touch-icon.png", "site.webmanifest", "arsonmix-48.png",
+                         "apple-touch-icon.png", "site.webmanifest", "arsonmix-48.png", "arsonmix-128.png", "brand-512.png",
                          "landing.css", "downloads.js"):
                 self.assertTrue((base / name).is_file(), (str(base), name))
             for name in ("console-overview.jpg", "console-routing.jpg", "console-faders.jpg"):
