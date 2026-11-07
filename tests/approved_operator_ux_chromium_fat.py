@@ -235,12 +235,24 @@ def check_identity_zero_reflow(page,width,height,scale,channel):
           flush=True)
 
 def main():
+    import argparse
+    import subprocess
     import sys
-    sys.path.insert(0,str(ROOT/'scripts'))
-    import build_approved_native_gui as build
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--public',action='store_true',help='Exercise the public Pages bundle')
+    args=parser.parse_args()
+    surface='public Pages' if args.public else 'native-assembled'
     with tempfile.TemporaryDirectory(prefix="arsonmix-ux-fat-") as td, sync_playwright() as p:
-        staged=Path(td)/'native'
-        build.stage(staged)
+        if args.public:
+            subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
+                            '--out',td,'--sha','pages-gui-qualified'],
+                           cwd=ROOT,check=True)
+            staged=Path(td)/'preview'
+        else:
+            sys.path.insert(0,str(ROOT/'scripts'))
+            import build_approved_native_gui as build
+            staged=Path(td)/'native'
+            build.stage(staged)
         browser=p.chromium.launch(headless=True)
         try:
             for width,height,scale in CASES:
@@ -252,6 +264,6 @@ def main():
                 assert not errors,(width,height,errors)
                 page.close()
         finally:browser.close()
-    print('PASS operator UX: actual native-assembled Chromium layout/interaction across display scales')
+    print(f'PASS operator UX: actual {surface} Chromium layout/interaction across display scales')
 
 if __name__=='__main__':main()
