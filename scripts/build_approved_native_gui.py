@@ -357,7 +357,25 @@ def verify(out: Path) -> dict:
         expected_out = Path(tmp) / "bundle"
         expected = stage(expected_out)
         if existing != expected:
-            raise ValueError("STALE OR WRONG APPROVED GUI BUNDLE: source/manifest changed")
+            # Diagnose the exact differing byte source. Never weaken the gate,
+            # and never hide a Python/zlib or asset generation mismatch behind
+            # an unhelpful generic manifest error.
+            mismatches = []
+            for key in sorted(set(existing) | set(expected)):
+                old, new = existing.get(key), expected.get(key)
+                if old == new:
+                    continue
+                if key == "files" and isinstance(old, list) and isinstance(new, list):
+                    old_files = {x["path"]: x["sha256"] for x in old}
+                    new_files = {x["path"]: x["sha256"] for x in new}
+                    for path in sorted(old_files.keys() | new_files.keys()):
+                        if old_files.get(path) != new_files.get(path):
+                            mismatches.append(
+                                f"resource={path} existing={old_files.get(path)} regenerated={new_files.get(path)}")
+                else:
+                    mismatches.append(f"field={key} existing={old!r} regenerated={new!r}")
+            raise ValueError("STALE OR WRONG APPROVED GUI BUNDLE: " +
+                             "; ".join(mismatches[:4]))
         paths = {"index.html", "ApprovedGuiResources.h", "approved-gui-manifest.json"}
         paths.update(p["path"] for p in expected["files"])
         for path in sorted(paths):

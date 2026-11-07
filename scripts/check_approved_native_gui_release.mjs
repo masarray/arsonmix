@@ -64,7 +64,13 @@ try {
   if(/juce_add_binary_data\(ARMixAssets SOURCES\s*web\//.test(cmake) ||
      host.includes('BinaryData::consolenative_html'))
     block('Forbidden alternative GUI compiled in Windows executable');
-  const py=process.env.PYTHON || 'python';
+  // CMake's FindPython3 may pick a different interpreter than PATH's
+  // `python` on Windows. PNG/favicon bytes can differ across zlib versions.
+  // Reproduce the GUI with the exact Python that made the CMake bundle.
+  const interpreterNote=join(bundle,'..','approved-gui-python.txt');
+  const cmakePython=existsSync(interpreterNote)
+    ? read(interpreterNote).toString('utf8').trim() : '';
+  const py=cmakePython || process.env.PYTHON || 'python';
   const result=spawnSync(py,['scripts/build_approved_native_gui.py',
       '--out',bundle,'--verify'],{cwd:root,encoding:'utf8',timeout:60000});
   if(result.error || result.status!==0)

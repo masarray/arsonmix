@@ -9,6 +9,10 @@ endif()
 add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The independent exact-byte verifier must use the SAME Python interpreter
+# selected by CMake to generate compressed favicon/PNG resources (Windows
+# runners can have several Python versions with different zlib builds).
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/approved-gui-python.txt" "${Python3_EXECUTABLE}\n")
 set(ARMIX_BRAND_DIR "${CMAKE_CURRENT_BINARY_DIR}/brand_icons")
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_brand_icons.py"
