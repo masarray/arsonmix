@@ -31,7 +31,7 @@ static juce::var nativeGraph(){
 }
 static juce::var edit(const juce::String& id,const juce::String& name,
                       const juce::String& color="#c32974",
-                      const juce::String& icon="🎹"){
+                      const juce::String& icon=juce::String::fromUTF8("\xF0\x9F\x8E\xB9")){
     auto v=object();
     set(v,"channelId",id);set(v,"name",name);
     set(v,"color",color);set(v,"icon",icon);
@@ -69,7 +69,7 @@ int main(){
         set(req,"rosterRevision","11");
         set(req,"icon","<script>");
         assert(store.apply(req,g)=="INVALID_CHANNEL_NAME_COLOR_OR_ICON");
-        set(req,"icon","🎹");
+        set(req,"icon",keyboard);
         assert(store.apply(req,g).isEmpty());
         auto snap=store.snapshot(g);
         assert(snap.getProperty("revision","").toString()=="1");
