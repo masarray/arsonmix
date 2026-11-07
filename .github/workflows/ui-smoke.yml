@@ -168,6 +168,8 @@ jobs:
         run: python tests/approved_gui_perf_stage_a_smoke.py
       - name: Validate Stage B native meter dirty-write / authoritative Pages parity
         run: python tests/approved_native_meter_dirty_stage_b_smoke.py
+      - name: Verify landing visuals and release download truth on desktop/mobile
+        run: python tests/landing_page_browser_smoke.py
       - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
         run: python tests/approved_stage_c_css_visual_parity_smoke.py
       - name: Check real mobile /preview/ touch toolbar, popup and stray chevrons
@@ -446,6 +448,7 @@ jobs:
         with:
           name: arsonmix-gui-current-smoke
           path: |
+            landing-v1-*.png
             pages-wire-main-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png
