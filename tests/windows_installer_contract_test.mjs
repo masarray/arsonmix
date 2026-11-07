@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const read = path => readFileSync(path, 'utf8');
 const iss = read('installer/ArSonMix.iss');
+const legacyShutdown = read('installer/ArSonMixUpdateShutdown.ps1');
 const ps = read('scripts/build_verify_windows_installer.ps1');
 const fixture = read('tests/fixtures/installer_graceful_close.cs');
 const ci = read('.github/workflows/p1-windows.yml');
@@ -78,6 +79,29 @@ test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test 
   assert.match(fixture, /Application\.Run\(window\)/);
   // No fixture is packaged: only the verified native EXE ships.
   assert.doesNotMatch(iss, /installer_graceful_close|\.cs"/);
+});
+
+test('Legacy pre-handshake mixer process is shut down before Inno touches its EXE', () => {
+  // No taskkill/force; close only an exact path-matched ArSonMix process.
+  assert.match(iss, /^Source: "ArSonMixUpdateShutdown\.ps1"; Flags: dontcopy$/m);
+  assert.match(iss, /ExtractTemporaryFile\('ArSonMixUpdateShutdown\.ps1'\)/);
+  assert.match(iss, /PrepareToInstall/);
+  assert.match(iss, /OpenExclusiveFile/);
+  assert.match(iss, /InstalledExeReplaceable\(Target\)/);
+  assert.match(iss, /if ExitCode <> 0 then/);
+  assert.match(legacyShutdown, /GetProcessesByName\('ArSonMix'\)/);
+  assert.match(legacyShutdown, /\.MainModule\.FileName/);
+  assert.match(legacyShutdown, /OrdinalIgnoreCase/);
+  assert.match(legacyShutdown, /CloseMainWindow/);
+  assert.match(legacyShutdown, /EnumWindows/);
+  assert.match(legacyShutdown, /GetWindowThreadProcessId/);
+  assert.match(legacyShutdown, /PostMessage/);
+  assert.doesNotMatch(legacyShutdown + iss, /taskkill|Stop-Process|TerminateProcess|CloseApplications=force/i);
+  assert.match(ps, /INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS/);
+  assert.match(ps, /INNO_BLOCKED_FAIL_CLOSED_PASS/);
+  assert.match(fixture, /args\[2\] == "legacy"/);
+  assert.match(fixture, /args\[2\] == "blocked"/);
+  assert.doesNotMatch(iss, /DestName:\s*"ArSonMixUpdateShutdown\.ps1"/);
 });
 
 test('installer packaging is gated by the exact SHA FAT verifier', () => {
