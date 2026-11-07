@@ -187,7 +187,7 @@ def apply_operator_ux(html: str, assets: Path) -> str:
                "background:#962f38!important;background-color:#962f38!important;"
                "border-color:#e6505d!important;color:#fff!important}\n")
     plugin_path.write_text(plugin,encoding="utf-8")
-    html = once(html, "restorePluginPreferences();init();", "restorePluginPreferences();init();\n"+SPLIT_BOOTSTRAP, "startup geometry bootstrap")
+    html = once(html, "restorePluginPreferences();init();", SPLIT_BOOTSTRAP+"\nrestorePluginPreferences();init();", "startup geometry bootstrap")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:
         raise ValueError("Operator UX DOM invariants rejected")
     return html
