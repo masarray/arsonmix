@@ -6,6 +6,7 @@ const read = path => readFileSync(path, 'utf8');
 const iss = read('installer/ArSonMix.iss');
 const legacyShutdown = read('installer/ArSonMixUpdateShutdown.ps1');
 const ps = read('scripts/build_verify_windows_installer.ps1');
+const isolatedSmoke = read('scripts/test_inno_graceful_update_windows.ps1');
 const fixture = read('tests/fixtures/installer_graceful_close.cs');
 const ci = read('.github/workflows/p1-windows.yml');
 
@@ -97,8 +98,8 @@ test('Legacy pre-handshake mixer process is shut down before Inno touches its EX
   assert.match(legacyShutdown, /GetWindowThreadProcessId/);
   assert.match(legacyShutdown, /PostMessage/);
   assert.doesNotMatch(legacyShutdown + iss, /(?:^|\\n)\\s*(?:taskkill|Stop-Process|TerminateProcess|CloseApplications=force)\\b/im);
-  assert.match(ps, /INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS/);
-  assert.match(ps, /INNO_BLOCKED_FAIL_CLOSED_PASS/);
+  assert.match(isolatedSmoke, /INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS/);
+  assert.match(isolatedSmoke, /INNO_BLOCKED_FAIL_CLOSED_PASS/);
   assert.match(fixture, /args\[2\] == "legacy"/);
   assert.match(fixture, /args\[2\] == "blocked"/);
   assert.doesNotMatch(iss, /DestName:\s*"ArSonMixUpdateShutdown\.ps1"/);
