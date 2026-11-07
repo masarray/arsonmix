@@ -39,7 +39,7 @@ function Get-FatSha256([string] $Path) {
 $manifestPath=Join-Path $root 'BUILD_PROVENANCE.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Missing BUILD_PROVENANCE.json: extract the complete verified Windows FAT ZIP first' }
 $m=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ([string]$m.fatStatus -ne 'EXPERIMENTAL_NOT_HARDWARE_QUALIFIED') { throw 'Unexpected hardware qualification claim' }
+if ([string]$m.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE') { throw 'Unexpected hardware qualification claim' }
 if ([string]$m.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid exact source SHA' }
 if ([string]$m.fatCollectorSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Missing FAT collector provenance' }
 $selfHash=(Get-FatSha256 -Path $PSCommandPath)
@@ -84,7 +84,7 @@ function Parse-Pins([string]$raw) {
 }
 if ($Action -eq 'Verify') {
   Write-Host ('FAT PACKAGE OK; build='+$m.sourceCommit+'; EXE SHA256='+$exeHash)
-  Write-Host 'UNQUALIFIED 10CH/4AUX candidate. No sound, device, latency or hardware result has been tested.'
+  Write-Host 'ArSonMix 10CH/4AUX Preview: software integrity verified. Owner has reported real audio listening; this tool does not attest exact-build hardware measurements.'
   exit 0
 }
 $j=Read-Journal
