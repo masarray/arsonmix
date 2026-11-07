@@ -17,7 +17,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
     'DisableWelcomePage=yes', 'DisableDirPage=yes',
     'DisableReadyPage=yes', 'DisableFinishedPage=yes',
     'SetupMutex=ArSonMix.PerUserInstaller.SingleInstance',
-    'UNQUALIFIED', 'verified-gui.exe', 'BUILD_PROVENANCE.json'
+    'Preview', 'verified-gui.exe', 'BUILD_PROVENANCE.json'
   ]) assert.ok(iss.includes(item), item);
 
   assert.doesNotMatch(iss, /^\[UninstallDelete\]/m);
@@ -61,7 +61,7 @@ test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test 
     '/CLOSEAPPLICATIONS', '/NOFORCECLOSEAPPLICATIONS',
     'INNO_GRACEFUL_UPDATE_PASS', 'Test-Path -LiteralPath $installSentinel',
     'Test-Path -LiteralPath $sentinel', 'INSTALLER_PROVENANCE.json',
-    'PHYSICAL_FAT_PENDING'
+    'OWNER_FIELD_AUDIO_LISTENING_REPORTED'
   ]) assert.ok((ps + fixture).includes(item), item);
   assert.equal((ps.match(/Start-Process -FilePath \$setup/g) ?? []).length, 2);
   assert.match(fixture, /FormClosing/);
@@ -84,6 +84,6 @@ test('installer packaging is gated by the exact SHA FAT verifier', () => {
   const verify = ci.indexOf('      - name: Independently verify release ZIP and embedded GUI/engine before upload');
   const installer = ci.indexOf('      - name: Compile and validate per-user Windows RC installer from exact FAT PE');
   assert.ok(verify >= 0 && installer > verify);
-  assert.match(ci, /ArSonMix-Windows-Installer-UNQUALIFIED/);
+  assert.match(ci, /ArSonMix-Windows-Installer-Preview/);
   assert.match(ci, /tests\/windows_installer_contract_test\.mjs/);
 });
