@@ -172,6 +172,59 @@ class BundleTests(unittest.TestCase):
         self.assertFalse((self.output / "FactoryFX").exists())
         self.assertFalse(list(self.output.glob(".factoryfx-incoming-*")))
 
+
+    def test_optional_bundle_skips_broken_plugin_and_keeps_verified_eq(self):
+        other = dict(self.approved, productId="arson-verb",
+                     sourceRepo="masarray/arsonverb",
+                     assetName="ArSonVerb-Windows-x64-VST3.zip")
+        (self.notices / "arson-verb.txt").write_text(
+            "Reviewed optional Reverb", encoding="utf-8")
+        self.save_lock(self.approved, other)
+
+        def try_download(item, target):
+            if item["productId"] == "arson-verb":
+                raise ValueError("upstream artifact is not available")
+            shutil.copyfile(self.archive, target)
+
+        with patch.object(bundle, "download_release", side_effect=try_download):
+            bundle.stage(bundle.read_lock(self.lock), self.output, self.notices,
+                         best_effort=True)
+        accepted = bundle.read_best_effort_report(bundle.read_lock(self.lock), self.output)
+        self.assertEqual([p["productId"] for p in accepted], ["arson-eq"])
+        bundle.verify(accepted, self.output, self.notices)
+        manifest = json.loads(
+            (self.output / "FactoryFX/factoryfx-manifest.json").read_text())
+        self.assertEqual(manifest["distribution"], "engineering-partial")
+        self.assertEqual(len(manifest["plugins"]), 1)
+        self.assertFalse(list(self.output.glob(".factoryfx-incoming-*")))
+        self.assertFalse((self.output / "FactoryFX/ArSonVerb").exists())
+
+    def test_optional_bundle_all_unavailable_does_not_block_mixer(self):
+        self.save_lock(self.approved)
+        with patch.object(bundle, "download_release", side_effect=OSError("offline")):
+            bundle.stage(bundle.read_lock(self.lock), self.output, self.notices,
+                         best_effort=True)
+        self.assertFalse((self.output / "FactoryFX").exists())
+        accepted = bundle.read_best_effort_report(bundle.read_lock(self.lock), self.output)
+        self.assertEqual(accepted, [])
+        bundle.verify(accepted, self.output, self.notices)
+        report = json.loads((self.output / "FACTORYFX_STAGE_REPORT.json").read_text())
+        self.assertEqual(report["omitted"][0]["productId"], "arson-eq")
+        report["included"] = [{"productId": "unapproved-module",
+                               "artifactSha256": "a" * 64}]
+        (self.output / "FACTORYFX_STAGE_REPORT.json").write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bundle.read_best_effort_report(bundle.read_lock(self.lock), self.output)
+
+    def test_optional_bundle_empty_reviewed_lock_is_valid_core_only(self):
+        self.save_lock()
+        bundle.stage(bundle.read_lock(self.lock), self.output, self.notices,
+                     best_effort=True)
+        self.assertFalse((self.output / "FactoryFX").exists())
+        self.assertEqual(
+            bundle.read_best_effort_report(bundle.read_lock(self.lock), self.output),
+            [])
+
     def test_production_names_are_exact_not_count_only(self):
         refs = [dict(self.approved, productId=pid) for pid in
                 ("arson-eq", "arson-comp", "arson-harmony", "arson-color")]

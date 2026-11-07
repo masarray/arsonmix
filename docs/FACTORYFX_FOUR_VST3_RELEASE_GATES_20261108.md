@@ -1,8 +1,10 @@
 # FXF4 — Four first-party VST3 FactoryFX release path (2026-11-08)
 
 ## Product outcome
-The first public four-FX ArSonMix package must contain **ArSonEQ, ArSonComp,
-ArSonVerb and ArSonKuPik Enhancer** in both the portable ZIP and Inno installer.
+ArSonMix is **primarily a mixer with its native built-in FX**. Extra VST3
+modules are optional bonuses, never a dependency for shipping or running it.
+Bundle every separately approved and obtainable ArSonEQ, ArSonComp, ArSonVerb
+or ArSonKuPik VST3. Zero to four extras is allowed; aim for at least one.
 The native Parametric EQ already compiled into ArSonMix is a separate built-in
 insert and remains available irrespective of external VST3 packaging.
 
@@ -36,11 +38,14 @@ config/factoryfx-approved-releases.json.
    licenseReview=approved, hostQualification=passed and entitlementPolicy.
    Include complete applicable notices in config/factoryfx-notices/.
    Never invent a SHA, FUID, host UID or approval flag.
-4. For *official four-FX packages*, run:
-   python scripts/factoryfx_release_bundle.py stage --output dist --require four
-   An incomplete lock fails rather than creating an app-only "four-FX" release.
-   An experimental app-only FAT remains possible with --require none, but must
-   never be marketed as a bundled FX production installer.
+4. Normal mixer packaging uses:
+   python scripts/factoryfx_release_bundle.py stage --output dist --best-effort
+   Each approved module is staged independently. Missing ZIP, invalid archive,
+   checksum mismatch or absent notice skips ONLY that bonus, with a separate
+   FACTORYFX_STAGE_REPORT.json recording included/omitted modules. The native
+   mixer and its built-in EQ are still shipped, even if none is available.
+   Separate strict qualification may use `--require four` without best-effort.
+   Never advertise four shipped VST3 unless all four are in the verified ZIP.
 5. Packager first materializes the entire approved package in a temporary
    same-volume directory. ZIP resource, manifest and notice checks run before
    one atomic FactoryFX directory rename. Failed staging leaves no half-published
@@ -51,7 +56,9 @@ config/factoryfx-approved-releases.json.
    approved ZIP SHA, native JUCE host UID and product ID match the freshly
    validated package. No Factory cache enters the visible catalog until verified.
    Audio callback never hashes/scans/opens files/constructs plugins.
-7. Show files keep plugin logical identity and state. Each FX must handle
+7. Runtime quarantines a corrupt/missing/UID-mismatched optional effect only;
+   healthy approved FX remain available. The native EQ and mixer must stay live.
+8. Show files keep plugin logical identity and state. Each FX must handle
    missing/invalid version explicitly; never substitute another vendor plugin
    or silently disable the whole audio engine.
 
@@ -62,8 +69,8 @@ config/factoryfx-approved-releases.json.
 - Node contract tests: Factory-vs-user Vault, cached factory source remains
   invisible before independent Registry verification.
 - Windows C++ native Registry negative cases, real VST3 load and DSP tests.
-- Exact-head installer and portable archive: all four original .vst3 bundles,
-  their licenses, per-file hashes, offline fresh install, existing mixer upgrade
+- Exact-head installer and portable archive: only successfully attested .vst3 bundles,
+  their licenses, per-file hashes, accurate omission report, offline fresh install, existing mixer upgrade
   with safe shutdown, old Show recall, app/user separation.
 - ASIO real monitoring with multiple instances, BUS/MAIN wet sends, 44.1/48/96k,
   128/256 frames where supported, rack power/bypass, CPU/xrun observation and
