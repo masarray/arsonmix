@@ -306,6 +306,19 @@ public:
         closePluginEditor();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
+        // Best-effort clean-exit checkpoint, after emergency physical MUTE.
+        // A pending worker already owns a safe immutable snapshot. Never
+        // block or mutate the audio callback for session disk persistence.
+        engine_.setOutputMuted(true);
+        engine_.disconnectSecondaryOutput();
+        if(!mixerSessionWorker_.busy()) {
+            const auto lab=engine_.status().getProperty("dryRoutingLab",{});
+            if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false))) {
+                const auto error=saveMixerSession(true);
+                if(error.isNotEmpty())
+                    diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
+            }
+        }
         engine_.stop();
         browser_.setVisible (false);
     }
@@ -1810,6 +1823,29 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
+        // A disk SHA is NOT permission to instantiate executable code.
+        // Every external VST3 must still match today's verified catalog
+        // identity, exact UID and registered path. A moved or tampered
+        // binary needs an explicit catalog remap, never a blind load.
+        for(const auto& insert:doc.inserts) {
+            if(insert.catalogId==
+                 armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+                if(insert.path.isNotEmpty() || insert.uid!=0)
+                    return "Saved built-in EQ identity was modified";
+                continue;
+            }
+            const auto* registered=catalog_.find(insert.catalogId);
+            if(!registered || registered->uid!=insert.uid ||
+               registered->path!=insert.path ||
+               registered->key()!=insert.catalogId) {
+                mixerSessionStatus_="NEEDS_VST3_REMAP";
+                mixerSessionError_=
+                    "Saved external VST3 identity unavailable: "+insert.catalogId;
+                diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",
+                    mixerSessionError_);
+                return mixerSessionError_;
+            }
+        }
         // Existing live graphs cannot be replaced by startup autosave or
         // a stale More-button click. Never demote the true native renderer.
         const auto live=engine_.status().getProperty("dryRoutingLab",{});

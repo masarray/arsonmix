@@ -52,7 +52,11 @@ public:
                        armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
                         auto eq=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
                         eq->prepareToPlay(sampleRate,frames);
-                        if(!eq->isReady())return "Built-in EQ could not prepare";
+                        if(!eq->isReady()||
+                           !eq->restoreUnpublishedState(
+                             state->bytes.getData(),
+                             static_cast<int>(state->bytes.getSize())))
+                            return "Saved native EQ state rejected; graph unchanged";
                         processor=std::move(eq);
                     } else {
                         if(!format||
@@ -74,8 +78,10 @@ public:
                             return "Saved VST3 stereo layout rejected: "+layout;
                         processor->prepareToPlay(sampleRate,frames);
                     }
-                    processor->setStateInformation(state->bytes.getData(),
-                         static_cast<int>(state->bytes.getSize()));
+                    if(insert.catalogId!=
+                       armix::builtin_fx::ChannelEqProcessor::catalogIdentity)
+                        processor->setStateInformation(state->bytes.getData(),
+                             static_cast<int>(state->bytes.getSize()));
                     const int latency=processor->getLatencySamples();
                     if(latency<0||
                        latency>armix::dsp::StereoLatencyDelay::maximumSamples)
