@@ -76,6 +76,31 @@ int main(){
     assert(restored.request.sources[0].inputL==0);
     assert(restored.binding.backend=="ASIO");
     assert(restored.outputs.mainR==1);
+    // Refuse unconfirmed or incompatible device remaps without mutating
+    // the saved ChannelId/EdgeId graph; accept only a verified live pair.
+    auto remap=d;
+    HardwareBinding replacement={"WASAPI","New capture","New playback",
+                                 "5","c",44100.,512};
+    VerifiedNativeOutputs verifiedPair={2,1,0,-1,-1,false};
+    const auto graphBefore=Codec::encode(remap);
+    auto refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
+                                                 verifiedPair,2,false);
+    assert(refusal.startsWith("NEEDS_REMAP"));
+    assert(Codec::encode(remap)==graphBefore);
+    refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
+                                            verifiedPair,1,true);
+    assert(refusal.startsWith("NEEDS_REMAP"));
+    assert(Codec::encode(remap)==graphBefore);
+    assert(MixerDeviceBindingPolicy::apply(remap,replacement,
+                                           verifiedPair,2,true).isEmpty());
+    assert(remap.binding.backend=="WASAPI" && remap.outputs.mainL==1);
+    assert(remap.roster.revision()==d.roster.revision());
+    assert(remap.roster.find({1})->sends.size()==2 &&
+           remap.roster.find({1})->sends[0].edgeId==100);
+    auto exact=d;
+    assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,false)
+           .isEmpty());
+    assert(Codec::encode(exact)==graphBefore);
     ChannelEdit newChannel;
     newChannel.kind=ChannelEdit::Kind::add;
     newChannel.position=15;newChannel.role=ChannelRole::input;

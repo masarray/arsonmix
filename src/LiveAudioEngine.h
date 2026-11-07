@@ -1444,7 +1444,7 @@ public:
            routeReconfiguring_.load(std::memory_order_acquire)||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
             return "MUTE MAIN/STREAM and finish FX handoff before session save";
-        const auto* device=deviceManager_.getCurrentAudioDevice();
+        auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device||!device->isOpen())return "Audio device unavailable for session capture";
         auto error=dryRoutingLab_.captureNativeMixerSession(document,states);
         if(error.isNotEmpty())return error;
@@ -1463,11 +1463,63 @@ public:
         return {};
     }
 
+    struct MixerBindingInspection final {
+        armix::session::HardwareBinding live;
+        armix::mixer::VerifiedNativeOutputs outputs{};
+        int callbackInputs=0;
+        std::uint64_t epoch=0;
+        bool changed=false;
+    };
+    // A read-only control-thread preview for explicit hardware rebind.
+    juce::String inspectNativeMixerSessionBinding(
+            const armix::session::MixerSessionDocument& saved,
+            MixerBindingInspection& out) {
+        if(!allOutputsDisarmed()||independent_.active()||!attached_||
+           !directFence_.permitted()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+             armix::diagnostics::Route::normal||
+           routeReconfiguring_.load(std::memory_order_acquire))
+            return "MUTE output and verify DIRECT before device inspection";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())
+            return "NEEDS_REMAP: current audio device unavailable";
+        MixerBindingInspection candidate;
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        candidate.live={
+            deviceManager_.getCurrentAudioDeviceType(),
+            setup.inputDeviceName,setup.outputDeviceName,
+            device->getActiveInputChannels().toString(16),
+            device->getActiveOutputChannels().toString(16),
+            device->getCurrentSampleRate(),
+            device->getCurrentBufferSizeSamples()};
+        candidate.callbackInputs=device->getActiveInputChannels().countNumberOfSetBits();
+        candidate.epoch=dryRoutingLab_.epoch();
+        if(!dryRoutingLab_.currentHardwareForSession(candidate.outputs) ||
+           !candidate.epoch)
+            return "NEEDS_REMAP: live MAIN output pair is not verified";
+        auto probe=saved;
+        const auto reason=armix::session::MixerDeviceBindingPolicy::apply(
+            probe,candidate.live,candidate.outputs,candidate.callbackInputs,true);
+        if(reason.isNotEmpty())return reason;
+        candidate.changed=!
+            armix::session::MixerDeviceBindingPolicy::sameBinding(
+                saved.binding,candidate.live) ||
+            !armix::session::MixerDeviceBindingPolicy::sameOutputs(
+                saved.outputs,candidate.outputs);
+        if(candidate.epoch!=dryRoutingLab_.epoch())
+            return "NEEDS_REMAP: device changed during inspection";
+        out=std::move(candidate);
+        return {};
+    }
+
     // STARTUP: fresh vendor processors are prepared and all hashes validated
     // before the ONE native PCM publication. No saved physical ARM state.
     juce::String restoreNativeMixerSession(
             armix::session::MixerSessionDocument document,
-            const std::vector<armix::shows::BinaryState>& states) {
+            const std::vector<armix::shows::BinaryState>& states,
+            bool explicitDeviceRebind=false) {
         if(!allOutputsDisarmed()||independent_.active()||!attached_||
            !directFence_.permitted()||handoff_.busy()||
            fxMovePhase_.load(std::memory_order_acquire)!=0||
@@ -1475,21 +1527,17 @@ public:
              armix::diagnostics::Route::normal||
            routeReconfiguring_.load(std::memory_order_acquire))
             return "MUTE output and verify DIRECT before restoring mixer";
+        MixerBindingInspection inspected;
+        auto bindingError=inspectNativeMixerSessionBinding(document,inspected);
+        if(bindingError.isNotEmpty())return bindingError;
+        bindingError=armix::session::MixerDeviceBindingPolicy::apply(
+            document,inspected.live,inspected.outputs,
+            inspected.callbackInputs,explicitDeviceRebind);
+        if(bindingError.isNotEmpty())return bindingError;
         auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device||!device->isOpen())
-            return "NEEDS_REMAP: saved audio device unavailable";
-        juce::AudioDeviceManager::AudioDeviceSetup setup;
-        deviceManager_.getAudioDeviceSetup(setup);
-        if(document.binding.backend!=deviceManager_.getCurrentAudioDeviceType()||
-           document.binding.capture!=setup.inputDeviceName||
-           document.binding.playback!=setup.outputDeviceName||
-           document.binding.inputMask!=device->getActiveInputChannels().toString(16)||
-           document.binding.outputMask!=device->getActiveOutputChannels().toString(16)||
-           document.binding.rate!=device->getCurrentSampleRate())
-            return "NEEDS_REMAP: driver, endpoint, pin mask or rate changed";
-        if(document.request.physicalInputs!=
-           device->getActiveInputChannels().countNumberOfSetBits())
-            return "NEEDS_REMAP: callback-ordered physical input pins changed";
+        if(!device||!device->isOpen() ||
+           dryRoutingLab_.epoch()!=inspected.epoch)
+            return "NEEDS_REMAP: device epoch changed before PCM publish";
         const auto ep=dryRoutingLab_.epoch();
         const auto next=dryRoutingLab_.nativeGraphRevisionForRestore();
         if(!ep||!next)return "No valid native epoch for session restore";

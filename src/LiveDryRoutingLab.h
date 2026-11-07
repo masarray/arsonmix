@@ -2083,6 +2083,32 @@ public:
         } catch(...) {return "Native graph/VST3 state capture failed";}
     }
 
+    // Read the CURRENT legacy publisher's physical destinations on CONTROL.
+    // A persisted pair must never be mistaken for hardware authorization.
+    bool currentHardwareForSession(
+            armix::mixer::VerifiedNativeOutputs& result) const noexcept {
+        if(!ready() || !registryValid_.load(std::memory_order_acquire))
+            return false;
+        const auto generation=epoch();
+        const auto* active=publisher_.controlPrepared(generation,revision());
+        const int count=callbackOutputCount_.load(std::memory_order_acquire);
+        if(!active || count<2 || count>256)return false;
+        armix::mixer::VerifiedNativeOutputs observed{};
+        observed.activeOutputChannels=count;
+        observed.mainL=active->mainOutputLeft();
+        observed.mainR=active->mainOutputRight();
+        observed.monitorEnabled=active->monitorEnabled();
+        if(observed.monitorEnabled) {
+            observed.monitorL=active->monitorOutputLeft();
+            observed.monitorR=active->monitorOutputRight();
+        }
+        if(!observed.valid() || epoch()!=generation ||
+           !registryValid_.load(std::memory_order_acquire))
+            return false;
+        result=observed;
+        return true;
+    }
+
     // Restore the validated persisted ChannelId roster with exactly ONE
     // native PCM publication. Rejected sessions leave the current unpatched
     // graph and hardware MUTE untouched. No native FX construction here.

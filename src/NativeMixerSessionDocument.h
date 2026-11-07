@@ -42,6 +42,51 @@ struct MixerSessionDocument final {
     std::uint64_t acceptedRevision=0;
     juce::int64 savedMs=0;
 };
+// Logical topology never authorizes a different physical endpoint. An
+// operator-confirmed rebind changes only verified hardware metadata; it
+// cannot change the ChannelId graph, vendor state, or ARM an output.
+struct MixerDeviceBindingPolicy final {
+    static bool sameBinding(const HardwareBinding& a,const HardwareBinding& b) {
+        return a.backend==b.backend && a.capture==b.capture &&
+               a.playback==b.playback && a.inputMask==b.inputMask &&
+               a.outputMask==b.outputMask && a.rate==b.rate;
+    }
+    static bool sameOutputs(const VerifiedNativeOutputs& a,
+                            const VerifiedNativeOutputs& b) {
+        return a.activeOutputChannels==b.activeOutputChannels &&
+               a.mainL==b.mainL && a.mainR==b.mainR &&
+               a.monitorEnabled==b.monitorEnabled &&
+               (!a.monitorEnabled ||
+                (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
+    }
+    static juce::String apply(MixerSessionDocument& document,
+            const HardwareBinding& live,
+            const VerifiedNativeOutputs& outputs,
+            int callbackInputs,bool operatorApproved) {
+        if(!outputs.valid() || callbackInputs<1 || callbackInputs>256 ||
+           live.backend.isEmpty() || live.capture.isEmpty() ||
+           live.playback.isEmpty() || live.inputMask.isEmpty() ||
+           live.outputMask.isEmpty() || !std::isfinite(live.rate) ||
+           live.rate<8000. || live.rate>384000. ||
+           live.frames<16 || live.frames>8192)
+            return "NEEDS_REMAP: live device verification incomplete";
+        if(document.request.physicalInputs!=callbackInputs)
+            return "NEEDS_REMAP: active input count changed; reassign IN explicitly";
+        for(const auto& source:document.request.sources)
+            if(source.inputL<0 || source.inputL>=callbackInputs ||
+               (source.stereo && (source.inputR<0 ||
+                                  source.inputR>=callbackInputs)))
+                return "NEEDS_REMAP: saved source patch exceeds active pins";
+        if(sameBinding(document.binding,live) &&
+           sameOutputs(document.outputs,outputs))
+            return {};
+        if(!operatorApproved)
+            return "NEEDS_REMAP: different device, pin mask, outputs or rate; confirm rebind";
+        document.binding=live;
+        document.outputs=outputs;
+        return {};
+    }
+};
 inline juce::String decimal(std::uint64_t value) {
     return juce::String(std::to_string(value));
 }
