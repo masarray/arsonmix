@@ -122,6 +122,46 @@ static void nativeDeviceRecovery() {
         fresh.prepareDevice(&device);
         assert(fresh.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
         assert(fresh.ready() && !fresh.hasExplicitRoute());
+        const auto epoch=fresh.epoch();
+        assert(fresh.repatchPhysicalSource(0,epoch,fresh.revision(),"NONE",-1,-1,
+            true,false,0,formats,48000.,480).isEmpty());
+        assert(fresh.admitChannelIdFromAcceptedM4(0,480,true));
+        assert(!fresh.hasVerifiedNativeSources());
+        auto native=fresh.nativeBusStatus();
+        const auto graph=static_cast<std::uint64_t>(
+            native.getProperty("graphRevision",{}).toString().getLargeIntValue());
+        const auto roster=static_cast<std::uint64_t>(
+            native.getProperty("rosterRevision",{}).toString().getLargeIntValue());
+        int publications=0;
+        const auto publish=[&]{++publications;};
+        assert(!fresh.createNativeInputChannel(epoch,graph+1,roster,"Stale",
+            ProcessingFormat::stereo,true,publish).accepted);
+        assert(publications==0);
+        const auto added=fresh.createNativeInputChannel(epoch,graph,roster,"Track 11",
+            ProcessingFormat::stereo,true,publish);
+        assert(added.accepted && added.pcmRevision==graph+1 && publications==1);
+        assert(!fresh.hasVerifiedNativeSources());
+        native=fresh.nativeBusStatus();
+        const auto channels=native.getProperty("channels",{});
+        const auto* strips=channels.getArray();
+        assert(strips && strips->size()==16);
+        const auto& track=strips->getReference(14);
+        assert(track.getProperty("id",{}).toString()==juce::String(added.created.value));
+        assert(track.getProperty("name",{}).toString()=="Track 11");
+        assert(track.getProperty("format",{}).toString()=="STEREO");
+        assert(track.getProperty("primaryOutput",{}).toString()==
+               strips->getReference(15).getProperty("id",{}).toString());
+        const auto patched=fresh.patchNativeInputSource(epoch,added.pcmRevision,
+            added.rosterRevision,added.created,0,1,true,true);
+        assert(patched.accepted && fresh.hasVerifiedNativeSources());
+        std::array<float,480> left,right,outLeft{},outRight{};
+        left.fill(.2f);right.fill(.1f);
+        const float* inputs[]={left.data(),right.data()};
+        float* outputs[]={outLeft.data(),outRight.data()};
+        assert(fresh.process(inputs,2,outputs,2,480,1.f,false,
+            nullptr,nullptr,false,nullptr,nullptr,true));
+        assert(outLeft.back()>0.f && outRight.back()>0.f);
+
     }
 
     LiveDryRoutingLab mixer;

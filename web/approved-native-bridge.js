@@ -804,29 +804,61 @@
       controller?.subscribe();
     },8000);
   }
-  let pendingBusCreate=null,busRequestSerial=0;
-  function requestNativeBusCreate(){
+  let pendingBusCreate=null,stripRequestSerial=0;
+  function canCreateNativeTrack(next){
+    if(next?.retained)return false;
+    if(next?.admitted)
+      return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
+    return mixerSession()?.authority==="NONE" && deviceReady();
+  }
+  function syncAddTrack(next=controller?.state()?.current){
+    const button=document.getElementById("addTrack");
+    if(!button)return;
+    const available=canCreateNativeTrack(next);
+    button.disabled=!available || !!pendingBusCreate;
+    button.title=available?"Add a stereo audio track routed to MAIN":
+      "Connect a verified audio device in Audio I/O to add tracks";
+  }
+  function finishNativeTrack(next){
+    const pending=pendingBusCreate;
+    if(!pending?.track || !pending.createdId || !next?.admitted ||
+       next.device.epoch!==pending.epoch ||
+       BigInt(next.graph.revision)<BigInt(pending.revision))return;
+    const channel=next.graph.channels.find(ch=>ch.id===pending.createdId && ch.role==="INPUT");
+    const id=channel && uiByNativeId.get(channel.id);
+    const strip=scope?.tracks.find(t=>t.id===id);
+    if(!strip||!scope.revealTrack)return;
+    pendingBusCreate=null;
+    syncAddTrack(next);
+    scope.revealTrack(strip);
+    nativeToast(strip.name+" added · choose its IN to receive audio");
+  }
+  function requestNativeBusCreate(track=false){
     const accepted=controller?.state()?.current;
     const session=mixerSession();
     const capabilities=accepted?.graph?.capabilities?.supportedOps;
-    if(pendingBusCreate||session?.authority!=="CHANNEL_ID"||
-       !accepted?.admitted||!Array.isArray(capabilities)||
-       !capabilities.includes("CREATE_GROUP")){
-      nativeToast("BUS needs the verified native ChannelId graph");
-      return false;
-    }
-    const requestId="bus-"+(++busRequestSerial);
-    pendingBusCreate={requestId};
+    const available=track?canCreateNativeTrack(accepted):
+      session?.authority==="CHANNEL_ID" && accepted?.admitted &&
+      capabilities?.includes("CREATE_GROUP");
+    if(pendingBusCreate||!available)return false;
+    const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
+    const epoch=hardware.device.epoch;
+    const bootstrap=track && session.authority==="NONE";
+    pendingBusCreate={requestId,track,epoch};
+    syncAddTrack(accepted);
     backend.emitEvent("arMixAction",{
-      action:"routingNativeBusCreate",requestId,
-      deviceEpoch:accepted.device.epoch,
-      graphRevision:accepted.graph.revision,
-      rosterRevision:accepted.graph.rosterRevision});
-    status("Adding a real stereo BUS → MAIN · native PCM pending");
+      action:track?"routingNativeTrackCreate":"routingNativeBusCreate",requestId,
+      deviceEpoch:epoch,
+      ...(bootstrap?{bootstrapRevision:legacy().routingRevision}:{
+        graphRevision:accepted.graph.revision,
+        rosterRevision:accepted.graph.rosterRevision})});
+    const label=track?"Audio Track":"BUS";
+    status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
       if(pendingBusCreate?.requestId!==requestId)return;
       pendingBusCreate=null;
-      status("Add BUS timed out · old PCM kept");
+      syncAddTrack();
+      status("Add "+label+" timed out · refreshing mixer");
       controller?.subscribe();
     },8000);
     return true;
@@ -1941,6 +1973,12 @@
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
+      const addTrack=document.getElementById("addTrack");
+      if(addTrack){
+        addTrack.textContent="+ Audio Track";
+        toolbar.insertBefore(addTrack,io);
+      }
+      syncAddTrack();
       const monitor=item("button","tool","Unmute Output");
       monitor.dataset.nativeMonitor="true";
       monitor.addEventListener("click",()=>{
@@ -2016,6 +2054,9 @@
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=session.authority==="CHANNEL_ID" &&
       next.admitted && caps?.callbackOwnsChannelIds===true;
+    if(pendingBusCreate && pendingBusCreate.epoch!==next.device.epoch)
+      pendingBusCreate=null;
+    syncAddTrack(next);
     const addBus=document.getElementById("addBus");
     if(addBus){
       addBus.hidden=!nativeAdmitted ||
@@ -2061,6 +2102,7 @@
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      finishNativeTrack(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
       if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -2074,6 +2116,7 @@
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    finishNativeTrack(next);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
@@ -2181,12 +2224,22 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
-      if(!pendingBusCreate||pendingBusCreate.requestId!==ack?.requestId)return;
-      pendingBusCreate=null;
-      if(ack.ok===true && typeof ack.createdId==="string" &&
-         /^[1-9]\d*$/.test(ack.createdId))
-        status("BUS accepted by native PCM · verifying later graph readback");
-      else nativeToast("Add BUS rejected · "+(ack?.error||"native graph error"));
+      const pending=pendingBusCreate;
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      const label=pending.track?"Audio Track":"BUS";
+      if(ack.ok===true && protocol.decimal(ack.createdId) && ack.createdId!=="0" &&
+         (!pending.track || (protocol.decimal(ack.graphRevision) && ack.graphRevision!=="0"))){
+        status(label+" accepted by native PCM · verifying graph readback");
+        if(pending.track){
+          pending.createdId=ack.createdId;
+          pending.revision=ack.graphRevision;
+          finishNativeTrack(controller?.state()?.current);
+        }else pendingBusCreate=null;
+      }else{
+        pendingBusCreate=null;
+        nativeToast("Add "+label+" rejected · "+(ack?.error||"native graph error"));
+      }
+      syncAddTrack();
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
@@ -2850,8 +2903,8 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
-    if(target.id==="addBus"){
-      requestNativeBusCreate();return;
+    if(target.id==="addBus"||target.id==="addTrack"){
+      requestNativeBusCreate(target.id==="addTrack");return;
     }
     status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);
@@ -2921,7 +2974,6 @@
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
     reset:"Demo reset must not erase a live mixer",
-    addTrack:"Native channel creation requires graph admission",
     addFx:"Use a verified FX insert slot on an admitted channel"
   });
   function presentNativeOnlyTools(){

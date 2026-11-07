@@ -435,12 +435,12 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const lab=read("src/LiveDryRoutingLab.h");
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
- assert.match(bridge,/function requestNativeBusCreate\(\)/);
- assert.match(bridge,/action:"routingNativeBusCreate"/);
+ assert.match(bridge,/function requestNativeBusCreate\(track=false\)/);
+ assert.match(bridge,/action:track\?"routingNativeTrackCreate":"routingNativeBusCreate"/);
  assert.match(bridge,/target.id==="addBus"/);
  assert.match(bridge,/arMixNativeBusAck/);
  assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
- assert.match(host,/if\(action=="routingNativeBusCreate"\)/);
+ assert.match(host,/if\(action=="routingNativeBusCreate" \|\| action=="routingNativeTrackCreate"\)/);
  assert.match(host,/engine_\.editNativeBus\(ep,rev,roster,/);
  assert.match(engine,/topologyPublicationMute_\.store\(/);
  assert.match(lab,/if\(beforePublish\)beforePublish\(\)/);

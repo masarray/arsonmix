@@ -2755,7 +2755,8 @@ private:
                 juce::String(result.error?result.error:"native error"),true);
             return;
         }
-        if(action=="routingNativeBusCreate") {
+        if(action=="routingNativeBusCreate" || action=="routingNativeTrackCreate") {
+            const bool track=action=="routingNativeTrackCreate";
             const auto request=args.getProperty("requestId",{}).toString();
             const auto rawEp=args.getProperty("deviceEpoch",{});
             const auto rawRev=args.getProperty("graphRevision",{});
@@ -2763,42 +2764,80 @@ private:
             std::uint64_t ep=0,rev=0,roster=0;
             const auto live=engine_.status();
             const auto lab=live.getProperty("dryRoutingLab",{});
-            const auto native=lab.getProperty("nativeBus",{});
+            auto native=lab.getProperty("nativeBus",{});
             const auto before=approvedNativeSnapshot(live);
             const auto caps=before.getProperty("graph",{})
                 .getProperty("capabilities",{}).getProperty("supportedOps",{});
             const bool admitted=caps.isArray()&&
-                caps.getArray()->contains("CREATE_GROUP");
-            const bool valid=request.startsWith("bus-")&&
+                caps.getArray()->contains(juce::String(track?"CREATE_CHANNEL":"CREATE_GROUP"));
+            const auto rawBootstrap=args.getProperty("bootstrapRevision",{});
+            std::uint64_t bootstrapRevision=0;
+            const bool bootstrap=track && !native.isObject() &&
+                !lab.getProperty("retainedNativeBus",{}).isObject() &&
+                !static_cast<bool>(lab.getProperty("hasAcceptedRoute",false)) &&
+                armix::console::approvedNativeId(rawBootstrap,bootstrapRevision) &&
+                juce::String(std::to_string(bootstrapRevision))==
+                    lab.getProperty("revision",{}).toString();
+            const bool currentGraph=admitted &&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                native.getProperty("graphRevision","").toString()==rawRev.toString() &&
+                native.getProperty("rosterRevision","").toString()==rawRoster.toString();
+            const bool valid=request.startsWith(track?"track-":"bus-")&&
                 request.length()<=64 &&
                 !acceptedControlRequests_.contains(request)&&
                 armix::console::approvedNativeId(rawEp,ep)&&
-                armix::console::approvedNativeId(rawRev,rev)&&
-                armix::console::approvedNativeId(rawRoster,roster)&&
                 ep==engine_.dryRoutingLabEpoch() &&
-                native.getProperty("graphRevision","").toString()==rawRev.toString() &&
-                native.getProperty("rosterRevision","").toString()==rawRoster.toString() &&
-                admitted && !nativeShowBusy_ && !studioBackupBusy_;
+                (currentGraph||bootstrap) && !nativeShowBusy_ && !studioBackupBusy_;
             LiveDryRoutingLab::NativeBusResult result;
-            result.error="NATIVE_BUS_NOT_ADMITTED_OR_STALE";
+            result.error="NATIVE_CHANNEL_CREATE_NOT_ADMITTED_OR_STALE";
+            juce::String bootstrapError;
             if(valid) {
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                int count=0;
+                if(bootstrap) {
+                    // Admit the existing silent starter mixer without choosing
+                    // a hardware source, then use the revisions it published.
+                    bootstrapError=engine_.switchDryRoutingLabSource(
+                        0,ep,bootstrapRevision,"NONE",-1,-1);
+                    native=engine_.status().getProperty("dryRoutingLab",{})
+                        .getProperty("nativeBus",{});
+                    if(bootstrapError.isEmpty() &&
+                       (!armix::console::approvedNativeId(native.getProperty("graphRevision",{}),rev) ||
+                        !armix::console::approvedNativeId(native.getProperty("rosterRevision",{}),roster)))
+                        bootstrapError="NATIVE_STARTER_MIXER_NOT_ADMITTED";
+                }
                 const auto channels=native.getProperty("channels",{});
-                if(const auto* rows=channels.getArray())
-                    for(const auto& row:*rows)
+                const auto* rows=channels.getArray();
+                if(track && bootstrapError.isEmpty()) {
+                    juce::StringArray names;
+                    int inputs=0;
+                    if(rows)for(const auto& row:*rows) {
+                        names.add(row.getProperty("name","").toString());
+                        if(row.getProperty("role","").toString()=="INPUT")++inputs;
+                    }
+                    juce::String name;
+                    do { name="Track "+juce::String(++inputs); }
+                    while(names.contains(name,true));
+                    result=engine_.createNativeInputChannel(ep,rev,roster,
+                        name.toStdString(),armix::mixer::ProcessingFormat::stereo);
+                } else if(!track) {
+                    int count=0;
+                    if(rows)for(const auto& row:*rows)
                         if(row.getProperty("role","").toString()=="GROUP")++count;
-                const std::string name="Bus "+std::to_string(count+1);
-                result=engine_.editNativeBus(ep,rev,roster,
-                    armix::mixer::ChannelRole::group,
-                    std::span<const armix::mixer::ChannelId>{},name,1.f);
+                    result=engine_.editNativeBus(ep,rev,roster,
+                        armix::mixer::ChannelRole::group,
+                        std::span<const armix::mixer::ChannelId>{},
+                        "Bus "+std::to_string(count+1),1.f);
+                }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
             ack->setProperty("ok",valid&&result.accepted);
-            ack->setProperty("error",result.error?result.error:"NATIVE_BUS_UNKNOWN");
+            const juce::String error=bootstrapError.isNotEmpty()?bootstrapError:
+                juce::String(result.error?result.error:"NATIVE_CHANNEL_CREATE_UNKNOWN");
+            ack->setProperty("error",error);
             ack->setProperty("createdId",result.accepted?
                 juce::String(std::to_string(result.created.value)):juce::String());
             ack->setProperty("graphRevision",
@@ -2807,10 +2846,11 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixNativeBusAck",juce::var(ack.release()));
             if(valid&&result.accepted)
-                diagnostics_.record("NATIVE_DAW_BUS",
-                    "Created real ChannelId GROUP with MAIN output");
-            else emitNotice("Add BUS rejected: "+
-                juce::String(result.error?result.error:"native error"),true);
+                diagnostics_.record(track?"NATIVE_DAW_TRACK":"NATIVE_DAW_BUS",
+                    track?"Created unpatched stereo input with MAIN output":
+                          "Created real ChannelId GROUP with MAIN output");
+            else emitNotice(juce::String(track?"Add Audio Track rejected: ":"Add BUS rejected: ")+
+                error,true);
             return;
         }
 

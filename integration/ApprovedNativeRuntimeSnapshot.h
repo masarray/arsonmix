@@ -312,6 +312,8 @@ inline bool projectInstalledNativeChannelIdGraph(
     if(has("NATIVE_MOVE_INSERT"))available.add(juce::String("MOVE_INSERT"));
     if(has("NATIVE_LOAD_INSERT"))
         available.add(juce::String("LOAD_INSERT"));
+    if(has("NATIVE_CREATE_CHANNEL"))
+        available.add(juce::String("CREATE_CHANNEL"));
     if(has("NATIVE_CREATE_GROUP_SELECTED"))
         available.add(juce::String("CREATE_GROUP"));
     const auto graph=snapshot.getProperty("graph",{});

@@ -1802,24 +1802,29 @@ public:
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
             armix::mixer::ProcessingFormat format) {
-        LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="HARDWARE_NOT_DISARMED";
-        if(independent_.active()||!attached_||!directFence_.permitted()||
-           routeReconfiguring_.load(std::memory_order_acquire)||
-           diagnosticRoute_.load(std::memory_order_acquire)!=
-               armix::diagnostics::Route::normal ||
-           !allOutputsDisarmed()||handoff_.busy()||
-           fxMovePhase_.load(std::memory_order_acquire)!=0)
-            return fail;
-        return dryRoutingLab_.createNativeInputChannel(
-            epoch,pcmRevision,rosterRevision,name,format,true);
+        return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
+            "NATIVE_TRACK_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                return dryRoutingLab_.createNativeInputChannel(
+                    epoch,pcmRevision,rosterRevision,name,format,true,beforePublish);
+            });
     }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
             int left,int right,bool stereo) {
+        return editNativeInputTopology(epoch,"NATIVE_SOURCE_DEVICE_UNAVAILABLE",
+            "NATIVE_SOURCE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                return dryRoutingLab_.patchNativeInputSource(
+                    epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
+                    true,beforePublish);
+            });
+    }
+    template<class Edit>
+    LiveDryRoutingLab::NativeBusResult editNativeInputTopology(
+            std::uint64_t epoch,const char* unavailable,const char* exception,
+            Edit&& edit) {
         LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="NATIVE_SOURCE_DEVICE_UNAVAILABLE";
+        fail.error=unavailable;
         if(independent_.active()||!attached_||!directFence_.permitted()||
            secondaryOutput_.armed()||
            routeReconfiguring_.load(std::memory_order_acquire)||
@@ -1830,13 +1835,11 @@ public:
         const bool wasMonitoring=isMonitorEnabled();
         bool publishing=false;
         try{
-            const auto result=dryRoutingLab_.patchNativeInputSource(
-                epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
-                true,[&]{
-                    publishing=true;
-                    if(wasMonitoring)topologyPublicationMute_.store(
-                        true,std::memory_order_release);
-                });
+            const auto result=edit([&]{
+                publishing=true;
+                if(wasMonitoring)topologyPublicationMute_.store(
+                    true,std::memory_order_release);
+            });
             if(publishing){
                 if(wasMonitoring &&
                    !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
@@ -1852,7 +1855,7 @@ public:
                 setOutputMuted(true);
                 topologyPublicationMute_.store(false,std::memory_order_release);
             }
-            fail.error="NATIVE_SOURCE_PUBLICATION_EXCEPTION";
+            fail.error=exception;
             return fail;
         }
     }

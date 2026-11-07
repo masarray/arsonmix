@@ -1602,7 +1602,8 @@ public:
     NativeBusResult createNativeInputChannel(std::uint64_t expectedEpoch,
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             const std::string& name,armix::mixer::ProcessingFormat format,
-            bool outputsDisarmed=false) {
+            bool outputsDisarmed=false,
+            const std::function<void()>& beforePublish={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1657,6 +1658,7 @@ public:
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
+            if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 roster,nativeAccepted_.graph.request,expectedPcmRevision,
                 expectedEpoch,epoch(),true,std::move(fx));
