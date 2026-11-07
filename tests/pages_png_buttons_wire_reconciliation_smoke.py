@@ -47,8 +47,15 @@ def verify_bundle(dist):
         assert (generated/"assets"/name).read_bytes()==(OWNER/name).read_bytes(),name
     canonical={f.name for f in (REFERENCE/"assets").iterdir() if f.is_file()}
     published={f.name for f in (generated/"assets").iterdir() if f.is_file()}
-    assert published==canonical|{SPRITE,"arsonmix-approved-runtime.css"},(
-        "asset set drift",published^canonical)
+    # The approved app branding now adds exactly three favicon resources to
+    # the compiled /preview/ folder. Keep the asset set strict and verify
+    # byte identity against this build's generated public root, not unrelated
+    # developer-local files or an older locked GUI reference.
+    favicons={"favicon.ico","favicon-16x16.png","favicon-32x32.png"}
+    expected=canonical|{SPRITE,"arsonmix-approved-runtime.css"}|favicons
+    assert published==expected,("asset set drift",published^expected)
+    for name in favicons:
+        assert (generated/"assets"/name).read_bytes()==(dist/name).read_bytes(),name
     for name in canonical-set(SPECIAL):
         # Compiled CSS is checked byte-for-byte by published_console above.
         # Uncompiled JS/SVG/font/artwork assets must remain exact source bytes.
