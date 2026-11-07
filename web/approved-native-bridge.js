@@ -1772,8 +1772,57 @@
         status(showNote.textContent);
       }
     });
+
+    // One durable ChannelId MixerSession, separate from the limited legacy
+    // ShowV2. These buttons NEVER stage browser-only mixer/FX state.
+    const sessionHeading=item("span","more-tools-caption",
+      "STUDIO / COMPLETE MIXER SESSION");
+    const sessionSave=item("button","tool","Save Mixer Session");
+    const sessionRestore=item("button","tool","Restore Saved Mixer");
+    const sessionRecover=item("button","tool","Recover Previous Mixer");
+    const sessionState=item("span","more-tools-caption",
+      "Checking native ChannelId session…");
+    sessionState.style.whiteSpace="normal";
+    sessionState.dataset.nativeSessionState="true";
+    const sessionAction=(action)=>{
+      if(hardware?.device?.outputArmed!==false ||
+         hardware?.raw?.monitor===true){
+        status("Mixer session: first MUTE physical output and STREAM");
+        return;
+      }
+      backend.emitEvent("arMixAction",{action});
+      sessionState.textContent=action==="nativeSessionSave"?
+        "Capturing native ChannelIds, WIRE, FX and vendor state…":
+        "Verifying saved native session and hardware identity…";
+    };
+    sessionSave.addEventListener("click",()=>sessionAction("nativeSessionSave"));
+    sessionRestore.addEventListener("click",()=>sessionAction("nativeSessionRestore"));
+    sessionRecover.addEventListener("click",()=>sessionAction("nativeSessionRecover"));
+    backend.addEventListener("arMixNativeSessionAck",ack=>{
+      const state=String(ack?.state||"UNAVAILABLE");
+      sessionState.textContent=state+(ack?.error?" · "+String(ack.error):"");
+      if(ack?.operation==="INSPECT")return;
+      if(ack?.ok===true){
+        status(ack.operation==="SAVE"?
+          "Verified native MixerSession written; output remains MUTED":
+          ack.operation==="RESTORE"?
+          "Mixer Session restored; inspect routing then explicitly enable MONITOR":
+          "Previous MixerSession generation recovered on disk; RESTORE explicitly");
+        controller?.subscribe();
+      }else{
+        status("MIXER SESSION: "+String(ack?.error||"No native ACK"));
+        nativeToast(String(ack?.error||"Mixer operation rejected"));
+      }
+    });
+    backend.addEventListener("arMixStatus",state=>{
+      const next=state?.mixerSessionStatus;
+      if(typeof next!=="string"||!next)return;
+      const label=next+(state.mixerSessionError?" · "+String(state.mixerSessionError):"");
+      if(sessionState.textContent!==label)sessionState.textContent=label;
+    });
     menu.append(caption,setup,muteBtn,hardwareNote,
       healthTitle,mark,report,advanced,
+      sessionHeading,sessionSave,sessionRestore,sessionRecover,sessionState,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
@@ -2766,6 +2815,7 @@
   const ready=()=>{
     presentNativeOnlyTools();
     installFirstSoundMenu();
+    backend.emitEvent("arMixAction",{action:"nativeSessionInspect"});
     scope?.setNativeCatalog?.([]); // no synthetic/demo VST3 in Windows host
     updateHardwarePanel(null);
     stopDemo();
