@@ -7,12 +7,11 @@ web/app.js, preview-v2 routes, a demo-renderer substitute, or another layout.
 import asyncio
 import hashlib
 from pathlib import Path
-import re
 import shutil
 import tempfile
 
 from playwright.async_api import async_playwright
-from approved_css_original_bundle_fixture import reconstructed_original_css_html
+from approved_css_original_bundle_fixture import restore_original_css_bundle
 
 ROOT=Path(__file__).resolve().parents[1]
 COMPILED=ROOT/"dist-pages/preview"
@@ -74,15 +73,7 @@ async def main():
     with tempfile.TemporaryDirectory(prefix="armix-stage-c-original-") as tmp:
         baseline=Path(tmp)/"preview"
         shutil.copytree(COMPILED,baseline)
-        original_html=reconstructed_original_css_html((baseline/'index.html').read_text(encoding='utf-8'))
-        (baseline/'index.html').write_text(original_html,encoding='utf-8')
-        cssnames=[p.name for p in (COMPILED/"assets").glob("*.css")]
-        for name in cssnames:
-            source=(ROOT/("site/preview-buttons/assets"
-                           if name=="mixer-control-keys.css"
-                           else "site/preview-v2/assets")/name)
-            if source.is_file():
-                shutil.copyfile(source,baseline/"assets"/name)
+        restore_original_css_bundle(baseline)
         async with async_playwright() as playwright:
             browser=await playwright.chromium.launch(headless=True)
             try:
