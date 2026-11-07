@@ -70,9 +70,16 @@ struct MixerDeviceBindingPolicy final {
             const HardwareBinding& live,int count,Mode mode=Mode::exact) {
         const auto& saved=document.binding;
         if(mode==Mode::verifiedDeviceApply &&
-           (saved.backend!=live.backend || saved.playback!=live.playback ||
-            !samePinNames(saved.outputNames,live.outputNames,live.backend)))
+           (saved.backend!=live.backend || saved.playback!=live.playback))
             return {count,0,1,-1,-1,false};
+        // A matching endpoint name does NOT prove an unchanged physical
+        // jack inventory. Reject rather than silently rebase MAIN to 1/2
+        // if pin labels changed or an unknown ASIO inventory lost pins.
+        if(mode==Mode::verifiedDeviceApply &&
+           ((!saved.outputNames.isEmpty() && saved.outputNames!=live.outputNames) ||
+            (saved.outputNames.isEmpty() && live.backend=="ASIO" &&
+             saved.outputMask!=live.outputMask)))
+            return {count,-1,-1,-1,-1,false};
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
         if(saved.outputMask!=live.outputMask) {
@@ -125,8 +132,7 @@ struct MixerDeviceBindingPolicy final {
         // ordinals; it never authorizes quietly switching MAIN to another
         // jack. Compare against the policy-computed remap even when a caller
         // supplies a valid but DIFFERENT output pair.
-        if(saved.backend==live.backend && saved.playback==live.playback &&
-           samePinNames(saved.outputNames,live.outputNames,live.backend)) {
+        if(saved.backend==live.backend && saved.playback==live.playback) {
             const auto mapped=proposedOutputs(document,live,
                 outputs.activeOutputChannels,Mode::verifiedDeviceApply);
             if(!mapped.valid() || !sameOutputs(mapped,outputs))
