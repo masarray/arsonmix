@@ -11,6 +11,7 @@
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "NativeVerifiedSourcePatch.h"
 #include "NativeTopologyEditSafety.h"
+#include "NativeMixerSessionDocument.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
@@ -2023,6 +2024,134 @@ public:
     }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
+
+    // CONTROL-only capture of the currently INSTALLED ChannelId PCM graph.
+    // Fail closed if any vendor cannot supply a quiescent binary state.
+    juce::String captureNativeMixerSession(
+            armix::session::MixerSessionDocument& document,
+            std::vector<armix::shows::BinaryState>& blobs) noexcept {
+        using namespace armix::mixer;
+        if(!channelIdPhysicalPcmActive()||
+           !nativeAccepted_.matches(nativePublisher_,epoch(),nativeAccepted_.pcmRevision))
+            return "No authoritative native ChannelId graph";
+        if(nativeAccepted_.fxOwners->externalChannel().value)
+            return "External CH1 FX owner cannot yet be serialized independently";
+        try {
+            armix::session::MixerSessionDocument draft;
+            draft.roster=nativeAccepted_.graph.roster;
+            draft.acceptedRevision=draft.roster.revision();
+            draft.legacyIds=nativeAccepted_.graph.ids;
+            draft.outputs=nativeAccepted_.hardware;
+            draft.request=nativeAccepted_.graph.request;
+            std::vector<armix::shows::BinaryState> staged;
+            std::set<juce::String> hashes;
+            juce::int64 total=0;
+            for(const auto& channel:draft.roster.channels()) {
+                const auto count=nativeAccepted_.fxOwners->insertCount(channel.id);
+                if(count>static_cast<std::size_t>(FxGraph::maxInsertsPerStrip))
+                    return "Native FX count exceeded per-channel rack";
+                if(nativeAccepted_.fxOwners->rackBypassed(channel.id))
+                    draft.rackBypassed.push_back(channel.id);
+                for(std::size_t slot=0;slot<count;++slot) {
+                    const auto* owner=nativeAccepted_.fxOwners->ownerForControl(channel.id,slot);
+                    if(!owner||!*owner||!(*owner)->processor||
+                       (*owner)->catalogId.isEmpty())
+                        return "Native FX lease missing during capture";
+                    juce::MemoryBlock bytes;
+                    if(!(*owner)->tryCaptureState(bytes))
+                        return "VST3 state not quiescent: "+(*owner)->catalogId;
+                    total+=static_cast<juce::int64>(bytes.getSize());
+                    if(total>128LL*1024LL*1024LL)
+                        return "Native mixer vendor-state budget exceeded";
+                    const auto hash=juce::SHA256(bytes).toHexString();
+                    draft.inserts.push_back({channel.id,slot,(*owner)->catalogId,
+                        {},hash,(*owner)->name,0,
+                        (*owner)->bypassRequested.load(std::memory_order_acquire)});
+                    if(hashes.insert(hash).second) {
+                        armix::shows::BinaryState entry;
+                        entry.sha256=hash;entry.bytes=std::move(bytes);
+                        staged.push_back(std::move(entry));
+                    }
+                }
+            }
+            if(epoch()!=nativeAccepted_.deviceEpoch ||
+               !nativeAccepted_.matches(nativePublisher_,epoch(),nativeAccepted_.pcmRevision))
+                return "Native graph changed during FX snapshot";
+            document=std::move(draft);
+            blobs=std::move(staged);
+            return {};
+        } catch(...) {return "Native graph/VST3 state capture failed";}
+    }
+
+    // Restore the validated persisted ChannelId roster with exactly ONE
+    // native PCM publication. Rejected sessions leave the current unpatched
+    // graph and hardware MUTE untouched. No native FX construction here.
+    juce::String restoreNativeMixerSession(
+            armix::session::MixerSessionDocument document,
+            std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> bank,
+            bool outputsDisarmed) {
+        using namespace armix::mixer;
+        if(!outputsDisarmed||!ready()||
+           !registryValid_.load(std::memory_order_acquire)||
+           channelIdPhysicalPcmActive()||!bank)
+            return "Restore requires verified unpatched and muted device";
+        if(document.request.physicalInputs!=portCount_.load(std::memory_order_acquire)||
+           document.outputs.activeOutputChannels!=callbackOutputCount_.load(std::memory_order_acquire))
+            return "NEEDS_REMAP: callback port layout changed";
+        const auto generation=epoch();
+        const auto* active=publisher_.controlPrepared(generation,revision());
+        if(!active || document.outputs.mainL!=active->mainOutputLeft() ||
+           document.outputs.mainR!=active->mainOutputRight() ||
+           document.outputs.monitorEnabled!=active->monitorEnabled() ||
+           (document.outputs.monitorEnabled &&
+             (document.outputs.monitorL!=active->monitorOutputLeft()||
+              document.outputs.monitorR!=active->monitorOutputRight())))
+            return "NEEDS_REMAP: physical MAIN/MONITOR output pair changed";
+        if(document.request.maxFrames<=0)return "Invalid saved mixer quantum";
+        try {
+            document.request.maxFrames=active->maxFramesPerPlugin();
+            document.request.maxScratchBytes=32U*1024U*1024U;
+            const auto previous=nativePublisher_.acceptedRevision();
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(bank);
+            fx.context=bank.get();
+            fx.deviceEpoch=generation;fx.graphRevision=previous+1;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);
+            };
+            fx.latency=+[](void* p,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            const auto published=nativePublisher_.commit(
+                document.roster,document.request,previous,generation,epoch(),
+                true,std::move(fx));
+            if(!published.ok())
+                return "Native ChannelId PCM rejected persisted topology: "+
+                    juce::String(static_cast<int>(published.fault));
+            nativeAccepted_.graph.roster=std::move(document.roster);
+            nativeAccepted_.graph.request=std::move(document.request);
+            nativeAccepted_.graph.ids=document.legacyIds;
+            nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
+            nativeAccepted_.hardware=document.outputs;
+            nativeAccepted_.fxOwners=std::move(bank);
+            nativeAccepted_.deviceEpoch=generation;
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true;
+            nativeControlDirty_=true;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            // Only the logical source patch is restored. Physical OUT remains
+            // disarmed until the user independently enables monitoring.
+            userPatched_.store(true,std::memory_order_release);
+            channelIdPcmEpoch_.store(generation,std::memory_order_release);
+            return {};
+        }catch(...) {return "Native session restore exception";}
+    }
+
+    std::uint64_t nativeGraphRevisionForRestore() const noexcept {
+        const auto current=nativePublisher_.acceptedRevision();
+        return current==std::numeric_limits<std::uint64_t>::max()?0:current+1;
+    }
+
     juce::var nativeBusStatus(bool retained=false) const {
         if(!nativeAccepted_.fxOwners ||
            (!retained && !channelIdPhysicalPcmActive()))return {};
