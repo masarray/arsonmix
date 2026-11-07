@@ -31,7 +31,8 @@ if buttons_dest.exists(): shutil.rmtree(buttons_dest)
 # are source inputs only; this output has ONE HTML, ONE CSS/JS/asset set.
 (buttons_dest/'assets').mkdir(parents=True)
 # Same small icon is shipped into JUCE's approved resource provider.
-shutil.copy2(dst/'favicon-32x32.png',buttons_dest/'assets'/'favicon-32x32.png')
+for name in ('favicon.ico','favicon-16x16.png','favicon-32x32.png'):
+    shutil.copy2(dst/name,buttons_dest/'assets'/name)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
 sprite='mute-solo-pfl-56x37.png'
