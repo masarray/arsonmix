@@ -33,6 +33,17 @@ def reconstruct():
     """Return byte-exact internal source HTML and Chrome material, with CSS order."""
     d=manifest()
     html=HTML.read_text(encoding="utf-8")
+    # Historical CSS V28 fixture predates the later owner-approved brand.
+    # Remove ONLY the exact favicon metadata tags for the historic byte-level
+    # reconstruction. All original HTML, JS, CSS and ordering stay locked.
+    brand_head_links=(
+        '<link rel="icon" href="assets/favicon.ico" sizes="any">\n',
+        '<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">\n',
+        '<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">\n',
+    )
+    for link in brand_head_links:
+        assert html.count(link)<=1, "Duplicate approved favicon metadata"
+        html=html.replace(link,"",1)
     chrome=OWNER.read_text(encoding="utf-8")
     assert meta(html)==d["current"]["html"],"V28 HTML changed after checkpoint"
     assert meta(chrome)==d["current"]["chrome"],"V28 Chrome CSS changed after checkpoint"
