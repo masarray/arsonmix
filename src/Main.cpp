@@ -4035,6 +4035,16 @@ public:
     }
     void initialise (const juce::String&) override
     {
+#if defined(_WIN32)
+        // Per-user-session installer handshake. An Inno update requests the
+        // ordinary JUCE quit path on the MESSAGE thread: the native mixer
+        // persists accepted .smix state before the installer replaces the PE.
+        // Never signal from the audio callback or terminate the process.
+        updateRunningMutex_ = ::CreateMutexW (nullptr, FALSE,
+            L"Local\\ArSonMix.MixerRunning.v1");
+        installerShutdownEvent_ = ::CreateEventW (nullptr, TRUE, FALSE,
+            L"Local\\ArSonMix.InstallShutdown.v1");
+#endif
         // Paint the approved dark native splash BEFORE browser cache I/O,
         // WebView2 initialization, device scan or native console construction.
         splash_ = std::make_unique<ArSonMixStartupSplash>();
@@ -4042,7 +4052,23 @@ public:
     }
     void timerCallback() override
     {
-        stopTimer();
+#if defined(_WIN32)
+        if (installerShutdownEvent_ != nullptr &&
+            ::WaitForSingleObject (installerShutdownEvent_, 0) == WAIT_OBJECT_0)
+        {
+            stopTimer();
+            // This reaches shutdown() -> window_.reset() ->
+            // ConsoleWindow::~ConsoleWindow() -> saveMixerSession().
+            systemRequestedQuit();
+            return;
+        }
+#endif
+        if (startupAttempted_)
+            return;
+        startupAttempted_ = true;
+        // Remain active only as a lightweight update handshake (4 Hz).
+        // Do not touch audio-device selection, callback, or GUI geometry.
+        startTimer (250);
         const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
         if (!folder.createDirectory().wasOk() && !folder.isDirectory())
         {
@@ -4078,8 +4104,25 @@ public:
         stopTimer();
         window_.reset();
         splash_.reset();
+#if defined(_WIN32)
+        if (installerShutdownEvent_ != nullptr)
+        {
+            ::CloseHandle (installerShutdownEvent_);
+            installerShutdownEvent_ = nullptr;
+        }
+        if (updateRunningMutex_ != nullptr)
+        {
+            ::CloseHandle (updateRunningMutex_);
+            updateRunningMutex_ = nullptr;
+        }
+#endif
     }
 private:
+    bool startupAttempted_ = false;
+#if defined(_WIN32)
+    HANDLE updateRunningMutex_ = nullptr;
+    HANDLE installerShutdownEvent_ = nullptr;
+#endif
     std::unique_ptr<ArSonMixStartupSplash> splash_;
     std::unique_ptr<ConsoleWindow> window_;
 };
