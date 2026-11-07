@@ -63,6 +63,10 @@ if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
 $approvedGuiDir = Join-Path $BuildDir "approved_gui"
 . (Join-Path $PSScriptRoot "resolve_approved_gui_python.ps1")
 $approvedGuiPython = Resolve-ArSonMixApprovedGuiPython -BuildDir $BuildDir
+# Validate the ACTUAL compiled Windows taskbar/EXE icon against the approved
+# committed PNG, not merely CMake resource names or an unverified .ico.
+& $approvedGuiPython scripts/verify_windows_pe_brand_icon.py --exe $app --approved assets/icon/arsonmix-256.png
+if ($LASTEXITCODE -ne 0) { throw "WINDOWS BRAND PE ICON MISMATCH: compiled app icon differs from approved ArSonMix" }
 & $approvedGuiPython scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
 if ($LASTEXITCODE -ne 0) { throw "APPROVED GUI PROVENANCE MISMATCH: generated bundle differs from Pages" }
 $approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"

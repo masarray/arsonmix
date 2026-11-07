@@ -11,6 +11,7 @@ const read=path=>readFileSync(path,'utf8');
 const workflow=read('.github/workflows/p1-windows.yml');
 const packaging=read('scripts/package_native_windows.ps1');
 const pythonProvenance=read('scripts/resolve_approved_gui_python.ps1');
+const iconVerifier=read('scripts/verify_windows_pe_brand_icon.py');
 const verify=read('scripts/verify_native_windows_artifact.ps1');
 const nativeMain=read('src/Main.cpp');
 const cmake=read('CMakeLists.txt');
@@ -30,6 +31,19 @@ test('packaging and independent ZIP verifier use the exact CMake Python, never P
   assert.match(pythonProvenance,/approved-gui-python\.txt/);
   assert.match(pythonProvenance,/Test-Path -LiteralPath \$selected -PathType Leaf/);
   assert.match(pythonProvenance,/refusing unverified GUI regeneration/);
+});
+
+test('EXE and independently ZIP-distributed PE icons must match approved source RGBA',()=>{
+  for(const script of [packaging,verify]){
+    assert.match(script,/& \$approvedGuiPython scripts\/verify_windows_pe_brand_icon\.py --exe/);
+    assert.match(script,/--approved assets\/icon\/arsonmix-256\.png/);
+    assert.match(script,/LASTEXITCODE -ne 0/);
+  }
+  assert.match(iconVerifier,/RT_GROUP_ICON\/RT_ICON/);
+  assert.match(iconVerifier,/read_png\(expected\)/);
+  assert.match(iconVerifier,/actual_rows=read_png/);
+  assert.match(iconVerifier,/old\[pos\+3\]!=actual\[pos\+3\]/);
+  assert.match(iconVerifier,/required=\{16,32,48,256\}/);
 });
 
 test('native FAT picks exact JUCE GUI target, not a test executable',()=>{
