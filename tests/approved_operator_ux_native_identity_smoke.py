@@ -45,9 +45,19 @@ def main():
         assert page.locator('#wireNavigatorToggle').is_visible()
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_selector('#tracks .strip[data-id="1"]')
-        page.locator('#tracks .strip[data-id="1"] .strip-identity-top').dblclick()
+        # Single click on the top identity, not double click, is the
+        # discoverable native edit path. It must not create PCM intents.
+        page.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
         editor=page.locator('#channelIdentity')
-        assert editor.is_visible(),"native bridge still blocks identity window"
+        assert editor.is_visible(),"single-click native identity editor did not open"
+        assert page.locator('#identityName').evaluate("el=>el===document.activeElement")
+        page.locator('#identityName').fill("Discard this")
+        page.locator('#identityCancel').click()
+        assert editor.is_hidden(),"Cancel must dismiss without modifying the channel"
+        assert "Discard this" not in page.locator('#tracks .strip[data-id="1"]').inner_text()
+        # A normal click on the nameplate is also actionable.
+        page.locator('#tracks .strip[data-id="1"] .footer-label .name').click()
+        assert editor.is_visible(),"footer name click did not open editor"
         page.locator('#identityName').fill("Studio Vox")
         color="#c32974"
         page.locator(f'#identityColors [data-identity-color="{color}"]').click()
@@ -75,16 +85,27 @@ def main():
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_selector('#tracks .strip[data-id="1"]')
         assert "Studio Vox" in page.locator('#tracks .strip[data-id="1"]').inner_text()
-        page.locator('#tracks .strip[data-id="2"] .strip-identity-top').dblclick()
+        # Keyboard F2 edits the selected loaded channel; Enter on focused
+        # footer name is accessible when using keyboard-only navigation.
+        page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+        assert page.locator('#channelIdentity').is_visible()
+        page.locator('#identityCancel').click()
+        page.keyboard.press('F2')
+        assert page.locator('#channelIdentity').is_visible(),"F2 edit not available"
         page.locator('#identityName').fill('Studio Vox')
         page.locator('#identitySave').click()
         assert page.locator('#channelIdentity').is_visible(),\
             "duplicate visible channel names should not silently collide"
         page.locator('#identityClose').click()
+        page.locator('#tracks .strip[data-id="2"] .footer-label .name').focus()
+        page.keyboard.press('Enter')
+        assert page.locator('#channelIdentity').is_visible(),"keyboard Enter did not open editor"
+        page.keyboard.press('Escape')
+        assert page.locator('#channelIdentity').is_hidden()
         assert page.evaluate("()=>window.__nativeIntents.length")==0
         assert not errors,errors
         page.close()
         context.close();browser.close()
-    print("PASS native identity: real edit name/icon/color; exact ChannelId; readback/reload; duplicate reject; no PCM graph intents")
+    print("PASS native identity: click/header/footer, F2/Enter, Cancel/Escape, edited name/icon/color, readback/reload, duplicate reject, exact ChannelId, zero PCM intents")
 
 if __name__=="__main__":main()

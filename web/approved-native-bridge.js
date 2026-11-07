@@ -34,13 +34,32 @@
     }
   }catch(_){ /* unavailable storage must never break live mixer */ }
   const displayNameFor=ch=>channelPresentation.get(ch.id)?.name||ch.name;
+  // A channel's cosmetic identity can be edited when its exact native id is
+  // present in the current acknowledged OR retained graph. No physical
+  // audio device, output arm or PCM graph mutation is required.
+  const identityChannelFor=t=>{
+    const id=nativeIdFor(t),current=controller?.state()?.current;
+    return id && (current?.admitted||current?.retained) &&
+      current.graph?.channels?.some(ch=>ch.id===id)?id:null;
+  };
+  const identityEligible=t=>Boolean(identityChannelFor(t));
+  let lastEditedChannelId=null;
+  function openNativeIdentity(t,anchor){
+    if(!identityEligible(t)){
+      nativeToast("Channel identity unavailable until its native channel is loaded");
+      return false;
+    }
+    lastEditedChannelId=t.id;
+    scope?.openChannelIdentity?.(t,anchor);
+    return true;
+  }
   function acceptIdentityPresentation(){
     const id=scope?.identityTrackId,t=scope?.tracks?.concat(scope.master||[])
       ?.find(x=>x.id===id),nativeId=nativeIdFor(t);
     const name=String(document.getElementById("identityName")?.value||"")
       .trim().replace(/\s+/g," ").slice(0,30);
-    if(!nativeId||!flags.acceptedGraphConnected){
-      status("Select an admitted native channel before editing its identity");return false;
+    if(!nativeId||!identityEligible(t)){
+      nativeToast("Select a loaded native channel before editing its identity");return false;
     }
     if(!name||scope.tracks.concat(scope.master).some(
        x=>x.id!==id&&x.name.toLowerCase()===name.toLowerCase())){
@@ -48,13 +67,22 @@
     }
     const color=/^#[0-9a-fA-F]{6}$/.test(scope.identityColor||"")
       ?scope.identityColor:t.color;
-    const icon=typeof scope.identityIcon==="string"&&scope.identityIcon.length<=4
+    const icon=scope.channelIcons?.includes?.(scope.identityIcon)
       ?scope.identityIcon:t.icon;
+    const previous=channelPresentation.get(nativeId);
     channelPresentation.set(nativeId,{name,color,icon});
     try{
       const channels=Object.fromEntries([...channelPresentation].slice(-128));
-      window.localStorage?.setItem(identityStoreKey,JSON.stringify({version:1,channels}));
-    }catch(_){status("Channel display changed; local storage unavailable");}
+      if(!window.localStorage)throw new Error("Channel identity storage unavailable");
+      window.localStorage.setItem(identityStoreKey,JSON.stringify({version:1,channels}));
+    }catch(_){
+      // Never claim a saved identity if it cannot survive a WebView2 restart.
+      if(previous)channelPresentation.set(nativeId,previous);
+      else channelPresentation.delete(nativeId);
+      nativeToast("Cannot save channel identity; check WebView storage access");
+      return false;
+    }
+    nativeToast("Channel identity saved · "+name);
     return true; // original approved editor updates the single UI model
   }
   const pendingWireGains=new Map();
@@ -2434,8 +2462,14 @@
     consumeAction(t,action,btn) {
       if (!connected)return false;
       // Selection, WIRE inspection and section presentation are UI-only.
-      if (["wireExpand","wireSource","wireRoute","editIdentity","rename"].includes(action))
-        return !["wireExpand","wireSource","wireRoute"].includes(action);
+      if(action==="editIdentity"||action==="rename"){
+        // A single click on the channel header/name now opens the SAME
+        // original name/color/icon editor. No demo graph changes.
+        openNativeIdentity(t,btn);
+        return true;
+      }
+      if (["wireExpand","wireSource","wireRoute"].includes(action))
+        return false;
       if(action==="removeFx") {
         const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
         const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
@@ -2707,11 +2741,8 @@
         if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
         else intent("SET_PAN",t,{value:0});
       }
-      else if(event.target.closest?.(".footer-label,.strip-identity-top")){
-        if(nativeIdFor(t) && flags.acceptedGraphConnected)
-          scope?.openChannelIdentity?.(t,event.target);
-        else status("Channel identity available after verified native admission");
-      }
+      else if(event.target.closest?.(".footer-label,.strip-identity-top"))
+        openNativeIdentity(t,event.target);
       return true;
     },
     applyIdentity:acceptIdentityPresentation,
@@ -2764,6 +2795,50 @@
   // Native fader is committed exactly once INSIDE the original GUI's
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
+
+  // Editing is accessible without a mouse. F2 operates on the selected
+  // loaded channel; Enter/Space activates the focusable footer name.
+  document.addEventListener("keydown",event=>{
+    if(!connected||event.altKey||event.ctrlKey||event.metaKey)return;
+    const target=event.target;
+    const editorHidden=Boolean(document.getElementById("channelIdentity")?.hidden);
+    const textEntry=target?.closest?.('input,textarea,select,[contenteditable="true"]');
+    // Closing the editor can leave DOM focus on its now-hidden input under
+    // WebView2. F2 must still reopen the last selected channel, rather than
+    // being swallowed by the generic text-entry shortcut guard.
+    if(textEntry && !(event.key==="F2" && editorHidden &&
+                      target?.id==="identityName"))return;
+    const focused=target?.closest?.('.footer-label .name');
+    if(focused && ["Enter"," "].includes(event.key)){
+      const track=scope?.tracks?.concat(scope.master||[])?.find(
+        item=>item.id===Number(focused.closest(".strip")?.dataset.id));
+      event.preventDefault();event.stopImmediatePropagation();
+      openNativeIdentity(track,focused);return;
+    }
+    if(event.key!=="F2")return;
+    const tracks=scope?.tracks?.concat(scope.master||[])||[];
+    const focusedTrack=target?.closest?.(".strip")?.dataset.id;
+    const selected=tracks.find(t=>t.id===Number(focusedTrack))||
+      tracks.find(t=>t.selected && identityEligible(t))||
+      tracks.find(t=>t.id===lastEditedChannelId && identityEligible(t));
+    if(!selected)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const anchor=document.querySelector('.strip[data-id="'+selected.id+'"] .footer-label')||
+      document.querySelector('.strip[data-id="'+selected.id+'"] .strip-identity-top');
+    openNativeIdentity(selected,anchor);
+  },true);
+
+  // Preserve keyboard focus when closing the modeless identity window.
+  // The original Pages close handlers own visibility; never replace them.
+  for(const id of ["identityCancel","identityClose","identitySave"]){
+    document.getElementById(id)?.addEventListener("click",()=>{
+      requestAnimationFrame(()=>{
+        if(!document.getElementById("channelIdentity")?.hidden)return;
+        const name=document.querySelector('.strip[data-id="'+lastEditedChannelId+'"] .footer-label .name');
+        name?.focus?.();
+      });
+    });
+  }
 
   // Pages' reference-only controls must not masquerade as working native
   // operations. Keep REAL audio/FX/WIRE/device controls fully interactive;

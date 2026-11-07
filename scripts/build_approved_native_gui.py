@@ -234,7 +234,7 @@ NATIVE_EVENT_HOOKS = (
      "  renderPluginCatalog();renderFastPicker();return pluginCatalog.length;\n"
      " },\n"
      " closeNativePicker(){setFastPicker(false);},\n"
-     " colors:COLORS,wireGraph:ArSonWireGraph,\n"
+     " colors:COLORS,channelIcons:CHANNEL_ICONS,wireGraph:ArSonWireGraph,\n"
      " allocateWireId(){return nextWireId++;},\n"
      " installGraph(channels,main,edges){\n"
      "  tracks=channels;master=main;wireEdges=edges;\n"
