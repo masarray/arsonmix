@@ -147,6 +147,11 @@ def main():
             assert page.locator(".mx-peq-knob").count()==3
             assert page.locator(".mx-peq-band").count()==8
             assert page.locator(".mx-peq-graph svg").count()==1
+            # Native EQ graph is painted by requestAnimationFrame following the
+            # accepted-snapshot event. The editor can be visible one frame
+            # before the SVG is populated; wait for the real rendered line,
+            # without sleeping or weakening the expected graph assertions.
+            page.locator(".mx-peq-zero").wait_for(state="attached")
             assert page.locator(".mx-peq-zero").count()==1
             assert page.locator(".mx-peq-graph circle[data-eq-node]").count()==16
             bbox=editor.bounding_box()
