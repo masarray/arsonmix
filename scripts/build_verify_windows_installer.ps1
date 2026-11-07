@@ -95,9 +95,18 @@ try {
         "/DIR=$install",('/LOG="' + $upgradeLog + '"')
     ) -Wait -PassThru
     $fixtureProcess.Refresh()
+    $closeMarker=Test-Path -LiteralPath $fixtureClosed
+    $closeText=if($closeMarker){(Get-Content -LiteralPath $fixtureClosed -Raw).Trim()}else{"MISSING"}
+    $installedAfter=(Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host "INNO_UPGRADE_DIAG: installerExit=$($upgrade.ExitCode) oldProcessExited=$($fixtureProcess.HasExited) gracefulMarker=$closeText restoredExeShaOk=$($installedAfter -eq $appHash)"
     if($upgrade.ExitCode -ne 0 -or -not $fixtureProcess.HasExited -or
-       -not (Test-Path -LiteralPath $fixtureClosed) -or
-       (Get-Content -LiteralPath $fixtureClosed -Raw).Trim() -ne "WM_CLOSE_SAVED"){
+       -not $closeMarker -or $closeText -ne "WM_CLOSE_SAVED"){
+        if(Test-Path -LiteralPath $upgradeLog){
+            Get-Content -LiteralPath $upgradeLog |
+              Select-String -Pattern 'Restart Manager|close application|closing application|file in use|ArSonMix|error|installing' |
+              Select-Object -Last 45 |
+              ForEach-Object {Write-Host "INNO_RESTART_MANAGER_LOG: $($_.Line)"}
+        }
         throw "In-place update did not gracefully close the running ArSonMix fixture (see $upgradeLog)"
     }
     if((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $appHash -or
