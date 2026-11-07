@@ -105,7 +105,7 @@ $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
     sourceCommit = $gitSha
     gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
-    engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__HARDWARE_FAT_UNQUALIFIED"
+    engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__PREVIEW"
     nativeDSP = "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK"
     storageMode = "PORTABLE_MARKER__USER_STUDIO_EMPTY_AT_RELEASE"
     guiExeBytes = $appBytes
@@ -133,7 +133,7 @@ $manifest = [ordered]@{
     approvedGuiSource = "site/preview-v2 DOM + site/preview-buttons approved PNG skin (deterministic JUCE BinaryData)"
     approvedGuiAdapterStatus = "SCAFFOLD_ONLY__NOT_LIVE_PCM"
     guiCalibration = "APPROVED_PAGES_VISUAL_PROVENANCE_ONLY__M1_NOT_PRODUCT_READY"
-    fatStatus = "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED"
+    fatStatus = "SOFTWARE_VERIFIED_PREVIEW_CANDIDATE"
     note = "No assertion of clean 0-FX sound, measured round-trip latency or native render-hardware XRUN."
 }
 $manifest | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $OutputDir "BUILD_PROVENANCE.json") -Encoding utf8
