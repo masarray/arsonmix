@@ -156,3 +156,7 @@ Physical audio FAT: <verified on equipment OR PENDING>
 Unresolved risk and next significant milestone: <specific>
 ```
 
+
+## Historical CSS migrations
+
+Full current-product UI qualification keeps archived V8–V27 migration tests disabled unless `historical_css: true` is explicitly requested. Current approved GUI, native interaction, browser and provenance checks remain mandatory.

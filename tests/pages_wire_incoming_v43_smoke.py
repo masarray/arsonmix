@@ -3,6 +3,7 @@
 from pathlib import Path
 import math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 CANONICAL=ROOT/"site/preview-v2/index.html"
@@ -53,11 +54,9 @@ def main():
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),"--out",str(dst),
                   "--sha","v43-ci-source","--branch","main"],check=True,
                  cwd=ROOT,capture_output=True,text=True)
-  public=dst/"preview/index.html"
+  public=published_console(dst)
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
   assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):

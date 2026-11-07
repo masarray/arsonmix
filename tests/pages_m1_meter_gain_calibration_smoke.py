@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT = Path(__file__).resolve().parents[1]
 CANON = ROOT / "site/preview-v2/index.html"
@@ -20,7 +21,14 @@ def close(a, b, tolerance=0.65):
     assert abs(a - b) <= tolerance, (a, b, tolerance)
 
 def geometry(page, density, label):
-    page.locator("#densitySelect").select_option(density)
+    picker=page.locator("#densitySelect")
+    if picker.is_visible():
+        picker.select_option(density)
+    else:
+        # Approved Pages V29 is a single comfort-only product; density
+        # testing still covers all three variants in the historical source.
+        assert density=="comfort" and picker.is_hidden()
+        assert page.locator(".console-body").get_attribute("data-density")=="comfort"
     page.wait_for_selector("#tracks .strip[data-id='1'] .fader-scale")
     out = page.evaluate("""() => {
       const strip=document.querySelector('#tracks .strip[data-id="1"]');
@@ -199,17 +207,9 @@ def main():
         subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
             "--out",str(dist),"--sha","m1-calibrated","--branch","m1"],
             cwd=ROOT,check=True,capture_output=True,text=True)
-        published=dist/"preview/mixer.html"
-        assert published.read_bytes()==CANON.read_bytes(),"Published mixer source drift"
-        expected_ruler_keys={
-            "mixer-fader-assembly.css":"css-owner-v27-fader-rollback-pre-v52-tail",
-            "mixer-meter-display.css":"css-owner-v27-meter-pruned",
-        }
-        for name,key in expected_ruler_keys.items():
-            assert f"assets/{name}?v={key}" in published.read_text("utf-8"),(
-                "stale ruler cache URL",name,key)
-        for name in ("mixer-fader-assembly.css","mixer-meter-display.css"):
-            assert (dist/"preview/assets"/name).read_bytes()==(ASSETS/name).read_bytes(),name
+        # The shared provenance gate verifies every compiled ruler owner and
+        # its content-addressed runtime bundle against the exact source.
+        published=published_console(dist)
         with sync_playwright() as pw:
             browser=pw.chromium.launch(headless=True)
             for html,label,width,height in (
@@ -217,23 +217,26 @@ def main():
                 (CANON,"canonical",1680,900),
                 (CANON,"canonical",1920,1080),
                 (published,"pages",1680,900),
-                (dist/"preview-buttons/index.html","png",1366,768)):
+                (published,"png",1366,768)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda exc:errors.append(str(exc)))
                 page.goto(html.as_uri())
-                for density in ("comfort","standard","compact"):
+                modes=("comfort","standard","compact") if label=="canonical" else ("comfort",)
+                for density in modes:
                     data=geometry(page,density,label)
                     if width==1680 and label=="pages" and density=="comfort":
                         page.locator("#tracks .strip[data-id='1'] .fader-section").screenshot(
                             path="m1-calibrated-fader-meter-1680.png")
-                if label=="pages":page.locator("#densitySelect").select_option("comfort")
+                if label=="pages":
+                    assert page.locator("#densitySelect").is_hidden()
+                    assert page.locator(".console-body").get_attribute("data-density")=="comfort"
                 math_and_preview(page,label)
                 assert not errors,(label,width,errors)
                 page.close()
             browser.close()
     print("PASS M1: dBFS meter and gain rulers calibrated to physical travel; "
-          "preview demo displays real dBFS percentages, 3 densities × 3 sizes × 3 Pages routes")
+          "preview demo displays real dBFS, source 3 densities × 3 viewports and the approved public comfort view")
 
 if __name__=="__main__":
     main()

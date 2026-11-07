@@ -79,6 +79,20 @@ int main() {
     assert(SpyGraph::alive==1);
     assert(p.publish(makeGraph(8,1,201),0,8)==Publisher::Result::applied);
     { auto v=p.acquire();assert(v.get(8)->prepared->value==201); }
+    {
+        auto live=p.acquire();
+        assert(!p.rebindQuiescent(8,9,[]() noexcept {return true;}));
+        assert(live.get(8) && !live.get(9));
+    }
+    assert(!p.rebindQuiescent(8,9,[]() noexcept {return false;}));
+    assert(p.controlPrepared(8,1) && !p.controlPrepared(9,1));
+    const auto* retained=p.controlPrepared(8,1);
+    assert(p.rebindQuiescent(8,9,[&]() noexcept {
+        auto blocked=p.acquire();
+        return !blocked.get(8) && !blocked.get(9);
+    }));
+    assert(p.controlPrepared(9,1)==retained && !p.controlPrepared(8,1));
+    assert(p.lastRevision()==1);
     p.unpublish();
     assert(p.pollRetirement());
     assert(SpyGraph::alive==0);

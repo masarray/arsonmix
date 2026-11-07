@@ -59,6 +59,12 @@ struct UnifiedLegacyAccepted final {
                fxOwners->setInsertBypass(epoch,revision,id,slot,
                                          instanceId,bypass);
     }
+    bool setFxRackBypass(const DynamicNativeSessionPublisher& publisher,
+                         std::uint64_t epoch,std::uint64_t revision,
+                         ChannelId id,bool bypass) const noexcept {
+        return matches(publisher,epoch,revision) &&
+               fxOwners->setRackBypass(epoch,revision,id,bypass);
+    }
     DynamicChannelFxLeaseBank::Lease leaseFxEditor(
             const DynamicNativeSessionPublisher& publisher,
             std::uint64_t epoch,std::uint64_t revision,ChannelId id,
@@ -179,6 +185,9 @@ public:
         plan.context=owner.get();
         plan.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
             (*static_cast<Bank*>(ctx))(id,l,r,n);
+        };
+        plan.latency=+[](void* ctx,ChannelId id) noexcept {
+            return static_cast<Bank*>(ctx)->latencySamples(id);
         };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
         result.native=publisher.commit(candidate.roster,candidate.request,

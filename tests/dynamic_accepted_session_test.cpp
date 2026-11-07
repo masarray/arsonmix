@@ -235,7 +235,7 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
         w.from=from;w.edgeId=id;return w;
     };
     const std::array<WireChange,3> initial{
-        connect(one,main),connect(two,main),connect(three,main)
+        routeOnly(one,main),routeOnly(two,main),routeOnly(three,main)
     };
     a=session.wireTransaction(1,1,initial,physical,epoch,epoch,true);
     assert(a.ok()&&a.graphRevision==2&&a.edit.createdEdgeIds.size()==3);
@@ -355,6 +355,93 @@ static void verifyAtomicWireTransactionAndZeroSampleHops() {
     assert(a.ok() && a.graphRevision==7);
     assert(findEdge(one,main,7)==chainId && !findEdge(one,two,7));
     assert(render() && near(left[11],.3f*center));
+
+    // MAIN is a valid ROUTE_ONLY destination while the physical output is
+    // armed. GROUP -> MAIN is one exclusive path, never double dry PCM.
+    a=session.wireTransaction(7,7,hop1,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==8);
+    assert(!findEdge(one,main,8) && findEdge(one,two,8));
+    assert(render() && near(left[11],.3f*center));
+    // Deliberately connect an independent 40%-gain parallel send to MAIN.
+    const std::array<WireChange,1> parallelMain{connect(one,main,.4f)};
+    a=session.wireTransaction(8,8,parallelMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==9);
+    const auto parallelEdge=findEdge(one,main,9);
+    assert(parallelEdge && findEdge(one,two,9));
+    assert(render() && near(left[11],.3f*1.4f*center,1e-4f));
+    // ROUTE_ONLY to MAIN promotes that same EdgeId, removes only the
+    // previous primary to GROUP, and forces unity post-fader output.
+    const std::array<WireChange,1> backToMain{routeOnly(one,main)};
+    a=session.wireTransaction(9,9,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==10);
+    const auto* afterMain=session.acceptedRouting(epoch,10);
+    assert(afterMain && afterMain->find(one)->primaryOutput==main);
+    assert(!findEdge(one,two,10) && findEdge(one,main,10)==parallelEdge);
+    assert(std::count_if(afterMain->edges.begin(),afterMain->edges.end(),
+        [&](const auto& edge){return edge.from==one;})==1);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+    a=session.wireTransaction(10,10,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==11);
+    assert(findEdge(one,main,11)==parallelEdge);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+    auto staleMain=session.wireTransaction(10,10,backToMain,
+                                           physical,epoch,epoch,false);
+    assert(staleMain.fault==DynamicAcceptedSession::Fault::staleRoster);
+    assert(session.acceptedGraphRevision()==11);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+
+    // GUI SOURCE ONLY: unplug only the actual accepted primary MAIN edge.
+    // The capture source and other channels stay in the same installed
+    // graph; MAIN is silent until a later explicit WIRE reconnect.
+    const std::array<WireChange,1> sourceOnly{remove(one,parallelEdge)};
+    a=session.wireTransaction(11,11,sourceOnly,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==12);
+    assert(!session.acceptedRouting(epoch,12)->find(one)->primaryOutput.value);
+    assert(!findEdge(one,main,12));
+    assert(session.acceptedPhysicalRequest().sources.size()==1);
+    assert(session.acceptedPhysicalRequest().sources.front().id==one);
+    assert(render() && near(left[11],0.f,1e-5f) &&
+           near(right[11],0.f,1e-5f));
+    // Replug MAIN via the same menu/socket. No external monitor ARM or
+    // hardware source patch is required, and exactly one path resumes PCM.
+    a=session.wireTransaction(12,12,backToMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==13);
+    assert(findEdge(one,main,13)!=0);
+    assert(session.acceptedRouting(epoch,13)->find(one)->primaryOutput==main);
+    assert(render() && near(left[11],.3f*center,1e-4f));
+
+    // Installed PCM regression: a deliberate parallel MAIN send must survive
+    // a later exclusive BUS retarget. The GUI used to reject the successful
+    // readback merely because it saw any MAIN edge, even a NON-primary send.
+    a=session.wireTransaction(13,13,hop1,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==14);
+    assert(findEdge(one,two,14) && !findEdge(one,main,14));
+    const std::array<WireChange,1> extraMain{connect(one,main,.25f)};
+    a=session.wireTransaction(14,14,extraMain,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==15);
+    const auto preservedSend=findEdge(one,main,15);
+    assert(preservedSend && render() &&
+           near(left[11],.3f*1.25f*center,1e-4f));
+    const std::array<WireChange,1> switchBus{routeOnly(one,three)};
+    a=session.wireTransaction(15,15,switchBus,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==16);
+    const auto* preserved=session.acceptedRouting(epoch,16);
+    assert(preserved && preserved->find(one)->primaryOutput==three);
+    assert(!findEdge(one,two,16) && findEdge(one,main,16)==preservedSend);
+    const auto parallelNative=std::find_if(preserved->edges.begin(),
+        preserved->edges.end(),[&](const auto& edge) {
+            return edge.edgeId==preservedSend;
+        });
+    assert(parallelNative!=preserved->edges.end() &&
+           !parallelNative->primaryOutput);
+    assert(render() && near(left[11],.3f*1.25f*center,1e-4f));
+    // Detach the independent parallel MAIN send by the same stable EdgeId,
+    // keeping the BUS primary and returning to exactly one PCM path.
+    const std::array<WireChange,1> removeExtra{remove(one,preservedSend)};
+    a=session.wireTransaction(16,16,removeExtra,physical,epoch,epoch,false);
+    assert(a.ok() && a.graphRevision==17);
+    assert(!findEdge(one,main,17) && findEdge(one,three,17));
+    assert(render() && near(left[11],.3f*center,1e-4f));
     session.unpublish();
     session.pollRetirement();
 }
@@ -449,6 +536,83 @@ static void verifyPrimaryOutKeepsCanonicalEdgeIdentity() {
     session.pollRetirement();
 }
 
+// Real PCM golden regression for a HELD operator fader, not a mouse-up-only
+// scalar. Between each input move, the installed native DSP renders another
+// callback block and must audibly change the waveform. Structural revision
+// stays constant; there is no second callback or graph compilation.
+static void verifyHeldDragIntermediatePcmOnOriginalChannels() {
+    constexpr std::uint64_t epoch=94021;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest physical;
+    physical.physicalInputs=4;
+    physical.maxFrames=64;
+    std::vector<ChannelEdit> initial;
+    for(int i=0;i<10;++i)
+        initial.push_back(add(static_cast<std::size_t>(i),
+                              ChannelRole::input,"HELD ORIGINAL CH"));
+    initial.push_back(add(10,ChannelRole::main,"MAIN",
+                          ProcessingFormat::stereo));
+    const auto accepted=pcm.edit(0,0,initial,physical,epoch,epoch,true);
+    assert(accepted.ok() && accepted.edit.createdIds.size()==11);
+    const auto& ids=accepted.edit.createdIds;
+    const auto main=ids[10];
+    const std::array<ChannelId,4> channels{ids[0],ids[1],ids[4],ids[9]};
+    const std::array<ChannelEdit,4> links{
+        output(channels[0],main),output(channels[1],main),
+        output(channels[2],main),output(channels[3],main)};
+    for(std::size_t i=0;i<channels.size();++i)
+        physical.sources.push_back(
+            {channels[i],static_cast<int>(i),-1,false});
+    const auto patched=pcm.edit(1,1,links,physical,epoch,epoch,true);
+    assert(patched.ok() && pcm.acceptedGraphRevision()==2);
+    std::array<float,64> a{},b{},c{},d{},left{},right{};
+    a.fill(.1f);b.fill(.2f);c.fill(.3f);d.fill(.4f);
+    const float* pins[]{a.data(),b.data(),c.data(),d.data()};
+    const std::array<float,4> signal{.1f,.2f,.3f,.4f};
+    std::array<float,4> levels{1.f,1.f,1.f,1.f};
+    const auto noFx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto renderAndCheck=[&] {
+        assert(pcm.render(epoch,pins,4,left.data(),right.data(),64,
+                          false,noFx));
+        float sum=0.f;
+        for(std::size_t i=0;i<levels.size();++i)
+            sum+=signal[i]*levels[i];
+        assert(near(left[63],sum*center));
+        assert(near(right[63],sum*center));
+        return left[63];
+    };
+    assert(near(renderAndCheck(),center));
+    // These are successive pointermove gain targets with NO pointerup.
+    // Assert actual PCM changes on EACH intermediate value, for every
+    // original input strip whose stable ChannelId is independent of GUI order.
+    for(std::size_t i=0;i<channels.size();++i) {
+        float previous=center;
+        for(const float db:{-6.f,-12.f,-24.f}) {
+            const float linear=std::pow(10.f,db/20.f);
+            assert(pcm.setLiveMix(epoch,2,channels[i],linear,0.f));
+            levels[i]=linear;
+            const float audible=renderAndCheck();
+            assert(audible<previous);
+            previous=audible;
+            assert(near(pcm.acceptedRoster().find(channels[i])->faderLinear,
+                        linear));
+            assert(pcm.acceptedGraphRevision()==2);
+        }
+        // Release is merely the last target: no structural commit and no
+        // newly armed audio path is required to restore the baseline.
+        assert(pcm.setLiveMix(epoch,2,channels[i],1.f,0.f));
+        levels[i]=1.f;
+        assert(near(renderAndCheck(),center));
+    }
+    // A stale epoch/revision cannot mutate an otherwise live fader or PCM.
+    assert(!pcm.setLiveMix(epoch-1,2,channels[2],0.f,0.f));
+    assert(!pcm.setLiveMix(epoch,1,channels[2],0.f,0.f));
+    assert(near(renderAndCheck(),center));
+    pcm.unpublish();
+    pcm.pollRetirement();
+}
+
 // Original CH1-10 do not get a different fader/solo DSP owner from CH11.
 // This is an actual accepted native publisher PCM test, not a mock GUI reducer.
 static void verifyOriginalAndAddedInputsShareNativePcmControls() {
@@ -522,7 +686,121 @@ static void verifyOriginalAndAddedInputsShareNativePcmControls() {
     pcm.pollRetirement();
 }
 
+// Real sample-block regression for DAW semantics: SOURCE ONLY retains its
+// physical input, independent CONNECT to MAIN is a parallel SEND, and the
+// subsequent explicit ROUTE_ONLY promotes that exact edge to primary.
+static void verifySourceOnlyParallelMainVsExclusivePrimaryPcm() {
+    constexpr std::uint64_t ep=99221;
+    constexpr float center=.7071067811865475f;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest io;io.physicalInputs=1;io.maxFrames=64;
+    const std::array<ChannelEdit,2> create{
+        add(0,ChannelRole::input,"VOCAL"),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto state=pcm.edit(0,0,create,io,ep,ep,true);
+    assert(state.ok()&&state.edit.createdIds.size()==2);
+    const auto vocal=state.edit.createdIds[0],main=state.edit.createdIds[1];
+    io.sources={{vocal,0,-1,false}};
+    WireChange primary;primary.kind=WireChange::Kind::routeOnly;
+    primary.from=vocal;primary.to=main;primary.gain=1.f;
+    const std::array<WireChange,1> toMain{primary};
+    state=pcm.wireTransaction(1,1,toMain,io,ep,ep,true);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==2);
+    const auto* first=pcm.acceptedRouting(ep,2);
+    assert(first&&first->edges.size()==1);
+    const auto primaryEdge=first->edges[0].edgeId;
+    std::array<float,64> impulse{},l{},r{};
+    impulse[9]=.25f;
+    const float* pins[]{impulse.data()};
+    const auto render=[&]{
+        return pcm.render(ep,pins,1,l.data(),r.data(),64,false,
+            +[](ChannelId,float*,float*,int) noexcept {});
+    };
+    assert(render()&&near(l[9],.25f*center)&&near(r[9],.25f*center));
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;
+    unplug.from=vocal;unplug.edgeId=primaryEdge;
+    const std::array<WireChange,1> remove{unplug};
+    state=pcm.wireTransaction(2,2,remove,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==3);
+    assert(pcm.acceptedRouting(ep,3)->find(vocal)->primaryOutput.value==0);
+    assert(render()&&near(l[9],0.f)&&near(r[9],0.f));
+    // No source deletion: physical impulse remains available after unplug.
+    WireChange parallel;parallel.kind=WireChange::Kind::connect;
+    parallel.from=vocal;parallel.to=main;parallel.gain=.4f;
+    const std::array<WireChange,1> sendToMain{parallel};
+    state=pcm.wireTransaction(3,3,sendToMain,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==4);
+    const auto* withSend=pcm.acceptedRouting(ep,4);
+    assert(withSend&&withSend->find(vocal)->primaryOutput.value==0);
+    assert(withSend->find(vocal)->parallelSends.size()==1);
+    assert(withSend->edges.size()==1&&!withSend->edges[0].primaryOutput);
+    const auto parallelEdge=withSend->edges[0].edgeId;
+    assert(render()&&near(l[9],.25f*.4f*center)&&
+           near(r[9],.25f*.4f*center));
+    // Exclusive routing promotes existing EdgeId; no double dry mix.
+    state=pcm.wireTransaction(4,4,toMain,io,ep,ep,false);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==5);
+    const auto* exclusive=pcm.acceptedRouting(ep,5);
+    assert(exclusive&&exclusive->edges.size()==1);
+    assert(exclusive->edges[0].edgeId==parallelEdge);
+    assert(exclusive->edges[0].primaryOutput);
+    assert(exclusive->find(vocal)->parallelSends.empty());
+    assert(exclusive->find(vocal)->primaryOutput==main);
+    assert(render()&&near(l[9],.25f*center)&&near(r[9],.25f*center));
+    // A stale EdgeId must never disconnect the promoted primary.
+    const std::array<WireChange,1> staleRemove{unplug};
+    const auto rejected=pcm.wireTransaction(5,5,staleRemove,io,ep,ep,false);
+    assert(rejected.fault==DynamicAcceptedSession::Fault::editRejected);
+    assert(pcm.acceptedGraphRevision()==5);
+    assert(render()&&near(l[9],.25f*center));
+}
+
+// Actual GROUP post-insert PCM must be silenced by its own realtime MUTE,
+// with no graph rebuild, physical source reset or lost monitor state.
+static void verifyGroupMuteAffectsRealNativePcm() {
+    constexpr std::uint64_t ep=99222;
+    DynamicAcceptedSession pcm;
+    DynamicGraphRequest io;io.physicalInputs=1;io.maxFrames=64;
+    const std::array<ChannelEdit,3> created{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::group,"BUS A",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto state=pcm.edit(0,0,created,io,ep,ep,true);
+    assert(state.ok()&&state.edit.createdIds.size()==3);
+    const auto voice=state.edit.createdIds[0];
+    const auto bus=state.edit.createdIds[1];
+    const auto main=state.edit.createdIds[2];
+    io.sources={{voice,0,-1,false}};
+    const std::array<ChannelEdit,2> serial{output(voice,bus),output(bus,main)};
+    state=pcm.edit(1,1,serial,io,ep,ep,true);
+    assert(state.ok()&&pcm.acceptedGraphRevision()==2);
+    std::array<float,64> mono{},l{},r{};
+    mono.fill(.25f);
+    const float* pins[]{mono.data()};
+    const auto render=[&]{
+        return pcm.render(ep,pins,1,l.data(),r.data(),64,false,
+            +[](ChannelId,float*,float*,int) noexcept {});
+    };
+    assert(render());
+    const float audible=l[63];
+    assert(audible>.05f&&near(r[63],audible));
+    assert(pcm.setLiveMuteSolo(ep,2,bus,true,false));
+    assert(render()&&near(l[63],0.f,1e-4f)&&near(r[63],0.f,1e-4f));
+    assert(pcm.acceptedRoster().find(bus)->mute);
+    assert(pcm.setLiveMuteSolo(ep,2,bus,false,false));
+    assert(render()&&near(l[63],audible,1e-4f)&&near(r[63],audible,1e-4f));
+    assert(!pcm.setLiveMuteSolo(ep-1,2,bus,true,false));
+    assert(!pcm.setLiveMuteSolo(ep,1,bus,true,false));
+    assert(pcm.acceptedGraphRevision()==2);
+    assert(render()&&near(l[63],audible,1e-4f));
+}
+
 int main() {
+    verifyGroupMuteAffectsRealNativePcm();
+    verifySourceOnlyParallelMainVsExclusivePrimaryPcm();
+    verifyHeldDragIntermediatePcmOnOriginalChannels();
     verifyOriginalAndAddedInputsShareNativePcmControls();
     verifyPrimaryOutKeepsCanonicalEdgeIdentity();
     verifyDefaultNativeMainEdgeAndDisconnectedRestore();

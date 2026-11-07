@@ -33,9 +33,11 @@ inline bool nativeV8Number(const juce::var& value,double& n) {
 // A structurally correct bus is NOT proof that its IDs own the installed
 // JUCE callback. The real PCM owner must explicitly admit the producer.
 // G0 must pass false and keep the accepted GUI graph unmodified.
-inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
-                                    bool installedChannelIdCallbackAdmitted) {
-    if(!installedChannelIdCallbackAdmitted)return false;
+enum class NativeGraphProjection { installed, retained };
+
+inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
+                               NativeGraphProjection mode) {
+    const bool installed=mode==NativeGraphProjection::installed;
     const auto device=snapshot.getProperty("device",{});
     if(!nativeV8Decimal(device.getProperty("epoch",{})))return false;
     const auto rawRows=bus.getProperty("channels",{}),rawEdges=bus.getProperty("edges",{});
@@ -81,24 +83,42 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
         ch->setProperty("controls",juce::var(controls.release()));
         juce::Array<juce::var> fx;
         for(const auto& item:*inserts.getArray()){
+            // This integration/ header is the one included by the live native
+            // runtime snapshot. The src/ counterpart is NOT its replacement.
+            // id is the installed processor token; catalogId is the vendor
+            // identity used for the command and subsequent ACK/readback.
             const auto token=item.getProperty("instanceId",{}),label=item.getProperty("name",{});
+            const auto catalog=item.getProperty("id",{});
             const auto bypass=item.getProperty("bypassed",{});
-            if(!token.isString()||!label.isString()||!bypass.isBool())return false;
+            if(!token.isString()||token.toString().isEmpty()||
+               !catalog.isString()||catalog.toString().isEmpty()||
+               catalog.toString().getNumBytesAsUTF8()>256||
+               !label.isString()||!bypass.isBool())return false;
             auto insert=std::make_unique<juce::DynamicObject>();
-            insert->setProperty("id",token);insert->setProperty("name",label);
+            insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
+            insert->setProperty("name",label);
             insert->setProperty("bypassed",bypass);
+            const auto latency=item.getProperty("latencySamples",{});
+            if(latency.isInt())insert->setProperty("latencySamples",latency);
+            const auto changed=item.getProperty("latencyChanged",{});
+            if(changed.isBool())insert->setProperty("latencyChanged",changed);
             fx.add(juce::var(insert.release()));
         }
         ch->setProperty("inserts",juce::var(fx));
+        const auto rackBypassed=row.getProperty("fxRackBypassed",{});
+        if(!rackBypassed.isVoid()) {
+            if(!rackBypassed.isBool())return false;
+            ch->setProperty("fxRackBypassed",rackBypassed);
+        }
         ch->setProperty("sends",juce::var(juce::Array<juce::var>{}));
-        if(role!="INPUT"){
+        { // INPUT channels can receive WIRE PCM as well as physical capture.
             auto dst=std::make_unique<juce::DynamicObject>();
             dst->setProperty("id",id);dst->setProperty("name",name);
             dst->setProperty("role",role);
             destinations.add(juce::var(dst.release()));
         }
         double left=0.,right=0.;
-        if(nativeV8Number(row.getProperty("peakL",{}),left) &&
+        if(installed && nativeV8Number(row.getProperty("peakL",{}),left) &&
            nativeV8Number(row.getProperty("peakR",{}),right) &&
            left>=0.&&right>=0.){
             auto peak=std::make_unique<juce::DynamicObject>();
@@ -148,17 +168,28 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
     if(!g||!t||!graph.getProperty("capabilities",{}).isObject())return false;
     // All validation completed before anything becomes authoritative.
     g->setProperty("revision",rev);g->setProperty("rosterRevision",roster);
+    const auto latency=bus.getProperty("latencySamples",{});
+    if(latency.isInt())g->setProperty("latencySamples",latency);
     g->setProperty("mainChannelId",mainId);
     g->setProperty("channels",juce::var(channels));
     g->setProperty("destinations",juce::var(destinations));
     g->setProperty("edges",juce::var(wires));
     if(auto* caps=graph.getProperty("capabilities",{}).getDynamicObject()){
-        caps->setProperty("callbackOwnsChannelIds",true);
-        juce::Array<juce::var> ops;ops.add("APPLY_WIRE_TRANSACTION");
+        caps->setProperty("callbackOwnsChannelIds",installed);
+        juce::Array<juce::var> ops;
+        if(installed)ops.add("APPLY_WIRE_TRANSACTION");
+        const auto actual=installed?bus.getProperty("supportedOps",{}):juce::var{};
+        if(const auto* list=actual.getArray())
+            if(list->contains(juce::var("NATIVE_SET_WIRE_GAIN")))ops.add("SET_WIRE_GAIN");
         caps->setProperty("supportedOps",juce::var(ops));
     }
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));
     // productionCallbackLive deliberately stays FALSE until full FAT.
     return true;
+}
+inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
+                                    bool installedChannelIdCallbackAdmitted) {
+    return installedChannelIdCallbackAdmitted &&
+           projectNativeGraph(snapshot,bus,NativeGraphProjection::installed);
 }
 } // namespace armix::console

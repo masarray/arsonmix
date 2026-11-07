@@ -6,6 +6,7 @@ Tests the actually published /preview/ bundle, not just /preview-v2 source.
 from pathlib import Path
 import subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 from pages_wire_incoming_v43_smoke import center
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -61,10 +62,8 @@ def main():
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
     "--out",str(dist),"--sha","v45-browser","--branch","v45"],
     cwd=ROOT,capture_output=True,text=True,check=True)
-  public=dist/"preview/mixer.html"
-  assert public.read_bytes()==HTML.read_bytes(),"Pages did not publish canonical V45 console"
+  public=published_console(dist)
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==STYLE.read_bytes(),"Pages lost WIRE CSS"
-  assert "assets/mixer-wire-dots.css?v=v59-selected-wire-quiet" in public.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680,1920):
@@ -106,9 +105,13 @@ def main():
     p.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     restored=channel_ring(dest)
     assert restored["arrival"]=="true" and restored["border"]==connected["border"] and restored["background"]==connected["background"],(width,"visible accepted cable must relight destination",restored)
-    # Compact is a spatial fallback, not a different hit-test or route state.
+    # The historical source supports Compact; the compiled public GUI
+    # deliberately hides the selector. Never simulate an unsupported mode.
     if width==1366:
-     p.locator('#densitySelect').select_option(label="Compact")
+     picker=p.locator('#densitySelect')
+     if picker.is_visible():picker.select_option(label="Compact")
+     else:
+      assert picker.is_hidden() and body.get_attribute("data-density")=="comfort"
      label_geometry(p,width)
     assert not errors,(width,errors)
     p.close()

@@ -62,7 +62,10 @@ test('bypass is sample-smoothed by one original CH1 DSP owner for M4 and native 
    'native and M4 must share the original CH1 sample-accurate DSP owner');
  const originalDSP=e.slice(start,legacy);
  const adapters=e.slice(legacy,end);
- assert.match(originalDSP,/bypass\.request\(graph\.bypassFlags/);
+ assert.match(originalDSP,/bypass\.request\(graph\.rackBypassed\.load/);
+ assert.match(originalDSP,/graph\.bypassFlags\[physical\]\.load/);
+ assert.match(originalDSP,/\|\|/, "rack override must OR with individual insert bypass");
+
  assert.match(originalDSP,/slot\.processor->processBlock\(buffer,midi\)/);
  assert.match(originalDSP,/bypass\.transitioning\(\)/);
  assert.match(originalDSP,/graph\.dryScratch\.getWritePointer\(0\)/);
@@ -186,14 +189,20 @@ test('R0B B3 always-on native 10CH startup is verified, muted and unpatched',()=
 test('R0B B3 preserves diagnostic isolation without exposing an accepted patch',()=>{
  const diagnostic=e.slice(e.indexOf('juce::String setDiagnosticRoute'),
                           e.indexOf('armix::diagnostics::Route diagnosticRoute()'));
- assert.match(diagnostic,/dryRoutingLab_\.hasExplicitRoute\(\)/);
+ // Endpoint isolation is allowed for the unedited silent graph, but an
+ // authored native WIRE/FX session must never be discarded on device change.
+ assert.match(diagnostic,/dryRoutingLab_\.hasAuthoredMixerContent\(\)/);
  assert.match(diagnostic,/dryRoutingLab_\.disable\(\)/);
  assert.match(diagnostic,/startUnpatchedProductionSession\(\)/);
  assert.match(diagnostic,/resumeVerifiedDirectRoute\(\)/);
  const manual=e.slice(e.indexOf('void beginManualAudioSetup()'),
                       e.indexOf('bool independentClockActive()'));
  assert.match(manual,/setOutputMuted\(true\)/);
- assert.match(manual,/dryRoutingLab_\.disable\(\)/);
+ assert.match(manual,/secondaryOutput_\.disarm\(\)/);
+ assert.doesNotMatch(manual,/dryRoutingLab_\.disable\(\)/);
+ assert.match(manual,/decideDeviceSession\(/);
+ assert.match(manual,/Decision::retainBoundMixer/);
+ assert.match(manual,/Decision::retainUnboundMixer/);
  assert.match(manual,/startUnpatchedProductionSession\(\)/);
  assert.doesNotMatch(manual,/setOutputMuted\(false\)/);
 });
@@ -221,7 +230,7 @@ test('R0B B3 never processes MASTER FX, strips or AUX until explicit ACK',()=>{
                        lab.indexOf('juce::var status('));
   const zero=body.indexOf('FloatVectorOperations::clear(outputs[c],frames)');
   const guard=body.indexOf('!userPatched_.load(std::memory_order_acquire)');
-  const lease=body.indexOf('publisher_.acquire()');
+  const lease=body.indexOf('publisher_.acquire(channelIdRender)');
   const dsp=body.indexOf('snapshot->prepared->process(');
   assert.ok(zero>=0&&guard>zero&&lease>guard&&dsp>lease);
   assert.match(body,/if\(!userPatched_\.load\(std::memory_order_acquire\)\)/);

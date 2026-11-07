@@ -26,6 +26,9 @@ on:
       - 'web/monitor.js'
       - 'tests/*.cpp'
       - 'scripts/package_native_windows.ps1'
+      - 'scripts/build_verify_windows_installer.ps1'
+      - 'installer/**'
+      - 'tests/windows_installer_contract_test.mjs'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
@@ -64,6 +67,9 @@ on:
       - 'web/monitor.js'
       - 'tests/*.cpp'
       - 'scripts/package_native_windows.ps1'
+      - 'scripts/build_verify_windows_installer.ps1'
+      - 'installer/**'
+      - 'tests/windows_installer_contract_test.mjs'
       - 'scripts/verify_native_windows_artifact.ps1'
       - 'scripts/collect_hardware_fat_windows.ps1'
       - 'scripts/console_v6_fat_gate.mjs'
@@ -121,7 +127,7 @@ jobs:
           node scripts/check_console_puzzle.mjs
           node --check web/approved-native-bridge.js
           node --check web/approved-native-contract.js
-          node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/live_graph_contract_test.mjs
+          node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
   windows-build:
@@ -197,6 +203,7 @@ jobs:
             'tests/independent_clock_adapter_contract_test.mjs'
             'tests/direct_restore_recovery_contract_test.mjs'
             'tests/native_artifact_packaging_contract_test.mjs'
+            'tests/windows_installer_contract_test.mjs'
             'tests/portable_workspace_contract_test.mjs'
             'tests/plugin_vault_contract_test.mjs'
             'tests/plugin_ui_contract_test.mjs'
@@ -217,7 +224,8 @@ jobs:
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
       - name: Build executable and native RT tests
-        run: cmake --build build --config Release --target ARMixConsole ARMixFactoryFxRegistryTests ARMixFxOrderTests ARMixFxStructuralHandoffTests ARMixMixerRoutingTests ARMixChannelRoutingContractTests ARMixChannelSendTests ARMixPreparedMixerBlockTests ARMixLiveRoutingEpochTests ARMixJucePortMaskTests ARMixNativeMixerSessionTests ARMixNativeDrySendTests ARMixLiveChannelFxTests ARMixDedicatedAuxBusTests ARMixTenChannelLiveControlTests ARMixWorkspaceTests ARMixVaultTests ARMixBackupTests ARMixOrbitPhaseTests ARMixOrbitControlTests ARMixOrbitMotionTests ARMixOrbitDistanceTests ARMixFxBypassEnvelopeTests ARMixDearVrPolarPolicyTests ARMixRTTests ARMixPresetTests ARMixShowSchemaTests ARMixShowStoreTests ARMixLiveShowCaptureTests ARMixNativeMasterLoudnessTests ARMixDiagnosticTests ARMixClockBridgeTests ARMixVirtualClockSoakTests ARMixCadenceTests ARMixCaptureBoundaryTests ARMixCrackleWindowTests ARMixHealthTests ARMixPolicyTests ARMixPeriodEvidenceTests ARMixLifecycleTests ARMixWasapiProbeTests ARMixDualJuceTests ARMixClockSizingTests ARMixIndependentFormatTests ARMixRecoveryTests ARMixStreamWatchdogTests ARMixBridgeContinuityTests ARMixEndpointPolicyTests ARMixEndpointGuardTests ARMixAsioPolicyTests ARMixAsioBackendTests ARMixAsioRegistryIdentityTests ARMixDirectFenceTests --parallel 2
+        # Build the default CMake graph so every registered CTest executable is built.
+        run: cmake --build build --config Release --parallel 2
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
@@ -238,6 +246,28 @@ jobs:
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install Inno Setup 6 compiler if missing
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
+              -not (Test-Path -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            choco install innosetup --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compiler installation failed' }
+          }
+      - name: Compile and validate per-user Windows RC installer from exact FAT PE
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        shell: pwsh
+        run: |
+          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        with:
+          name: ArSonMix-Windows-Installer-UNQUALIFIED-${{ github.run_id }}
+          path: installer-output/
+          if-no-files-found: error
+          retention-days: 14
       # Optional manual FAT only: never churn experimental ZIPs per commit.
       # The unqualified artifact is NOT a stable release or physical audio proof.
       - uses: actions/upload-artifact@v4

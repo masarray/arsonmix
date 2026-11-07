@@ -47,8 +47,7 @@ test('restore retry is bounded and disabled on success, explicit direct and setu
   assert.match(main,/SMART_CLOCK_RECOVERY/);
   assert.match(main,/annotateRecovery \(status\)/);
   assert.match(main,/annotateRecovery \(state\)/);
-  assert.match(cmake,/BoundedDirectDeviceRecovery/);
-  assert.match(workflow,/ARMixRecoveryTests/);
+  assert.match(cmake,/add_test\(NAME BoundedDirectDeviceRecovery COMMAND ARMixRecoveryTests\)/);
   assert.match(workflow,/direct_restore_recovery_contract_test.mjs/);
 });
 test('verified native FAT package preserves actual beta live-bridge provenance, not older offline-only claim',()=>{

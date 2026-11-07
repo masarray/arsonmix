@@ -1,4 +1,4 @@
-"""Product UX FAT (real Chromium) for the SINGLE assembled public /preview/ GUI without native Windows release.
+"""Product UX FAT (real Chromium) for the SINGLE assembled /preview/ and native WebView HTML.
 
 Checks rendering in CSS-pixel viewports corresponding to 100/125/150% Windows
 display scaling. DeviceScaleFactor alone does not reduce usable CSS height,
@@ -235,13 +235,24 @@ def check_identity_zero_reflow(page,width,height,scale,channel):
           flush=True)
 
 def main():
-    import sys
+    import argparse
     import subprocess
-    with tempfile.TemporaryDirectory(prefix="arsonmix-pages-ux-fat-") as td, sync_playwright() as p:
-        subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
-                        '--out',td,'--sha','pages-gui-qualified'],
-                       cwd=ROOT,check=True)
-        staged=Path(td)/'preview'
+    import sys
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--public',action='store_true',help='Exercise the public Pages bundle')
+    args=parser.parse_args()
+    surface='public Pages' if args.public else 'native-assembled'
+    with tempfile.TemporaryDirectory(prefix="arsonmix-ux-fat-") as td, sync_playwright() as p:
+        if args.public:
+            subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
+                            '--out',td,'--sha','pages-gui-qualified'],
+                           cwd=ROOT,check=True)
+            staged=Path(td)/'preview'
+        else:
+            sys.path.insert(0,str(ROOT/'scripts'))
+            import build_approved_native_gui as build
+            staged=Path(td)/'native'
+            build.stage(staged)
         browser=p.chromium.launch(headless=True)
         try:
             for width,height,scale in CASES:
@@ -253,6 +264,6 @@ def main():
                 assert not errors,(width,height,errors)
                 page.close()
         finally:browser.close()
-    print('PASS operator UX: actual public Pages Chromium layout/interaction across display scales')
+    print(f'PASS operator UX: actual {surface} Chromium layout/interaction across display scales')
 
 if __name__=='__main__':main()

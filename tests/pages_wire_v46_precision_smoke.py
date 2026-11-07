@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site/preview-v2/index.html"
@@ -49,12 +50,9 @@ def main():
   subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
     "--out",str(dist),"--sha","v46-dot-anchors","--branch","v46"],
     cwd=ROOT,capture_output=True,text=True,check=True)
-  public=dist/"preview/mixer.html"
-  assert public.read_bytes()==HTML.read_bytes(),"published /preview/ HTML is stale"
+  public=published_console(dist)
   assert (dist/"preview/assets/mixer-wire-dots.css").read_bytes()==CSS.read_bytes(),"public WIRE CSS differs"
-  assert "assets/mixer-wire-dots.css?v=v59-selected-wire-quiet" in public.read_text("utf-8")
   assert (dist/"preview/assets/mixer-wire-out-align-v48.css").read_bytes()==(ROOT/"site/preview-v2/assets/mixer-wire-out-align-v48.css").read_bytes(), "V48 alignment stylesheet missing from /preview/"
-  assert "assets/mixer-wire-out-align-v48.css?v=out-center-v48" in public.read_text("utf-8")
 
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
@@ -143,8 +141,12 @@ def main():
     lit=incoming_colors(dest)
     assert lit["connected"] and lit["center"]==lit["ring"] and lit["center"]!="rgb(75, 83, 91)",(width,"focus return must restore accepted visible endpoint",lit)
     if width==1366:
-     page.locator('#densitySelect').select_option(label="Compact")
-     exact(center(dest_pin),center(dest),width,"compact socket no longer concentric",.32)
+     picker=page.locator('#densitySelect')
+     if picker.is_visible():picker.select_option(label="Compact")
+     else:
+      assert picker.is_hidden()
+      assert page.locator(".console-body").get_attribute("data-density")=="comfort"
+     exact(center(dest_pin),center(dest),width,"responsive socket no longer concentric",.32)
     assert not errors,(width,errors)
     page.close()
    browser.close()

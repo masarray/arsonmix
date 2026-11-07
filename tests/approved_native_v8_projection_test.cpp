@@ -33,6 +33,10 @@ struct NativeControlProbe {
         lastEpoch=e;lastRevision=r;lastId=id.value;
         lastMute=m;lastSolo=s;return true;
     }
+    bool setNativeBusMuteSolo(std::uint64_t e,std::uint64_t r,
+                              armix::mixer::ChannelId id,bool m,bool s) {
+        return setNativeInputMuteSolo(e,r,id,m,s);
+    }
 };
 static juce::var parse(const char* bytes) {
     auto json=juce::JSON::parse(juce::String::fromUTF8(bytes));
@@ -70,6 +74,38 @@ static juce::var realBusReadbackFixture() {
       ]
     })JSON");
 }
+static void nativeInsertCatalogInstanceProjectionRegression() {
+    auto source=realBusReadbackFixture();
+    auto item=std::make_unique<juce::DynamicObject>();
+    item->setProperty("instanceId","vst3-instance-unique-7");
+    item->setProperty("id","vendor.eq.catalog");
+    item->setProperty("name","Vendor EQ");
+    item->setProperty("bypassed",false);
+    juce::Array<juce::var> inserts;
+    inserts.add(juce::var(item.release()));
+    source.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("inserts",juce::var(inserts));
+    source.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("fxRackBypassed",true);
+    auto snapshot=canonicalSnapshot();
+    assert(projectApprovedNativeV8(snapshot,source,true));
+    const auto live=snapshot.getProperty("graph",{})
+        .getProperty("channels",{})[0].getProperty("inserts",{})[0];
+    assert(live.getProperty("id","").toString()=="vst3-instance-unique-7");
+    assert(live.getProperty("catalogId","").toString()=="vendor.eq.catalog");
+    assert(!static_cast<bool>(live.getProperty("bypassed",true)));
+    assert(static_cast<bool>(snapshot.getProperty("graph",{})
+        .getProperty("channels",{})[0].getProperty("fxRackBypassed",false)));
+    // A missing catalog token must not be projected as a verified processor.
+    auto invalid=juce::JSON::parse(juce::JSON::toString(source,false));
+    invalid.getProperty("channels",{})[0].getProperty("inserts",{})[0]
+        .getDynamicObject()->removeProperty("id");
+    auto untouched=canonicalSnapshot();
+    const auto before=juce::JSON::toString(untouched,false);
+    assert(!projectApprovedNativeV8(untouched,invalid,true));
+    assert(juce::JSON::toString(untouched,false)==before);
+}
+
 static void noMutationOnReject(juce::var snapshot,juce::var bus,bool admitted) {
     const auto before=juce::JSON::toString(snapshot,false);
     assert(!projectApprovedNativeV8(snapshot,bus,admitted));
@@ -243,6 +279,289 @@ static void controlIntentTranslationCases(const juce::var& canonical,
 }
 
 
+// P1 WIRE gateway regression: all ChannelId/EdgeId conversion is validated
+// on the CONTROL thread. A test probe is not a hardware PCM producer.
+struct NativeWireProbe : NativeControlProbe {
+    std::uint64_t epoch=0,pcmRevision=0,rosterRevision=0;
+    std::vector<armix::mixer::WireChange> applied;
+    // Match the actual LiveDryRoutingLab::NativeBusResult ABI.
+    struct Result { bool accepted=false; const char* error="NATIVE_REJECTED"; };
+    Result applyNativeWireTransaction(std::uint64_t ep,std::uint64_t rev,
+        std::uint64_t roster,std::span<const armix::mixer::WireChange> edits) {
+        epoch=ep;pcmRevision=rev;rosterRevision=roster;
+        applied.assign(edits.begin(),edits.end());
+        return {true,""};
+    }
+};
+// Processing-width intent is an admitted ChannelId operation, not the M4
+// channel ordinal. Probe tests exact 64-bit IDs without claiming hardware.
+struct NativeFormatProbe : NativeControlProbe {
+    std::uint64_t epoch=0,revision=0,rosterRevision=0,id=0;
+    armix::mixer::ProcessingFormat width=armix::mixer::ProcessingFormat::mono;
+    struct Result {bool accepted=false;const char* error="REJECTED";};
+    Result editNativeProcessingFormat(std::uint64_t ep,std::uint64_t rev,
+        std::uint64_t roster,armix::mixer::ChannelId target,
+        armix::mixer::ProcessingFormat next) {
+        epoch=ep;revision=rev;rosterRevision=roster;
+        id=target.value;width=next;
+        return {true,""};
+    }
+};
+static void approvedNativeMstTranslationRegression() {
+    auto installed=realBusReadbackFixture();
+    juce::Array<juce::var> nativeOps;
+    nativeOps.add("NATIVE_SET_PROCESSING_FORMAT");
+    installed.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto accepted=canonicalSnapshot();
+    assert(projectApprovedNativeV8(accepted,installed,true));
+    juce::Array<juce::var> publicOps;
+    publicOps.add("SET_PROCESSING_FORMAT");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("format","STEREO");
+    auto command=std::make_unique<juce::DynamicObject>();
+    command->setProperty("requestId","native-mst-test-1");
+    command->setProperty("deviceEpoch","91");
+    command->setProperty("baseGraphRevision","25");
+    command->setProperty("baseRosterRevision","9");
+    command->setProperty("targetChannelId","9007199254740993");
+    command->setProperty("operation","SET_PROCESSING_FORMAT");
+    command->setProperty("payload",juce::var(payload.release()));
+    auto intent=juce::var(command.release());
+    const auto result=translateApprovedNativeControl(intent,accepted,installed);
+    assert(result.ok());
+    assert(result.translated.getProperty("operation","").toString()
+           =="NATIVE_SET_PROCESSING_FORMAT");
+    NativeFormatProbe probe;
+    assert(executeApprovedNativeControl(probe,result.translated));
+    assert(probe.epoch==91 && probe.revision==25 && probe.rosterRevision==9);
+    assert(probe.id==9007199254740993ULL);
+    assert(probe.width==armix::mixer::ProcessingFormat::stereo);
+
+    auto stale=juce::JSON::parse(juce::JSON::toString(intent,false));
+    stale.getDynamicObject()->setProperty("baseRosterRevision","8");
+    assert(!translateApprovedNativeControl(stale,accepted,installed).ok());
+    auto wrong=juce::JSON::parse(juce::JSON::toString(intent,false));
+    wrong.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("format","MONO");
+    assert(translateApprovedNativeControl(wrong,accepted,installed).error
+           =="INVALID_NATIVE_PROCESSING_FORMAT");
+    auto main=juce::JSON::parse(juce::JSON::toString(intent,false));
+    main.getDynamicObject()->setProperty("targetChannelId","18446744073709551615");
+    assert(!translateApprovedNativeControl(main,accepted,installed).ok());
+    auto noNative=juce::JSON::parse(juce::JSON::toString(installed,false));
+    noNative.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(juce::Array<juce::var>{}));
+    assert(!translateApprovedNativeControl(intent,accepted,noNative).ok());
+}
+
+static void approvedNativeGroupMuteSoloRegression() {
+    auto installed=realBusReadbackFixture();
+    auto group=std::make_unique<juce::DynamicObject>();
+    group->setProperty("id","9007199254740994");
+    group->setProperty("name","Bus A");
+    group->setProperty("role","GROUP");
+    group->setProperty("format","STEREO");
+    group->setProperty("primaryOutput","0");
+    group->setProperty("fader",1.0);
+    group->setProperty("pan",0.0);
+    group->setProperty("mute",false);
+    group->setProperty("solo",false);
+    group->setProperty("inserts",juce::var(juce::Array<juce::var>{}));
+    installed.getProperty("channels",{}).getArray()->add(
+        juce::var(group.release()));
+    juce::Array<juce::var> nativeOps;nativeOps.add("NATIVE_SET_BUS_MUTE_SOLO");
+    installed.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto publicSnapshot=canonicalSnapshot();
+    assert(projectApprovedNativeV8(publicSnapshot,installed,true));
+    juce::Array<juce::var> publicOps;
+    publicOps.add("SET_MUTE");publicOps.add("SET_SOLO");
+    publicSnapshot.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    auto makeRequest=[&](const char* op,bool newValue,const char* id){
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("value",newValue);
+        auto request=std::make_unique<juce::DynamicObject>();
+        request->setProperty("requestId","group-control-1");
+        request->setProperty("deviceEpoch","91");
+        request->setProperty("baseGraphRevision","25");
+        request->setProperty("baseRosterRevision","9");
+        request->setProperty("targetChannelId",id);
+        request->setProperty("operation",op);
+        request->setProperty("payload",juce::var(payload.release()));
+        return juce::var(request.release());
+    };
+    NativeControlProbe probe;
+    const auto busId="9007199254740994";
+    auto muted=translateApprovedNativeControl(
+        makeRequest("SET_MUTE",true,busId),publicSnapshot,installed);
+    assert(muted.ok());
+    assert(muted.translated.getProperty("operation","").toString()==
+           "NATIVE_SET_BUS_MUTE_SOLO");
+    assert(executeApprovedNativeControl(probe,muted.translated));
+    assert(probe.lastId==9007199254740994ULL&&probe.lastMute&&!probe.lastSolo);
+    auto solo=translateApprovedNativeControl(
+        makeRequest("SET_SOLO",true,busId),publicSnapshot,installed);
+    assert(solo.ok());
+    assert(executeApprovedNativeControl(probe,solo.translated));
+    assert(probe.lastSolo&&!probe.lastMute);
+    // MAIN remains immutable through the BUS-specific control gate.
+    auto denied=translateApprovedNativeControl(
+        makeRequest("SET_MUTE",true,"18446744073709551615"),
+        publicSnapshot,installed);
+    assert(!denied.ok());
+}
+
+static void approvedNativeVst3LoadContractRegression(
+        const juce::var& canonical,const juce::var& producer) {
+    // Native VST3 command admission is independent of a fabricated vendor
+    // fixture. No processor is created here: the real JUCE host resolves
+    // the opaque catalog key and the live publisher proves PCM after ACK.
+    auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
+    auto bus=juce::JSON::parse(juce::JSON::toString(producer,false));
+    juce::Array<juce::var> pubOps,nativeOps;
+    pubOps.add("LOAD_INSERT");
+    nativeOps.add("NATIVE_LOAD_INSERT");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(pubOps));
+    bus.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("catalogId","test.vendor.vst3");
+    payload->setProperty("slot",0);
+    auto intent=std::make_unique<juce::DynamicObject>();
+    intent->setProperty("operation","LOAD_INSERT");
+    intent->setProperty("requestId","fx-canonical-test");
+    intent->setProperty("targetChannelId","9007199254740993");
+    intent->setProperty("deviceEpoch","91");
+    intent->setProperty("baseGraphRevision","25");
+    intent->setProperty("baseRosterRevision","9");
+    intent->setProperty("payload",juce::var(payload.release()));
+    const juce::var request(intent.release());
+    const auto translated=translateApprovedNativeControl(request,accepted,bus);
+    assert(translated.ok());
+    assert(translated.translated.getProperty("operation","").toString()
+           =="NATIVE_LOAD_INSERT");
+    assert(translated.translated.getProperty("payload",{})
+           .getProperty("catalogId","").toString()=="test.vendor.vst3");
+    const auto noChange=[&](juce::var cmd,juce::var live,juce::var native){
+        const auto before=juce::JSON::toString(native,false);
+        const auto result=translateApprovedNativeControl(cmd,live,native);
+        assert(!result.ok()&&!result.translated.isObject());
+        assert(juce::JSON::toString(native,false)==before);
+    };
+    auto stale=juce::JSON::parse(juce::JSON::toString(request,false));
+    stale.getDynamicObject()->setProperty("baseGraphRevision","24");
+    noChange(stale,accepted,bus);
+    auto gap=juce::JSON::parse(juce::JSON::toString(request,false));
+    gap.getProperty("payload",{}).getDynamicObject()->setProperty("slot",1);
+    noChange(gap,accepted,bus);
+    auto empty=juce::JSON::parse(juce::JSON::toString(request,false));
+    empty.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("catalogId","");
+    noChange(empty,accepted,bus);
+    auto unsupported=juce::JSON::parse(juce::JSON::toString(bus,false));
+    unsupported.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(juce::Array<juce::var>{}));
+    noChange(request,accepted,unsupported);
+    auto falseRole=juce::JSON::parse(juce::JSON::toString(accepted,false));
+    falseRole.getProperty("graph",{}).getProperty("channels",{})[0]
+             .getDynamicObject()->setProperty("role","MAIN");
+    noChange(request,falseRole,bus);
+}
+static void approvedWireTranslationRegression(const juce::var& canonical,
+                                                const juce::var& producer) {
+    auto accepted=juce::JSON::parse(juce::JSON::toString(canonical,false));
+    auto bus=juce::JSON::parse(juce::JSON::toString(producer,false));
+    juce::Array<juce::var> publicOps,nativeOps;
+    publicOps.add("APPLY_WIRE_TRANSACTION");
+    nativeOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    accepted.getProperty("graph",{}).getProperty("capabilities",{})
+        .getDynamicObject()->setProperty("supportedOps",juce::var(publicOps));
+    bus.getDynamicObject()->setProperty("supportedOps",juce::var(nativeOps));
+    const juce::String id="9007199254740993";
+    const juce::String edge="9223372036854775808";
+    auto request=std::make_unique<juce::DynamicObject>();
+    request->setProperty("requestId","p1-wire-control-test");
+    request->setProperty("operation","APPLY_WIRE_TRANSACTION");
+    request->setProperty("targetChannelId",id);
+    request->setProperty("deviceEpoch","91");
+    request->setProperty("baseGraphRevision","25");
+    request->setProperty("baseRosterRevision","9");
+    auto one=std::make_unique<juce::DynamicObject>();
+    one->setProperty("op","REMOVE");
+    one->setProperty("from",id);
+    one->setProperty("edgeId",edge);
+    juce::Array<juce::var> changes;changes.add(juce::var(one.release()));
+    auto payload=std::make_unique<juce::DynamicObject>();
+    payload->setProperty("changes",juce::var(changes));
+    request->setProperty("payload",juce::var(payload.release()));
+    const auto original=juce::var(request.release());
+    const auto translated=translateApprovedNativeControl(original,accepted,bus);
+    assert(translated.ok());
+    assert(translated.translated.getProperty("operation","").toString()
+           =="NATIVE_APPLY_WIRE_TRANSACTION");
+    NativeWireProbe native;
+    assert(executeApprovedNativeControl(native,translated.translated));
+    assert(native.epoch==91&&native.pcmRevision==25&&native.rosterRevision==9);
+    assert(native.applied.size()==1);
+    assert(native.applied[0].kind==armix::mixer::WireChange::Kind::remove);
+    assert(native.applied[0].from.value==9007199254740993ULL);
+    assert(native.applied[0].edgeId==9223372036854775808ULL);
+    // The accepted ChannelId MAIN is a valid ROUTE_ONLY target from a
+    // real UI OUT gesture (even though the decoder formerly rejected it).
+    auto reconnect=juce::JSON::parse(juce::JSON::toString(original,false));
+    auto wire=std::make_unique<juce::DynamicObject>();
+    wire->setProperty("op","ROUTE_ONLY");
+    wire->setProperty("from",id);
+    wire->setProperty("to","18446744073709551615");
+    wire->setProperty("tap","POST_FADER");
+    wire->setProperty("gainLinear",1.0);
+    juce::Array<juce::var> reconnectChanges;
+    reconnectChanges.add(juce::var(wire.release()));
+    reconnect.getProperty("payload",{}).getDynamicObject()
+        ->setProperty("changes",juce::var(reconnectChanges));
+    auto back=translateApprovedNativeControl(reconnect,accepted,bus);
+    assert(back.ok());
+    assert(executeApprovedNativeControl(native,back.translated));
+    assert(native.applied.size()==1);
+    assert(native.applied.front().kind==armix::mixer::WireChange::Kind::routeOnly);
+    assert(native.applied.front().to.value==18446744073709551615ULL);
+
+    auto fail=[&](juce::var intent,juce::var acceptedState,juce::var nativeState){
+        const auto before=juce::JSON::toString(nativeState,false);
+        const auto result=translateApprovedNativeControl(intent,acceptedState,nativeState);
+        assert(!result.ok());assert(!result.translated.isObject());
+        assert(juce::JSON::toString(nativeState,false)==before);
+        return result.error;
+    };
+    auto forged=juce::JSON::parse(juce::JSON::toString(original,false));
+    forged.getProperty("payload",{}).getProperty("changes",{})[0]
+          .getDynamicObject()->setProperty("edgeId","9223372036854775807");
+    assert(fail(forged,accepted,bus)=="WIRE_STALE_EDGE");
+    auto wrongSource=juce::JSON::parse(juce::JSON::toString(original,false));
+    wrongSource.getProperty("payload",{}).getProperty("changes",{})[0]
+          .getDynamicObject()->setProperty("from","18446744073709551615");
+    assert(fail(wrongSource,accepted,bus)=="WIRE_SOURCE_OR_OPERATION_INVALID");
+    auto stale=juce::JSON::parse(juce::JSON::toString(original,false));
+    stale.getDynamicObject()->setProperty("baseGraphRevision","24");
+    assert(fail(stale,accepted,bus)=="STALE_NATIVE_CONTROL_REVISION");
+    auto noNative=juce::JSON::parse(juce::JSON::toString(bus,false));
+    noNative.getDynamicObject()->setProperty("supportedOps",
+                                              juce::var(juce::Array<juce::var>{}));
+    assert(fail(original,accepted,noNative)=="NATIVE_WIRE_NOT_ADMITTED");
+    auto fractionalMain=juce::JSON::parse(juce::JSON::toString(reconnect,false));
+    fractionalMain.getProperty("payload",{}).getProperty("changes",{})[0]
+        .getDynamicObject()->setProperty("gainLinear",0.8);
+    assert(fail(fractionalMain,accepted,bus)=="WIRE_UNSUPPORTED_TAP_OR_GAIN");
+    auto invalidTap=juce::JSON::parse(juce::JSON::toString(original,false));
+    auto edit=invalidTap.getProperty("payload",{}).getProperty("changes",{})[0];
+    edit.getDynamicObject()->setProperty("op","CONNECT");
+    edit.getDynamicObject()->setProperty("to","18446744073709551615");
+    edit.getDynamicObject()->setProperty("tap","PRE_FADER");
+    edit.getDynamicObject()->setProperty("gainLinear",1.0);
+    assert(fail(invalidTap,accepted,bus)=="WIRE_UNSUPPORTED_TAP_OR_GAIN");
+}
 static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     // This fixture is ONLY accepted native readback; not a hardware device.
     // It proves Main.cpp cannot publish a fake live graph from G0/M4 JSON.
@@ -260,6 +579,11 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
       "nativeChannelIdPcmActive":true,"epoch":91}})JSON");
     live.getProperty("dryRoutingLab",{}).getDynamicObject()
         ->setProperty("nativeBus",rawBus);
+    // The physical master is post-ChannelId host PCM, not the generic
+    // roster's default 0 dB. Keep its accepted gain and mute across native
+    // projection, even when the source input fader changes independently.
+    live.getDynamicObject()->setProperty("masterDb",-13.5);
+    live.getDynamicObject()->setProperty("masterMute",true);
     auto fail=[&](const juce::var& candidate) {
         auto before=juce::JSON::toString(snap,false);
         assert(!projectInstalledNativeChannelIdGraph(snap,candidate));
@@ -290,6 +614,29 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     fail(deny);
     assert(synchronizeApprovedRouteDeviceEpoch(snap,live));
     assert(projectInstalledNativeChannelIdGraph(snap,live));
+    const auto projectedRows=snap.getProperty("graph",{}).getProperty("channels",{});
+    const auto* projected=projectedRows.getArray();
+    assert(projected && projected->size()==2);
+    bool physicalMasterFound=false;
+    for(const auto& row:*projected)
+        if(row.getProperty("role",{}).toString()=="MAIN") {
+            const auto ctl=row.getProperty("controls",{});
+            assert(std::abs(static_cast<double>(ctl.getProperty("faderDb",{}))
+                              -(-13.5))<0.00001);
+            assert(static_cast<bool>(ctl.getProperty("mute",false)));
+            physicalMasterFound=true;
+        }
+    assert(physicalMasterFound);
+    publishAuthoritativeMixerSession(snap);
+    const auto session=snap.getProperty("mixerSession",{});
+    assert(session.getProperty("authority","").toString()=="CHANNEL_ID");
+    assert(session.getProperty("deviceEpoch","").toString()=="91");
+    assert(session.getProperty("routeRevision","").toString()=="25");
+    assert(session.getProperty("channels",{}).getArray()->size()==2);
+    assert(session.getProperty("channels",{})[0].getProperty("id","").toString()
+           =="9007199254740993");
+    assert(std::abs(static_cast<double>(session.getProperty("main",{})
+        .getProperty("db",0.))-(-13.5))<0.00001);
     // Real restart: lab routing epoch counts STOP+START, unlike M2
     // deviceStartCount. This G0-to-native authority switch must advance.
     auto disconnected=canonicalSnapshot();
@@ -309,6 +656,9 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     assert(disconnected.getProperty("device",{})
                .getProperty("epoch","").toString()=="93");
     assert(!projectInstalledNativeChannelIdGraph(disconnected,dead));
+    publishAuthoritativeMixerSession(disconnected);
+    assert(disconnected.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
     const auto ghost=disconnected.getProperty("graph",{});
     assert(!static_cast<bool>(ghost.getProperty("capabilities",{})
                             .getProperty("callbackOwnsChannelIds",false)));
@@ -332,6 +682,35 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
     assert(graph.getProperty("channels",{}).getArray()->size()==2);
     assert(graph.getProperty("capabilities",{})
                  .getProperty("supportedOps",{}).getArray()->isEmpty());
+    // Only a real installed callback may advertise WIRE; G0 and producer
+    // snapshots without the corresponding capability remain fail-closed.
+    auto wiredBus=juce::JSON::parse(juce::JSON::toString(rawBus,false));
+    juce::Array<juce::var> nativeWireOps;
+    nativeWireOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    wiredBus.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(nativeWireOps));
+    auto wiredLive=juce::JSON::parse(juce::JSON::toString(live,false));
+    wiredLive.getProperty("dryRoutingLab",{}).getDynamicObject()
+        ->setProperty("nativeBus",wiredBus);
+    auto wiredSnap=canonicalSnapshot();
+    auto* wiredDevice=wiredSnap.getProperty("device",{}).getDynamicObject();
+    wiredDevice->setProperty("sampleRate",48000.0);
+    wiredDevice->setProperty("bufferFrames",256);
+    wiredDevice->setProperty("enabledInputs",juce::var(inputs));
+    wiredDevice->setProperty("enabledOutputs",juce::var(outputs));
+    assert(synchronizeApprovedRouteDeviceEpoch(wiredSnap,wiredLive));
+    assert(projectInstalledNativeChannelIdGraph(wiredSnap,wiredLive));
+    const auto wireCaps=wiredSnap.getProperty("graph",{})
+        .getProperty("capabilities",{}).getProperty("supportedOps",{});
+    assert(wireCaps.getArray()&&
+           wireCaps.getArray()->contains("APPLY_WIRE_TRANSACTION"));
+    nativeWireOps.add("NATIVE_CREATE_GROUP_SELECTED");
+    wiredBus.getDynamicObject()->setProperty(
+        "supportedOps",juce::var(nativeWireOps));
+    assert(projectInstalledNativeChannelIdGraph(wiredSnap,wiredLive));
+    assert(wiredSnap.getProperty("graph",{}).getProperty("capabilities",{})
+        .getProperty("supportedOps",{}).getArray()->contains("CREATE_GROUP"));
+    assert(!static_cast<bool>(wiredSnap.getProperty("productionCallbackLive",false)));
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 }
 
@@ -368,6 +747,58 @@ static void firstSoundRouteAdmissionRegression() {
     assert(publishVerifiedFirstSoundState(snapshot,live));
     m4=snapshot.getProperty("legacyM4",{});
     assert(static_cast<bool>(m4.getProperty("routeAccepted",false)));
+    // First hardware choice may target CH05 (not hardcoded CH01). All ten
+    // rows must project from native accepted data, never demo INPUT 1.
+    juce::Array<juce::var> rows;
+    for(int i=0;i<10;++i) {
+        auto row=std::make_unique<juce::DynamicObject>();
+        row->setProperty("mode",i==4?"MONO":"NONE");
+        row->setProperty("left",i==4?0:-1);
+        row->setProperty("right",-1);
+        row->setProperty("main",true);
+        rows.add(juce::var(row.release()));
+    }
+    auto accepted=std::make_unique<juce::DynamicObject>();
+    accepted->setProperty("channels",juce::var(rows));
+    live.getProperty("dryRoutingLab",{}).getDynamicObject()->setProperty(
+        "acceptedRoute",juce::var(accepted.release()));
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    m4=snapshot.getProperty("legacyM4",{});
+    const auto physicalRows=m4.getProperty("channels",{});
+    assert(physicalRows.isArray());
+    assert(physicalRows.getArray()->size()==10);
+    assert(physicalRows.getArray()->getReference(4).getProperty("mode",{}).toString()=="MONO");
+    assert(static_cast<int>(physicalRows.getArray()->getReference(4).getProperty("left",-1))==0);
+    // One internal BUS must NOT invalidate the ten-lane native projection
+    // or erase physical CH05 input/controls, which are still accepted PCM.
+    auto withBus=juce::JSON::parse(juce::JSON::toString(live,false));
+    withBus.getProperty("dryRoutingLab",{})
+      .getProperty("acceptedRoute",{}).getProperty("channels",{})
+      .getArray()->getReference(2).getDynamicObject()->setProperty("mode","BUS");
+    assert(publishVerifiedFirstSoundState(snapshot,withBus));
+    auto busReadback=snapshot.getProperty("legacyM4",{}).getProperty("channels",{});
+    assert(busReadback.isArray()&&busReadback.getArray()->size()==10);
+    assert(busReadback[2].getProperty("mode","").toString()=="BUS");
+    assert(static_cast<int>(busReadback[2].getProperty("left",0))==-1);
+    assert(busReadback[4].getProperty("mode","").toString()=="MONO");
+    assert(static_cast<int>(busReadback[4].getProperty("left",-1))==0);
+    auto invalidBus=juce::JSON::parse(juce::JSON::toString(withBus,false));
+    invalidBus.getProperty("dryRoutingLab",{})
+      .getProperty("acceptedRoute",{}).getProperty("channels",{})
+      .getArray()->getReference(2).getDynamicObject()->setProperty("left",7);
+    assert(publishVerifiedFirstSoundState(snapshot,invalidBus));
+    assert(snapshot.getProperty("legacyM4",{})
+        .getProperty("channels",{}).getArray()->isEmpty());
+    assert(publishVerifiedFirstSoundState(snapshot,live));
+    // Disabled hardware input is never presented as accepted physical PCM.
+    auto badPins=juce::JSON::parse(juce::JSON::toString(live,false));
+    badPins.getProperty("dryRoutingLab",{}).getProperty("acceptedRoute",{})
+        .getProperty("channels",{}).getArray()->getReference(4)
+        .getDynamicObject()->setProperty("left",7);
+    assert(publishVerifiedFirstSoundState(snapshot,badPins));
+    assert(snapshot.getProperty("legacyM4",{}).getProperty("channels",{}).getArray()->isEmpty());
+    // Restore valid accepted rows for the stale epoch/fail-closed matrix.
+    assert(publishVerifiedFirstSoundState(snapshot,live));
     auto reject=[&](const juce::var& degraded) {
         auto fresh=juce::JSON::parse(juce::JSON::toString(snapshot,false));
         assert(!publishVerifiedFirstSoundState(fresh,degraded));
@@ -396,6 +827,66 @@ static void firstSoundRouteAdmissionRegression() {
     withoutInput.getProperty("device",{}).getDynamicObject()
         ->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
     assert(!publishVerifiedFirstSoundState(withoutInput,live));
+}
+
+// Control-only fixture: validates exclusive M4 session normalization,
+// never claims that fixture data is a hardware PCM recording.
+static void milestoneAM4SessionProjectionRegression() {
+    auto snapshot=canonicalSnapshot();
+    snapshot.getProperty("device",{}).getDynamicObject()->setProperty("epoch","33");
+    auto m4=std::make_unique<juce::DynamicObject>();
+    m4->setProperty("active",true);
+    m4->setProperty("routeAccepted",true);
+    m4->setProperty("nativeBusStructural",false);
+    m4->setProperty("routingRevision","19");
+    m4->setProperty("masterDb",-7.5);
+    m4->setProperty("masterMute",false);
+    juce::Array<juce::var> sources,controls,peaksL,peaksR,rackFlags;
+    for(int i=0;i<10;++i) {
+        auto src=std::make_unique<juce::DynamicObject>();
+        src->setProperty("mode",i==4?"MONO":"NONE");
+        src->setProperty("left",i==4?2:-1);
+        src->setProperty("right",-1);
+        src->setProperty("main",true);
+        sources.add(juce::var(src.release()));
+        auto ctl=std::make_unique<juce::DynamicObject>();
+        ctl->setProperty("db",i==4?-6.:0.);
+        ctl->setProperty("pan",i==4?25.:0.);
+        ctl->setProperty("mute",false);
+        ctl->setProperty("solo",false);
+        controls.add(juce::var(ctl.release()));
+        peaksL.add(i==4?0.125:0.0);
+        peaksR.add(i==4?0.25:0.0);
+        rackFlags.add(i==4);
+    }
+    m4->setProperty("channels",juce::var(sources));
+    m4->setProperty("channelControls",juce::var(controls));
+    m4->setProperty("channelPeaksL",juce::var(peaksL));
+    m4->setProperty("channelPeaksR",juce::var(peaksR));
+    m4->setProperty("fxRackBypassed",juce::var(rackFlags));
+    snapshot.getDynamicObject()->setProperty("legacyM4",juce::var(m4.release()));
+    publishAuthoritativeMixerSession(snapshot);
+    const auto session=snapshot.getProperty("mixerSession",{});
+    assert(session.getProperty("authority","").toString()=="M4");
+    assert(session.getProperty("deviceEpoch","").toString()=="33");
+    assert(session.getProperty("routeRevision","").toString()=="19");
+    const auto rows=session.getProperty("channels",{});
+    assert(rows.isArray()&&rows.getArray()->size()==10);
+    assert(rows[4].getProperty("id","").toString()=="m4:05");
+    assert(rows[4].getProperty("fxRackBypassed",{}).isBool());
+    assert(static_cast<bool>(rows[4].getProperty("fxRackBypassed",false)));
+    assert(std::abs(static_cast<double>(rows[4].getProperty("controls",{})
+        .getProperty("faderDb",0.0))+6.)<0.00001);
+    assert(std::abs(static_cast<double>(rows[4].getProperty("controls",{})
+        .getProperty("pan",0.0))-.25)<0.00001);
+    assert(std::abs(static_cast<double>(session.getProperty("main",{})
+        .getProperty("db",0.0))+7.5)<0.00001);
+    // Reject corrupt producer readback atomically, not just the bad strip.
+    snapshot.getProperty("legacyM4",{}).getProperty("channelControls",{})
+        .getArray()->getReference(4).getDynamicObject()->setProperty("db",55.);
+    publishAuthoritativeMixerSession(snapshot);
+    assert(snapshot.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
 }
 
 static void firstSoundMeasuredSignalEvidenceRegression() {
@@ -457,7 +948,39 @@ static void firstSoundMeasuredSignalEvidenceRegression() {
     assert(!static_cast<bool>(signal(live,true,true).getProperty("captureObserved",true)));
 }
  
+static void retainedDocumentDoesNotAdmitPcm() {
+    auto snapshot=canonicalSnapshot();
+    snapshot.getProperty("device",{}).getDynamicObject()
+        ->setProperty("outputArmed",false);
+    auto bus=realBusReadbackFixture();
+    auto live=parse(R"JSON({
+      "masterDb":-9.0,"masterMute":true,
+      "dryRoutingLab":{"nativeChannelIdPcmActive":false}
+    })JSON");
+    auto* route=live.getProperty("dryRoutingLab",{}).getDynamicObject();
+    route->setProperty("nativeBus",bus);
+    assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
+    route->setProperty("retainedNativeBus",bus);
+    assert(projectRetainedNativeChannelIdGraph(snapshot,live));
+    publishAuthoritativeMixerSession(snapshot);
+    const auto graph=snapshot.getProperty("graph",{});
+    const auto caps=graph.getProperty("capabilities",{});
+    assert(graph.getProperty("bindingState",{}).toString()=="NEEDS_REMAP");
+    assert(graph.getProperty("channels",{})[0].getProperty("id",{}).toString()=="9007199254740993");
+    assert(graph.getProperty("edges",{})[0].getProperty("edgeId",{}).toString()=="9223372036854775808");
+    assert(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",true)));
+    assert(caps.getProperty("supportedOps",{}).getArray()->isEmpty());
+    assert(snapshot.getProperty("telemetry",{}).getProperty("channelMeterRmsPeak",{})
+        .getDynamicObject()->getProperties().size()==0);
+    const auto session=snapshot.getProperty("mixerSession",{});
+    assert(session.getProperty("bindingState",{}).toString()=="NEEDS_REMAP");
+    assert(static_cast<double>(session.getProperty("main",{}).getProperty("db",0.0))==-9.0);
+    route->setProperty("nativeChannelIdPcmActive",true);
+    assert(!projectRetainedNativeChannelIdGraph(snapshot,live));
+}
+
 int main() {
+    retainedDocumentDoesNotAdmitPcm();
     auto snap=canonicalSnapshot();
     auto bus=realBusReadbackFixture();
     // Merely having matching native-shaped JSON cannot enable fake LIVE.
@@ -488,9 +1011,19 @@ int main() {
     assert(!static_cast<bool>(snap.getProperty("productionCallbackLive",false)));
 
     controlIntentTranslationCases(snap,bus);
+    nativeInsertCatalogInstanceProjectionRegression();
+    approvedNativeMstTranslationRegression();
+    approvedNativeGroupMuteSoloRegression();
+    approvedNativeVst3LoadContractRegression(snap,bus);
+    approvedWireTranslationRegression(snap,bus);
     installedCallbackAdmissionRegression(bus);
     firstSoundRouteAdmissionRegression();
+    milestoneAM4SessionProjectionRegression();
     firstSoundMeasuredSignalEvidenceRegression();
+    auto unadmitted=canonicalSnapshot();
+    publishAuthoritativeMixerSession(unadmitted);
+    assert(unadmitted.getProperty("mixerSession",{})
+        .getProperty("authority","").toString()=="NONE");
 
     auto missingMain=realBusReadbackFixture();
     missingMain.getProperty("channels",{})[1].getDynamicObject()

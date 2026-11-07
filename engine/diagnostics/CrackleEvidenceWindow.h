@@ -37,12 +37,26 @@ public:
         std::uint64_t count = 0;
         bool available = false;
     };
+    // OS memory measurements are sampled ONLY by the message thread.
+    // "Page faults" includes soft/minor faults; NOT a hard-fault / disk
+    // paging counter and never proof of a missed hardware callback.
+    struct MemoryPressure
+    {
+        std::uint32_t systemLoadPercent = 0;
+        std::uint64_t availablePhysicalMiB = 0;
+        std::uint64_t processWorkingSetMiB = 0;
+        std::uint64_t processPrivateCommitMiB = 0;
+        std::uint64_t processPageFaults = 0;
+        bool systemAvailable = false;
+        bool processAvailable = false;
+    };
     struct Sample
     {
         std::uint64_t atMs = 0;
         std::uint64_t deviceGeneration = 0;
         std::string routeScope; // stable backend, endpoints, mode and output gates
         std::array<Reading,counterCount> counters {};
+        MemoryPressure memory {};
         bool connected = false;
     };
     struct Delta
@@ -60,6 +74,10 @@ public:
         Reason reason = Reason::insufficientHistory;
         std::uint64_t elapsedMs = 0;
         std::array<Delta,counterCount> changes {};
+        MemoryPressure memoryBefore {}, memoryAtMark {};
+        std::uint32_t peakLoadPercent = 0;
+        bool loadComparable = false;
+        Delta processPageFaults {};
         bool ready() const noexcept { return reason == Reason::ready; }
     };
 
@@ -129,6 +147,34 @@ public:
         }
         result.reason = Reason::ready;
         result.elapsedMs = now.atMs - baseline->atMs;
+        result.memoryBefore = baseline->memory;
+        result.memoryAtMark = now.memory;
+        // Pressure and page-fault samples share the exact same validated
+        // route/generation/time window as the audio timing counters.
+        if(baseline->memory.systemAvailable && now.memory.systemAvailable)
+        {
+            result.loadComparable = true;
+            result.peakLoadPercent = now.memory.systemLoadPercent;
+            for(std::size_t i=0; i<size_; ++i)
+            {
+                const auto& candidate =
+                    history_[(next_+historyCapacity-size_+i)%historyCapacity];
+                if(candidate.atMs < baseline->atMs ||
+                   candidate.atMs > now.atMs)continue;
+                if(!candidate.memory.systemAvailable) {
+                    result.loadComparable=false;break;
+                }
+                if(candidate.memory.systemLoadPercent>result.peakLoadPercent)
+                    result.peakLoadPercent=candidate.memory.systemLoadPercent;
+            }
+        }
+        if(baseline->memory.processAvailable &&
+           now.memory.processAvailable &&
+           now.memory.processPageFaults >= baseline->memory.processPageFaults)
+            result.processPageFaults = {
+                now.memory.processPageFaults-baseline->memory.processPageFaults,
+                true
+            };
         for (std::size_t i=0; i<counterCount; ++i)
         {
             const auto& a = baseline->counters[i];

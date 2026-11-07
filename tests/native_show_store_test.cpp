@@ -106,19 +106,50 @@ int main() {
  assert(store.load(show.id,loaded,retrieved).isEmpty());
  assert(retrieved[0].name=="Performance Ready");
 
+ // A valid current performance cannot be overwritten with older recovery.
+ assert(store.recoverPrevious(show.id).isNotEmpty());
+ assert(store.currentGeneration(show.id)==second);
+ ShowV2 previousShow;std::vector<SnapshotV2> previousItems;
+ juce::String previousGeneration;
+ assert(store.loadPrevious(show.id,previousShow,previousItems,&previousGeneration).isEmpty());
+ assert(previousGeneration==first.getFileName());
+ assert(previousItems.size()==1 && previousItems[0].name=="Soundcheck");
+
  // Missing/corrupt payload never partially replaces the accepted outputs.
  const auto vendor=second.getChildFile("blobs").getChildFile(blob.sha256+".bin");
  assert(vendor.appendText("damaged"));
  assert(store.load(show.id,loaded,retrieved).isNotEmpty());
  assert(retrieved.size()==1&&retrieved[0].name=="Performance Ready");
 
- // Bad HEAD rejected before using unsafe path; backup remains intact.
+ // Read-only recovery inspection never mutates HEAD even after blob corruption.
+ assert(store.loadPrevious(show.id,previousShow,previousItems).isEmpty());
+ assert(store.currentGeneration(show.id)==second);
+
+ // Explicit recovery validates prior JSON and BOTH vendor state hashes.
+ // A corrupt latest blob is not silently accepted by normal load.
+ const auto priorPointer=workspace.getChildFile("Shows").getChildFile(show.id)
+     .getChildFile("PREVIOUS");
+ assert(priorPointer.existsAsFile());
+ assert(priorPointer.loadFileAsString().trim()==first.getFileName());
+ assert(store.recoverPrevious(show.id).isEmpty());
+ assert(store.currentGeneration(show.id)==first);
+ restoredStates.clear();
+ assert(store.loadWithStates(show.id,fxShow,fxSnaps,restoredStates).isEmpty());
+ assert(restoredStates.size()==2 && fxSnaps[0].name=="Soundcheck");
+
+ // Bad HEAD rejected before using unsafe path; recovery must remain possible.
  auto head=workspace.getChildFile("Shows").getChildFile(show.id).getChildFile("HEAD");
  assert(head.replaceWithText("../unsafe"));
  assert(store.load(show.id,loaded,retrieved).isNotEmpty());
  assert(store.currentGeneration(show.id)==juce::File{});
  assert(first.isDirectory());
+ assert(store.recoverPrevious(show.id).isEmpty());
+ assert(store.currentGeneration(show.id)==first);
+ // Corrupt PREVIOUS must never clobber the last accepted HEAD.
+ assert(priorPointer.replaceWithText("../../outside"));
+ assert(store.recoverPrevious(show.id).isNotEmpty());
+ assert(store.currentGeneration(show.id)==first);
  base.deleteRecursively();
- std::cout<<"PASS: immutable Shows generation, staged VST3 hash, atomic HEAD, no partial recovery\n";
+ std::cout<<"PASS: immutable Shows, staged VST3 hashes, explicit last-known-good recovery\n";
  return 0;
 }

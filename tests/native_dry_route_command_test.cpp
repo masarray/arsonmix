@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "../engine/core/PreparedMixerBlock.h"
+#include "../src/NativeVerifiedSourcePatch.h"
+#include "../src/NativeTopologyEditSafety.h"
+#include "../src/NativeSessionToken.h"
+#include <limits>
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
@@ -10,6 +14,51 @@
 using namespace armix::mixer;
 static bool near(float a,float b){return std::abs(a-b)<0.00001f;}
 int main(){
+    // P0 First Sound: live same-format pin moves must remain atomic even
+    // during MAIN/STREAM, but a structural change cannot publish while
+    // STREAM is consuming the old graph. Physical re-arm is never implicit
+    // after a device epoch change or unsafe / unpatched output.
+    using Guard=NativeTopologyEditSafety;
+    // JUCE WebView JSON can carry whole numbers as Double. Native routing
+    // commands must accept the SAME epoch/revision but reject stale/fractional
+    // and JS-inexact tokens, regardless of action (FX/OUT/M4).
+    using armix::console::nativeSessionTokenMatches;
+    using armix::console::nativeSessionTokenValid;
+    const juce::var epoch=juce::int64(91);
+    assert(nativeSessionTokenMatches(juce::var(91),epoch));
+    assert(nativeSessionTokenMatches(juce::var(91.0),epoch));
+    assert(nativeSessionTokenMatches(juce::var(juce::int64(91)),epoch));
+    assert(!nativeSessionTokenMatches(juce::var(92.0),epoch));
+    assert(!nativeSessionTokenMatches(juce::var(91.5),epoch));
+    assert(!nativeSessionTokenMatches(juce::var("91"),epoch));
+    assert(!nativeSessionTokenValid(juce::var(0.0)));
+    assert(!nativeSessionTokenValid(juce::var(-1.0)));
+    assert(!nativeSessionTokenValid(juce::var(9007199254740992.0)));
+    assert(!nativeSessionTokenValid(
+        juce::var(std::numeric_limits<double>::quiet_NaN())));
+    assert(!nativeSessionTokenValid(
+        juce::var(std::numeric_limits<double>::infinity())));
+    static_assert(!Guard::structuralSource(true,true));
+    static_assert( Guard::structuralSource(true,false));
+    static_assert( Guard::structuralSource(false,true));
+    assert(Guard::mayEdit(false,true));
+    assert(Guard::mayEdit(true,false));
+    assert(!Guard::mayEdit(true,true));
+    assert(Guard::mayRestoreMonitor(true,true,true,false));
+    assert(!Guard::mayRestoreMonitor(true,false,true,false));
+    assert(!Guard::mayRestoreMonitor(true,true,false,false));
+    assert(!Guard::mayRestoreMonitor(true,true,true,true));
+    assert(!Guard::mayRestoreMonitor(false,true,true,false));
+    constexpr Guard::MixSnapshot oldM4{0.25f,-0.25f,false,false};
+    constexpr Guard::MixSnapshot acceptedNative{0.75f,0.5f,true,true};
+    constexpr auto migrated=Guard::preserveAcceptedMix(
+        oldM4,acceptedNative,true);
+    static_assert(migrated.linear==0.75f && migrated.pan==0.5f &&
+                  migrated.mute && migrated.solo);
+    constexpr auto legacyOnly=Guard::preserveAcceptedMix(
+        oldM4,acceptedNative,false);
+    static_assert(legacyOnly.linear==0.25f && legacyOnly.pan==-0.25f &&
+                  !legacyOnly.mute && !legacyOnly.solo);
     juce::String json=R"({"channels":[)";
     for(int i=0;i<stripCount;++i) {
         if(i)json<<",";
@@ -123,6 +172,45 @@ int main(){
     }
     NativeDryRouteCommand v2;
     assert(NativeDryRouteCommand::decode(typed,v2,error));
+    // /preview/ IN=None disconnects real hardware without changing
+    // channel processing width or other accepted channels.
+    typed.getDynamicObject()->setProperty("deviceEpoch",juce::int64(91));
+    typed.getDynamicObject()->setProperty("revision",juce::int64(7));
+    juce::var sourceCleared, rejectedClear;
+    const auto activePins=std::span<const int>(ports.data(),ports.size());
+    assert(NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",-1,-1,activePins,91,7,sourceCleared).isEmpty());
+    const auto cleared=sourceCleared.getProperty("channels",{})
+        .getArray()->getReference(0);
+    assert(cleared.getProperty("mode",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceKind",{}).toString()=="NONE");
+    assert(cleared.getProperty("sourceFormat",{}).toString()=="NONE");
+    assert(cleared.getProperty("channelFormat",{}).toString()=="STEREO");
+    assert(static_cast<int>(cleared.getProperty("left",-2))==-1);
+    assert(static_cast<int>(cleared.getProperty("right",-2))==-1);
+    assert(typed.getProperty("channels",{}).getArray()->getReference(0)
+        .getProperty("sourceKind",{}).toString()=="PHYSICAL");
+    NativeDryRouteCommand disconnectedPlan;
+    // CH1 still owns two PRE/POST sends to BUS channels. Clearing its
+    // hardware source while those sends remain must be rejected, not
+    // silently create a dangling audio path.
+    assert(!NativeDryRouteCommand::decode(sourceCleared,disconnectedPlan,error));
+    assert(error.containsIgnoreCase("Enable a sender"));
+    // After the operator explicitly disconnects those sends, the very
+    // same accepted NONE source must compile to physical silence.
+    auto disconnectedNoSends=juce::JSON::parse(
+        juce::JSON::toString(sourceCleared,false));
+    disconnectedNoSends.getDynamicObject()->setProperty("sends",
+        juce::var(juce::Array<juce::var>{}));
+    assert(NativeDryRouteCommand::decode(disconnectedNoSends,
+                                          disconnectedPlan,error));
+    assert(disconnectedPlan.channels.stripsAndMaster.strips[0].source
+        ==SourceMode::disconnected);
+    assert(!NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",2,-1,activePins,91,7,rejectedClear).isEmpty());
+    assert(!NativeVerifiedSourcePatch::prepare(
+        typed,0,"NONE",-1,-1,activePins,90,7,rejectedClear).isEmpty());
+
     assert(v2.channels.stripsAndMaster.strips[0].source==SourceMode::mono);
     assert(v2.channels.formats[0]==ChannelFormat::stereo);
     assert(v2.channels.stripsAndMaster.strips[1].source==SourceMode::disconnected);

@@ -13,6 +13,20 @@ const main1=state.edges.find(e=>e.sourceId===1);
 const unplug=graph.applyWireTransaction(state,[{type:'REMOVE',sourceId:1,edgeId:main1.id}]);
 assert.equal(unplug.ok,true);
 assert.equal(unplug.edges.filter(e=>e.destId===9).length,2);
+// An explicit parallel MAIN send does not secretly replace SOURCE ONLY.
+const parallelMain=graph.applyWireTransaction(
+ {...state,edges:unplug.edges,nextId:unplug.nextId},
+ [{type:'CONNECT',sourceId:1,destId:9,mode:'send'}]);
+assert.equal(parallelMain.ok,true);
+const sendToMain=parallelMain.edges.find(e=>e.sourceId===1&&e.destId===9);
+assert.equal(sendToMain.kind,'send');assert.equal(sendToMain.mode,'send');
+assert.equal(parallelMain.edges.filter(e=>e.sourceId===1&&e.kind==='primary').length,0);
+// Default WIRE to MAIN remains a primary; explicit mode is required for SEND.
+const defaultMain=graph.applyWireTransaction(
+ {...state,edges:unplug.edges,nextId:unplug.nextId},
+ [{type:'CONNECT',sourceId:1,destId:9}]);
+assert.equal(defaultMain.ok,true);
+assert.equal(defaultMain.edges.find(e=>e.sourceId===1&&e.destId===9)?.kind,'primary');
 const unchanged=JSON.stringify(state);
 const connected=graph.applyWireTransaction({...state,edges:unplug.edges,nextId:unplug.nextId},
  [{type:'CONNECT',sourceId:1,destId:3}]);

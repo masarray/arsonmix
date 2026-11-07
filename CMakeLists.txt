@@ -9,6 +9,10 @@ endif()
 add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# The independent exact-byte verifier must use the SAME Python interpreter
+# selected by CMake to generate compressed favicon/PNG resources (Windows
+# runners can have several Python versions with different zlib builds).
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/approved-gui-python.txt" "${Python3_EXECUTABLE}\n")
 set(ARMIX_BRAND_DIR "${CMAKE_CURRENT_BINARY_DIR}/brand_icons")
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_brand_icons.py"
@@ -33,14 +37,15 @@ juce_add_gui_app(ARMixConsole
 # The approved operator GUI is generated from the EXACT Pages sources at
 # configure time. Never compile legacy web/index.html or console-native.html.
 # User-approved /preview/ iframe uses preview-v2 DOM + PNG-button variant.
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(ARMIX_APPROVED_GUI_DIR "${CMAKE_CURRENT_BINARY_DIR}/approved_gui")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_SOURCE_INPUTS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-v2/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/site/preview-buttons/assets/*")
 list(APPEND ARMIX_APPROVED_GUI_SOURCE_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/web/approved-native-bridge.js"
-    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py")
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_pages.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compose_native_peq.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ARMIX_APPROVED_GUI_SOURCE_INPUTS})
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_approved_native_gui.py"
@@ -62,6 +67,12 @@ juce_add_binary_data(ARMixAssets SOURCES
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+# Explicit UTF-8 source decoding: native channel icons are Unicode, and
+# MSVC's machine-specific ANSI source charset corrupts emoji literals.
+# Limit the flag to C++ (not Windows .rc/resource compilation).
+if(MSVC)
+  target_compile_options(ARMixConsole PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+endif()
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -127,6 +138,16 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
   add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
+  juce_add_console_app(ARMixApprovedRoutingPcmTests PRODUCT_NAME "ArSonMix Approved WIRE PCM Tests")
+  target_sources(ARMixApprovedRoutingPcmTests PRIVATE tests/approved_native_routing_pcm_test.cpp)
+  target_link_libraries(ARMixApprovedRoutingPcmTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixApprovedRoutingPcmTests PRIVATE cxx_std_20)
+  add_test(NAME P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM COMMAND ARMixApprovedRoutingPcmTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixApprovedRoutingPcmTests)
+  add_executable(ARMixLatencyCompensationTests tests/dynamic_latency_compensation_test.cpp)
+  target_compile_features(ARMixLatencyCompensationTests PRIVATE cxx_std_20)
+  add_test(NAME NativeGraphLatencyAlignedFanInAndHardwarePCM COMMAND ARMixLatencyCompensationTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixLatencyCompensationTests)
   add_executable(ARMixChannelRoutingContractTests tests/channel_routing_contract_test.cpp)
   target_compile_features(ARMixChannelRoutingContractTests PRIVATE cxx_std_20)
   add_test(NAME MonoStereoSparsePhysicalPortRouting COMMAND ARMixChannelRoutingContractTests)
@@ -162,6 +183,10 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixNativeDrySendTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
   target_compile_features(ARMixNativeDrySendTests PRIVATE cxx_std_20)
   add_test(NAME LiveNativePrePostSendAndBusContract COMMAND ARMixNativeDrySendTests)
+  # Device reopen must not silently replace an authored ChannelId mixer.
+  add_executable(ARMixDeviceSessionTransitionTests tests/device_session_transition_policy_test.cpp engine/device/DeviceSessionTransitionPolicy.h)
+  target_compile_features(ARMixDeviceSessionTransitionTests PRIVATE cxx_std_20)
+  add_test(NAME NonDestructiveAudioSetupRetainsMixerDocument COMMAND ARMixDeviceSessionTransitionTests)
   add_executable(ARMixLiveRoutingEpochTests tests/live_port_epoch_publisher_test.cpp)
   target_compile_features(ARMixLiveRoutingEpochTests PRIVATE cxx_std_20)
   add_test(NAME P1ELivePortGenerationRevisionAndRealtimeRetirement COMMAND ARMixLiveRoutingEpochTests)
@@ -313,6 +338,33 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixShowStoreTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixShowStoreTests PRIVATE cxx_std_20)
   add_test(NAME P4ImmutableNativeShowsAndVendorStateRoundTrip COMMAND ARMixShowStoreTests)
+  # Full-size stable ChannelId MixerSession document (never the fixed ShowV2).
+  juce_add_console_app(ARMixDurableMixerSessionTests PRODUCT_NAME "ArSonMix Durable Dynamic Mixer Session Tests")
+  target_sources(ARMixDurableMixerSessionTests PRIVATE tests/native_mixer_session_store_test.cpp
+      src/NativeMixerSessionDocument.h src/NativeMixerSessionStore.h)
+  target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
+      juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
+  add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
+  # Presentation-only native identity; no audio-thread access.
+  juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")
+  target_sources(ARMixChannelAppearanceTests PRIVATE
+      tests/native_channel_appearance_store_test.cpp src/NativeChannelAppearanceStore.h)
+  target_link_libraries(ARMixChannelAppearanceTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixChannelAppearanceTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(ARMixChannelAppearanceTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+  endif()
+  add_test(NAME NativeChannelIdentityDiskAckAndExactId COMMAND ARMixChannelAppearanceTests)
+
+  # Eight-band native PEQ: deterministic sweep, stereo isolation, RT no-heap,
+  # smoothing and Nyquist guards. Built with the existing Windows native lane.
+  add_executable(ARMixNativeChannelEqTests tests/builtin_channel_eq_test.cpp
+      engine/builtin_fx/BuiltInFxCatalog.h engine/builtin_fx/ChannelEq.h)
+  target_compile_features(ARMixNativeChannelEqTests PRIVATE cxx_std_20)
+  add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)

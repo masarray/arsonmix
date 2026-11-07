@@ -37,9 +37,7 @@ test('plugin catalog and native vendor ZIP persist workspace refs without changi
   assert.match(main,/presets_ \(settingsDirectory\(\)\.getChildFile \("presets"\), settingsDirectory\(\)\)/);
 });
 test('real Windows-native USB move test is built in existing CTest and release includes marker',()=>{
-  assert.match(cmake,/ARMixWorkspaceTests/);
-  assert.match(cmake,/PortableStudioUsbRelocation/);
-  assert.match(workflow,/ARMixWorkspaceTests/);
+  assert.match(cmake,/add_test\(NAME PortableStudioUsbRelocation COMMAND ARMixWorkspaceTests\)/);
   assert.match(workflow,/portable_workspace_contract_test\.mjs/);
   assert.match(packaging,/ARSONMIX_PORTABLE_WORKSPACE_V1/);
   assert.match(packaging,/portable_mode\.txt/);

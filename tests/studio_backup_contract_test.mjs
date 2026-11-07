@@ -34,9 +34,7 @@ test('backup is non realtime and fail-closed, not a browser localStorage illusio
   assert.doesNotMatch(read('src/LiveAudioEngine.h'),/StudioBackup::/);
 });
 test('Windows CI compiles and runs native corruption/USB backup tests in existing job',()=>{
-  assert.match(cmake,/ARMixBackupTests/);
-  assert.match(cmake,/VerifiedPortableStudioBackup/);
-  assert.match(workflow,/ARMixBackupTests/);
+  assert.match(cmake,/add_test\(NAME VerifiedPortableStudioBackup COMMAND ARMixBackupTests\)/);
   assert.match(workflow,/studio_backup_contract_test\.mjs/);
   assert.match(fixture,/StudioBackup::verify/);
   assert.match(fixture,/INJECTED\.vst3/);

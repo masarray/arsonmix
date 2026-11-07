@@ -98,7 +98,12 @@ if ($LASTEXITCODE -ne 0 -or $sha -ne $manifest.sourceCommit) {
 # Release gate must verify the EXACT GUI shown by /preview/, not a
 # self-consistent but WRONG legacy web/index.html or console-native renderer.
 $approvedGuiDir = Join-Path "build" "approved_gui"
-& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+. (Join-Path $PSScriptRoot "resolve_approved_gui_python.ps1")
+$approvedGuiPython = Resolve-ArSonMixApprovedGuiPython -BuildDir "build"
+# Independent post-package check of the EXE that will go INSIDE the ZIP.
+& $approvedGuiPython scripts/verify_windows_pe_brand_icon.py --exe $exePath --approved assets/icon/arsonmix-256.png
+if ($LASTEXITCODE -ne 0) { throw "REJECT: distributed Windows PE icon does not match current approved brand" }
+& $approvedGuiPython scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
 if ($LASTEXITCODE -ne 0) { throw "REJECT: native GUI is not built from current approved Pages" }
 $approvedPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
 $approved = Get-Content -LiteralPath $approvedPath -Raw -Encoding UTF8 | ConvertFrom-Json

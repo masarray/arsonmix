@@ -7,13 +7,13 @@ This is reference GUI evidence, never proof of native Windows PCM.
 """
 import hashlib
 import json
-import re
 import struct
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
 REFERENCE=ROOT/"site/preview-v2"
@@ -37,27 +37,30 @@ def verify_bundle(dist):
     assert "url=../preview/" in (dist/"preview-buttons/index.html").read_text(encoding="utf-8")
     assert 'http-equiv="refresh"' in (dist/"preview/mixer.html").read_text(encoding="utf-8")
 
-    # Strip only the two deliberate fingerprinted CSS/JS URLs. Everything
-    # else, including the V46+ WIRE model and channel events, must be 1:1.
-    stripped=html
+    # The shipped page uses the current authoritative-FX transformation and
+    # one compiled CSS bundle. The independent gate reconstructs/compares ALL
+    # generated HTML and owner CSS bytes, including approved PNG revisions.
+    assert published_console(dist)==generated/"index.html"
     for name in SPECIAL:
-        path="assets/"+name
-        original_url=re.search(re.escape(path)+r'(?:\?[^"\s>]+)?',original)
-        current_url=re.search(re.escape(path)+r'\?rev=([0-9a-f]{16})',stripped)
-        assert original_url and current_url,(name,"missing cache-safe URL")
         expected=hashlib.sha256((OWNER/name).read_bytes()).hexdigest()[:16]
-        assert current_url.group(1)==expected,(name,"wrong asset revision")
-        stripped=stripped[:current_url.start()]+original_url.group(0)+stripped[current_url.end():]
+        assert meta["button_css_js_revisions"][name]==expected,name
         assert (generated/"assets"/name).read_bytes()==(OWNER/name).read_bytes(),name
-    assert stripped==original,"User-approved button variant modified the real WIRE mixer"
-
-    # Removing old snapshots makes every extra asset a current-source
-    # dependency, never a cloned V45 file frozen across future WIRE updates.
     canonical={f.name for f in (REFERENCE/"assets").iterdir() if f.is_file()}
     published={f.name for f in (generated/"assets").iterdir() if f.is_file()}
-    assert published==canonical|{SPRITE},("asset set drift",published^canonical)
+    # The approved app branding now adds exactly three favicon resources to
+    # the compiled /preview/ folder. Keep the asset set strict and verify
+    # byte identity against this build's generated public root, not unrelated
+    # developer-local files or an older locked GUI reference.
+    favicons={"favicon.ico","favicon-16x16.png","favicon-32x32.png"}
+    expected=canonical|{SPRITE,"arsonmix-approved-runtime.css"}|favicons
+    assert published==expected,("asset set drift",published^expected)
+    for name in favicons:
+        assert (generated/"assets"/name).read_bytes()==(dist/name).read_bytes(),name
     for name in canonical-set(SPECIAL):
-        assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
+        # Compiled CSS is checked byte-for-byte by published_console above.
+        # Uncompiled JS/SVG/font/artwork assets must remain exact source bytes.
+        if not name.endswith(".css"):
+            assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
 
     png=(generated/"assets"/SPRITE).read_bytes()
     assert png==(ROOT/"site/preview-v34/assets"/SPRITE).read_bytes()

@@ -68,10 +68,14 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
     assert.equal(selected(uiPush, filename), false, filename + ' wrongly triggers browser main');
   }
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
-  for (const target of [
-    'ARMixPreparedMixerBlockTests', 'ARMixNativeMixerSessionTests',
-    'ARMixLiveRoutingEpochTests', 'ARMixRTTests', 'ARMixLiveChannelFxTests'
-  ]) assert.ok(native.includes(target), 'Missing vital audio test ' + target);
+});
+
+test('Windows builds the default CMake graph before running all CTests', () => {
+  assert.match(native, /-DBUILD_TESTING=ON/);
+  const build = native.indexOf('run: cmake --build build --config Release --parallel 2');
+  const ctest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
+  assert.ok(build >= 0 && ctest > build, 'Build all default targets before CTest');
+  assert.doesNotMatch(native, /cmake --build [^\r\n]*--target\b/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
@@ -129,8 +133,24 @@ test('ordinary GUI PR and main use current targeted checks; full history is expl
   assert.match(ui, /python tests\/pages_v55_context_wire_fader_smoke.py/);
   assert.match(ui, /node tests\/wire_main_native_handoff_contract.test.cjs/);
   assert.match(ui, /python tests\/pages_v51_portrait_led_peak_hold_smoke.py/);
-  const fullOnly = [...ui.matchAll(/^\s{8}if: .*workflow_dispatch.*integration\/product-/gm)].length;
-  assert.ok(fullOnly >= 35, 'Historical/extended GUI steps must be opt-in, found ' + fullOnly);
+  assert.match(ui,/historical_css:\n\s+description:.*\n\s+type: boolean\n\s+required: false\n\s+default: false/);
+  const start=ui.indexOf('      - name: Mount pinned V24 historical CSS fixture');
+  const end=ui.indexOf('      - name: Verify V28 exact approved /preview/ source');
+  assert.ok(start>0&&end>start,'archived fixtures and current product checks must remain distinct');
+  const archived=ui.slice(start,end).split(/(?=      - name: )/).filter(s=>s.trim());
+  assert.equal(archived.length,28,'all archived tests and mount/restore steps remain available');
+  for(const step of archived)
+    assert.match(step,/if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.historical_css == true \}\}/);
+  // Real product functional/geometry/provenance checks must never inherit
+  // the historical opt-in or disappear with the old fixture mounts.
+  for(const file of ['pages_wire_incoming_v43_smoke.py','preview_v15_drag_wire_smoke.py',
+    'pages_m1_meter_gain_calibration_smoke.py','pages_m3_operator_visual_interaction_smoke.py',
+    'pages_wire_v44_finish_smoke.py','pages_wire_v45_socket_layout_smoke.py',
+    'pages_wire_v46_precision_smoke.py']) {
+    const step=ui.split(/(?=      - name: )/).find(s=>s.includes('python tests/'+file));
+    assert.ok(step,file+' stays required in current UI qualification');
+    assert.ok(!step.includes('inputs.historical_css'),file+' was incorrectly made historical');
+  }
   assert.match(ui, /python tests\/pages_css_architecture_v27_smoke.py/);
   assert.match(ui, /retention-days: 3/);
 });
@@ -143,7 +163,7 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
   assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
-  assert.equal(fatOnly,4,'Packaging, FactoryFX stage, ZIP verify and upload require manual FAT');
+  assert.equal(fatOnly,7,'Portable FAT and Inno installer build/verify/upload all require deliberate manual opt-in');
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
   assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <

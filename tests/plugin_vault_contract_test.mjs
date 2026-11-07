@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 const read=p=>readFileSync(p,'utf8');
 const vault=read('src/PluginVault.h'), catalog=read('src/PluginCatalog.h'),
   main=read('src/Main.cpp'), cmake=read('CMakeLists.txt'),
-  workflow=read('.github/workflows/p1-windows.yml'), testNative=read('tests/plugin_vault_test.cpp');
+  testNative=read('tests/plugin_vault_test.cpp');
 
 test('manual VST3 import physically copies whole plugin into the user workspace, not mere absolute source registration',()=>{
   assert.match(catalog,/scan \(juce::StringArray \{ file\.getFullPathName\(\) \}, copyToVault\)/);
@@ -40,9 +40,7 @@ test('no all-PC scan required for three manually selected VSTs; no third-party c
   assert.match(catalog,/scan \(juce::StringArray \{ file\.getFullPathName\(\) \}, copyToVault\)/);
 });
 test('Windows CTest exercises full VST bundle resources and preserves original files/versions',()=>{
-  assert.match(cmake,/ARMixVaultTests/);
-  assert.match(cmake,/SelectiveVst3BundleVaultImport/);
-  assert.match(workflow,/ARMixVaultTests/);
+  assert.match(cmake,/add_test\(NAME SelectiveVst3BundleVaultImport COMMAND ARMixVaultTests\)/);
   assert.match(testNative,/Contents\/x86_64-win\/MyVerb\.vst3/);
   assert.match(testNative,/Contents\/Resources\/moduleinfo\.json/);
   assert.match(testNative,/NEVER delete user source VST/);

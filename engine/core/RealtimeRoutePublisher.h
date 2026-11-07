@@ -35,7 +35,8 @@ public:
     };
     class ReadLease final {
     public:
-        explicit ReadLease (RealtimeRoutePublisher& owner) noexcept : owner_(&owner) {
+        explicit ReadLease (RealtimeRoutePublisher& owner,bool skip=false) noexcept : owner_(&owner) {
+            if(skip)return;
             auto activity=owner_->activity_.load(std::memory_order_seq_cst);
             // Do not spin/wait inside the audio callback. One silent block is
             // preferable to scheduling jitter while control thread publishes.
@@ -95,6 +96,25 @@ public:
         return Result::applied;
     }
 
+    // CONTROL only, after proving identical hardware layout and format.
+    // Keep the prepared compatibility plan and its revision. Run the paired
+    // publication while no reader can observe or acquire this snapshot.
+    template<class Commit>
+    bool rebindQuiescent(std::uint64_t from,std::uint64_t to,
+                         Commit&& commit) noexcept {
+        static_assert(noexcept(commit()));
+        if(!owned_ || active_.load(std::memory_order_seq_cst)!=owned_.get() ||
+           owned_->deviceEpoch!=from || !from || to<=from)return false;
+        std::uint32_t idle=0;
+        if(!activity_.compare_exchange_strong(idle,writerFlag,
+                                               std::memory_order_seq_cst))
+            return false;
+        const bool accepted=commit();
+        if(accepted)owned_->deviceEpoch=to;
+        activity_.store(0,std::memory_order_seq_cst);
+        return accepted;
+    }
+
     // Immediately gate the last route to silence. Do NOT delete a graph
     // while the audio callback could own a ReadLease to its snapshot.
     void unpublish() noexcept {
@@ -140,7 +160,7 @@ public:
                owned_->graphRevision==expectedRevision
                    ?owned_->prepared.get():nullptr;
     }
-    [[nodiscard]] ReadLease acquire() noexcept {return ReadLease(*this);}
+    [[nodiscard]] ReadLease acquire(bool skip=false) noexcept {return ReadLease(*this,skip);}
     std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
     std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL
     bool readersPresent() const noexcept {

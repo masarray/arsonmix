@@ -28,8 +28,9 @@ public:
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
         void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
         std::uint64_t deviceEpoch=0,graphRevision=0;
+        int (*latency)(void*,ChannelId) noexcept=nullptr;
         bool valid() const noexcept {
-            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision) ||
+            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision&&!latency) ||
                    (owner&&context==owner.get()&&render&&
                     deviceEpoch>0&&graphRevision>0);
         }
@@ -68,7 +69,8 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={},bool verifiedInternalWireOnly=false) {
+                        FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
+                        bool verifiedInternalFxOnly=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -83,9 +85,15 @@ public:
            expectedRevision==std::numeric_limits<std::uint64_t>::max()) {
             report.fault=Fault::staleRevision;return report;
         }
-        // Only the canonical native WIRE owner may attest unchanged
-        // physical patch / device epoch. Other structural edits disarm.
-        if(!allOutputsDisarmed && !verifiedInternalWireOnly) {
+        // A latency-budgeted vendor FX lease can be prepared off-RT and
+        // published on the SAME physical device/patch as the existing
+        // ChannelId graph. Neither WIRE nor this in-place FX edit can
+        // change physical pins. Other structural edits still disarm.
+        if(verifiedInternalFxOnly && !fx.owner) {
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        if(!allOutputsDisarmed && !verifiedInternalWireOnly &&
+           !verifiedInternalFxOnly) {
             report.fault=Fault::outputArmed;return report;
         }
         auto next=std::make_unique<Publisher::Snapshot>();
@@ -94,6 +102,11 @@ public:
         auto prepared=std::make_unique<Prepared>();
         if(!DynamicPreparedMixerBlock::compile(
               roster,request,prepared->graph,report.graphError)) {
+            report.fault=Fault::invalidGraph;return report;
+        }
+        if(!prepared->graph.prepareLatency([&](ChannelId id) noexcept {
+               return fx.latency?fx.latency(fx.context,id):0;
+           },request.maxScratchBytes,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
         }
         // The Console data and PCM schedule must originate from one and the
@@ -228,12 +241,44 @@ public:
                              bool preFader,float gain) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setParallelSendGain(
-                    source,destination,preFader,gain);
+                if(!std::isfinite(gain)||gain<0.f||gain>4.f)return false;
+                const bool admitted=std::any_of(active.routing.edges.begin(),active.routing.edges.end(),
+                    [&](const auto& edge){return edge.from==source&&edge.to==destination&&
+                        edge.preFader==preFader&&!edge.primaryOutput;});
+                if(!admitted)return false;
+                if(active.graph.channelScheduled(source)&&!active.graph.setParallelSendGain(
+                    source,destination,preFader,gain))return false;
+                // A dormant send has no scratch/atomic DSP edge yet. Its
+                // accepted gain is still editable and seeds the next source
+                // preparation through the authoritative remembered roster.
+                // Routing readback is CONTROL-only; AUDIO reads only the
+                // graph's atomic gain target and preallocated 64-sample slew.
+                for(auto& edge:active.routing.edges)
+                    if(edge.from==source&&edge.to==destination&&
+                       edge.preFader==preFader&&!edge.primaryOutput)
+                        edge.gainLinear=gain;
+                for(auto& row:active.routing.channels)if(row.id==source)
+                    for(auto& edge:row.parallelSends)
+                        if(edge.destination==destination&&edge.preFader==preFader)
+                            edge.gain=gain;
+                return true;
             });
+    }
+    bool setWireGain(std::uint64_t epoch,std::uint64_t revision,
+                     ChannelId source,std::uint64_t edgeId,float gain) noexcept {
+        const auto* routing=acceptedRouting(epoch,revision);
+        if(!routing||!edgeId)return false;
+        for(const auto& edge:routing->edges)
+            if(edge.edgeId==edgeId&&edge.from==source&&!edge.primaryOutput)
+                return setParallelSendGain(epoch,revision,source,edge.to,edge.preFader,gain);
+        return false;
     }
 
     // CONTROL ONLY; never destroy the last live graph in a callback.
+    int latencySamples(std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.latencySamples():0;
+    }
     void unpublish() noexcept {publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {

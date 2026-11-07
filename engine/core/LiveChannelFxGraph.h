@@ -2,6 +2,9 @@
 #pragma once
 #include "PreparedMixerBlock.h"
 #include "FxBypassEnvelope.h"
+#include "StereoLatencyDelay.h"
+#include "RealtimeNativeFxControl.h"
+#include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
 #include <array>
@@ -27,12 +30,16 @@ public:
     static constexpr int maxInsertsPerStrip=8; // fixed capacity, no RT allocation
     using Processor=juce::AudioProcessor;
 
-    struct FxInstance final {
+    struct FxInstance final : juce::AudioProcessorListener {
         std::unique_ptr<Processor> processor;
+        RealtimeNativeFxControl* nativeControl=nullptr; // bound once OFF realtime
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
         const juce::String instanceId; // stable through MOVE; never a slot index
+        const int latencySamples;
+        std::atomic<bool> latencyChanged{false};
+        armix::dsp::StereoLatencyDelay dryDelay;
         std::atomic<bool> bypassRequested{false};
         armix::dsp::FxBypassEnvelope bypassFade; // RT exclusive state
         std::vector<float> dryLeft,dryRight; // CONTROL allocation
@@ -46,10 +53,17 @@ public:
             : processor(std::move(p)),catalogId(std::move(id)),name(std::move(label)),
               instanceId("g5c-"+juce::String(static_cast<juce::int64>(
                   nextId.fetch_add(1,std::memory_order_relaxed)))),
+              latencySamples(processor?processor->getLatencySamples():0),
               dryLeft(static_cast<std::size_t>(maxSamples)),
               dryRight(static_cast<std::size_t>(maxSamples)) {
+            if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
+            if(processor){
+                nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
+                if(nativeControl)nativeControl->sealForRealtime();
+                processor->addListener(this);
+            }
         }
         FxInstance(const FxInstance&)=delete;
         FxInstance& operator=(const FxInstance&)=delete;
@@ -57,9 +71,16 @@ public:
             // Shared by old/new immutable snapshots; last owner drops ONLY on
             // control-thread retirement after the final RT reader exits.
             if(processor) {
+                processor->removeListener(this);
                 try { processor->releaseResources(); }
                 catch(...) { /* vendor cleanup cannot unwind graph retirement */ }
             }
+        }
+        void audioProcessorParameterChanged(juce::AudioProcessor*,int,float) override {}
+        void audioProcessorChanged(juce::AudioProcessor* p,
+                const juce::AudioProcessorListener::ChangeDetails& details) override {
+            if(details.latencyChanged && p && p->getLatencySamples()!=latencySamples)
+                latencyChanged.store(true,std::memory_order_release);
         }
         // G5E: vendor binary state capture is CONTROL only. This is the same
         // fail-closed gate used by realtime processBlock. While control owns
@@ -69,6 +90,13 @@ public:
                 return false;
             bool ok=false;
             try {
+                // Even under the exclusive processor gate, async EQ edits
+                // can still be QUEUED or have an unconsumed completion.
+                // Never serialize a stale binary state into a native Show.
+                if(nativeControl && !nativeControl->stateSnapshotQuiescent()) {
+                    processing.clear(std::memory_order_release);
+                    return false;
+                }
                 juce::MemoryBlock candidate;
                 processor->getStateInformation(candidate);
                 if(candidate.getSize()<=8U*1024U*1024U) {
@@ -79,7 +107,7 @@ public:
             processing.clear(std::memory_order_release);
             return ok;
         }
-        void render(float* left,float* right,int samples) noexcept {
+        void render(float* left,float* right,int samples,bool rackBypassed=false) noexcept {
             if(processing.test_and_set(std::memory_order_acquire)) {
                 contention.fetch_add(1,std::memory_order_relaxed);
                 juce::FloatVectorOperations::clear(left,samples);
@@ -87,22 +115,32 @@ public:
                 return;
             }
             // G5C: atomic request from control; fade and scratch RT-owned.
-            bypassFade.request(bypassRequested.load(std::memory_order_relaxed));
-            if(bypassFade.fullyBypassed()) {
-                processing.clear(std::memory_order_release);
-                return;
-            }
+            // Master rack bypass affects the WET/DRY envelope, never the remembered insert preference.
+            bypassFade.request(rackBypassed || bypassRequested.load(std::memory_order_relaxed));
             if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
                 juce::FloatVectorOperations::clear(left,std::max(0,samples));
                 juce::FloatVectorOperations::clear(right,std::max(0,samples));
                 processing.clear(std::memory_order_release);
                 return;
             }
-            const bool fading=bypassFade.transitioning();
-            if(fading) {
-                juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
-                juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
+            // Drain at most one native EQ control edit even while bypassed.
+            // Fully bypassed plugins otherwise never call processBlock, which
+            // would strand pending GUI commands until users turned them ON.
+            if(nativeControl && bypassFade.fullyBypassed())
+                nativeControl->consumeRealtimeEdits();
+            // Keep bypass at the SAME declared latency as wet, including
+            // rack bypass and disabled slots. PDC never changes on a scalar.
+            for(int i=0;i<samples;++i) {
+                float l=left[i],r=right[i];dryDelay.process(l,r);
+                dryLeft[static_cast<std::size_t>(i)]=l;
+                dryRight[static_cast<std::size_t>(i)]=r;
             }
+            if(bypassFade.fullyBypassed()||latencyChanged.load(std::memory_order_acquire)) {
+                juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
+                juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+                processing.clear(std::memory_order_release);return;
+            }
+            const bool fading=bypassFade.transitioning();
             try {
                 float* planar[]{left,right};
                 juce::AudioBuffer<float> buffer(planar,2,samples);
@@ -227,6 +265,17 @@ public:
         fx->bypassRequested.store(bypass,std::memory_order_release);
         return true;
     }
+    // One atomic rack override per channel. Individual slot bypass flags stay
+    // unchanged; ON restores the previous enabled/disabled combination.
+    bool setRackBypass(int strip,bool bypass) noexcept {
+        if(strip<0||strip>=fxSlots)return false;
+        rackBypassed_[strip].store(bypass,std::memory_order_release);
+        return true;
+    }
+    bool rackBypassed(int strip) const noexcept {
+        return strip>=0&&strip<fxSlots &&
+            rackBypassed_[strip].load(std::memory_order_acquire);
+    }
     // Same opaque token used by the native BYPASS ACK. A vendor editor takes
     // an owner lease ONLY on the message thread, never in process().
     InstanceLease leaseInsert(int strip,int position,const juce::String& token) const noexcept {
@@ -255,6 +304,10 @@ public:
         if(!original||original->catalogId!=catalogId)return false;
         for(int i=0;i<counts_[strip];++i)
             if(processors_[strip][i]==original)return false;
+        // Reusing the first retained plugin also carries its channel-level
+        // rack override; no resume-to-ON during a compatible reconfigure.
+        if(target==0)rackBypassed_[strip].store(
+            previous.rackBypassed(strip),std::memory_order_relaxed);
         processors_[strip][target]=original; // shared_ptr CONTROL only
         ++counts_[strip];++activeInserts_;
         return true;
@@ -295,12 +348,15 @@ public:
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
             const int count=counts_[strip]; // immutable, prepared OFF RT
+            const bool rackOff=rackBypassed_[strip].load(std::memory_order_acquire);
             if(count>0) {
                 for(int slot=0;slot<count;++slot) {
                     auto* instance=processors_[strip][slot].get();
-                    instance->render(l,r,samples); // no shared_ptr copies or RT heap use
+                    instance->render(l,r,samples,rackOff); // existing 8ms fade; no RT allocation
                 }
             } else if(strip==0 && externalFx)
+                // The legacy CH1 callback owns its own per-slot smooth rack
+                // bypass. Never skip it abruptly or strip out its FX tail.
                 externalFx(externalContext,strip,l,r,samples);
         };
         if(monitorEnabled_ && (!monitorL||!monitorR))return false;
@@ -315,6 +371,7 @@ private:
     RealtimeStripControls controls_ {};
     FxBank processors_ {};
     std::array<std::uint8_t,fxSlots> counts_ {};
+    std::array<std::atomic<bool>,fxSlots> rackBypassed_{}; // CONTROL write; one RT read per lane
     int activeInserts_=0;
     int pluginQuantum_=512;
     int mainOutputLeft_=0,mainOutputRight_=1;

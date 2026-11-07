@@ -79,11 +79,9 @@
     // FAT. Never equate an installed PCM graph with a release-ready product.
     // Conversely, callbackOwnsChannelIds is ONLY advertised by the real
     // installed callback; the legacy M4/Pages demo must remain unadmitted.
-    const admitted = caps.callbackOwnsChannelIds === true &&
+    const hasAcceptedGraph =
       cmp(d.epoch,"0") > 0 && cmp(g.revision,"0") > 0 &&
-      d.sampleRate > 0 && d.bufferFrames > 0 &&
-      d.enabledOutputs.length > 0 && d.outputEndpoints.length > 0 &&
-      Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
+      cmp(g.rosterRevision,"0") > 0 && Array.isArray(g.edges) && g.channels.length > 0 && mainCount === 1 &&
       typeof g.mainChannelId === "string" &&
       g.channels.some(ch => ch.id === g.mainChannelId && ch.role === "MAIN") &&
       g.channels.every(ch => fields(ch,["controls","inserts","sends"]) &&
@@ -92,11 +90,20 @@
         Number.isFinite(ch.controls.pan) && isBool(ch.controls.mute) &&
         isBool(ch.controls.solo) && Array.isArray(ch.inserts) &&
         Array.isArray(ch.sends));
+    const retained = g.bindingState === "NEEDS_REMAP";
+    if (retained && (!hasAcceptedGraph || caps.callbackOwnsChannelIds ||
+        caps.supportedOps.length !== 0 || d.outputArmed ||
+        raw.mixerSession?.authority !== "CHANNEL_ID" ||
+        raw.mixerSession?.bindingState !== "NEEDS_REMAP" ||
+        raw.mixerSession?.deviceEpoch !== d.epoch)) return null;
+    const admitted = caps.callbackOwnsChannelIds === true && hasAcceptedGraph &&
+      d.sampleRate > 0 && d.bufferFrames > 0 &&
+      d.enabledOutputs.length > 0 && d.outputEndpoints.length > 0;
     // A producer may stage PCM without claiming full release/UAT. A producer
     // must NEVER claim product LIVE without an admitted PCM graph.
     if (raw.productionCallbackLive && !admitted) return null;
     if (caps.callbackOwnsChannelIds && !admitted) return null;
-    return { raw, device:d, graph:g, telemetry:t, admitted,
+    return { raw, device:d, graph:g, telemetry:t, admitted, retained,
       productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
   }
@@ -116,6 +123,41 @@
     if (operation === "SET_MUTE" || operation === "SET_SOLO")
       return typeof payload.value==="boolean" &&
         ch.controls[operation==="SET_MUTE"?"mute":"solo"]===payload.value;
+    if (operation === "SET_PROCESSING_FORMAT")
+      return ["MONO","STEREO"].includes(payload.format) &&
+        cmp(next.graph.revision,pending.baseGraphRevision)>0 &&
+        cmp(next.graph.rosterRevision,pending.baseRosterRevision)>0 &&
+        ch.processingFormat===payload.format;
+    if (operation === "LOAD_INSERT")
+      return cmp(next.graph.revision,pending.baseGraphRevision)>0 &&
+        cmp(next.graph.rosterRevision,pending.baseRosterRevision)>0 &&
+        Number.isInteger(payload.slot)&&payload.slot>=0 &&
+        typeof payload.catalogId==="string" &&
+        Array.isArray(ch.inserts)&&ch.inserts.length===payload.slot+1 &&
+        ch.inserts[payload.slot]?.catalogId===payload.catalogId &&
+        typeof ch.inserts[payload.slot]?.id==="string" &&
+        ch.inserts[payload.slot].id.length>0 &&
+        !ch.inserts.slice(0,payload.slot).some(insert=>
+          insert.id===ch.inserts[payload.slot].id);
+    if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
+      const expected=pending.fxExpected;
+      if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
+         cmp(next.graph.rosterRevision,pending.baseRosterRevision)<=0)return false;
+      const ids=id=>(next.graph.channels.find(c=>c.id===id)?.inserts||[]).map(x=>x.id);
+      const equal=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
+      if(!equal(ids(targetChannelId),expected.source))return false;
+      if(expected.to&&!equal(ids(expected.to),expected.destination))return false;
+      const copies=next.graph.channels.reduce((n,c)=>n+c.inserts.filter(x=>x.id===payload.instanceId).length,0);
+      return copies===(operation==="REMOVE_INSERT"?0:1);
+    }
+    if (operation === "SET_WIRE_GAIN") {
+      const before=pending.wireIdentity;
+      const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+      return !!before && !!edge && edge.primaryOutput===false &&
+        edge.to===before.to && edge.tap===before.tap &&
+        Number.isFinite(payload.gainLinear)&&Number.isFinite(edge.gainLinear)&&
+        Math.abs(edge.gainLinear-payload.gainLinear)<=0.0001;
+    }
     if (operation !== "APPLY_WIRE_TRANSACTION" ||
         !Array.isArray(payload.changes) || !payload.changes.length) return false;
     // A structural WIRE transaction must advance the actual PCM graph.
@@ -166,10 +208,17 @@
           if (pending.originalPrimaryOutId &&
               pending.originalPrimaryOutId!==edit.to &&
               edges.some(e=>e.from===edit.from&&
-                e.to===pending.originalPrimaryOutId))
+                e.to===pending.originalPrimaryOutId&&
+                // A remembered parallel send is NOT the former primary.
+                // Unknown/legacy edge identity stays fail-closed.
+                e.primaryOutput!==false))
             return false;
           if (edit.to!==next.graph.mainChannelId &&
-              edges.some(e=>e.from===edit.from&&e.to===next.graph.mainChannelId))
+              edges.some(e=>e.from===edit.from&&
+                e.to===next.graph.mainChannelId&&
+                // ROUTE_ONLY replaces only the primary. A deliberate
+                // independent parallel MAIN send must remain audible.
+                e.primaryOutput!==false))
             return false;
         }
         return true;
@@ -242,7 +291,7 @@
               cmp(next.graph.rosterRevision,current.graph.rosterRevision) < 0))) {
           lastError="OLD_NATIVE_REVISION";notify();return false;
         }
-        if (pending && epochCompare !== 0) {
+        if (pending && (epochCompare !== 0 || next.retained)) {
           pending=null;lastError="STALE_DEVICE";
         }
       }
@@ -290,12 +339,40 @@
         lastError="UNKNOWN_CHANNEL_ID";notify();return {ok:false,error:lastError};
       }
       if (!object(payload)) {lastError="INVALID_PAYLOAD";notify();return {ok:false,error:lastError};}
+      let fxExpected=null;
+      if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
+        const source=current.graph.channels.find(c=>c.id===targetChannelId);
+        const slot=payload.slot,token=payload.instanceId;
+        if(!Number.isInteger(slot)||slot<0||source?.inserts?.[slot]?.id!==token)
+          return {ok:false,error:"STALE_FX_INSTANCE"};
+        const ids=source.inserts.map(x=>x.id);ids.splice(slot,1);
+        fxExpected={source:ids};
+        if(operation==="MOVE_INSERT") {
+          const dest=current.graph.channels.find(c=>c.id===payload.toChannelId),pos=payload.toSlot;
+          const same=dest?.id===targetChannelId;
+          const list=same?ids:dest?.inserts?.map(x=>x.id);
+          if(!dest||!["INPUT","GROUP","FX_RETURN","MAIN"].includes(dest.role)||
+             !list||list.length>=8||!Number.isInteger(pos)||pos<0||pos>list.length)
+            return {ok:false,error:"INVALID_FX_DESTINATION"};
+          list.splice(pos,0,token);
+          if(!same){fxExpected.to=dest.id;fxExpected.destination=list;}
+        }
+      }
+      let wireIdentity=null;
+      if(operation==="SET_WIRE_GAIN") {
+        const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+        if(!edge||edge.primaryOutput!==false||!Number.isFinite(payload.gainLinear)||
+           payload.gainLinear<0||payload.gainLinear>4) {
+          lastError="INVALID_WIRE_GAIN_TARGET";notify();return {ok:false,error:lastError};
+        }
+        wireIdentity={to:edge.to,tap:edge.tap};
+      }
       const requestId=session+"-"+(++lastRequest);
       const msg={requestId,deviceEpoch:current.device.epoch,
         baseGraphRevision:current.graph.revision,
         baseRosterRevision:current.graph.rosterRevision,
         operation,targetChannelId,payload};
-      pending={requestId,operation,targetChannelId,payload,
+      pending={requestId,operation,targetChannelId,payload,wireIdentity,fxExpected,
         originalPrimaryOutId:current.graph.channels.find(
           ch=>ch.id===targetChannelId)?.primaryOutId||null,
         deviceEpoch:msg.deviceEpoch,baseGraphRevision:msg.baseGraphRevision,

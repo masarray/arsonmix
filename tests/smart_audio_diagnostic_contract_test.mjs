@@ -13,7 +13,6 @@ const bridge=read('engine/device/AdaptiveClockBridge.h');
 const policy=read('engine/device/AudioProfilePolicy.h');
 const health=read('engine/core/RealtimeHealthHistogram.h');
 const cmake=read('CMakeLists.txt');
-const flow=read('.github/workflows/p1-windows.yml');
 
 test('native one-click copy uses system clipboard and includes last event markers',()=>{
   assert.match(host,/if \(action == "copyDiagnosticReport"\)/);
@@ -45,8 +44,7 @@ test('P0 capability report uses real independent endpoints and never auto-applie
   assert.match(host,/NOT_FAT_QUALIFIED_DO_NOT_AUTO_APPLY/);
   assert.match(host,/WASAPI shared can/);
   assert.match(adapter,/std::span<const int>/);
-  assert.match(cmake,/NativeDriverPeriodEvidence/);
-  assert.match(flow,/ARMixPeriodEvidenceTests/);
+  assert.match(cmake,/add_test\(NAME NativeDriverPeriodEvidence COMMAND ARMixPeriodEvidenceTests\)/);
   assert.match(policy,/unqualifiedLowLatency/);
   assert.match(policy,/explicitExclusiveApprovalRequired/);
 });
@@ -73,8 +71,7 @@ test('P0 ASIO native COM-driver registration attestation runs only on control pl
   assert.match(engine,/asioPinnedRegistration_\.sameDriverClass/);
   assert.match(engine,/asioRegisteredClassHash/);
   assert.match(host,/WINDOWS ASIO DRIVER REGISTRATION/);
-  assert.match(cmake,/AsioDriverClassRegistryAttestation/);
-  assert.match(flow,/ARMixAsioRegistryIdentityTests/);
+  assert.match(cmake,/add_test\(NAME AsioDriverClassRegistryAttestation COMMAND ARMixAsioRegistryIdentityTests\)/);
 });
 test('P0 render callback cadence uses previous quantum and labels provenance rather than inventing XRUNs',()=>{
   const cadence=read('engine/core/CallbackCadenceEvidence.h');
@@ -90,8 +87,7 @@ test('P0 render callback cadence uses previous quantum and labels provenance rat
   assert.match(engine,/callbackCadenceComparedIntervals/);
   assert.match(engine,/callbackCadenceClockRegressions/);
   assert.match(host,/START-to-START estimates use PREVIOUS callback frame count/);
-  assert.match(cmake,/P0RenderCallbackVariableQuantumCadence/);
-  assert.match(flow,/ARMixCadenceTests/);
+  assert.match(cmake,/add_test\(NAME P0RenderCallbackVariableQuantumCadence COMMAND ARMixCadenceTests\)/);
   assert.doesNotMatch(engine,/previousCallbackStartUs_/);
 });
 test('telemetry distinguishes measured host budget fractions from unobservable output underrun',()=>{
@@ -111,8 +107,7 @@ test('P0 deterministic virtual clock soak is enforced in Windows CTest',()=>{
   assert.match(soak,/steadyUnderflow/);
   assert.match(soak,/p99Budget/);
   assert.doesNotMatch(soak,/std::this_thread::sleep_for\s*\(|std::random_device\s*[({]/);
-  assert.match(cmake,/IndependentClockASRCDriftJitterSoak/);
-  assert.match(flow,/ARMixVirtualClockSoakTests/);
+  assert.match(cmake,/add_test\(NAME IndependentClockASRCDriftJitterSoak COMMAND ARMixVirtualClockSoakTests\)/);
 });
 test('clock bridge has no callback alloc / blocking and is gated behind independent stream adapter',()=>{
   assert.match(bridge,/class AdaptiveClockBridge final/);
@@ -128,7 +123,7 @@ test('clock bridge has no callback alloc / blocking and is gated behind independ
   assert.match(cmake,/RealtimeHealthHistogram/);
   for (const target of ['ARMixClockBridgeTests','ARMixVirtualClockSoakTests',
                         'ARMixHealthTests','ARMixPolicyTests'])
-    assert.ok(flow.includes(target), 'Windows CI is missing ' + target);
+    assert.match(cmake, new RegExp('add_test\\(NAME \\w+ COMMAND '+target+'\\)'));
   assert.match(policy,/class AudioProfilePolicy final/);
   assert.match(policy,/clockSharedByHardware/);
   assert.match(policy,/unsupportedClockAdapter/);
@@ -148,6 +143,5 @@ test('P0 capture block-head evidence is a single-pass RT heuristic, not invented
  assert.match(engine,/captureNonFiniteSamples/);
  assert.doesNotMatch(engine,/rawCapturePeak=juce::jmax\(/);
  assert.match(fixture,/100000/);
- assert.match(cmake,/P0CaptureZeroHeadBoundaryCandidates/);
- assert.match(flow,/ARMixCaptureBoundaryTests/);
+ assert.match(cmake,/add_test\(NAME P0CaptureZeroHeadBoundaryCandidates COMMAND ARMixCaptureBoundaryTests\)/);
 });

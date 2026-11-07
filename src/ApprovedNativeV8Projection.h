@@ -73,17 +73,34 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
         ch->setProperty("controls",juce::var(controls.release()));
         juce::Array<juce::var> fx;
         for(const auto& item:*inserts.getArray()){
+            // Catalog identity selects the vendor binary; instance identity
+            // addresses the live DSP processor and per-slot bypass/editor.
+            // They must NEVER be compared as if they were interchangeable.
             const auto token=item.getProperty("instanceId",{}),label=item.getProperty("name",{});
+            const auto catalog=item.getProperty("id",{});
             const auto bypass=item.getProperty("bypassed",{});
-            if(!token.isString()||!label.isString()||!bypass.isBool())return false;
+            if(!token.isString()||token.toString().isEmpty()||
+               !catalog.isString()||catalog.toString().isEmpty()||
+               catalog.toString().getNumBytesAsUTF8()>256||
+               !label.isString()||!bypass.isBool())return false;
             auto insert=std::make_unique<juce::DynamicObject>();
-            insert->setProperty("id",token);insert->setProperty("name",label);
+            insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
+            insert->setProperty("name",label);
             insert->setProperty("bypassed",bypass);
+            const auto latency=item.getProperty("latencySamples",{});
+            if(latency.isInt())insert->setProperty("latencySamples",latency);
+            const auto changed=item.getProperty("latencyChanged",{});
+            if(changed.isBool())insert->setProperty("latencyChanged",changed);
             fx.add(juce::var(insert.release()));
         }
         ch->setProperty("inserts",juce::var(fx));
+        const auto rackBypassed=row.getProperty("fxRackBypassed",{});
+        if(!rackBypassed.isVoid()) {
+            if(!rackBypassed.isBool())return false;
+            ch->setProperty("fxRackBypassed",rackBypassed);
+        }
         ch->setProperty("sends",juce::var(juce::Array<juce::var>{}));
-        if(role!="INPUT"){
+        { // INPUT channels can receive WIRE PCM as well as physical capture.
             auto dst=std::make_unique<juce::DynamicObject>();
             dst->setProperty("id",id);dst->setProperty("name",name);
             dst->setProperty("role",role);
@@ -140,6 +157,8 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
     if(!g||!t)return false;
     // All validation completed before anything becomes authoritative.
     g->setProperty("revision",rev);g->setProperty("rosterRevision",roster);
+    const auto latency=bus.getProperty("latencySamples",{});
+    if(latency.isInt())g->setProperty("latencySamples",latency);
     g->setProperty("mainChannelId",mainId);
     g->setProperty("channels",juce::var(channels));
     g->setProperty("destinations",juce::var(destinations));
@@ -147,6 +166,9 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
     if(auto* caps=graph.getProperty("capabilities",{}).getDynamicObject()){
         caps->setProperty("callbackOwnsChannelIds",true);
         juce::Array<juce::var> ops;ops.add("APPLY_WIRE_TRANSACTION");
+        const auto actual=bus.getProperty("supportedOps",{});
+        if(const auto* list=actual.getArray())
+            if(list->contains(juce::var("NATIVE_SET_WIRE_GAIN")))ops.add("SET_WIRE_GAIN");
         caps->setProperty("supportedOps",juce::var(ops));
     }
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));

@@ -58,11 +58,13 @@ enum class ChannelEditFault : std::uint8_t {
 struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
-        setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput
+        setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
+        removeInsertReference, moveInsertReference
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
     std::size_t position=0;
+    std::size_t insertPosition=0; // final destination position after removal
     ChannelRole role=ChannelRole::input;
     ProcessingFormat format=ProcessingFormat::mono;
     float value=0.f;
@@ -242,6 +244,23 @@ public:
                         result.fault=ChannelEditFault::budgetExceeded;
                     else it->insertCatalogIds.push_back(op.text);
                     break;
+                case ChannelEdit::Kind::removeInsertReference:
+                case ChannelEdit::Kind::moveInsertReference: {
+                    auto& slots=it->insertCatalogIds;
+                    if(op.position>=slots.size()) {result.fault=ChannelEditFault::invalidPosition;break;}
+                    if(op.kind==ChannelEdit::Kind::removeInsertReference) {
+                        slots.erase(slots.begin()+op.position);break;
+                    }
+                    auto target=seek(op.target);
+                    if(target==candidate.end() || target->role==ChannelRole::monitor ||
+                       (target!=it && target->insertCatalogIds.size()>=budget_.maximumInsertSlotsPerChannel) ||
+                       op.insertPosition>target->insertCatalogIds.size()-(target==it?1:0)) {
+                        result.fault=ChannelEditFault::invalidPosition;break;
+                    }
+                    auto catalog=slots[op.position];slots.erase(slots.begin()+op.position);
+                    target->insertCatalogIds.insert(target->insertCatalogIds.begin()+op.insertPosition,std::move(catalog));
+                    break;
+                }
                 case ChannelEdit::Kind::addSendReference:
                     // OUT is a single unity, POST-fader serial route. Its
                     // pan/fader live on the source strip; only SEND may own
@@ -355,7 +374,6 @@ public:
         const auto main=std::find_if(candidate.begin(),candidate.end(),
             [](const auto& ch){return ch.role==ChannelRole::main;});
         if(main==candidate.end()){result.fault=ChannelEditFault::invalidAction;return result;}
-        const ChannelId mainId=main->id;
         std::uint64_t stagedNextEdge=nextEdgeId_;
         if(!assignMissingEdgeIds(candidate,stagedNextEdge)){
             result.fault=ChannelEditFault::idExhausted;return result;
@@ -390,27 +408,40 @@ public:
             }
             if(!op.to.value || op.to==op.from || !std::isfinite(op.gain) ||
                op.gain<0.f || op.gain>4.f ||
-               (op.kind==WireChange::Kind::routeOnly && op.to==mainId)){
+               (op.kind==WireChange::Kind::routeOnly && op.gain!=1.f)){
                 result.fault=ChannelEditFault::invalidValue;break;
             }
-            const bool already=std::any_of(sends.begin(),sends.end(),
+            const auto existing=std::find_if(sends.begin(),sends.end(),
                 [&](const auto& s){return s.destination==op.to;});
-            if(already && op.kind==WireChange::Kind::connect){
+            if(existing!=sends.end() && op.kind==WireChange::Kind::connect){
                 result.fault=ChannelEditFault::duplicateSend;break;
             }
             if(op.kind==WireChange::Kind::routeOnly){
+                // ROUTE_ONLY is an exclusive primary OUT choice, including
+                // MAIN. Replace the previous primary destination (MAIN or
+                // GROUP), but preserve other deliberate parallel SENDs.
                 sends.erase(std::remove_if(sends.begin(),sends.end(),
-                    [&](const auto& s){return s.destination==mainId;}),
+                    [&](const auto& s){return s.primaryOutput &&
+                                                   s.destination!=op.to;}),
                     sends.end());
-                if(already)continue; // retain original edgeId/gain
+                const auto target=std::find_if(sends.begin(),sends.end(),
+                    [&](const auto& s){return s.destination==op.to;});
+                if(target!=sends.end()){
+                    // Promote the EXACT existing EdgeId to primary instead
+                    // of doubling a parallel SEND in the accepted PCM.
+                    target->primaryOutput=true;
+                    target->gain=1.f;target->preFader=false;target->pan=0.f;
+                    continue;
+                }
             }
             if(sends.size()>=budget_.maximumSendsPerChannel){
                 result.fault=ChannelEditFault::budgetExceeded;break;
             }
-            const bool hasPrimary=std::any_of(sends.begin(),sends.end(),
-                [](const auto& s){return s.primaryOutput;});
-            const bool primary=!hasPrimary &&
-                (op.to==mainId || op.kind==WireChange::Kind::routeOnly);
+            // CONNECT means a deliberate parallel POST-fader send, even to
+            // MAIN and even when primary OUT is NONE. Only ROUTE_ONLY may
+            // establish a primary. This prevents silent promotion of a send
+            // into an exclusive route and preserves SOURCE ONLY readback.
+            const bool primary=op.kind==WireChange::Kind::routeOnly;
             sends.push_back({op.to,op.gain,false,0.f,primary,0});
         }
         if(result.ok()){
@@ -649,6 +680,56 @@ public:
         ++nextId_;result.revision=++revision_;
         result.createdIds.push_back(busId);
         return result;
+    }
+
+    // Restore stable native ChannelIds and EdgeIds without replaying CREATE,
+    // which would invent new identities, reorder wires and break external FX.
+    // CONTROL ONLY; no audio is ever published by this operation.
+    bool restoreExact(std::uint64_t restoredRevision,
+                      std::span<const ChannelStripDefinition> entries) {
+        if(restoredRevision==0 || entries.empty() ||
+           !withinBudget(std::vector<ChannelStripDefinition>(entries.begin(),entries.end())))
+            return false;
+        std::unordered_set<std::uint64_t> ids,edges;
+        std::uint64_t maxId=0,maxEdge=0;
+        int mains=0,monitors=0;
+        for(const auto& ch:entries) {
+            if(!ch.id.value || ch.id.value==std::numeric_limits<std::uint64_t>::max() ||
+               !ids.insert(ch.id.value).second ||
+               !std::isfinite(ch.faderLinear) || ch.faderLinear<0.f ||
+               ch.faderLinear>4.f || !std::isfinite(ch.pan) ||
+               ch.pan< -1.f || ch.pan>1.f)return false;
+            maxId=std::max(maxId,ch.id.value);
+            mains+=ch.role==ChannelRole::main;
+            monitors+=ch.role==ChannelRole::monitor;
+            int primary=0;
+            for(const auto& send:ch.sends) {
+                if(!send.edgeId ||
+                   send.edgeId==std::numeric_limits<std::uint64_t>::max() ||
+                   !send.destination.value || send.destination==ch.id ||
+                   !edges.insert(send.edgeId).second ||
+                   !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
+                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
+                    return false;
+                primary+=send.primaryOutput;
+                maxEdge=std::max(maxEdge,send.edgeId);
+            }
+            if(primary>1 || (ch.role==ChannelRole::main && !ch.sends.empty()) ||
+               (ch.role==ChannelRole::monitor && !ch.sends.empty()))return false;
+        }
+        if(mains!=1||monitors>1)return false;
+        for(const auto& ch:entries)
+            for(const auto& send:ch.sends)
+                if(ids.count(send.destination.value)==0)return false;
+        auto candidate=std::vector<ChannelStripDefinition>(entries.begin(),entries.end());
+        auto index=buildIndex(candidate);
+        if(index.size()!=candidate.size())return false;
+        channels_.swap(candidate);
+        index_.swap(index);
+        revision_=restoredRevision;
+        nextId_=maxId+1;
+        nextEdgeId_=maxEdge+1;
+        return true;
     }
 
 private:
