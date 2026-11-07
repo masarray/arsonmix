@@ -337,7 +337,7 @@ if(BUILD_TESTING)
   target_sources(ARMixDurableMixerSessionTests PRIVATE tests/native_mixer_session_store_test.cpp
       src/NativeMixerSessionDocument.h src/NativeMixerSessionStore.h)
   target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
-      juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
+      juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
 

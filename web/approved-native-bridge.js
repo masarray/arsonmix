@@ -1840,15 +1840,16 @@
         " / OUT 0x"+String(b.outputMask||"?")+" · "+String(b.rate||"?")+" Hz";
       const sources=Array.isArray(ack.sources)?ack.sources:[];
       const pins=sources.slice(0,12).map(s=>"CH "+s.channelId+" ← "+
-        "IN "+(Number(s.left)+1)+(s.stereo?"/"+(Number(s.right)+1):"")).join("\n");
-      const message="REBIND SAVED MIXER TO CURRENT PHYSICAL DEVICE?\n\n"+
+        (s.unbound?"UNBOUND · select IN after rebind":
+          "IN "+(Number(s.left)+1)+(s.stereo?"/"+(Number(s.right)+1):""))).join("\n");
+      const message="REBIND MIXER TO CURRENT PHYSICAL DEVICE?\n\n"+
         "Saved: "+describe(saved)+"\n\nCurrent: "+describe(live)+
-        "\nCurrent MAIN output pair (callback ordinals): "+
+        "\nCurrent MAIN physical output pins: "+
         (Number(ack.currentMainL)+1)+"/"+(Number(ack.currentMainR)+1)+
-        "\nSaved MAIN pair: "+(Number(ack.savedMainL)+1)+"/"+
+        "\nSaved MAIN pair (callback ordinals): "+(Number(ack.savedMainL)+1)+"/"+
         (Number(ack.savedMainR)+1)+
         "\nInput callback pins: "+String(ack.inputs)+
-        "\n\nSaved sources keep these callback ordinal assignments:"+
+        "\n\nProposed physical input assignments:"+
         (pins?"\n"+pins:"\nNo physical sources")+
         (sources.length>12?"\n…plus "+(sources.length-12)+" more sources":"")+
         "\n\nVERIFY actual ASIO/WASAPI pin wiring and the MAIN output pair."+

@@ -35,7 +35,8 @@ public:
     };
     class ReadLease final {
     public:
-        explicit ReadLease (RealtimeRoutePublisher& owner) noexcept : owner_(&owner) {
+        explicit ReadLease (RealtimeRoutePublisher& owner,bool skip=false) noexcept : owner_(&owner) {
+            if(skip)return;
             auto activity=owner_->activity_.load(std::memory_order_seq_cst);
             // Do not spin/wait inside the audio callback. One silent block is
             // preferable to scheduling jitter while control thread publishes.
@@ -159,7 +160,7 @@ public:
                owned_->graphRevision==expectedRevision
                    ?owned_->prepared.get():nullptr;
     }
-    [[nodiscard]] ReadLease acquire() noexcept {return ReadLease(*this);}
+    [[nodiscard]] ReadLease acquire(bool skip=false) noexcept {return ReadLease(*this,skip);}
     std::uint64_t lastRevision() const noexcept {return revision_;} // CONTROL
     std::size_t pendingRetirements() const noexcept {return retiredCount_;} // CONTROL
     bool readersPresent() const noexcept {

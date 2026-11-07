@@ -5,6 +5,8 @@
 #include <cassert>
 #include <iostream>
 #include "../src/NativeMixerSessionStore.h"
+#include "../src/LiveDryRoutingLab.h"
+#include "../src/NativeMixerSessionFxRestore.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -60,7 +62,188 @@ static MixerSessionDocument makeSession() {
     d.rackBypassed.push_back({1});
     return d;
 }
+class FixtureDevice final : public juce::AudioIODevice {
+public:
+    FixtureDevice():AudioIODevice("Verified WASAPI fixture","Windows Audio") {
+        inputMask.setRange(0,2,true);
+        outputMask.setRange(0,2,true);
+    }
+    juce::StringArray getOutputChannelNames() override {return {"Main L","Main R"};}
+    juce::StringArray getInputChannelNames() override {return {"Capture L","Capture R"};}
+    juce::Array<double> getAvailableSampleRates() override {return {48000.,44100.};}
+    juce::Array<int> getAvailableBufferSizes() override {return {480,512};}
+    int getDefaultBufferSize() override {return 480;}
+    juce::String open(const juce::BigInteger&,const juce::BigInteger&,double,int) override {return {};}
+    void close() override {}
+    bool isOpen() override {return true;}
+    void start(juce::AudioIODeviceCallback*) override {}
+    void stop() override {}
+    bool isPlaying() override {return true;}
+    juce::String getLastError() override {return {};}
+    int getCurrentBufferSizeSamples() override {return frames;}
+    double getCurrentSampleRate() override {return rate;}
+    int getCurrentBitDepth() override {return 32;}
+    juce::BigInteger getActiveOutputChannels() const override {return outputMask;}
+    juce::BigInteger getActiveInputChannels() const override {return inputMask;}
+    int getOutputLatencyInSamples() override {return 0;}
+    int getInputLatencyInSamples() override {return 0;}
+    juce::BigInteger inputMask,outputMask;
+    int frames=480;
+    double rate=48000.;
+};
+
+static void nativeDeviceRecovery() {
+    FixtureDevice device;
+    auto saved=makeSession();
+    saved.binding={"Windows Audio","VB-Cable","Realtek","3","3",48000.,480};
+    saved.request.maxFrames=480;
+    saved.request.sources={{ChannelId{1},0,1,true}};
+    saved.rackBypassed.clear();
+    auto rows=saved.roster.channels();
+    rows.front().format=ProcessingFormat::stereo;
+    rows.front().sends.push_back({{2},.15f,false,0.f,false,110});
+    const auto eqId=armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
+    rows.front().insertCatalogIds.push_back(juce::String(eqId).toStdString());
+    assert(saved.roster.restoreExact(saved.acceptedRevision,rows));
+    BinaryState binary;
+    armix::builtin_fx::ChannelEqProcessor eq;
+    eq.prepareToPlay(48000.,480);
+    eq.getStateInformation(binary.bytes);
+    binary.sha256=juce::SHA256(binary.bytes).toHexString();
+    saved.inserts.push_back({{1},0,eqId,{},binary.sha256,"EQ",0,false});
+    // Validate the same durable document used at app startup.
+    MixerSessionDocument verified;
+    assert(Codec::decode(Codec::encode(saved),verified));
+    std::vector<BinaryState> blobs{binary};
+    juce::AudioPluginFormatManager formats;
+    {
+        LiveDryRoutingLab fresh;
+        fresh.prepareDevice(&device);
+        assert(fresh.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
+        assert(fresh.ready() && !fresh.hasExplicitRoute());
+    }
+
+    LiveDryRoutingLab mixer;
+    mixer.prepareDevice(&device);
+    const auto restore=[&](const MixerSessionDocument& doc,
+                           const std::vector<BinaryState>& states,bool disarmed) {
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault;
+        assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+        std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+        const auto preparation=NativeMixerSessionFxRestore::prepare(doc,states,formats,
+            device.rate,doc.request.maxFrames,pins.epoch,mixer.nativeGraphRevisionForRestore(),bank);
+        if(preparation.isNotEmpty())return preparation;
+        return mixer.restoreNativeMixerSession(doc,std::move(bank),pins,disarmed);
+    };
+    assert(!mixer.ready() && mixer.revision()==0); // no compatibility PCM publisher
+    assert(restore(verified,{},true).isNotEmpty());
+    assert(restore(verified,blobs,false).isNotEmpty());
+    assert(!mixer.channelIdPhysicalPcmActive());
+    assert(restore(verified,blobs,true).isEmpty());
+    const auto firstEpoch=mixer.epoch();
+    assert(mixer.ready() && mixer.controlRevision()>0 && mixer.revision()==0);
+    assert(mixer.status(&device).getProperty("mainOutputs",{}).getArray()->size()==2);
+
+    std::array<float,480> inL,inR,outL,outR;
+    inL.fill(.2f);inR.fill(.1f);
+    const float* in[]={inL.data(),inR.data()};
+    float* out[]={outL.data(),outR.data()};
+    const auto process=[&](bool muted) {
+        outL.fill(1.f);outR.fill(1.f);
+        assert(mixer.process(in,device.inputMask.countNumberOfSetBits(),out,2,480,1.f,muted,
+                             nullptr,nullptr,false,nullptr,nullptr,true));
+    };
+    process(true);
+    assert(outL.back()==0.f && outR.back()==0.f && mixer.peakLeft()==0.f);
+    auto graph=mixer.nativeBusStatus();
+    const auto channels=graph.getProperty("channels",{});
+    assert(static_cast<double>(channels.getArray()->getReference(0).getProperty("peakL",0.))>0.);
+    process(false);
+    assert(outL.back()>.05f && outR.back()>.025f);
+
+    // Reopen repeatedly. The field failure had retained channels, FX and
+    // WIRE, but no live legacy lease for the new 48 kHz/480 frame epoch.
+    for(int attempt=0;attempt<3;++attempt) {
+        const auto prior=mixer.epoch();
+        mixer.deviceStopped();
+        mixer.prepareDevice(&device);
+        assert(!mixer.ready() && mixer.revision()==0);
+        assert(mixer.status(&device).getProperty("retainedNativeBus",{}).isObject());
+        process(true);
+        assert(outL.back()==0.f && outR.back()==0.f);
+        assert(mixer.rebindVerifiedDevice(prior,mixer.epoch(),480,false));
+        assert(mixer.channelIdPhysicalPcmActive());
+        assert(!mixer.setNativeInputMuteSolo(firstEpoch,mixer.controlRevision(),{1},true,false));
+        process(true);
+        assert(outL.back()==0.f && outR.back()==0.f);
+        process(false);
+        assert(outL.back()>.05f && outR.back()>.025f);
+    }
+    const auto ep=mixer.epoch();
+    auto rev=mixer.controlRevision();
+    assert(mixer.setNativeInputMuteSolo(ep,rev,{1},true,false));
+    process(false);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    assert(mixer.setNativeInputMuteSolo(ep,rev,{1},false,false));
+    assert(mixer.setNativeInputMix(ep,rev,{1},.5f,0.f));
+    process(false);
+    assert(outL.back()>.02f && outL.back()<.19f);
+    MixerSessionDocument current;
+    std::vector<BinaryState> currentStates;
+    assert(mixer.captureNativeMixerSession(current,currentStates).isEmpty());
+    assert(current.roster.find({1})->sends[1].edgeId==101);
+    assert(current.roster.find({1})->faderLinear==.5f);
+    assert(current.inserts.size()==1 && current.inserts[0].catalogId==eqId);
+    current.binding=saved.binding;
+
+    mixer.deviceStopped();
+    device.inputMask.clearBit(1);
+    device.rate=44100.;
+    device.frames=512;
+    mixer.prepareDevice(&device);
+    auto nextBinding=current.binding;
+    nextBinding.inputMask="1";nextBinding.rate=device.rate;nextBinding.frames=device.frames;
+    const auto pair=MixerDeviceBindingPolicy::proposedOutputs(current,nextBinding,2);
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,false).isNotEmpty());
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,true).isEmpty());
+    assert(current.request.sources.empty()); // lost stereo half is never borrowed
+    assert(current.roster.find({1})->sends[1].edgeId==101);
+    current.request.maxFrames=512;
+    assert(restore(current,currentStates,true).isEmpty());
+    process(false);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    auto patch=mixer.patchNativeInputSource(mixer.epoch(),mixer.controlRevision(),
+        current.roster.revision(),{1},0,-1,false,true);
+    assert(patch.accepted);
+    process(false);
+    assert(outL.back()>.02f && outR.back()>.02f);
+    const std::array<WireChange,3> sourceOnly{{
+        {WireChange::Kind::remove,{1},{16},100},
+        {WireChange::Kind::remove,{1},{11},101},
+        {WireChange::Kind::remove,{1},{2},110}
+    }};
+    auto wire=mixer.applyNativeWireTransaction(mixer.epoch(),patch.pcmRevision,
+                                               patch.rosterRevision,sourceOnly);
+    assert(wire.accepted);
+    process(false);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    graph=mixer.nativeBusStatus();
+    assert(static_cast<double>(graph.getProperty("channels",{}).getArray()->
+        getReference(0).getProperty("peakL",0.))>0.);
+    const std::array<WireChange,1> reconnect{{
+        {WireChange::Kind::routeOnly,{1},{16},0,1.f}
+    }};
+    wire=mixer.applyNativeWireTransaction(mixer.epoch(),wire.pcmRevision,
+                                         wire.rosterRevision,reconnect);
+    assert(wire.accepted);
+    process(false);
+    assert(outL.back()>.02f && outR.back()>.02f);
+    std::cout<<"Native callback cold restore, muted meters, repeated reopen, FX, sparse remap and PCM: PASS\n";
+}
+
 int main(){
+    nativeDeviceRecovery();
     auto d=makeSession();
     const auto before=Codec::encode(d);
     MixerSessionDocument restored;

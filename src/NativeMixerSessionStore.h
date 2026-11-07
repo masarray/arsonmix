@@ -110,7 +110,7 @@ public:
         MixerSessionDocument current;
         std::vector<armix::shows::BinaryState> currentStates;
         if(load(current,currentStates).isEmpty())
-            return "Current mixer is verified; refusing rollback";
+            return "Saved disk generation is verified. Use Restore Saved Mixer or Rebind Current Device for audio recovery.";
         const auto pointer=readPointer(root_.getChildFile("PREVIOUS"));
         if(pointer.isEmpty())return "Last-good mixer pointer missing";
         MixerSessionDocument verified;

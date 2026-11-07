@@ -340,6 +340,7 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
+    bool mixerSessionRecoveryPending_=false;
     struct PendingMixerRebind final {
         juce::String nonce,signature;
         juce::int64 expiresAt=0;
@@ -1395,8 +1396,9 @@ private:
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
-        if(error.isEmpty()&&!engine_.finishManualAudioSetup()) {
-            if(engine_.directRouteAuthorized()&&engine_.hasRetainedUnboundMixer()) {
+        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer()) {
+            if(engine_.directRouteAuthorized() &&
+               (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
                 const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
                 diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
                 send(false,"NEEDS_REMAP",needsRemap,engine_.stageRetainedWasapiPortMapping());
@@ -1478,7 +1480,7 @@ private:
                     [safe]
                     {
                         if (safe == nullptr) return;
-                        if (safe->engine_.finishManualAudioSetup())
+                        if (safe->finishAudioSetupAndRecoverMixer())
                         {
                             safe->deviceSettingsDirty_ = true;
                             safe->startupError_.clear();
@@ -1827,6 +1829,38 @@ private:
                 juce::var(ack.release()));
     }
 
+    juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
+                                           bool captureIdentity) {
+        for(auto& insert:doc.inserts) {
+            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+                if(insert.path.isNotEmpty() || insert.uid!=0)
+                    return "Saved built-in EQ identity was modified";
+                continue;
+            }
+            const auto* registered=catalog_.find(insert.catalogId);
+            if(!registered || registered->key()!=insert.catalogId ||
+               (!captureIdentity && (registered->uid!=insert.uid || registered->path!=insert.path)))
+                return "Saved external VST3 identity unavailable: "+insert.catalogId;
+            if(captureIdentity) {
+                insert.path=registered->path;
+                insert.uid=registered->uid;
+                insert.name=registered->name;
+            }
+        }
+        return {};
+    }
+
+    juce::String readMixerSessionForRecovery(armix::session::MixerSessionDocument& doc,
+            std::vector<armix::shows::BinaryState>& blobs) {
+        if(engine_.hasRetainedNativeSession()) {
+            const auto error=engine_.captureNativeMixerSession(doc,blobs,true);
+            if(error.isNotEmpty())return error;
+            doc.id=mixerSessionId_;
+            return resolveMixerSessionCatalog(doc,true);
+        }
+        return armix::session::NativeMixerSessionStore(settingsDirectory()).load(doc,blobs);
+    }
+
     // Read-only operator preview: no vendor instantiation, no graph publish,
     // and no output authorization. Every source patch remains an ordinal.
     void previewMixerDeviceRebind() {
@@ -1839,10 +1873,7 @@ private:
             error="MUTE MAIN and STREAM, finish Studio IO before rebind";
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> blobs;
-        if(error.isEmpty()) {
-            armix::session::NativeMixerSessionStore store(settingsDirectory());
-            error=store.load(doc,blobs);
-        }
+        if(error.isEmpty())error=readMixerSessionForRecovery(doc,blobs);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         if(error.isEmpty()&&static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false)))
@@ -1873,16 +1904,21 @@ private:
             ack->setProperty("inputs",inspected.callbackInputs);
             ack->setProperty("savedMainL",doc.outputs.mainL);
             ack->setProperty("savedMainR",doc.outputs.mainR);
-            ack->setProperty("currentMainL",inspected.outputs.mainL);
-            ack->setProperty("currentMainR",inspected.outputs.mainR);
+            ack->setProperty("currentMainL",inspected.pins.outputPhysicalPort(inspected.outputs.mainL));
+            ack->setProperty("currentMainR",inspected.pins.outputPhysicalPort(inspected.outputs.mainR));
             ack->setProperty("currentMonitorEnabled",inspected.outputs.monitorEnabled);
             juce::Array<juce::var> sources;
             for(const auto& patch:doc.request.sources) {
+                const auto next=std::find_if(inspected.sources.begin(),inspected.sources.end(),
+                    [&](const auto& candidate){return candidate.id==patch.id;});
                 auto v=std::make_unique<juce::DynamicObject>();
                 v->setProperty("channelId",armix::session::decimal(patch.id.value));
-                v->setProperty("left",patch.inputL);
-                v->setProperty("right",patch.inputR);
-                v->setProperty("stereo",patch.stereo);
+                v->setProperty("unbound",next==inspected.sources.end());
+                if(next!=inspected.sources.end()) {
+                    v->setProperty("left",inspected.pins.inputs.physicalIndex(next->inputL));
+                    v->setProperty("right",inspected.pins.inputs.physicalIndex(next->inputR));
+                    v->setProperty("stereo",next->stereo);
+                }
                 sources.add(juce::var(v.release()));
             }
             ack->setProperty("sources",juce::var(sources));
@@ -1900,15 +1936,16 @@ private:
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
         armix::session::NativeMixerSessionStore store(settingsDirectory());
-        if(!store.exists()) {
+        if(!engine_.hasRetainedNativeSession() && !store.exists()) {
             mixerSessionStatus_="NO_SAVED_SESSION";
             return "No saved dynamic mixer session";
         }
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
-        auto error=store.load(doc,states);
+        const bool retained=engine_.hasRetainedNativeSession();
+        auto error=readMixerSessionForRecovery(doc,states);
         if(error.isNotEmpty()) {
-            mixerSessionStatus_="DAMAGED_SESSION";
+            mixerSessionStatus_=retained?"RETAINED_SESSION_UNAVAILABLE":"DAMAGED_SESSION";
             mixerSessionError_=error;
             diagnostics_.record("DYNAMIC_MIXER_READ_REJECTED",error);
             return error;
@@ -1918,27 +1955,15 @@ private:
         // Every external VST3 must still match today's verified catalog
         // identity, exact UID and registered path. A moved or tampered
         // binary needs an explicit catalog remap, never a blind load.
-        for(const auto& insert:doc.inserts) {
-            if(insert.catalogId==
-                 armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
-                if(insert.path.isNotEmpty() || insert.uid!=0)
-                    return "Saved built-in EQ identity was modified";
-                continue;
-            }
-            const auto* registered=catalog_.find(insert.catalogId);
-            if(!registered || registered->uid!=insert.uid ||
-               registered->path!=insert.path ||
-               registered->key()!=insert.catalogId) {
-                mixerSessionStatus_="NEEDS_VST3_REMAP";
-                mixerSessionError_=
-                    "Saved external VST3 identity unavailable: "+insert.catalogId;
-                diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",
-                    mixerSessionError_);
-                return mixerSessionError_;
-            }
+        error=resolveMixerSessionCatalog(doc,false);
+        if(error.isNotEmpty()) {
+            mixerSessionStatus_="NEEDS_VST3_REMAP";
+            mixerSessionError_=error;
+            diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
+            return error;
         }
+        LiveAudioEngine::MixerBindingInspection current;
         if(approvedRebind) {
-            LiveAudioEngine::MixerBindingInspection current;
             error=engine_.inspectNativeMixerSessionBinding(doc,current);
             if(error.isNotEmpty())return error;
             if(expectedStamp.isEmpty() ||
@@ -1953,7 +1978,7 @@ private:
             return "Live native mixer already active; refusing to replace it";
         }
         error=engine_.restoreNativeMixerSession(
-            std::move(doc),states,approvedRebind);
+            std::move(doc),states,approvedRebind?&current:nullptr);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -1961,6 +1986,7 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_RESTORE_REJECTED",error);
             return error;
         }
+        mixerSessionRecoveryPending_=false;
         mixerSessionStatus_=approvedRebind?"RESTORED_REBOUND_MUTED":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",
@@ -1974,6 +2000,8 @@ private:
     // Explicit user SAVE and bounded checkpoint autosave share the same
     // transaction. Native owner state only; no browser WIRE or demo scene.
     juce::String saveMixerSession(bool automatic=false) {
+        if(mixerSessionRecoveryPending_)
+            return "Recover the verified saved session before replacing its disk generation";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
            catalog_.busy()||engine_.isGraphSwitchPending()||
            !engine_.allOutputsDisarmed())
@@ -1986,16 +2014,8 @@ private:
             juce::Uuid().toDashedString().toLowerCase();
         // Use the verified installed vendor identity; never load using a
         // browser-provided plugin name or relocate an arbitrary VST3 path.
-        for(auto& fx:doc.inserts) {
-            if(fx.catalogId==
-                  armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
-                fx.path={};fx.uid=0;continue;
-            }
-            const auto* catalog=catalog_.find(fx.catalogId);
-            if(!catalog)return "Session VST3 no longer in verified native catalog: "+fx.catalogId;
-            fx.path=catalog->path;fx.uid=catalog->uid;
-            fx.name=catalog->name;
-        }
+        error=resolveMixerSessionCatalog(doc,true);
+        if(error.isNotEmpty())return error;
         doc.savedMs=1; // signature excludes wall time; includes FX state hashes
         const auto canonical=armix::session::Codec::encode(doc);
         armix::session::MixerSessionDocument verified;
@@ -3718,7 +3738,7 @@ private:
                 fault="Audio device changed during START AUDIO; recheck routing.";
             if (arm && fault.isEmpty() && !expectedRevision.isVoid() &&
                 static_cast<std::uint64_t>(static_cast<juce::int64>(expectedRevision))
-                    !=engine_.dryRoutingLabRevision())
+                    !=engine_.outputArmRevision())
                 fault="Native route revision changed; review hardware patch.";
             // Isolated output-tone testing remains supported in SIGNAL CHECK.
             if (arm && fault.isEmpty() &&
@@ -3756,12 +3776,36 @@ private:
         }
     }
 
+    bool finishAudioSetupAndRecoverMixer() {
+        const bool bound=engine_.finishManualAudioSetup();
+        if(!engine_.directRouteAuthorized())return false;
+        const auto lab=engine_.status().getProperty("dryRoutingLab",{});
+        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)))return true;
+        if(engine_.hasRetainedNativeSession() ||
+           armix::session::NativeMixerSessionStore(settingsDirectory()).exists()) {
+            const auto error=restoreSavedMixerSession();
+            if(error.isNotEmpty()) {
+                emitNotice("Mixer retained; "+error,true);
+                return false;
+            }
+            return true;
+        }
+        return bound;
+    }
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         // Save device state only after a real change, not on every 3-second tick.
         deviceSettingsDirty_ = true;
         // The retention gate closes only on an actual epoch/owner change.
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
+        if((audioSetupWindow_==nullptr || !audioSetupWindow_->isVisible()) &&
+           engine_.recoverSameWasapiMixer()) {
+            mixerSessionStatus_="RESTORED_MUTED";
+            mixerSessionError_.clear();
+            diagnostics_.record("DYNAMIC_MIXER_REATTACHED","Verified WASAPI callback epoch; outputs DISARMED");
+            emitApprovedNativeSnapshot();
+        }
     }
 
     void timerCallback() override
@@ -3818,6 +3862,7 @@ private:
             if(!mixerSessionStartupInspected_) {
                 mixerSessionStartupInspected_=true;
                 if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
+                    mixerSessionRecoveryPending_=true;
                     const auto error=restoreSavedMixerSession();
                     if(error.isNotEmpty())
                         emitNotice("Saved mixer retained; "+error,true);

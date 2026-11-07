@@ -59,7 +59,7 @@ test("STOP-race is fail closed: all outputs are written to silence without CH1 f
   assert.match(branch,/const float right=routed\?dryRoutingLab_\.peakRight\(\):0\.f/);
 });
 test("MUTE gate precedes processing and suppresses previous audible crossfade",()=>{
-  const start=lab.indexOf("if(snapshot->graphRevision!=audioRevision_");
+  const start=lab.indexOf("if(renderRevision!=audioRevision_");
   const beforeRender=lab.indexOf("snapshot->prepared->process(",start);
   const silent=lab.indexOf("if(masterMuted) {",start);
   assert.ok(start>=0&&silent>start&&beforeRender>silent);
@@ -67,7 +67,9 @@ test("MUTE gate precedes processing and suppresses previous audible crossfade",(
   assert.match(gate,/fadeRemaining_=rampFrames/);
   assert.match(gate,/fadeFromL_=fadeFromR_=0\.f/);
   assert.match(gate,/lastOutputL_=lastOutputR_=0\.f/);
-  assert.match(gate,/return true/);
+  assert.match(gate,/if\(!meterOnly\)\{silence\(\);return true;\}/);
+  assert.match(gate,/meterOnly\?mutedMain_\[0\]\.data\(\):mainL\+offset/);
+  assert.match(lab,/if\(outputs\[c\] && \(meterOnly \|\|/);
   assert.ok(!lab.includes("masterMuted?0.f:std::clamp(masterGain"), "don't mute before fade and then reintroduce old samples");
 });
 

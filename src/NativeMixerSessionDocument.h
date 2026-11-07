@@ -59,6 +59,27 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
+    // Preserve the selected physical pairs when they still exist. A new
+    // pair is only proposed here; apply() requires operator confirmation.
+    static VerifiedNativeOutputs proposedOutputs(const MixerSessionDocument& document,
+            const HardwareBinding& live,int count) {
+        auto outputs=document.outputs;
+        outputs.activeOutputChannels=count;
+        if(document.binding.outputMask!=live.outputMask) {
+            const auto saved=mask(document.binding.outputMask);
+            const auto current=mask(live.outputMask);
+            outputs.mainL=remapPin(saved,current,outputs.mainL);
+            outputs.mainR=remapPin(saved,current,outputs.mainR);
+            if(outputs.monitorEnabled) {
+                outputs.monitorL=remapPin(saved,current,outputs.monitorL);
+                outputs.monitorR=remapPin(saved,current,outputs.monitorR);
+            }
+        }
+        if(!outputs.valid())
+            outputs={count,0,1,outputs.monitorEnabled?2:-1,
+                     outputs.monitorEnabled?3:-1,outputs.monitorEnabled};
+        return outputs;
+    }
     static juce::String apply(MixerSessionDocument& document,
             const HardwareBinding& live,
             const VerifiedNativeOutputs& outputs,
@@ -70,21 +91,56 @@ struct MixerDeviceBindingPolicy final {
            live.rate<8000. || live.rate>384000. ||
            live.frames<16 || live.frames>8192)
             return "NEEDS_REMAP: live device verification incomplete";
-        if(document.request.physicalInputs!=callbackInputs)
-            return "NEEDS_REMAP: active input count changed; reassign IN explicitly";
-        for(const auto& source:document.request.sources)
-            if(source.inputL<0 || source.inputL>=callbackInputs ||
-               (source.stereo && (source.inputR<0 ||
-                                  source.inputR>=callbackInputs)))
-                return "NEEDS_REMAP: saved source patch exceeds active pins";
-        if(sameBinding(document.binding,live) &&
-           sameOutputs(document.outputs,outputs))
+        const auto oldPins=mask(document.binding.inputMask);
+        const auto newPins=mask(live.inputMask);
+        if(oldPins.countNumberOfSetBits()!=document.request.physicalInputs ||
+           newPins.countNumberOfSetBits()!=callbackInputs ||
+           mask(live.outputMask).countNumberOfSetBits()!=outputs.activeOutputChannels)
+            return "NEEDS_REMAP: callback pin inventory does not match device masks";
+        if(sameBinding(document.binding,live) && sameOutputs(document.outputs,outputs))
             return {};
         if(!operatorApproved)
             return "NEEDS_REMAP: different device, pin mask, outputs or rate; confirm rebind";
+
+        if(oldPins!=newPins) {
+            auto& sources=document.request.sources;
+            if(document.binding.backend!=live.backend || document.binding.capture!=live.capture) {
+                // Different endpoint AND different layout: numerical overlap
+                // cannot establish the identity of a capture pin.
+                sources.clear();
+            } else {
+                std::vector<DynamicSourcePatch> mapped;
+                mapped.reserve(sources.size());
+                for(auto source:sources) {
+                    source.inputL=remapPin(oldPins,newPins,source.inputL);
+                    if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
+                    if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
+                        mapped.push_back(source);
+                }
+                sources=std::move(mapped);
+            }
+        }
+        document.request.physicalInputs=callbackInputs;
         document.binding=live;
         document.outputs=outputs;
         return {};
+    }
+private:
+    static juce::BigInteger mask(const juce::String& text) {
+        juce::BigInteger bits;
+        bits.parseString(text,16);
+        return bits;
+    }
+    static int remapPin(const juce::BigInteger& saved,const juce::BigInteger& current,int ordinal) {
+        if(ordinal<0)return -1;
+        int physical=saved.findNextSetBit(0);
+        for(int i=0;i<ordinal && physical>=0;++i)
+            physical=saved.findNextSetBit(physical+1);
+        if(physical<0 || !current[physical])return -1;
+        int index=0;
+        for(int pin=current.findNextSetBit(0);pin<physical;pin=current.findNextSetBit(pin+1))
+            ++index;
+        return index;
     }
 };
 inline juce::String decimal(std::uint64_t value) {

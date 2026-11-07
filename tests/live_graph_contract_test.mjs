@@ -230,7 +230,7 @@ test('R0B B3 never processes MASTER FX, strips or AUX until explicit ACK',()=>{
                        lab.indexOf('juce::var status('));
   const zero=body.indexOf('FloatVectorOperations::clear(outputs[c],frames)');
   const guard=body.indexOf('!userPatched_.load(std::memory_order_acquire)');
-  const lease=body.indexOf('publisher_.acquire()');
+  const lease=body.indexOf('publisher_.acquire(channelIdRender)');
   const dsp=body.indexOf('snapshot->prepared->process(');
   assert.ok(zero>=0&&guard>zero&&lease>guard&&dsp>lease);
   assert.match(body,/if\(!userPatched_\.load\(std::memory_order_acquire\)\)/);

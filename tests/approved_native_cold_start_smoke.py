@@ -91,9 +91,14 @@ def main():
                             "inputMask":"5","outputMask":"3","rate":44100},
                 "inputs":2,"savedMainL":0,"savedMainR":1,
                 "currentMainL":1,"currentMainR":0,
-                "sources":[{"channelId":"1","left":0,"right":-1,"stereo":False}]}
-            page.once("dialog",lambda dialog:dialog.dismiss())
+                "sources":[{"channelId":"1","unbound":True}]}
+            preview_messages=[]
+            def dismiss_preview(dialog):
+                preview_messages.append(dialog.message)
+                dialog.dismiss()
+            page.once("dialog",dismiss_preview)
             emit(page,"arMixNativeSessionBindingAck",preview)
+            assert "CH 1 ← UNBOUND · select IN after rebind" in preview_messages[0]
             assert page.evaluate("()=>window.__events.at(-1).payload.action")==\
                    "nativeSessionInspectRebind"
             show_click("Rebind Current Device…")
