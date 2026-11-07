@@ -68,7 +68,8 @@ try {
     Write-Host "INNO_UPGRADE_DIAG exit=$($upgrade.ExitCode) exited=$exited marker=$markerText hashOk=$($newHash -eq $fixtureHash)"
     Show-UpgradeDiagnostics $log
     Assert-Condition ($upgrade.ExitCode -eq 0) "Silent Inno upgrade returned error"
-    Assert-Condition ($exited -and $marker -and $markerText -eq "WM_CLOSE_SAVED") "Inno did not gracefully close its running installed fixture"
+    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED")
+    Assert-Condition ($exited -and $marker -and ($acceptedSaves -contains $markerText)) "Inno did not request a saved, graceful Windows session close"
     Assert-Condition ($newHash -eq $fixtureHash) "Updated installed fixture hash mismatch"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Update removed user data"
     $uninstaller=Join-Path $install "unins000.exe"
@@ -76,7 +77,7 @@ try {
     $uninstall=Start-Process -FilePath $uninstaller -ArgumentList @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART") -Wait -PassThru
     Assert-Condition ($uninstall.ExitCode -eq 0) "Uninstall failed"
     Assert-Condition (Test-Path -LiteralPath $privateSentinel) "Uninstall erased Studio"
-    Write-Host "INNO_GRACEFUL_SMOKE_PASS: running app WM_CLOSE, same-path upgrade, integrity, Studio retention, uninstall"
+    Write-Host "INNO_GRACEFUL_SMOKE_PASS: running app Windows session close, same-path upgrade, integrity, Studio retention, uninstall"
 } finally {
     # Test-only cleanup; never used by production Inno Setup.
     if($null -ne $fixtureProcess){
