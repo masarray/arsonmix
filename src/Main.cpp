@@ -2552,6 +2552,7 @@ private:
         }
         if (action == "routingDryShowSave")
         {
+            const auto updateShowId=value.isString()?value.toString():juce::String();
             const auto reject=[this](const juce::String& reason) {
                 if(browser_.loaded) {
                     auto ack=std::make_unique<juce::DynamicObject>();
@@ -2562,6 +2563,8 @@ private:
                 }
                 emitNotice("Show not saved: "+reason,true);
             };
+            if(updateShowId.isNotEmpty()&&!armix::shows::detail::uuid(updateShowId))
+                return reject("Invalid Show identity for version update.");
             if (nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
                 engine_.isGraphSwitchPending() || engine_.hasTemporaryDiagnosticDevice())
                 return reject("Finish the current Studio task before capturing a native Show.");
@@ -2656,7 +2659,7 @@ private:
                         safe->browser_.emitEventIfBrowserIsVisible("arMixNativeShowSaveAck",
                             juce::var(ack.release()));
                     }
-                });
+                },updateShowId);
             if(!started)return reject("Native Show worker is busy. No session was modified.");
             nativeShowBusy_=true;
             return emitNotice("Saving ACK-verified routing and binary VST3 state on the Show IO worker.");

@@ -87,6 +87,13 @@ def main():
             assert recalled=={"action":"routingDryShowRecall","value":corrupt_id}
             emit(page,"arMixNativeShowRecallAck",{"ok":False,"error":"DEVICE_REBIND_REQUIRED"})
             assert "DEVICE_REBIND_REQUIRED" in page.locator(show_panel).text_content()
+            show_click("Save New Version")
+            assert page.evaluate("()=>window.__events.at(-1).payload")=={
+                "action":"routingDryShowSave","value":corrupt_id}
+            emit(page,"arMixNativeShowSaveAck",{"ok":True,"showId":corrupt_id})
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
+            emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
+                {"id":corrupt_id,"name":"Recovered Performance","hasPrevious":True,"needsRecovery":False}]})
             show_click("Save Show")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowSave"
             emit(page,"arMixNativeShowSaveAck",{"ok":True,"showId":show_id})

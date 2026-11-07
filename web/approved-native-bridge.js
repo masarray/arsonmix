@@ -1653,6 +1653,7 @@
     // native capture rather than silently truncated.
     const showHeading=item("span","more-tools-caption","STUDIO / VERIFIED SHOWS");
     const showSave=item("button","tool","Save Show");
+    const showUpdate=item("button","tool","Save New Version");
     const showBrowse=item("button","tool","Browse Shows");
     const showSelect=item("select","toolbar-select","");
     const showRecall=item("button","tool","Recall Show");
@@ -1662,7 +1663,8 @@
     showNote.style.whiteSpace="normal";
     showSelect.setAttribute("aria-label","Saved native Show");
     showSelect.style.maxWidth="210px";showSelect.style.fontSize="11px";
-    showSelect.hidden=true;showRecall.hidden=true;showRecover.hidden=true;
+    showSelect.hidden=true;showUpdate.hidden=true;
+    showRecall.hidden=true;showRecover.hidden=true;
     const showUuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let showBusy=false;
     const showEntries=new Map();
@@ -1676,6 +1678,7 @@
         hardware?.raw?.monitor!==true;
       showSave.disabled=showBusy;
       showBrowse.disabled=showBusy;
+      showUpdate.disabled=showBusy||!muted||!entry||entry.needsRecovery;
       showRecall.disabled=showBusy||!muted||!entry||entry.needsRecovery;
       showRecover.disabled=showBusy||!muted||!entry||!entry.hasPrevious;
     }
@@ -1692,6 +1695,14 @@
       showBusy=true;showControls();
       showNote.textContent="Capturing accepted routing and VST3 state…";
       backend.emitEvent("arMixAction",{action:"routingDryShowSave"});
+    });
+    showUpdate.addEventListener("click",()=>{
+      const id=showSelect.value,entry=showEntries.get(id);
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
+         hardware?.device?.outputArmed!==false)return;
+      showBusy=true;showControls();
+      showNote.textContent="Saving verified next generation · previous Show retained…";
+      backend.emitEvent("arMixAction",{action:"routingDryShowSave",value:id});
     });
     showBrowse.addEventListener("click",()=>{if(!showBusy)showRefresh();});
     showSelect.addEventListener("change",showControls);
@@ -1736,7 +1747,8 @@
             entry.id));
         }
       }
-      showSelect.hidden=false;showRecall.hidden=false;showRecover.hidden=false;
+      showSelect.hidden=false;showUpdate.hidden=false;
+      showRecall.hidden=false;showRecover.hidden=false;
       showNote.textContent=ack?.ok===true
         ?showEntries.size+" saved Shows · mute output before recall/recovery"
         :"Browse rejected: "+String(ack?.error||"Native storage unavailable");
@@ -1762,7 +1774,7 @@
     });
     menu.append(caption,setup,muteBtn,hardwareNote,
       healthTitle,mark,report,advanced,
-      showHeading,showSave,showBrowse,showSelect,showRecall,showRecover,showNote);
+      showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");

@@ -43,14 +43,17 @@ public:
                       std::move(completion));
     }
     bool launch(juce::File studio,SnapshotV2 snapshot,
-                std::vector<BinaryState> binaryStates,Completion completion) {
+                std::vector<BinaryState> binaryStates,Completion completion,
+                juce::String updateShowId={}) {
         // Reject invalid requests BEFORE reserving or retaining a potentially
         // large vendor-state payload on this long-lived worker.
         if(!detail::uuid(snapshot.id) ||
+           (updateShowId.isNotEmpty()&&!detail::uuid(updateShowId)) ||
            !reserve(Operation::save,std::move(studio),std::move(completion)))
             return false;
         snapshot_=std::move(snapshot);
         blobs_=std::move(binaryStates);
+        updateShowId_=std::move(updateShowId);
         return startOrRelease();
     }
     bool list(juce::File studio,Completion completion) {
@@ -90,6 +93,7 @@ private:
         blobs_.clear();
         blobs_.shrink_to_fit();
         requestedId_={};
+        updateShowId_={};
         requestEpoch_=0;requestRevision_=0;
         studio_={};
         finished_={};
@@ -132,15 +136,27 @@ private:
     }
     void save(NativeShowStore& store,Result& result) {
         result.snapshotId=snapshot_.id;
-        result.name=snapshot_.name;
         ShowV2 show;
-        show.id=juce::Uuid().toDashedString().toLowerCase();
-        show.name=snapshot_.name;
-        show.createdMs=snapshot_.createdMs;
-        show.modifiedMs=snapshot_.modifiedMs;
+        if(updateShowId_.isNotEmpty()) {
+            // Verify every byte of the existing Show before introducing a
+            // replacement generation. Never overwrite damaged or stale work.
+            std::vector<SnapshotV2> verifiedOld;
+            result.error=store.load(updateShowId_,show,verifiedOld);
+            if(result.error.isNotEmpty())return;
+            // The old snapshot remains immutable in PREVIOUS; only the
+            // current head gets the new accepted performance snapshot.
+            show.snapshotOrder.clear();
+            show.modifiedMs=juce::jmax(show.modifiedMs+1,snapshot_.modifiedMs);
+        } else {
+            show.id=juce::Uuid().toDashedString().toLowerCase();
+            show.name=snapshot_.name;
+            show.createdMs=snapshot_.createdMs;
+            show.modifiedMs=snapshot_.modifiedMs;
+        }
         show.currentSnapshotId=snapshot_.id;
         show.snapshotOrder.push_back(snapshot_.id);
         result.showId=show.id;
+        result.name=show.name;
         result.error=store.commit(show,{snapshot_},blobs_);
         if(result.error.isNotEmpty())return;
         ShowV2 verified;
@@ -228,6 +244,7 @@ private:
     SnapshotV2 snapshot_;
     std::vector<BinaryState> blobs_; // captured on CONTROL, hashed/written on IO worker
     juce::String requestedId_;
+    juce::String updateShowId_; // target of an EXPLICIT user version save
     juce::int64 requestEpoch_=0,requestRevision_=0;
     Completion finished_;
     std::shared_ptr<std::atomic<bool>> alive_=
