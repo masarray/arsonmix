@@ -197,7 +197,9 @@ def assert_still(before,after,where):
 def check_identity_zero_reflow(page,width,height,scale,channel):
     strip=page.locator(f'#tracks .strip[data-id="{channel}"]')
     strip.locator('.strip-identity-top').click()
-    wait_balanced(page)
+    # Baseline after the intentional fold/selection layout has been painted.
+    # Folded panels are NOT 50:50, and that is unrelated to editor stability.
+    page.evaluate("() => new Promise(done => requestAnimationFrame(done))")
     before=page.evaluate(IDENTITY_GEOMETRY)
     stem=ROOT/f'operator-identity-{width}x{height}-{scale}-ch{channel}'
     page.screenshot(path=str(stem)+'-before.png')
