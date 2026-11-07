@@ -86,7 +86,7 @@ def main():
             recalled=page.evaluate("()=>window.__events.at(-1).payload")
             assert recalled=={"action":"routingDryShowRecall","value":corrupt_id}
             emit(page,"arMixNativeShowRecallAck",{"ok":False,"error":"DEVICE_REBIND_REQUIRED"})
-            assert "DEVICE_REBIND_REQUIRED" in page.locator(show_panel).inner_text()
+            assert "DEVICE_REBIND_REQUIRED" in page.locator(show_panel).text_content()
             show_click("Save Show")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowSave"
             emit(page,"arMixNativeShowSaveAck",{"ok":True,"showId":show_id})
