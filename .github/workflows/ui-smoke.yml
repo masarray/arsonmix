@@ -95,6 +95,7 @@ jobs:
           python tests/brand_icon_contract_test.py
           python tests/brand_package_files_test.py
           python tests/css_v28_restore.py
+          python -m unittest discover -s tests -p approved_operator_ux_smoke.py -v
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
         run: |
           node --test tests/workstream_coordination_contract.test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/gui_workflow_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/ci_workflow_efficiency_test.mjs tests/fx_drag_reorder_contract_test.mjs tests/mixer_io_operator_contract_test.mjs tests/mixer_shell_contract_test.mjs tests/approved_native_m2_contract.test.cjs
@@ -179,8 +180,12 @@ jobs:
         run: python tests/pages_wire_first_canonical_main_smoke.py
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
         run: python tests/pages_wire_v49_direct_controls_smoke.py
-      - name: Verify V53 safe FX grip keyboard and DnD, unified rack and rail
+      - name: Verify V53 handle-free FX row drag, keyboard and rack reorder
         run: python tests/pages_fx_rail_v53_smoke.py
+      - name: Qualify public /preview/ floating Channel Editor with zero mixer reflow (five real Chromium viewports)
+        run: python tests/approved_operator_ux_chromium_fat.py
+      - name: Check public FX rack master bypass preserves individual slot states
+        run: python tests/approved_fx_rack_master_power_smoke.py
       - name: Verify V54 context-aware WIRE and independent FX chain/slot bypass
         run: python tests/pages_v54_wire_fx_context_smoke.py
       - name: Verify V55 accepted WIRE paint and V51 fader rollback
