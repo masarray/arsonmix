@@ -43,6 +43,15 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertEqual((source/"index.html").read_text(encoding="utf-8"),html_before)
             self.assertEqual((source/"assets/mixer-chrome-material.css").read_bytes(),chrome_before)
             self.assertEqual(len(list(assets.iterdir())),2)
+    def test_native_peq_close_matches_mixer_floating_windows(self):
+        peq=(ROOT/"site/preview-v2/assets/mixer-native-peq.js").read_text(encoding="utf-8")
+        css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text(encoding="utf-8")
+        self.assertIn('close.innerHTML=',peq)
+        self.assertIn('M6.4,19L5,17.6L10.6,12',peq)
+        self.assertIn('.mx-peq .mx-peq-close:active',css)
+        self.assertIn('background:#962f38',css)
+        self.assertIn('width:29px;height:29px',css)
+
     def test_native_hooks_and_audio_input_default(self):
         build=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
         bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")

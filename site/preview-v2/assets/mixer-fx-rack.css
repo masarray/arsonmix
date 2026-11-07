@@ -191,7 +191,12 @@
 .mx-peq-brand{font-size:11px;font-weight:570;color:#e8f4f7;letter-spacing:.025em;white-space:nowrap}
 .mx-peq-channel{font-size:10px;color:#81bdcb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mx-peq-global{margin-left:auto;font-size:20px!important;width:29px;height:27px;border-radius:4px!important;color:#82d7a7!important}
-.mx-peq-close{width:27px;height:27px;border-radius:4px!important;font-size:20px!important;line-height:1!important;color:#aac2cd!important}
+.mx-peq .mx-peq-close{display:inline-flex;align-items:center;justify-content:center;flex:0 0 29px;
+ width:29px;height:29px;min-width:29px;min-height:29px;padding:0;border:1px solid #57717f;
+ border-radius:3px;color:#d7e6eb;background:#253944;line-height:1;box-sizing:border-box}
+.mx-peq .mx-peq-close svg{width:20px;height:20px;display:block;pointer-events:none}
+.mx-peq .mx-peq-close:hover{color:#fff;background:#355161}
+.mx-peq .mx-peq-close:active{color:#fff;background:#962f38;border-color:#e6505d}
 .mx-peq-global:hover,.mx-peq-close:hover{background:#ffffff13}
 .mx-peq-body{display:grid;grid-template-columns:minmax(0,1fr) 143px;min-height:0;align-items:stretch;flex:0 1 auto}
 .mx-peq-graph{min-width:0;background:#0f202b;border-right:1px solid #29404e;overflow:hidden}
