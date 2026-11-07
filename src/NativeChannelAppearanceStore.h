@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include <array>
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <limits>
@@ -44,9 +46,24 @@ public:
         return true;
     }
     static bool validIcon(const juce::String& icon) {
-        return icon=="♩"||icon=="♫"||icon=="♬"||icon=="🎙"||
-               icon=="🎸"||icon=="🎹"||icon=="🥁"||icon=="🎧"||
-               icon=="▥"||icon=="◉"||icon=="◎"||icon=="⊞";
+        // Compiler-source codepages and JUCE's const-char* overloads differ on
+        // Windows. Decode the canonical wire UTF-8 bytes explicitly; no
+        // emoji literals or locale-sensitive constructors in native identity.
+        static const std::array<juce::String,12> allowed {
+            juce::String::fromUTF8("\xE2\x99\xA9"),
+            juce::String::fromUTF8("\xE2\x99\xAB"),
+            juce::String::fromUTF8("\xE2\x99\xAC"),
+            juce::String::fromUTF8("\xF0\x9F\x8E\x99"),
+            juce::String::fromUTF8("\xF0\x9F\x8E\xB8"),
+            juce::String::fromUTF8("\xF0\x9F\x8E\xB9"),
+            juce::String::fromUTF8("\xF0\x9F\xA5\x81"),
+            juce::String::fromUTF8("\xF0\x9F\x8E\xA7"),
+            juce::String::fromUTF8("\xE2\x96\xA5"),
+            juce::String::fromUTF8("\xE2\x97\x89"),
+            juce::String::fromUTF8("\xE2\x97\x8E"),
+            juce::String::fromUTF8("\xE2\x8A\x9E")
+        };
+        return std::find(allowed.begin(),allowed.end(),icon)!=allowed.end();
     }
 
     // Only the accepted control-thread graph may authorize a ChannelId edit.
