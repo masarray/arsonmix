@@ -7,6 +7,8 @@
 #include <memory>
 #include <atomic>
 #include <algorithm>
+#include <unordered_map>
+#include <string>
 #include <vector>
 
 // Prepare ALL owned VST3 processors on CONTROL before the one ChannelId PCM
@@ -28,6 +30,18 @@ public:
         auto* format=formats.getFormat(0);
         std::vector<Bank::Assignment> assignments;
         assignments.reserve(doc.roster.size());
+        // Index ONCE. A large dynamic mixer must not rescan every channel
+        // against all VST3 inserts and binary states at every restart.
+        // Manifest validity is established by Codec; preserve slot order.
+        std::unordered_map<std::uint64_t,std::vector<const StoredInsert*>> byChannel;
+        std::unordered_map<std::string,const armix::shows::BinaryState*> byHash;
+        byChannel.reserve(doc.roster.size());
+        byHash.reserve(states.size());
+        for(const auto& insert:doc.inserts)
+            byChannel[insert.channel.value].push_back(&insert);
+        for(const auto& state:states)
+            if(!byHash.emplace(state.sha256.toStdString(),&state).second)
+                return "Duplicate mixer vendor-state blob identity";
         try {
             for(const auto& ch:doc.roster.channels()) {
                 Bank::Assignment lane;
@@ -35,17 +49,18 @@ public:
                 if(std::find(doc.rackBypassed.begin(),doc.rackBypassed.end(),ch.id)
                    !=doc.rackBypassed.end())
                     lane.rackBypassed=std::make_shared<std::atomic<bool>>(true);
-                for(const auto& insert:doc.inserts) {
-                    if(insert.channel!=ch.id)continue;
+                const auto laneIt=byChannel.find(ch.id.value);
+                if(laneIt!=byChannel.end())
+                for(const StoredInsert* stored:laneIt->second) {
+                    const auto& insert=*stored;
                     if(insert.slot!=lane.inserts.size())
                         return "Saved FX slots are not contiguous";
-                    auto state=std::find_if(states.begin(),states.end(),
-                        [&](const armix::shows::BinaryState& v){
-                            return v.sha256==insert.sha256;
-                        });
-                    if(state==states.end()||
-                       state->bytes.getSize()>8U*1024U*1024U||
-                       juce::SHA256(state->bytes).toHexString()!=insert.sha256)
+                    const auto found=byHash.find(insert.sha256.toStdString());
+                    if(found==byHash.end())
+                        return "Missing saved VST3 state";
+                    const auto& state=*found->second;
+                    if(state.bytes.getSize()>8U*1024U*1024U||
+                       juce::SHA256(state.bytes).toHexString()!=insert.sha256)
                         return "Missing or corrupt saved VST3 state";
                     std::unique_ptr<juce::AudioProcessor> processor;
                     if(insert.catalogId==
@@ -54,8 +69,8 @@ public:
                         eq->prepareToPlay(sampleRate,frames);
                         if(!eq->isReady()||
                            !eq->restoreUnpublishedState(
-                             state->bytes.getData(),
-                             static_cast<int>(state->bytes.getSize())))
+                             state.bytes.getData(),
+                             static_cast<int>(state.bytes.getSize())))
                             return "Saved native EQ state rejected; graph unchanged";
                         processor=std::move(eq);
                     } else {
@@ -80,8 +95,8 @@ public:
                     }
                     if(insert.catalogId!=
                        armix::builtin_fx::ChannelEqProcessor::catalogIdentity)
-                        processor->setStateInformation(state->bytes.getData(),
-                             static_cast<int>(state->bytes.getSize()));
+                        processor->setStateInformation(state.bytes.getData(),
+                             static_cast<int>(state.bytes.getSize()));
                     const int latency=processor->getLatencySamples();
                     if(latency<0||
                        latency>armix::dsp::StereoLatencyDelay::maximumSamples)

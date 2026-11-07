@@ -29,7 +29,6 @@ static MixerSessionDocument makeSession() {
         if(i==1){
             row.sends.push_back({{16},1.f,false,0.f,true,100});
             row.sends.push_back({{11},.3f,true,-.25f,false,101});
-            row.insertCatalogIds.push_back("TestVendor|9|0");
         } else if(i==2)row.sends.push_back({{15},1.f,false,0.f,true,102});
         rows.push_back(std::move(row));
         d.legacyIds.inputs[i-1]={static_cast<std::uint64_t>(i)};
@@ -114,6 +113,33 @@ int main(){
     binary.sha256=juce::SHA256(binary.bytes).toHexString();
     d.inserts.push_back({{1},0,"TestVendor|9|0","C:/FX/Test.vst3",
                          binary.sha256,"EQ",9,false});
+    {
+        auto installed=d.roster.channels();
+        installed[0].insertCatalogIds.push_back("TestVendor|9|0");
+        assert(d.roster.restoreExact(d.acceptedRevision,installed));
+    }
+    // Semantic corruption must be rejected, even if the surrounding JSON
+    // is otherwise well-formed or would have a valid SHA-256 on disk.
+    const auto validWithFx=Codec::encode(d);
+    MixerSessionDocument rejected;
+    auto damaged=juce::JSON::parse(validWithFx);
+    auto channels=damaged.getProperty("channels",{});
+    auto* entries=channels.getArray();
+    assert(entries && !entries->isEmpty());
+    auto catalog=entries->getReference(0).getProperty("catalogs",{});
+    catalog.getArray()->clear();
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),rejected));
+    // A ghost slot may not point past the one accepted catalog entry.
+    damaged=juce::JSON::parse(validWithFx);
+    auto inserts=damaged.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()->setProperty("slot",1);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),rejected));
+    // Wrong plugin on the same slot is not a valid ChannelId FX recovery.
+    damaged=juce::JSON::parse(validWithFx);
+    inserts=damaged.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("catalogId","OtherVendor|99|0");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),rejected));
     assert(store.commit(d,{binary}).isEmpty());
     MixerSessionDocument loaded;
     std::vector<BinaryState> readback;

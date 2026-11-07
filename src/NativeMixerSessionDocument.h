@@ -341,14 +341,19 @@ public:
             for(const auto& fxRow:doc.inserts)
                 if(fxRow.channel==ch.id) {
                     if(fxRow.slot!=slot++)return false;
-                    if(!legacyMarker && !ch.insertCatalogIds.empty() &&
-                       ch.insertCatalogIds[fxRow.slot]!=fxRow.catalogId.toStdString())
+                    // A malformed, otherwise SHA-correct document can claim
+                    // more FX slots than the accepted roster's catalog.
+                    // Bound-check BEFORE indexing: never allow UB on restore.
+                    if(!legacyMarker &&
+                       (fxRow.slot>=ch.insertCatalogIds.size() ||
+                        ch.insertCatalogIds[fxRow.slot]!=fxRow.catalogId.toStdString()))
                         return false;
                 }
             // The old four AUX are declared as legacy:aux-rack placeholders
             // even when no plugin is installed. They are NOT vendor leases.
-            if(!legacyMarker&&!ch.insertCatalogIds.empty()&&
-               slot!=ch.insertCatalogIds.size())return false;
+            // No orphan leases, and no phantom roster FX. In particular an
+            // empty catalog cannot authorize an installed vendor processor.
+            if(!legacyMarker&&slot!=ch.insertCatalogIds.size())return false;
         }
         output=std::move(doc);
         return true;
