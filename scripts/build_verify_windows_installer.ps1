@@ -9,10 +9,10 @@ $manifest=Get-Content -LiteralPath (Join-Path $dist "BUILD_PROVENANCE.json") -Ra
 $exe=Join-Path $dist "ArSonMix-GUI10CH-P012-Windows-x64.exe"
 $appHash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 if($LASTEXITCODE -ne 0 -or $manifest.sourceCommit -ne $sha -or
-   $manifest.exeSha256 -ne $appHash -or $manifest.fatStatus -ne "EXPERIMENTAL_NOT_HARDWARE_QUALIFIED" -or
+   $manifest.exeSha256 -ne $appHash -or $manifest.fatStatus -ne "SOFTWARE_VERIFIED_PREVIEW_CANDIDATE" -or
    (Get-Item -LiteralPath $exe).Length -ne $manifest.guiExeBytes -or
    (Test-Path -LiteralPath (Join-Path $dist "Studio"))) {
-    throw "Installer requires the exact already verified and hardware-unqualified FAT PE"
+    throw "Installer requires an exact source-SHA software-verified Preview GUI PE"
 }
 $which=Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $iscc=if($which){$which.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
@@ -47,7 +47,7 @@ try {
         Copy-Item -LiteralPath $factory -Destination (Join-Path $stage "FactoryFX") -Recurse
     }
     & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "installer/ArSonMix.iss"
-    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-UNQUALIFIED.exe"
+    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
        (Get-Item -LiteralPath $setup).Length -lt 2MB){throw "ISCC failed to build installer RC"}
     $start=Start-Process -FilePath $setup -ArgumentList @(
@@ -128,11 +128,11 @@ try {
     [ordered]@{
         sourceCommit=$sha;appVersion=$appVersion;guiSha256=$appHash
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-        certification="UNSIGNED_HARDWARE_FAT_PENDING";mode="PER_USER_NO_AUTOARM"
+        certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
-    Write-Host "PHYSICAL_FAT_PENDING"
+    Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }
 finally {
     # Only a failing *test fixture* may be terminated in CI teardown.
