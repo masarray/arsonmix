@@ -343,8 +343,12 @@ public:
                        ch.insertCatalogIds[fxRow.slot]!=fxRow.catalogId.toStdString())
                         return false;
                 }
-            if(!ch.insertCatalogIds.empty()&&slot!=ch.insertCatalogIds.size())
-                return false;
+            // The old four AUX are declared as legacy:aux-rack placeholders
+            // even when no plugin is installed. They are NOT vendor leases.
+            const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
+                ch.insertCatalogIds[0]=="legacy:aux-rack";
+            if(!legacyMarker&&!ch.insertCatalogIds.empty()&&
+               slot!=ch.insertCatalogIds.size())return false;
         }
         output=std::move(doc);
         return true;

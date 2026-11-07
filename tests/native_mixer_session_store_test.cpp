@@ -62,7 +62,6 @@ static MixerSessionDocument makeSession() {
     return d;
 }
 int main(){
-    juce::ScopedJuceInitialiser_GUI init;
     auto d=makeSession();
     const auto before=Codec::encode(d);
     MixerSessionDocument restored;
