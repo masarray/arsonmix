@@ -17,23 +17,56 @@
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
 
-  // Display preferences are keyed by EXACT native ChannelId and never mutate PCM,
-  // native topology/route names or hardware authorization.
-  const identityStoreKey="arsonmix.native.channel-presentation.v1";
+  // Native owns durable channel presentation. The approved Pages model only
+  // renders native readback; no localStorage authority, fake PCM rename or
+  // UI-ordinal-dependent alias. All IDs remain exact uint64 decimal strings.
   const channelPresentation=new Map();
-  try {
-    const raw=JSON.parse(window.localStorage?.getItem(identityStoreKey)||"{}");
-    if(raw?.version===1 && raw.channels && typeof raw.channels==="object"){
-      for(const [id,p] of Object.entries(raw.channels).slice(0,128)){
-        if(!/^[1-9][0-9]{0,19}$/.test(id)||!p||typeof p!=="object")continue;
-        if(typeof p.name!=="string"||!p.name.trim()||p.name.length>30)continue;
-        const color=/^#[0-9a-fA-F]{6}$/.test(p.color||"")?p.color:null;
-        const icon=typeof p.icon==="string"&&p.icon.length<=4?p.icon:null;
-        channelPresentation.set(id,{name:p.name.trim(),color,icon});
-      }
-    }
-  }catch(_){ /* unavailable storage must never break live mixer */ }
+  let appearanceRevision="0",appearanceWritable=false;
+  let pendingIdentity=null,identityRequestSerial=0;
+  const legalName=name=>typeof name==="string"&&name.length>0&&name.length<=30&&
+    name===name.trim()&&!/[\x00-\x1f\x7f]/.test(name);
+  const legalColor=color=>typeof color==="string"&&/^#[0-9a-fA-F]{6}$/.test(color);
+  const legalIcon=icon=>typeof icon==="string"&&
+    ["♩","♫","♬","🎙","🎸","🎹","🥁","🎧","▥","◉","◎","⊞"].includes(icon);
   const displayNameFor=ch=>channelPresentation.get(ch.id)?.name||ch.name;
+  function appearanceFromNative(next){
+    const data=next?.raw?.channelAppearance;
+    if(!data || data.schema!=="arsonmix.native.channel-appearance.v1" ||
+       protocol.decimal(data.revision)===null || !Array.isArray(data.entries) ||
+       typeof data.readOnly!=="boolean"){
+      appearanceWritable=false;return;
+    }
+    const liveIds=new Set(next.graph.channels.map(ch=>ch.id));
+    const observed=new Map();
+    for(const p of data.entries){
+      if(!p||!liveIds.has(p.id)||observed.has(p.id)||
+         !legalName(p.name)||!legalColor(p.color)||!legalIcon(p.icon)){
+        appearanceWritable=false;
+        status("Native channel identity readback invalid; no UI change");
+        return;
+      }
+      observed.set(p.id,{name:p.name,color:p.color,icon:p.icon});
+    }
+    channelPresentation.clear();
+    for(const [id,p] of observed)channelPresentation.set(id,p);
+    appearanceRevision=data.revision;
+    appearanceWritable=!data.readOnly;
+    if(!pendingIdentity || !pendingIdentity.acked)return;
+    const p=pendingIdentity,confirmed=channelPresentation.get(p.channelId);
+    if(confirmed?.name===p.name&&confirmed.color===p.color&&confirmed.icon===p.icon){
+      pendingIdentity=null;
+      const apply=document.getElementById("identitySave");
+      if(apply)apply.disabled=false;
+      scope?.closeChannelIdentity?.();
+      status("Channel updated and stored in native workspace · "+p.name);
+    }
+  }
+  function rejectIdentity(reason){
+    pendingIdentity=null;
+    const apply=document.getElementById("identitySave");
+    if(apply)apply.disabled=false;
+    status(reason);
+  }
   // A channel's cosmetic identity can be edited when its exact native id is
   // present in the current acknowledged OR retained graph. No physical
   // audio device, output arm or PCM graph mutation is required.
@@ -54,36 +87,47 @@
     return true;
   }
   function acceptIdentityPresentation(){
-    const id=scope?.identityTrackId,t=scope?.tracks?.concat(scope.master||[])
-      ?.find(x=>x.id===id),nativeId=nativeIdFor(t);
-    const name=String(document.getElementById("identityName")?.value||"")
-      .trim().replace(/\s+/g," ").slice(0,30);
-    if(!nativeId||!identityEligible(t)){
-      nativeToast("Select a loaded native channel before editing its identity");return false;
-    }
-    if(!name||scope.tracks.concat(scope.master).some(
-       x=>x.id!==id&&x.name.toLowerCase()===name.toLowerCase())){
-      status("Enter a unique, nonempty channel name");return false;
-    }
-    const color=/^#[0-9a-fA-F]{6}$/.test(scope.identityColor||"")
-      ?scope.identityColor:t.color;
-    const icon=scope.channelIcons?.includes?.(scope.identityIcon)
-      ?scope.identityIcon:t.icon;
-    const previous=channelPresentation.get(nativeId);
-    channelPresentation.set(nativeId,{name,color,icon});
-    try{
-      const channels=Object.fromEntries([...channelPresentation].slice(-128));
-      if(!window.localStorage)throw new Error("Channel identity storage unavailable");
-      window.localStorage.setItem(identityStoreKey,JSON.stringify({version:1,channels}));
-    }catch(_){
-      // Never claim a saved identity if it cannot survive a WebView2 restart.
-      if(previous)channelPresentation.set(nativeId,previous);
-      else channelPresentation.delete(nativeId);
-      nativeToast("Cannot save channel identity; check WebView storage access");
+    if(!connected)return false;
+    const localId=scope?.identityTrackId,
+      track=scope?.tracks?.concat(scope.master||[])?.find(x=>x.id===localId),
+      channelId=nativeIdFor(track),current=controller?.state()?.current;
+    const rawName=String(document.getElementById("identityName")?.value||"");
+    const name=rawName.trim().replace(/\s+/g," ");
+    if(!channelId||!current||(current?.raw?.mixerSession?.authority!=="CHANNEL_ID")||
+       !(current.admitted||current.retained)||!appearanceWritable){
+      status("Native channel identity unavailable · verify saved native graph");
       return false;
     }
-    nativeToast("Channel identity saved · "+name);
-    return true; // original approved editor updates the single UI model
+    if(controller.state().pending||pendingIdentity){
+      status("Finish the current native operation before editing identity");
+      return false;
+    }
+    const color=scope?.identityColor,icon=scope?.identityIcon;
+    if(!legalName(name)||!legalColor(color)||!legalIcon(icon)){
+      status("Enter a valid channel name, color and icon");return false;
+    }
+    const seen=current.graph.channels.some(ch=>
+      ch.id!==channelId&&displayNameFor(ch).toLowerCase()===name.toLowerCase());
+    if(seen){status("Channel name is already used");return false;}
+    const requestId="appearance-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
+    pendingIdentity={requestId,channelId,name,color,icon,acked:false,
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+      rosterRevision:current.graph.rosterRevision};
+    const apply=document.getElementById("identitySave");
+    if(apply)apply.disabled=true;
+    backend.emitEvent("arMixChannelIdentitySet",{
+      requestId,channelId,name,color,icon,
+      appearanceRevision,deviceEpoch:current.device.epoch,
+      graphRevision:current.graph.revision,
+      rosterRevision:current.graph.rosterRevision
+    });
+    status("Saving native channel identity · "+name);
+    window.setTimeout(()=>{
+      if(pendingIdentity?.requestId!==requestId)return;
+      rejectIdentity("Native identity ACK/readback timed out; original identity retained");
+      controller?.subscribe();
+    },8000);
+    return false; // Prevent original Pages demo mutation until authoritative readback.
   }
   const pendingWireGains=new Map();
   let wireGainFlushQueued=false;
@@ -361,6 +405,7 @@
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
     const structure=JSON.stringify([
+      appearanceRevision, // cosmetic readback invalidates DOM projection
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
         ch.processingFormat,ch.source,ch.primaryOutId,
         ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
@@ -1942,6 +1987,7 @@
   }
   function onNativeReadback(next) {
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
+    appearanceFromNative(next);
     updateHardwarePanel(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
@@ -1987,7 +2033,7 @@
       pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
       pendingFxInsert=null;startupWire=null;activeWireAttempt=null;
       pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
-      const signature="retained|"+next.identity;
+      const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next))
         lastPaintedSignature=signature;
       stopDemo();
@@ -2011,7 +2057,7 @@
     // Control readback may change at the SAME structural graph revision.
     // Compare the actual accepted controls/edges, never skip native fader updates.
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges);
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -2114,6 +2160,15 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixChannelIdentityAck", ack=>{
+      if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
+      if(ack.ok!==true){
+        rejectIdentity("Native channel identity rejected · "+String(ack.error||"Unknown error"));
+        controller?.subscribe();return;
+      }
+      pendingIdentity.acked=true;
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixNativeSourceAck",ack=>{
       if(!activeNativeSource||activeNativeSource.requestId!==ack?.requestId)return;
       activeNativeSource=null;
