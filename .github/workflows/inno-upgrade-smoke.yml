@@ -4,6 +4,7 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'installer/ArSonMix.iss'
+      - 'installer/ArSonMixUpdateShutdown.ps1'
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/fixtures/installer_graceful_close.cs'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'installer/ArSonMix.iss'
+      - 'installer/ArSonMixUpdateShutdown.ps1'
       - 'scripts/build_verify_windows_installer.ps1'
       - 'scripts/test_inno_graceful_update_windows.ps1'
       - 'tests/fixtures/installer_graceful_close.cs'
