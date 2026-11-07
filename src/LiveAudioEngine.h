@@ -855,11 +855,7 @@ public:
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         if(!(rate>0.0) || frames>maxFrames)
             return "Unsupported device sample rate or buffer quantum";
-        juce::OwnedArray<juce::PluginDescription> descriptions;
-        fmt->findAllTypesForFile(descriptions,filename);
-        juce::PluginDescription* chosen=nullptr;
-        for(auto* d:descriptions)
-            if(d && d->uniqueId==uid && !d->isInstrument) { chosen=d;break; }
+        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid);
         if(!chosen)return "Effect identity not found inside VST3 module";
         juce::String error;
         auto instance=formats_.createPluginInstance(*chosen,rate,frames,error);
@@ -967,13 +963,7 @@ public:
             if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
                 !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
                 return "Plugin is missing or invalid: " + fx.name;
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            fmt->findAllTypesForFile (descriptions, fx.path);
-            juce::PluginDescription* match = nullptr;
-            for (auto* candidate : descriptions)
-                if (candidate != nullptr && candidate->uniqueId == fx.uid &&
-                    !candidate->isInstrument)
-                    { match = candidate; break; }
+            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid);
             if (!match) return "VST3 plugin identity missing: " + fx.name;
 
             juce::String error;
@@ -1742,12 +1732,7 @@ public:
         if(!fmt||!fmt->fileMightContainThisPluginType(path))
             {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
         try {
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            fmt->findAllTypesForFile(descriptions,path);
-            juce::PluginDescription* chosen=nullptr;
-            for(auto* item:descriptions)
-                if(item&&item->uniqueId==uid&&!item->isInstrument)
-                    {chosen=item;break;}
+            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid);
             if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
             juce::String pluginError;
             auto instance=formats_.createPluginInstance(*chosen,rate,

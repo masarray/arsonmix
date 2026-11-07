@@ -234,17 +234,17 @@ def main():
                 'active':active,'canReusePins':True})
             assert remap.is_hidden()
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'ok':True,
-                'state':'ACCEPTED_MUTED','active':active,'mixerBound':True})
+                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
             assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
-            rebound['device'].update(epoch='93',outputArmed=False)
+            rebound['device'].update(epoch='93',outputArmed=True)
             rebound['graph']['revision']='6'
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')
             monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
             emit(page,'arMixConsoleSnapshot',rebound)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
             assert page.locator('[data-native-monitor]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='false'
+            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
             assert page.locator('#tracks .strip').count()==4
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             assert strip.locator('select[data-field="input"]').is_enabled()
@@ -254,6 +254,17 @@ def main():
             strip.locator('.fx-section .fx-pick.empty').click()
             assert page.locator('#fastPicker [data-fast-id="test-vst-64"]').is_visible()
             page.locator('#fastClose').click()
+            # Apply again while MAIN is live. The native transaction owns
+            # temporary mute and restoration without an extra browser command.
+            page.locator('[data-native-io]').click()
+            emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
+                {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
+            page.locator('[data-audio-apply]').click()
+            repeated=page.evaluate(read_apply)
+            assert repeated['requestId']!=opened['requestId']
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':repeated['requestId'],'ok':True,
+                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
+            assert page.locator('.armix-audio-shade').is_hidden()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')

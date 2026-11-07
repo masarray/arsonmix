@@ -281,7 +281,37 @@ static void nativeDeviceRecovery() {
     std::cout<<"Native callback cold restore, muted meters, repeated reopen, FX, sparse remap and PCM: PASS\n";
 }
 
+static void warmVst3Discovery() {
+    const auto root=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixVst3Cache","",false);
+    assert(root.createDirectory().wasOk());
+    const auto module=root.getChildFile("Shell.vst3");
+    assert(module.replaceWithText("module v1"));
+    const auto cacheRoot=root.getChildFile("Cache");
+    armix::vst::DescriptionCache::Descriptions scanned;
+    for(int uid:{31,45,72}) {
+        auto item=std::make_unique<juce::PluginDescription>();
+        item->fileOrIdentifier=module.getFullPathName();
+        item->pluginFormatName="VST3";
+        item->name="Shell class "+juce::String(uid);
+        item->uniqueId=uid;
+        item->deprecatedUid=uid+1000;
+        item->isInstrument=uid==45;
+        scanned.add(item.release());
+    }
+    armix::vst::DescriptionCache(cacheRoot).remember(scanned);
+    const armix::vst::DescriptionCache nextProcess(cacheRoot);
+    const auto cached=nextProcess.find(module.getFullPathName(),72);
+    assert(cached&&cached->name=="Shell class 72"&&cached->deprecatedUid==1072);
+    assert(nextProcess.read(module.getFullPathName())[1]->uniqueId==45);
+    assert(!nextProcess.find(module.getFullPathName(),45));
+    assert(module.appendText("updated module binary"));
+    assert(!nextProcess.find(module.getFullPathName(),72));
+    assert(root.deleteRecursively());
+}
+
 int main(){
+    warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
     const auto before=Codec::encode(d);

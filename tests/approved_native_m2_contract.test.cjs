@@ -130,7 +130,7 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   assert.match(bridge,/const savedId = uiByNativeId\.get\(ch\.id\) \?\? m4Id/);
   assert.match(bridge,/action:"routingSourceSwitch"/);
   assert.match(bridge,/row\?\.left===p\.choice\.left/);
-  assert.match(bridge,/expectedEpoch:p\.epoch,expectedRevision:Number\(next\.revision\)/);
+  assert.match(nativeMain,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(bridge,/inputSelect\.hidden=true;routeBtn\.hidden=true;armBtn\.hidden=true/);
   assert.match(bridge,/openNativeAudioIO\(\)/);
   assert.match(bridge,/\.armix-audio-shade\[hidden\]\{display:none\}/);
@@ -160,8 +160,7 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.match(bridge,/action:"routingChannelPatch"/);
  assert.match(bridge,/const channel=m4Index\(t\)/);
  assert.match(bridge,/data-native-monitor/);
- assert.match(bridge,/const firstListen=p.autoListen/);
- assert.match(bridge,/next\.nativeChannelIdPcmActive===true \|\|/);
+ assert.match(native,/void serviceAutomaticMain\(\)/);
  assert.match(native,/if\(action=="routingM4Control"\)/);
  assert.match(native,/engine_\.setDryRoutingLabParameter\(channel,/);
  assert.match(native,/if\(action=="routingChannelPatch"\)/);
@@ -633,9 +632,9 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(engine,/currentSetup\.outputDeviceName/);
  assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
  assert.match(bridge,/const virtualCableFeedbackPair=/);
- assert.match(bridge,/next\.nativeChannelIdPcmActive===true/);
- assert.match(bridge,/if\(firstListen && !virtualCableFeedbackPair\(\)\)/);
- assert.match(bridge,/VB-Cable feedback loop; select physical playback/);
+ const native=read("src/Main.cpp");
+ assert.match(native,/if\(engine_\.liveOutputArmFault\(\)\.isNotEmpty\(\)\)return;/);
+ assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
  const pages=read("scripts/build_pages.py");
@@ -647,9 +646,8 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(bridge,/source:"\/preview\/ approved compiled Pages GUI"/);
  assert.match(bridge,/field==="input"/);
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
- assert.match(bridge,/row\?\.main===true/);
- assert.match(bridge,/pendingDeviceMute=\{requestId,epoch:String\(hardware\.device\.epoch\)\}/);
- assert.match(bridge,/ack\?\.requestId!==pendingDeviceMute\.requestId/);
+ assert.match(bridge,/ack\?\.requestId!==devicePanel.dataset.pendingRequest/);
+ assert.match(native,/requestAutomaticMain\(\);\s*send\(true,engine_\.isMonitorEnabled\(\)\?"ACCEPTED_LIVE":"ACCEPTED_MUTED"/);
  assert.match(bridge,/VIRTUAL \/ NO SPEAKERS/);
  assert.match(bridge,/Advanced driver recovery/);
  assert.match(native,/ack->setProperty\("requestId",[\s\S]*?args\.getProperty\("requestId",juce::var\(\)\)/);
@@ -1179,7 +1177,7 @@ test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);
  assert.match(bridge,/const deviceReady=\(\)=>/);
 });
-test("P0 FIRST SOUND G0 NONE authority exposes verified physical IN before any route and arms only after native ACK",()=>{
+test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
  let win;
  const tracks=Array.from({length:10},(_,i)=>({
@@ -1255,11 +1253,8 @@ test("P0 FIRST SOUND G0 NONE authority exposes verified physical IN before any r
  });
  const monitors=sent.filter(x=>x.name==="arMixAction"&&
   x.payload.action==="monitor");
- assert.equal(monitors.length,1,
-  "first accepted input routed to MAIN authorizes one automatic safe listen");
- assert.equal(monitors[0].payload.value,true);
- assert.equal(monitors[0].payload.expectedEpoch,69);
- assert.equal(monitors[0].payload.expectedRevision,13);
+ assert.equal(monitors.length,0,
+  "native owns automatic MAIN; the bridge never emits a second arm request");
  assert.equal(tracks[4].input,"None",
   "GUI must wait for a subsequent independent native readback");
  const none=clone(boot);

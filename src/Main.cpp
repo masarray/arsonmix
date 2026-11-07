@@ -1218,6 +1218,35 @@ private:
         return juce::var(o.release());
     }
 
+    // One-shot on a verified setup or startup, including the first input
+    // patch. A later device epoch or a user MUTE cancels the pending arm.
+    std::uint64_t autoMainEpoch_=0;
+    std::optional<std::uint64_t> autoMainCheckedRevision_;
+    void serviceAutomaticMain() {
+        if(autoMainEpoch_==0)return;
+        if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
+           engine_.isMonitorEnabled()) {
+            autoMainEpoch_=0;
+            return;
+        }
+        if(nativeShowBusy_||studioBackupBusy_||engine_.secondaryArmed()||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        const auto revision=engine_.outputArmRevision();
+        if(autoMainCheckedRevision_==revision)return;
+        if(engine_.isGraphSwitchPending()||!engine_.hasBoundMixerRoute())return;
+        autoMainCheckedRevision_=revision;
+        if(engine_.liveOutputArmFault().isNotEmpty())return;
+        engine_.setMonitorEnabled(true);
+        autoMainEpoch_=0;
+        diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
+    }
+
+    void requestAutomaticMain() {
+        autoMainEpoch_=engine_.dryRoutingLabEpoch();
+        autoMainCheckedRevision_.reset();
+        serviceAutomaticMain();
+    }
+
     void applyCustomAudioDevice(const juce::var& args)
     {
         // Synchronous manager operations stay on JUCE's established message
@@ -1250,9 +1279,9 @@ private:
            engine_.isGraphSwitchPending()||
             static_cast<bool>(nativeRoute.getProperty("pending",false))||
             engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
-            !engine_.allOutputsDisarmed())
+            engine_.secondaryArmed())
             return send(false,"REJECTED",
-                "MUTE MAIN and secondary output; finish Show/FX/diagnostic/clock transition first");
+                "Stop STREAM and finish Show/FX/diagnostic/clock transition first");
         const auto config=args.getProperty("config",{});
         if(!config.isObject())return send(false,"REJECTED","Missing device configuration");
         const auto typeName=config.getProperty("backend",{}).toString();
@@ -1291,6 +1320,7 @@ private:
         auto* previousDevice=manager.getCurrentAudioDevice();
         const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
         const bool previousMixerBound=engine_.hasBoundMixerRoute();
+        const bool previousMonitor=engine_.isMonitorEnabled();
         const auto confirm=config.getProperty("confirmRetainedPinMapping",false);
         if(!confirm.isBool())
             return send(false,"REJECTED","Invalid retained mixer mapping confirmation");
@@ -1306,7 +1336,8 @@ private:
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_REMAP_ACCEPTED",typeName);
-            send(true,"ACCEPTED_MUTED",{});
+            requestAutomaticMain();
+            send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
         }
@@ -1373,6 +1404,7 @@ private:
            !engine_.abandonPendingDirectRestoreForSetup())
             return send(false,"REJECTED","Failed to prepare an explicit replacement for the missing device");
         const auto start=monotonicMilliseconds();
+        autoMainEpoch_=0;
         engine_.beginManualAudioSetup();
         if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
         // JUCE setAudioDeviceSetup() can return success without reopening when
@@ -1430,7 +1462,8 @@ private:
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            send(true,"ACCEPTED_MUTED",{});
+            requestAutomaticMain();
+            send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
         }
@@ -1467,7 +1500,9 @@ private:
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-        send(false,verified?"RESTORED_MUTED":"RECOVERY_REQUIRED",error);
+        if(verified&&previousMonitor)requestAutomaticMain();
+        send(false,verified?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
+            "RECOVERY_REQUIRED",error);
         emitApprovedNativeSnapshot();
     }
 
@@ -1477,6 +1512,7 @@ private:
         if (setupLaunching_) return;
         // Suspend physical output but retain ALL authored mixer state while
         // the real JUCE device selector is visible (including no-change close).
+        autoMainEpoch_=0;
         engine_.beginManualAudioSetup();
 
         // The native JUCE device list is cached after first construction:
@@ -1500,6 +1536,7 @@ private:
                         if (safe == nullptr) return;
                         if (safe->finishAudioSetupAndRecoverMixer())
                         {
+                            safe->requestAutomaticMain();
                             safe->deviceSettingsDirty_ = true;
                             safe->startupError_.clear();
                             safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
@@ -1935,8 +1972,7 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        if(resume && engine_.liveOutputArmFault(false).isEmpty())
-            engine_.setMonitorEnabled(true);
+        if(resume)requestAutomaticMain();
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
@@ -2008,6 +2044,7 @@ private:
     }
 
     void openMixerFile(const juce::File& file) {
+        autoMainEpoch_=0;
         const auto chosenEpoch=engine_.dryRoutingLabEpoch();
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
         if(!mixerSessionWorker_.load(file,[safe,chosenEpoch,file](juce::String error,
@@ -3195,6 +3232,7 @@ private:
                         "Verified native Show routing and VST3 state restored in a newly prepared graph. OUTPUT remains MUTED; verify physical routing and plugin sound before unmuting.");
                 });
             if(!started)return reject("Cannot launch native Show readback worker.");
+            autoMainEpoch_=0;
             nativeShowBusy_=true;
             return;
         }
@@ -3721,6 +3759,7 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
+                autoMainEpoch_=0;
                 engine_.setMonitorEnabled(arm);
                 diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
             }
@@ -3838,18 +3877,21 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
-            if(!mixerSessionStartupInspected_) {
-                mixerSessionStartupInspected_=true;
-                if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
-                    mixerSessionRecoveryPending_=true;
-                    const auto error=restoreSavedMixerSession(startupError_.isEmpty());
-                    if(error.isNotEmpty())
-                        emitNotice("Saved mixer retained; "+error,true);
-                    else if(saved==nullptr)
-                        deviceSettingsDirty_=true;
-                }
-            }
             if (onStartupStage_) onStartupStage_ (2);
+        }
+        // Factory entries are published only after asynchronous manifest
+        // verification. Restore once they are visible, never reject a saved
+        // factory insert simply because the startup catalog is still busy.
+        if(!mixerSessionStartupInspected_ && !catalog_.busy()) {
+            mixerSessionStartupInspected_=true;
+            if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
+                mixerSessionRecoveryPending_=true;
+                const auto error=restoreSavedMixerSession(startupError_.isEmpty());
+                if(error.isNotEmpty())
+                    emitNotice("Saved mixer retained; "+error,true);
+                else
+                    deviceSettingsDirty_=true;
+            }else if(startupError_.isEmpty())requestAutomaticMain();
         }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
@@ -3870,6 +3912,7 @@ private:
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
+        serviceAutomaticMain();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.
         // A performance with armed speakers/stream is never interrupted for

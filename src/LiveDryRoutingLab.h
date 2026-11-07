@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+#include "Vst3DescriptionCache.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
@@ -386,12 +387,7 @@ public:
                 auto* fmt=formats.getFormat(0);
                 if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
                     return label+": VST3 module unavailable; rescan catalog";
-                juce::OwnedArray<juce::PluginDescription> descriptions;
-                fmt->findAllTypesForFile(descriptions,req.path);
-                juce::PluginDescription* chosen=nullptr;
-                for(auto* item:descriptions)
-                    if(item && item->uniqueId==req.uid && !item->isInstrument)
-                        {chosen=item;break;}
+                const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,req.path,req.uid);
                 if(!chosen)
                     return label+": selected effect identity is unavailable or instrument";
                 juce::String pluginError;

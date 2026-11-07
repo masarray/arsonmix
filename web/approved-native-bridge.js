@@ -1324,7 +1324,7 @@
   function syncMonitorButton(d) {
     const monitorButton=document.querySelector?.("[data-native-monitor]");
     if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"Monitor On":"Monitor Off";
+      monitorButton.textContent=d?.outputArmed?"Mute Output":"Unmute Output";
       monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
       monitorButton.title=d?.outputArmed?
         "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
@@ -1409,7 +1409,7 @@
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="",
+      deviceRequest=0,deviceChoice=null,deviceResult="",
       offeredPinRemap=null;
   let toastTimer=0;
   function nativeToast(message){
@@ -1525,29 +1525,13 @@
         renderDevicePanel();
       });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
-        if(deviceBusy||pendingDeviceMute||!deviceChoice||!deviceInventory?.active)return;
+        if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
         const draft=deviceChoice,active=deviceInventory.active;
         if(!draft.backend||!draft.capture||!draft.playback)return;
-        if(hardware?.device?.outputArmed){
-          // Correlate one deliberate MUTE to this Apply. An unrelated ACK
-          // must never authorize a hardware switch.
-          const requestId="device-mute-"+(++deviceRequest);
-          pendingDeviceMute={requestId,epoch:String(hardware.device.epoch)};
-          devicePanel.querySelector("[data-audio-apply]").disabled=true;
-          devicePanel.querySelector("[data-audio-active]").textContent=
-            "Muting current output before changing driver…";
-          backend.emitEvent("arMixAction",{action:"monitor",value:false,requestId});
-          window.setTimeout(()=>{
-            if(pendingDeviceMute?.requestId!==requestId)return;
-            pendingDeviceMute=null;
-            deviceResult="Driver change cancelled: no verified MUTE acknowledgement.";
-            renderDevicePanel();
-          },8000);
-        }else sendDeviceApply();
+        sendDeviceApply();
       };
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
-        if(!deviceBusy && !pendingDeviceMute && offeredPinRemap!==null &&
-           !hardware?.device?.outputArmed)
+        if(!deviceBusy && offeredPinRemap!==null)
           sendDeviceApply(true);
       };
       document.body.appendChild(devicePanel);
@@ -1634,11 +1618,11 @@
       "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples":
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
-      !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
+      !deviceChoice.backend||!deviceChoice.capture||
       !deviceChoice.playback;
     const remap=devicePanel.querySelector("[data-audio-remap]");
     remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
-    remap.disabled=deviceBusy || !!pendingDeviceMute;
+    remap.disabled=deviceBusy;
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
   function sendDeviceApply(confirmRetainedPinMapping=false){
@@ -1677,14 +1661,16 @@
         ack.active?.open===true && ack.active?.authorized===true &&
         Number.isSafeInteger(ack.active.deviceGeneration)?
           ack.active.deviceGeneration:null;
-      const accepted=ack.ok===true&&ack.state==="ACCEPTED_MUTED" &&
+      const accepted=ack.ok===true&&["ACCEPTED_LIVE","ACCEPTED_MUTED"].includes(ack.state) &&
         ack.active?.open===true && ack.active?.authorized===true &&
         Array.isArray(ack.active.enabledInputs) &&
         ack.active.enabledInputs.length>0 &&
         Array.isArray(ack.active.enabledOutputs) &&
         ack.active.enabledOutputs.length>=2;
+      const outputReady=ack.outputMuted===false;
       deviceResult=accepted?
-        (ack.mixerBound?"Mixer ready · MONITOR OFF":"Audio device ready · choose an IN on any channel"):
+        (outputReady?"Mixer ready · Output live":
+          ack.mixerBound?"Mixer ready · Verify channel IN and output":"Audio device ready · choose a channel IN"):
         ack.state==="NEEDS_REMAP"?
           "NEEDS REMAP · "+ack.error:
           "Device rejected · "+(ack.error||"native hardware readback failed");
@@ -1692,9 +1678,8 @@
       if(accepted){
         devicePanel.hidden=true;
         status("DEVICE READY · "+ack.active.backend+" · "+
-          ack.active.rate+" Hz / "+ack.active.buffer+" samples · MONITOR OFF");
-        nativeToast(ack.mixerBound?"Mixer ready · MONITOR OFF":
-          "Audio device connected · "+ack.active.backend+" · "+ack.active.rate+" Hz · choose channel IN");
+          ack.active.rate+" Hz / "+ack.active.buffer+" samples");
+        nativeToast(deviceResult);
         controller?.subscribe();
       }else renderDevicePanel();
     });
@@ -1956,7 +1941,7 @@
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
-      const monitor=item("button","tool","Monitor Off");
+      const monitor=item("button","tool","Unmute Output");
       monitor.dataset.nativeMonitor="true";
       monitor.addEventListener("click",()=>{
         const armed=hardware?.device?.outputArmed===true;
@@ -1991,9 +1976,7 @@
       rev=safeNativeCounter(legacy()?.routingRevision);
     if(ep===null||rev===null)return;
     const requestId=++sourceSerial;
-    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev,
-      autoListen:legacy()?.routeAccepted!==true &&
-        hardware?.device?.outputArmed!==true};
+    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev};
     backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
       requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
       deviceEpoch:ep,revision:rev});
@@ -2242,23 +2225,7 @@
           // Native publisher + engine own the accepted graph; refresh the
           // UI only from a subsequent authoritative snapshot.
           controller.subscribe();
-          const firstListen=p.autoListen && row?.main===true &&
-             (next.nativeChannelIdPcmActive===true ||
-              (Array.isArray(next.channelControls)&&next.channelControls.length===10)) &&
-             hardware?.device?.epoch===String(p.epoch);
-          // Never arm physical audio when the GUI still lacks admitted PCM
-          // controls, or when capture and playback feed the *same* VB Cable.
-          // Native C++ enforces the feedback policy a second time.
-          if(firstListen && !virtualCableFeedbackPair()) {
-            backend.emitEvent("arMixAction",{action:"monitor",value:true,
-              expectedEpoch:p.epoch,expectedRevision:Number(next.revision)});
-          }
-          if(firstListen && virtualCableFeedbackPair())
-            status("MONITOR OFF · VB-Cable feedback loop; select physical playback");
-          else if(p.autoListen && !firstListen)
-            status("CH "+(p.channel+1)+" routed · PCM controls not yet admitted; MONITOR OFF");
-          else
-            status("CH "+(p.channel+1)+" native input accepted");
+          status("CH "+(p.channel+1)+" native input accepted");
         } else {
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
           controller.subscribe();
@@ -2385,19 +2352,6 @@
       }
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
-      if(pendingDeviceMute){
-        // Reject any stale/unrelated ACK and any device epoch change.
-        if(ack?.requestId!==pendingDeviceMute.requestId)return;
-        const epochMatches=String(ack?.deviceEpoch)===pendingDeviceMute.epoch;
-        pendingDeviceMute=null;
-        if(ack?.ok===true && ack?.armed===false && epochMatches)
-          sendDeviceApply();
-        else if(devicePanel){
-          deviceResult="Device change rejected: MUTE or audio epoch not verified.";
-          renderDevicePanel();
-        }
-        return;
-      }
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
           "NATIVE: output muted.");
