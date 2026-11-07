@@ -1807,6 +1807,7 @@
       "STUDIO / COMPLETE MIXER SESSION");
     const sessionSave=item("button","tool","Save Mixer Session");
     const sessionRestore=item("button","tool","Restore Saved Mixer");
+    const sessionRebind=item("button","tool","Rebind Current Device…");
     const sessionRecover=item("button","tool","Recover Previous Mixer");
     const sessionState=item("span","more-tools-caption",
       "Checking native ChannelId session…");
@@ -1825,7 +1826,39 @@
     };
     sessionSave.addEventListener("click",()=>sessionAction("nativeSessionSave"));
     sessionRestore.addEventListener("click",()=>sessionAction("nativeSessionRestore"));
+    sessionRebind.addEventListener("click",()=>sessionAction("nativeSessionInspectRebind"));
     sessionRecover.addEventListener("click",()=>sessionAction("nativeSessionRecover"));
+    backend.addEventListener("arMixNativeSessionBindingAck",ack=>{
+      if(ack?.ok!==true||typeof ack.token!=="string"){
+        sessionState.textContent="REBIND REJECTED · "+
+          String(ack?.error||"No native hardware readback");
+        status(sessionState.textContent);return;
+      }
+      const saved=ack.saved||{},live=ack.current||{};
+      const describe=b=>String(b.backend||"?")+" · "+String(b.capture||"?")+
+        " → "+String(b.playback||"?")+" · IN 0x"+String(b.inputMask||"?")+
+        " / OUT 0x"+String(b.outputMask||"?")+" · "+String(b.rate||"?")+" Hz";
+      const sources=Array.isArray(ack.sources)?ack.sources:[];
+      const pins=sources.slice(0,12).map(s=>"CH "+s.channelId+" ← "+
+        "IN "+(Number(s.left)+1)+(s.stereo?"/"+(Number(s.right)+1):"")).join("\n");
+      const message="REBIND SAVED MIXER TO CURRENT PHYSICAL DEVICE?\n\n"+
+        "Saved: "+describe(saved)+"\n\nCurrent: "+describe(live)+
+        "\nCurrent MAIN output pair (callback ordinals): "+
+        (Number(ack.currentMainL)+1)+"/"+(Number(ack.currentMainR)+1)+
+        "\nSaved MAIN pair: "+(Number(ack.savedMainL)+1)+"/"+
+        (Number(ack.savedMainR)+1)+
+        "\nInput callback pins: "+String(ack.inputs)+
+        "\n\nSaved sources keep these callback ordinal assignments:"+
+        (pins?"\n"+pins:"\nNo physical sources")+
+        (sources.length>12?"\n…plus "+(sources.length-12)+" more sources":"")+
+        "\n\nVERIFY actual ASIO/WASAPI pin wiring and the MAIN output pair."+
+        "\nChannelIds, GROUP/WIRE and FX are retained. Physical output stays MUTED."+
+        "\nSave Mixer Session after verifying the new binding. Continue?";
+      if(window.confirm(message)){
+        backend.emitEvent("arMixAction",{action:"nativeSessionRebind",value:ack.token});
+        sessionState.textContent="Verifying unchanged hardware and reconstructing native FX…";
+      }else sessionState.textContent="Rebind cancelled · current mixer untouched";
+    });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const state=String(ack?.state||"UNAVAILABLE");
       sessionState.textContent=state+(ack?.error?" · "+String(ack.error):"");
@@ -1833,8 +1866,8 @@
       if(ack?.ok===true){
         status(ack.operation==="SAVE"?
           "Verified native MixerSession written; output remains MUTED":
-          ack.operation==="RESTORE"?
-          "Mixer Session restored; inspect routing then explicitly enable MONITOR":
+          (ack.operation==="RESTORE"||ack.operation==="REBIND")?
+          "Mixer Session restored MUTED; verify physical pins and explicitly enable MONITOR":
           "Previous MixerSession generation recovered on disk; RESTORE explicitly");
         controller?.subscribe();
       }else{
@@ -1850,7 +1883,7 @@
     });
     menu.append(caption,setup,muteBtn,hardwareNote,
       healthTitle,mark,report,advanced,
-      sessionHeading,sessionSave,sessionRestore,sessionRecover,sessionState,
+      sessionHeading,sessionSave,sessionRestore,sessionRebind,sessionRecover,sessionState,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
