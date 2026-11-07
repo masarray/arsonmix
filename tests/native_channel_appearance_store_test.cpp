@@ -52,7 +52,13 @@ int main(){
         auto req=edit(vocalId,"Studio Vox");
         // Fail closed on non-graph identity or stale lease.
         set(req,"channelId","9007199254740994");
-        assert(store.apply(req,g)=="CHANNEL_NOT_IN_NATIVE_ROSTER");
+        const auto missing=store.apply(req,g);
+        if(missing!="CHANNEL_NOT_IN_NATIVE_ROSTER") {
+            std::cerr<<"Non-roster guard returned: "<<missing.toStdString()<<"\n"
+                     <<"request="<<juce::JSON::toString(req,false).toStdString()<<"\n"
+                     <<"accepted="<<juce::JSON::toString(g,false).toStdString()<<"\n";
+        }
+        assert(missing=="CHANNEL_NOT_IN_NATIVE_ROSTER");
         set(req,"channelId",vocalId);
         set(req,"rosterRevision","10");
         assert(store.apply(req,g)=="STALE_CHANNEL_IDENTITY_OR_GRAPH");
