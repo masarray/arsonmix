@@ -503,6 +503,8 @@ jobs:
             pages-v54-*.png
             pages-v55-*.png
             pages-v28-physical-console-owner-v59-*.png
+            operator-identity-*.png
+            operator-ux-*.png
             pages-mobile-*.png
             native-wire-gain-*.png
             native-cold-start-*.png
