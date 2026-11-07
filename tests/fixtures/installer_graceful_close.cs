@@ -93,6 +93,14 @@ internal static class ArSonMixInstallerGracefulCloseFixture
             Environment.Exit(22);
         bool legacy = args.Length == 3 && (args[2] == "legacy" || args[2] == "blocked");
         bool blockClose = args.Length == 3 && args[2] == "blocked";
+        if (blockClose)
+        {
+            // Test-only locked EXE with no usable GUI window: WM_CLOSE can
+            // never be acknowledged. The installer MUST abort before [Files].
+            File.WriteAllText(args[0], "WINDOW_READY_BLOCKED");
+            System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
+            return;
+        }
 
         using (var window = new MixerWindow(args[1], legacy, blockClose))
         {
