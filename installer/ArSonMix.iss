@@ -57,3 +57,43 @@ Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginal
 
 ; Never delete private Studio data on install/update/uninstall; never install
 ; portable_mode.txt or silently ARM an audio output.
+
+; For releases that support the installer handshake, ask JUCE to do its
+; OWN accepted-session save+shutdown before Windows touches the running EXE.
+; Old releases without the handshake still use Restart Manager above.
+[Code]
+function OpenEventW(Access: LongWord; InheritHandle: Boolean; Name: string): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SignalEvent(EventHandle: THandle): Boolean;
+  external 'SetEvent@kernel32.dll stdcall';
+function CloseWinHandle(EventHandle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ShutdownSignal: THandle;
+  Attempt: Integer;
+begin
+  Result := '';
+  ShutdownSignal := OpenEventW($0002, False, 'Local\ArSonMix.InstallShutdown.v1');
+  if ShutdownSignal = 0 then
+    Exit;  { no new-app handshake: native Restart Manager fallback }
+
+  if not SignalEvent(ShutdownSignal) then
+  begin
+    CloseWinHandle(ShutdownSignal);
+    Result := 'ArSonMix could not safely prepare the running mixer for update. Please close ArSonMix normally and try again.';
+    Exit;
+  end;
+  CloseWinHandle(ShutdownSignal);
+
+  { Wait for JUCE shutdown -> mixer .smix checkpoint -> process handle
+    release. Never terminate an audio process or replace a locked executable. }
+  for Attempt := 1 to 75 do
+  begin
+    if not CheckForMutexes('Local\ArSonMix.MixerRunning.v1') then
+      Exit;
+    Sleep(200);
+  end;
+  Result := 'ArSonMix is still saving the current mixer session. Please close ArSonMix normally and run the installer again.';
+end;
