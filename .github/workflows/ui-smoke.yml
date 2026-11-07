@@ -118,7 +118,7 @@ jobs:
   operator-ux-fat:
     name: Operator UX real Chromium / native-assembled GUI (5 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/approved-operator-ux-20261107' || github.head_ref == 'fix/native-channel-identity-editor-20261107') }}
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
