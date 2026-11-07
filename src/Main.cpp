@@ -33,6 +33,7 @@
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
+#include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
 #include <algorithm>
 #include <cstring>
@@ -233,6 +234,9 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
+              .withEventListener ("arMixChannelIdentitySet", [this] (juce::var args) {
+                  handleNativeChannelIdentitySet(args);
+              })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
                   consoleSubscribed_ = true;
@@ -306,9 +310,7 @@ public:
         closePluginEditor();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
-        // Best-effort clean-exit checkpoint, after emergency physical MUTE.
-        // A pending worker already owns a safe immutable snapshot. Never
-        // block or mutate the audio callback for session disk persistence.
+        // Clean-exit native mixer checkpoint after physical OUTPUT mute.
         engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
         if(!mixerSessionWorker_.busy()) {
@@ -331,6 +333,7 @@ private:
     juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
+    armix::appearance::Store channelAppearance_{settingsDirectory()};
     armix::storage::NativePresetArchive presets_;
     std::function<void(int)> onStartupStage_;
     Browser browser_;
@@ -362,6 +365,7 @@ private:
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
     juce::StringArray acceptedControlRequests_; // bounded request replay fence
+    juce::StringArray acceptedAppearanceRequests_; // message-thread UI-only requests
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -929,6 +933,9 @@ private:
             (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         // Sole control-thread SessionSnapshot from the installed PCM publisher.
         armix::console::publishAuthoritativeMixerSession(accepted);
+        if(auto* obj=accepted.getDynamicObject())
+            obj->setProperty("channelAppearance",
+                channelAppearance_.snapshot(accepted.getProperty("graph",{})));
         return accepted;
     }
 
@@ -942,6 +949,38 @@ private:
         if (consoleSubscribed_ && browser_.loaded)
             browser_.emitEventIfBrowserIsVisible (
                 "arMixConsoleSnapshot", approvedNativeSnapshot());
+    }
+
+    // Separate presentation transaction: stable native ChannelId +
+    // actual graph lease, atomic disk write, then ACK/readback. It must NEVER
+    // dispatch a PCM graph edit or change live monitoring authorization.
+    void handleNativeChannelIdentitySet(const juce::var& request)
+    {
+        const auto requestVar=request.getProperty("requestId",{});
+        const auto id=requestVar.isString()?requestVar.toString():juce::String{};
+        juce::String error;
+        if(id.isEmpty()||id.length()>120)
+            error="INVALID_CHANNEL_APPEARANCE_REQUEST_ID";
+        else if(acceptedAppearanceRequests_.contains(id))
+            error="DUPLICATE_CHANNEL_APPEARANCE_REQUEST_ID";
+        else {
+            acceptedAppearanceRequests_.add(id);
+            if(acceptedAppearanceRequests_.size()>256)
+                acceptedAppearanceRequests_.remove(0);
+            error=channelAppearance_.apply(request,approvedNativeSnapshot());
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",id);
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixChannelIdentityAck",
+                juce::var(ack.release()));
+        if(error.isEmpty()) {
+            diagnostics_.record("NATIVE_CHANNEL_APPEARANCE_SAVED",
+                request.getProperty("channelId","").toString());
+            emitApprovedNativeSnapshot(); // independent native readback
+        } else diagnostics_.record("NATIVE_CHANNEL_APPEARANCE_REJECTED",error);
     }
 
     // One native dispatcher; the source of truth is the already installed
@@ -1823,10 +1862,7 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
-        // A disk SHA is NOT permission to instantiate executable code.
-        // Every external VST3 must still match today's verified catalog
-        // identity, exact UID and registered path. A moved or tampered
-        // binary needs an explicit catalog remap, never a blind load.
+        // Disk hash is not permission to instantiate an unverified vendor.
         for(const auto& insert:doc.inserts) {
             if(insert.catalogId==
                  armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
