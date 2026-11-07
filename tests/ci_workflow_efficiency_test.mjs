@@ -163,7 +163,7 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
   assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
-  assert.equal(fatOnly,4,'Packaging, FactoryFX stage, ZIP verify and upload require manual FAT');
+  assert.equal(fatOnly,7,'Portable FAT and Inno installer build/verify/upload all require deliberate manual opt-in');
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
   assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <
