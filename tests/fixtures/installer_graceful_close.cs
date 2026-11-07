@@ -19,7 +19,7 @@ internal static class ArSonMixInstallerGracefulCloseFixture
         private const int WM_QUERYENDSESSION = 0x0011;
         private const int WM_ENDSESSION = 0x0016;
 
-        public MixerWindow(string marker)
+        public MixerWindow(string marker, bool legacy)
         {
             savedMarker = marker;
             Text = "ArSonMix Upgrade Graceful-Close FAT Fixture";
@@ -29,29 +29,31 @@ internal static class ArSonMixInstallerGracefulCloseFixture
             // The production mixer creates exactly these same per-session
             // handles. Inno signals the event and waits for the mutex to go
             // away after the accepted mixer session has been saved.
-            runningMutex = new System.Threading.Mutex(false,
-                @"Local\ArSonMix.MixerRunning.v1");
-            shutdownEvent = new System.Threading.EventWaitHandle(false,
-                System.Threading.EventResetMode.ManualReset,
-                @"Local\ArSonMix.InstallShutdown.v1");
-            shutdownPoll = new System.Windows.Forms.Timer();
-            shutdownPoll.Interval = 50;
-            shutdownPoll.Tick += (sender, e) =>
+            if (!legacy)
             {
-                if (!shutdownEvent.WaitOne(0)) return;
-                shutdownPoll.Stop();
-                File.WriteAllText(savedMarker, "INSTALLER_HANDSHAKE_SAVED");
-                Close();
-            };
-            shutdownPoll.Start();
+                runningMutex = new System.Threading.Mutex(false,
+                    @"Local\ArSonMix.MixerRunning.v1");
+                shutdownEvent = new System.Threading.EventWaitHandle(false,
+                    System.Threading.EventResetMode.ManualReset,
+                    @"Local\ArSonMix.InstallShutdown.v1");
+                shutdownPoll = new System.Windows.Forms.Timer();
+                shutdownPoll.Interval = 50;
+                shutdownPoll.Tick += (sender, e) =>
+                {
+                    if (!shutdownEvent.WaitOne(0)) return;
+                    shutdownPoll.Stop();
+                    File.WriteAllText(savedMarker, "INSTALLER_HANDSHAKE_SAVED");
+                    Close();
+                };
+                shutdownPoll.Start();
+            }
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            shutdownPoll.Stop();
-            shutdownPoll.Dispose();
-            shutdownEvent.Dispose();
-            runningMutex.Dispose();
+            if (shutdownPoll != null) { shutdownPoll.Stop(); shutdownPoll.Dispose(); }
+            if (shutdownEvent != null) shutdownEvent.Dispose();
+            if (runningMutex != null) runningMutex.Dispose();
             base.OnFormClosed(e);
         }
 
@@ -79,10 +81,11 @@ internal static class ArSonMixInstallerGracefulCloseFixture
     [STAThread]
     private static void Main(string[] args)
     {
-        if (args.Length != 2)
+        if (args.Length != 2 && args.Length != 3)
             Environment.Exit(22);
+        bool legacy = args.Length == 3 && args[2] == "legacy";
 
-        using (var window = new MixerWindow(args[1]))
+        using (var window = new MixerWindow(args[1], legacy))
         {
             window.Shown += (sender, e) => File.WriteAllText(args[0], "WINDOW_READY");
             Application.Run(window);
