@@ -79,7 +79,7 @@ public:
             processing.clear(std::memory_order_release);
             return ok;
         }
-        void render(float* left,float* right,int samples) noexcept {
+        void render(float* left,float* right,int samples,bool rackBypassed=false) noexcept {
             if(processing.test_and_set(std::memory_order_acquire)) {
                 contention.fetch_add(1,std::memory_order_relaxed);
                 juce::FloatVectorOperations::clear(left,samples);
@@ -87,7 +87,8 @@ public:
                 return;
             }
             // G5C: atomic request from control; fade and scratch RT-owned.
-            bypassFade.request(bypassRequested.load(std::memory_order_relaxed));
+            // Master rack bypass affects the WET/DRY envelope, never the remembered insert preference.
+            bypassFade.request(rackBypassed || bypassRequested.load(std::memory_order_relaxed));
             if(bypassFade.fullyBypassed()) {
                 processing.clear(std::memory_order_release);
                 return;
@@ -227,6 +228,17 @@ public:
         fx->bypassRequested.store(bypass,std::memory_order_release);
         return true;
     }
+    // One atomic rack override per channel. Individual slot bypass flags stay
+    // unchanged; ON restores the previous enabled/disabled combination.
+    bool setRackBypass(int strip,bool bypass) noexcept {
+        if(strip<0||strip>=fxSlots)return false;
+        rackBypassed_[strip].store(bypass,std::memory_order_release);
+        return true;
+    }
+    bool rackBypassed(int strip) const noexcept {
+        return strip>=0&&strip<fxSlots &&
+            rackBypassed_[strip].load(std::memory_order_acquire);
+    }
     // Same opaque token used by the native BYPASS ACK. A vendor editor takes
     // an owner lease ONLY on the message thread, never in process().
     InstanceLease leaseInsert(int strip,int position,const juce::String& token) const noexcept {
@@ -255,6 +267,10 @@ public:
         if(!original||original->catalogId!=catalogId)return false;
         for(int i=0;i<counts_[strip];++i)
             if(processors_[strip][i]==original)return false;
+        // Reusing the first retained plugin also carries its channel-level
+        // rack override; no resume-to-ON during a compatible reconfigure.
+        if(target==0)rackBypassed_[strip].store(
+            previous.rackBypassed(strip),std::memory_order_relaxed);
         processors_[strip][target]=original; // shared_ptr CONTROL only
         ++counts_[strip];++activeInserts_;
         return true;
@@ -295,12 +311,15 @@ public:
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
             const int count=counts_[strip]; // immutable, prepared OFF RT
+            const bool rackOff=rackBypassed_[strip].load(std::memory_order_acquire);
             if(count>0) {
                 for(int slot=0;slot<count;++slot) {
                     auto* instance=processors_[strip][slot].get();
-                    instance->render(l,r,samples); // no shared_ptr copies or RT heap use
+                    instance->render(l,r,samples,rackOff); // existing 8ms fade; no RT allocation
                 }
             } else if(strip==0 && externalFx)
+                // The legacy CH1 callback owns its own per-slot smooth rack
+                // bypass. Never skip it abruptly or strip out its FX tail.
                 externalFx(externalContext,strip,l,r,samples);
         };
         if(monitorEnabled_ && (!monitorL||!monitorR))return false;
@@ -315,6 +334,7 @@ private:
     RealtimeStripControls controls_ {};
     FxBank processors_ {};
     std::array<std::uint8_t,fxSlots> counts_ {};
+    std::array<std::atomic<bool>,fxSlots> rackBypassed_{}; // CONTROL write; one RT read per lane
     int activeInserts_=0;
     int pluginQuantum_=512;
     int mainOutputLeft_=0,mainOutputRight_=1;
