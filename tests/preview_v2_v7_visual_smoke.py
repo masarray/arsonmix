@@ -97,8 +97,101 @@ def audit_geometry(page, title):
 
 
 
+
+def audit_v29_operator_collapse(page, label):
+    """Real published V29: one comfort layout, frame-synchronized 50:50.
+
+    Keep all eight actual operator fold combinations, not the obsolete V7
+    fixed-viewport fader-height law. Legacy V7 geometry remains independently
+    tested by audit_p0_collapse on the unassembled authoring source.
+    """
+    body=page.locator(".console-body")
+    assert page.locator("#densitySelect").is_hidden(), label
+    assert body.get_attribute("data-density")=="comfort", label
+    keys=("route","fx","send")
+    rail={key:page.locator(f'.section-rail [data-section="{key}"]') for key in keys}
+    original=tuple("collapsed-"+key in (body.get_attribute("class") or "") for key in keys)
+    initial_edge=page.locator('#tracks .strip[data-id="5"] .wire-node-out').get_attribute("data-wire-main-edge")
+    assert initial_edge, (label,"missing original MAIN EdgeId")
+    seen=set()
+    try:
+        for n in range(8):
+            target=tuple(bool(n & (1<<i)) for i in range(3))
+            for i,key in enumerate(keys):
+                if ("collapsed-"+key in (body.get_attribute("class") or ""))!=target[i]:
+                    rail[key].click()
+            # V29 measures the actual console on a ResizeObserver/Microtask
+            # paint boundary; reading all changes in one synchronous JS loop
+            # would sample a stale pre-fold --v13-fader-h value.
+            page.wait_for_timeout(60)
+            status=tuple("collapsed-"+key in (body.get_attribute("class") or "") for key in keys)
+            assert status==target,(label,"incomplete fold state",target,status)
+            seen.add(status)
+            data=page.evaluate("""() => {
+                const root=document.querySelector('.console-body'),
+                      strip=document.querySelector('#tracks .strip[data-id="1"]'),
+                      master=document.querySelector('#master .strip'),
+                      rail=document.querySelector('.section-rail');
+                const box=node=>{const b=node.getBoundingClientRect();return {top:b.top,bottom:b.bottom,height:b.height};};
+                const cells=['identity','route','fx','send','pan','switch','fader','footer'];
+                const slot=k=>k==='identity'?'.strip-identity-top':k==='footer'?'.bottom-section':'.'+k+'-section';
+                const rows=Object.fromEntries(cells.map(k=>[
+                    k,{strip:box(strip.querySelector(slot(k))),rail:box(rail.querySelector('.rail-cell.'+k))}]));
+                return {root:box(root),rows,master:box(master.querySelector('.bottom-section')),
+                        fxList:strip.querySelector('.fxslot-list').getBoundingClientRect().height,
+                        wireDeck:getComputedStyle(strip.querySelector('.wire-deck')).display,
+                        wireTray:getComputedStyle(strip.querySelector('.wire-tray')).display,
+                        wireSvg:getComputedStyle(document.querySelector('#wireLayer')).display,
+                        sendExpanded:rail.querySelector('[data-section="send"]').getAttribute('aria-expanded'),
+                        overflow:strip.getBoundingClientRect().bottom-box(strip.querySelector('.bottom-section')).bottom};
+            }""")
+            rows=data["rows"]
+            for key,part in rows.items():
+                actual,expected=part["strip"],part["rail"]
+                assert abs(actual["top"]-expected["top"])<=1.5 and abs(actual["bottom"]-expected["bottom"])<=1.5,(
+                    label,status,key,"rail/channel misaligned",actual,expected)
+            assert rows["fader"]["strip"]["height"]>=120,(label,status,"fader below usable limit",data)
+            assert rows["footer"]["strip"]["height"]>=32,(label,status,"missing channel labels",data)
+            assert abs(data["overflow"])<=3,(label,status,"strip footer truncated",data)
+            assert abs(data["master"]["bottom"]-rows["footer"]["strip"]["bottom"])<=2,(
+                label,status,"pinned MAIN footer not aligned",data)
+            if target[1]:
+                assert rows["fx"]["strip"]["height"]>=20,(label,status,"FX fold lost rack header",data)
+            else:
+                assert data["fxList"]>=88,(label,status,"expanded FX rack cannot show inserts",data)
+            if target[2]:
+                assert rows["send"]["strip"]["height"]<=29,(label,status,"WIRE fold not compact",data)
+                assert data["wireDeck"]=="none" and data["wireTray"]=="none" and data["wireSvg"]=="none",(
+                    label,status,"WIRE fold leaves painted cables",data)
+                assert data["sendExpanded"]=="false",(label,status,"WIRE rail fold ARIA drift")
+            else:
+                assert rows["send"]["strip"]["height"]>=100,(label,status,"expanded WIRE bay missing",data)
+                assert data["wireDeck"]!="none" and data["wireTray"]!="none",(
+                    label,status,"WIRE dock unexpectedly hidden",data)
+                assert data["sendExpanded"]=="true",(label,status,"WIRE rail expand ARIA drift")
+            # For ALL expanded upper modules the native V29 50:50 split
+            # must be actual computed geometry, not a forced old pixel target.
+            if not any(target):
+                upper=rows["pan"]["strip"]["top"]-data["root"]["top"]
+                lower=rows["footer"]["strip"]["bottom"]-rows["pan"]["strip"]["top"]
+                assert abs(upper-lower)<=3,(label,"V29 halves must be equal",upper,lower,data)
+            assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').get_attribute("data-wire-main-edge")==initial_edge,(
+                label,status,"fold changed accepted MAIN EdgeId")
+    finally:
+        for i,key in enumerate(keys):
+            if ("collapsed-"+key in (body.get_attribute("class") or ""))!=original[i]:
+                rail[key].click()
+        page.wait_for_timeout(60)
+    assert len(seen)==8,(label,"missing actual operator fold states",seen)
+    assert tuple("collapsed-"+key in (body.get_attribute("class") or "") for key in keys)==original,(
+        label,"initial fold state was not restored")
+    return {"states":seen}
+
+
 def audit_p0_collapse(page, label):
     """Every ROUTE/FX/SEND combination preserves PAN/SWITCH/FADER/FOOTER."""
+    if page.locator("#densitySelect").is_hidden():
+        return audit_v29_operator_collapse(page,label)
     result=page.evaluate("""() => {
       const body=document.querySelector('.console-body');
       const rail=document.querySelector('.section-rail');
