@@ -32,6 +32,14 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertIn('id="densitySelect" class="density-select" hidden',compiled)
             self.assertEqual(compiled.count(CLOSE_ICON),6)
             self.assertIn("V29 adaptive 50/50 console",chrome)
+            self.assertIn("position:fixed;z-index:115;left:8px",chrome)
+            self.assertIn("max-height:calc(100dvh - 16px);overflow-y:auto",chrome)
+            self.assertEqual(compiled.count('id="channelIdentity"'),1)
+            self.assertLess(
+                compiled.index('</div>\n    <div id="channelIdentity"'),
+                compiled.index('<script src="assets/wire-graph-model.js'))
+            self.assertIn("focus({preventScroll:true})",compiled)
+            self.assertIn("positionChannelIdentity(dialog,anchor)",compiled)
             self.assertIn("installConsoleSplit",compiled)
             self.assertIn("ResizeObserver",compiled)
             self.assertIn("MutationObserver",compiled)
