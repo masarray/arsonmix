@@ -44,6 +44,10 @@ int main(){
         .getNonexistentChildFile("ArSonMixChannelIdentity","",false);
     assert(dir.createDirectory().wasOk());
     const auto g=nativeGraph();
+    // Raw UTF-8 bytes are a compiler-charset-independent ground truth.
+    const auto keyboard=juce::String::fromUTF8("\xF0\x9F\x8E\xB9");
+    assert(Store::validIcon(keyboard));
+    assert(edit("9007199254740993","Studio Vox").getProperty("icon",{}).toString()==keyboard);
     const juce::String vocalId="9007199254740993";
     const juce::String guitarId="9007199254740995";
     {
