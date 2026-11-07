@@ -84,6 +84,7 @@ try {
         Start-Sleep -Milliseconds 200
     }
     Assert-Condition (Test-Path -LiteralPath $ready) "Legacy pre-handshake fixture never became ready"
+    Assert-Condition ((Get-Content -LiteralPath $ready -Raw).Trim() -eq "WINDOW_READY_LEGACY") "Legacy fixture did not receive mode argument"
     $legacy=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/LOG="' + (Join-Path $work 'legacy-upgrade.log') + '"')) -Wait -PassThru
     $fixtureProcess.Refresh()
     $legacyMarker=if(Test-Path -LiteralPath $closed){(Get-Content -LiteralPath $closed -Raw).Trim()}else{"MISSING"}
@@ -106,9 +107,11 @@ try {
         Start-Sleep -Milliseconds 200
     }
     Assert-Condition (Test-Path -LiteralPath $ready) "Unresponsive fixture never became ready"
+    Assert-Condition ((Get-Content -LiteralPath $ready -Raw).Trim() -eq "WINDOW_READY_BLOCKED") "Unresponsive fixture did not receive block mode argument"
     $blocked=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/LOG="' + (Join-Path $work 'blocked-upgrade.log') + '"')) -Wait -PassThru
     $fixtureProcess.Refresh()
     Write-Host "INNO_BLOCKED_DIAG exit=$($blocked.ExitCode) stillRunning=$(-not $fixtureProcess.HasExited)"
+    Show-UpgradeDiagnostics (Join-Path $work 'blocked-upgrade.log')
     Assert-Condition ($blocked.ExitCode -ne 0 -and -not $fixtureProcess.HasExited) "Installer improperly replaced a live GUI that refused to close"
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Blocked upgrade unexpectedly modified installed EXE"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Blocked upgrade removed personal files"
