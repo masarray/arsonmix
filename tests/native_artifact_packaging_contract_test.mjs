@@ -41,7 +41,7 @@ test('EXE and independently ZIP-distributed PE icons must match approved source 
   }
   assert.match(iconVerifier,/RT_GROUP_ICON\/RT_ICON/);
   assert.match(iconVerifier,/read_png\(expected\)/);
-  assert.match(iconVerifier,/actual_rows=read_png/);
+  assert.match(iconVerifier,/actual_rows\s*=\s*read_png/);
   assert.match(iconVerifier,/old\[pos\+3\]!=actual\[pos\+3\]/);
   assert.match(iconVerifier,/required=\{16,32,48,256\}/);
 });
