@@ -19,6 +19,12 @@ def apply_fx_rack_interaction(html, assets=None):
   return !!window.ArSonFxRackAuthority?.move?.(t.id,from,t.id,to,t.fxInsertIds[from]?.id);
  }
 ''',"native MOVE_INSERT bridge")
+    html=once(html,
+        "document.querySelector('.strip[data-id=\"'+t.id+'\"] .fx-grip[data-insert-id=\"'+id+'\"]')?.focus();",
+        "document.querySelector('.strip[data-id=\"'+t.id+'\"] .fxslot-row[data-insert-id=\"'+id+'\"] .fx-pick')?.focus({preventScroll:true});",
+        "preserve keyboard focus after handle-free reorder")
+    html=once(html,'Ctrl+Z on grip to undo','Ctrl+Z on FX name to undo',
+              "retire grip keyboard tooltip")
     anchor='function undoReferenceFx(t){\n'
     html=once(html,anchor,anchor+' if(undoFxTransfer(t))return true;\n',"transfer undo")
     before="const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);"
