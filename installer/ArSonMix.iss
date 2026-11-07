@@ -35,11 +35,11 @@ DisableDirPage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
 SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
-; Windows Restart Manager asks the running ArSonMix to close normally,
-; invoking JUCE shutdown/session persistence before any executable is replaced.
-; Never force-kill an audio session or restart an old process beside the new one.
-CloseApplications=yes
-CloseApplicationsFilter=ArSonMix.exe
+; Our pre-install shutdown owns the lifecycle for BOTH new and legacy
+; releases. Do not let Windows Restart Manager issue a second shutdown or
+; force a hung mixer after our fail-closed check. A single controlled
+; WM_CLOSE followed by full process exit is required before replacing EXE.
+CloseApplications=no
 RestartApplications=no
 [Files]
 ; The shutdown helper is EMBEDDED TEMPORARILY in Setup, never installed.
@@ -52,7 +52,7 @@ Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreve
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
-; closes the prior verified app before [Files], while [Run] launches exactly
+; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
