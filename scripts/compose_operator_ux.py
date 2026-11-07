@@ -92,7 +92,7 @@ def apply_operator_ux(html: str, assets: Path) -> str:
     if count != 1:
         raise ValueError("Operator UX minimize event drift")
     html = once(html,
-        "const panel=plugEl('pluginBrowser'),parent=document.querySelector('.console-pane');\n  const bounds=parent?.getBoundingClientRect?.();",
+        "const panel=plugEl('pluginBrowser'),parent=document.querySelector('.console-pane');\n const bounds=parent?.getBoundingClientRect?.();",
         "const panel=plugEl('pluginBrowser');\n  const bounds={left:0,top:0,width:window.innerWidth,height:window.innerHeight};",
         "drag within entire window")
     targets = ("identityClose","pluginClose","fastClose",
