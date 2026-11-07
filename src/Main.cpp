@@ -310,6 +310,17 @@ public:
         closePluginEditor();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
+        // Clean-exit native mixer checkpoint after physical OUTPUT mute.
+        engine_.setOutputMuted(true);
+        engine_.disconnectSecondaryOutput();
+        if(!mixerSessionWorker_.busy()) {
+            const auto lab=engine_.status().getProperty("dryRoutingLab",{});
+            if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false))) {
+                const auto error=saveMixerSession(true);
+                if(error.isNotEmpty())
+                    diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
+            }
+        }
         engine_.stop();
         browser_.setVisible (false);
     }
@@ -1851,6 +1862,26 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
+        // Disk hash is not permission to instantiate an unverified vendor.
+        for(const auto& insert:doc.inserts) {
+            if(insert.catalogId==
+                 armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+                if(insert.path.isNotEmpty() || insert.uid!=0)
+                    return "Saved built-in EQ identity was modified";
+                continue;
+            }
+            const auto* registered=catalog_.find(insert.catalogId);
+            if(!registered || registered->uid!=insert.uid ||
+               registered->path!=insert.path ||
+               registered->key()!=insert.catalogId) {
+                mixerSessionStatus_="NEEDS_VST3_REMAP";
+                mixerSessionError_=
+                    "Saved external VST3 identity unavailable: "+insert.catalogId;
+                diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",
+                    mixerSessionError_);
+                return mixerSessionError_;
+            }
+        }
         // Existing live graphs cannot be replaced by startup autosave or
         // a stale More-button click. Never demote the true native renderer.
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
