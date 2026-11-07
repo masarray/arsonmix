@@ -18,7 +18,7 @@ class BrandPackageFiles(unittest.TestCase):
             self.assertEqual(ico[offset:offset+8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(ico, (ROOT / "site/favicon.ico").read_bytes())
         head = (ROOT / "site/index.html").read_text(encoding="utf-8").split("</head>", 1)[0]
-        self.assertTrue(any(value in (ROOT / "site/index.html").read_text(encoding="utf-8") for value in ('src="arsonmix-48.png"', 'src="./arsonmix-48.png"')))
+        self.assertIn('src="arsonmix-48.png"', (ROOT / "site/index.html").read_text(encoding="utf-8"))
         for name in ("favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
                      "apple-touch-icon.png", "site.webmanifest"):
             self.assertIn(name, head)

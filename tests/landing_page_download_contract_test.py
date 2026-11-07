@@ -15,7 +15,7 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn('<link rel="icon" href="./favicon.ico"', html)
             self.assertIn("apple-touch-icon.png", html)
             self.assertIn("site.webmanifest", html)
-            self.assertIn('src="./arsonmix-48.png"', html)
+            self.assertIn('src="arsonmix-48.png"', html)
             self.assertIn('href="./preview/"', html)
             self.assertIn('id="download"', html)
             self.assertIn("media/console-overview.jpg", html)

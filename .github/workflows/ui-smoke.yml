@@ -104,7 +104,6 @@ jobs:
         run: |
           python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
           python tests/single_preview_publication_contract_test.py dist-pages
-          python tests/landing_page_download_contract_test.py dist-pages
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
@@ -168,8 +167,6 @@ jobs:
         run: python tests/approved_gui_perf_stage_a_smoke.py
       - name: Validate Stage B native meter dirty-write / authoritative Pages parity
         run: python tests/approved_native_meter_dirty_stage_b_smoke.py
-      - name: Verify landing visuals and release download truth on desktop/mobile
-        run: python tests/landing_page_browser_smoke.py
       - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
         run: python tests/approved_stage_c_css_visual_parity_smoke.py
       - name: Check real mobile /preview/ touch toolbar, popup and stray chevrons
@@ -448,7 +445,6 @@ jobs:
         with:
           name: arsonmix-gui-current-smoke
           path: |
-            landing-v1-*.png
             pages-wire-main-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png

@@ -23,37 +23,51 @@ SPRITE="mute-solo-pfl-56x37.png"
 
 
 def verify_bundle(dist):
-    """One approved published GUI; Stage C CSS and Stage D runtime are compiled."""
     generated=dist/"preview"
-    html=(generated/"index.html").read_text("utf-8")
-    original=(REFERENCE/"index.html").read_text("utf-8")
-    meta=json.loads((generated/"build.json").read_text("utf-8"))
-    assert meta["kind"]=="APPROVED_SINGLE_GUI" and meta["live_audio"] is False
+    entry=(dist/"preview/index.html").read_text(encoding="utf-8")
+    assert "<iframe" not in entry, "Only one direct public preview GUI is allowed"
+    assert (dist/"preview-buttons/index.html").is_file(), "Legacy button URL must redirect"
+    original=(REFERENCE/"index.html").read_text(encoding="utf-8")
+    html=(generated/"index.html").read_text(encoding="utf-8")
+    meta=json.loads((generated/"build.json").read_text(encoding="utf-8"))
+    assert meta["kind"]=="APPROVED_SINGLE_GUI"
+    assert meta["live_audio"] is False
     assert meta["wire_source_sha256"]==hashlib.sha256(original.encode()).hexdigest()
-    assert "<iframe" not in html
-    assert "mixer-control-keys.js?rev=" in html
-    for retired in ("preview-v2","preview-buttons"):
-        shell=dist/retired
-        assert "url=../preview/" in (shell/"index.html").read_text("utf-8"),retired
-        assert sorted(x.name for x in shell.iterdir())==["index.html"],retired
-    assert 'http-equiv="refresh"' in (generated/"mixer.html").read_text("utf-8")
-    assets=generated/"assets"
+    assert "url=../preview/" in (dist/"preview-v2/index.html").read_text(encoding="utf-8")
+    assert "url=../preview/" in (dist/"preview-buttons/index.html").read_text(encoding="utf-8")
+    assert 'http-equiv="refresh"' in (dist/"preview/mixer.html").read_text(encoding="utf-8")
+
+    # Strip only the two deliberate fingerprinted CSS/JS URLs. Everything
+    # else, including the V46+ WIRE model and channel events, must be 1:1.
+    stripped=html
     for name in SPECIAL:
-        digest=hashlib.sha256((OWNER/name).read_bytes()).hexdigest()[:16]
-        assert meta["button_css_js_revisions"][name]==digest,name
-        assert (assets/name).is_file(),name
-        if name.endswith(".js"):
-            assert (assets/name).read_bytes()==(OWNER/name).read_bytes()
-    # Source CSS is optimized by the canonical build; runtime DOM is verified
-    # by the strict single-preview publication contract elsewhere in CI.
-    assert (assets/"mixer-wire-dots.css").is_file()
-    assert (assets/"knob-ICON.svg").read_bytes()==(REFERENCE/"assets/knob-ICON.svg").read_bytes()
-    png=(assets/SPRITE).read_bytes()
-    assert png==(OWNER/SPRITE).read_bytes()
+        path="assets/"+name
+        original_url=re.search(re.escape(path)+r'(?:\?[^"\s>]+)?',original)
+        current_url=re.search(re.escape(path)+r'\?rev=([0-9a-f]{16})',stripped)
+        assert original_url and current_url,(name,"missing cache-safe URL")
+        expected=hashlib.sha256((OWNER/name).read_bytes()).hexdigest()[:16]
+        assert current_url.group(1)==expected,(name,"wrong asset revision")
+        stripped=stripped[:current_url.start()]+original_url.group(0)+stripped[current_url.end():]
+        assert (generated/"assets"/name).read_bytes()==(OWNER/name).read_bytes(),name
+    assert stripped==original,"User-approved button variant modified the real WIRE mixer"
+
+    # Removing old snapshots makes every extra asset a current-source
+    # dependency, never a cloned V45 file frozen across future WIRE updates.
+    canonical={f.name for f in (REFERENCE/"assets").iterdir() if f.is_file()}
+    published={f.name for f in (generated/"assets").iterdir() if f.is_file()}
+    assert published==canonical|{SPRITE},("asset set drift",published^canonical)
+    for name in canonical-set(SPECIAL):
+        assert (generated/"assets"/name).read_bytes()==(REFERENCE/"assets"/name).read_bytes(),name
+
+    png=(generated/"assets"/SPRITE).read_bytes()
+    assert png==(ROOT/"site/preview-v34/assets"/SPRITE).read_bytes()
     assert png[:8]==bytes.fromhex("89504e470d0a1a0a")
     assert struct.unpack(">II",png[16:24])==(112,111)
-    assert png[25]==6
+    assert png[25]==6,"Must keep RGBA transparency"
+    assert "background-size:200% 300%" in (OWNER/SPECIAL[0]).read_text()
+    assert "aria-pressed=\"true\"" in (OWNER/SPECIAL[0]).read_text()
     return generated
+
 
 def verify_browser(dist):
     html=dist/"preview/index.html"

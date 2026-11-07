@@ -1,6 +1,17 @@
 name: Publish ArSonMix GUI (main dispatcher)
 
 on:
+  # Landing-only changes have a separate, fail-closed browser gate. The mixer
+  # itself continues to require the existing full Chromium workflow_run.
+  push:
+    branches: [main]
+    paths:
+      - 'site/index.html'
+      - 'site/landing.css'
+      - 'site/downloads.js'
+      - 'site/media/**'
+      - 'scripts/build_landing_assets.py'
+      - '.github/workflows/pages-publish.yml'
   workflow_dispatch:
   workflow_run:
     workflows: ["UI smoke (Chromium)"]
@@ -36,6 +47,27 @@ jobs:
           if [ "$SOURCE_SHA" != "$CURRENT_MAIN" ]; then
             echo "fresh=false" >> "$GITHUB_OUTPUT"
             echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # Marketing only: any mixer, engine, preview/DOM/CSS/build change
+            # immediately fails closed to the full Chromium workflow_run gate.
+            CHANGES="$(git diff --name-only HEAD^ HEAD)"
+            if [ -z "$CHANGES" ]; then
+              echo "fresh=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            while IFS= read -r path; do
+              case "$path" in
+                site/index.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|.github/workflows/pages-publish.yml)
+                  ;;
+                *)
+                  echo "fresh=false" >> "$GITHUB_OUTPUT"
+                  echo "NOT LANDING ONLY: $path requires full /preview/ qualification"
+                  exit 0
+                  ;;
+              esac
+            done <<< "$CHANGES"
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            echo "Scoped landing-only changes validated against first-parent diff"
           else
             # On the latest qualified main, always publish the assembled /preview/;
             # a preceding GUI commit may have been followed by docs/CI commits.
@@ -52,13 +84,21 @@ jobs:
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
+          python scripts/build_landing_assets.py dist-pages
           # The ONLY public mixer is /preview/, generated with the approved
           # PNG controls. Old links redirect to it; they never show other GUI.
           python tests/single_preview_publication_contract_test.py dist-pages
           python tests/landing_page_download_contract_test.py dist-pages
+          python -m py_compile scripts/build_landing_assets.py tests/landing_page_browser_smoke.py
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py
+      - name: Browser-qualify landing-only release at desktop and mobile
+        if: ${{ steps.guard.outputs.fresh == 'true' && github.event_name == 'push' }}
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          python tests/landing_page_browser_smoke.py
       - name: Configure GitHub Pages
         if: ${{ steps.guard.outputs.fresh == 'true' }}
         uses: actions/configure-pages@v5

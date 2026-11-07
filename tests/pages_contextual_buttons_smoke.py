@@ -113,31 +113,24 @@ def main():
         subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),
                         '--out',str(dist),'--sha','v6-ci','--branch','main'],
                        cwd=ROOT,check=True,capture_output=True,text=True)
-        # Modern product has exactly ONE public and native-approved GUI.
-        # Old preview-v2/preview-buttons paths are redirects ONLY (no CSS/JS
-        # duplicates). Their prior cloned renderers were intentionally retired.
-        published=dist/'preview'
-        assets=published/'assets'
-        assert (assets/OWNER).is_file() and (assets/OWNER).stat().st_size>50
-        assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes()
-        for retired in ('preview-v2','preview-buttons'):
-            legacy=dist/retired
-            assert 'url=../preview/' in (legacy/'index.html').read_text('utf-8'),retired
-            assert sorted(x.name for x in legacy.iterdir())==['index.html'],retired
-        assert 'url=./' in (published/'mixer.html').read_text('utf-8')
+        for target in ('preview','preview-v2','preview-buttons'):
+            assets=dist/target/'assets'
+            assert (assets/OWNER).read_bytes()==(ROOT/'site/preview-v2/assets'/OWNER).read_bytes(),target
+            assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes(),target
         png_src=ROOT/'site/preview-buttons/assets'
-        for name in ('mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'):
-            assert (assets/name).is_file(),name
-            # Runtime CSS is source-compiled; the approved PNG artwork remains byte-exact.
-            if name.endswith('.png') or name.endswith('.js'):
-                assert (assets/name).read_bytes()==(png_src/name).read_bytes(),name
+        png_pub=dist/'preview-buttons/assets'
+        for file in ('mixer-control-keys.css','mixer-control-keys.js','mute-solo-pfl-56x37.png'):
+            assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            # Source baseline and ONLY approved published result, never a third renderer.
-            check_page(browser,CANON,'canonical')
-            check_page(browser,published/'index.html','png')
+            for file,label in (
+                (CANON,'canonical'),
+                (dist/'preview/mixer.html','public'),
+                (dist/'preview-buttons/index.html','png')
+            ):
+                check_page(browser,file,label)
             browser.close()
-    print('PASS V6 OTHER buttons: ONE approved public GUI, redirects, PNG protected, native latches,')
+    print('PASS V6 OTHER buttons: 3 routes, PNG protected, action release, native latches,')
     print('micro geometry, fixed MAIN size, no pointer-focus or layout scroll')
 
 
