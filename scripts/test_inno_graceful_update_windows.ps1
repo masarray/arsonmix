@@ -43,7 +43,7 @@ try {
     Assert-Condition ($LASTEXITCODE -eq 0) "Cannot compile Inno fixture setup"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     Assert-Condition (Test-Path -LiteralPath $setup -PathType Leaf) "Compiled Inno test installer missing"
-    $setupArgs=@("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/CLOSEAPPLICATIONS","/NOFORCECLOSEAPPLICATIONS","/DIR=$install")
+    $setupArgs=@("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/NOCLOSEAPPLICATIONS","/DIR=$install")
     $first=Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru
     Assert-Condition ($first.ExitCode -eq 0) ("First test install exit="+$first.ExitCode)
     $installedExe=Join-Path $install "ArSonMix.exe"
