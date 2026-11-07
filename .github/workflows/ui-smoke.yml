@@ -131,7 +131,9 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
       - name: Measure actual layout, close keys, floating move and small-screen scaling
-        run: python tests/approved_operator_ux_chromium_fat.py
+        run: |
+          python tests/approved_operator_ux_chromium_fat.py
+          python tests/approved_operator_ux_native_identity_smoke.py
       - name: Retain rendered evidence across viewport sizes
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -203,6 +205,10 @@ jobs:
         run: python tests/approved_native_meter_dirty_stage_b_smoke.py
       - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
         run: python tests/approved_stage_c_css_visual_parity_smoke.py
+      - name: V29 operator WebView: five geometry sizes, floating controls, and native channel identity
+        run: |
+          python tests/approved_operator_ux_chromium_fat.py
+          python tests/approved_operator_ux_native_identity_smoke.py
       - name: Check real mobile /preview/ touch toolbar, popup and stray chevrons
         run: python tests/approved_preview_mobile_navigation_smoke.py
       - name: FX rack master bypass preserves each insert state (real Chromium)
