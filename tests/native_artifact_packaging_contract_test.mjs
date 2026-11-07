@@ -118,9 +118,9 @@ test('native bridge authenticates UI readiness but never hallucinates PCM/VST3 L
   assert.match(verify,/WEBVIEW2_GUI_READY_TIMEOUT/);
 });
 
-test('physical 10CH+4AUX runtime remains hardware-unqualified, no fake UAT',()=>{
+test('physical 10CH+4AUX Preview build does not invent independent hardware certification',()=>{
   assert.match(packaging,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
-  assert.match(packaging,/HARDWARE_FAT_UNQUALIFIED/);
+  assert.match(packaging,/PREVIEW/);
   assert.match(verify,/NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK/);
   assert.doesNotMatch(packaging,/CHANNEL_1_ONLY__REMAINING_9_GUI_CHANNELS_NOT_REAL_AUDIO/);
   for(const marker of [
@@ -152,7 +152,7 @@ test('M3-E same-SHA native ZIP carries SHA-pinned FAT tools and no fake hardware
   assert.match(v,/FAT tool ZIP payload digest differs/);
   assert.match(v,/scripts\/m3e_fat_evidence_gate\.mjs/);
   assert.match(collector,/FAT_RUNS\.json/);
-  assert.match(collector,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+  assert.match(collector,/SOFTWARE_VERIFIED_PREVIEW_CANDIDATE/);
   assert.match(collector,/physicalAudibilityVerifiedBySoftware=\$false/);
   assert.match(checker,/PENDING_NATIVE_CALLBACK_PROOF/);
   assert.match(checker,/EVIDENCE_READY_FOR_HUMAN_REVIEW/);

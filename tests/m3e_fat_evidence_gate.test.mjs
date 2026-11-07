@@ -34,7 +34,7 @@ function makePackage(dir){
     approvedGuiRoute:'/preview/',approvedGuiOutput:'preview/index.html',
     approvedGuiPagesSha256:'1'.repeat(64),approvedGuiNativeHtmlSha256:'2'.repeat(64),
     approvedGuiManifestSha256:'3'.repeat(64),
-    fatStatus:'EXPERIMENTAL_NOT_HARDWARE_QUALIFIED',
+    fatStatus:'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE',
     fatCollectorSha256:sha(collector),fatGateSha256:sha(gate)};
   const save=()=>writeFileSync(join(dir,'BUILD_PROVENANCE.json'),JSON.stringify(m));
   save();return {m,save,exe,collector};
