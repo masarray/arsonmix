@@ -2815,7 +2815,6 @@
   const ready=()=>{
     presentNativeOnlyTools();
     installFirstSoundMenu();
-    backend.emitEvent("arMixAction",{action:"nativeSessionInspect"});
     scope?.setNativeCatalog?.([]); // no synthetic/demo VST3 in Windows host
     updateHardwarePanel(null);
     stopDemo();
