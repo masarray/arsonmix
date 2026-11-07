@@ -45,6 +45,54 @@ def main():
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
             emit(page,'arMixConsoleSnapshot',g0)
+            # Native-only Studio controls must use real JUCE Show I/O; the
+            # public Pages scene model must never acknowledge a persisted Show.
+            show_panel = "#moreTools .more-tools-panel"
+            show_id = "11111111-2222-4333-8444-555555555555"
+            corrupt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            def show_click(text):
+                page.evaluate("""([selector,text])=>{
+                  const buttons=[...document.querySelectorAll(selector+' button')];
+                  const button=buttons.find(b=>b.textContent===text);
+                  if(!button)throw Error('Missing native Show button: '+text);
+                  button.click();
+                }""",[show_panel,text])
+            def show_select(value):
+                return page.evaluate("""([selector,value])=>{
+                  const node=document.querySelector(selector+' select[aria-label="Saved native Show"]');
+                  if(!node)throw Error('Native Show selector absent');
+                  node.value=value;node.dispatchEvent(new Event('change'));
+                  const buttons=[...document.querySelectorAll(selector+' button')];
+                  const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
+                  return {recall:available('Recall Show'),recover:available('Recover Last Good')};
+                }""",[show_panel,value])
+            show_click("Browse Shows")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
+            emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
+                {"id":show_id,"name":"Valid Performance","hasPrevious":True,"needsRecovery":False},
+                {"id":corrupt_id,"name":"Damaged HEAD","hasPrevious":True,"needsRecovery":True}]})
+            assert show_select(show_id)=={"recall":True,"recover":True}
+            assert show_select(corrupt_id)=={"recall":False,"recover":True}
+            show_click("Recover Last Good")
+            recovery=page.evaluate("()=>window.__events.at(-1).payload")
+            assert recovery=={"action":"routingDryShowRecover","value":corrupt_id}
+            assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            emit(page,"arMixNativeShowRecoverAck",{"ok":True,"showId":corrupt_id})
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
+            emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
+                {"id":corrupt_id,"name":"Recovered Performance","hasPrevious":True,"needsRecovery":False}]})
+            assert show_select(corrupt_id)["recall"] is True
+            show_click("Recall Show")
+            recalled=page.evaluate("()=>window.__events.at(-1).payload")
+            assert recalled=={"action":"routingDryShowRecall","value":corrupt_id}
+            emit(page,"arMixNativeShowRecallAck",{"ok":False,"error":"DEVICE_REBIND_REQUIRED"})
+            assert "DEVICE_REBIND_REQUIRED" in page.locator(show_panel).inner_text()
+            show_click("Save Show")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowSave"
+            emit(page,"arMixNativeShowSaveAck",{"ok":True,"showId":show_id})
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
+            emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
+            assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
             if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
                 page.locator('.section-rail [data-section="send"]').click()
             # Release before bootstrap SOURCE's later native readback arrives.
