@@ -61,8 +61,8 @@ try {
     # observe the graceful close marker, replace its running .exe with the
     # verified FAT PE and preserve private Studio plus unknown user files.
     # This never replaces the source FAT executable or touches a user install.
-    $csc=Join-Path $env:WINDIR "Microsoft.NET\\Framework\\v4.0.30319\\csc.exe"
-    $fixtureSource=Join-Path $root "tests\\fixtures\\installer_graceful_close.cs"
+    $csc=Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe"
+    $fixtureSource=Join-Path $root "tests\fixtures\installer_graceful_close.cs"
     if(-not (Test-Path -LiteralPath $csc -PathType Leaf) -or
        -not (Test-Path -LiteralPath $fixtureSource -PathType Leaf)){
         throw "Windows Framework C# compiler or WM_CLOSE fixture missing"
