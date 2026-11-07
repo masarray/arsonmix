@@ -2993,7 +2993,7 @@
       requestAnimationFrame(()=>{
         if(!document.getElementById("channelIdentity")?.hidden)return;
         const name=document.querySelector('.strip[data-id="'+lastEditedChannelId+'"] .footer-label .name');
-        name?.focus?.();
+        name?.focus?.({preventScroll:true});
       });
     });
   }
