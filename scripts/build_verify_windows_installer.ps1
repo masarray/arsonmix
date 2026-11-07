@@ -91,7 +91,7 @@ try {
     $upgradeLog=Join-Path $env:RUNNER_TEMP ("arsonmix-upgrade-"+[guid]::NewGuid().ToString("N")+".log")
     $upgrade=Start-Process -FilePath $setup -ArgumentList @(
         "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER",
-        "/CLOSEAPPLICATIONS","/NOFORCECLOSEAPPLICATIONS",
+        "/NOCLOSEAPPLICATIONS",
         "/DIR=$install",('/LOG="' + $upgradeLog + '"')
     ) -Wait -PassThru
     $fixtureProcess.Refresh()
