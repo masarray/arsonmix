@@ -2596,15 +2596,15 @@
       if(!el)continue;
       el.disabled=true;
       el.title=reason;
-      el.dataset.nativeUnavailable=reason;
+      if(el.dataset)el.dataset.nativeUnavailable=reason;
       // Do not advertise an interactive click target that native cannot
       // fulfill. Internal IDs survive for the approved Pages DOM contract.
-      el.style.setProperty("display","none","important");
-      el.setAttribute("aria-hidden","true");
+      el.style?.setProperty?.("display","none","important");
+      el.setAttribute?.("aria-hidden","true");
     }
     const select=document.getElementById("sceneSelect");
     const label=document.querySelector('label[for="sceneSelect"]');
-    if(select&&label)label.style.setProperty("display","none","important");
+    if(select&&label)label.style?.setProperty?.("display","none","important");
     // Keyboard shortcuts in Pages call the demo reducer directly, bypassing
     // the click capture guard below. Suppress that route only in JUCE native.
     document.addEventListener("keydown",event=>{

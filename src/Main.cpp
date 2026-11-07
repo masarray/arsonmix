@@ -3396,8 +3396,8 @@ private:
         {
             webViewPeerWarmed_ = true;
             setVisible (true);
-            browser_.resized(); // first visible HWND, not its pre-splash size
             toBack();
+            browser_.resized(); // first visible HWND, not its pre-splash size
         }
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
