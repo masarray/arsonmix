@@ -24,6 +24,7 @@
     "distribution": {
       "enum": [
         "engineering-partial",
+        "production-four",
         "production-six"
       ]
     },

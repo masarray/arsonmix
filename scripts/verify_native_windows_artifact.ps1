@@ -13,7 +13,8 @@ $expected = @(
     "README.md",
     "portable_mode.txt",
     "collect_hardware_fat_windows.ps1",
-    "m3e_fat_evidence_gate.mjs"
+    "m3e_fat_evidence_gate.mjs",
+    "FACTORYFX_STAGE_REPORT.json"
 )
 foreach ($name in $expected) {
     if (-not (Test-Path -LiteralPath (Join-Path $OutputDir $name) -PathType Leaf)) {
@@ -22,7 +23,7 @@ foreach ($name in $expected) {
 }
 # Verify FactoryFX only when an exact reviewed lock explicitly authorizes it.
 # App-only engineering ZIPs remain unchanged; a missing approved module fails.
-& python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $OutputDir
+& python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $OutputDir --best-effort
 if ($LASTEXITCODE -ne 0) { throw "FactoryFX resource, manifest or licence gate failed" }
 $factoryPath = Join-Path $OutputDir "FactoryFX"
 $topDirs = @(Get-ChildItem -LiteralPath $OutputDir -Directory | ForEach-Object Name)

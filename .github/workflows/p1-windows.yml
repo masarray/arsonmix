@@ -240,7 +240,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
         run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}

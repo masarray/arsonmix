@@ -75,11 +75,55 @@ int main()
     if (! check (! scan.ok(), "six-effect production manifest cannot claim one effect"))
         return 6;
 
+    manifest.replaceWithText (original.replace ("engineering-partial", "production-four"));
+    scan = armix::factory::Registry::discover (root);
+    if (! check (! scan.ok() && scan.candidates.empty(),
+                 "four-effect production manifest cannot claim one effect"))
+        return 8;
+
+
+    // A corrupted optional VST3 must be quarantined, not block valid EQ.
+    const auto secondBundle = root.getChildFile ("FactoryFX/ArSonComp/ArSonComp.vst3");
+    if (! secondBundle.getParentDirectory().createDirectory().wasOk() ||
+        ! secondBundle.replaceWithText ("original compressor fixture"))
+        return 22;
+    auto two = juce::JSON::parse (original);
+    auto rowsVar = two.getProperty ("plugins", {});
+    auto* rows = rowsVar.getArray();
+    if (rows == nullptr || rows->size() != 1) return 23;
+    auto second = juce::JSON::parse (juce::JSON::toString (rows->getReference (0)));
+    auto* comp = second.getDynamicObject();
+    if (comp == nullptr) return 24;
+    comp->setProperty ("productId", "arson-comp");
+    comp->setProperty ("bundleRelativePath", "FactoryFX/ArSonComp/ArSonComp.vst3");
+    comp->setProperty ("hostUniqueId", 2345);
+    auto filesVar = second.getProperty ("files", {});
+    auto* fileRows = filesVar.getArray();
+    if (fileRows == nullptr || fileRows->isEmpty()) return 25;
+    fileRows->getReference (0).getDynamicObject()->setProperty (
+        "sha256", juce::SHA256 (secondBundle).toHexString());
+    rows->add (second);
+    const auto twoManifest = juce::JSON::toString (two);
+    manifest.replaceWithText (twoManifest);
+    secondBundle.replaceWithText ("damaged compressor");
+    scan = armix::factory::Registry::discover (root);
+    if (! check (! scan.ok() && scan.candidates.empty(),
+                 "strict package gate rejects any modified effect")) return 26;
+    scan = armix::factory::Registry::discover (root, true);
+    if (! check (scan.ok() && scan.candidates.size() == 1 &&
+                 scan.candidates.front().productId == "arson-eq" &&
+                 ! scan.warnings.isEmpty(),
+                 "runtime isolates damaged compressor and preserves verified EQ")) return 27;
+    secondBundle.replaceWithText ("original compressor fixture");
+    scan = armix::factory::Registry::discover (root, true);
+    if (! check (scan.ok() && scan.candidates.size() == 2 &&
+                 scan.warnings.isEmpty(), "valid optional effects all load")) return 28;
+
     manifest.deleteFile();
     scan = armix::factory::Registry::discover (root);
     if (! check (! scan.ok() && scan.candidates.empty(), "missing manifest rejected"))
         return 7;
 
-    std::cout << "FactoryFX registry: valid package + 6 negative gates passed\n";
+    std::cout << "FactoryFX registry: valid package + isolated optional VST3 regression passed\n";
     return 0;
 }

@@ -31,9 +31,9 @@ jobs:
           commit-message: 'chore(factoryfx): record latest upstream release candidates'
           branch: bot/factoryfx-release-candidates
           delete-branch: true
-          title: 'FactoryFX: review new EQ/Verb/Enhancer releases (metadata only)'
+          title: 'FactoryFX: review EQ/Comp/Verb/KuPik VST3 candidates (metadata only)'
           body: |
-            Upstream release discovery only. NO plugin is qualified, downloaded,
+            VST3 release discovery (including test prereleases) only. NO plugin is qualified, downloaded,
             licensed, shipped or enabled by this PR.
             Inspect provenance, complete Windows VST3 ZIP, host UID/CID,
             licence/entitlement and Show migration before separately promoting
