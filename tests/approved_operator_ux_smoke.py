@@ -32,6 +32,10 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertIn('id="densitySelect" class="density-select" hidden',compiled)
             self.assertEqual(compiled.count(CLOSE_ICON),6)
             self.assertIn("V29 adaptive 50/50 console",chrome)
+            self.assertIn("installConsoleSplit",compiled)
+            self.assertIn("ResizeObserver",compiled)
+            self.assertIn("MutationObserver",compiled)
+            self.assertIn("--ux-fx-balanced-h',fx+'px'",compiled)
             self.assertIn("--ux-fx-balanced-h",chrome)
             self.assertIn("calc(50%",chrome)
             self.assertIn(".console-body.collapsed-route{--route-h:23px",chrome)
@@ -67,6 +71,11 @@ class OperatorConsoleTests(unittest.TestCase):
         self.assertIn("active.enabledInputs",bridge)
         self.assertIn("data-audio-asio4all-hint",bridge)
         self.assertIn("armix-floating-close",bridge)
+        self.assertIn("viewportWidth:Math.round(window.innerWidth)",bridge)
+        self.assertIn("presentNativeOnlyTools()",bridge)
+        main=(ROOT/"src/Main.cpp").read_text(encoding="utf-8")
+        self.assertIn("browser_.resized(); // first visible HWND",main)
+        self.assertIn("available.getWidth() - 24",main)
         self.assertNotIn("A virtual cable does not automatically play through headphones",bridge)
 
 if __name__=="__main__":

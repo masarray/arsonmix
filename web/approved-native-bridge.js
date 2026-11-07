@@ -2570,14 +2570,64 @@
   // Native fader is committed exactly once INSIDE the original GUI's
   // finishFaderPointer via build_approved_native_gui.py hook. A later
   // window.pointerup listener would run after that handler clears the gesture.
+
+  // Pages' reference-only controls must not masquerade as working native
+  // operations. Keep REAL audio/FX/WIRE/device controls fully interactive;
+  // until full device-independent Show is implemented, hide unsafe demo
+  // shortcuts instead of silently intercepting and leaving broken buttons.
+  const nativeReferenceOnly=Object.freeze({
+    sceneSelect:"Native full-session Show is not yet available",
+    saveScene:"Native full-session Show is not yet available",
+    recallScene:"Native full-session Show is not yet available",
+    sceneSafe:"Show safe requires native session snapshots",
+    group:"Native channel grouping not yet admitted",
+    ungroup:"Native channel grouping not yet admitted",
+    copy:"Native channel copy not yet admitted",
+    paste:"Native channel paste not yet admitted",
+    clearCue:"PFL requires dedicated physical monitoring",
+    preview:"Demo meters never run inside the native audio host",
+    reset:"Demo reset must not erase a live mixer",
+    addTrack:"Native channel creation requires graph admission",
+    addFx:"Use a verified FX insert slot on an admitted channel"
+  });
+  function presentNativeOnlyTools(){
+    for(const [id,reason] of Object.entries(nativeReferenceOnly)){
+      const el=document.getElementById(id);
+      if(!el)continue;
+      el.disabled=true;
+      el.title=reason;
+      el.dataset.nativeUnavailable=reason;
+      // Do not advertise an interactive click target that native cannot
+      // fulfill. Internal IDs survive for the approved Pages DOM contract.
+      el.style.setProperty("display","none","important");
+      el.setAttribute("aria-hidden","true");
+    }
+    const select=document.getElementById("sceneSelect");
+    const label=document.querySelector('label[for="sceneSelect"]');
+    if(select&&label)label.style.setProperty("display","none","important");
+    // Keyboard shortcuts in Pages call the demo reducer directly, bypassing
+    // the click capture guard below. Suppress that route only in JUCE native.
+    document.addEventListener("keydown",event=>{
+      if(!(event.ctrlKey||event.metaKey))return;
+      if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+      if(["c","v","g"].includes(event.key.toLowerCase())){
+        event.preventDefault();event.stopImmediatePropagation();
+        nativeToast("Native channel copy/group requires accepted mixer session support");
+      }
+    },true);
+  }
   const ready=()=>{
+    presentNativeOnlyTools();
     installFirstSoundMenu();
     scope?.setNativeCatalog?.([]); // no synthetic/demo VST3 in Windows host
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
     backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false
+      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false,
+      viewportWidth:Math.round(window.innerWidth),
+      viewportHeight:Math.round(window.innerHeight),
+      devicePixelRatio:window.devicePixelRatio
     });
     controller.subscribe();
   };

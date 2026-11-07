@@ -57,6 +57,16 @@ def assert_key(page, selector):
         selector,active,color)
     page.mouse.up()
 
+def wait_balanced(page):
+    page.wait_for_function("""() => {
+      const root=document.querySelector('.console-body'),strip=document.querySelector('#tracks .strip');
+      const pan=strip?.querySelector('.pan-section'),footer=strip?.querySelector('.bottom-section');
+      if(!root||!pan||!footer)return false;
+      const r=root.getBoundingClientRect(),p=pan.getBoundingClientRect(),
+            f=footer.getBoundingClientRect();
+      return Math.abs((p.top-r.top)-(f.bottom-p.top))<=2;
+    }""",timeout=4000)
+
 def inspect_page(page, width, height, scale, label):
     page.goto((Path(label)).as_uri())
     page.wait_for_selector('#tracks .strip[data-id="1"]')
@@ -66,6 +76,8 @@ def inspect_page(page, width, height, scale, label):
     assert page.locator('.window-title').inner_text().find("OPERATOR-FIRST")<0
     assert page.locator('#densitySelect').is_hidden()
     assert page.locator('#pluginMinimize').count()==0
+    assert page.evaluate("()=>document.querySelector('.console-body').__armixBalancedSplitInstalled")
+    wait_balanced(page)
     m=metrics(page)
     print("UX_BASE",width,height,scale,json.dumps(m,sort_keys=True),flush=True)
     assert m and m['density']=='comfort'
@@ -76,16 +88,18 @@ def inspect_page(page, width, height, scale, label):
     assert abs(m['gap'])<=3,(width,height,m)
     assert m['overflow']>=-3
     assert m['upper']>0 and m['lower']>0
+    assert abs(m['upper']-m['lower'])<=2,(width,height,m)
     # Expand all components and verify coherent 50:50 allocation.
     for area in ('route','fx','send'):
         if page.locator('.console-body').evaluate("(e,a)=>e.classList.contains('collapsed-'+a)",area):
             page.locator(f'.section-rail [data-section="{area}"]').click()
+    wait_balanced(page)
     m=metrics(page)
     print("UX_EXPANDED",width,height,scale,json.dumps(m,sort_keys=True),flush=True)
     assert m['route']>=20 and m['fx']>=100 and m['wire']>=20,(width,height,m)
     assert m['upper']>0 and m['lower']>0
     assert abs(m['gap'])<=3,(width,height,m)
-    assert 0.31<=m['lower']/(m['upper']+m['lower'])<=0.69,(width,height,m)
+    assert abs(m['upper']-m['lower'])<=2,(width,height,m)
     # Fold the FX; sections/fader must preserve mechanical labels and avoid
     # a second panel/overflow, even when all three upper parts are collapsed.
     for area in ('fx','route','send'):

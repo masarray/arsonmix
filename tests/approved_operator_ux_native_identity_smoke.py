@@ -25,15 +25,24 @@ def main():
         def open_page():
             page=context.new_page()
             page.on('pageerror',lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__nativeEvents=[];
               window.__JUCE__={backend:{
-                emitEvent(name,payload){if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
+                emitEvent(name,payload){window.__nativeEvents.push({name,payload});if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
             return page
         state=snapshot()
         page=open_page()
+        ready=page.evaluate("()=>window.__nativeEvents.find(e=>e.name==='arMixGuiReady')?.payload")
+        assert ready and ready['viewportWidth']==1366 and ready['viewportHeight']==768
+        # Never show demo-only controls as clickable on a physical host.
+        for id in ('saveScene','recallScene','copy','paste','group','ungroup','preview','clearCue','reset'):
+            element=page.locator('#'+id)
+            assert element.is_hidden() and element.is_disabled(),id
+        assert page.locator('[data-native-monitor]').count()==1
+        assert page.locator('#pluginsButton').is_visible()
+        assert page.locator('#wireNavigatorToggle').is_visible()
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_selector('#tracks .strip[data-id="1"]')
         page.locator('#tracks .strip[data-id="1"] .strip-identity-top').dblclick()
