@@ -99,7 +99,7 @@ try {
     $closeText=if($closeMarker){(Get-Content -LiteralPath $fixtureClosed -Raw).Trim()}else{"MISSING"}
     $installedAfter=(Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Host "INNO_UPGRADE_DIAG: installerExit=$($upgrade.ExitCode) oldProcessExited=$($fixtureProcess.HasExited) gracefulMarker=$closeText restoredExeShaOk=$($installedAfter -eq $appHash)"
-    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED")
+    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED","INSTALLER_HANDSHAKE_SAVED")
     if($upgrade.ExitCode -ne 0 -or -not $fixtureProcess.HasExited -or
        -not $closeMarker -or -not ($acceptedSaves -contains $closeText)){
         if(Test-Path -LiteralPath $upgradeLog){
