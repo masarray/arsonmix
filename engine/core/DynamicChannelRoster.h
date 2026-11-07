@@ -682,6 +682,56 @@ public:
         return result;
     }
 
+    // Restore stable native ChannelIds and EdgeIds without replaying CREATE,
+    // which would invent new identities, reorder wires and break external FX.
+    // CONTROL ONLY; no audio is ever published by this operation.
+    bool restoreExact(std::uint64_t restoredRevision,
+                      std::span<const ChannelStripDefinition> entries) {
+        if(restoredRevision==0 || entries.empty() ||
+           !withinBudget(std::vector<ChannelStripDefinition>(entries.begin(),entries.end())))
+            return false;
+        std::unordered_set<std::uint64_t> ids,edges;
+        std::uint64_t maxId=0,maxEdge=0;
+        int mains=0,monitors=0;
+        for(const auto& ch:entries) {
+            if(!ch.id.value || ch.id.value==std::numeric_limits<std::uint64_t>::max() ||
+               !ids.insert(ch.id.value).second ||
+               !std::isfinite(ch.faderLinear) || ch.faderLinear<0.f ||
+               ch.faderLinear>4.f || !std::isfinite(ch.pan) ||
+               ch.pan< -1.f || ch.pan>1.f)return false;
+            maxId=std::max(maxId,ch.id.value);
+            mains+=ch.role==ChannelRole::main;
+            monitors+=ch.role==ChannelRole::monitor;
+            int primary=0;
+            for(const auto& send:ch.sends) {
+                if(!send.edgeId ||
+                   send.edgeId==std::numeric_limits<std::uint64_t>::max() ||
+                   !send.destination.value || send.destination==ch.id ||
+                   !edges.insert(send.edgeId).second ||
+                   !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
+                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
+                    return false;
+                primary+=send.primaryOutput;
+                maxEdge=std::max(maxEdge,send.edgeId);
+            }
+            if(primary>1 || (ch.role==ChannelRole::main && !ch.sends.empty()) ||
+               (ch.role==ChannelRole::monitor && !ch.sends.empty()))return false;
+        }
+        if(mains!=1||monitors>1)return false;
+        for(const auto& ch:entries)
+            for(const auto& send:ch.sends)
+                if(ids.count(send.destination.value)==0)return false;
+        auto candidate=std::vector<ChannelStripDefinition>(entries.begin(),entries.end());
+        auto index=buildIndex(candidate);
+        if(index.size()!=candidate.size())return false;
+        channels_.swap(candidate);
+        index_.swap(index);
+        revision_=restoredRevision;
+        nextId_=maxId+1;
+        nextEdgeId_=maxEdge+1;
+        return true;
+    }
+
 private:
     static bool assignMissingEdgeIds(
         std::vector<ChannelStripDefinition>& rows,std::uint64_t& next) {
