@@ -147,6 +147,37 @@ def main():
             # Late readback from the disconnected epoch cannot re-admit audio.
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
+            # A new WASAPI pair is inspected before exposing a separate,
+            # explicit confirmation for the retained numbered pin mapping.
+            page.locator('[data-native-io]').click()
+            backend='Windows Audio'
+            active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
+                'open':True,'authorized':True,'deviceGeneration':12,'rate':48000,'buffer':256,
+                'inputNames':['Input 1'],'outputNames':['Output 1','Output 2'],
+                'enabledInputs':[0],'enabledOutputs':[0,1],'rates':[48000],'buffers':[256]}
+            emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
+                {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
+            remap=page.locator('[data-audio-remap]')
+            assert remap.is_hidden()
+            page.locator('[data-audio-apply]').click()
+            read_apply='()=>window.__events.filter(e=>e.payload?.action==="audioDeviceApply").at(-1).payload'
+            opened=page.evaluate(read_apply)
+            assert 'confirmRetainedPinMapping' not in opened['config']
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':'old','state':'NEEDS_REMAP',
+                'active':active,'canReusePins':True})
+            assert remap.is_hidden()
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'state':'NEEDS_REMAP',
+                'active':active,'canReusePins':True})
+            remap.click()
+            binding=page.evaluate(read_apply)
+            assert binding['config']['confirmRetainedPinMapping'] is True
+            assert binding['expectedDeviceGeneration']==12
+            assert binding['config']['captureDevice']=='New Capture'
+            assert binding['config']['playbackDevice']=='New Playback'
+            assert binding['config']['sampleRate']==48000 and binding['config']['bufferSize']==256
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':binding['requestId'],'ok':True,
+                'state':'ACCEPTED_MUTED','active':active,'mixerBound':True})
+            assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
             rebound['device'].update(epoch='93',outputArmed=False)
             rebound['graph']['revision']='6'

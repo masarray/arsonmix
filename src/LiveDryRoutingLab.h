@@ -4,6 +4,7 @@
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
@@ -453,6 +454,7 @@ public:
             channelIdPcmEpoch_.store(previousPcmEpoch,std::memory_order_release);
         switch(result) {
             case Publisher::Result::applied:
+                reboundQuantum_.store(Block::hardFrameLimit,std::memory_order_release);
                 publishedEpoch_.store(currentEpoch,std::memory_order_release);
                 enabled_.store(true,std::memory_order_release);
                 sendCount_.store(sends.count,std::memory_order_relaxed);
@@ -2238,10 +2240,11 @@ public:
                     return true;
         return false;
     }
-    // CONTROL only. The verified profile proves identical port ordinals,
-    // rate and block size. Recompile the accepted ChannelId roster to reset
-    // DSP scratch/PDC, but preserve vendor instances and every document ID.
-    bool rebindVerifiedDevice(std::uint64_t priorEpoch,std::uint64_t newEpoch) {
+    // CONTROL only. The verified profile proves identical port ordinals.
+    // Rebuild DSP scratch/PDC while retaining the accepted document and
+    // compatible processors. Never re-use a processor at a different rate.
+    bool rebindVerifiedDevice(std::uint64_t priorEpoch,std::uint64_t newEpoch,
+                              int deviceFrames,bool rateChanged) {
         using namespace armix::mixer;
         if(!priorEpoch || newEpoch<=priorEpoch || newEpoch!=epoch() ||
            publishedEpoch_.load(std::memory_order_acquire)!=priorEpoch ||
@@ -2251,6 +2254,28 @@ public:
         const bool native=rebindableNativeEpoch_.load(std::memory_order_acquire)==priorEpoch;
         if(!native && (nativeStructureLive_ || nativeControlDirty_ ||
                       nativeAccepted_.deviceEpoch==priorEpoch))return false;
+        const auto* compatibility=publisher_.controlPrepared(priorEpoch,revision());
+        if(!compatibility)return false;
+        int preparedFrames=std::min(compatibility->maxFramesPerPlugin(),
+            reboundQuantum_.load(std::memory_order_acquire));
+        if(native)preparedFrames=std::min(preparedFrames,nativeAccepted_.graph.request.maxFrames);
+        bool hasEffects=false;
+        if(rateChanged) {
+            // Also check the compatibility plan. It can still hold legacy
+            // owners which a later M4 operation might otherwise reuse.
+            for(int lane=0;lane<fxSlots && !hasEffects;++lane)
+                hasEffects=compatibility->insertsOn(lane)>0;
+            if(native && nativeAccepted_.fxOwners) {
+                hasEffects=hasEffects || nativeAccepted_.fxOwners->externalChannel().value!=0;
+                for(const auto& row:nativeAccepted_.graph.roster.channels()) {
+                    if(hasEffects)break;
+                    hasEffects=nativeAccepted_.fxOwners->insertCount(row.id)>0;
+                }
+            }
+        }
+        const int quantum=armix::device::retainedMixerQuantum(
+            preparedFrames,deviceFrames,Block::hardFrameLimit,rateChanged,hasEffects);
+        if(quantum==0)return false;
         std::shared_ptr<DynamicChannelFxLeaseBank> owner;
         DynamicNativeSessionPublisher::FxPlan fx;
         const auto revision=nativeAccepted_.pcmRevision;
@@ -2289,6 +2314,7 @@ public:
             nativeControlDirty_=true;
             channelIdPcmEpoch_.store(newEpoch,std::memory_order_release);
         }
+        reboundQuantum_.store(quantum,std::memory_order_release);
         publishedEpoch_.store(newEpoch,std::memory_order_release);
         userPatched_.store(true,std::memory_order_release);
         return newEpoch==epoch() && ready();
@@ -2377,6 +2403,9 @@ public:
             silence();return true;
         }
         const auto generation=epoch();
+        // Sample the cap before leasing. A fresh plan may raise the cap
+        // after publishing, while an older callback still holds its lease.
+        const int reboundQuantum=reboundQuantum_.load(std::memory_order_acquire);
         auto lease=publisher_.acquire();
         const auto* snapshot=lease.get(generation);
         if(!snapshot||!snapshot->prepared ||
@@ -2438,7 +2467,7 @@ public:
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
-        const int max=snapshot->prepared->maxFramesPerPlugin();
+        const int max=std::min(snapshot->prepared->maxFramesPerPlugin(),reboundQuantum);
         if(max<=0) {
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
@@ -2743,6 +2772,7 @@ private:
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::atomic<std::uint64_t> publishedEpoch_{0};
     std::atomic<std::uint64_t> rebindableNativeEpoch_{0};
+    std::atomic<int> reboundQuantum_{Block::hardFrameLimit};
     std::atomic<int> callbackInputCount_{-1};
     std::atomic<int> callbackOutputCount_{-1};
     std::atomic<bool> enabled_{false};
