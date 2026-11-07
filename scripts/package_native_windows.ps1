@@ -61,7 +61,9 @@ if ($LASTEXITCODE -ne 0 -or $gitSha -notmatch '^[0-9a-f]{40}$') {
 # Refuse a valid PE/CTest artifact which embeds the WRONG browser renderer.
 # This is the source/asset attestation for the exact approved Pages GUI.
 $approvedGuiDir = Join-Path $BuildDir "approved_gui"
-& python scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
+. (Join-Path $PSScriptRoot "resolve_approved_gui_python.ps1")
+$approvedGuiPython = Resolve-ArSonMixApprovedGuiPython -BuildDir $BuildDir
+& $approvedGuiPython scripts/build_approved_native_gui.py --out $approvedGuiDir --verify
 if ($LASTEXITCODE -ne 0) { throw "APPROVED GUI PROVENANCE MISMATCH: generated bundle differs from Pages" }
 $approvedGuiManifestPath = Join-Path $approvedGuiDir "approved-gui-manifest.json"
 $approvedGui = Get-Content -LiteralPath $approvedGuiManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json

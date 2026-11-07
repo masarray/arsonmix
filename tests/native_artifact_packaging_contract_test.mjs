@@ -10,12 +10,27 @@ import './m3e_fat_evidence_gate.test.mjs';
 const read=path=>readFileSync(path,'utf8');
 const workflow=read('.github/workflows/p1-windows.yml');
 const packaging=read('scripts/package_native_windows.ps1');
+const pythonProvenance=read('scripts/resolve_approved_gui_python.ps1');
 const verify=read('scripts/verify_native_windows_artifact.ps1');
 const nativeMain=read('src/Main.cpp');
 const cmake=read('CMakeLists.txt');
 const generator=read('scripts/build_approved_native_gui.py');
 const adapter=read('web/approved-native-bridge.js');
 const fat=read('docs/HARDWARE_FAT_GUI10_ENGINE_P012_20261027.md');
+
+
+test('packaging and independent ZIP verifier use the exact CMake Python, never PATH python for icon recompression',()=>{
+  for(const script of [packaging,verify]){
+    assert.match(script,/resolve_approved_gui_python\.ps1/);
+    assert.match(script,/Resolve-ArSonMixApprovedGuiPython/);
+    assert.match(script,/& \$approvedGuiPython scripts\/build_approved_native_gui\.py --out \$approvedGuiDir --verify/);
+    assert.doesNotMatch(script,/& python scripts\/build_approved_native_gui\.py/);
+  }
+  assert.match(cmake,/approved-gui-python\.txt/);
+  assert.match(pythonProvenance,/approved-gui-python\.txt/);
+  assert.match(pythonProvenance,/Test-Path -LiteralPath \$selected -PathType Leaf/);
+  assert.match(pythonProvenance,/refusing unverified GUI regeneration/);
+});
 
 test('native FAT picks exact JUCE GUI target, not a test executable',()=>{
   assert.match(cmake,/juce_add_gui_app\(ARMixConsole/);
