@@ -13,15 +13,17 @@ internal static class ArSonMixInstallerGracefulCloseFixture
     private sealed class MixerWindow : Form
     {
         private readonly string savedMarker;
+        private readonly bool blockClose;
         private readonly System.Threading.Mutex runningMutex;
         private readonly System.Threading.EventWaitHandle shutdownEvent;
         private readonly System.Windows.Forms.Timer shutdownPoll;
         private const int WM_QUERYENDSESSION = 0x0011;
         private const int WM_ENDSESSION = 0x0016;
 
-        public MixerWindow(string marker, bool legacy)
+        public MixerWindow(string marker, bool legacy, bool blockClose)
         {
             savedMarker = marker;
+            this.blockClose = blockClose;
             Text = "ArSonMix Upgrade Graceful-Close FAT Fixture";
             Width = 420;
             Height = 120;
@@ -72,6 +74,7 @@ internal static class ArSonMixInstallerGracefulCloseFixture
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            if (blockClose) { e.Cancel = true; return; }
             if (!File.Exists(savedMarker))
                 File.WriteAllText(savedMarker, "WM_CLOSE_SAVED");
             base.OnFormClosing(e);
@@ -83,9 +86,10 @@ internal static class ArSonMixInstallerGracefulCloseFixture
     {
         if (args.Length != 2 && args.Length != 3)
             Environment.Exit(22);
-        bool legacy = args.Length == 3 && args[2] == "legacy";
+        bool legacy = args.Length == 3 && (args[2] == "legacy" || args[2] == "blocked");
+        bool blockClose = args.Length == 3 && args[2] == "blocked";
 
-        using (var window = new MixerWindow(args[1], legacy))
+        using (var window = new MixerWindow(args[1], legacy, blockClose))
         {
             window.Shown += (sender, e) => File.WriteAllText(args[0], "WINDOW_READY");
             Application.Run(window);
