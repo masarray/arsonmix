@@ -127,6 +127,7 @@ def inspect_page(page, width, height, scale, label):
     assert moved['x']>=-2 and moved['y']>=-2 and moved['x']+moved['width']<=width+4,(
         "plugin escaped viewport",width,height,moved)
     page.screenshot(path=str(ROOT/f'operator-ux-drag-{width}x{height}-{scale}.png'))
+    check_identity_zero_reflow(page,width,height,scale,1)  # plugin open/dragged
     assert_key(page,'#pluginClose')
     assert win.is_hidden()
     # Identity window and the other modeless tool share the exact square key.
@@ -134,6 +135,7 @@ def inspect_page(page, width, height, scale, label):
     assert page.locator('#channelIdentity').is_visible()
     assert_key(page,'#identityClose')
     assert page.locator('#channelIdentity').is_hidden()
+    check_identity_zero_reflow(page,width,height,scale,10)  # right-edge clamp
     # All other close keys use the SAME SVG and dimensions; hidden popups
     # cannot be pointer-tested here, but the CSS/DOM invariants are checked.
     for id in ('fastClose','wireConfigClose','wireWsClose','routeChoiceClose'):
@@ -143,6 +145,85 @@ def inspect_page(page, width, height, scale, label):
     page.screenshot(path=str(ROOT / f'operator-ux-{width}x{height}-{scale}.png'),
                     full_page=True)
     return m
+
+
+# Every significant console coordinate and scroll extent must stay unchanged.
+# This intentionally tests MORE than 'editor.is_visible()' at all five scales.
+IDENTITY_GEOMETRY = """() => {
+  const selectors=[
+    'html','body','.app','.window-title','.command-bar','.console-pane',
+    '.console-body','.section-rail','#viewport','#tracks','#master',
+    '#master .strip','#tracks .strip','#tracks .strip .strip-identity-top',
+    '#tracks .strip .route-section','#tracks .strip .fx-section',
+    '#tracks .strip .send-section','#tracks .strip .pan-section',
+    '#tracks .strip .switch-section','#tracks .strip .fader-section',
+    '#tracks .strip .bottom-section','#tracks .strip .fader',
+    '#tracks .strip .meter-lane','#tracks .strip .wire-node-in',
+    '#tracks .strip .wire-node-out','#master .fader',
+    '#master .meter-lane','#pluginBrowser'
+  ];
+  const rect=e=>{const r=e.getBoundingClientRect();
+    return [r.x,r.y,r.width,r.height];};
+  const rects={};
+  for(const selector of selectors)
+    rects[selector]=Array.from(document.querySelectorAll(selector))
+      .filter(e=>!e.hidden&&getComputedStyle(e).display!=='none').map(rect);
+  const scroll={};
+  for(const selector of ['html','body','.app','.console-pane',
+                          '.console-body','#viewport','#tracks','#master']){
+    const e=document.querySelector(selector);
+    if(e)scroll[selector]=[e.scrollTop,e.scrollLeft,e.clientWidth,
+                           e.clientHeight,e.scrollWidth,e.scrollHeight];
+  }
+  return {rects,scroll,viewport:[innerWidth,innerHeight,
+      visualViewport?.width||innerWidth,visualViewport?.height||innerHeight,
+      visualViewport?.offsetLeft||0,visualViewport?.offsetTop||0],
+    density:document.querySelector('.console-body').dataset.density,
+    bank:document.getElementById('bankSelect').value,
+    editorParent:document.getElementById('channelIdentity').parentElement.tagName};
+}"""
+
+def assert_still(before,after,where):
+    assert after['editorParent']=='BODY',(where,'editor lives inside mixer')
+    for key in ('scroll','viewport','density','bank'):
+        assert before[key]==after[key],(where,key,before[key],after[key])
+    for selector,lhs in before['rects'].items():
+        rhs=after['rects'][selector]
+        assert len(lhs)==len(rhs),(where,selector,len(lhs),len(rhs))
+        for index,(a,b) in enumerate(zip(lhs,rhs)):
+            for axis,(x,y) in enumerate(zip(a,b)):
+                assert abs(x-y)<=0.5,(where,selector,index,axis,x,y)
+
+def check_identity_zero_reflow(page,width,height,scale,channel):
+    strip=page.locator(f'#tracks .strip[data-id="{channel}"]')
+    strip.locator('.strip-identity-top').click()
+    wait_balanced(page)
+    before=page.evaluate(IDENTITY_GEOMETRY)
+    stem=ROOT/f'operator-identity-{width}x{height}-{scale}-ch{channel}'
+    page.screenshot(path=str(stem)+'-before.png')
+    strip.locator('.strip-identity-top').dblclick()
+    editor=page.locator('#channelIdentity')
+    assert editor.is_visible(),(width,height,channel)
+    assert editor.evaluate("e=>getComputedStyle(e).position")=='fixed'
+    assert page.locator('#identityName').evaluate("e=>document.activeElement===e")
+    box=editor.bounding_box()
+    assert box and box['x']>=-0.5 and box['y']>=-0.5,box
+    assert box['x']+box['width']<=width+0.5,box
+    assert box['y']+box['height']<=height+0.5,box
+    assert page.locator('#identityClose').is_visible()
+    assert page.locator('#identitySave').is_visible()
+    opened=page.evaluate(IDENTITY_GEOMETRY)
+    assert_still(before,opened,(width,height,scale,channel,'open'))
+    page.screenshot(path=str(stem)+'-open.png')
+    page.locator('#identityCancel').click()
+    assert editor.is_hidden()
+    closed=page.evaluate(IDENTITY_GEOMETRY)
+    assert_still(before,closed,(width,height,scale,channel,'close'))
+    page.screenshot(path=str(stem)+'-closed.png')
+    print('IDENTITY_ZERO_REFLOW',width,height,scale,channel,
+          json.dumps({'before':before['scroll'],'opened':opened['scroll'],
+                      'closed':closed['scroll'],'editor':box},sort_keys=True),
+          flush=True)
 
 def main():
     import sys
