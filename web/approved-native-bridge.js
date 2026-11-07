@@ -1267,6 +1267,12 @@
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
         <div class="armix-device-note">The output device above is the real destination.
           A virtual cable does not automatically play through headphones.</div>
+        <div class="armix-device-note" data-audio-asio4all-hint hidden>
+          ASIO4ALL combines enabled WDM pins behind ONE ASIO device.
+          Enable VB-Cable capture and Realtek playback in ASIO4ALL, then Apply
+          to reopen it. Review the fresh capture/playback pin names below before
+          unmuting. Separate hardware clocks may not stay synchronized.
+        </div>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer<select data-audio-field="buffer"></select></label>
@@ -1370,6 +1376,9 @@
         rate:0,buffer:0};
     }
     const t=types.find(x=>x.name===deviceChoice.backend);
+    const asio4allHint=devicePanel.querySelector("[data-audio-asio4all-hint]");
+    if(asio4allHint)asio4allHint.hidden=!(
+      deviceChoice.backend==="ASIO"&&/asio4all/i.test(deviceChoice.capture));
     fillAudioSelect("backend",types.map(x=>x.name),deviceChoice.backend);
     fillAudioSelect("capture",t?.inputs||[],deviceChoice.capture);
     fillAudioSelect("playback",t?.outputs||[],deviceChoice.playback);

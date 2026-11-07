@@ -16,6 +16,7 @@
 #include "../engine/core/DearVrPolarPolicy.h"
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
+#include "../engine/device/AudioSetupRecoveryPolicy.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
 #include "../engine/diagnostics/CrackleEvidenceWindow.h"
 #if defined(_WIN32)
@@ -1178,6 +1179,12 @@ private:
         const auto previousType=manager.getCurrentAudioDeviceType();
         const bool sameEndpoint=unchangedDevice&&before.inputDeviceName==capture
                              &&before.outputDeviceName==playback;
+        auto* previousDevice=manager.getCurrentAudioDevice();
+        const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
+        const auto originalInputNames=previousWasOpen
+            ?previousDevice->getInputChannelNames():juce::StringArray{};
+        const auto originalOutputNames=previousWasOpen
+            ?previousDevice->getOutputChannelNames():juce::StringArray{};
         juce::AudioDeviceManager::AudioDeviceSetup candidate=before;
         candidate.inputDeviceName=capture;
         candidate.outputDeviceName=playback;
@@ -1188,12 +1195,15 @@ private:
         // Its first APPLY uses safe defaults; then users refine real pin masks.
         const auto pinInput=config.getProperty("enabledInputs",{});
         const auto pinOutput=config.getProperty("enabledOutputs",{});
-        if(sameEndpoint && pinInput.isArray() && pinOutput.isArray()) {
-            auto* active=manager.getCurrentAudioDevice();
-            if(active==nullptr||!active->isOpen())
-                return send(false,"REJECTED","Current device is not open; refresh");
-            const auto inCount=juce::jmin(64,active->getInputChannelNames().size());
-            const auto outCount=juce::jmin(64,active->getOutputChannelNames().size());
+        // External ASIO4ALL changes can leave the same endpoint name in JUCE
+        // with a closed object. Reopen with safe default masks first; the
+        // previous (possibly reordered) physical pin indices are not valid.
+        const auto recovery=armix::device::AudioSetupRecoveryPolicy::select(
+            sameEndpoint,previousWasOpen,typeName=="ASIO",
+            pinInput.isArray()&&pinOutput.isArray());
+        if(recovery.reuseActivePins) {
+            const auto inCount=juce::jmin(64,previousDevice->getInputChannelNames().size());
+            const auto outCount=juce::jmin(64,previousDevice->getOutputChannelNames().size());
             auto parsePins=[](const juce::var& values,int limit,juce::BigInteger& mask)->bool {
                 const auto* array=values.getArray();
                 if(array==nullptr||array->size()>64)return false;
@@ -1236,12 +1246,29 @@ private:
         const auto start=monotonicMilliseconds();
         engine_.beginManualAudioSetup();
         if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
+        // JUCE setAudioDeviceSetup() can return success without reopening when
+        // setup == currentSetup and currentAudioDevice != nullptr, even when
+        // that driver object has stopped. closeAudioDevice() deletes it but
+        // keeps the setup for an explicit, fresh driver instance on APPLY.
+        // For ASIO this also observes changed ASIO4ALL aggregate WDM pins.
+        // Only the operator initiates this; never auto-reopen/arm on a timer.
+        if(recovery.recreateDevice && manager.getCurrentAudioDeviceType()==typeName) {
+            diagnostics_.record("CUSTOM_AUDIO_RECREATE",
+                typeName+" | "+(previousWasOpen?"REFRESH_ASIO_PINS":"CLOSED_DEVICE_RECOVERY"));
+            manager.closeAudioDevice();
+        }
         auto error=manager.getCurrentAudioDeviceType()==typeName
             ?manager.setAudioDeviceSetup(candidate,true)
             :juce::String("Selected audio backend could not be opened");
         juce::AudioDeviceManager::AudioDeviceSetup actual;
         manager.getAudioDeviceSetup(actual);
         auto* opened=manager.getCurrentAudioDevice();
+        const bool changedAsioPinLayout=error.isEmpty()&&recovery.verifyAsioPinIdentity&&
+            opened!=nullptr&&opened->isOpen()&&
+            (opened->getInputChannelNames()!=originalInputNames||
+             opened->getOutputChannelNames()!=originalOutputNames);
+        if(changedAsioPinLayout)
+            error="ASIO pin layout changed. Output remains muted; review the NEW capture and playback pins and Apply again";
         if(error.isEmpty()&&(opened==nullptr||!opened->isOpen()||
               manager.getCurrentAudioDeviceType()!=typeName||
               actual.inputDeviceName!=capture||actual.outputDeviceName!=playback||
@@ -1265,11 +1292,19 @@ private:
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             return send(true,"ACCEPTED_MUTED",{});
         }
+        // A changed ASIO layout cannot be 'restored' by replaying indices
+        // that now refer to different WDM pins. Keep the fresh device MUTED,
+        // unauthorised, and show its new pin names for deliberate remapping.
+        if(changedAsioPinLayout) {
+            diagnostics_.record("CUSTOM_AUDIO_ASIO_TOPOLOGY_CHANGED",error);
+            return send(false,"RECOVERY_REQUIRED",error);
+        }
         // One rollback, never blind default endpoint fallback, no auto-unmute.
+        // A previously CLOSED device was never a verified rollback target.
         engine_.beginManualAudioSetup();
-        if(manager.getCurrentAudioDeviceType()!=previousType&&previousType.isNotEmpty())
+        if(recovery.priorKnownOpen&&manager.getCurrentAudioDeviceType()!=previousType&&previousType.isNotEmpty())
             manager.setCurrentAudioDeviceType(previousType,false);
-        const auto restored=previousType.isNotEmpty()&&
+        const auto restored=recovery.priorKnownOpen&&previousType.isNotEmpty()&&
             manager.getCurrentAudioDeviceType()==previousType&&
             manager.setAudioDeviceSetup(before,true).isEmpty();
         juce::AudioDeviceManager::AudioDeviceSetup checked;
@@ -1280,7 +1315,11 @@ private:
             checked.inputChannels==before.inputChannels&&
             checked.outputChannels==before.outputChannels&&
             manager.getCurrentAudioDevice()!=nullptr&&
-            manager.getCurrentAudioDevice()->isOpen()&&engine_.finishManualAudioSetup();
+            manager.getCurrentAudioDevice()->isOpen()&&
+            (previousType!="ASIO"||
+             (manager.getCurrentAudioDevice()->getInputChannelNames()==originalInputNames&&
+              manager.getCurrentAudioDevice()->getOutputChannelNames()==originalOutputNames))&&
+            engine_.finishManualAudioSetup();
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
