@@ -147,6 +147,18 @@ def main():
             # Late readback from the disconnected epoch cannot re-admit audio.
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
+            rebound=copy.deepcopy(state)
+            rebound['device'].update(epoch='93',outputArmed=False)
+            rebound['graph']['revision']='6'
+            rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')
+            monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
+            emit(page,'arMixConsoleSnapshot',rebound)
+            page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
+            assert page.locator('[data-native-monitor]').is_enabled()
+            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='false'
+            assert page.locator('#tracks .strip').count()==4
+            assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
+            assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()

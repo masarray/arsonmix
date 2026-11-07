@@ -1889,6 +1889,15 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     assert(heapCalls.load(std::memory_order_relaxed)==heapBefore);
     assert(GainFx::living==pluginCount&&fallbackCalls==0);
     assert(!live.setLiveMix(epoch,2,voice,0.f,0.f));
+    Bank rebound;
+    assert(Bank::rebindSameFormat(epoch,4,*nextBank,rebound)==Bank::Fault::invalidEpoch);
+    assert(nextBank->setRackBypass(epoch,3,voice,true));
+    assert(Bank::rebindSameFormat(epoch+1,4,*nextBank,rebound)==Bank::Fault::none);
+    assert(rebound.ownerForControl(voice,0)->get()==nextBank->ownerForControl(voice,0)->get());
+    assert(rebound.rackBypassed(voice));
+    assert(!rebound.setInsertBypass(epoch,4,voice,0,token,true));
+    assert(rebound.setInsertBypass(epoch+1,4,voice,0,token,true));
+    assert(GainFx::living==pluginCount);
     live.unpublish();live.pollRetirement();
 }
 

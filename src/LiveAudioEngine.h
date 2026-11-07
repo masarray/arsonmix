@@ -388,11 +388,7 @@ public:
             case Decision::createFirstSilentMixer:
                 return startUnpatchedProductionSession().isEmpty();
             case Decision::retainUnboundMixer:
-                // Driver epoch changed; the old graph cannot be trusted to
-                // render new hardware. Keep its document/leases in memory,
-                // stay muted and require a verified full-graph rebind.
-                setOutputMuted(true);
-                return false;
+                return rebindRetainedWasapiSession();
             case Decision::rejectedDevice:
                 return false;
         }
@@ -1098,10 +1094,15 @@ public:
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";
-        return dryRoutingLab_.startUnpatchedSession(
+        const auto epoch=dryRoutingLab_.epoch();
+        auto profile=inspectWasapiBinding();
+        const auto error=dryRoutingLab_.startUnpatchedSession(
             directFence_.permitted(),independent_.active(),graphOwned_->count,
             formats_,device->getCurrentSampleRate(),
             juce::jmax(32,device->getCurrentBufferSizeSamples()));
+        if(error.isEmpty() && dryRoutingLab_.epoch()==epoch)
+            acceptedWasapiBinding_=std::move(profile);
+        return error;
     }
 
     // Historical STOP command retained as a safe CLEAR PATCH alias.
@@ -1780,6 +1781,7 @@ public:
         return dryRoutingLab_.setNativeBusMix(epoch,revision,id,gain,pan);
     }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
+    bool hasBoundMixerRoute() const noexcept {return dryRoutingLab_.hasExplicitRoute();}
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
     juce::var status()
@@ -2019,6 +2021,76 @@ public:
     }
 
 private:
+    struct WasapiBinding {
+        armix::device::EndpointIdentityPolicy::Selection endpoints;
+        juce::String backend;
+        juce::BigInteger inputs,outputs;
+        juce::StringArray inputLabels,outputLabels;
+        double rate=0.0;
+        int frames=0;
+        std::uint64_t epoch=0;
+
+        bool sameHardware(const WasapiBinding& other) const {
+            return backend==other.backend &&
+                armix::device::EndpointIdentityPolicy::sameIdentity(endpoints,other.endpoints) &&
+                inputs==other.inputs && outputs==other.outputs &&
+                inputLabels==other.inputLabels && outputLabels==other.outputLabels &&
+                rate==other.rate && frames==other.frames;
+        }
+    };
+
+    std::optional<WasapiBinding> inspectWasapiBinding() {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen() || independent_.active() ||
+           !directFence_.permitted() || !device->getTypeName().startsWith("Windows Audio"))
+            return {};
+        const auto epoch=dryRoutingLab_.epoch();
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        const auto endpoints=armix::device::WasapiEndpointIdentityGuard::resolve(
+            setup.inputDeviceName,setup.outputDeviceName);
+        if(!endpoints.ok())return {};
+        const auto inputs=device->getActiveInputChannels();
+        const auto outputs=device->getActiveOutputChannels();
+        const auto rate=device->getCurrentSampleRate();
+        const auto frames=device->getCurrentBufferSizeSamples();
+        if(inputs!=setup.inputChannels || outputs!=setup.outputChannels ||
+           inputs.isZero() || outputs.countNumberOfSetBits()<2 ||
+           !std::isfinite(rate) || rate<8000.0 || rate!=setup.sampleRate ||
+           frames<16 || frames!=setup.bufferSize)return {};
+        const auto inLabels=device->getInputChannelNames();
+        const auto outLabels=device->getOutputChannelNames();
+        const auto uniqueActiveLabels=[](const juce::BigInteger& mask,const juce::StringArray& labels) {
+            juce::StringArray seen;
+            for(int pin=mask.findNextSetBit(0);pin>=0;pin=mask.findNextSetBit(pin+1)) {
+                if(pin>=labels.size() || labels[pin].isEmpty() || seen.contains(labels[pin]))
+                    return false;
+                seen.add(labels[pin]);
+            }
+            return true;
+        };
+        if(!uniqueActiveLabels(inputs,inLabels) || !uniqueActiveLabels(outputs,outLabels) ||
+           dryRoutingLab_.epoch()!=epoch || !directFence_.permitted())return {};
+        return WasapiBinding{endpoints.selection,device->getTypeName(),inputs,outputs,
+                             inLabels,outLabels,rate,frames,epoch};
+    }
+
+    bool rebindRetainedWasapiSession() {
+        if(!acceptedWasapiBinding_ || !allOutputsDisarmed() || !attached_ ||
+           routeReconfiguring_.load(std::memory_order_acquire) || handoff_.busy() ||
+           fxMovePhase_.load(std::memory_order_acquire)!=0 ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=armix::diagnostics::Route::normal)
+            return false;
+        try {
+            auto current=inspectWasapiBinding();
+            if(!current || !acceptedWasapiBinding_->sameHardware(*current) ||
+               !dryRoutingLab_.rebindVerifiedDevice(acceptedWasapiBinding_->epoch,current->epoch))
+                return false;
+            acceptedWasapiBinding_=std::move(current);
+            return true;
+        } catch(...) {return false;}
+    }
+
     bool approveDirectRoute (
         const armix::device::AsioRegistrationPolicy::Identity* expectedAsio = nullptr)
     {
@@ -2088,6 +2160,7 @@ private:
     static constexpr int maxFrames = 8192;
     armix::device::AsioPriorityDeviceManager deviceManager_;
     armix::device::DirectRouteFence directFence_;
+    std::optional<WasapiBinding> acceptedWasapiBinding_; // CONTROL only
     // Control-thread only; retain full class identity for exact comparison,
     // publish correlation HASH only. Never read registry in audio callback.
     armix::device::AsioRegistrationPolicy::Identity asioPinnedRegistration_;

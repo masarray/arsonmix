@@ -1133,6 +1133,16 @@
          mixerSession()?.authority==="NONE") &&
         legacy()?.active===true &&
         safeNativeCounter(legacy()?.routingRevision)!==null));
+  function syncMonitorButton(d) {
+    const monitorButton=document.querySelector?.("[data-native-monitor]");
+    if(monitorButton){
+      monitorButton.textContent=d?.outputArmed?"MONITOR OFF":"MONITOR ON";
+      monitorButton.title=d?.outputArmed?
+        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
+      monitorButton.disabled=!d?.outputArmed && !deviceReady();
+      monitorButton.dataset.armed=String(!!d?.outputArmed);
+    }
+  }
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -1142,14 +1152,7 @@
     const label=document.getElementById("transport");
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
-    const monitorButton=document.querySelector?.("[data-native-monitor]");
-    if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"MONITOR OFF":"MONITOR ON";
-      monitorButton.title=d?.outputArmed?
-        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
-      monitorButton.disabled=!d?.outputArmed && !deviceReady();
-      monitorButton.dataset.armed=String(!!d?.outputArmed);
-    }
+    syncMonitorButton(d);
     const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
       scope.master.output=mainOutput;
@@ -1471,16 +1474,17 @@
         Array.isArray(ack.active.enabledOutputs) &&
         ack.active.enabledOutputs.length>=2;
       deviceResult=accepted?
-        "Audio device ready · choose an IN on any channel":
-        "Device rejected · "+(ack.error||"native hardware readback failed");
+        (ack.mixerBound?"Mixer ready · MONITOR OFF":"Audio device ready · choose an IN on any channel"):
+        ack.state==="NEEDS_REMAP"?
+          "NEEDS REMAP · "+ack.error:
+          "Device rejected · "+(ack.error||"native hardware readback failed");
       deviceChoice=null;
       if(accepted){
         devicePanel.hidden=true;
-        status("AUDIO ACTIVE · "+ack.active.backend+" · "+
-          ack.active.rate+" Hz / "+ack.active.buffer+
-          " samples · MONITOR muted until a real IN is selected");
-        nativeToast("Audio device connected · "+ack.active.backend+
-          " · "+ack.active.rate+" Hz · choose channel IN");
+        status("DEVICE READY · "+ack.active.backend+" · "+
+          ack.active.rate+" Hz / "+ack.active.buffer+" samples · MONITOR OFF");
+        nativeToast(ack.mixerBound?"Mixer ready · MONITOR OFF":
+          "Audio device connected · "+ack.active.backend+" · "+ack.active.rate+" Hz · choose channel IN");
         controller?.subscribe();
       }else renderDevicePanel();
     });
@@ -1718,6 +1722,7 @@
       return;
     }
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;

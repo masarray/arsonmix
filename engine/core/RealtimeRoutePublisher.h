@@ -95,6 +95,25 @@ public:
         return Result::applied;
     }
 
+    // CONTROL only, after proving identical hardware layout and format.
+    // Keep the prepared compatibility plan and its revision. Run the paired
+    // publication while no reader can observe or acquire this snapshot.
+    template<class Commit>
+    bool rebindQuiescent(std::uint64_t from,std::uint64_t to,
+                         Commit&& commit) noexcept {
+        static_assert(noexcept(commit()));
+        if(!owned_ || active_.load(std::memory_order_seq_cst)!=owned_.get() ||
+           owned_->deviceEpoch!=from || !from || to<=from)return false;
+        std::uint32_t idle=0;
+        if(!activity_.compare_exchange_strong(idle,writerFlag,
+                                               std::memory_order_seq_cst))
+            return false;
+        const bool accepted=commit();
+        if(accepted)owned_->deviceEpoch=to;
+        activity_.store(0,std::memory_order_seq_cst);
+        return accepted;
+    }
+
     // Immediately gate the last route to silence. Do NOT delete a graph
     // while the audio callback could own a ReadLease to its snapshot.
     void unpublish() noexcept {

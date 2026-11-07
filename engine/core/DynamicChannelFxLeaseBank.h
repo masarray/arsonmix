@@ -262,6 +262,22 @@ public:
                                DynamicChannelFxLeaseBank& destination) {
         if(!epoch || epoch!=prior.epoch_ ||
            revision<=prior.revision_)return Fault::invalidEpoch;
+        return reusePreparedOwners(epoch,revision,prior,destination);
+    }
+
+    // Caller has independently verified identical negotiated audio format.
+    static Fault rebindSameFormat(std::uint64_t epoch,std::uint64_t revision,
+                                 const DynamicChannelFxLeaseBank& prior,
+                                 DynamicChannelFxLeaseBank& destination) {
+        if(epoch<=prior.epoch_ || revision<=prior.revision_)
+            return Fault::invalidEpoch;
+        return reusePreparedOwners(epoch,revision,prior,destination);
+    }
+
+private:
+    static Fault reusePreparedOwners(std::uint64_t epoch,std::uint64_t revision,
+                                     const DynamicChannelFxLeaseBank& prior,
+                                     DynamicChannelFxLeaseBank& destination) {
         std::vector<Assignment> retained;
         retained.reserve(prior.rows_.size());
         for(const auto& row:prior.rows_) {
@@ -275,6 +291,7 @@ public:
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
+public:
     // Processing MONO/STEREO is a DSP lane property, not a device pin change.
     // Rebind the vendor lease's matching format atomically with the PCM
     // topology; otherwise a later insert would see stale format metadata.

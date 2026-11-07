@@ -65,10 +65,19 @@ public:
         bool mute=false, solo=false, mono=false;
     };
 
+    // Device callbacks only invalidate admission. CONTROL can later rebind
+    // the previously active graph after independent hardware verification.
+    void invalidateDeviceAdmission() noexcept {
+        const auto previous=channelIdPcmEpoch_.exchange(0,std::memory_order_acq_rel);
+        const auto generation=epoch();
+        if(publishedEpoch_.load(std::memory_order_acquire)==generation)
+            rebindableNativeEpoch_.store(previous,std::memory_order_release);
+    }
+
     // JUCE calls aboutToStart after configuring the input/output device.
     // One device session gets a new epoch; stored route cannot survive it.
     void prepareDevice (juce::AudioIODevice* device) noexcept {
-        channelIdPcmEpoch_.store(0,std::memory_order_release);
+        invalidateDeviceAdmission();
         const auto generation=deviceEpoch_.fetch_add(1,std::memory_order_acq_rel)+1;
         userPatched_.store(false,std::memory_order_release);
         registryValid_.store(false,std::memory_order_release);
@@ -98,7 +107,7 @@ public:
         registryValid_.store(true,std::memory_order_release);
     }
     void deviceStopped() noexcept {
-        channelIdPcmEpoch_.store(0,std::memory_order_release);
+        invalidateDeviceAdmission();
         // A stale lab cannot silently resume legacy CH1 on device hotplug.
         userPatched_.store(false,std::memory_order_release);
         deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
@@ -2229,6 +2238,61 @@ public:
                     return true;
         return false;
     }
+    // CONTROL only. The verified profile proves identical port ordinals,
+    // rate and block size. Recompile the accepted ChannelId roster to reset
+    // DSP scratch/PDC, but preserve vendor instances and every document ID.
+    bool rebindVerifiedDevice(std::uint64_t priorEpoch,std::uint64_t newEpoch) {
+        using namespace armix::mixer;
+        if(!priorEpoch || newEpoch<=priorEpoch || newEpoch!=epoch() ||
+           publishedEpoch_.load(std::memory_order_acquire)!=priorEpoch ||
+           !active() || !acceptedRoute_.isObject() ||
+           !registryValid_.load(std::memory_order_acquire) ||
+           topologyFault_.load(std::memory_order_acquire))return false;
+        const bool native=rebindableNativeEpoch_.load(std::memory_order_acquire)==priorEpoch;
+        if(!native && (nativeStructureLive_ || nativeControlDirty_ ||
+                      nativeAccepted_.deviceEpoch==priorEpoch))return false;
+        std::shared_ptr<DynamicChannelFxLeaseBank> owner;
+        DynamicNativeSessionPublisher::FxPlan fx;
+        const auto revision=nativeAccepted_.pcmRevision;
+        if(native) {
+            if(!nativeAccepted_.matches(nativePublisher_,priorEpoch,revision))
+                return false;
+            owner=std::make_shared<DynamicChannelFxLeaseBank>();
+            if(DynamicChannelFxLeaseBank::rebindSameFormat(
+                   newEpoch,revision+1,*nativeAccepted_.fxOwners,*owner)!=
+               DynamicChannelFxLeaseBank::Fault::none)return false;
+            fx.owner=owner;fx.context=owner.get();
+            fx.deviceEpoch=newEpoch;fx.graphRevision=revision+1;
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,r,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+        }
+        const bool applied=publisher_.rebindQuiescent(priorEpoch,newEpoch,[&]() noexcept {
+            if(newEpoch!=epoch())return false;
+            if(!native)return true;
+            try {
+                return nativePublisher_.commit(
+                    nativeAccepted_.graph.roster,nativeAccepted_.graph.request,
+                    revision,newEpoch,epoch(),true,std::move(fx)).ok();
+            } catch(...) {return false;}
+        });
+        if(!applied)return false;
+        if(native) {
+            nativeAccepted_.deviceEpoch=newEpoch;
+            nativeAccepted_.pcmRevision=revision+1;
+            nativeAccepted_.fxOwners=std::move(owner);
+            // The retained compatibility plan is only the physical contract.
+            // A later native fault must not silently fall back to its DSP.
+            nativeControlDirty_=true;
+            channelIdPcmEpoch_.store(newEpoch,std::memory_order_release);
+        }
+        publishedEpoch_.store(newEpoch,std::memory_order_release);
+        userPatched_.store(true,std::memory_order_release);
+        return newEpoch==epoch() && ready();
+    }
     bool ready() const noexcept {
         return active() && !topologyFault_.load(std::memory_order_acquire)
             && publishedEpoch_.load(std::memory_order_acquire)==epoch();
@@ -2678,6 +2742,7 @@ private:
     std::atomic<bool> topologyFault_{false};
     std::atomic<std::uint64_t> deviceEpoch_{0};
     std::atomic<std::uint64_t> publishedEpoch_{0};
+    std::atomic<std::uint64_t> rebindableNativeEpoch_{0};
     std::atomic<int> callbackInputCount_{-1};
     std::atomic<int> callbackOutputCount_{-1};
     std::atomic<bool> enabled_{false};

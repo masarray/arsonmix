@@ -1137,6 +1137,7 @@ private:
             ack->setProperty("error",error);
             ack->setProperty("active",currentDeviceSnapshot());
             ack->setProperty("outputMuted",engine_.isOutputMuted());
+            ack->setProperty("mixerBound",engine_.hasBoundMixerRoute());
             if(browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceApplyAck",juce::var(ack.release()));
         };
@@ -1292,16 +1293,24 @@ private:
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
-        if(error.isEmpty()&&!engine_.finishManualAudioSetup())
-            error=engine_.hasRetainedUnboundMixer()
-                ? "Mixer document retained safely, but this device change needs a verified complete ChannelId / FX rebind; audio remains muted"
-                : "Device opened but direct safe production session was rejected";
+        if(error.isEmpty()&&!engine_.finishManualAudioSetup()) {
+            if(engine_.directRouteAuthorized()&&engine_.hasRetainedUnboundMixer()) {
+                const juce::String needsRemap="Device verified. Mixer retained and muted; its previous hardware mapping could not be verified";
+                diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
+                send(false,"NEEDS_REMAP",needsRemap);
+                emitApprovedNativeSnapshot();
+                return;
+            }
+            error="Device opened but direct safe production session was rejected";
+        }
         if(error.isEmpty()) {
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            return send(true,"ACCEPTED_MUTED",{});
+            send(true,"ACCEPTED_MUTED",{});
+            emitApprovedNativeSnapshot();
+            return;
         }
         // A changed ASIO layout cannot be 'restored' by replaying indices
         // that now refer to different WDM pins. Keep the fresh device MUTED,
@@ -1325,6 +1334,8 @@ private:
             checked.outputDeviceName==before.outputDeviceName&&
             checked.inputChannels==before.inputChannels&&
             checked.outputChannels==before.outputChannels&&
+            checked.sampleRate==before.sampleRate&&
+            checked.bufferSize==before.bufferSize&&
             manager.getCurrentAudioDevice()!=nullptr&&
             manager.getCurrentAudioDevice()->isOpen()&&
             (previousType!="ASIO"||
@@ -1335,6 +1346,7 @@ private:
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
         send(false,verified?"RESTORED_MUTED":"RECOVERY_REQUIRED",error);
+        emitApprovedNativeSnapshot();
     }
 
     void showDeviceSetup()
@@ -1382,6 +1394,7 @@ private:
                                 safe->engine_.hasRetainedUnboundMixer()
                                     ? "Mixer and plugin state retained. Device binding changed; output stays muted until a verified full-session rebind."
                                     : "Choose a working capture and render device. Audio remains muted.", true);
+                            safe->emitApprovedNativeSnapshot();
                         }
                     });
             safe->audioSetupWindow_->setVisible (true);
@@ -3452,7 +3465,7 @@ private:
             // DeviceManager signals even when a temporary capture-only /
             // output-only route is selected. Never persist that test route.
             if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
-                engine_.directRouteAuthorized() &&
+                engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
                 (audioSetupWindow_ == nullptr || !audioSetupWindow_->isVisible()) &&
                 engine_.devices().getCurrentAudioDevice() != nullptr)
             if (auto xml = engine_.devices().createStateXml())
