@@ -37,7 +37,7 @@ def main():
         ready=page.evaluate("()=>window.__nativeEvents.find(e=>e.name==='arMixGuiReady')?.payload")
         assert ready and ready['viewportWidth']==1366 and ready['viewportHeight']==768
         # Never show demo-only controls as clickable on a physical host.
-        for id in ('saveScene','recallScene','copy','paste','group','ungroup','preview','clearCue','reset'):
+        for id in ('saveScene','recallScene','copy','paste','group','ungroup','preview','clearCue','reset','sofToggle','sofTarget'):
             element=page.locator('#'+id)
             assert element.is_hidden() and element.is_disabled(),id
         assert page.locator('[data-native-monitor]').count()==1
