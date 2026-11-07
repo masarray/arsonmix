@@ -44,6 +44,9 @@ int main(){
         .getNonexistentChildFile("ArSonMixChannelIdentity","",false);
     assert(dir.createDirectory().wasOk());
     const auto g=nativeGraph();
+    // Match the production transport: apply takes the accepted envelope,
+    // while snapshot projects appearances against its nested channel graph.
+    const auto graph=g.getProperty("graph",{});
     // Raw UTF-8 bytes are a compiler-charset-independent ground truth.
     const auto keyboard=juce::String::fromUTF8("\xF0\x9F\x8E\xB9");
     assert(Store::validIcon(keyboard));
@@ -71,7 +74,7 @@ int main(){
         assert(store.apply(req,g)=="INVALID_CHANNEL_NAME_COLOR_OR_ICON");
         set(req,"icon",keyboard);
         assert(store.apply(req,g).isEmpty());
-        auto snap=store.snapshot(g);
+        auto snap=store.snapshot(graph);
         assert(snap.getProperty("revision","").toString()=="1");
         const auto stored=snap.getProperty("entries",{});
         const auto* rows=stored.getArray();
@@ -85,18 +88,18 @@ int main(){
         assert(store.apply(stale,g)=="CHANNEL_NAME_ALREADY_IN_USE");
         set(stale,"name","Guitar New");
         assert(store.apply(stale,g).isEmpty());
-        assert(store.snapshot(g).getProperty("revision","").toString()=="2");
+        assert(store.snapshot(graph).getProperty("revision","").toString()=="2");
     }
     {
         Store reboot(dir); // No WebView/localStorage or device required.
         assert(reboot.error().isEmpty());
-        const auto snap=reboot.snapshot(g);
+        const auto snap=reboot.snapshot(graph);
         const auto entries=snap.getProperty("entries",{});
         assert(entries.isArray() && entries.getArray()->size()==2);
         auto req=edit(vocalId,"Studio Vox");
         set(req,"appearanceRevision","2");
         assert(reboot.apply(req,g).isEmpty()); // idempotent, no extra disk write
-        assert(reboot.snapshot(g).getProperty("revision","").toString()=="2");
+        assert(reboot.snapshot(graph).getProperty("revision","").toString()=="2");
         set(req,"name","Studio Vox 2");
         set(req,"deviceEpoch","8");
         assert(reboot.apply(req,g)=="STALE_CHANNEL_IDENTITY_OR_GRAPH");
