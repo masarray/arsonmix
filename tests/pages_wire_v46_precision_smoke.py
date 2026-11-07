@@ -141,8 +141,12 @@ def main():
     lit=incoming_colors(dest)
     assert lit["connected"] and lit["center"]==lit["ring"] and lit["center"]!="rgb(75, 83, 91)",(width,"focus return must restore accepted visible endpoint",lit)
     if width==1366:
-     page.locator('#densitySelect').select_option(label="Compact")
-     exact(center(dest_pin),center(dest),width,"compact socket no longer concentric",.32)
+     picker=page.locator('#densitySelect')
+     if picker.is_visible():picker.select_option(label="Compact")
+     else:
+      assert picker.is_hidden()
+      assert page.locator(".console-body").get_attribute("data-density")=="comfort"
+     exact(center(dest_pin),center(dest),width,"responsive socket no longer concentric",.32)
     assert not errors,(width,errors)
     page.close()
    browser.close()

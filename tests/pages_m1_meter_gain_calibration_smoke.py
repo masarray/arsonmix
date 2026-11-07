@@ -21,7 +21,14 @@ def close(a, b, tolerance=0.65):
     assert abs(a - b) <= tolerance, (a, b, tolerance)
 
 def geometry(page, density, label):
-    page.locator("#densitySelect").select_option(density)
+    picker=page.locator("#densitySelect")
+    if picker.is_visible():
+        picker.select_option(density)
+    else:
+        # Approved Pages V29 is a single comfort-only product; density
+        # testing still covers all three variants in the historical source.
+        assert density=="comfort" and picker.is_hidden()
+        assert page.locator(".console-body").get_attribute("data-density")=="comfort"
     page.wait_for_selector("#tracks .strip[data-id='1'] .fader-scale")
     out = page.evaluate("""() => {
       const strip=document.querySelector('#tracks .strip[data-id="1"]');
@@ -215,18 +222,21 @@ def main():
                 errors=[]
                 page.on("pageerror",lambda exc:errors.append(str(exc)))
                 page.goto(html.as_uri())
-                for density in ("comfort","standard","compact"):
+                modes=("comfort","standard","compact") if label=="canonical" else ("comfort",)
+                for density in modes:
                     data=geometry(page,density,label)
                     if width==1680 and label=="pages" and density=="comfort":
                         page.locator("#tracks .strip[data-id='1'] .fader-section").screenshot(
                             path="m1-calibrated-fader-meter-1680.png")
-                if label=="pages":page.locator("#densitySelect").select_option("comfort")
+                if label=="pages":
+                    assert page.locator("#densitySelect").is_hidden()
+                    assert page.locator(".console-body").get_attribute("data-density")=="comfort"
                 math_and_preview(page,label)
                 assert not errors,(label,width,errors)
                 page.close()
             browser.close()
     print("PASS M1: dBFS meter and gain rulers calibrated to physical travel; "
-          "preview demo displays real dBFS percentages, 3 densities × 3 sizes, source + sole approved /preview/")
+          "preview demo displays real dBFS, source 3 densities × 3 viewports and the approved public comfort view")
 
 if __name__=="__main__":
     main()

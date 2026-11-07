@@ -54,8 +54,16 @@ def check(page,path,label):
 
     # No dB scale positions or real input values change: only typography and
     # major/minor rendering. The two physical ruler ends match the cap travel.
-    for density in ("comfort","standard","compact"):
-        page.locator("#densitySelect").select_option(density)
+    # Only the historical authoring source exposes density selection.
+    # The shipping /preview/ has one approved comfort view, with the
+    # compatibility dropdown intentionally hidden (V29 operator decision).
+    picker=page.locator("#densitySelect")
+    modes=("comfort","standard","compact") if picker.is_visible() else ("comfort",)
+    if not picker.is_visible():
+        assert picker.is_hidden() and page.locator(".console-body").get_attribute("data-density")=="comfort",label
+    for density in modes:
+        if picker.is_visible():
+            picker.select_option(density)
         page.wait_for_selector(channel+" .gain-scale-travel")
         tick=page.evaluate("""(sel)=>{
            const strip=document.querySelector(sel);
@@ -117,7 +125,7 @@ def main():
                 check(page,path,label)
             browser.close()
     print("PASS V18: Material delete+phase, 17px square buttons, calibrated rulers,")
-    print("no label overlaps across densities, PNG preserved, source + sole approved /preview/")
+    print("no ruler overlaps: 3 source densities + approved public comfort, original PNG preserved")
 
 if __name__=="__main__":
     main()

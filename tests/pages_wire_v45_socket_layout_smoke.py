@@ -105,9 +105,13 @@ def main():
     p.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     restored=channel_ring(dest)
     assert restored["arrival"]=="true" and restored["border"]==connected["border"] and restored["background"]==connected["background"],(width,"visible accepted cable must relight destination",restored)
-    # Compact is a spatial fallback, not a different hit-test or route state.
+    # The historical source supports Compact; the compiled public GUI
+    # deliberately hides the selector. Never simulate an unsupported mode.
     if width==1366:
-     p.locator('#densitySelect').select_option(label="Compact")
+     picker=p.locator('#densitySelect')
+     if picker.is_visible():picker.select_option(label="Compact")
+     else:
+      assert picker.is_hidden() and body.get_attribute("data-density")=="comfort"
      label_geometry(p,width)
     assert not errors,(width,errors)
     p.close()
