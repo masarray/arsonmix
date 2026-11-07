@@ -65,6 +65,10 @@ test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test 
   ]) assert.ok((ps + fixture).includes(item), item);
   assert.equal((ps.match(/Start-Process -FilePath \$setup/g) ?? []).length, 2);
   assert.match(fixture, /FormClosing/);
+  assert.match(fixture, /WM_QUERYENDSESSION/);
+  assert.match(fixture, /WM_ENDSESSION/);
+  assert.match(ps, /RM_QUERY_SAVED/);
+  assert.match(ps, /RM_ENDSESSION_SAVED/);
   assert.match(fixture, /Application\.Run\(window\)/);
   // No fixture is packaged: only the verified native EXE ships.
   assert.doesNotMatch(iss, /installer_graceful_close|\.cs"/);
