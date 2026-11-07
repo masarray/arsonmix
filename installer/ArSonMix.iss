@@ -53,7 +53,7 @@ Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{a
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
-Filename: "{app}\\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
+Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
 
 ; Never delete private Studio data on install/update/uninstall; never install
 ; portable_mode.txt or silently ARM an audio output.
