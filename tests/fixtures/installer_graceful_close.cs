@@ -13,6 +13,9 @@ internal static class ArSonMixInstallerGracefulCloseFixture
     private sealed class MixerWindow : Form
     {
         private readonly string savedMarker;
+        private readonly System.Threading.Mutex runningMutex;
+        private readonly System.Threading.EventWaitHandle shutdownEvent;
+        private readonly System.Windows.Forms.Timer shutdownPoll;
         private const int WM_QUERYENDSESSION = 0x0011;
         private const int WM_ENDSESSION = 0x0016;
 
@@ -23,6 +26,33 @@ internal static class ArSonMixInstallerGracefulCloseFixture
             Width = 420;
             Height = 120;
             ShowInTaskbar = false;
+            // The production mixer creates exactly these same per-session
+            // handles. Inno signals the event and waits for the mutex to go
+            // away after the accepted mixer session has been saved.
+            runningMutex = new System.Threading.Mutex(false,
+                @"Local\ArSonMix.MixerRunning.v1");
+            shutdownEvent = new System.Threading.EventWaitHandle(false,
+                System.Threading.EventResetMode.ManualReset,
+                @"Local\ArSonMix.InstallShutdown.v1");
+            shutdownPoll = new System.Windows.Forms.Timer();
+            shutdownPoll.Interval = 50;
+            shutdownPoll.Tick += (sender, e) =>
+            {
+                if (!shutdownEvent.WaitOne(0)) return;
+                shutdownPoll.Stop();
+                File.WriteAllText(savedMarker, "INSTALLER_HANDSHAKE_SAVED");
+                Close();
+            };
+            shutdownPoll.Start();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            shutdownPoll.Stop();
+            shutdownPoll.Dispose();
+            shutdownEvent.Dispose();
+            runningMutex.Dispose();
+            base.OnFormClosed(e);
         }
 
         protected override void WndProc(ref Message m)
@@ -40,7 +70,8 @@ internal static class ArSonMixInstallerGracefulCloseFixture
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            File.WriteAllText(savedMarker, "WM_CLOSE_SAVED");
+            if (!File.Exists(savedMarker))
+                File.WriteAllText(savedMarker, "WM_CLOSE_SAVED");
             base.OnFormClosing(e);
         }
     }
