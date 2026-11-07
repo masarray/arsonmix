@@ -57,7 +57,7 @@ export function inspectM3ePackage(root){
      !HEX64.test(manifest.approvedGuiPagesSha256||'')||
      !HEX64.test(manifest.approvedGuiNativeHtmlSha256||'')||
      !HEX64.test(manifest.approvedGuiManifestSha256||'')||
-     manifest.fatStatus!=='EXPERIMENTAL_NOT_HARDWARE_QUALIFIED')
+     manifest.fatStatus!=='SOFTWARE_VERIFIED_PREVIEW_CANDIDATE')
     throw Error('Source/GUI/qualification manifest is not approved and fail-closed');
   const exe=readExact(p,manifest.executable,manifest.exeSha256);
   checkPe64Gui(exe);
