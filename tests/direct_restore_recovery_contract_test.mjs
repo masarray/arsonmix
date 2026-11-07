@@ -59,7 +59,7 @@ test('verified native FAT package preserves actual beta live-bridge provenance, 
   assert.match(fatGuide,/Do not enable beta independent clocks/);
   assert.match(fatGuide,/ASRC_INPUT_UNDERFLOW_FRAMES/);
   assert.ok(packaging.includes('HARDWARE_FAT_GUIDE.md'));
-  assert.match(packaging,/EXPERIMENTAL_NOT_HARDWARE_QUALIFIED/);
+  assert.match(packaging,/SOFTWARE_VERIFIED_PREVIEW_CANDIDATE/);
   assert.doesNotMatch(packaging,/An offline adaptive dual-clock FIR bridge is tested in CI but NOT connected/);
 });
 
