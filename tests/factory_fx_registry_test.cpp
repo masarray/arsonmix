@@ -75,11 +75,17 @@ int main()
     if (! check (! scan.ok(), "six-effect production manifest cannot claim one effect"))
         return 6;
 
+    manifest.replaceWithText (original.replace ("engineering-partial", "production-four"));
+    scan = armix::factory::Registry::discover (root);
+    if (! check (! scan.ok() && scan.candidates.empty(),
+                 "four-effect production manifest cannot claim one effect"))
+        return 8;
+
     manifest.deleteFile();
     scan = armix::factory::Registry::discover (root);
     if (! check (! scan.ok() && scan.candidates.empty(), "missing manifest rejected"))
         return 7;
 
-    std::cout << "FactoryFX registry: valid package + 6 negative gates passed\n";
+    std::cout << "FactoryFX registry: valid package + 7 negative gates passed\n";
     return 0;
 }
