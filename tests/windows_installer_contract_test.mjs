@@ -29,9 +29,9 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /FactoryFX\\\*.*skipifsourcedoesntexist/);
 });
 
-test('Restart Manager requests graceful shutdown, not data-loss force-close', () => {
-  assert.match(iss, /^CloseApplications=yes$/m);
-  assert.match(iss, /^CloseApplicationsFilter=ArSonMix\.exe$/m);
+test('single installer preflight requests graceful shutdown; Restart Manager cannot force old mixer', () => {
+  assert.match(iss, /^CloseApplications=no$/m);
+  assert.doesNotMatch(iss, /^CloseApplicationsFilter=/m);
   assert.match(iss, /^RestartApplications=no$/m);
   // Never prevent upgrades while the mixer is open: no AppMutex.
   assert.doesNotMatch(iss, /^AppMutex=/m);
@@ -60,7 +60,7 @@ test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test 
     'assets/icon/arsonmix-app.ico', 'FactoryFX',
     'Start-Process -FilePath $setup', 'Start-Process -FilePath $installedExe',
     'installer_graceful_close.cs', 'WM_CLOSE_SAVED', 'WINDOW_READY',
-    '/CLOSEAPPLICATIONS', '/NOFORCECLOSEAPPLICATIONS',
+    '/NOCLOSEAPPLICATIONS',
     'INNO_GRACEFUL_UPDATE_PASS', 'Test-Path -LiteralPath $installSentinel',
     'Test-Path -LiteralPath $sentinel', 'INSTALLER_PROVENANCE.json',
     'OWNER_FIELD_AUDIO_LISTENING_REPORTED'
