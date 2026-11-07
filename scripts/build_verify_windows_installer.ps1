@@ -53,6 +53,23 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    # Exercise the real Inno UPDATE path, not only a clean installation.
+    # Silent CI must never launch the live audio application. Restart Manager
+    # closes a running installation gracefully when needed; real open-process
+    # behavior is separately qualified on hardware.
+    $upgrade=Start-Process -FilePath $setup -ArgumentList @(
+        "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER",
+        "/CLOSEAPPLICATIONS","/NORESTARTAPPLICATIONS","/DIR=$install"
+    ) -Wait -PassThru
+    if($upgrade.ExitCode -ne 0){throw "Inno in-place update failed: $($upgrade.ExitCode)"}
+    if(-not (Test-Path -LiteralPath $installedExe -PathType Leaf) -or
+       (Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $appHash -or
+       -not (Test-Path -LiteralPath $sentinel) -or
+       (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
+        throw "In-place update changed the verified GUI, erased Studio or switched to portable mode"
+    }
+    $upgradeManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    if($upgradeManifest.sourceCommit -ne $sha){throw "In-place update lost exact source attestation"}
     $uninstall=Join-Path $install "unins000.exe"
     if(-not (Test-Path -LiteralPath $uninstall -PathType Leaf)){throw "Uninstaller missing"}
     $stop=Start-Process -FilePath $uninstall -ArgumentList @(
@@ -66,7 +83,7 @@ try {
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         certification="UNSIGNED_HARDWARE_FAT_PENDING";mode="PER_USER_NO_AUTOARM"
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
-    Write-Host "INSTALLER_RC_VERIFIED: SHA-matched PE, install/uninstall, private Studio intact"
+    Write-Host "INSTALLER_RC_VERIFIED: SHA-matched PE, fresh install, in-place update, uninstall, private Studio intact"
     Write-Host "PHYSICAL_FAT_PENDING"
 }
 finally {
