@@ -7,6 +7,7 @@
 #include "VstBusLayout.h"
 #include "LiveGraphHandoff.h"
 #include "LiveDryRoutingLab.h"
+#include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
@@ -1432,6 +1433,83 @@ public:
             return "MUTE OUTPUT and use verified DIRECT before FX state capture";
         return dryRoutingLab_.captureRoutedFxStates(epoch,revision,states);
     }
+
+    // Native session serialization is CONTROL-owned; all vendor binary reads
+    // require MUTED MAIN/STREAM, with zero I/O in the physical audio callback.
+    juce::String captureNativeMixerSession(
+            armix::session::MixerSessionDocument& document,
+            std::vector<armix::shows::BinaryState>& states) {
+        if(!allOutputsDisarmed()||independent_.active()||
+           !directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return "MUTE MAIN/STREAM and finish FX handoff before session save";
+        const auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())return "Audio device unavailable for session capture";
+        auto error=dryRoutingLab_.captureNativeMixerSession(document,states);
+        if(error.isNotEmpty())return error;
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        document.binding={
+            deviceManager_.getCurrentAudioDeviceType(),
+            setup.inputDeviceName,setup.outputDeviceName,
+            device->getActiveInputChannels().toString(16),
+            device->getActiveOutputChannels().toString(16),
+            device->getCurrentSampleRate(),
+            device->getCurrentBufferSizeSamples()};
+        document.masterGain=masterGain_.load(std::memory_order_acquire);
+        document.masterMute=masterMute_.load(std::memory_order_acquire);
+        document.masterMono=masterMono_.load(std::memory_order_acquire);
+        return {};
+    }
+
+    // STARTUP: fresh vendor processors are prepared and all hashes validated
+    // before the ONE native PCM publication. No saved physical ARM state.
+    juce::String restoreNativeMixerSession(
+            armix::session::MixerSessionDocument document,
+            const std::vector<armix::shows::BinaryState>& states) {
+        if(!allOutputsDisarmed()||independent_.active()||!attached_||
+           !directFence_.permitted()||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+             armix::diagnostics::Route::normal||
+           routeReconfiguring_.load(std::memory_order_acquire))
+            return "MUTE output and verify DIRECT before restoring mixer";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())
+            return "NEEDS_REMAP: saved audio device unavailable";
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        if(document.binding.backend!=deviceManager_.getCurrentAudioDeviceType()||
+           document.binding.capture!=setup.inputDeviceName||
+           document.binding.playback!=setup.outputDeviceName||
+           document.binding.inputMask!=device->getActiveInputChannels().toString(16)||
+           document.binding.outputMask!=device->getActiveOutputChannels().toString(16)||
+           document.binding.rate!=device->getCurrentSampleRate())
+            return "NEEDS_REMAP: driver, endpoint, pin mask or rate changed";
+        if(document.request.physicalInputs!=
+           device->getActiveInputChannels().countNumberOfSetBits())
+            return "NEEDS_REMAP: callback-ordered physical input pins changed";
+        const auto ep=dryRoutingLab_.epoch();
+        const auto next=dryRoutingLab_.nativeGraphRevisionForRestore();
+        if(!ep||!next)return "No valid native epoch for session restore";
+        std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> bank;
+        const auto error=armix::session::NativeMixerSessionFxRestore::prepare(
+            document,states,formats_,device->getCurrentSampleRate(),
+            juce::jmax(32,device->getCurrentBufferSizeSamples()),ep,next,bank);
+        if(error.isNotEmpty())return error;
+        const auto gain=document.masterGain;
+        const auto mute=document.masterMute;
+        const auto mono=document.masterMono;
+        const auto applied=dryRoutingLab_.restoreNativeMixerSession(
+            std::move(document),std::move(bank),allOutputsDisarmed());
+        if(applied.isNotEmpty())return applied;
+        setMasterGainLinear(gain);
+        setMasterMuted(mute);setMasterMono(mono);
+        setMonitorEnabled(false);
+        return {};
+    }
+
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     // One native ChannelId bus transaction on the installed DIRECT device.
