@@ -23,6 +23,7 @@ struct CatalogEntry
     bool favorite = false; // Portable user preference; never inferred from vendor scanner.
     bool factory = false; // Verified app-managed binary, not user Vault.
     juce::String factoryProductId;
+    juce::String factoryArtifactSha256; // Reviewed binary SHA; validated by Registry before reuse.
 
     juce::String key() const { return path + "|" + juce::String (uid) + "|" + juce::String (variant); }
 
@@ -38,7 +39,11 @@ struct CatalogEntry
         o->setProperty ("variant", variant);
         o->setProperty ("favorite", favorite);
         o->setProperty ("source", factory ? "factory" : "user");
-        if (factory) o->setProperty ("factoryProductId", factoryProductId);
+        if (factory)
+        {
+            o->setProperty ("factoryProductId", factoryProductId);
+            o->setProperty ("factoryArtifactSha256", factoryArtifactSha256);
+        }
         return juce::var (o.release());
     }
 
@@ -54,6 +59,7 @@ struct CatalogEntry
         e.favorite = static_cast<bool> (v.getProperty ("favorite", false));
         e.factory = v.getProperty ("source", {}).toString() == "factory";
         e.factoryProductId = v.getProperty ("factoryProductId", {}).toString();
+        e.factoryArtifactSha256 = v.getProperty ("factoryArtifactSha256", {}).toString();
         return e;
     }
 };
@@ -188,6 +194,7 @@ public:
         for (const auto& entry : entries_)
             list.add (entry.toVar());
         o->setProperty ("items", juce::var (list));
+        o->setProperty ("verifiedFactory", juce::var (verifiedFactory));
         o->setProperty ("scanning", busy());
         o->setProperty ("message", scanMessage_);
         o->setProperty ("count", static_cast<int> (entries_.size()));
@@ -216,6 +223,17 @@ private:
                 ? armix::factory::Registry::discover (armix::factory::Registry::executableRoot())
                 : armix::factory::Discovery{};
             if (factoryOnly_ && ! factory.ok()) importErrors = factory.error;
+            // The cache is metadata ONLY. Verified binaries/resources are rehashed
+            // first by Registry on this worker; a cache file cannot authorise FX.
+            juce::var cachedFactory;
+            if (factoryOnly_ && factory.ok())
+            {
+                const auto file = owner_.dataFolder_.getChildFile ("plugin-catalog.json");
+                if (file.existsAsFile() && file.getSize() <= 128 * 1024)
+                    cachedFactory = juce::JSON::parse (file);
+            }
+            const auto cachedItems = cachedFactory.getProperty ("verifiedFactory", {});
+            const auto* verifiedCache = cachedItems.getArray();
             // 1. Enumerate candidates. Total cannot be estimated here.
             owner_.phase_.store (1, std::memory_order_release);
             if (factoryOnly_ && factory.ok())
@@ -261,7 +279,33 @@ private:
                     const juce::ScopedLock lock (owner_.progressLock_);
                     owner_.current_ = juce::File (path).getFileName();
                 }
-                if (format.fileMightContainThisPluginType (path))
+                bool usedVerifiedCache = false;
+                if (factoryOnly_ && verifiedCache != nullptr && verifiedCache->size() <= 64)
+                {
+                    const auto approved = std::find_if (factory.candidates.begin(), factory.candidates.end(),
+                        [&path] (const armix::factory::Candidate& c) { return c.path == path; });
+                    if (approved != factory.candidates.end())
+                        for (const auto& item : *verifiedCache)
+                        {
+                            if (! item.isObject()) continue;
+                            auto entry = CatalogEntry::fromVar (item);
+                            if (! entry.factory || entry.factoryProductId != approved->productId ||
+                                entry.path != path || entry.uid != approved->hostUniqueId ||
+                                ! entry.factoryArtifactSha256.equalsIgnoreCase (approved->artifactSha256) ||
+                                entry.name.isEmpty() || entry.name.length() > 120 ||
+                                entry.variant < 0 || entry.variant >= 16)
+                                continue;
+                            if (std::none_of (found.begin(), found.end(), [&entry] (const CatalogEntry& e)
+                                { return e.key() == entry.key(); }))
+                            {
+                                found.push_back (std::move (entry));
+                                usedVerifiedCache = true;
+                            }
+                        }
+                }
+                // Cold run after a new FactoryFX release still inspects the
+                // real VST3 class; subsequent starts reuse its verified identity.
+                if (! usedVerifiedCache && format.fileMightContainThisPluginType (path))
                 {
                     juce::OwnedArray<juce::PluginDescription> descriptions;
                     format.findAllTypesForFile (descriptions, path);
@@ -280,6 +324,7 @@ private:
                             if (it == factory.candidates.end()) continue;
                             entry.factory = true;
                             entry.factoryProductId = it->productId;
+                            entry.factoryArtifactSha256 = it->artifactSha256;
                         }
                         found.push_back (std::move (entry));
                     }
@@ -397,10 +442,16 @@ private:
     void save()
     {
         auto o = std::make_unique<juce::DynamicObject>();
-        juce::Array<juce::var> list, folders;
+        juce::Array<juce::var> list, verifiedFactory, folders;
         for (const auto& entry : entries_)
         {
-            if (entry.factory) continue; // Never persist an unverified factory binary path.
+            // Factory descriptors are a cold-scan accelerator, never an
+            // authority: load() must NOT expose them until Registry rehashes.
+            if (entry.factory)
+            {
+                verifiedFactory.add (entry.toVar());
+                continue;
+            }
             auto item = entry.toVar();
             item.getDynamicObject()->setProperty ("path",
                 armix::storage::PortableWorkspace::encode (dataFolder_, juce::File (entry.path)));

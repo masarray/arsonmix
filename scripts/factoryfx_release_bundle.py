@@ -25,6 +25,18 @@ OWNED = {
     "arson-harmony": ("masarray/arson-harmony", "ArSonHarmony", "ArSonHarmony.vst3", "HARMONY"),
     "arson-color": ("masarray/arson-color", "ArSonColor", "ArSonColor.vst3", "COLOR"),
 }
+FOUR_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb", "arsonkupik-enhancer"))
+
+
+def distribution_for(plugins):
+    ids = [p["productId"] for p in plugins]
+    if len(ids) == 6 and set(ids) == set(OWNED):
+        return "production-six"
+    if len(ids) == 4 and set(ids) == FOUR_IDS:
+        return "production-four"
+    return "engineering-partial"
+
+
 HEX = lambda s, n: isinstance(s, str) and re.fullmatch("[0-9a-fA-F]{" + str(n) + "}", s) is not None
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 MAX_UNPACKED = 200 * 1024 * 1024
@@ -121,7 +133,7 @@ def zip_members(z, bundle):
             # Standalone EXEs and foreign plugins must never enter the factory.
             continue
         i = positions[0]
-        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3")):
+        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3", "Plugin")):
             fail("unexpected VST3 archive root")
         sub = parts[i + 1:]
         if not sub:
@@ -143,14 +155,25 @@ def zip_members(z, bundle):
 
 
 def stage(plugins, output, notices):
-    factory = output / "FactoryFX"
-    if factory.exists():
+    """Build the WHOLE factory off to the side; publish only after full verify.
+
+    A partial download, invalid ZIP, bad notice or failed integrity check must
+    leave the existing installed/package FactoryFX untouched. Temporary files
+    are on the same filesystem so the final directory rename is atomic.
+    """
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / "FactoryFX"
+    if destination.exists() or destination.is_symlink():
         fail("staging must start with clean FactoryFX destination")
     if not plugins:
         print("FACTORYFX: no approved plugins; app-only engineering package unchanged")
         return
-    with tempfile.TemporaryDirectory(prefix="arsonmix-factoryfx-") as work:
+    with tempfile.TemporaryDirectory(prefix=".factoryfx-incoming-", dir=output) as work:
         temp = Path(work)
+        staging = temp / "staged"
+        staging.mkdir()
+        factory = staging / "FactoryFX"
         rows = []
         for p in plugins:
             pid = p["productId"]
@@ -184,14 +207,16 @@ def stage(plugins, output, notices):
             })
         manifest = {
             "schemaVersion": 1, "platform": "windows-x64", "hostFormat": "VST3",
-            "distribution": "production-six" if len(rows) == 6 else "engineering-partial",
-            "plugins": rows,
+            "distribution": distribution_for(plugins), "plugins": rows,
         }
         (factory / "factoryfx-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        verify(plugins, output, notices)
-        print("FACTORYFX staged and verified: " + ", ".join(x["productId"] for x in rows))
-
+        # Verify staging BEFORE revealing it to runtime, packaging, or installer.
+        verify(plugins, staging, notices)
+        if destination.exists() or destination.is_symlink():
+            fail("concurrent FactoryFX staging detected")
+        factory.rename(destination)
+    print("FACTORYFX staged and verified: " + ", ".join(x["productId"] for x in rows))
 
 def verify(plugins, output, notices):
     factory = output / "FactoryFX"
@@ -203,7 +228,7 @@ def verify(plugins, output, notices):
     if not manifest_path.is_file():
         fail("missing FactoryFX manifest")
     m = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if m.get("distribution") != ("production-six" if len(plugins) == 6 else "engineering-partial"):
+    if m.get("distribution") != distribution_for(plugins):
         fail("FactoryFX distribution level mismatch")
     rows = m.get("plugins")
     if not isinstance(rows, list) or len(rows) != len(plugins):
@@ -241,6 +266,10 @@ def verify(plugins, output, notices):
             if file.is_symlink() or not file.is_file() or sha256(file) != entry["sha256"]:
                 fail(pid + ": missing or modified resource " + relative)
             allowed_files.add(file.relative_to(factory).as_posix())
+    # Never follow or tolerate symlinks, including directory junctions.
+    for item in factory.rglob("*"):
+        if item.is_symlink() or not (item.is_dir() or item.is_file()):
+            fail("FactoryFX contains symlink or special filesystem entry")
     actual = {x.relative_to(factory).as_posix() for x in factory.rglob("*") if x.is_file()}
     if actual != allowed_files:
         fail("FactoryFX untracked/extra resource or user content found")
@@ -252,13 +281,15 @@ def main():
     parser.add_argument("--lock", default="config/factoryfx-approved-releases.json")
     parser.add_argument("--notices", default="config/factoryfx-notices")
     parser.add_argument("--output", default="dist")
-    parser.add_argument("--require", choices=["none", "factory", "six"], default="none")
+    parser.add_argument("--require", choices=["none", "factory", "four", "six"], default="none")
     args = parser.parse_args()
     plugins = read_lock(args.lock)
     if args.require == "factory" and not plugins:
         fail("Factory FX required but no approved release")
-    if args.require == "six" and len(plugins) != 6:
-        fail("Production bundle requires all six approved effects")
+    if args.require == "four" and distribution_for(plugins) != "production-four":
+        fail("Four-FX release requires EQ, Comp, Verb and KuPik — all approved")
+    if args.require == "six" and distribution_for(plugins) != "production-six":
+        fail("Six-FX release requires all six approved effects")
     if args.action == "stage":
         stage(plugins, Path(args.output), Path(args.notices))
     else:
