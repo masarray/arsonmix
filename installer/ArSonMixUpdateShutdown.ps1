@@ -68,8 +68,10 @@ public static class ArSonMixInstallerWindowShutdown {
     foreach($process in $matches) {
         try {
             # JUCE handles WM_CLOSE on its message thread and can save session.
-            $null=$process.CloseMainWindow()
-            $null=[ArSonMixInstallerWindowShutdown]::CloseTopLevelWindows($process.Id)
+            $mainWindowWasNotified=$process.CloseMainWindow()
+            if(-not $mainWindowWasNotified) {
+                $null=[ArSonMixInstallerWindowShutdown]::CloseTopLevelWindows($process.Id)
+            }
         } finally {$process.Dispose()}
     }
     $end=[DateTime]::UtcNow.AddSeconds($WaitSeconds)
