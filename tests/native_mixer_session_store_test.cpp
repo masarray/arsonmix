@@ -327,6 +327,51 @@ int main(){
     assert(captureChanged.request.sources.empty());
     assert(captureChanged.roster.find({1})->sends[0].edgeId==100);
 
+    // Output 3/4 was explicitly assigned to MAIN. Disabling those pins
+    // must NEVER reassign MAIN to still-enabled 1/2 after Audio I/O Apply:
+    // rejection keeps the original logical/physical saved session intact.
+    auto main34=d;
+    main34.binding.outputMask="f";
+    main34.binding.outputNames={"OUT 1","OUT 2","OUT 3","OUT 4"};
+    main34.outputs={4,2,3,-1,-1,false};
+    const auto main34Before=Codec::encode(main34);
+    auto only12=main34.binding;
+    only12.outputMask="3";
+    const auto missingPair=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only12,2,BindingMode::verifiedDeviceApply);
+    assert(!missingPair.valid()); // never silently return {2,0,1}
+    assert(MixerDeviceBindingPolicy::apply(main34,only12,missingPair,2,
+        BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
+    // Even a caller supplying a syntactically valid but unauthorized MAIN
+    // pair must not bypass the physical-pin identity check.
+    const VerifiedNativeOutputs unauthorized12={2,0,1,-1,-1,false};
+    assert(MixerDeviceBindingPolicy::apply(main34,only12,unauthorized12,2,
+        BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
+    assert(Codec::encode(main34)==main34Before);
+    // If outputs 3/4 remain physically selected, ordinal 2/3 -> 0/1
+    // is a legal SAME-PIN remap, not an automatic route to different jacks.
+    auto only34=main34.binding;
+    only34.outputMask="c";
+    const auto preservedMain=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only34,2,BindingMode::verifiedDeviceApply);
+    assert(preservedMain.valid() && preservedMain.mainL==0 && preservedMain.mainR==1);
+    auto main34Accepted=main34;
+    assert(MixerDeviceBindingPolicy::apply(main34Accepted,only34,preservedMain,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(main34Accepted.outputs.mainL==0 && main34Accepted.outputs.mainR==1);
+    assert(main34Accepted.binding.outputMask=="c");
+    assert(main34Accepted.roster.revision()==main34.roster.revision());
+    // Changed ASIO output identity (or unknown inventory with changed
+    // mask) must fail closed until the user chooses an explicit MAIN pair.
+    auto renamed34=main34.binding;
+    renamed34.outputNames={"Other 1","Other 2","Other 3","Other 4"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,renamed34,4,
+        BindingMode::verifiedDeviceApply).valid());
+    auto newOutputs=main34.binding;
+    newOutputs.playback="Different playback endpoint";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,newOutputs,4,
+        BindingMode::verifiedDeviceApply).valid());
+
     auto reordered=d;
     reordered.binding.inputNames={"In 1","In 2"};
     auto reorderedPins=reordered.binding;
