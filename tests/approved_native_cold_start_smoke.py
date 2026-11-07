@@ -79,6 +79,34 @@ def main():
                 "operation":"RESTORE","ok":False,"state":"NEEDS_REMAP",
                 "error":"NEEDS_REMAP: physical ASIO input mask changed"})
             assert "NEEDS_REMAP" in page.locator(show_panel).text_content()
+            # Native device rebind requires an explicit preview and dialog.
+            # Cancelling must NOT send a rebind intent to the JUCE dispatcher.
+            show_click("Rebind Current Device…")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")==\
+                   "nativeSessionInspectRebind"
+            preview={"ok":True,"token":"test-one-time-approval",
+                "saved":{"backend":"ASIO","capture":"Old","playback":"Old",
+                          "inputMask":"3","outputMask":"3","rate":48000},
+                "current":{"backend":"WASAPI","capture":"New","playback":"New",
+                            "inputMask":"5","outputMask":"3","rate":44100},
+                "inputs":2,"savedMainL":0,"savedMainR":1,
+                "currentMainL":1,"currentMainR":0,
+                "sources":[{"channelId":"1","left":0,"right":-1,"stereo":False}]}
+            page.once("dialog",lambda dialog:dialog.dismiss())
+            emit(page,"arMixNativeSessionBindingAck",preview)
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")==\
+                   "nativeSessionInspectRebind"
+            show_click("Rebind Current Device…")
+            page.once("dialog",lambda dialog:dialog.accept())
+            emit(page,"arMixNativeSessionBindingAck",preview)
+            assert page.evaluate("()=>window.__events.at(-1).payload")=={
+                "action":"nativeSessionRebind","value":"test-one-time-approval"}
+            emit(page,"arMixNativeSessionAck",{
+                "operation":"REBIND","ok":True,"state":"RESTORED_REBOUND_MUTED"})
+            assert "RESTORED_REBOUND_MUTED" in page.locator(show_panel).text_content()
+            # Rebind path never triggers an implicit monitor/stream ARM.
+            assert not page.evaluate(
+                "()=>window.__events.some(e=>e.payload?.action==='monitor')")
             show_click("Recover Previous Mixer")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionRecover"
             emit(page,"arMixNativeSessionAck",{
