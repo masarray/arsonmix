@@ -66,6 +66,26 @@ def main():
                   const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
                   return {recall:available('Recall Show'),recover:available('Recover Last Good')};
                 }""",[show_panel,value])
+            # The full dynamic ChannelId session is not the fixed ShowV2
+            # and always passes through the real JUCE backend authority.
+            show_click("Save Mixer Session")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionSave"
+            emit(page,"arMixNativeSessionAck",{
+                "operation":"SAVE","ok":True,"state":"SAVED_VERIFIED_MUTED"})
+            assert "SAVED_VERIFIED_MUTED" in page.locator(show_panel).text_content()
+            show_click("Restore Saved Mixer")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionRestore"
+            emit(page,"arMixNativeSessionAck",{
+                "operation":"RESTORE","ok":False,"state":"NEEDS_REMAP",
+                "error":"NEEDS_REMAP: physical ASIO input mask changed"})
+            assert "NEEDS_REMAP" in page.locator(show_panel).text_content()
+            show_click("Recover Previous Mixer")
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionRecover"
+            emit(page,"arMixNativeSessionAck",{
+                "operation":"RECOVER","ok":True,"state":"RECOVERED_ON_DISK_MUTED"})
+            assert "RECOVERED_ON_DISK_MUTED" in page.locator(show_panel).text_content()
+            # None of these three operations authorizes physical MONITOR.
+            assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
