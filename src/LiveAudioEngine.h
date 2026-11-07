@@ -18,6 +18,7 @@
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
 #include "../engine/device/DirectRouteFence.h"
+#include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/device/WasapiEndpointIdentityGuard.h"
 #include "../engine/core/FxOrderPlan.h"
 #include "../engine/core/FxMoveRamp.h"
@@ -370,12 +371,35 @@ public:
     // starts its new callback before the selector window is closed.
     void beginManualAudioSetup() noexcept {
         setOutputMuted(true);
+        secondaryOutput_.disarm();
         directFence_.suspend();
-        dryRoutingLab_.disable(); // explicit control-thread reset; not RT
+        // Do NOT disable the accepted ChannelId graph. Audio Setup is a
+        // device-binding operation, not an implicit CLEAR MIXER command.
+        // The JUCE selector may change the driver before its window closes.
     }
     bool finishManualAudioSetup() {
         if(!approveDirectRoute())return false;
-        return startUnpatchedProductionSession().isEmpty();
+        using Decision=armix::device::DeviceSessionDecision;
+        switch(armix::device::decideDeviceSession(
+                   true,dryRoutingLab_.ready(),
+                   dryRoutingLab_.hasAuthoredMixerContent())) {
+            case Decision::retainBoundMixer:
+                return true; // no-op dialog: keep the exact FX/WIRE/PCM graph
+            case Decision::createFirstSilentMixer:
+                return startUnpatchedProductionSession().isEmpty();
+            case Decision::retainUnboundMixer:
+                // Driver epoch changed; the old graph cannot be trusted to
+                // render new hardware. Keep its document/leases in memory,
+                // stay muted and require a verified full-graph rebind.
+                setOutputMuted(true);
+                return false;
+            case Decision::rejectedDevice:
+                return false;
+        }
+        return false;
+    }
+    bool hasRetainedUnboundMixer() const noexcept {
+        return dryRoutingLab_.hasAuthoredMixerContent() && !dryRoutingLab_.ready();
     }
 
     // Device changes are exclusively CONTROL-THREAD transactions.
@@ -411,8 +435,8 @@ public:
 
     juce::String setIndependentClockEnabled (bool wanted)
     {
-        if (dryRoutingLab_.hasExplicitRoute())
-            return "CLEAR PATCH and MUTE OUTPUT before changing the device clock";
+        if (dryRoutingLab_.hasAuthoredMixerContent())
+            return "Preserve the authored mixer first: changing the device clock requires a full non-destructive session rebind";
         if (handoff_.busy()) return "Finish pending VST3 graph switch before changing audio backend";
         if (wanted == independent_.active() && !(savedDirectSetup_ && !wanted)) return {};
         if (wanted && savedDirectSetup_) return "Restore old device backend before another transition";
@@ -507,8 +531,8 @@ public:
     // user setup is restored on exit; temporary routes must not be persisted.
     juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
     {
-        if (dryRoutingLab_.hasExplicitRoute())
-            return "CLEAR PATCH and MUTE OUTPUT before changing SIGNAL CHECK";
+        if (dryRoutingLab_.hasAuthoredMixerContent())
+            return "An authored mixer cannot enter endpoint isolation until a safe session rebind is available";
         using Route = armix::diagnostics::Route;
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
         if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
@@ -1069,6 +1093,8 @@ public:
     juce::String startUnpatchedProductionSession() {
         setOutputMuted(true);
         secondaryOutput_.disarm(); // never carry LIVE STREAM into a new unpatched graph
+        if(hasRetainedUnboundMixer())
+            return "Mixer session preserved, but device changed: full ChannelId graph and plugin-state rebind required (output stays muted)";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !directFence_.permitted() || independent_.active())
             return "No verified DIRECT full-duplex device";

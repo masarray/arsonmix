@@ -2208,6 +2208,21 @@ public:
     bool active() const noexcept {return enabled_.load(std::memory_order_acquire);}
     float peakLeft() const noexcept {return peakL_.load(std::memory_order_relaxed);}
     float peakRight() const noexcept {return peakR_.load(std::memory_order_relaxed);}
+    // CONTROL ONLY: hardware loss makes ready() false but does not erase
+    // authored values, FX identity, GROUP/FX_RETURN buses or accepted WIREs.
+    // Never downgrade this dynamic document to the fixed 10CH/4AUX schema.
+    bool hasAuthoredMixerContent() const noexcept {
+        if(acceptedRoute_.isObject() || nativeStructureLive_ || nativeControlDirty_)
+            return true;
+        for(const auto& lane:acceptedFxSelections_)
+            for(const auto& fx:lane)
+                if(fx.id.isNotEmpty())return true;
+        if(nativeAccepted_.fxOwners)
+            for(const auto& channel:nativeAccepted_.graph.roster.channels())
+                if(nativeAccepted_.fxOwners->insertCount(channel.id)>0)
+                    return true;
+        return false;
+    }
     bool ready() const noexcept {
         return active() && !topologyFault_.load(std::memory_order_acquire)
             && publishedEpoch_.load(std::memory_order_acquire)==epoch();

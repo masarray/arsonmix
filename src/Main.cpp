@@ -1293,7 +1293,9 @@ private:
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
         if(error.isEmpty()&&!engine_.finishManualAudioSetup())
-            error="Device opened but direct safe production session was rejected";
+            error=engine_.hasRetainedUnboundMixer()
+                ? "Mixer document retained safely, but this device change needs a verified complete ChannelId / FX rebind; audio remains muted"
+                : "Device opened but direct safe production session was rejected";
         if(error.isEmpty()) {
             deviceSettingsDirty_=true;
             directRestore_.cancel();
@@ -1339,6 +1341,8 @@ private:
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
         if (setupLaunching_) return;
+        // Suspend physical output but retain ALL authored mixer state while
+        // the real JUCE device selector is visible (including no-change close).
         engine_.beginManualAudioSetup();
 
         // The native JUCE device list is cached after first construction:
@@ -1374,7 +1378,10 @@ private:
                         {
                             safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
                                 "No valid full-duplex device; audio remains gated");
-                            safe->emitNotice ("Choose a working capture and render device. Audio remains muted.", true);
+                            safe->emitNotice (
+                                safe->engine_.hasRetainedUnboundMixer()
+                                    ? "Mixer and plugin state retained. Device binding changed; output stays muted until a verified full-session rebind."
+                                    : "Choose a working capture and render device. Audio remains muted.", true);
                         }
                     });
             safe->audioSetupWindow_->setVisible (true);
