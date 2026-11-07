@@ -183,7 +183,18 @@ public:
         }
         if(!input.isExhausted())return false;
         const double validationRate=ready_?rate_:48000.;
+        const float maxHz=static_cast<float>(
+            std::min(20000.0,validationRate*0.45));
         for(std::size_t i=0;i<next.size();++i) {
+            // The DSP already clamps DISABLED bands on a device-rate switch.
+            // Saved frequency must first be sane; then only an inactive band
+            // may be clamped below the new Nyquist guard. Enabled invalid
+            // filters are rejected, never silently retuned.
+            if(!std::isfinite(next[i].frequencyHz)||
+                next[i].frequencyHz<20.f||next[i].frequencyHz>20000.f)
+                return false;
+            if(!next[i].enabled)
+                next[i].frequencyHz=std::min(next[i].frequencyHz,maxHz);
             ChannelEq::PreparedBandEdit prepared{};
             if(!ChannelEq::prepareBandEdit(i,next[i],validationRate,prepared))
                 return false; // all-or-nothing preflight

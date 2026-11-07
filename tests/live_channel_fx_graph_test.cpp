@@ -2108,6 +2108,27 @@ static void verifyNativeEqCaptureRequiresAcceptedDspAndOfflineRestore() {
     assert(sealedEq&&!sealedEq->restoreUnpublishedState(saved.getData(),
         static_cast<int>(saved.getSize())));
     assert(sealed->tryCaptureState(bad)); // restored bank is quiescent
+
+    // At 48 kHz a disabled high band can remember 20 kHz; restoring the
+    // same Show at 44.1 kHz clamps ONLY that inactive band to the safe cap.
+    auto source=std::make_unique<Eq>();
+    source->prepareToPlay(48000.0,64);
+    auto* sourceEq=source.get();
+    auto sourceOwner=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(source),Eq::catalogIdentity,"High band",64);
+    armix::builtin_fx::Band inactive{};
+    inactive.enabled=false;inactive.frequencyHz=20000.f;
+    assert(sourceEq->queueBand(7,inactive,502));
+    sourceOwner->render(left.data(),right.data(),64);
+    Eq::Completion highAck{};
+    assert(sourceEq->pollCompletion(highAck)&&highAck.applied);
+    juce::MemoryBlock highState;
+    assert(sourceOwner->tryCaptureState(highState));
+    Eq lowerRate;
+    lowerRate.prepareToPlay(44100.0,64);
+    assert(lowerRate.restoreUnpublishedState(highState.getData(),
+        static_cast<int>(highState.getSize())));
+    assert(lowerRate.acceptedBands()[7].frequencyHz<=19845.f);
 }
 
 int main(int argc,char** argv) {
