@@ -89,6 +89,82 @@ public:
         return writePointer(head,id);
     }
 
+    // A single portable JSON file, with content-addressed plug-in state.
+    static juce::String writeFile(const juce::File& file,MixerSessionDocument doc,
+                                  const std::vector<armix::shows::BinaryState>& states) {
+        doc.resumeMain.reset();
+        const auto json=Codec::encode(doc);
+        MixerSessionDocument verified;
+        if(!Codec::decode(json,verified))return "Cannot encode mixer file";
+        auto root=juce::JSON::parse(json);
+        auto blobs=juce::var(new juce::DynamicObject());
+        std::set<juce::String> hashes,referenced;
+        for(const auto& insert:doc.inserts)referenced.insert(insert.sha256);
+        juce::int64 total=0;
+        for(const auto& state:states) {
+            const auto size=static_cast<juce::int64>(state.bytes.getSize());
+            total+=size;
+            if(!safeHash(state.sha256)||!hashes.insert(state.sha256).second||
+               size>maxState||total>maxTotal||
+               juce::SHA256(state.bytes).toHexString()!=state.sha256)
+                return "Invalid mixer plug-in state";
+            blobs.getDynamicObject()->setProperty(state.sha256,
+                juce::Base64::toBase64(state.bytes.getData(),state.bytes.getSize()));
+        }
+        if(hashes!=referenced||hashes.size()>maxStates)
+            return "Incomplete mixer plug-in state";
+        root.getDynamicObject()->setProperty("pluginState",blobs);
+        juce::TemporaryFile staging(file);
+        if(!staging.getFile().replaceWithText(juce::JSON::toString(root,false)) ||
+           !staging.overwriteTargetFileWithTemporary())
+            return "Could not write mixer file";
+        return {};
+    }
+
+    static juce::String readFile(const juce::File& file,MixerSessionDocument& out,
+                                 std::vector<armix::shows::BinaryState>& states) {
+        constexpr auto maxFile=maxJson+(maxTotal*4/3)+maxStates*80;
+        const auto size=file.getSize();
+        if(!file.hasFileExtension(".smix")||!file.existsAsFile()||size<1||size>maxFile)
+            return "Mixer file is missing, invalid or too large";
+        juce::FileInputStream input(file);
+        juce::MemoryBlock contents;
+        if(!input.openedOk()||input.readIntoMemoryBlock(contents,maxFile+1)>maxFile)
+            return "Could not read mixer file";
+        auto root=juce::JSON::parse(contents.toString());
+        if(!root.isObject())return "Invalid mixer JSON";
+        const auto blobs=root.getProperty("pluginState",{});
+        if(!blobs.isObject())return "Mixer plug-in state is missing";
+        root.getDynamicObject()->removeProperty("pluginState");
+        root.getDynamicObject()->removeProperty("resumeMain");
+        MixerSessionDocument doc;
+        if(!Codec::decode(juce::JSON::toString(root,false),doc))
+            return "Invalid mixer session";
+        std::set<juce::String> referenced;
+        for(const auto& insert:doc.inserts)referenced.insert(insert.sha256);
+        const auto& properties=blobs.getDynamicObject()->getProperties();
+        if(referenced.size()>maxStates||static_cast<int>(referenced.size())!=properties.size())
+            return "Incomplete mixer plug-in state";
+        std::vector<armix::shows::BinaryState> verified;
+        juce::int64 total=0;
+        for(const auto& hash:referenced) {
+            const auto state=blobs.getProperty(hash,{});
+            if(!safeHash(hash)||!state.isString()||state.toString().length()>((maxState+2)/3)*4)
+                return "Invalid mixer plug-in state";
+            juce::MemoryOutputStream decoded;
+            if(!juce::Base64::convertFromBase64(decoded,state.toString()))
+                return "Invalid mixer plug-in state encoding";
+            const auto bytes=static_cast<juce::int64>(decoded.getDataSize());
+            total+=bytes;
+            if(bytes>maxState||total>maxTotal||juce::SHA256(decoded.getMemoryBlock()).toHexString()!=hash)
+                return "Mixer plug-in state failed verification";
+            verified.push_back({hash,decoded.getMemoryBlock()});
+        }
+        out=std::move(doc);
+        states=std::move(verified);
+        return {};
+    }
+
     // Read normal HEAD only: no silent fallback to an older performance.
     juce::String load(MixerSessionDocument& out,
                       std::vector<armix::shows::BinaryState>& states) const {
@@ -110,7 +186,7 @@ public:
         MixerSessionDocument current;
         std::vector<armix::shows::BinaryState> currentStates;
         if(load(current,currentStates).isEmpty())
-            return "Saved disk generation is verified. Use Restore Saved Mixer or Rebind Current Device for audio recovery.";
+            return "Saved mixer generation is already verified";
         const auto pointer=readPointer(root_.getChildFile("PREVIOUS"));
         if(pointer.isEmpty())return "Last-good mixer pointer missing";
         MixerSessionDocument verified;

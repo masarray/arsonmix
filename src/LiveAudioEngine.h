@@ -1472,22 +1472,20 @@ public:
         armix::session::HardwareBinding live;
         armix::mixer::VerifiedNativeOutputs outputs{};
         armix::device::JuceActivePortSnapshot pins;
-        std::vector<armix::mixer::DynamicSourcePatch> sources;
         int callbackInputs=0;
         std::uint64_t epoch=0;
-        bool changed=false;
     };
-    // A read-only control-thread preview for explicit hardware rebind.
+    // Read-only control-thread verification of the currently opened pins.
     juce::String inspectNativeMixerSessionBinding(
             const armix::session::MixerSessionDocument& saved,
             MixerBindingInspection& out) {
-        if(!allOutputsDisarmed()||independent_.active()||!attached_||
+        if(independent_.active()||!attached_||
            !directFence_.permitted()||handoff_.busy()||
            fxMovePhase_.load(std::memory_order_acquire)!=0||
            diagnosticRoute_.load(std::memory_order_acquire)!=
              armix::diagnostics::Route::normal||
            routeReconfiguring_.load(std::memory_order_acquire))
-            return "MUTE output and verify DIRECT before device inspection";
+            return "Verify DIRECT before device inspection";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device||!device->isOpen())
             return "NEEDS_REMAP: current audio device unavailable";
@@ -1513,29 +1511,20 @@ public:
         candidate.callbackInputs=candidate.pins.inputs.enabledCount;
         candidate.outputs=armix::session::MixerDeviceBindingPolicy::proposedOutputs(
             saved,candidate.live,candidate.pins.outputCount);
-        auto probe=saved;
-        const auto reason=armix::session::MixerDeviceBindingPolicy::apply(
-            probe,candidate.live,candidate.outputs,candidate.callbackInputs,true);
-        if(reason.isNotEmpty())return reason;
-        candidate.sources=std::move(probe.request.sources);
-        candidate.changed=!
-            armix::session::MixerDeviceBindingPolicy::sameBinding(
-                saved.binding,candidate.live) ||
-            !armix::session::MixerDeviceBindingPolicy::sameOutputs(
-                saved.outputs,candidate.outputs);
         if(candidate.epoch!=dryRoutingLab_.epoch())
             return "NEEDS_REMAP: device changed during inspection";
         out=std::move(candidate);
         return {};
     }
 
-    // STARTUP: fresh vendor processors are prepared and all hashes validated
-    // before the ONE native PCM publication. No saved physical ARM state.
+    // Prepare fresh vendor processors before publishing the replacement.
+    // A successful publication leaves MAIN disarmed for caller verification.
     juce::String restoreNativeMixerSession(
             armix::session::MixerSessionDocument document,
             const std::vector<armix::shows::BinaryState>& states,
-            const MixerBindingInspection* approval=nullptr) {
-        if(!allOutputsDisarmed()||independent_.active()||!attached_||
+            bool replaceActive=false,bool* sameLiveOutputs=nullptr) {
+        if((replaceActive?secondaryOutput_.armed():!allOutputsDisarmed())||
+           independent_.active()||!attached_||
            !directFence_.permitted()||handoff_.busy()||
            fxMovePhase_.load(std::memory_order_acquire)!=0||
            diagnosticRoute_.load(std::memory_order_acquire)!=
@@ -1546,13 +1535,10 @@ public:
         auto bindingError=inspectNativeMixerSessionBinding(document,inspected);
         if(bindingError.isNotEmpty())return bindingError;
         using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
-        if(approval && (approval->epoch!=inspected.epoch ||
-           !BindingPolicy::sameBinding(approval->live,inspected.live) ||
-           approval->live.frames!=inspected.live.frames ||
-           !BindingPolicy::sameOutputs(approval->outputs,inspected.outputs)))
-            return "STALE_REBIND: approved device changed";
+        if(sameLiveOutputs)
+            *sameLiveOutputs=dryRoutingLab_.matchesNativeMixerOutputs(inspected.outputs);
         bindingError=BindingPolicy::apply(document,inspected.live,inspected.outputs,
-                                         inspected.callbackInputs,approval!=nullptr);
+                                         inspected.callbackInputs,false);
         if(bindingError.isNotEmpty())return bindingError;
         const auto ep=inspected.epoch;
         const auto next=dryRoutingLab_.nativeGraphRevisionForRestore();
@@ -1569,14 +1555,20 @@ public:
         const auto gain=document.masterGain;
         const auto mute=document.masterMute;
         const auto mono=document.masterMono;
+        const bool monitoring=isMonitorEnabled();
+        if(monitoring)setMonitorEnabled(false);
         const auto applied=dryRoutingLab_.restoreNativeMixerSession(
-            std::move(document),std::move(bank),inspected.pins,allOutputsDisarmed());
-        if(applied.isNotEmpty())return applied;
+            std::move(document),std::move(bank),inspected.pins,
+            allOutputsDisarmed(),replaceActive);
+        if(applied.isNotEmpty()) {
+            if(monitoring&&ep==dryRoutingLab_.epoch()&&liveOutputArmFault(false).isEmpty())
+                setMonitorEnabled(true);
+            return applied;
+        }
         acceptedWasapiBinding_=std::move(profile);
         acceptedMixerBinding_=std::move(inspected.live);
         setMasterGainLinear(gain);
         setMasterMuted(mute);setMasterMono(mono);
-        setMonitorEnabled(false);
         return {};
     }
 

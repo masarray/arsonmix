@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+#include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "NativeShowStore.h"
 #include <charconv>
@@ -39,6 +40,8 @@ struct MixerSessionDocument final {
     std::vector<ChannelId> rackBypassed;
     float masterGain=1.f;
     bool masterMute=false,masterMono=false;
+    // Internal checkpoint preference, distinct from the hardware monitor pair.
+    std::optional<bool> resumeMain;
     std::uint64_t acceptedRevision=0;
     juce::int64 savedMs=0;
 };
@@ -100,7 +103,7 @@ struct MixerDeviceBindingPolicy final {
         if(sameBinding(document.binding,live) && sameOutputs(document.outputs,outputs))
             return {};
         if(!operatorApproved)
-            return "NEEDS_REMAP: different device, pin mask, outputs or rate; confirm rebind";
+            return "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O";
 
         if(oldPins!=newPins) {
             auto& sources=document.request.sources;
@@ -211,6 +214,7 @@ public:
         set(root,"id",d.id);
         set(root,"acceptedRevision",decimal(d.acceptedRevision));
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
+        if(d.resumeMain.has_value())set(root,"resumeMain",*d.resumeMain);
         set(root,"legacyIds",ids(d.legacyIds));
         auto bind=object();
         set(bind,"backend",d.binding.backend);
@@ -291,6 +295,11 @@ public:
         if(!root.isObject()||get(root,"schema").toString()!="arsonmix.mixer-session.v1")
             return false;
         MixerSessionDocument doc;
+        if(root.getDynamicObject()->hasProperty("resumeMain")) {
+            bool resume=false;
+            if(!strictBool(get(root,"resumeMain"),resume))return false;
+            doc.resumeMain=resume;
+        }
         if(!textField(get(root,"id"),doc.id,48)||
            !armix::shows::detail::uuid(doc.id)||
            !parseDecimal(get(root,"acceptedRevision"),doc.acceptedRevision)||

@@ -103,6 +103,31 @@ def main():
                 emit(page, "arMixConsoleSnapshot", state)
                 assert page.evaluate("()=>window.__heldStrip===document.querySelector('#tracks .strip[data-id=\"2\"]')"), "scalar edit rebuilt strip"
                 assert float(page.locator('#tracks .strip[data-id="2"] .wire-gain').input_value()) == -60
+                # Drag the actual receiving knob with native ACKs mid-gesture.
+                pot = knob.locator("..").bounding_box()
+                assert pot
+                x, y = pot["x"]+pot["width"]/2, pot["y"]+pot["height"]/2
+                page.mouse.move(x,y)
+                page.mouse.down()
+                page.mouse.move(x,y-32,steps=5)
+                page.wait_for_function("()=>window.__nativeIntents.length===3")
+                coarse = page.evaluate("()=>window.__nativeIntents.at(-1)")
+                assert float(knob.input_value()) == -56
+                page.keyboard.down("Shift")
+                page.mouse.move(x,y-56,steps=4)
+                page.keyboard.up("Shift")
+                assert float(knob.input_value()) == -55.5
+                state["graph"]["edges"][1]["gainLinear"] = coarse["payload"]["gainLinear"]
+                ack(page,state,coarse)
+                emit(page,"arMixConsoleSnapshot",state)
+                assert float(knob.input_value()) == -55.5
+                page.mouse.up()
+                page.wait_for_function("()=>window.__nativeIntents.length===4")
+                final = page.evaluate("()=>window.__nativeIntents.at(-1)")
+                assert abs(final["payload"]["gainLinear"] - 10**(-55.5/20)) < 1e-8
+                state["graph"]["edges"][1]["gainLinear"] = final["payload"]["gainLinear"]
+                ack(page,state,final)
+                emit(page,"arMixConsoleSnapshot",state)
                 # OUT to the same INPUT is the existing exclusive native transaction.
                 page.locator('#tracks .strip[data-id="1"] select[data-field="output"]').select_option(label="CH04")
                 route = page.evaluate("()=>window.__nativeIntents.at(-1)")

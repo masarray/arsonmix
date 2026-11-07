@@ -126,7 +126,8 @@ static void nativeDeviceRecovery() {
     LiveDryRoutingLab mixer;
     mixer.prepareDevice(&device);
     const auto restore=[&](const MixerSessionDocument& doc,
-                           const std::vector<BinaryState>& states,bool disarmed) {
+                           const std::vector<BinaryState>& states,bool disarmed,
+                           bool replaceActive=false) {
         armix::device::JuceActivePortSnapshot pins;
         armix::device::JuceActivePortSnapshot::Fault fault;
         assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
@@ -134,7 +135,7 @@ static void nativeDeviceRecovery() {
         const auto preparation=NativeMixerSessionFxRestore::prepare(doc,states,formats,
             device.rate,doc.request.maxFrames,pins.epoch,mixer.nativeGraphRevisionForRestore(),bank);
         if(preparation.isNotEmpty())return preparation;
-        return mixer.restoreNativeMixerSession(doc,std::move(bank),pins,disarmed);
+        return mixer.restoreNativeMixerSession(doc,std::move(bank),pins,disarmed,replaceActive);
     };
     assert(!mixer.ready() && mixer.revision()==0); // no compatibility PCM publisher
     assert(restore(verified,{},true).isNotEmpty());
@@ -159,6 +160,19 @@ static void nativeDeviceRecovery() {
     auto graph=mixer.nativeBusStatus();
     const auto channels=graph.getProperty("channels",{});
     assert(static_cast<double>(channels.getArray()->getReference(0).getProperty("peakL",0.))>0.);
+    process(false);
+    assert(outL.back()>.05f && outR.back()>.025f);
+
+    // Portable Open may replace a live session only on an explicit muted
+    // publication. Invalid FX must leave the accepted graph and PCM intact.
+    const auto liveRevision=mixer.controlRevision();
+    assert(restore(verified,blobs,true).isNotEmpty());
+    assert(restore(verified,{},true,true).isNotEmpty());
+    assert(mixer.controlRevision()==liveRevision);
+    process(false);
+    assert(outL.back()>.05f && outR.back()>.025f);
+    assert(restore(verified,blobs,true,true).isEmpty());
+    assert(mixer.controlRevision()>liveRevision);
     process(false);
     assert(outL.back()>.05f && outR.back()>.025f);
 
@@ -352,6 +366,25 @@ int main(){
     MixerSessionDocument loaded;
     std::vector<BinaryState> readback;
     assert(store.load(loaded,readback).isEmpty());
+    assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    // Legacy JSON lacks a preference. Both explicit settings survive checkpoint
+    // round trips, and portable files cannot request MAIN authorization.
+    assert(!loaded.resumeMain.has_value());
+    d.resumeMain=true;
+    MixerSessionDocument roundTrip;
+    assert(Codec::decode(Codec::encode(d),roundTrip)&&roundTrip.resumeMain==true);
+    d.resumeMain=false;
+    assert(Codec::decode(Codec::encode(d),roundTrip)&&roundTrip.resumeMain==false);
+    const auto portable=studio.getChildFile("Live.smix");
+    assert(NativeMixerSessionStore::writeFile(portable,d,{binary}).isEmpty());
+    assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isEmpty());
+    assert(!roundTrip.resumeMain.has_value());
+    assert(roundTrip.request.sources.size()==d.request.sources.size());
+    assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    auto tampered=juce::JSON::parse(portable.loadFileAsString());
+    tampered.getProperty("pluginState",{}).getDynamicObject()->setProperty(binary.sha256,"AAAA");
+    assert(portable.replaceWithText(juce::JSON::toString(tampered)));
+    assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isNotEmpty());
     assert(readback.size()==1&&readback[0].bytes==binary.bytes);
     const auto firstId=studio.getChildFile("MixerSession").getChildFile("HEAD")
         .loadFileAsString().trim();

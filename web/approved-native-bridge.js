@@ -485,7 +485,7 @@
       return true;
     }
     scope?.syncNativeWireGains?.(next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
+      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
         e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10})));
     // Immutable graph topology is identical: update actual scalar controls
     // only. Never detach the active HTML select or the captured fader pointer.
@@ -1324,7 +1324,8 @@
   function syncMonitorButton(d) {
     const monitorButton=document.querySelector?.("[data-native-monitor]");
     if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"MONITOR OFF":"MONITOR ON";
+      monitorButton.textContent=d?.outputArmed?"Monitor On":"Monitor Off";
+      monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
       monitorButton.title=d?.outputArmed?
         "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
       monitorButton.disabled=!d?.outputArmed && !deviceReady();
@@ -1915,111 +1916,59 @@
       }
     });
 
-    // One durable ChannelId MixerSession, separate from the limited legacy
-    // ShowV2. These buttons NEVER stage browser-only mixer/FX state.
-    const sessionHeading=item("span","more-tools-caption",
-      "STUDIO / COMPLETE MIXER SESSION");
-    const sessionSave=item("button","tool","Save Mixer Session");
-    const sessionRestore=item("button","tool","Restore Saved Mixer");
-    const sessionRebind=item("button","tool","Rebind Current Device…");
-    const sessionRecover=item("button","tool","Recover Previous Mixer");
-    const sessionState=item("span","more-tools-caption",
-      "Checking native ChannelId session…");
-    sessionState.style.whiteSpace="normal";
-    sessionState.dataset.nativeSessionState="true";
-    const sessionAction=(action)=>{
-      if(hardware?.device?.outputArmed!==false ||
-         hardware?.raw?.monitor===true){
-        status("Mixer session: first MUTE physical output and STREAM");
+    backend.addEventListener("arMixNativeSessionAck",ack=>{
+      const save=ack?.operation==="SAVE";
+      if(!save&&ack?.operation!=="OPEN")return;
+      if(ack.ok!==true){
+        const error=String(ack.error||"Mixer file operation failed");
+        status(error);nativeToast(error);
         return;
       }
-      backend.emitEvent("arMixAction",{action});
-      sessionState.textContent=action==="nativeSessionSave"?
-        "Capturing native ChannelIds, WIRE, FX and vendor state…":
-        "Verifying saved native session and hardware identity…";
-    };
-    sessionSave.addEventListener("click",()=>sessionAction("nativeSessionSave"));
-    sessionRestore.addEventListener("click",()=>sessionAction("nativeSessionRestore"));
-    sessionRebind.addEventListener("click",()=>sessionAction("nativeSessionInspectRebind"));
-    sessionRecover.addEventListener("click",()=>sessionAction("nativeSessionRecover"));
-    backend.addEventListener("arMixNativeSessionBindingAck",ack=>{
-      if(ack?.ok!==true||typeof ack.token!=="string"){
-        sessionState.textContent="REBIND REJECTED · "+
-          String(ack?.error||"No native hardware readback");
-        status(sessionState.textContent);return;
-      }
-      const saved=ack.saved||{},live=ack.current||{};
-      const describe=b=>String(b.backend||"?")+" · "+String(b.capture||"?")+
-        " → "+String(b.playback||"?")+" · IN 0x"+String(b.inputMask||"?")+
-        " / OUT 0x"+String(b.outputMask||"?")+" · "+String(b.rate||"?")+" Hz";
-      const sources=Array.isArray(ack.sources)?ack.sources:[];
-      const pins=sources.slice(0,12).map(s=>"CH "+s.channelId+" ← "+
-        (s.unbound?"UNBOUND · select IN after rebind":
-          "IN "+(Number(s.left)+1)+(s.stereo?"/"+(Number(s.right)+1):""))).join("\n");
-      const message="REBIND MIXER TO CURRENT PHYSICAL DEVICE?\n\n"+
-        "Saved: "+describe(saved)+"\n\nCurrent: "+describe(live)+
-        "\nCurrent MAIN physical output pins: "+
-        (Number(ack.currentMainL)+1)+"/"+(Number(ack.currentMainR)+1)+
-        "\nSaved MAIN pair (callback ordinals): "+(Number(ack.savedMainL)+1)+"/"+
-        (Number(ack.savedMainR)+1)+
-        "\nInput callback pins: "+String(ack.inputs)+
-        "\n\nProposed physical input assignments:"+
-        (pins?"\n"+pins:"\nNo physical sources")+
-        (sources.length>12?"\n…plus "+(sources.length-12)+" more sources":"")+
-        "\n\nVERIFY actual ASIO/WASAPI pin wiring and the MAIN output pair."+
-        "\nChannelIds, GROUP/WIRE and FX are retained. Physical output stays MUTED."+
-        "\nSave Mixer Session after verifying the new binding. Continue?";
-      if(window.confirm(message)){
-        backend.emitEvent("arMixAction",{action:"nativeSessionRebind",value:ack.token});
-        sessionState.textContent="Verifying unchanged hardware and reconstructing native FX…";
-      }else sessionState.textContent="Rebind cancelled · current mixer untouched";
-    });
-    backend.addEventListener("arMixNativeSessionAck",ack=>{
-      const state=String(ack?.state||"UNAVAILABLE");
-      sessionState.textContent=state+(ack?.error?" · "+String(ack.error):"");
-      if(ack?.operation==="INSPECT")return;
-      if(ack?.ok===true){
-        status(ack.operation==="SAVE"?
-          "Verified native MixerSession written; output remains MUTED":
-          (ack.operation==="RESTORE"||ack.operation==="REBIND")?
-          "Mixer Session restored MUTED; verify physical pins and explicitly enable MONITOR":
-          "Previous MixerSession generation recovered on disk; RESTORE explicitly");
-        controller?.subscribe();
-      }else{
-        status("MIXER SESSION: "+String(ack?.error||"No native ACK"));
-        nativeToast(String(ack?.error||"Mixer operation rejected"));
-      }
-    });
-    backend.addEventListener("arMixStatus",state=>{
-      const next=state?.mixerSessionStatus;
-      if(typeof next!=="string"||!next)return;
-      const label=next+(state.mixerSessionError?" · "+String(state.mixerSessionError):"");
-      if(sessionState.textContent!==label)sessionState.textContent=label;
+      const message=save?"Mixer saved as .smix":"Mixer opened";
+      status(message);nativeToast(message);
+      if(!save)controller?.subscribe();
     });
     menu.append(caption,setup,muteBtn,hardwareNote,
       healthTitle,mark,report,advanced,
-      sessionHeading,sessionSave,sessionRestore,sessionRebind,sessionRecover,sessionState,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");
     if(toolbar && !toolbar.querySelector("[data-native-io]")){
+      const firstTool=toolbar.firstElementChild;
+      for(const [caption,action,icon] of [
+        ["Save","nativeMixerFileSave","mixer-save.svg"],
+        ["Open","nativeMixerFileOpen","mixer-open.svg"]
+      ]){
+        const button=item("button","tool mixer-file-tool",caption);
+        button.type="button";
+        button.title=caption+" mixer (.smix)";
+        const image=document.createElement("img");
+        image.src="assets/"+icon;
+        image.alt="";
+        image.width=image.height=16;
+        button.prepend(image);
+        button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
+        toolbar.insertBefore(button,firstTool);
+      }
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
-      const monitor=item("button","tool","MONITOR ON");
+      const monitor=item("button","tool","Monitor Off");
       monitor.dataset.nativeMonitor="true";
       monitor.addEventListener("click",()=>{
         const armed=hardware?.device?.outputArmed===true;
-        if(!armed && (!deviceReady()||legacy()?.routeAccepted!==true ||
+        if(!armed && (!deviceReady()||
+            (mixerSession()?.authority!=="CHANNEL_ID"&&legacy()?.routeAccepted!==true)||
             virtualCableFeedbackPair())){
           status("MONITOR OFF · select real input and safe playback device");
           return;
         }
         const ep=safeNativeCounter(hardware?.device?.epoch),
-          rev=safeNativeCounter(legacy()?.routingRevision);
+          rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
+            mixerSession()?.routeRevision:legacy()?.routingRevision);
         if(!armed&&(ep===null||rev===null))return;
         backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
           requestId:"manual-monitor-"+(++m4RequestSerial),
@@ -2213,7 +2162,7 @@
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
           if(flags.acceptedGraphConnected && (scope.activeFaderId??-1)<0){
-            if(!document.activeElement?.matches?.(".strip select"))
+            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain"))
               scope.render?.();
             controller.subscribe();
             if(state.current)paintNativeMeters(state.current);
@@ -2500,6 +2449,7 @@
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
           status("WIRE gain unavailable · accepted parallel send required");
+        else scope.paintWireKnob?.(el,Number(el.value));
         return true;
       }
       if(field==="input"){

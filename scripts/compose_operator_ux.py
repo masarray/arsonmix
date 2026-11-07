@@ -78,6 +78,8 @@ OPERATOR_CSS = """
 .window-title .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .window-title .right{margin-left:auto;min-width:0;max-width:48%;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;color:#90b6c8;font-size:10px;font-weight:400}
+.command-bar .mixer-file-tool{display:inline-flex;align-items:center;gap:5px}
+.command-bar .mixer-file-tool img{display:block;flex:none;pointer-events:none}
 .command-bar #densitySelect,.command-bar [for="densitySelect"],.command-bar #mode{display:none!important}
 /* Every console floating editor uses one square Material close key. */
 :is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose){
@@ -127,6 +129,57 @@ def apply_operator_ux(html: str, assets: Path) -> str:
         "const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';",
         "const density='comfort'; // V29: one permanently comfortable operator view",
         "single comfort mode")
+    html = once(html,
+        "sendKnobDrag={id:e.pointerId,pot,input,x:e.clientX,y:e.clientY,start:Number(input.value)||0};",
+        """if(input.disabled)return;
+ input.focus({preventScroll:true});
+ sendKnobDrag={id:e.pointerId,pot,input,x:e.clientX,y:e.clientY,value:Number(input.value)||0,
+  start:Number(input.value)||0};""",
+        "focus and hold the WIRE knob")
+    html = once(html,
+        """ const distance=e.clientX-g.x-(e.clientY-g.y),next=wireGainValue(g.start+distance/(e.shiftKey?14:3));
+ if(Number(g.input.value)!==next){g.input.value=String(next);handleField({target:g.input,type:'input'});}""",
+        """ const dx=e.clientX-g.x,dy=g.y-e.clientY;g.x=e.clientX;g.y=e.clientY;
+ const delta=Math.abs(dy)>=Math.abs(dx)?dy:dx;
+ const previous=wireGainValue(g.value);
+ g.value=Math.max(-60,Math.min(6,g.value+delta/(e.shiftKey?48:8)));
+ const next=wireGainValue(g.value);
+ if(previous!==next){
+  g.input.value=String(next);paintWireKnob(g.input,next);
+  handleField({target:g.input,type:'input'});
+ }""",
+        "precision WIRE drag without shift jumps")
+    html = once(html,
+        "let sendKnobDrag=null;",
+        """let sendKnobDrag=null;
+function paintWireKnob(input,db){
+ const pct=wireGainPercent(db),pot=input.closest('.wire-pot');
+ pot?.style.setProperty('--wire-pct',pct+'%');
+ pot?.style.setProperty('--wire-deg',(-135+pct*2.7).toFixed(1)+'deg');
+ input.style.setProperty('--wire-pct',pct+'%');
+ input.setAttribute('aria-valuetext',wireDbText(db));
+}""",
+        "immediate WIRE knob feedback")
+    html = once(html,
+        "if(cancel){g.input.value=String(g.start);",
+        "if(cancel){g.input.value=String(g.start);paintWireKnob(g.input,g.start);",
+        "restore canceled WIRE knob visual")
+    html = once(html,
+        " else handleField({target:g.input,type:'change'});",
+        """ else {
+  g.input.value=String(wireGainValue(g.value));
+  handleField({target:g.input,type:'change'});
+ }""",
+        "flush exact WIRE pointer release value")
+    html = once(html,
+        "sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));",
+        """sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
+sendControlSurface.addEventListener('lostpointercapture',e=>finishSendKnob(e,true));""",
+        "cancel an interrupted WIRE pointer")
+    html = once(html,
+        " if(e.button!==0)return;\n const t=findTrack(e.target);\n if(t?.kind==='master'",
+        " if(e.button!==0||e.target.closest?.('.wire-pot'))return;\n const t=findTrack(e.target);\n if(t?.kind==='master'",
+        "keep WIRE focus while turning receiver knob")
     old_minimize = re.compile(r'<button class="plugin-minimize" id="pluginMinimize"[^>]*>−</button>')
     html, count = old_minimize.subn("", html)
     if count != 1:

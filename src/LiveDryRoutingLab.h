@@ -2038,6 +2038,15 @@ public:
             return "No authoritative native ChannelId graph";
         if(nativeAccepted_.fxOwners->externalChannel().value)
             return "External CH1 FX owner cannot yet be serialized independently";
+        // MAIN and STREAM are muted by the caller. Wait briefly for the
+        // current callback to leave the vendor processors before capturing.
+        std::optional<armix::rt::RealtimeRenderPermit> renderPermit;
+        for(int attempt=0;attempt<50;++attempt) {
+            renderPermit.emplace(rendering_);
+            if(*renderPermit)break;
+            juce::Thread::sleep(1);
+        }
+        if(!*renderPermit)return "Audio callback did not quiesce for mixer capture";
         try {
             armix::session::MixerSessionDocument draft;
             draft.roster=nativeAccepted_.graph.roster;
@@ -2109,10 +2118,10 @@ public:
             armix::session::MixerSessionDocument document,
             std::shared_ptr<armix::mixer::DynamicChannelFxLeaseBank> bank,
             const armix::device::JuceActivePortSnapshot& pins,
-            bool outputsDisarmed) {
+            bool outputsDisarmed,bool replaceActive=false) {
         using namespace armix::mixer;
-        if(!outputsDisarmed || channelIdPhysicalPcmActive() || !bank)
-            return "Restore requires a muted device without live ChannelId PCM";
+        if(!outputsDisarmed || (!replaceActive && channelIdPhysicalPcmActive()) || !bank)
+            return "Restore requires a muted device";
         const auto generation=pins.epoch;
         if(!matchesSessionDevice(pins) || bank->epoch()!=generation ||
            document.request.physicalInputs!=pins.inputs.enabledCount ||
@@ -2160,6 +2169,11 @@ public:
             return channelIdPhysicalPcmActive()?juce::String{}:
                 juce::String("NEEDS_REMAP: device changed during native publication");
         }catch(...) {return "Native session restore exception";}
+    }
+
+    bool matchesNativeMixerOutputs(const armix::mixer::VerifiedNativeOutputs& outputs) const noexcept {
+        return channelIdPhysicalPcmActive() &&
+            armix::session::MixerDeviceBindingPolicy::sameOutputs(nativeAccepted_.hardware,outputs);
     }
 
     std::uint64_t nativeGraphRevisionForRestore() const noexcept {

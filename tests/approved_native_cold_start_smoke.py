@@ -66,58 +66,18 @@ def main():
                   const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
                   return {recall:available('Recall Show'),recover:available('Recover Last Good')};
                 }""",[show_panel,value])
-            # The full dynamic ChannelId session is not the fixed ShowV2
-            # and always passes through the real JUCE backend authority.
-            show_click("Save Mixer Session")
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionSave"
-            emit(page,"arMixNativeSessionAck",{
-                "operation":"SAVE","ok":True,"state":"SAVED_VERIFIED_MUTED"})
-            assert "SAVED_VERIFIED_MUTED" in page.locator(show_panel).text_content()
-            show_click("Restore Saved Mixer")
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionRestore"
-            emit(page,"arMixNativeSessionAck",{
-                "operation":"RESTORE","ok":False,"state":"NEEDS_REMAP",
-                "error":"NEEDS_REMAP: physical ASIO input mask changed"})
-            assert "NEEDS_REMAP" in page.locator(show_panel).text_content()
-            # Native device rebind requires an explicit preview and dialog.
-            # Cancelling must NOT send a rebind intent to the JUCE dispatcher.
-            show_click("Rebind Current Device…")
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")==\
-                   "nativeSessionInspectRebind"
-            preview={"ok":True,"token":"test-one-time-approval",
-                "saved":{"backend":"ASIO","capture":"Old","playback":"Old",
-                          "inputMask":"3","outputMask":"3","rate":48000},
-                "current":{"backend":"WASAPI","capture":"New","playback":"New",
-                            "inputMask":"5","outputMask":"3","rate":44100},
-                "inputs":2,"savedMainL":0,"savedMainR":1,
-                "currentMainL":1,"currentMainR":0,
-                "sources":[{"channelId":"1","unbound":True}]}
-            preview_messages=[]
-            def dismiss_preview(dialog):
-                preview_messages.append(dialog.message)
-                dialog.dismiss()
-            page.once("dialog",dismiss_preview)
-            emit(page,"arMixNativeSessionBindingAck",preview)
-            assert "CH 1 ← UNBOUND · select IN after rebind" in preview_messages[0]
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")==\
-                   "nativeSessionInspectRebind"
-            show_click("Rebind Current Device…")
-            page.once("dialog",lambda dialog:dialog.accept())
-            emit(page,"arMixNativeSessionBindingAck",preview)
-            assert page.evaluate("()=>window.__events.at(-1).payload")=={
-                "action":"nativeSessionRebind","value":"test-one-time-approval"}
-            emit(page,"arMixNativeSessionAck",{
-                "operation":"REBIND","ok":True,"state":"RESTORED_REBOUND_MUTED"})
-            assert "RESTORED_REBOUND_MUTED" in page.locator(show_panel).text_content()
-            # Rebind path never triggers an implicit monitor/stream ARM.
-            assert not page.evaluate(
-                "()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            show_click("Recover Previous Mixer")
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeSessionRecover"
-            emit(page,"arMixNativeSessionAck",{
-                "operation":"RECOVER","ok":True,"state":"RECOVERED_ON_DISK_MUTED"})
-            assert "RECOVERED_ON_DISK_MUTED" in page.locator(show_panel).text_content()
-            # None of these three operations authorizes physical MONITOR.
+            toolbar=page.locator(".command-bar")
+            for caption,icon in [("Save","mixer-save.svg"),("Open","mixer-open.svg")]:
+                button=toolbar.get_by_role("button",name=caption,exact=True)
+                assert button.locator("img").get_attribute("src")=="assets/"+icon
+                assert button.locator("img").evaluate("el=>el.complete && el.naturalWidth>0")
+                button.click()
+                assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeMixerFile"+caption
+            for name in ["Save Mixer Session","Restore Saved Mixer",
+                         "Rebind Current Device…","Recover Previous Mixer"]:
+                assert page.get_by_role("button",name=name,exact=True).count()==0
+            emit(page,"arMixNativeSessionAck",{"operation":"OPEN","ok":False,"error":"Invalid mixer JSON"})
+            assert page.get_by_text("Invalid mixer JSON",exact=True).count()>=1
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
