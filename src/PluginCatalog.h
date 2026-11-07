@@ -194,7 +194,6 @@ public:
         for (const auto& entry : entries_)
             list.add (entry.toVar());
         o->setProperty ("items", juce::var (list));
-        o->setProperty ("verifiedFactory", juce::var (verifiedFactory));
         o->setProperty ("scanning", busy());
         o->setProperty ("message", scanMessage_);
         o->setProperty ("count", static_cast<int> (entries_.size()));
