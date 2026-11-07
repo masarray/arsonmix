@@ -1648,8 +1648,121 @@
       if(Number.isFinite(bytes)&&bytes>0)
         nativeToast("Audio report copied · paste into engineering chat");
     });
+    // Native-only access to EXISTING JUCE Show storage, not browser scenes.
+    // ShowV2 is 10CH+4AUX; unsupported dynamic WIRE/GROUP is rejected by
+    // native capture rather than silently truncated.
+    const showHeading=item("span","more-tools-caption","STUDIO / VERIFIED SHOWS");
+    const showSave=item("button","tool","Save Show");
+    const showBrowse=item("button","tool","Browse Shows");
+    const showSelect=item("select","toolbar-select","");
+    const showRecall=item("button","tool","Recall Show");
+    const showRecover=item("button","tool","Recover Last Good");
+    const showNote=item("span","more-tools-caption",
+      "Verified Shows only · full dynamic-session autosave is not yet available");
+    showNote.style.whiteSpace="normal";
+    showSelect.setAttribute("aria-label","Saved native Show");
+    showSelect.style.maxWidth="210px";showSelect.style.fontSize="11px";
+    showSelect.hidden=true;showRecall.hidden=true;showRecover.hidden=true;
+    const showUuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let showBusy=false;
+    const showEntries=new Map();
+    const showOption=(name,value)=>{
+      const option=document.createElement("option");
+      option.textContent=name;option.value=value;return option;
+    };
+    function showControls(){
+      const entry=showEntries.get(showSelect.value);
+      const muted=hardware?.device?.outputArmed===false &&
+        hardware?.raw?.monitor!==true;
+      showSave.disabled=showBusy;
+      showBrowse.disabled=showBusy;
+      showRecall.disabled=showBusy||!muted||!entry||entry.needsRecovery;
+      showRecover.disabled=showBusy||!muted||!entry||!entry.hasPrevious;
+    }
+    function showRefresh(){
+      showBusy=true;showControls();
+      showNote.textContent="Browsing verified native Shows…";
+      backend.emitEvent("arMixAction",{action:"routingDryShowList"});
+    }
+    showSave.addEventListener("click",()=>{
+      if(showBusy)return;
+      if(hardware?.device?.outputArmed!==false||hardware?.raw?.monitor===true){
+        status("SHOW SAVE requires MUTED output");return;
+      }
+      showBusy=true;showControls();
+      showNote.textContent="Capturing accepted routing and VST3 state…";
+      backend.emitEvent("arMixAction",{action:"routingDryShowSave"});
+    });
+    showBrowse.addEventListener("click",()=>{if(!showBusy)showRefresh();});
+    showSelect.addEventListener("change",showControls);
+    showRecall.addEventListener("click",()=>{
+      const id=showSelect.value,entry=showEntries.get(id);
+      if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
+         hardware?.device?.outputArmed!==false)return;
+      showBusy=true;showControls();
+      showNote.textContent="Verifying Show / preparing native FX · output stays MUTED…";
+      backend.emitEvent("arMixAction",{action:"routingDryShowRecall",value:id});
+    });
+    showRecover.addEventListener("click",()=>{
+      const id=showSelect.value,entry=showEntries.get(id);
+      if(showBusy||!entry?.hasPrevious||!showUuid.test(id)||
+         hardware?.device?.outputArmed!==false)return;
+      showBusy=true;showControls();
+      showNote.textContent="Verifying previous generation · valid latest will NOT be overwritten…";
+      backend.emitEvent("arMixAction",{action:"routingDryShowRecover",value:id});
+    });
+    backend.addEventListener("arMixNativeShowSaveAck",ack=>{
+      showBusy=false;showControls();
+      if(ack?.ok===true){
+        status("SHOW SAVED · native verified state · OUTPUT MUTED");
+        showRefresh();
+      }else{
+        showNote.textContent="Save rejected: "+String(ack?.error||"Native capture rejected");
+        status(showNote.textContent);
+      }
+    });
+    backend.addEventListener("arMixNativeShowListAck",ack=>{
+      showBusy=false;showEntries.clear();
+      showSelect.replaceChildren(showOption("Choose verified Show…",""));
+      if(ack?.ok===true&&Array.isArray(ack.items)){
+        for(const entry of ack.items.slice(0,64)){
+          if(!showUuid.test(entry?.id))continue;
+          showEntries.set(entry.id,{
+            hasPrevious:entry.hasPrevious===true,
+            needsRecovery:entry.needsRecovery===true
+          });
+          showSelect.append(showOption(
+            String(entry.name||"Saved Show")+(entry.needsRecovery?" · RECOVERY":""),
+            entry.id));
+        }
+      }
+      showSelect.hidden=false;showRecall.hidden=false;showRecover.hidden=false;
+      showNote.textContent=ack?.ok===true
+        ?showEntries.size+" saved Shows · mute output before recall/recovery"
+        :"Browse rejected: "+String(ack?.error||"Native storage unavailable");
+      showControls();
+    });
+    backend.addEventListener("arMixNativeShowRecallAck",ack=>{
+      showBusy=false;showControls();
+      showNote.textContent=ack?.ok===true
+        ?"SHOW RESTORED · OUTPUT MUTED; verify physical pins before MONITOR ON"
+        :"Recall rejected: "+String(ack?.error||"Native route unchanged");
+      if(ack?.ok===true)controller?.subscribe();
+      status(showNote.textContent);
+    });
+    backend.addEventListener("arMixNativeShowRecoverAck",ack=>{
+      showBusy=false;showControls();
+      if(ack?.ok===true){
+        status("Last verified Show restored on disk · muted; recall explicitly");
+        showRefresh();
+      }else{
+        showNote.textContent="Recovery rejected: "+String(ack?.error||"Previous generation invalid");
+        status(showNote.textContent);
+      }
+    });
     menu.append(caption,setup,muteBtn,hardwareNote,
-      healthTitle,mark,report,advanced);
+      healthTitle,mark,report,advanced,
+      showHeading,showSave,showBrowse,showSelect,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");

@@ -2688,6 +2688,8 @@ private:
                         auto row=std::make_unique<juce::DynamicObject>();
                         row->setProperty("id",item.id);
                         row->setProperty("name",item.name);
+                        row->setProperty("needsRecovery",item.needsRecovery);
+                        row->setProperty("hasPrevious",item.hasPrevious);
                         items.add(juce::var(row.release()));
                     }
                     ack->setProperty("items",juce::var(items));
@@ -2698,6 +2700,51 @@ private:
                         safe->emitNotice("Native Show browsing failed: "+result.error,true);
                 });
             if(!started)return rejectList("Cannot start native Show browser.");
+            nativeShowBusy_=true;
+            return;
+        }
+        // Explicit recovery repairs only a damaged disk HEAD, never auto-
+        // recalls/arms audio and never overwrites a verified current Show.
+        if (action == "routingDryShowRecover")
+        {
+            const auto id=value.toString();
+            const auto reject=[this](const juce::String& error) {
+                if(browser_.loaded) {
+                    auto ack=std::make_unique<juce::DynamicObject>();
+                    ack->setProperty("ok",false);
+                    ack->setProperty("error",error);
+                    browser_.emitEventIfBrowserIsVisible(
+                        "arMixNativeShowRecoverAck",juce::var(ack.release()));
+                }
+                emitNotice("Show recovery unchanged: "+error,true);
+            };
+            if(!armix::shows::detail::uuid(id))
+                return reject("Select a valid saved Show identity.");
+            if(nativeShowBusy_||studioBackupBusy_||catalog_.busy()||
+               engine_.isGraphSwitchPending()||!engine_.allOutputsDisarmed())
+                return reject("MUTE both outputs and finish all Studio tasks before recovery.");
+            auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+            const bool started=nativeShowWorker_.recover(settingsDirectory(),id,
+                [safe](armix::shows::NativeShowSaveWorker::Result result) {
+                    if(safe==nullptr)return;
+                    safe->nativeShowBusy_=false;
+                    if(result.ok())
+                        safe->diagnostics_.record("NATIVE_SHOW_LKG_RECOVERED",result.showId);
+                    else safe->diagnostics_.record("NATIVE_SHOW_LKG_REJECTED",result.error);
+                    if(safe->browser_.loaded) {
+                        auto ack=std::make_unique<juce::DynamicObject>();
+                        ack->setProperty("ok",result.ok());
+                        ack->setProperty("error",result.error);
+                        ack->setProperty("showId",result.showId);
+                        safe->browser_.emitEventIfBrowserIsVisible(
+                            "arMixNativeShowRecoverAck",juce::var(ack.release()));
+                    }
+                    if(result.ok())
+                        safe->emitNotice("Last verified Show restored on disk. OUTPUT stays MUTED; review and RECALL explicitly.");
+                    else
+                        safe->emitNotice("Last-good Show recovery rejected: "+result.error,true);
+                });
+            if(!started)return reject("Cannot start Show recovery IO worker.");
             nativeShowBusy_=true;
             return;
         }

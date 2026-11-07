@@ -137,6 +137,32 @@ public:
         return writePointer(head,generation);
     }
 
+    // Read-only last-known-good inspection. Verify the complete previous
+    // generation, including each vendor blob, before exposing its metadata.
+    // A corrupt HEAD must never force recovery or change the accepted graph.
+    juce::String loadPrevious(const juce::String& requestedId,ShowV2& show,
+                              std::vector<SnapshotV2>& snapshots,
+                              juce::String* generation=nullptr) const {
+        if(!detail::uuid(requestedId))return "Invalid Show ID";
+        const auto dir=root_.getChildFile(requestedId.toLowerCase());
+        const auto pointer=dir.getChildFile("PREVIOUS");
+        if(!pointer.existsAsFile()||pointer.getSize()<1||pointer.getSize()>128)
+            return "Previous Show generation missing";
+        const auto id=pointer.loadFileAsString().trim();
+        if(!detail::uuid(id))return "Unsafe previous Show pointer";
+        ShowV2 candidate;
+        std::vector<SnapshotV2> items;
+        const auto error=readFolder(dir.getChildFile("versions").getChildFile(id),
+                                    candidate,items);
+        if(error.isNotEmpty())return "Previous Show cannot be verified: "+error;
+        if(!candidate.id.equalsIgnoreCase(requestedId))
+            return "Previous Show identity mismatch";
+        show=std::move(candidate);
+        snapshots=std::move(items);
+        if(generation)*generation=id;
+        return {};
+    }
+
     // Explicit operator-directed disaster recovery. NEVER silently substitute
     // PREVIOUS on normal load: that would turn a corrupted latest performance
     // into an apparently successful, but stale, recalled Show.
@@ -144,21 +170,20 @@ public:
     // After success, existing loadWithStates() can restore every verified blob.
     juce::String recoverPrevious(const juce::String& requestedId) const {
         if(!detail::uuid(requestedId))return "Invalid Show ID";
-        const auto dir=root_.getChildFile(requestedId.toLowerCase());
-        const auto backup=dir.getChildFile("PREVIOUS");
-        if(!backup.existsAsFile() || backup.getSize()<1 || backup.getSize()>128)
-            return "Previous Show generation missing";
-        const auto priorId=backup.loadFileAsString().trim();
-        if(!detail::uuid(priorId))return "Unsafe previous Show pointer";
+        // A valid current performance must never be overwritten with an
+        // older one merely because a recovery pointer exists.
+        ShowV2 current;
+        std::vector<SnapshotV2> currentSnapshots;
+        if(load(requestedId,current,currentSnapshots).isEmpty())
+            return "Current Show is verified: refusing to overwrite working performance";
+        juce::String priorId;
         ShowV2 recovered;
         std::vector<SnapshotV2> snapshots;
-        const auto error=readFolder(dir.getChildFile("versions").getChildFile(priorId),
-                                    recovered,snapshots);
-        if(error.isNotEmpty())return "Previous Show cannot be verified: "+error;
-        if(!recovered.id.equalsIgnoreCase(requestedId))
-            return "Previous Show identity mismatch";
-        // Pointer recovery is an explicit IO transaction, not PCM publication.
-        return writePointer(dir.getChildFile("HEAD"),priorId);
+        const auto error=loadPrevious(requestedId,recovered,snapshots,&priorId);
+        if(error.isNotEmpty())return error;
+        // Pointer repair is an explicit IO transaction, never PCM publication.
+        return writePointer(root_.getChildFile(requestedId.toLowerCase())
+                            .getChildFile("HEAD"),priorId);
     }
 
     // Read-and-verify entire generation before changing either output value.

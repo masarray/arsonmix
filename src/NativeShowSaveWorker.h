@@ -16,10 +16,11 @@
 namespace armix::shows {
 class NativeShowSaveWorker final : private juce::Thread {
 public:
-    enum class Operation { save, list, read };
+    enum class Operation { save, list, read, recover };
     struct Summary {
         juce::String id,name;
         juce::int64 modifiedMs=0;
+        bool needsRecovery=false,hasPrevious=false;
     };
     struct Result {
         Operation operation=Operation::save;
@@ -55,6 +56,14 @@ public:
     bool list(juce::File studio,Completion completion) {
         if(!reserve(Operation::list,std::move(studio),std::move(completion)))
             return false;
+        return startOrRelease();
+    }
+    // Explicit recovery runs only on this serialized storage worker.
+    bool recover(juce::File studio,juce::String showId,Completion completion) {
+        if(!detail::uuid(showId)||
+           !reserve(Operation::recover,std::move(studio),std::move(completion)))
+            return false;
+        requestedId_=std::move(showId);
         return startOrRelease();
     }
     bool read(juce::File studio,juce::String showId,
@@ -99,7 +108,8 @@ private:
         try {
             NativeShowStore store(studio_);
             if(operation_==Operation::save)save(store,result);
-            else if(operation_==Operation::list)listShows(result);
+            else if(operation_==Operation::list)listShows(store,result);
+            else if(operation_==Operation::recover)recoverShow(store,result);
             else readShow(store,result);
         } catch(const std::exception& e) {
             result.error="Native Show IO exception: "+juce::String(e.what());
@@ -144,7 +154,7 @@ private:
     }
     // Lightweight bounded metadata listing. Full data+SHA verification is
     // performed again by NativeShowStore::load before any recall can apply.
-    void listShows(Result& result) {
+    void listShows(NativeShowStore& store,Result& result) {
         const auto root=studio_.getChildFile("Shows");
         if(!root.isDirectory())return;
         juce::DirectoryIterator iter(root,false,"*",juce::File::findDirectories);
@@ -157,17 +167,26 @@ private:
             const auto folder=iter.getFile();
             const auto id=folder.getFileName();
             if(!detail::uuid(id))continue;
+            const bool hasPrevious=folder.getChildFile("PREVIOUS").existsAsFile();
             const auto head=folder.getChildFile("HEAD");
-            if(!head.existsAsFile()||head.getSize()>128)continue;
-            const auto version=head.loadFileAsString().trim();
-            if(!detail::uuid(version))continue;
-            const auto meta=folder.getChildFile("versions")
-                .getChildFile(version).getChildFile("show.json");
-            if(!meta.existsAsFile()||meta.getSize()>maxJsonBytes)continue;
+            juce::String version;
+            if(head.existsAsFile()&&head.getSize()>0&&head.getSize()<=128)
+                version=head.loadFileAsString().trim();
+            const auto meta=detail::uuid(version)
+                ?folder.getChildFile("versions").getChildFile(version).getChildFile("show.json")
+                :juce::File{};
             ShowV2 show;
-            if(!Codec::decode(meta.loadFileAsString(),show) ||
-               !show.id.equalsIgnoreCase(id)||show.snapshotOrder.empty())continue;
-            result.items.push_back({show.id,show.name,show.modifiedMs});
+            if(meta.existsAsFile()&&meta.getSize()>0&&meta.getSize()<=maxJsonBytes&&
+               Codec::decode(meta.loadFileAsString(),show)&&
+               show.id.equalsIgnoreCase(id)&&!show.snapshotOrder.empty()) {
+                result.items.push_back({show.id,show.name,show.modifiedMs,false,hasPrevious});
+            } else if(hasPrevious) {
+                // A damaged HEAD must not make a verified prior Show invisible.
+                std::vector<SnapshotV2> verified;
+                if(store.loadPrevious(id,show,verified).isEmpty() &&
+                   !show.snapshotOrder.empty())
+                    result.items.push_back({show.id,show.name,show.modifiedMs,true,true});
+            }
         }
         std::sort(result.items.begin(),result.items.end(),
             [](const Summary& a,const Summary& b) {
@@ -175,6 +194,15 @@ private:
                 return a.id<b.id;
             });
         if(result.items.size()>64)result.items.resize(64);
+    }
+    void recoverShow(NativeShowStore& store,Result& result) {
+        result.showId=requestedId_;
+        result.error=store.recoverPrevious(requestedId_);
+        if(result.error.isNotEmpty())return;
+        ShowV2 verified;
+        std::vector<SnapshotV2> checked;
+        result.error=store.load(requestedId_,verified,checked);
+        if(result.error.isEmpty())result.name=verified.name;
     }
     void readShow(NativeShowStore& store,Result& result) {
         result.showId=requestedId_;

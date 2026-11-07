@@ -106,11 +106,24 @@ int main() {
  assert(store.load(show.id,loaded,retrieved).isEmpty());
  assert(retrieved[0].name=="Performance Ready");
 
+ // A valid current performance cannot be overwritten with older recovery.
+ assert(store.recoverPrevious(show.id).isNotEmpty());
+ assert(store.currentGeneration(show.id)==second);
+ ShowV2 previousShow;std::vector<SnapshotV2> previousItems;
+ juce::String previousGeneration;
+ assert(store.loadPrevious(show.id,previousShow,previousItems,&previousGeneration).isEmpty());
+ assert(previousGeneration==first.getFileName());
+ assert(previousItems.size()==1 && previousItems[0].name=="Soundcheck");
+
  // Missing/corrupt payload never partially replaces the accepted outputs.
  const auto vendor=second.getChildFile("blobs").getChildFile(blob.sha256+".bin");
  assert(vendor.appendText("damaged"));
  assert(store.load(show.id,loaded,retrieved).isNotEmpty());
  assert(retrieved.size()==1&&retrieved[0].name=="Performance Ready");
+
+ // Read-only recovery inspection never mutates HEAD even after blob corruption.
+ assert(store.loadPrevious(show.id,previousShow,previousItems).isEmpty());
+ assert(store.currentGeneration(show.id)==second);
 
  // Explicit recovery validates prior JSON and BOTH vendor state hashes.
  // A corrupt latest blob is not silently accepted by normal load.
