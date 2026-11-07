@@ -85,20 +85,27 @@ def physical_main_plug(page):
 
 
 def audit_visual_matrix(browser):
-    """Nine real Chromium renders: viewport, density, focus, collapse, plug."""
+    """Nine real Chromium renders: viewport, actual operator focus/fold states and plug."""
     for width,height in ((1366,768),(1680,900),(1920,1080)):
-        for density in ("comfort","standard","compact"):
+        for presentation in ("default","folded","refocused"):
             page=browser.new_page(viewport={"width":width,"height":height},
                                   reduced_motion="reduce")
             errors=[]
             page.on("pageerror",lambda exc: errors.append(str(exc)))
             page.goto(PAGE.as_uri())
-            page.locator("#densitySelect").select_option(density)
             body=page.locator(".console-body")
-            # Narrow/Compact intentionally locks the WIRE bay folded to keep
-            # 23px physical geometry. It has graph-bound compact contacts,
-            # not a full cable overlay; the rail refuses expansion by design.
-            if density=="compact":
+            # V29 has ONE operator comfort view. The original density select
+            # remains as a hidden, inert compatibility ID, not a public tool.
+            # Audit meaningful operator fold and focus states instead of
+            # selecting an invisible legacy dropdown and timing out.
+            assert page.locator("#densitySelect").is_hidden()
+            assert body.get_attribute("data-density")=="comfort"
+            if presentation=="folded":
+                if "collapsed-send" not in (body.get_attribute("class") or ""):
+                    page.locator('.section-rail [data-section="send"]').click()
+                assert "collapsed-send" in (body.get_attribute("class") or "")
+                # Folded visual sockets may disappear; canonical MAIN EdgeId
+                # and other channels' connections must not be discarded.
                 assert "collapsed-send" in (body.get_attribute("class") or "")
                 initial=edge(page,1,"out")
                 assert initial, "folded view must retain the canonical MAIN graph edge"
@@ -111,8 +118,8 @@ def audit_visual_matrix(browser):
                 assert page.locator('#tracks .strip[data-id="1"] .wire-fold-summary .has-out').count()==0
                 assert page.locator(".wire-main-fragment").count()==0
                 page.screenshot(path=str(ROOT/
-                    f"pages-wire-main-{width}x{height}-{density}.png"))
-                assert not errors,(width,height,density,errors)
+                    f"pages-wire-main-{width}x{height}-{presentation}.png"))
+                assert not errors,(width,height,presentation,errors)
                 page.close()
                 continue
             if "collapsed-send" in (body.get_attribute("class") or ""):
@@ -121,6 +128,9 @@ def audit_visual_matrix(browser):
             assert initial,"quiet MAIN must retain the real graph edge"
             assert page.locator('.wire-main-fragment').count()==0
             assert page.locator('#tracks .strip[data-id="1"] .wire-node-out').get_attribute('data-wire-main-edge')==initial
+            if presentation=="refocused":
+                page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+                assert edge(page,2,"out"), "refocus must preserve the other MAIN EdgeId"
             page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
             focused=edge(page,5,"out")
             assert page.locator('#master .wire-node-in').get_attribute('data-wire-main-edge')==focused
@@ -131,8 +141,8 @@ def audit_visual_matrix(browser):
             assert page.locator('.wire-main-fragment').count()==0
             assert edge(page,1,"out")==initial and edge(page,5,"out")==focused
             page.screenshot(path=str(ROOT/
-                f"pages-wire-main-{width}x{height}-{density}.png"))
-            assert not errors,(width,height,density,errors)
+                f"pages-wire-main-{width}x{height}-{presentation}.png"))
+            assert not errors,(width,height,presentation,errors)
             page.close()
 
 def run():
@@ -263,7 +273,7 @@ def run():
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"
         page.close()
         browser.close()
-    print("PASS WIRE A: nine Chromium viewport/density cable audits plus exact-edge MAIN gesture, Scene/SAFE, Undo")
+    print("PASS WIRE A: nine Chromium viewport/operator-state cable audits plus exact-edge MAIN gesture, Scene/SAFE, Undo")
 
 if __name__=="__main__":
     run()
