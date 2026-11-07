@@ -127,9 +127,10 @@ jobs:
   windows-build:
     name: Windows MSVC / realtime CTest
     needs: quick
-    # Draft commits never reserve expensive Windows runners. Non-draft PR
-    # synchronizations re-test latest HEAD. Main push and manual always run.
-    if: ${{ github.event_name != 'pull_request' }}
+    # One explicitly scoped UX milestone qualifies real Windows CTest and
+    # independently audited FAT ZIP. Other PRs stay on cheap contracts;
+    # main push/manual retain the existing qualification workflow.
+    if: ${{ github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107') }}
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
@@ -222,19 +223,19 @@ jobs:
       - name: Test realtime control primitives
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107') }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107') }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107') }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
@@ -242,7 +243,7 @@ jobs:
       # Optional manual FAT only: never churn experimental ZIPs per commit.
       # The unqualified artifact is NOT a stable release or physical audio proof.
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) || (github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107') }}
         with:
           name: ArSonMix-Windows-FAT-UNQUALIFIED-${{ github.run_id }}
           path: dist/
