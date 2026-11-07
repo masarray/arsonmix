@@ -197,9 +197,7 @@ test("P1K truly keeps ten physical INPUT strips and adds four independent native
   assert.match(app,/auxes:draftAux\.map/);
   assert.match(app,/data-aux-fx/);
   const cmake=readFileSync(new URL("../CMakeLists.txt",import.meta.url),"utf8");
-  const workflow=readFileSync(new URL("../.github/workflows/p1-windows.yml",import.meta.url),"utf8");
-  assert.match(cmake,/P1KTenIndependentInputsAndFourDedicatedAuxReturns/);
-  assert.match(workflow,/ARMixDedicatedAuxBusTests/);
+  assert.match(cmake,/add_test\(NAME P1KTenIndependentInputsAndFourDedicatedAuxReturns COMMAND ARMixDedicatedAuxBusTests\)/);
 });
 
 

@@ -34,7 +34,6 @@ test('independent source/render means two actual JUCE managers and distinct call
 test('P0 immutable independent stream format fence blocks silent device/period/map substitutions',()=>{
   const fence=r('engine/device/IndependentStreamFormatFence.h');
   const cmake=r('CMakeLists.txt');
-  const workflow=r('.github/workflows/p1-windows.yml');
   assert.match(fence,/class IndependentStreamFormatFence final/);
   assert.match(fence,/bool observeCallbackChannels/);
   assert.match(fence,/lifecyclePeriod/);
@@ -45,8 +44,7 @@ test('P0 immutable independent stream format fence blocks silent device/period/m
   assert.match(device,/formatFence_\.resetStopped\(\)/);
   assert.match(engine,/bridgeNegotiationFault/);
   assert.match(host,/getProperty \("bridgeNegotiationFault", "NONE"\)/);
-  assert.match(cmake,/IndependentStreamNegotiatedFormatFence/);
-  assert.match(workflow,/ARMixIndependentFormatTests/);
+  assert.match(cmake,/add_test\(NAME IndependentStreamNegotiatedFormatFence COMMAND ARMixIndependentFormatTests\)/);
 });
 
 test('live deployment preserves direct ASIO and bounded rollback semantics',()=>{
