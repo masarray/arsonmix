@@ -16,6 +16,47 @@
   const uiByNativeId = new Map();       // EXACT uint64 string -> local view-only ordinal
   const wireByUiId = new Map();         // view-only EdgeId -> EXACT decimal-string native EdgeId
   const uiByWireId = new Map();
+
+  // Display preferences are keyed by EXACT native ChannelId and never mutate PCM,
+  // native topology/route names or hardware authorization.
+  const identityStoreKey="arsonmix.native.channel-presentation.v1";
+  const channelPresentation=new Map();
+  try {
+    const raw=JSON.parse(window.localStorage?.getItem(identityStoreKey)||"{}");
+    if(raw?.version===1 && raw.channels && typeof raw.channels==="object"){
+      for(const [id,p] of Object.entries(raw.channels).slice(0,128)){
+        if(!/^[1-9][0-9]{0,19}$/.test(id)||!p||typeof p!=="object")continue;
+        if(typeof p.name!=="string"||!p.name.trim()||p.name.length>30)continue;
+        const color=/^#[0-9a-fA-F]{6}$/.test(p.color||"")?p.color:null;
+        const icon=typeof p.icon==="string"&&p.icon.length<=4?p.icon:null;
+        channelPresentation.set(id,{name:p.name.trim(),color,icon});
+      }
+    }
+  }catch(_){ /* unavailable storage must never break live mixer */ }
+  const displayNameFor=ch=>channelPresentation.get(ch.id)?.name||ch.name;
+  function acceptIdentityPresentation(){
+    const id=scope?.identityTrackId,t=scope?.tracks?.concat(scope.master||[])
+      ?.find(x=>x.id===id),nativeId=nativeIdFor(t);
+    const name=String(document.getElementById("identityName")?.value||"")
+      .trim().replace(/\s+/g," ").slice(0,30);
+    if(!nativeId||!flags.acceptedGraphConnected){
+      status("Select an admitted native channel before editing its identity");return false;
+    }
+    if(!name||scope.tracks.concat(scope.master).some(
+       x=>x.id!==id&&x.name.toLowerCase()===name.toLowerCase())){
+      status("Enter a unique, nonempty channel name");return false;
+    }
+    const color=/^#[0-9a-fA-F]{6}$/.test(scope.identityColor||"")
+      ?scope.identityColor:t.color;
+    const icon=typeof scope.identityIcon==="string"&&scope.identityIcon.length<=4
+      ?scope.identityIcon:t.icon;
+    channelPresentation.set(nativeId,{name,color,icon});
+    try{
+      const channels=Object.fromEntries([...channelPresentation].slice(-128));
+      window.localStorage?.setItem(identityStoreKey,JSON.stringify({version:1,channels}));
+    }catch(_){status("Channel display changed; local storage unavailable");}
+    return true; // original approved editor updates the single UI model
+  }
   const pendingWireGains=new Map();
   let wireGainFlushQueued=false;
   let startupWire=null, startupWireSerial=0, activeWireAttempt=null;
@@ -117,8 +158,10 @@
   function nativeOutputTargets(t,channels=controller?.state()?.current?.graph?.channels||[]){
     const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
     return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
-      .map(ch=>({id:ch.id,label:reserved.includes(ch.name)||
-        channels.filter(other=>other.name===ch.name).length>1?ch.name+" ["+ch.id+"]":ch.name}));
+      .map(ch=>{const label=displayNameFor(ch);
+        return {id:ch.id,label:reserved.includes(label)||
+        channels.filter(other=>displayNameFor(other)===label).length>1?
+          label+" ["+ch.id+"]":label};});
   }
   const intent = (operation,t,payload) => {
     if (!flags.acceptedGraphConnected) {
@@ -156,7 +199,10 @@
       // No Number(ch.id): all native identities stay canonical uint64 strings.
       localByNative.set(ch.id,t.id);
       nextNativeByUi.set(t.id,ch.id);
-      t.name=ch.name;t.kind=kind;
+      t.name=displayNameFor(ch);t.kind=kind;
+      const appearance=channelPresentation.get(ch.id);
+      if(appearance?.color)t.color=appearance.color;
+      if(appearance?.icon)t.icon=appearance.icon;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
@@ -1240,7 +1286,12 @@
         .armix-audio-dialog{background:#142631;border:1px solid #467083;border-radius:8px;
           box-shadow:0 16px 56px #0009;color:#e3eff4;width:min(480px,94vw);
           padding:17px;display:grid;gap:11px;font:12px system-ui,sans-serif}
-        .armix-audio-dialog h2{font-size:16px;font-weight:600;margin:0}
+        .armix-audio-dialog h2{font-size:14px;font-weight:600;margin:0}
+        .armix-audio-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+        .armix-audio-dialog .armix-floating-close{display:flex;align-items:center;justify-content:center;
+          width:29px;height:29px;min-height:29px;padding:0;border-radius:3px;flex:0 0 29px}
+        .armix-audio-dialog .armix-floating-close:active{background:#a42e3d;border-color:#e75f65;color:#fff}
+        .armix-floating-close svg{width:20px;height:20px;display:block;pointer-events:none}
         .armix-audio-dialog label{display:grid;gap:5px;color:#a9c5d2}
         .armix-audio-dialog select{background:#09202c;border:1px solid #476778;
           border-radius:4px;color:#edf9ff;min-height:30px;width:100%;padding:3px 7px}
@@ -1260,26 +1311,23 @@
       devicePanel.className="armix-audio-shade";
       devicePanel.innerHTML=`<section class="armix-audio-dialog" role="dialog"
         aria-modal="true" aria-label="Audio hardware setup">
-        <h2>Audio I/O</h2>
+        <header class="armix-audio-top"><h2>Audio I/O</h2><button class="armix-floating-close" type="button"
+          data-audio-close aria-label="Close Audio I/O" title="Close"><svg xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path
+          d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg></button></header>
         <label>Driver<select data-audio-field="backend"></select></label>
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
-        <div class="armix-device-note">The output device above is the real destination.
-          A virtual cable does not automatically play through headphones.</div>
-        <div class="armix-device-note" data-audio-asio4all-hint hidden>
-          ASIO4ALL combines enabled WDM pins behind ONE ASIO device.
-          Enable VB-Cable capture and Realtek playback in ASIO4ALL, then Apply
-          to reopen it. Review the fresh capture/playback pin names below before
-          unmuting. Separate hardware clocks may not stay synchronized.
-        </div>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
+          <div class="armix-device-note" data-audio-asio4all-hint hidden>
+            Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
+          </div>
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer<select data-audio-field="buffer"></select></label>
           <div class="armix-device-pins" data-audio-pins></div>
         </details>
         <div class="armix-device-actions">
-          <button type="button" data-audio-close>Close</button>
           <button type="button" data-audio-apply>Apply device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=()=>{
@@ -1423,8 +1471,7 @@
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText && !deviceBusy)activeText.textContent=deviceResult||(active.open?
-      "ACTIVE · "+active.backend+" · "+active.captureDevice+
-        " → "+active.playbackDevice+" · "+active.rate+" Hz / "+active.buffer+" samples":
+      "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples":
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
@@ -2432,9 +2479,14 @@
         if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
         else intent("SET_PAN",t,{value:0});
       }
-      else status("NATIVE: identity editor unavailable until native ACK contract");
+      else if(event.target.closest?.(".footer-label,.strip-identity-top")){
+        if(nativeIdFor(t) && flags.acceptedGraphConnected)
+          scope?.openChannelIdentity?.(t,event.target);
+        else status("Channel identity available after verified native admission");
+      }
       return true;
     },
+    applyIdentity:acceptIdentityPresentation,
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;

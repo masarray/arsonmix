@@ -184,7 +184,9 @@ public:
         }
         // Saved explicit device choice MUST NOT be silently replaced by
         // JUCE's selectDefaultDeviceOnFailure path (e.g. ASIO -> WASAPI).
-        auto error = deviceManager_.initialise (1, 2, savedSettings, !savedRoute);
+        // Prefer both input pins on a verified stereo endpoint; saved explicit
+        // channel masks still take precedence. Outputs remain DISARMED.
+        auto error = deviceManager_.initialise (2, 2, savedSettings, !savedRoute);
         if (error.isNotEmpty() && !savedRoute && deviceManager_.singleAsioPreferred())
         {
             // This was only an automatic FIRST-RUN ASIO preference, not the
