@@ -29,6 +29,68 @@
   const legalIcon=icon=>typeof icon==="string"&&
     ["♩","♫","♬","🎙","🎸","🎹","🥁","🎧","▥","◉","◎","⊞"].includes(icon);
   const displayNameFor=ch=>channelPresentation.get(ch.id)?.name||ch.name;
+  // Legacy WebView aliases are an import queue ONLY, never rendered or written
+  // as authoritative state. Each imported row must receive a native ACK plus
+  // readback before its browser cache entry can be retired.
+  const legacyIdentityKey="arsonmix.native.channel-presentation.v1";
+  const legacyImport=new Map(), legacyDeferred=new Set();
+  try {
+    const prior=JSON.parse(window.localStorage?.getItem(legacyIdentityKey)||"{}");
+    if(prior?.version===1&&prior.channels&&typeof prior.channels==="object"){
+      for(const [id,p] of Object.entries(prior.channels).slice(0,128)){
+        if(protocol.decimal(id)===null||!p||!legalName(p.name)||
+           !legalColor(p.color)||!legalIcon(p.icon))continue;
+        legacyImport.set(id,{name:p.name,color:p.color,icon:p.icon});
+      }
+    }
+  }catch(_){ /* Native readback remains authoritative on corrupt WebView cache. */ }
+  function retireLegacyRow(id){
+    legacyImport.delete(id);
+    try {
+      const prior=JSON.parse(window.localStorage?.getItem(legacyIdentityKey)||"{}");
+      if(prior?.version!==1||!prior.channels||typeof prior.channels!=="object")return;
+      delete prior.channels[id];
+      if(Object.keys(prior.channels).length)
+        window.localStorage.setItem(legacyIdentityKey,JSON.stringify(prior));
+      else window.localStorage.removeItem(legacyIdentityKey);
+    }catch(_){status("Native identity saved; legacy cache cleanup unavailable");}
+  }
+  function maybeMigrateLegacy(next){
+    if(!appearanceWritable||pendingIdentity||!legacyImport.size||
+       !(next?.admitted||next?.retained)||
+       next?.raw?.mixerSession?.authority!=="CHANNEL_ID")return;
+    for(const [id,p] of legacyImport){
+      if(legacyDeferred.has(id)||!next.graph.channels.some(ch=>ch.id===id))continue;
+      const authoritative=channelPresentation.get(id);
+      if(authoritative){
+        // Never overwrite a genuine native edit with older browser data.
+        if(authoritative.name===p.name&&authoritative.color===p.color&&
+           authoritative.icon===p.icon)retireLegacyRow(id);
+        else legacyDeferred.add(id);
+        continue;
+      }
+      if(next.graph.channels.some(ch=>ch.id!==id&&
+         displayNameFor(ch).toLowerCase()===p.name.toLowerCase())){
+        legacyDeferred.add(id);
+        status("Legacy channel identity name conflicts with native graph; cache preserved");
+        continue;
+      }
+      const requestId="appearance-import-"+Date.now().toString(36)+"-"+(++identityRequestSerial);
+      pendingIdentity={requestId,channelId:id,...p,acked:false,migration:true};
+      backend.emitEvent("arMixChannelIdentitySet",{
+        requestId,channelId:id,...p,appearanceRevision,
+        deviceEpoch:next.device.epoch,graphRevision:next.graph.revision,
+        rosterRevision:next.graph.rosterRevision
+      });
+      window.setTimeout(()=>{
+        if(pendingIdentity?.requestId!==requestId)return;
+        legacyDeferred.add(id);
+        rejectIdentity("Legacy channel identity import timed out; old cache preserved");
+        controller?.subscribe();
+      },8000);
+      return; // one crash-recoverable, revision-serialized transaction
+    }
+  }
   function appearanceFromNative(next){
     const data=next?.raw?.channelAppearance;
     if(!data || data.schema!=="arsonmix.native.channel-appearance.v1" ||
@@ -51,15 +113,22 @@
     for(const [id,p] of observed)channelPresentation.set(id,p);
     appearanceRevision=data.revision;
     appearanceWritable=!data.readOnly;
-    if(!pendingIdentity || !pendingIdentity.acked)return;
-    const p=pendingIdentity,confirmed=channelPresentation.get(p.channelId);
-    if(confirmed?.name===p.name&&confirmed.color===p.color&&confirmed.icon===p.icon){
-      pendingIdentity=null;
-      const apply=document.getElementById("identitySave");
-      if(apply)apply.disabled=false;
-      scope?.closeChannelIdentity?.();
-      status("Channel updated and stored in native workspace · "+p.name);
+    if(pendingIdentity?.acked){
+      const p=pendingIdentity,confirmed=channelPresentation.get(p.channelId);
+      if(confirmed?.name===p.name&&confirmed.color===p.color&&confirmed.icon===p.icon){
+        pendingIdentity=null;
+        if(p.migration){
+          retireLegacyRow(p.channelId);
+          status("Legacy channel identity migrated to native workspace · "+p.name);
+        }else{
+          const apply=document.getElementById("identitySave");
+          if(apply)apply.disabled=false;
+          scope?.closeChannelIdentity?.();
+          status("Channel updated and stored in native workspace · "+p.name);
+        }
+      }
     }
+    maybeMigrateLegacy(next);
   }
   function rejectIdentity(reason){
     pendingIdentity=null;
@@ -2163,6 +2232,7 @@
     backend.addEventListener("arMixChannelIdentityAck", ack=>{
       if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
       if(ack.ok!==true){
+        if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
         rejectIdentity("Native channel identity rejected · "+String(ack.error||"Unknown error"));
         controller?.subscribe();return;
       }

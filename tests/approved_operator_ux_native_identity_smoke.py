@@ -126,8 +126,38 @@ def main():
         page.keyboard.press('Escape')
         assert editor.is_hidden()
         assert page.evaluate("()=>window.__nativeIntents.length")==0
+        # Upgrade old WebView cache exactly once; no optimistic local rename.
+        # The emulated host starts with a clean native workspace and accepts
+        # the import ONLY after native ACK and revisioned readback.
+        page.evaluate("""(id)=>localStorage.setItem(
+          'arsonmix.native.channel-presentation.v1',
+          JSON.stringify({version:1,channels:{[id]:{
+            name:'Legacy Vocal',color:'#c32974',icon:'🎹'}}}))""",SOURCE)
+        page.close()
+        page=open_page()
+        fresh=copy.deepcopy(state)
+        fresh["channelAppearance"]={
+            "schema":"arsonmix.native.channel-appearance.v1",
+            "revision":"0","readOnly":False,"entries":[]}
+        emit(page,"arMixConsoleSnapshot",fresh)
+        page.wait_for_function("""()=>window.__nativeEvents.some(e=>
+          e.name==='arMixChannelIdentitySet'&&e.payload.name==='Legacy Vocal')""")
+        req=page.evaluate("""()=>window.__nativeEvents.find(e=>
+          e.name==='arMixChannelIdentitySet'&&e.payload.name==='Legacy Vocal').payload""")
+        assert req["channelId"]==SOURCE and req["appearanceRevision"]=="0"
+        assert "Legacy Vocal" not in page.locator('#tracks .strip[data-id="1"]').inner_text()
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
+        emit(page,"arMixChannelIdentityAck",{"requestId":req["requestId"],"ok":True,"error":""})
+        fresh["channelAppearance"]["revision"]="1"
+        fresh["channelAppearance"]["entries"]=[{
+            "id":SOURCE,"name":"Legacy Vocal","color":"#c32974","icon":"🎹"}]
+        emit(page,"arMixConsoleSnapshot",fresh)
+        page.wait_for_function("""()=>document.querySelector(
+          '#tracks .strip[data-id="1"]').textContent.includes('Legacy Vocal') &&
+          localStorage.getItem('arsonmix.native.channel-presentation.v1')===null""")
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
         assert not errors,errors
         page.close();context.close();browser.close()
-    print("PASS native identity click/ACK/readback/reject/restart with zero PCM graph intents")
+    print("PASS native identity double-click/ACK/readback/reject/restart/legacy migration with zero PCM graph intents")
 
 if __name__=="__main__":main()
