@@ -94,7 +94,6 @@ jobs:
           python tests/gui_baseline_lock_test.py
           python tests/brand_icon_contract_test.py
           python tests/brand_package_files_test.py
-          python tests/landing_page_download_contract_test.py dist-pages
           python tests/css_v28_restore.py
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
         run: |
@@ -105,6 +104,7 @@ jobs:
         run: |
           python scripts/build_pages.py --out dist-pages --sha "${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}" --branch main
           python tests/single_preview_publication_contract_test.py dist-pages
+          python tests/landing_page_download_contract_test.py dist-pages
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
