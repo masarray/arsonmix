@@ -41,7 +41,7 @@ try {
     Assert-Condition (Test-Path -LiteralPath $iscc -PathType Leaf) "ISCC.exe missing"
     & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=0.5.0" (Join-Path $root "installer/ArSonMix.iss")
     Assert-Condition ($LASTEXITCODE -eq 0) "Cannot compile Inno fixture setup"
-    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-UNQUALIFIED.exe"
+    $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     Assert-Condition (Test-Path -LiteralPath $setup -PathType Leaf) "Compiled Inno test installer missing"
     $setupArgs=@("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/CLOSEAPPLICATIONS","/NOFORCECLOSEAPPLICATIONS","/DIR=$install")
     $first=Start-Process -FilePath $setup -ArgumentList $setupArgs -Wait -PassThru
