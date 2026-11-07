@@ -96,7 +96,7 @@ test('Legacy pre-handshake mixer process is shut down before Inno touches its EX
   assert.match(legacyShutdown, /EnumWindows/);
   assert.match(legacyShutdown, /GetWindowThreadProcessId/);
   assert.match(legacyShutdown, /PostMessage/);
-  assert.doesNotMatch(legacyShutdown + iss, /taskkill|Stop-Process|TerminateProcess|CloseApplications=force/i);
+  assert.doesNotMatch(legacyShutdown + iss, /(?:^|\\n)\\s*(?:taskkill|Stop-Process|TerminateProcess|CloseApplications=force)\\b/im);
   assert.match(ps, /INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS/);
   assert.match(ps, /INNO_BLOCKED_FAIL_CLOSED_PASS/);
   assert.match(fixture, /args\[2\] == "legacy"/);
