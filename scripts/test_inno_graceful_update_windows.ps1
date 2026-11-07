@@ -68,7 +68,7 @@ try {
     Write-Host "INNO_UPGRADE_DIAG exit=$($upgrade.ExitCode) exited=$exited marker=$markerText hashOk=$($newHash -eq $fixtureHash)"
     Show-UpgradeDiagnostics $log
     Assert-Condition ($upgrade.ExitCode -eq 0) "Silent Inno upgrade returned error"
-    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED")
+    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED","INSTALLER_HANDSHAKE_SAVED")
     Assert-Condition ($exited -and $marker -and ($acceptedSaves -contains $markerText)) "Inno did not request a saved, graceful Windows session close"
     Assert-Condition ($newHash -eq $fixtureHash) "Updated installed fixture hash mismatch"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Update removed user data"
