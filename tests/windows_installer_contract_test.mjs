@@ -69,6 +69,12 @@ test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test 
   assert.match(fixture, /WM_ENDSESSION/);
   assert.match(ps, /RM_QUERY_SAVED/);
   assert.match(ps, /RM_ENDSESSION_SAVED/);
+  assert.match(ps, /INSTALLER_HANDSHAKE_SAVED/);
+  assert.match(iss, /PrepareToInstall/);
+  assert.match(iss, /OpenEventW/);
+  assert.match(iss, /CheckForMutexes/);
+  assert.match(fixture, /ArSonMix\.InstallShutdown/);
+  assert.match(fixture, /ArSonMix\.MixerRunning/);
   assert.match(fixture, /Application\.Run\(window\)/);
   // No fixture is packaged: only the verified native EXE ships.
   assert.doesNotMatch(iss, /installer_graceful_close|\.cs"/);
