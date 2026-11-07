@@ -14,7 +14,9 @@ def browser_check(page):
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
     assert page.locator("a[href='./preview/']").count() >= 2
-    imgs = page.locator(".gallery img,.app-shot img,.brand img")
+    imgs = page.locator(".gallery img,.app-shot img,.brand img,.hero-brand-lockup img")
+    assert page.locator(".hero-brand-lockup img").count() == 1
+    assert page.locator(".hero-brand-lockup img").evaluate("img=>img.naturalWidth >= 512")
     assert all(imgs.evaluate_all("nodes=>nodes.map(n=>n.complete && n.naturalWidth>0)")), "Screenshot/brand broken"
     overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 2, "Horizontal overflow (px): " + str(overflow)
