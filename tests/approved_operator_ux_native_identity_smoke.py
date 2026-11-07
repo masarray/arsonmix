@@ -113,6 +113,8 @@ def main():
         # no shared JS localStorage or reconstructed PCM graph.
         page.close()
         page=open_page()
+        # Each WebView reload creates a new page: never reuse old locators.
+        editor=page.locator("#channelIdentity")
         emit(page,"arMixConsoleSnapshot",copy.deepcopy(state))
         page.wait_for_selector('#tracks .strip[data-id="1"]')
         assert "Studio Vox" in page.locator('#tracks .strip[data-id="1"]').inner_text()
