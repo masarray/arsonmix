@@ -6,11 +6,14 @@
 #ifndef OutputRoot
   #error "Supply /DOutputRoot with destination directory"
 #endif
+#ifndef SourceAppVersion
+  #error "Supply /DSourceAppVersion from the authoritative CMake project version"
+#endif
 [Setup]
 AppId=ArSonMix.LiveStudio
 AppName=ArSonMix
-AppVersion=0.1.0-rc.1
-AppVerName=ArSonMix RC (hardware FAT pending)
+AppVersion={#SourceAppVersion}
+AppVerName=ArSonMix {#SourceAppVersion} RC (hardware FAT pending)
 AppPublisher=ArSonMix
 AppPublisherURL=https://masarray.github.io/arsonmix/
 DefaultDirName={localappdata}\Programs\ArSonMix
