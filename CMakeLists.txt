@@ -332,6 +332,14 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixShowStoreTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixShowStoreTests PRIVATE cxx_std_20)
   add_test(NAME P4ImmutableNativeShowsAndVendorStateRoundTrip COMMAND ARMixShowStoreTests)
+  # Full-size stable ChannelId MixerSession document (never the fixed ShowV2).
+  juce_add_console_app(ARMixDurableMixerSessionTests PRODUCT_NAME "ArSonMix Durable Dynamic Mixer Session Tests")
+  target_sources(ARMixDurableMixerSessionTests PRIVATE tests/native_mixer_session_store_test.cpp
+      src/NativeMixerSessionDocument.h src/NativeMixerSessionStore.h)
+  target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
+      juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
+  add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
 
   # Eight-band native PEQ: deterministic sweep, stereo isolation, RT no-heap,
   # smoothing and Nyquist guards. Built with the existing Windows native lane.
