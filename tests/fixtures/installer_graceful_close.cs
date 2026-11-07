@@ -65,6 +65,11 @@ internal static class ArSonMixInstallerGracefulCloseFixture
             // JUCEApplication::systemRequestedQuit(), which saves the mixer
             // when ConsoleWindow is destructed. Simulate the durable save
             // at the corresponding OS request, not an abrupt termination.
+            if (blockClose && (m.Msg == WM_QUERYENDSESSION || m.Msg == WM_ENDSESSION))
+            {
+                m.Result = IntPtr.Zero; // Test only: reject OS close as well as WM_CLOSE.
+                return;
+            }
             if (m.Msg == WM_QUERYENDSESSION)
                 File.WriteAllText(savedMarker, "RM_QUERY_SAVED");
             else if (m.Msg == WM_ENDSESSION && m.WParam != IntPtr.Zero)
@@ -91,7 +96,8 @@ internal static class ArSonMixInstallerGracefulCloseFixture
 
         using (var window = new MixerWindow(args[1], legacy, blockClose))
         {
-            window.Shown += (sender, e) => File.WriteAllText(args[0], "WINDOW_READY");
+            window.Shown += (sender, e) => File.WriteAllText(args[0],
+                blockClose ? "WINDOW_READY_BLOCKED" : legacy ? "WINDOW_READY_LEGACY" : "WINDOW_READY");
             Application.Run(window);
         }
     }
