@@ -70,7 +70,8 @@ const root=dom("section","mx-peq");root.id="mxNativePeq";root.hidden=true;root.s
 root.setAttribute("aria-label","ArSonMix Parametric EQ");root.setAttribute("aria-modal","false");
 const head=dom("header","mx-peq-title"),brand=dom("span","mx-peq-brand","ArSonMix  /  PARAMETRIC EQ"),
  channel=dom("span","mx-peq-channel"),power=dom("button","mx-peq-global","⏻"),
- close=dom("button","mx-peq-close","×");power.type=close.type="button";
+ close=dom("button","mx-peq-close");power.type=close.type="button";
+close.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg>';close.setAttribute("aria-label","Close Parametric EQ");
  power.title="Toggle accepted insert bypass";close.title="Close EQ";
  head.append(brand,channel,power,close);
 const body=dom("div","mx-peq-body"),graph=dom("div","mx-peq-graph");

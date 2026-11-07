@@ -1,11 +1,12 @@
 """Fail closed: GitHub Pages must expose ONE approved ArSonMix GUI at /preview/."""
 from pathlib import Path
-import json, re, sys, hashlib
+import json, re, sys, hashlib, shutil, tempfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from compile_approved_css import LINK, optimize_css, compile_runtime_bundle, link_runtime_bundle, RUNTIME_CSS
 from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
 from compose_native_peq import apply_native_peq
+from compose_operator_ux import apply_operator_ux
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -42,15 +43,26 @@ require((gui/'assets/gui-perf-probe.js').read_bytes()==
 expected=apply_authoritative_fx_power(expected)
 expected=apply_fx_rack_interaction(expected)
 expected=apply_native_peq(expected)
+# V29 edits only the generated owners, after the historical V28 source lock.
+# Build the exact same two temporary pre-optimizer owners without mutating
+# the source repository or the already optimized distribution.
+with tempfile.TemporaryDirectory(prefix="armix-operator-contract-") as td:
+    owned=Path(td)
+    owners=("mixer-chrome-material.css","mixer-plugin-browser.css")
+    for name in owners:
+        shutil.copy2(ROOT/"site/preview-v2/assets"/name,owned/name)
+    expected=apply_operator_ux(expected,owned)
+    composed_css={name:(owned/name).read_text(encoding="utf-8") for name in owners}
 # Stage C: the source HTML remains byte-exact, but the 18 deployed CSS files
 # contain only proven cascade winners. Verify every *generated* byte and query
 # hash; never approve an extra stylesheet, different owner or PNG mutation.
 linked=[match.group(2) for match in LINK.finditer(expected)]
 require(len(linked)==18 and len(set(linked))==18,'approved CSS owners changed')
-source_css=[(name,(ROOT / ("site/preview-buttons/assets"
-                               if name=="mixer-control-keys.css"
-                               else "site/preview-v2/assets") / name)
-                        .read_text(encoding="utf-8")) for name in linked]
+source_css=[(name, composed_css[name] if name in composed_css else
+                 (ROOT / ("site/preview-buttons/assets"
+                          if name=="mixer-control-keys.css"
+                          else "site/preview-v2/assets") / name)
+                    .read_text(encoding="utf-8")) for name in linked]
 compiled,counts=optimize_css(source_css)
 record=build.get('css_compilation') or {}
 for stat in ('sourceDeclarations','removedDeclarations',

@@ -103,6 +103,9 @@ NATIVE_EVENT_HOOKS = (
     # Native-only: the SAME original quick picker/manager owns the UI.
     # Only insertion leaves the demo reducer and goes to JUCE's actual VST3
     # graph; never mark a browser insert as loaded.
+    ("function applyChannelIdentity(){\n",
+     "function applyChannelIdentity(){\n"
+     " if(window.__JUCE__?.backend&&!window.__ARMIX_NATIVE_M2__?.applyIdentity?.())return;\n"),
     ("function insertCatalogPlugin(id){\n",
      "function insertCatalogPlugin(id){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.insertPlugin?.(id,activeFxTarget);return;}\n"),
@@ -216,6 +219,9 @@ NATIVE_EVENT_HOOKS = (
      "  return true;\n"
      " },\n"
      " make,render,findTrack,displayMeterDbfs,\n"
+     " openChannelIdentity,closeChannelIdentity,\n"
+     " get identityTrackId(){return identityTrackId;},\n"
+     " get identityColor(){return identityColor;},get identityIcon(){return identityIcon;},\n"
      " refreshStrip,syncFaderVisual,openFastPicker,openPluginBrowser,\n"
      " get activeFaderId(){return faderGesture?Number(faderGesture.input.closest('.strip')?.dataset.id):-1;},\n"
      " setNativeCatalog(rows){\n"

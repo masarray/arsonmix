@@ -97,6 +97,7 @@ jobs:
           node --check site/preview-v2/assets/gui-perf-probe.js
           node --check site/preview-v2/assets/mixer-native-peq.js
           python tests/native_peq_assembly_test.py
+          python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
           python tests/gui_baseline_lock_test.py
           python tests/brand_icon_contract_test.py
@@ -114,6 +115,34 @@ jobs:
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
+  operator-ux-fat:
+    name: Operator UX real Chromium / native-assembled GUI (5 viewports)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium for UX FAT
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Measure actual layout, close keys, floating move and small-screen scaling
+        run: |
+          python tests/approved_operator_ux_chromium_fat.py
+          python tests/approved_operator_ux_native_identity_smoke.py
+      - name: Retain rendered evidence across viewport sizes
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Operator-UX-5-viewports-${{ github.run_id }}
+          path: operator-ux-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   frontend:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
@@ -176,6 +205,10 @@ jobs:
         run: python tests/approved_native_meter_dirty_stage_b_smoke.py
       - name: Verify Stage C shipped CSS versus original-source computed and screenshot parity
         run: python tests/approved_stage_c_css_visual_parity_smoke.py
+      - name: V29 operator WebView - five geometry sizes, floating controls, and native channel identity
+        run: |
+          python tests/approved_operator_ux_chromium_fat.py
+          python tests/approved_operator_ux_native_identity_smoke.py
       - name: Check real mobile /preview/ touch toolbar, popup and stray chevrons
         run: python tests/approved_preview_mobile_navigation_smoke.py
       - name: FX rack master bypass preserves each insert state (real Chromium)
