@@ -140,6 +140,48 @@ def apply_operator_ux(html: str, assets: Path) -> str:
         "const panel=plugEl('pluginBrowser'),parent=document.querySelector('.console-pane');\n const bounds=parent?.getBoundingClientRect?.();",
         "const panel=plugEl('pluginBrowser');\n  const bounds={left:0,top:0,width:window.innerWidth,height:window.innerHeight};",
         "drag within entire window")
+    # V30: Channel Editor is a body-level, modeless viewport window.
+    # Historic V28 HTML remains untouched; both Pages and native share this.
+    identity_start = html.index('    <div id="channelIdentity" class="channel-identity"')
+    identity_end = html.index('    <aside id="pluginBrowser"', identity_start)
+    identity_markup = html[identity_start:identity_end]
+    if html.count('id="channelIdentity"') != 1 or identity_markup.count('    </div>\n') != 1:
+        raise ValueError("Channel editor DOM anchor drift")
+    html = once(html, identity_markup, "", "remove editor from mixer flow")
+    html = once(html,
+        '</div>\n<script src="assets/wire-graph-model.js?v=wire-a1"></script>',
+        '</div>\n' + identity_markup +
+        '<script src="assets/wire-graph-model.js?v=wire-a1"></script>',
+        "place editor under body outside scrolling app")
+    html = once(html,
+        "function openChannelIdentity(t,anchor){",
+        """function positionChannelIdentity(dialog,anchor){
+ // One geometry read on explicit open, not in the live meter/PCM path.
+ const visual=window.visualViewport;
+ const vx=visual?.offsetLeft??0,vy=visual?.offsetTop??0;
+ const vw=visual?.width||window.innerWidth,vh=visual?.height||window.innerHeight;
+ const gap=8;
+ dialog.style.maxWidth=Math.max(1,vw-2*gap)+'px';
+ dialog.style.maxHeight=Math.max(1,vh-2*gap)+'px';
+ const box=dialog.getBoundingClientRect(),a=anchor?.getBoundingClientRect?.();
+ const preferredX=a?a.left+a.width/2-box.width/2:vx+gap;
+ const preferredY=a?a.top+18:vy+gap;
+ const x=Math.max(vx+gap,Math.min(vx+vw-box.width-gap,preferredX));
+ const y=Math.max(vy+gap,Math.min(vy+vh-box.height-gap,preferredY));
+ dialog.style.left=x+'px';dialog.style.top=y+'px';
+}
+function openChannelIdentity(t,anchor){""",
+        "install measured viewport positioning")
+    html = once(html,
+        """ const parent=document.querySelector('.console-pane'),a=anchor?.getBoundingClientRect?.(),p=parent?.getBoundingClientRect?.();
+ if(a&&p&&dialog.style?.setProperty){
+  dialog.style.setProperty('left',Math.max(8,Math.min(p.width-302,a.left-p.left+a.width/2-148))+'px');
+  dialog.style.setProperty('top',Math.max(8,Math.min(p.height-295,a.top-p.top+18))+'px');
+ }
+ document.getElementById('identityName').focus?.();""",
+        """ positionChannelIdentity(dialog,anchor);
+ document.getElementById('identityName').focus({preventScroll:true});""",
+        "remove mixer-relative geometry and focus scroll")
     targets = ("identityClose","pluginClose","fastClose",
                "wireConfigClose","wireWsClose","routeChoiceClose")
     for target in targets:
@@ -151,6 +193,12 @@ def apply_operator_ux(html: str, assets: Path) -> str:
     plugin_path = assets / "mixer-plugin-browser.css"
     chrome = chrome_path.read_text(encoding="utf-8")
     plugin = plugin_path.read_text(encoding="utf-8")
+    # Edit the existing compiled CSS owner, not a late override stylesheet.
+    chrome = once(chrome,
+        " position:absolute;z-index:115;left:28px;top:100px;width:302px;max-width:calc(100% - 24px);",
+        " position:fixed;z-index:115;left:8px;top:8px;width:302px;max-width:calc(100vw - 16px);"
+        "\n max-height:calc(100dvh - 16px);overflow-y:auto;overscroll-behavior:contain;",
+        "viewport-based bounded editor geometry")
     if "V29 adaptive 50/50 console" in chrome:
         raise ValueError("Operator UX cannot stack duplicate styles")
     # Replace the original movable-window geometry instead of layering another

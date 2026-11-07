@@ -48,9 +48,12 @@ expected=apply_native_peq(expected)
 # the source repository or the already optimized distribution.
 with tempfile.TemporaryDirectory(prefix="armix-operator-contract-") as td:
     owned=Path(td)
-    owners=("mixer-chrome-material.css","mixer-plugin-browser.css")
+    owners=("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-fx-rack.css")
     for name in owners:
         shutil.copy2(ROOT/"site/preview-v2/assets"/name,owned/name)
+    # Recreate the SAME handle-free FX CSS owner as the production assembler,
+    # then run the existing operator composer. Historic V28 assets stay locked.
+    apply_fx_rack_interaction((ROOT/"site/preview-v2/index.html").read_text(encoding="utf-8"),owned)
     expected=apply_operator_ux(expected,owned)
     composed_css={name:(owned/name).read_text(encoding="utf-8") for name in owners}
 # Stage C: the source HTML remains byte-exact, but the 18 deployed CSS files

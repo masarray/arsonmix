@@ -66,13 +66,15 @@ document.addEventListener('pointerdown',e=>{
  if(e.button!==0)return;
  // A fresh gesture must never inherit suppression of the previous drag's click.
  fxPointerSuppressUntil=0;
- const handle=e.target.closest?.('.fx-grip,.fx-pick:not(.empty)'),row=handle?.closest('.fxslot-row:not(.is-empty)'),t=row&&findTrack(row);
+ const row=e.target.closest?.('.fxslot-row:not(.is-empty)');
+ // POWER and DELETE are never drag initiators, even on touch devices.
+ if(!row||e.target.closest?.('[data-action="slotPower"],[data-action="removeFx"]'))return;
+ const t=findTrack(row);
  if(!row||!t)return;ensureFxInsertIds(t);
  const slot=Number(row.dataset.slot),token=t.fxInsertIds[slot]?.id;if(!token)return;
  clearFxPointer();const r=row.getBoundingClientRect();
  fxPointerDrag={pointer:e.pointerId,sourceId:t.id,slot,token,row,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,
   offsetX:e.clientX-r.left,offsetY:e.clientY-r.top,width:r.width,active:false};
- if(handle.classList.contains('fx-grip'))e.preventDefault();
 },true);
 window.addEventListener('pointermove',e=>{
  const g=fxPointerDrag;if(!g||e.pointerId!==g.pointer)return;
@@ -110,7 +112,7 @@ window.addEventListener('pointerup',e=>{
 window.addEventListener('pointercancel',clearFxPointer,true);
 window.addEventListener('blur',clearFxPointer);
 document.addEventListener('dragstart',e=>{
- if(e.target.closest?.('.fx-grip,.fx-pick')){e.preventDefault();e.stopImmediatePropagation();}
+ if(e.target.closest?.('.fxslot-row:not(.is-empty)')){e.preventDefault();e.stopImmediatePropagation();}
 },true);
 document.addEventListener('click',e=>{
  if(e.detail!==0&&performance.now()<fxPointerSuppressUntil&&e.target.closest?.('.fx-section')){

@@ -74,7 +74,7 @@ if canonical_html.count('</body>')!=1 or probe_tag in canonical_html:
     raise SystemExit('Approved Pages profiler injection must have exactly one body')
 canonical_html=canonical_html.replace('</body>',probe_tag+'\n</body>',1)
 canonical_html=apply_authoritative_fx_power(canonical_html)
-canonical_html=apply_fx_rack_interaction(canonical_html)
+canonical_html=apply_fx_rack_interaction(canonical_html,buttons_dest/'assets')
 canonical_html=apply_native_peq(canonical_html)
 canonical_html=apply_operator_ux(canonical_html,buttons_dest/'assets')
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source

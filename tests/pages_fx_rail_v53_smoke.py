@@ -41,18 +41,19 @@ def check_geometry(page,width,presentation):
         (width,presentation,"pinned Master has no rack")
  for channel in ('1',):
   root=page.locator(f'#tracks .strip[data-id="{channel}"]')
+  assert root.locator('.fx-grip').count()==0,(width,presentation,"obsolete grip visible")
   for row in root.locator('.fxslot-row').all():
-   assert row.get_attribute("draggable") is None,(width,presentation,"row-wide drag regressed")
+   assert row.get_attribute("draggable") is None,(width,presentation,"native HTML DnD must stay disabled")
   for row in root.locator('.fxslot-row.is-active,.fxslot-row.is-bypassed').all():
-   grip=row.locator('.fx-grip')
+   power=row.locator('[data-action="slotPower"]')
    remove=row.locator('[data-action="removeFx"]')
-   assert grip.count()==remove.count()==1
-   g=grip.bounding_box();r=remove.bounding_box()
-   assert g and r and g["x"]+g["width"] <= r["x"]+.5,\
-          (width,presentation,"grip must precede REMOVE",g,r)
-   assert grip.get_attribute("draggable")=="true"
-   assert grip.get_attribute("aria-label"),"FX grip must be keyboard accessible"
-   assert row.locator('.fx-pick').get_attribute("draggable") is None
+   name=row.locator('.fx-pick')
+   assert power.count()==remove.count()==name.count()==1
+   p=power.bounding_box();r=remove.bounding_box();n=name.bounding_box()
+   assert p and n and r and p["x"]+p["width"]<=n["x"]+1 and n["x"]+n["width"]<=r["x"]+1
+   assert name.get_attribute("draggable") is None
+   assert name.get_attribute("aria-label"),"FX name retains accessible editor activation"
+   assert row.evaluate("e=>getComputedStyle(e).cursor")=="grab"
  rail=page.locator('.section-rail [data-section="fx"]')
  assert rail.get_attribute("aria-expanded")=="true"
  # V29 has one comfort density: actual FX rail disclosure must remain
@@ -71,7 +72,7 @@ def check_transactions(page):
  effect=page.locator('#fastResults .fast-effect').filter(has_text="Dynamics Processing").first
  assert effect.is_visible(),"Quick FX Picker did not expose Dynamics Processing"
  effect.click()
- assert root.locator('.fx-grip[data-slot="1"]').count()==1,"Second FX not accepted by GUI"
+ assert root.locator('.fxslot-row:not(.is-empty)').count()>=2,"Second FX not accepted by GUI"
  # Independently bypass first plugin; the move must carry bypass with identity.
  root.locator('[data-action="slotPower"][data-slot="0"]').click()
  initial=model(page)
@@ -82,8 +83,8 @@ def check_transactions(page):
  for selector in ('.fx-pick[data-slot="0"]','[data-action="slotPower"][data-slot="0"]',
                   '[data-action="removeFx"][data-slot="0"]'):
   assert root.locator(selector).get_attribute("draggable") is None
- # Focusable grip is the only drag actuator. Keyboard moves one real insert.
- first=root.locator('.fx-grip[data-slot="0"]')
+ # Focusable plugin name also exposes keyboard reorder, without a handle.
+ first=root.locator('.fx-pick[data-slot="0"]')
  first.focus();first.press('Alt+ArrowDown')
  after=model(page)
  assert [x["name"] for x in after[:2]]==[
@@ -92,31 +93,31 @@ def check_transactions(page):
    x["id"] for x in initial[:2][::-1]],"insert identity lost"
  assert [x["bypassed"] for x in after[:2]]==[
    x["bypassed"] for x in initial[:2][::-1]],"bypass moved separately"
- root.locator('.fx-grip').first.focus()
- root.locator('.fx-grip').first.press('Control+z')
- assert model(page)==initial,"grip Ctrl+Z must restore order, bypass and identity"
- # Real pointer Drag&Drop on dedicated grip; non-draggable rows cannot reorder.
- root.locator('.fx-grip[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'),target_position={'x':40,'y':18})
+ root.locator('.fx-pick:not(.empty)').first.focus()
+ root.locator('.fx-pick:not(.empty)').first.press('Control+z')
+ assert model(page)==initial,"plugin-name Ctrl+Z must restore order, bypass and identity"
+ # Real pointer Drag&Drop on row-wide pointer; non-draggable rows cannot reorder.
+ root.locator('.fx-pick[data-slot="0"]').drag_to(root.locator('.fxslot-row[data-slot="1"]'),target_position={'x':40,'y':18})
  dragged=model(page)
  # Slot indices are physical positions and MUST remain 0/1 after moving.
  # Compare stable insert payload separately from its new position.
  assert [r["slot"] for r in dragged[:2]]==[0,1],("invalid DnD positions",dragged)
  for key in ("id","name","bypassed"):
   assert [r[key] for r in dragged[:2]]==[
-   r[key] for r in initial[:2][::-1]],("grip DnD changed "+key,dragged)
- # Cross-channel reference transfer preserves token/bypass and compacts
+   r[key] for r in initial[:2][::-1]],("row DnD changed "+key,dragged)
+ # Cross-channel pointer transfer preserves token/bypass and compacts
  # both chains. Native transfer has separate accepted PCM coverage.
  before=model(page)
  second=model(page,"2")
  other=page.locator('#tracks .strip[data-id="2"]')
- root.locator('.fx-grip[data-slot="0"]').drag_to(other.locator('.fxslot-row[data-slot="0"]'))
+ root.locator('.fx-pick[data-slot="0"]').drag_to(other.locator('.fxslot-row[data-slot="0"]'))
  assert len([r for r in model(page) if r['name']!='None'])==len([r for r in before if r['name']!='None'])-1
  assert len([r for r in model(page,"2") if r['name']!='None'])==len([r for r in second if r['name']!='None'])+1
- other.locator('.fx-grip').first.focus()
- other.locator('.fx-grip').first.press('Control+z')
+ other.locator('.fx-pick:not(.empty)').first.focus()
+ other.locator('.fx-pick:not(.empty)').first.press('Control+z')
  assert model(page)==before and model(page,"2")==second,"transfer undo lost native-style identity"
- root.locator('.fx-grip').first.focus()
- root.locator('.fx-grip').first.press('Control+z')
+ root.locator('.fx-pick:not(.empty)').first.focus()
+ root.locator('.fx-pick:not(.empty)').first.press('Control+z')
  assert model(page)==initial,"preceding reorder undo lost"
  # The separate OFF button is never a drag handle; it flips only bypass.
  root.locator('[data-action="slotPower"][data-slot="0"]').click()
@@ -156,6 +157,6 @@ def main():
    assert not errors,(width,errors)
    page.close()
   browser.close()
- print("PASS V53 dedicated grip + reversible FX reorder, visual frame and rail on 4 sizes × 3 operator states")
+ print("PASS V53 row-wide pointer + reversible FX reorder, visual frame and rail on 4 sizes × 3 operator states")
 
 if __name__=="__main__":main()
