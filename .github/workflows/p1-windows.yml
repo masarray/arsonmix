@@ -135,7 +135,7 @@ jobs:
     needs: quick
     # Draft commits never reserve expensive Windows runners. Non-draft PR
     # synchronizations re-test latest HEAD. Main push and manual always run.
-    if: ${{ github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.head_ref == 'fix/native-channel-appearance-20261107') }}
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
