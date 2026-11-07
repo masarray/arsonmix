@@ -7,6 +7,14 @@ using armix::device::decideDeviceSession;
 
 int main()
 {
+    using armix::device::retainedMixerQuantum;
+    static_assert(retainedMixerQuantum(256,1024,8192,false,true)==256);
+    static_assert(retainedMixerQuantum(256,64,8192,false,true)==64);
+    static_assert(retainedMixerQuantum(64,512,8192,false,true)==64);
+    static_assert(retainedMixerQuantum(256,512,8192,true,false)==256);
+    static_assert(retainedMixerQuantum(256,512,8192,true,true)==0);
+    static_assert(retainedMixerQuantum(256,8193,8192,false,false)==0);
+    static_assert(retainedMixerQuantum(0,512,8192,false,false)==0);
     // Opening and closing the dialog without a real hardware generation
     // change never discards an accepted mixer, regardless of its contents.
     static_assert(decideDeviceSession(true, true, true) ==

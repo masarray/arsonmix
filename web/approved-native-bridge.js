@@ -1266,7 +1266,8 @@
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="";
+      deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="",
+      offeredPinRemap=null;
   let toastTimer=0;
   function nativeToast(message){
     let element=document.getElementById("armixNativeToast");
@@ -1337,6 +1338,7 @@
         </details>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
+          <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=()=>{
         devicePanel.hidden=true;
@@ -1346,6 +1348,7 @@
       });
       devicePanel.addEventListener("change",e=>{
         if(!deviceChoice)return;
+        offeredPinRemap=null;
         deviceResult="";
         const pinSide=e.target.dataset.audioPin;
         if(pinSide==="input"||pinSide==="output"){
@@ -1399,11 +1402,17 @@
           },8000);
         }else sendDeviceApply();
       };
+      devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
+        if(!deviceBusy && !pendingDeviceMute && offeredPinRemap!==null &&
+           !hardware?.device?.outputArmed)
+          sendDeviceApply(true);
+      };
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceResult="";
+    offeredPinRemap=null;
     if(active)active.textContent="Reading verified audio devices…";
     backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
@@ -1484,12 +1493,17 @@
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
       !deviceChoice.playback;
+    const remap=devicePanel.querySelector("[data-audio-remap]");
+    remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
+    remap.disabled=deviceBusy || !!pendingDeviceMute;
+    remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
-  function sendDeviceApply(){
+  function sendDeviceApply(confirmRetainedPinMapping=false){
     if(!deviceChoice||!deviceInventory?.active)return;
     const c=deviceChoice,a=deviceInventory.active;
     const same=a.open&&a.backend===c.backend&&
       a.captureDevice===c.capture&&a.playbackDevice===c.playback;
+    if(confirmRetainedPinMapping && (!same || offeredPinRemap!==a.deviceGeneration))return;
     deviceBusy=true;
     const requestId="approved-io-"+(++deviceRequest);
     devicePanel.dataset.pendingRequest=requestId;
@@ -1498,10 +1512,12 @@
     backend.emitEvent("arMixAction",{action:"audioDeviceApply",
       requestId,expectedDeviceGeneration:Number(a.deviceGeneration),
       config:{backend:c.backend,captureDevice:c.capture,
-        playbackDevice:c.playback,sampleRate:same?c.rate:0,
-        bufferSize:same?c.buffer:0,
+        playbackDevice:c.playback,
+        sampleRate:confirmRetainedPinMapping?a.rate:same?c.rate:0,
+        bufferSize:confirmRetainedPinMapping?a.buffer:same?c.buffer:0,
         enabledInputs:same?c.inputPins:[],
-        enabledOutputs:same?c.outputPins:[]}});
+        enabledOutputs:same?c.outputPins:[],
+        ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{})}});
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
@@ -1514,6 +1530,10 @@
       if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
       if(ack.active)deviceInventory.active=ack.active;
+      offeredPinRemap=ack.state==="NEEDS_REMAP" && ack.canReusePins===true &&
+        ack.active?.open===true && ack.active?.authorized===true &&
+        Number.isSafeInteger(ack.active.deviceGeneration)?
+          ack.active.deviceGeneration:null;
       const accepted=ack.ok===true&&ack.state==="ACCEPTED_MUTED" &&
         ack.active?.open===true && ack.active?.authorized===true &&
         Array.isArray(ack.active.enabledInputs) &&
@@ -2577,6 +2597,8 @@
   // shortcuts instead of silently intercepting and leaving broken buttons.
   const nativeReferenceOnly=Object.freeze({
     sceneSelect:"Native full-session Show is not yet available",
+    sofToggle:"Sends on Faders requires acknowledged native send-gain routing",
+    sofTarget:"Sends on Faders requires acknowledged native send-gain routing",
     saveScene:"Native full-session Show is not yet available",
     recallScene:"Native full-session Show is not yet available",
     sceneSafe:"Show safe requires native session snapshots",

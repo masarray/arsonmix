@@ -372,6 +372,7 @@ public:
     // Suppress any live output while selecting/changing a device, even if JUCE
     // starts its new callback before the selector window is closed.
     void beginManualAudioSetup() noexcept {
+        offeredWasapiBinding_.reset();
         setOutputMuted(true);
         secondaryOutput_.disarm();
         directFence_.suspend();
@@ -395,6 +396,27 @@ public:
                 return false;
         }
         return false;
+    }
+    // Explicit operator consent can bind matching numbered pins on another
+    // uniquely identified WASAPI endpoint pair. It never authorizes output.
+    bool stageRetainedWasapiPortMapping() {
+        offeredWasapiBinding_.reset();
+        if(!hasRetainedUnboundMixer() || !acceptedWasapiBinding_)return false;
+        try {
+            auto current=inspectWasapiBinding();
+            if(!current || !acceptedWasapiBinding_->samePinLayout(*current) ||
+               acceptedWasapiBinding_->sameEndpoints(*current) ||
+               acceptedWasapiBinding_->rate!=current->rate)
+                return false;
+            offeredWasapiBinding_=std::move(current);
+            return true;
+        } catch(...) {return false;}
+    }
+    bool confirmRetainedWasapiPortMapping() {
+        auto offered=std::move(offeredWasapiBinding_);
+        offeredWasapiBinding_.reset();
+        return offered && hasRetainedUnboundMixer() && directFence_.permitted() &&
+               rebindRetainedWasapiSession(&*offered);
     }
     bool hasRetainedUnboundMixer() const noexcept {
         return dryRoutingLab_.hasAuthoredMixerContent() && !dryRoutingLab_.ready();
@@ -2032,12 +2054,12 @@ private:
         int frames=0;
         std::uint64_t epoch=0;
 
-        bool sameHardware(const WasapiBinding& other) const {
-            return backend==other.backend &&
-                armix::device::EndpointIdentityPolicy::sameIdentity(endpoints,other.endpoints) &&
-                inputs==other.inputs && outputs==other.outputs &&
-                inputLabels==other.inputLabels && outputLabels==other.outputLabels &&
-                rate==other.rate && frames==other.frames;
+        bool samePinLayout(const WasapiBinding& other) const {
+            return backend==other.backend && inputs==other.inputs && outputs==other.outputs &&
+                inputLabels==other.inputLabels && outputLabels==other.outputLabels;
+        }
+        bool sameEndpoints(const WasapiBinding& other) const noexcept {
+            return armix::device::EndpointIdentityPolicy::sameIdentity(endpoints,other.endpoints);
         }
     };
 
@@ -2059,7 +2081,8 @@ private:
         if(inputs!=setup.inputChannels || outputs!=setup.outputChannels ||
            inputs.isZero() || outputs.countNumberOfSetBits()<2 ||
            !std::isfinite(rate) || rate<8000.0 || rate!=setup.sampleRate ||
-           frames<16 || frames!=setup.bufferSize)return {};
+           frames<16 || frames>LiveDryRoutingLab::Block::hardFrameLimit ||
+           frames!=setup.bufferSize)return {};
         const auto inLabels=device->getInputChannelNames();
         const auto outLabels=device->getOutputChannelNames();
         const auto uniqueActiveLabels=[](const juce::BigInteger& mask,const juce::StringArray& labels) {
@@ -2077,7 +2100,7 @@ private:
                              inLabels,outLabels,rate,frames,epoch};
     }
 
-    bool rebindRetainedWasapiSession() {
+    bool rebindRetainedWasapiSession(const WasapiBinding* offered=nullptr) {
         if(!acceptedWasapiBinding_ || !allOutputsDisarmed() || !attached_ ||
            routeReconfiguring_.load(std::memory_order_acquire) || handoff_.busy() ||
            fxMovePhase_.load(std::memory_order_acquire)!=0 ||
@@ -2085,8 +2108,21 @@ private:
             return false;
         try {
             auto current=inspectWasapiBinding();
-            if(!current || !acceptedWasapiBinding_->sameHardware(*current) ||
-               !dryRoutingLab_.rebindVerifiedDevice(acceptedWasapiBinding_->epoch,current->epoch))
+            if(!current || !acceptedWasapiBinding_->samePinLayout(*current))
+                return false;
+            if(offered) {
+                if(offered->epoch!=current->epoch || offered->rate!=current->rate ||
+                   offered->frames!=current->frames || !offered->sameEndpoints(*current) ||
+                   !offered->samePinLayout(*current))
+                    return false;
+            } else if(!acceptedWasapiBinding_->sameEndpoints(*current))return false;
+            const bool rateChanged=acceptedWasapiBinding_->rate!=current->rate;
+            // The external CH1/Orbit rack is prepared by the device callback
+            // rather than the retained ChannelId lease bank. Keep the same
+            // policy for it as for other authored effects.
+            if((rateChanged && graphOwned_->count>0) ||
+               !dryRoutingLab_.rebindVerifiedDevice(acceptedWasapiBinding_->epoch,
+                   current->epoch,current->frames,rateChanged))
                 return false;
             acceptedWasapiBinding_=std::move(current);
             return true;
@@ -2163,6 +2199,7 @@ private:
     armix::device::AsioPriorityDeviceManager deviceManager_;
     armix::device::DirectRouteFence directFence_;
     std::optional<WasapiBinding> acceptedWasapiBinding_; // CONTROL only
+    std::optional<WasapiBinding> offeredWasapiBinding_;  // one explicit remap
     // Control-thread only; retain full class identity for exact comparison,
     // publish correlation HASH only. Never read registry in audio callback.
     armix::device::AsioRegistrationPolicy::Identity asioPinnedRegistration_;

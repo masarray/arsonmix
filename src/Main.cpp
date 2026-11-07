@@ -1166,7 +1166,8 @@ private:
         // thread. A vendor driver may block; never pretend JS async fixes it.
         const auto id=args.getProperty("requestId",{}).toString().substring(0,64);
         const auto oldGeneration=engine_.status().getProperty("deviceGeneration",0);
-        auto send=[&](bool ok,const juce::String& state,const juce::String& error)
+        auto send=[&](bool ok,const juce::String& state,const juce::String& error,
+                      bool canReusePins=false)
         {
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",id);
@@ -1176,6 +1177,7 @@ private:
             ack->setProperty("active",currentDeviceSnapshot());
             ack->setProperty("outputMuted",engine_.isOutputMuted());
             ack->setProperty("mixerBound",engine_.hasBoundMixerRoute());
+            ack->setProperty("canReusePins",canReusePins);
             if(browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceApplyAck",juce::var(ack.release()));
         };
@@ -1229,6 +1231,25 @@ private:
                              &&before.outputDeviceName==playback;
         auto* previousDevice=manager.getCurrentAudioDevice();
         const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
+        const auto confirm=config.getProperty("confirmRetainedPinMapping",false);
+        if(!confirm.isBool())
+            return send(false,"REJECTED","Invalid retained mixer mapping confirmation");
+        if(static_cast<bool>(confirm)) {
+            // The first Apply must open and verify the selected device.
+            // Confirmation binds only that exact, still-open generation;
+            // draft rate, buffer and pin changes use the normal Apply path.
+            if(!sameEndpoint || !previousWasOpen || rate!=before.sampleRate ||
+               block!=before.bufferSize ||
+               !engine_.confirmRetainedWasapiPortMapping())
+                return send(false,"NEEDS_REMAP",
+                    "Cannot reuse mixer pins. Endpoint, pin layout or FX format is incompatible.");
+            deviceSettingsDirty_=true;
+            directRestore_.cancel();
+            diagnostics_.record("CUSTOM_AUDIO_REMAP_ACCEPTED",typeName);
+            send(true,"ACCEPTED_MUTED",{});
+            emitApprovedNativeSnapshot();
+            return;
+        }
         const auto originalInputNames=previousWasOpen
             ?previousDevice->getInputChannelNames():juce::StringArray{};
         const auto originalOutputNames=previousWasOpen
@@ -1333,9 +1354,9 @@ private:
             error="Driver readback mismatch; device setting was not accepted";
         if(error.isEmpty()&&!engine_.finishManualAudioSetup()) {
             if(engine_.directRouteAuthorized()&&engine_.hasRetainedUnboundMixer()) {
-                const juce::String needsRemap="Device verified. Mixer retained and muted; its previous hardware mapping could not be verified";
+                const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
                 diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
-                send(false,"NEEDS_REMAP",needsRemap);
+                send(false,"NEEDS_REMAP",needsRemap,engine_.stageRetainedWasapiPortMapping());
                 emitApprovedNativeSnapshot();
                 return;
             }
