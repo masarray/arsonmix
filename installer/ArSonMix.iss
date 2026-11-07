@@ -1,4 +1,5 @@
-; ArSonMix x64 RC from exact independently verified FAT app, no new DSP or GUI.
+; ArSonMix x64 per-user Inno Setup: safe in-place upgrade + single launch.
+; Exact independently verified FAT app; no new DSP or GUI.
 #ifndef SourceRoot
   #error "Supply /DSourceRoot with SHA-verified staging directory"
 #endif
@@ -25,7 +26,17 @@ SetupIconFile={#SourceRoot}\arsonmix-app.ico
 UninstallDisplayIcon={app}\ArSonMix.exe
 Compression=lzma2
 SolidCompression=yes
-CloseApplications=no
+UsePreviousAppDir=yes
+DisableWelcomePage=yes
+DisableDirPage=yes
+DisableReadyPage=yes
+DisableFinishedPage=yes
+SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
+; Windows Restart Manager asks the running ArSonMix to close normally,
+; invoking JUCE shutdown/session persistence before any executable is replaced.
+; Never force-kill an audio session or restart an old process beside the new one.
+CloseApplications=yes
+CloseApplicationsFilter=ArSonMix.exe
 RestartApplications=no
 [Files]
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
@@ -34,5 +45,12 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
-; No Run or UninstallDelete: do not auto-activate live audio or erase
-; AppData Studio. Do not install portable_mode.txt.
+; Do not create a second copy of an already running mixer. Restart Manager
+; closes the prior verified app before [Files], while [Run] launches exactly
+; one new executable only after a successful interactive install/update.
+; Silent enterprise/FAT installs deliberately do not launch desktop audio.
+[Run]
+Filename: "{app}\\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
+
+; Never delete private Studio data on install/update/uninstall; never install
+; portable_mode.txt or silently ARM an audio output.
