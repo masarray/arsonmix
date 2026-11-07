@@ -15,6 +15,7 @@ struct Candidate
 {
     juce::String productId, path;
     int hostUniqueId = 0;
+    juce::String artifactSha256; // Fixed, approved ZIP identity for cold-scan metadata cache.
 };
 
 struct Discovery
@@ -163,7 +164,8 @@ struct Registry final
                     return fail (id + ": modified VST3 resource");
             }
             result.candidates.push_back ({ id, bundle.getFullPathName(),
-                static_cast<int> (item.getProperty ("hostUniqueId", 0)) });
+                static_cast<int> (item.getProperty ("hostUniqueId", 0)),
+                item.getProperty ("artifactSha256", {}).toString() });
         }
         // Official four-FX packs require the exact reviewed original suppliers.
         if (distribution == "production-four")
