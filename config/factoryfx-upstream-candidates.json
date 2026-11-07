@@ -4,23 +4,34 @@
     {
       "productId": "arson-eq",
       "distributionRepo": "masarray/arson-eq",
-      "releaseTag": null,
-      "publishedAt": null,
-      "windowsVst3Asset": null
+      "releaseTag": "v0.1.0-m3.1-sc220-test",
+      "publishedAt": "2026-11-03T23:42:18Z",
+      "windowsVst3Asset": "ArSonEQ-v0.1.0-M3.1-Windows-x64-VST3.zip",
+      "prerelease": true
+    },
+    {
+      "productId": "arson-comp",
+      "distributionRepo": "masarray/arson-comp",
+      "releaseTag": "v0.2.0-sc220-vst3-test",
+      "publishedAt": "2026-11-03T23:42:19Z",
+      "windowsVst3Asset": "ArSonComp-v0.2.0-Windows-x64-VST3.zip",
+      "prerelease": true
     },
     {
       "productId": "arson-verb",
       "distributionRepo": "masarray/arsonverb",
-      "releaseTag": null,
-      "publishedAt": null,
-      "windowsVst3Asset": null
+      "releaseTag": "v1.0.1",
+      "publishedAt": "2026-10-31T22:34:11Z",
+      "windowsVst3Asset": "ArSonVerb-Windows-x64-VST3-v1.0.1.zip",
+      "prerelease": false
     },
     {
       "productId": "arsonkupik-enhancer",
       "distributionRepo": "masarray/vst-enhancer",
       "releaseTag": "v0.5.26",
       "publishedAt": "2026-08-23T23:40:39Z",
-      "windowsVst3Asset": "ArSonKuPik-v0.5.26-Windows-x64-VST3.zip"
+      "windowsVst3Asset": "ArSonKuPik-v0.5.26-Windows-x64-VST3.zip",
+      "prerelease": false
     }
   ]
 }
