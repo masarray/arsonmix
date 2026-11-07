@@ -55,6 +55,7 @@ jobs:
           # The ONLY public mixer is /preview/, generated with the approved
           # PNG controls. Old links redirect to it; they never show other GUI.
           python tests/single_preview_publication_contract_test.py dist-pages
+          python tests/landing_page_download_contract_test.py dist-pages
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py

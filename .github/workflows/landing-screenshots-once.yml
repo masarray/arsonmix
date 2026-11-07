@@ -1,0 +1,36 @@
+name: Capture ArSonMix landing screenshots (one-time)
+on:
+  push:
+    branches: [feat/arsonmix-premium-download-landing-20261107]
+    paths:
+      - '.github/workflows/landing-screenshots-once.yml'
+permissions:
+  contents: write
+jobs:
+  approved-gui-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser for actual approved GUI screenshots
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Build canonical Pages GUI and capture three original screenshots
+        run: |
+          python scripts/build_pages.py --out dist-pages --sha "$GITHUB_SHA" --branch main
+          python scripts/capture_landing_screenshots.py
+      - name: Publish screenshot assets to this same PR branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/media/
+          if ! git diff --cached --quiet; then
+            git commit -m "assets(landing): capture actual approved GUI for product screenshots"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi

@@ -14,6 +14,18 @@ dst.mkdir(parents=True,exist_ok=True)
 # Publish only the landing and ONE approved /preview/ GUI. Internal GUI seed
 # folders remain in repo for design tests, never as separate public screens.
 shutil.copy2(ROOT/'site/index.html',dst/'index.html')
+# Landing assets are independent of the ONE approved mixer /preview/ bundle.
+# Copy screenshot evidence captured from that exact canonical GUI, no fake renders.
+for filename in ('landing.css','downloads.js'):
+    shutil.copy2(ROOT/'site'/filename,dst/filename)
+media_src=ROOT/'site/media'
+media_dst=dst/'media'
+if media_dst.exists(): shutil.rmtree(media_dst)
+if media_src.is_dir():
+    media_dst.mkdir(parents=True)
+    for filename in ('console-overview.jpg','console-routing.jpg','console-faders.jpg'):
+        source=media_src/filename
+        if source.is_file(): shutil.copy2(source,media_dst/filename)
 # One logo source, one deterministic build for all web/PWA/favicon resources.
 subprocess.run([sys.executable,str(ROOT/'scripts/generate_brand_icons.py'),
                 '--source',str(ROOT/'assets/icon/brand-source-128.png'),

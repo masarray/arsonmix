@@ -1,18 +1,156 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark"><meta name="theme-color" content="#092131"><meta name="description" content="ArSonMix – professional live VST FX host and digital mixing console. Try the live GUI prototype.">
-<title>ArSonMix — Live FX Console</title>
-<link rel="icon" href="favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png"><link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png"><link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png"><link rel="manifest" href="site.webmanifest">
-<style>
-:root{font-family:Inter,"Segoe UI",Arial,sans-serif;color:#dce7ed;background:#0a1118}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 70% 2%,#183342 0%,transparent 45%),#0b1219}a{color:inherit;text-decoration:none}button{font:inherit}.shell{max-width:1110px;margin:auto;padding:0 28px}.nav{height:70px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #28404e;gap:16px}.logo{display:inline-flex;align-items:center;gap:8px;font-size:18px;font-weight:600;letter-spacing:.2px;white-space:nowrap}.logo img{width:26px;height:26px;display:block;flex:none}.logo b{color:#38c5ef;font-weight:720;letter-spacing:1px}.logo span{font-weight:350;color:#adbfca}.links{display:flex;align-items:center;gap:28px;font-size:12px;color:#b0c7d2}.links a:hover{color:#53d7f6}.nav-cta,.primary{background:linear-gradient(180deg,#5ae7ff,#099dca 63%,#087494);color:#04131d;border:1px solid #63ddf3;box-shadow:inset 0 1px #d9fcff,0 5px 16px #06162190;border-radius:5px;padding:11px 18px;font-weight:700;font-size:12px;white-space:nowrap}.primary:hover,.nav-cta:hover{filter:brightness(1.1)}.nav-cta{padding:9px 15px}.eyebrow{font-size:10px;letter-spacing:2px;color:#66d8f2;text-transform:uppercase}.hero{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;align-items:start;min-height:0;padding-top:32px;padding-bottom:44px}.hero h1{font-size:clamp(29px,3.15vw,43px);line-height:1.13;letter-spacing:-.9px;font-weight:590;margin:18px 0}.hero h1 em{font-style:normal;color:#58d5ef}.hero p{font-size:14px;line-height:1.85;color:#9ab2bf;max-width:450px}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px;align-items:center}.secondary{padding:10px 17px;font-size:12px;border:1px solid #496573;background:#192b35;border-radius:5px;color:#c9e3ed}.meta{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:#90aab7;margin-top:27px}.meta span{display:flex;align-items:center;gap:7px}.dot{width:7px;height:7px;display:inline-block;border-radius:100%;background:#5adb83;box-shadow:0 0 8px #5adb8365}.console{background:linear-gradient(#243846,#101b24);border:1px solid #3c5868;border-radius:9px;box-shadow:0 18px 54px #0009,inset 0 1px #7896a144;overflow:hidden;transform:none}.mocktop{height:40px;border-bottom:2px solid #050c12;padding:11px 14px;font-size:11px;display:flex;justify-content:space-between;color:#83d6ee}.mocktop b{color:#dcecf1}.preview-window{width:100%;aspect-ratio:1593/928;overflow:hidden;position:relative;background:#08131a;border-bottom:1px solid #314d59}.preview-window iframe{display:block;width:1593px;height:928px;border:0;pointer-events:none;transform-origin:top left;transform:scale(var(--landing-preview-scale,.32))}.preview-window .preview-open{position:absolute;inset:0;z-index:2;display:block;cursor:pointer}.preview-open:focus-visible{outline:2px solid #7ae2e9;outline-offset:-3px}.mockfoot{display:flex;align-items:center;gap:7px;height:29px;background:#101f29;padding:8px;color:#8aa9b8;font-size:10px;border-top:1px solid #344852}.section{border-top:1px solid #30404a;padding:36px 0 44px}.sectionhead{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:16px}.sectionhead h2{font-weight:570;font-size:21px;margin:8px 0 0}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.card{padding:21px;border:1px solid #304653;background:linear-gradient(#182832,#111c25);border-radius:6px}.card .symbol{font-size:20px;color:#57d5f0}.card h3{font-size:13px;font-weight:610;margin:12px 0 7px}.card p{font-size:12px;line-height:1.7;color:#8daab7;margin:0}.footer{display:flex;justify-content:space-between;gap:18px;padding:26px 0;border-top:1px solid #30404a;color:#809ba7;font-size:11px}.footer a:hover{color:#69e5ff}@media(max-width:850px){.hero{grid-template-columns:1fr;min-height:0}.console{transform:none}.links{gap:13px}.cards{grid-template-columns:1fr}.hero{gap:25px}.shell{padding:0 16px}}@media(max-width:490px){.links .source{display:none}.hero h1{font-size:31px}.console{max-width:100%}.nav{height:62px}}
-</style></head><body>
-<div class="shell"><header class="nav"><a href="./" class="logo"><img src="arsonmix-48.png" width="26" height="26" alt="" aria-hidden="true"><span><b>Ar</b>SonMix</span></a><nav class="links"><a class="source" href="https://github.com/masarray/arsonmix">GitHub Source</a><a href="./preview/" class="nav-cta">Open Approved Mixer →</a></nav></header>
-<main><section class="hero"><div><div class="eyebrow">LIVE AUDIO · VST FX · DIGITAL CONSOLE</div><h1>The next-generation <em>live mixing</em> workspace.</h1><p>A precision-focused digital mixer UI for live vocals, karaoke, and streaming. Explore the WIRE mixer with embedded Inter throughout, uniform backlit MUTE/SOLO/PFL and compact contextual FX, phase and M/ST controls. Reference UI only. This is an interactive UI reference, not a native audio engine.</p><div class="actions"><a class="primary" href="./preview/">Open Approved ArSonMix Mixer</a><a class="secondary" href="https://github.com/masarray/arsonmix">View Repository</a></div><div class="meta"><span><i class="dot"></i> GUI preview available</span><span>Windows-native engine in development</span><span>Open source</span></div></div>
-<div class="console" aria-label="Current ArSonMix 10-channel mixer GUI preview"><div class="mocktop"><b>ArSonMix · APPROVED GUI REFERENCE</b><span>REAL GUI · NATIVE ENGINE INTEGRATION</span></div><div class="preview-window" id="landingMixerPreview"><iframe title="Approved ArSonMix Mixer" src="./preview/" loading="lazy" scrolling="no" tabindex="-1" aria-hidden="true"></iframe><a class="preview-open" href="./preview/" aria-label="Open the one approved ArSonMix GUI"></a></div><div class="mockfoot"><i class="dot"></i> Approved console GUI · native audio integration in progress</div></div></section>
-<section class="section"><div class="sectionhead"><div><div class="eyebrow">EXPLORE THE CONSOLE</div><h2>Built around a practical live workflow</h2></div><a href="./preview/" style="color:#68d7f0;font-size:12px">Open Approved Mixer →</a></div><div class="cards"><article class="card"><span class="symbol">⌁</span><h3>Professional mixer surface</h3><p>Channel faders, pan, routing, meters, and tactile MUTE/SOLO/HPF states inspired by physical consoles.</p></article><article class="card"><span class="symbol">≋</span><h3>FX chain workflow</h3><p>Explore racks, plugin browser and signal flow. The browser version is a UI prototype, not a real-time audio engine.</p></article><article class="card"><span class="symbol">◉</span><h3>Continuously updated GUI</h3><p>The preview is rebuilt from the current development HTML by GitHub Actions. Check version and reload from the preview header.</p></article></div></section></main>
-<footer class="footer"><span>© ArSonMix · Community prototype</span><span><a href="./preview/">Mixer Preview</a> &nbsp;·&nbsp; <a href="https://github.com/masarray/arsonmix">GitHub</a></span></footer></div><script>
-/* Resize only on layout changes; no animation frame, animation, or polling. */
-(()=>{const host=document.getElementById('landingMixerPreview');if(!host)return;
-const fit=()=>host.style.setProperty('--landing-preview-scale',String(host.clientWidth/1593));
-fit();window.addEventListener('resize',fit,{passive:true});})();
-</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#09131b">
+  <meta name="description" content="ArSonMix is a modern digital mixer and native VST3 effects host for live vocals, streaming and performance. Explore the console and find official downloads for Windows, Linux and macOS.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ArSonMix — Your mix. In focus.">
+  <meta property="og:description" content="A precise, modern workspace for live audio. Explore the mixer and official desktop release availability.">
+  <meta property="og:image" content="https://masarray.github.io/arsonmix/android-chrome-512x512.png">
+  <meta property="og:url" content="https://masarray.github.io/arsonmix/">
+  <title>ArSonMix — Professional Live Mixing Studio</title>
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="stylesheet" href="./landing.css">
+  <script src="./downloads.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./" aria-label="ArSonMix, home">
+        <img src="./arsonmix-48.png" width="38" height="38" alt="" aria-hidden="true">
+        <span class="brand-name">Ar<span>Son</span>Mix</span>
+        <span class="brand-mark">STUDIO</span>
+      </a>
+      <nav class="top-nav" aria-label="Main navigation">
+        <a href="#console">Console</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#download">Downloads</a>
+        <a href="https://github.com/masarray/arsonmix" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+      <a class="header-cta" href="#download">Get ArSonMix <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main id="content">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot" aria-hidden="true"></span> THE DIGITAL MIXER FOR YOUR LIVE SOUND</div>
+        <h1 id="hero-title">Your mix.<br><em>In focus.</em></h1>
+        <p class="hero-lead">A beautiful, practical audio workspace built around what matters: levels, signal flow, and every detail of your sound.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#download"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg> Get ArSonMix</a>
+          <a class="btn btn-outline" href="./preview/">Explore live GUI <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="availability-note"><span class="status-pin" aria-hidden="true"></span> Desktop releases are being prepared. Check availability below.</p>
+        <div class="hero-proof" aria-label="Product highlights">
+          <span>Native desktop architecture</span>
+          <span>VST3 effects workflow</span>
+          <span>Flexible WIRE routing</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="visual-label"><span class="visual-pip" aria-hidden="true"></span> ARSONMIX / CONSOLE VIEW <span>01 — LIVE MIX</span></div>
+        <a class="app-shot" href="./media/console-overview.jpg" target="_blank" rel="noopener" aria-label="Open full mixer screenshot">
+          <div class="window-chrome" aria-hidden="true"><span class="traffic"><i></i><i></i><i></i></span><span>ArSonMix — Studio Console</span><span class="chrome-end">MIX / MAIN</span></div>
+          <img src="./media/console-overview.jpg" width="1680" height="900" fetchpriority="high" alt="ArSonMix digital mixer showing channel strips, FX racks, wiring patch points, level meters and silver faders">
+        </a>
+        <div class="visual-foot"><span>CAPTURED FROM APPROVED ARSONMIX CONSOLE GUI</span><span>Explore interface <span aria-hidden="true">↗</span></span></div>
+      </div>
+    </section>
+
+    <div class="strip-divider" aria-hidden="true"><div class="wrap"><span>CONTROL</span><span>ROUTE</span><span>PROCESS</span><span>MONITOR</span></div></div>
+
+    <section class="section wrap" id="console" aria-labelledby="console-title">
+      <div class="section-heading">
+        <div><div class="section-kicker">01 / INSIDE THE MIXER</div><h2 id="console-title">Everything visible.<br><span>Nothing in your way.</span></h2></div>
+        <p>Designed around familiar console controls so you can spend more time mixing and less time finding things.</p>
+      </div>
+      <div class="gallery">
+        <a class="gallery-large" href="./media/console-overview.jpg" target="_blank" rel="noopener" aria-label="Open full ArSonMix console screenshot">
+          <img src="./media/console-overview.jpg" width="1680" height="900" loading="lazy" decoding="async" alt="Full ArSonMix mixer console in dark blue, showing channels CH 1–9 and the main output">
+          <span class="gallery-caption"><b>THE MIXING CONSOLE</b><span>01 / Overview <span aria-hidden="true">↗</span></span></span>
+        </a>
+        <div class="gallery-pair">
+          <a href="./media/console-routing.jpg" target="_blank" rel="noopener" aria-label="Open detailed WIRE routing screenshot">
+            <img src="./media/console-routing.jpg" width="1060" height="355" loading="lazy" decoding="async" alt="Close-up of ArSonMix WIRE patching, FX slots and signal flow connections">
+            <span class="gallery-caption"><b>WIRE & EFFECTS</b><span>02 / Signal flow <span aria-hidden="true">↗</span></span></span>
+          </a>
+          <a href="./media/console-faders.jpg" target="_blank" rel="noopener" aria-label="Open detailed faders and meters screenshot">
+            <img src="./media/console-faders.jpg" width="1060" height="355" loading="lazy" decoding="async" alt="Close-up of ArSonMix stereo meters, level readouts and tactile silver mixer faders">
+            <span class="gallery-caption"><b>LEVELS & FADERS</b><span>03 / Hands-on mixing <span aria-hidden="true">↗</span></span></span>
+          </a>
+        </div>
+      </div>
+      <p class="screenshot-disclaimer">Screenshots show the approved GUI reference. Browser preview is not a substitute for the native audio engine or hardware qualification.</p>
+    </section>
+
+    <section class="section wrap" id="workflow" aria-labelledby="workflow-title">
+      <div class="section-heading">
+        <div><div class="section-kicker">02 / YOUR WORKFLOW</div><h2 id="workflow-title">Made for the moment<br><span>the sound goes live.</span></h2></div>
+        <p>Focused controls, clear feedback and a familiar signal chain for your performance or production setup.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature"><span class="feature-number">01</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="10" y="7" width="8" height="34" rx="4"/><rect x="30" y="7" width="8" height="34" rx="4"/><path d="M7 21h14M27 31h14"/></svg><h3>Precise mix control</h3><p>Level meters, pan, MUTE, SOLO and tactile fader control, arranged like a real desk.</p></article>
+        <article class="feature"><span class="feature-number">02</span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="10" cy="14" r="4"/><circle cx="38" cy="34" r="4"/><circle cx="38" cy="14" r="4"/><path d="M14 14h20M10 18v16h24"/></svg><h3>Clear WIRE routing</h3><p>See how channels connect and keep the signal path legible across the console.</p></article>
+        <article class="feature"><span class="feature-number">03</span><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="8" width="34" height="32" rx="5"/><path d="M13 18h22M13 27h22M21 14v8M30 23v8"/></svg><h3>VST3 FX workflow</h3><p>Organize inserts and work with your effects without losing your place in the mix.</p></article>
+      </div>
+    </section>
+
+    <section class="section wrap downloads" id="download" aria-labelledby="downloads-title">
+      <div class="download-intro">
+        <div class="section-kicker">03 / DOWNLOAD</div>
+        <h2 id="downloads-title">Your studio starts here.</h2>
+        <p>Select your platform. Official installer links are shown only when a matching public release asset exists.</p>
+        <div id="release-summary" class="release-summary" role="status" aria-live="polite">Checking official release availability…</div>
+      </div>
+      <div class="os-grid">
+        <article class="os-card" data-platform="windows">
+          <div class="os-top">
+            <svg class="os-icon" viewBox="0 0 52 52" role="img" aria-label="Windows logo"><path fill="currentColor" d="M5 9 24 6v18H5zm23-3L47 3v21H28zM5 28h19v18L5 43zm23 0h19v21l-19-3z"/></svg>
+            <span class="os-state" data-release-state>NOT PUBLISHED</span>
+          </div>
+          <h3>Windows</h3>
+          <p>64-bit desktop · JUCE native host</p>
+          <a class="os-download" data-release-link href="https://github.com/masarray/arsonmix/releases" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg><span data-link-label>Check releases</span><span class="down-arrow" aria-hidden="true">↗</span></a>
+          <div class="os-note" data-release-note>Official Windows release pending. <a href="https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml" target="_blank" rel="noopener noreferrer">Build history ↗</a></div>
+        </article>
+        <article class="os-card" data-platform="linux">
+          <div class="os-top">
+            <svg class="os-icon penguin" viewBox="0 0 52 52" role="img" aria-label="Linux penguin icon"><path d="M26 5c-8 0-13 8-13 19 0 7-4 12-7 16 4 2 8 1 11-1 3 4 15 4 18 0 3 2 7 3 11 1-3-4-7-9-7-16C39 13 34 5 26 5Z"/><path d="M26 20c-5 0-9 8-9 14 0 6 18 6 18 0 0-6-4-14-9-14Z"/><path d="M19 15h.1m14 0h.1"/><path d="m22 20 4 3 4-3"/></svg>
+            <span class="os-state" data-release-state>PLANNED</span>
+          </div>
+          <h3>Linux</h3>
+          <p>Desktop distribution · availability TBA</p>
+          <a class="os-download" data-release-link href="https://github.com/masarray/arsonmix/releases" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg><span data-link-label>Check releases</span><span class="down-arrow" aria-hidden="true">↗</span></a>
+          <div class="os-note" data-release-note>Native Linux installer is not currently published.</div>
+        </article>
+        <article class="os-card" data-platform="macos">
+          <div class="os-top">
+            <svg class="os-icon" viewBox="0 0 52 52" role="img" aria-label="macOS Apple icon"><path fill="currentColor" d="M35.1 27.5c.1-5.2 4.3-7.6 4.5-7.7-2.4-3.5-6.1-4-7.5-4.1-3.1-.3-6 1.9-7.6 1.9-1.5 0-3.9-1.9-6.4-1.8-3.3.1-6.3 2-8 4.8-3.4 5.5-.9 13.7 2.4 18.2 1.7 2.2 3.7 4.6 6.2 4.5 2.5-.1 3.5-1.6 6.5-1.6 2.9 0 3.8 1.6 6.4 1.5 2.6-.1 4.3-2.2 5.9-4.4 1.9-2.6 2.7-5.2 2.8-5.3-.1 0-5.2-2-5.3-7.9zM31 12.7c1.2-1.5 2.1-3.5 1.9-5.6-1.9.1-4.1 1.3-5.4 2.8-1.2 1.4-2.2 3.4-1.9 5.3 2.1.2 4.1-1 5.4-2.5z"/></svg>
+            <span class="os-state" data-release-state>PLANNED</span>
+          </div>
+          <h3>macOS</h3>
+          <p>Apple desktop · availability TBA</p>
+          <a class="os-download" data-release-link href="https://github.com/masarray/arsonmix/releases" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg><span data-link-label>Check releases</span><span class="down-arrow" aria-hidden="true">↗</span></a>
+          <div class="os-note" data-release-note>A supported macOS build has not been published.</div>
+        </article>
+      </div>
+      <div class="download-footer"><span>Official packages only · No automatic downloads · No unqualified FAT artifacts</span><a href="https://github.com/masarray/arsonmix/releases" target="_blank" rel="noopener noreferrer">All release notes & builds ↗</a></div>
+    </section>
+
+    <section class="closing wrap" aria-labelledby="closing-title">
+      <div><span class="closing-label">ARSONMIX / STUDIO</span><h2 id="closing-title">Make every channel count.</h2><p>Explore the current GUI while the native desktop release is prepared.</p></div>
+      <a class="btn btn-outline" href="./preview/">Open interactive mixer <span aria-hidden="true">↗</span></a>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="wrap footer-inner"><a class="brand mini-brand" href="./"><img src="./arsonmix-48.png" alt="" width="27" height="27"> ArSonMix</a><span>Independent live audio studio project · © 2026</span><div><a href="https://github.com/masarray/arsonmix" target="_blank" rel="noopener noreferrer">Source</a><a href="./preview/">Console preview</a><a href="#download">Downloads</a></div></div></footer>
+</body>
+</html>

@@ -94,6 +94,7 @@ jobs:
           python tests/gui_baseline_lock_test.py
           python tests/brand_icon_contract_test.py
           python tests/brand_package_files_test.py
+          python tests/landing_page_download_contract_test.py dist-pages
           python tests/css_v28_restore.py
       - name: Check native UI contracts, workflow policy, and WIRE without Chromium
         run: |
