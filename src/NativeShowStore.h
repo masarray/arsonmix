@@ -162,7 +162,6 @@ public:
     }
 
     // Read-and-verify entire generation before changing either output value.
-    // Read-and-verify entire generation before changing either output value.
     juce::String load(const juce::String& requestedId,ShowV2& show,
                       std::vector<SnapshotV2>& snapshots) const {
         if(!detail::uuid(requestedId))return "Invalid Show ID";
