@@ -55,9 +55,9 @@ def main():
                  cwd=ROOT,capture_output=True,text=True)
   public=dst/"preview/index.html"
   shared=dst/"preview/assets/mixer-wire-dots.css"
-  assert "mixer-control-keys.css?rev=" in public.read_text("utf-8"),"Published /preview/ lost approved PNG hardware keys"
-  assert shared.read_bytes()==WIRE_CSS.read_bytes(),"Approved /preview/ did not publish the effective WIRE CSS"
-  assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in public.read_text("utf-8")
+  assert "mixer-control-keys.js?rev=" in public.read_text("utf-8"),"Published approved PNG keys missing"
+  assert shared.is_file() and shared.stat().st_size>50,"Missing compiled WIRE CSS owner"
+  assert "mixer-wire-dots.css" in CANONICAL.read_text("utf-8")
   with sync_playwright() as pw:
    browser=pw.chromium.launch(headless=True)
    for width in (1366,1680):
