@@ -10,7 +10,7 @@ _current_gui=tempfile.TemporaryDirectory(prefix="arsonmix-approved-interaction-"
 subprocess.run([sys.executable,str(ROOT/'scripts/build_pages.py'),'--out',_current_gui.name],cwd=ROOT,check=True,capture_output=True)
 PAGE=published_console(Path(_current_gui.name))
 BREAKPOINTS=((1366,768),(1378,911),(1680,900),(1920,1080))
-DENSITIES=("comfort","standard","compact")
+PRESENTATIONS=("default","wire-folded","refocused")
 
 def model(page,channel="1"):
  """Read only the public rendered rack; never reach private JS closure state."""
@@ -21,54 +21,46 @@ def model(page,channel="1"):
      bypassed:row.classList.contains('is-bypassed')
    })).filter(row=>row.id)""")
 
-def check_geometry(page,width,density):
+def check_geometry(page,width,presentation):
  root=page.locator('#tracks .strip[data-id="1"]')
  rack=root.locator('.fx-section')
  plate=rack.locator('.subhead')
  well=rack.locator('.fxslot-list')
  p=plate.bounding_box();w=well.bounding_box()
- assert p and w and p["height"]>0 and w["height"]>0,(width,density,p,w)
+ assert p and w and p["height"]>0 and w["height"]>0,(width,presentation,p,w)
  assert abs(p["x"]-w["x"])<2 and abs(p["width"]-w["width"])<2,\
-        (width,density,"FX plate and inset well must share side edges",p,w)
+        (width,presentation,"FX plate and inset well must share side edges",p,w)
  assert abs((p["y"]+p["height"])-w["y"])<=2.1,\
-        (width,density,"FX header disconnected from processor well",p,w)
+        (width,presentation,"FX header disconnected from processor well",p,w)
  skin=plate.evaluate("""el=>({bg:getComputedStyle(el).backgroundImage,
      border:getComputedStyle(el).borderBottomWidth})""")
- assert skin["bg"]!="none" and skin["border"]=="1px",(width,density,skin)
+ assert skin["bg"]!="none" and skin["border"]=="1px",(width,presentation,skin)
  assert page.locator('.section-rail .rail-cell.fx .rail-svg-icon').evaluate(
-  "el=>Math.round(el.getBoundingClientRect().width)")==16,(width,density,"oversized FX rail icon")
+  "el=>Math.round(el.getBoundingClientRect().width)")==16,(width,presentation,"oversized FX rail icon")
  assert page.locator("#master .strip .fx-section").count()==1, \
-        (width,density,"pinned Master has no rack")
+        (width,presentation,"pinned Master has no rack")
  for channel in ('1',):
   root=page.locator(f'#tracks .strip[data-id="{channel}"]')
   for row in root.locator('.fxslot-row').all():
-   assert row.get_attribute("draggable") is None,(width,density,"row-wide drag regressed")
+   assert row.get_attribute("draggable") is None,(width,presentation,"row-wide drag regressed")
   for row in root.locator('.fxslot-row.is-active,.fxslot-row.is-bypassed').all():
    grip=row.locator('.fx-grip')
    remove=row.locator('[data-action="removeFx"]')
    assert grip.count()==remove.count()==1
    g=grip.bounding_box();r=remove.bounding_box()
    assert g and r and g["x"]+g["width"] <= r["x"]+.5,\
-          (width,density,"grip must precede REMOVE",g,r)
+          (width,presentation,"grip must precede REMOVE",g,r)
    assert grip.get_attribute("draggable")=="true"
    assert grip.get_attribute("aria-label"),"FX grip must be keyboard accessible"
    assert row.locator('.fx-pick').get_attribute("draggable") is None
  rail=page.locator('.section-rail [data-section="fx"]')
  assert rail.get_attribute("aria-expanded")=="true"
- if density=="compact":
-  # Approved Narrow mode explicitly refuses FX/SEND disclosure changes to
-  # protect the calibrated vertical chassis. Verify zero accidental mutation.
-  before=page.locator(".console-body").get_attribute("class")
-  rail.click()
-  assert rail.get_attribute("aria-expanded")=="true",(
-    width,density,"Narrow mode changed FX disclosure unexpectedly")
-  assert page.locator(".console-body").get_attribute("class")==before,(
-    width,density,"Narrow mode shifted rack/fader geometry")
- else:
-  rail.click()
-  assert rail.get_attribute("aria-expanded")=="false",(width,density,"FX collapse aria broken")
-  rail.click()
-  assert rail.get_attribute("aria-expanded")=="true",(width,density,"FX expand aria broken")
+ # V29 has one comfort density: actual FX rail disclosure must remain
+ # reversible across every operator state without swapping FX slot IDs.
+ rail.click()
+ assert rail.get_attribute("aria-expanded")=="false",(width,presentation,"FX collapse aria broken")
+ rail.click()
+ assert rail.get_attribute("aria-expanded")=="true",(width,presentation,"FX expand aria broken")
 
 def check_transactions(page):
  root=page.locator('#tracks .strip[data-id="1"]')
@@ -140,17 +132,30 @@ def main():
    page=browser.new_page(viewport={"width":width,"height":height},device_scale_factor=1)
    errors=[];page.on("pageerror",lambda error:errors.append(str(error)))
    page.goto(PAGE.as_uri())
-   for density in DENSITIES:
-    page.locator("#densitySelect").select_option(density)
-    if "collapsed-fx" in (page.locator(".console-body").get_attribute("class") or ""):
+   # Composed /preview/ deliberately has one hidden legacy density ID.
+   # Keep twelve real viewport/operator-state cases without resurrecting it.
+   assert page.locator("#densitySelect").is_hidden()
+   assert page.locator(".console-body").get_attribute("data-density")=="comfort"
+   for presentation in PRESENTATIONS:
+    body=page.locator(".console-body")
+    if presentation=="wire-folded":
+     if "collapsed-send" not in (body.get_attribute("class") or ""):
+      page.locator('.section-rail [data-section="send"]').click()
+     assert "collapsed-send" in (body.get_attribute("class") or "")
+    elif presentation=="refocused":
+     if "collapsed-send" in (body.get_attribute("class") or ""):
+      page.locator('.section-rail [data-section="send"]').click()
+     page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
+     page.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
+    if "collapsed-fx" in (body.get_attribute("class") or ""):
      page.locator('.section-rail [data-section="fx"]').click()
-    check_geometry(page,width,density)
-    if width==1680 and density=="comfort":check_transactions(page)
-   page.locator("#densitySelect").select_option("comfort")
+    check_geometry(page,width,presentation)
+    if width==1680 and presentation=="default":check_transactions(page)
+   assert page.locator(".console-body").get_attribute("data-density")=="comfort"
    page.screenshot(path=f"pages-v53-fx-rail-{width}.png",full_page=True)
    assert not errors,(width,errors)
    page.close()
   browser.close()
- print("PASS V53 dedicated grip + reversible FX reorder, visual frame and rail on 4 sizes × 3 densities")
+ print("PASS V53 dedicated grip + reversible FX reorder, visual frame and rail on 4 sizes × 3 operator states")
 
 if __name__=="__main__":main()
