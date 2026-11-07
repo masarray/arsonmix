@@ -71,7 +71,8 @@ struct MixerDeviceBindingPolicy final {
         const auto& saved=document.binding;
         if(mode==Mode::verifiedDeviceApply &&
            (saved.backend!=live.backend || saved.playback!=live.playback))
-            return {count,0,1,-1,-1,false};
+            return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:
+                            VerifiedNativeOutputs{count,-1,-1,-1,-1,false};
         // A matching endpoint name does NOT prove an unchanged physical
         // jack inventory. Reject rather than silently rebase MAIN to 1/2
         // if pin labels changed or an unknown ASIO inventory lost pins.
