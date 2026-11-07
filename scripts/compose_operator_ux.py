@@ -136,6 +136,11 @@ def apply_operator_ux(html: str, assets: Path) -> str:
     if count != 1:
         raise ValueError("Operator UX obsolete minimized CSS drift")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
+    # Same plugin-browser CSS owner: pressed state outranks the legacy
+    # .plugin-close transparent background after Stage C compilation.
+    plugin += ("\n#pluginBrowser #pluginClose:active{"
+               "background:#962f38!important;background-color:#962f38!important;"
+               "border-color:#e6505d!important;color:#fff!important}\n")
     plugin_path.write_text(plugin,encoding="utf-8")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:
         raise ValueError("Operator UX DOM invariants rejected")

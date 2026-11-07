@@ -50,8 +50,11 @@ def assert_key(page, selector):
     page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
     page.mouse.down()
     color=button.evaluate("e=>getComputedStyle(e).backgroundColor")
-    assert color.startswith("rgb(") and (lambda a:a[0]>a[1]*1.3 and a[0]>a[2]*1.2)(
-        list(map(int,color[4:-1].split(',')[:3]))),(selector,color)
+    active=button.evaluate("e=>e.matches(':active')")
+    print("UX_CLOSE_PRESSED",selector,"active",active,"color",color,flush=True)
+    rgb=[int(float(x.strip())) for x in color.replace("rgba(","").replace("rgb(","").split(")")[0].split(",")[:3]]
+    assert active and rgb[0]>=110 and rgb[0]>rgb[1]*1.3 and rgb[0]>rgb[2]*1.2,(
+        selector,active,color)
     page.mouse.up()
 
 def inspect_page(page, width, height, scale, label):
@@ -109,6 +112,7 @@ def inspect_page(page, width, height, scale, label):
         "plugin drag inert",width,height,original,moved)
     assert moved['x']>=-2 and moved['y']>=-2 and moved['x']+moved['width']<=width+4,(
         "plugin escaped viewport",width,height,moved)
+    page.screenshot(path=str(ROOT/f'operator-ux-drag-{width}x{height}-{scale}.png'))
     assert_key(page,'#pluginClose')
     assert win.is_hidden()
     # Identity window and the other modeless tool share the exact square key.

@@ -39,6 +39,8 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertNotIn(".plugin-browser.minimized",plugin)
             self.assertIn("calc(100vw - 28px)",plugin)
             self.assertIn("calc(100dvh - 90px)",plugin)
+            self.assertIn("#pluginBrowser #pluginClose:active",plugin)
+            self.assertIn("background:#962f38!important",plugin)
             # No extra CSS file, one canonical assembler, source history untouched.
             self.assertEqual((source/"index.html").read_text(encoding="utf-8"),html_before)
             self.assertEqual((source/"assets/mixer-chrome-material.css").read_bytes(),chrome_before)
