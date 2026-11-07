@@ -11,9 +11,9 @@
     {
       "productId": "arson-verb",
       "distributionRepo": "masarray/arsonverb",
-      "releaseTag": null,
-      "publishedAt": null,
-      "windowsVst3Asset": null
+      "releaseTag": "v1.0.1",
+      "publishedAt": "2026-10-31T22:34:11Z",
+      "windowsVst3Asset": "ArSonVerb-Windows-x64-VST3-v1.0.1.zip"
     },
     {
       "productId": "arsonkupik-enhancer",
