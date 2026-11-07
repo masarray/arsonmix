@@ -92,7 +92,8 @@ class Codec final {
         return v;
     }
     static bool readIds(const juce::var& v,LegacyChannelIds& ids) {
-        const auto* in=get(v,"inputs").getArray(),*aux=get(v,"aux").getArray();
+        const auto inputVar=get(v,"inputs"),auxVar=get(v,"aux");
+        const auto* in=inputVar.getArray(),*aux=auxVar.getArray();
         if(!in||!aux||in->size()!=stripCount||aux->size()!=auxBusCount)
             return false;
         for(int i=0;i<stripCount;++i)
@@ -223,7 +224,8 @@ public:
         doc.masterGain=static_cast<float>(n);
         if(!strictBool(get(master,"mute"),doc.masterMute)||
            !strictBool(get(master,"mono"),doc.masterMono))return false;
-        const auto* channels=get(root,"channels").getArray();
+        const auto channelsVar=get(root,"channels");
+        const auto* channels=channelsVar.getArray();
         if(!channels||channels->size()<15||channels->size()>2048)return false;
         std::vector<ChannelStripDefinition> entries;
         entries.reserve(static_cast<std::size_t>(channels->size()));
@@ -243,8 +245,9 @@ public:
             row.pan=static_cast<float>(n);
             if(!strictBool(get(ch,"mute"),row.mute)||
                !strictBool(get(ch,"solo"),row.solo))return false;
-            const auto* catalogs=get(ch,"catalogs").getArray();
-            const auto* sends=get(ch,"sends").getArray();
+            const auto catalogsVar=get(ch,"catalogs"),sendsVar=get(ch,"sends");
+            const auto* catalogs=catalogsVar.getArray();
+            const auto* sends=sendsVar.getArray();
             if(!catalogs||!sends||catalogs->size()>8||sends->size()>128)
                 return false;
             for(const auto& catalog:*catalogs) {
@@ -281,7 +284,8 @@ public:
            !integral(get(req,"maxFrames"),doc.request.maxFrames,16,8192)||
            !strictBool(get(req,"mainMonoAfterFx"),doc.request.mainMonoAfterFx))
             return false;
-        const auto* sources=get(req,"sources").getArray();
+        const auto sourcesVar=get(req,"sources");
+        const auto* sources=sourcesVar.getArray();
         if(!sources||sources->size()>channels->size())return false;
         std::set<std::uint64_t> seenSources;
         for(const auto& src:*sources) {
@@ -297,8 +301,9 @@ public:
                 return false;
             doc.request.sources.push_back(p);
         }
-        const auto* fx=get(root,"inserts").getArray();
-        const auto* racks=get(root,"rackBypassed").getArray();
+        const auto fxVar=get(root,"inserts"),racksVar=get(root,"rackBypassed");
+        const auto* fx=fxVar.getArray();
+        const auto* racks=racksVar.getArray();
         if(!fx||!racks||fx->size()>16384||racks->size()>channels->size())return false;
         std::set<std::pair<std::uint64_t,std::size_t>> seenFx;
         for(const auto& item:*fx) {
@@ -326,6 +331,9 @@ public:
                doc.rackBypassed.end())return false;
             doc.rackBypassed.push_back(id);
         }
+        // Encode always emits in ChannelId/slot order. A manually shuffled or
+        // duplicated slot manifest is rejected; its vendor states must never
+        // attach to a different processor or channel.
         for(const auto& ch:doc.roster.channels()) {
             std::size_t slot=0;
             for(const auto& fxRow:doc.inserts)
