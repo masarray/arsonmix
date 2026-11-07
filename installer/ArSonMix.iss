@@ -101,14 +101,14 @@ var
   Attempt, ExitCode: Integer;
 begin
   Result := '';
-  Target := ExpandConstant('{app}\\ArSonMix.exe');
+  Target := ExpandConstant('{app}\ArSonMix.exe');
   if not FileExists(Target) then
     Exit; { first install: there is no existing exe to close }
 
   { First attempt: updated app receives its OWN graceful GUI-thread quit
     event. Never signal on the audio callback or issue terminate/kill. }
   ShutdownSignal := OpenEventW($0002, False,
-    'Local\\ArSonMix.InstallShutdown.v1');
+    'Local\ArSonMix.InstallShutdown.v1');
   if ShutdownSignal <> 0 then
   begin
     if not SignalEvent(ShutdownSignal) then
@@ -120,7 +120,7 @@ begin
     CloseWinHandle(ShutdownSignal);
     for Attempt := 1 to 100 do
     begin
-      if not CheckForMutexes('Local\\ArSonMix.MixerRunning.v1') then
+      if not CheckForMutexes('Local\ArSonMix.MixerRunning.v1') then
         Break;
       Sleep(200);
     end;
@@ -131,8 +131,8 @@ begin
     installation path, request WM_CLOSE and wait for the exit of ALL of them.
     Doing this explicitly avoids showing Inno's late DeleteFile code 5 UI. }
   ExtractTemporaryFile('ArSonMixUpdateShutdown.ps1');
-  HelperPath := ExpandConstant('{tmp}\\ArSonMixUpdateShutdown.ps1');
-  PowerShellExe := ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe');
+  HelperPath := ExpandConstant('{tmp}\ArSonMixUpdateShutdown.ps1');
+  PowerShellExe := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     AddQuotes(HelperPath) + ' -TargetPath ' + AddQuotes(Target) +
     ' -WaitSeconds 25';
