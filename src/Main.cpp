@@ -3831,9 +3831,11 @@ private:
                 mixerSessionStartupInspected_=true;
                 if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
                     mixerSessionRecoveryPending_=true;
-                    const auto error=restoreSavedMixerSession(saved!=nullptr && startupError_.isEmpty());
+                    const auto error=restoreSavedMixerSession(startupError_.isEmpty());
                     if(error.isNotEmpty())
                         emitNotice("Saved mixer retained; "+error,true);
+                    else if(saved==nullptr)
+                        deviceSettingsDirty_=true;
                 }
             }
             if (onStartupStage_) onStartupStage_ (2);
