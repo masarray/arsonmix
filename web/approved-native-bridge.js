@@ -2801,7 +2801,13 @@
   document.addEventListener("keydown",event=>{
     if(!connected||event.altKey||event.ctrlKey||event.metaKey)return;
     const target=event.target;
-    if(target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+    const editorHidden=Boolean(document.getElementById("channelIdentity")?.hidden);
+    const textEntry=target?.closest?.('input,textarea,select,[contenteditable="true"]');
+    // Closing the editor can leave DOM focus on its now-hidden input under
+    // WebView2. F2 must still reopen the last selected channel, rather than
+    // being swallowed by the generic text-entry shortcut guard.
+    if(textEntry && !(event.key==="F2" && editorHidden &&
+                      target?.id==="identityName"))return;
     const focused=target?.closest?.('.footer-label .name');
     if(focused && ["Enter"," "].includes(event.key)){
       const track=scope?.tracks?.concat(scope.master||[])?.find(
@@ -2821,6 +2827,18 @@
       document.querySelector('.strip[data-id="'+selected.id+'"] .strip-identity-top');
     openNativeIdentity(selected,anchor);
   },true);
+
+  // Preserve keyboard focus when closing the modeless identity window.
+  // The original Pages close handlers own visibility; never replace them.
+  for(const id of ["identityCancel","identityClose","identitySave"]){
+    document.getElementById(id)?.addEventListener("click",()=>{
+      requestAnimationFrame(()=>{
+        if(!document.getElementById("channelIdentity")?.hidden)return;
+        const name=document.querySelector('.strip[data-id="'+lastEditedChannelId+'"] .footer-label .name');
+        name?.focus?.();
+      });
+    });
+  }
 
   // Pages' reference-only controls must not masquerade as working native
   // operations. Keep REAL audio/FX/WIRE/device controls fully interactive;
