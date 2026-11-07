@@ -89,7 +89,9 @@ struct MixerDeviceBindingPolicy final {
             outputs.monitorL=outputs.monitorR=-1;
             outputs.monitorEnabled=false;
         }
-        if(!outputs.valid())outputs={count,0,1,-1,-1,false};
+        // Never substitute the first available pair when the saved MAIN
+        // physical connectors disappear. Audio may only return after the
+        // operator explicitly patches MAIN to available output pins.
         return outputs;
     }
     static juce::String apply(MixerSessionDocument& document,
@@ -117,6 +119,19 @@ struct MixerDeviceBindingPolicy final {
         if(mode==Mode::exact)
             return exact?juce::String{}:juce::String(
                 "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O");
+
+        // An Apply of the SAME playback endpoint must keep the saved
+        // physical MAIN connectors. The current mask only changes their
+        // ordinals; it never authorizes quietly switching MAIN to another
+        // jack. Compare against the policy-computed remap even when a caller
+        // supplies a valid but DIFFERENT output pair.
+        if(saved.backend==live.backend && saved.playback==live.playback &&
+           samePinNames(saved.outputNames,live.outputNames,live.backend)) {
+            const auto mapped=proposedOutputs(document,live,
+                outputs.activeOutputChannels,Mode::verifiedDeviceApply);
+            if(!mapped.valid() || !sameOutputs(mapped,outputs))
+                return "NEEDS_REMAP: saved MAIN output pins are no longer selected; explicitly choose MAIN outputs";
+        }
 
         auto& sources=document.request.sources;
         if(saved.backend!=live.backend || saved.capture!=live.capture ||
