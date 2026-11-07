@@ -340,6 +340,31 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
+    struct PendingMixerRebind final {
+        juce::String nonce,signature;
+        juce::int64 expiresAt=0;
+    } pendingMixerRebind_;
+    // SHA binds the immutable persisted session to a specific verified
+    // physical device epoch, masks and output pair. Never a PCM authority.
+    static juce::String mixerRebindSignature(
+            const armix::session::MixerSessionDocument& doc,
+            const LiveAudioEngine::MixerBindingInspection& live) {
+        const auto& b=live.live;
+        const auto& o=live.outputs;
+        auto raw=armix::session::Codec::encode(doc)+
+            "|device="+b.backend+"|capture="+b.capture+
+            "|playback="+b.playback+"|input="+b.inputMask+
+            "|output="+b.outputMask+"|rate="+juce::String(b.rate,3)+
+            "|frames="+juce::String(b.frames)+
+            "|inputs="+juce::String(live.callbackInputs)+
+            "|epoch="+juce::String(std::to_string(live.epoch))+
+            "|active="+juce::String(o.activeOutputChannels)+
+            "|main="+juce::String(o.mainL)+","+juce::String(o.mainR)+
+            "|monitor="+juce::String(o.monitorEnabled?1:0)+
+            ","+juce::String(o.monitorL)+","+juce::String(o.monitorR);
+        return juce::SHA256(raw.toRawUTF8(),raw.getNumBytesAsUTF8())
+            .toHexString();
+    }
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
@@ -1802,9 +1827,75 @@ private:
                 juce::var(ack.release()));
     }
 
-    // Called once immediately after startup and again only on user-directed
-    // restore. No implicit mapping to a different soundcard or active output.
-    juce::String restoreSavedMixerSession() {
+    // Read-only operator preview: no vendor instantiation, no graph publish,
+    // and no output authorization. Every source patch remains an ordinal.
+    void previewMixerDeviceRebind() {
+        auto ack=std::make_unique<juce::DynamicObject>();
+        juce::String error;
+        pendingMixerRebind_={};
+        if(!engine_.allOutputsDisarmed()||mixerSessionWorker_.busy()||
+           nativeShowBusy_||studioBackupBusy_||catalog_.busy()||
+           engine_.isGraphSwitchPending())
+            error="MUTE MAIN and STREAM, finish Studio IO before rebind";
+        armix::session::MixerSessionDocument doc;
+        std::vector<armix::shows::BinaryState> blobs;
+        if(error.isEmpty()) {
+            armix::session::NativeMixerSessionStore store(settingsDirectory());
+            error=store.load(doc,blobs);
+        }
+        const auto live=engine_.status().getProperty("dryRoutingLab",{});
+        if(error.isEmpty()&&static_cast<bool>(
+            live.getProperty("nativeChannelIdPcmActive",false)))
+            error="Live ChannelId mixer already active; refusing rebind";
+        LiveAudioEngine::MixerBindingInspection inspected;
+        if(error.isEmpty())
+            error=engine_.inspectNativeMixerSessionBinding(doc,inspected);
+        if(error.isEmpty()) {
+            const auto nonce=juce::Uuid().toDashedString().toLowerCase();
+            pendingMixerRebind_={
+                nonce,mixerRebindSignature(doc,inspected),
+                juce::Time::currentTimeMillis()+30000};
+            auto encode=[](const armix::session::HardwareBinding& b) {
+                auto v=std::make_unique<juce::DynamicObject>();
+                v->setProperty("backend",b.backend);
+                v->setProperty("capture",b.capture);
+                v->setProperty("playback",b.playback);
+                v->setProperty("inputMask",b.inputMask);
+                v->setProperty("outputMask",b.outputMask);
+                v->setProperty("rate",b.rate);
+                v->setProperty("frames",b.frames);
+                return juce::var(v.release());
+            };
+            ack->setProperty("token",nonce);
+            ack->setProperty("saved",encode(doc.binding));
+            ack->setProperty("current",encode(inspected.live));
+            ack->setProperty("changed",inspected.changed);
+            ack->setProperty("inputs",inspected.callbackInputs);
+            ack->setProperty("savedMainL",doc.outputs.mainL);
+            ack->setProperty("savedMainR",doc.outputs.mainR);
+            ack->setProperty("currentMainL",inspected.outputs.mainL);
+            ack->setProperty("currentMainR",inspected.outputs.mainR);
+            ack->setProperty("currentMonitorEnabled",inspected.outputs.monitorEnabled);
+            juce::Array<juce::var> sources;
+            for(const auto& patch:doc.request.sources) {
+                auto v=std::make_unique<juce::DynamicObject>();
+                v->setProperty("channelId",armix::session::decimal(patch.id.value));
+                v->setProperty("left",patch.inputL);
+                v->setProperty("right",patch.inputR);
+                v->setProperty("stereo",patch.stereo);
+                sources.add(juce::var(v.release()));
+            }
+            ack->setProperty("sources",juce::var(sources));
+        }
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixNativeSessionBindingAck",juce::var(ack.release()));
+    }
+
+    // Startup and ordinary restore never authorize a different endpoint.
+    juce::String restoreSavedMixerSession(bool approvedRebind=false,
+                                          const juce::String& expectedStamp={}) {
         if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
@@ -1846,6 +1937,14 @@ private:
                 return mixerSessionError_;
             }
         }
+        if(approvedRebind) {
+            LiveAudioEngine::MixerBindingInspection current;
+            error=engine_.inspectNativeMixerSessionBinding(doc,current);
+            if(error.isNotEmpty())return error;
+            if(expectedStamp.isEmpty() ||
+               mixerRebindSignature(doc,current)!=expectedStamp)
+                return "STALE_REBIND: saved session or audio device changed";
+        }
         // Existing live graphs cannot be replaced by startup autosave or
         // a stale More-button click. Never demote the true native renderer.
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
@@ -1853,7 +1952,8 @@ private:
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already active; refusing to replace it";
         }
-        error=engine_.restoreNativeMixerSession(std::move(doc),states);
+        error=engine_.restoreNativeMixerSession(
+            std::move(doc),states,approvedRebind);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -1861,9 +1961,11 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_RESTORE_REJECTED",error);
             return error;
         }
-        mixerSessionStatus_="RESTORED_MUTED";
+        mixerSessionStatus_=approvedRebind?"RESTORED_REBOUND_MUTED":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",
+            approvedRebind?
+            "Operator-approved hardware mapping; ChannelId/WIRE/VST3 retained, outputs DISARMED":
             "Exact native ChannelId/WIRE/VST3; outputs remain DISARMED");
         emitApprovedNativeSnapshot();
         return {};
@@ -2715,6 +2817,29 @@ private:
         if(action=="nativeSessionInspect") {
             emitMixerSessionAck("INSPECT",
                 mixerSessionStatus_=="DAMAGED_SESSION"?mixerSessionError_:juce::String{});
+            return;
+        }
+        if(action=="nativeSessionInspectRebind") {
+            previewMixerDeviceRebind();
+            return;
+        }
+        if(action=="nativeSessionRebind") {
+            // The one-use token is consumed even on failure. Revalidate the
+            // entire saved document and live device just before publication.
+            const auto approved=pendingMixerRebind_;
+            pendingMixerRebind_={};
+            juce::String result;
+            if(!value.isString() || approved.nonce.isEmpty() ||
+               value.toString()!=approved.nonce ||
+               juce::Time::currentTimeMillis()>approved.expiresAt)
+                result="STALE_REBIND: request expired or not confirmed";
+            else result=restoreSavedMixerSession(true,approved.signature);
+            if(result.isNotEmpty()) {
+                mixerSessionStatus_="REBIND_REJECTED";
+                mixerSessionError_=result;
+                emitNotice("MIXER SESSION: "+result,true);
+            }
+            emitMixerSessionAck("REBIND",result);
             return;
         }
         if(action=="nativeSessionSave" || action=="nativeSessionRestore" ||
