@@ -11,6 +11,7 @@ const ci = read('.github/workflows/p1-windows.yml');
 test('per-user Inno Setup upgrades the same app and retains private Studio data', () => {
   for (const item of [
     'AppId=ArSonMix.LiveStudio', 'PrivilegesRequired=lowest',
+    'AppVersion={#SourceAppVersion}', 'AppVerName=ArSonMix {#SourceAppVersion}',
     'DefaultDirName={localappdata}', 'UsePreviousAppDir=yes',
     'ArchitecturesAllowed=x64compatible', 'MinVersion=10.0.17763',
     'DisableWelcomePage=yes', 'DisableDirPage=yes',
@@ -53,6 +54,7 @@ test('successful interactive install or update launches exactly one new mixer', 
 test('Windows FAT actually repeats the installer while a graceful WM_CLOSE test mixer is running', () => {
   for (const item of [
     'manifest.sourceCommit', 'manifest.exeSha256', 'manifest.fatStatus',
+    '/DSourceAppVersion=$appVersion', 'project\\(ARMixConsole VERSION',
     'assets/icon/arsonmix-app.ico', 'FactoryFX',
     'Start-Process -FilePath $setup', 'Start-Process -FilePath $installedExe',
     'installer_graceful_close.cs', 'WM_CLOSE_SAVED', 'WINDOW_READY',
