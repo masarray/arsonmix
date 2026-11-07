@@ -266,16 +266,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
-          name: ArSonMix-Windows-Installer-UNQUALIFIED-${{ github.run_id }}
+          name: ArSonMix-Windows-Installer-Preview-${{ github.run_id }}
           path: installer-output/
           if-no-files-found: error
           retention-days: 14
       # Optional manual FAT only: never churn experimental ZIPs per commit.
-      # The unqualified artifact is NOT a stable release or physical audio proof.
+      # Preview artifact is build/installer verified. Owner physical listening is field evidence,
+      # distinct from automated exact-SHA hardware performance certification.
       - uses: actions/upload-artifact@v4
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
-          name: ArSonMix-Windows-FAT-UNQUALIFIED-${{ github.run_id }}
+          name: ArSonMix-Windows-FAT-Preview-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
