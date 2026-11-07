@@ -13,7 +13,7 @@
 AppId=ArSonMix.LiveStudio
 AppName=ArSonMix
 AppVersion={#SourceAppVersion}
-AppVerName=ArSonMix {#SourceAppVersion} RC (hardware FAT pending)
+AppVerName=ArSonMix {#SourceAppVersion} Preview
 AppPublisher=ArSonMix
 AppPublisherURL=https://masarray.github.io/arsonmix/
 DefaultDirName={localappdata}\Programs\ArSonMix
@@ -24,7 +24,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 WizardStyle=modern
 OutputDir={#OutputRoot}
-OutputBaseFilename=ArSonMix-Windows-x64-Setup-UNQUALIFIED
+OutputBaseFilename=ArSonMix-Windows-x64-Setup-Preview
 SetupIconFile={#SourceRoot}\arsonmix-app.ico
 UninstallDisplayIcon={app}\ArSonMix.exe
 Compression=lzma2
