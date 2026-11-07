@@ -135,7 +135,7 @@ def inspect_page(page, width, height, scale, label):
     assert page.locator('#channelIdentity').is_visible()
     assert_key(page,'#identityClose')
     assert page.locator('#channelIdentity').is_hidden()
-    check_identity_zero_reflow(page,width,height,scale,10)  # right-edge clamp
+    check_identity_zero_reflow(page,width,height,scale,'right-edge')
     # All other close keys use the SAME SVG and dimensions; hidden popups
     # cannot be pointer-tested here, but the CSS/DOM invariants are checked.
     for id in ('fastClose','wireConfigClose','wireWsClose','routeChoiceClose'):
@@ -195,7 +195,11 @@ def assert_still(before,after,where):
                 assert abs(x-y)<=0.5,(where,selector,index,axis,x,y)
 
 def check_identity_zero_reflow(page,width,height,scale,channel):
-    strip=page.locator(f'#tracks .strip[data-id="{channel}"]')
+    # Bank contents are driven by the current native/channel roster. The
+    # viewport's right edge is its last rendered strip, not a guessed ID 10.
+    strip=(page.locator('#tracks .strip').last if channel=='right-edge'
+           else page.locator(f'#tracks .strip[data-id="{channel}"]'))
+    assert strip.count()==1,(width,height,channel,'strip missing')
     strip.locator('.strip-identity-top').click()
     # Baseline after the intentional fold/selection layout has been painted.
     # Folded panels are NOT 50:50, and that is unrelated to editor stability.
@@ -217,7 +221,10 @@ def check_identity_zero_reflow(page,width,height,scale,channel):
     opened=page.evaluate(IDENTITY_GEOMETRY)
     assert_still(before,opened,(width,height,scale,channel,'open'))
     page.screenshot(path=str(stem)+'-open.png')
-    page.locator('#identityCancel').click()
+    if channel=='right-edge':
+        page.keyboard.press('Escape')
+    else:
+        page.locator('#identityCancel').click()
     assert editor.is_hidden()
     closed=page.evaluate(IDENTITY_GEOMETRY)
     assert_still(before,closed,(width,height,scale,channel,'close'))
