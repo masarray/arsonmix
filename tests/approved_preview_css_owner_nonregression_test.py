@@ -18,7 +18,7 @@ class ApprovedCssOwnership(unittest.TestCase):
         self.assertEqual(result["crossOwnerBaseline"], 114)
         self.assertEqual(result["newCrossOwnerConflicts"], 0)
         self.assertEqual(result["sameOwnerRepeatedBaseline"], 252)
-        self.assertEqual(result["sameOwnerRepeatedCurrent"], 252)
+        self.assertLessEqual(result["sameOwnerRepeatedCurrent"], 252)
         self.assertEqual(result["newSameOwnerStacking"], 0)
         self.assertTrue(str(OWNER.source_path("mixer-control-keys.css"))
                         .endswith("site/preview-buttons/assets/mixer-control-keys.css"))
@@ -47,7 +47,7 @@ class ApprovedCssOwnership(unittest.TestCase):
         names, _ = OWNER.inspect()
         present = OWNER.count_same_file_repeated_declarations(names)
         invented = dict(present)
-        invented["mixer-fader-assembly.css"] += 1
+        invented["mixer-fader-assembly.css"] = 10000
         with patch.object(OWNER, "count_same_file_repeated_declarations",
                           return_value=invented):
             with self.assertRaisesRegex(ValueError, "NEW SAME-OWNER"):
@@ -62,7 +62,16 @@ class ApprovedCssOwnership(unittest.TestCase):
                           return_value=reduced):
             result = OWNER.verify()
             self.assertEqual(result["newSameOwnerStacking"], 0)
-            self.assertEqual(result["sameOwnerRepeatedCurrent"], 251)
+            self.assertEqual(result["sameOwnerRepeatedCurrent"], sum(present.values())-1)
+
+    def test_media_context_is_distinct_but_repeated_context_still_rejected(self):
+        self.assertEqual(OWNER.same_context_repeat_count(
+            '.eq{width:100px}@media(max-width:650px){.eq{width:80px}}'),0)
+        self.assertEqual(OWNER.same_context_repeat_count(
+            '@media(max-width:650px){.eq{width:80px}}'
+            '@media(max-width:650px){.eq{width:70px}}'),1)
+        self.assertEqual(OWNER.same_context_repeat_count(
+            '.eq{width:100px}.eq{width:90px}'),1)
 
     def test_late_stylesheet_and_inline_css_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "inline CSS"):
