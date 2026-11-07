@@ -2463,9 +2463,9 @@
       if (!connected)return false;
       // Selection, WIRE inspection and section presentation are UI-only.
       if(action==="editIdentity"||action==="rename"){
-        // A single click on the channel header/name now opens the SAME
-        // original name/color/icon editor. No demo graph changes.
-        openNativeIdentity(t,btn);
+        // DAW convention: one click only selects/focuses this channel.
+        // The existing native consumeDoubleClick opens the identity editor;
+        // never open it from the click event preceding a double-click.
         return true;
       }
       if (["wireExpand","wireSource","wireRoute"].includes(action))
