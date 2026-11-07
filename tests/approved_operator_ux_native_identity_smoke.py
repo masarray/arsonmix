@@ -45,19 +45,23 @@ def main():
         assert page.locator('#wireNavigatorToggle').is_visible()
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_selector('#tracks .strip[data-id="1"]')
-        # Single click on the top identity, not double click, is the
-        # discoverable native edit path. It must not create PCM intents.
+        # DAW convention: single click selects channel; only double-click
+        # on its header/footer opens the name/color/icon editor.
         page.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
         editor=page.locator('#channelIdentity')
-        assert editor.is_visible(),"single-click native identity editor did not open"
+        assert editor.is_hidden(),"single-click must only select the channel"
+        page.locator('#tracks .strip[data-id="1"] .strip-identity-top').dblclick()
+        assert editor.is_visible(),"double-click on header did not open editor"
         assert page.locator('#identityName').evaluate("el=>el===document.activeElement")
         page.locator('#identityName').fill("Discard this")
         page.locator('#identityCancel').click()
         assert editor.is_hidden(),"Cancel must dismiss without modifying the channel"
         assert "Discard this" not in page.locator('#tracks .strip[data-id="1"]').inner_text()
-        # A normal click on the nameplate is also actionable.
+        # Footer name follows the same single-select/double-edit contract.
         page.locator('#tracks .strip[data-id="1"] .footer-label .name').click()
-        assert editor.is_visible(),"footer name click did not open editor"
+        assert editor.is_hidden(),"single-click on footer name opened editor"
+        page.locator('#tracks .strip[data-id="1"] .footer-label .name').dblclick()
+        assert editor.is_visible(),"footer double-click did not open editor"
         page.locator('#identityName').fill("Studio Vox")
         color="#c32974"
         page.locator(f'#identityColors [data-identity-color="{color}"]').click()
@@ -88,8 +92,7 @@ def main():
         # Keyboard F2 edits the selected loaded channel; Enter on focused
         # footer name is accessible when using keyboard-only navigation.
         page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
-        assert page.locator('#channelIdentity').is_visible()
-        page.locator('#identityCancel').click()
+        assert page.locator('#channelIdentity').is_hidden()
         page.keyboard.press('F2')
         assert page.locator('#channelIdentity').is_visible(),"F2 edit not available"
         page.locator('#identityName').fill('Studio Vox')
@@ -106,6 +109,6 @@ def main():
         assert not errors,errors
         page.close()
         context.close();browser.close()
-    print("PASS native identity: click/header/footer, F2/Enter, Cancel/Escape, edited name/icon/color, readback/reload, duplicate reject, exact ChannelId, zero PCM intents")
+    print("PASS native identity: single-click selects; double-click header/footer edits; F2/Enter, Cancel/Escape, name/icon/color, reload, duplicate reject, exact ChannelId, zero PCM intents")
 
 if __name__=="__main__":main()
