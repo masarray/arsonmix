@@ -1,3 +1,13 @@
+<p align="center">
+  <a href="https://masarray.github.io/arsonmix/"><img src="assets/icon/brand-512.png" width="208" alt="ArSonMix official mixer artwork — MUTE, SOLO, PFL, stereo level meters and silver fader"></a>
+</p>
+<p align="center"><strong>ArSonMix · Professional Live Mixing Studio</strong></p>
+<p align="center">
+  <a href="https://masarray.github.io/arsonmix/">Official website &amp; downloads</a> ·
+  <a href="https://masarray.github.io/arsonmix/preview/">Approved mixer</a> ·
+  <a href="https://github.com/masarray/arsonmix/releases">Releases</a>
+</p>
+
 > **ONLY APPROVED ARSONMIX GUI (owner decision, 2026-11-04):** https://masarray.github.io/arsonmix/preview/ . This is the *one* public GUI and Windows UI target, with its specific approved PNG hardware buttons. Bare `/preview-v2/` is wrong as a product preview and is redirect-only; `/preview-buttons/` and old archived previews are also redirect-only. The native JUCE engine must be stitched into exactly the assembled `/preview/` renderer. No alternative `web/index.html`, `web/mixer-layout.js`, `web/console-native.html` or older PR #278/#271 GUI may ship. [Root agent lock](AGENTS.md) · [GUI→native P0 #389](https://github.com/masarray/arsonmix/issues/389) · [current handoff](docs/workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) (historical filename) · [ENGINE #266](https://github.com/masarray/arsonmix/pull/266) · [FAT #270](https://github.com/masarray/arsonmix/pull/270). Browser GUI is simulation, not proof of PCM.
 
 # ArSonMix — Native Realtime Live Mixer and VST3 Host

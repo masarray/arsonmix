@@ -68,10 +68,14 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
     assert.equal(selected(uiPush, filename), false, filename + ' wrongly triggers browser main');
   }
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
-  for (const target of [
-    'ARMixPreparedMixerBlockTests', 'ARMixNativeMixerSessionTests',
-    'ARMixLiveRoutingEpochTests', 'ARMixRTTests', 'ARMixLiveChannelFxTests'
-  ]) assert.ok(native.includes(target), 'Missing vital audio test ' + target);
+});
+
+test('Windows builds the default CMake graph before running all CTests', () => {
+  assert.match(native, /-DBUILD_TESTING=ON/);
+  const build = native.indexOf('run: cmake --build build --config Release --parallel 2');
+  const ctest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
+  assert.ok(build >= 0 && ctest > build, 'Build all default targets before CTest');
+  assert.doesNotMatch(native, /cmake --build [^\r\n]*--target\b/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
