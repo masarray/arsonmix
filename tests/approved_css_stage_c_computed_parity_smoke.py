@@ -9,21 +9,11 @@ from pathlib import Path
 import shutil
 import tempfile
 from playwright.async_api import async_playwright
-from approved_css_original_bundle_fixture import reconstructed_original_css_html
+from approved_css_original_bundle_fixture import restore_original_css_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION = ROOT / "dist-pages" / "preview"
-SHEETS = (
-    "mixer-console-foundation.css", "mixer-channel-grid.css",
-    "mixer-section-controls.css", "mixer-section-layout.css",
-    "mixer-hardware-artwork.css", "mixer-v3-layout-contract.css",
-    "mixer-chrome-material.css", "mixer-control-keys.css",
-    "mixer-fx-rack.css", "mixer-plugin-browser.css",
-    "mixer-pan-controls.css", "mixer-fader-assembly.css",
-    "mixer-meter-display.css", "mixer-utility-controls.css",
-    "inter-embedded.css", "mixer-wire-dots.css",
-    "mixer-wire-out-align-v48.css", "mixer-contextual-buttons.css",
-)
+
 PROPERTIES = (
     "display", "position", "visibility", "opacity", "width", "height",
     "min-width", "min-height", "max-width", "max-height", "top", "left",
@@ -103,13 +93,7 @@ async def main():
     with tempfile.TemporaryDirectory(prefix="armix-css-c-baseline-") as tmp:
         before = Path(tmp) / "approved-original-css"
         shutil.copytree(PRODUCTION, before)
-        original_html=reconstructed_original_css_html((before/'index.html').read_text(encoding='utf-8'))
-        (before/'index.html').write_text(original_html,encoding='utf-8')
-        for name in SHEETS:
-            source = (ROOT / ("site/preview-buttons/assets"
-                              if name == "mixer-control-keys.css"
-                              else "site/preview-v2/assets") / name)
-            shutil.copy2(source, before / "assets" / name)
+        restore_original_css_bundle(before)
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             try:
