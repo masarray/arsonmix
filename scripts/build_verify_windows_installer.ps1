@@ -99,8 +99,9 @@ try {
     $closeText=if($closeMarker){(Get-Content -LiteralPath $fixtureClosed -Raw).Trim()}else{"MISSING"}
     $installedAfter=(Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Host "INNO_UPGRADE_DIAG: installerExit=$($upgrade.ExitCode) oldProcessExited=$($fixtureProcess.HasExited) gracefulMarker=$closeText restoredExeShaOk=$($installedAfter -eq $appHash)"
+    $acceptedSaves=@("WM_CLOSE_SAVED","RM_QUERY_SAVED","RM_ENDSESSION_SAVED")
     if($upgrade.ExitCode -ne 0 -or -not $fixtureProcess.HasExited -or
-       -not $closeMarker -or $closeText -ne "WM_CLOSE_SAVED"){
+       -not $closeMarker -or -not ($acceptedSaves -contains $closeText)){
         if(Test-Path -LiteralPath $upgradeLog){
             Get-Content -LiteralPath $upgradeLog |
               Select-String -Pattern 'Restart Manager|close application|closing application|file in use|ArSonMix|error|installing' |
@@ -115,7 +116,7 @@ try {
        (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
         throw "In-place update failed verified EXE replacement or data preservation"
     }
-    Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app WM_CLOSE, verified PE replacement, user files preserved"
+    Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"
     if(-not (Test-Path -LiteralPath $uninstall -PathType Leaf)){throw "Uninstaller missing"}
     $stop=Start-Process -FilePath $uninstall -ArgumentList @(
@@ -130,7 +131,7 @@ try {
         certification="UNSIGNED_HARDWARE_FAT_PENDING";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
-    Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app update, SHA-matched PE, uninstall, private Studio intact"
+    Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
     Write-Host "PHYSICAL_FAT_PENDING"
 }
 finally {
