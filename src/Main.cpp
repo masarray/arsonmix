@@ -1246,7 +1246,8 @@ private:
                 static_cast<double>(oldGeneration))
             return send(false,"REJECTED","Stale device generation; refresh DEVICE / DRIVER");
         const auto nativeRoute=engine_.status().getProperty("dryRoutingLab",{});
-        if(nativeShowBusy_||studioBackupBusy_||engine_.isGraphSwitchPending()||
+        if(nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
+           engine_.isGraphSwitchPending()||
             static_cast<bool>(nativeRoute.getProperty("pending",false))||
             engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
             !engine_.allOutputsDisarmed())
@@ -1289,6 +1290,7 @@ private:
                              &&before.outputDeviceName==playback;
         auto* previousDevice=manager.getCurrentAudioDevice();
         const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
+        const bool previousMixerBound=engine_.hasBoundMixerRoute();
         const auto confirm=config.getProperty("confirmRetainedPinMapping",false);
         if(!confirm.isBool())
             return send(false,"REJECTED","Invalid retained mixer mapping confirmation");
@@ -1410,8 +1412,8 @@ private:
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
-        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer()) {
-            if(engine_.directRouteAuthorized() &&
+        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(true)) {
+            if(!previousMixerBound && engine_.directRouteAuthorized() &&
                (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
                 const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
                 diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
@@ -1419,9 +1421,11 @@ private:
                 emitApprovedNativeSnapshot();
                 return;
             }
-            error="Device opened but direct safe production session was rejected";
+            error=mixerSessionError_.isNotEmpty()?mixerSessionError_:
+                juce::String("Device opened but mixer preparation was rejected");
         }
         if(error.isEmpty()) {
+            startupError_.clear();
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
@@ -1459,7 +1463,7 @@ private:
             (previousType!="ASIO"||
              (manager.getCurrentAudioDevice()->getInputChannelNames()==originalInputNames&&
               manager.getCurrentAudioDevice()->getOutputChannelNames()==originalOutputNames))&&
-            engine_.finishManualAudioSetup();
+            finishAudioSetupAndRecoverMixer();
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
@@ -1875,7 +1879,9 @@ private:
         return armix::session::NativeMixerSessionStore(settingsDirectory()).load(doc,blobs);
     }
 
-    juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false) {
+    juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
+            armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
+                armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
@@ -1911,14 +1917,16 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
-        const bool resume=startupOnSavedDevice && !usedPrevious && !retained &&
+        const bool resume=startupOnSavedDevice &&
+            bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
+            !usedPrevious && !retained &&
             doc.resumeMain.value_or(true);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         if(static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already active; refusing to replace it";
         }
-        error=engine_.restoreNativeMixerSession(std::move(doc),states);
+        error=engine_.restoreNativeMixerSession(std::move(doc),states,false,nullptr,bindingMode);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -3744,15 +3752,18 @@ private:
         }
     }
 
-    bool finishAudioSetupAndRecoverMixer() {
+    bool finishAudioSetupAndRecoverMixer(bool verifiedDeviceApply=false) {
         const bool bound=engine_.finishManualAudioSetup();
         if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)))return true;
         if(engine_.hasRetainedNativeSession() ||
            armix::session::NativeMixerSessionStore(settingsDirectory()).exists()) {
-            const auto error=restoreSavedMixerSession();
+            using BindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
+            const auto error=restoreSavedMixerSession(false,verifiedDeviceApply?
+                BindingMode::verifiedDeviceApply:BindingMode::exact);
             if(error.isNotEmpty()) {
+                mixerSessionError_=error;
                 emitNotice("Mixer retained; "+error,true);
                 return false;
             }

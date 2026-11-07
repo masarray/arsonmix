@@ -58,12 +58,26 @@ def main():
         strip.locator(".strip-identity-top").dblclick()
         assert editor.is_visible(),"double-click header should edit"
         assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native double-click")
-        page.locator("#identityName").fill("Studio Vox")
+        name=page.locator("#identityName")
+        assert name.evaluate("e=>document.activeElement===e && e.selectionStart===0 && e.selectionEnd===e.value.length")
+        before_move=editor.bounding_box()
+        handle=page.locator("#identityTitle").bounding_box()
+        assert before_move and handle
+        page.mouse.move(handle["x"]+8,handle["y"]+handle["height"]/2)
+        page.mouse.down()
+        page.mouse.move(handle["x"]+56,handle["y"]+36,steps=6)
+        page.mouse.up()
+        moved=editor.bounding_box()
+        assert moved and abs(moved["x"]-before_move["x"]-48)<2, (before_move,moved)
+        assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native editor drag")
+        assert name.evaluate("e=>e.selectionStart===0 && e.selectionEnd===e.value.length")
+        page.keyboard.type("Studio Vox")
+        assert name.input_value()=="Studio Vox"
         color="#c32974"
         page.locator(f'#identityColors [data-identity-color="{color}"]').click()
         icon="🎹"
         page.locator(f'#identityIcons [data-identity-icon="{icon}"]').click()
-        page.locator("#identitySave").click()
+        name.press("Enter")
         assert editor.is_visible(),"native identity edited before ACK"
         assert "Studio Vox" not in strip.inner_text(),"optimistic rename without native evidence"
         req=page.evaluate("""()=>window.__nativeEvents.filter(e=>

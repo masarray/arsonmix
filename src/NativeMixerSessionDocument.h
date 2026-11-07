@@ -20,6 +20,9 @@ struct HardwareBinding final {
     juce::String backend,capture,playback,inputMask,outputMask;
     double rate=0.;
     int frames=0;
+    // Live pin names guard device switches in this process. Older documents
+    // still decode without inventing an ASIO pin inventory.
+    juce::StringArray inputNames,outputNames;
 };
 struct StoredInsert final {
     ChannelId channel{};
@@ -62,31 +65,37 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
-    // Preserve the selected physical pairs when they still exist. A new
-    // pair is only proposed here; apply() requires operator confirmation.
+    enum class Mode { exact, verifiedDeviceApply };
     static VerifiedNativeOutputs proposedOutputs(const MixerSessionDocument& document,
-            const HardwareBinding& live,int count) {
+            const HardwareBinding& live,int count,Mode mode=Mode::exact) {
+        const auto& saved=document.binding;
+        if(mode==Mode::verifiedDeviceApply &&
+           (saved.backend!=live.backend || saved.playback!=live.playback ||
+            !samePinNames(saved.outputNames,live.outputNames,live.backend)))
+            return {count,0,1,-1,-1,false};
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
-        if(document.binding.outputMask!=live.outputMask) {
-            const auto saved=mask(document.binding.outputMask);
-            const auto current=mask(live.outputMask);
-            outputs.mainL=remapPin(saved,current,outputs.mainL);
-            outputs.mainR=remapPin(saved,current,outputs.mainR);
+        if(saved.outputMask!=live.outputMask) {
+            const auto oldPins=mask(saved.outputMask);
+            const auto newPins=mask(live.outputMask);
+            outputs.mainL=remapPin(oldPins,newPins,outputs.mainL);
+            outputs.mainR=remapPin(oldPins,newPins,outputs.mainR);
             if(outputs.monitorEnabled) {
-                outputs.monitorL=remapPin(saved,current,outputs.monitorL);
-                outputs.monitorR=remapPin(saved,current,outputs.monitorR);
+                outputs.monitorL=remapPin(oldPins,newPins,outputs.monitorL);
+                outputs.monitorR=remapPin(oldPins,newPins,outputs.monitorR);
             }
         }
-        if(!outputs.valid())
-            outputs={count,0,1,outputs.monitorEnabled?2:-1,
-                     outputs.monitorEnabled?3:-1,outputs.monitorEnabled};
+        if(!outputs.valid()) {
+            outputs.monitorL=outputs.monitorR=-1;
+            outputs.monitorEnabled=false;
+        }
+        if(!outputs.valid())outputs={count,0,1,-1,-1,false};
         return outputs;
     }
     static juce::String apply(MixerSessionDocument& document,
             const HardwareBinding& live,
             const VerifiedNativeOutputs& outputs,
-            int callbackInputs,bool operatorApproved) {
+            int callbackInputs,Mode mode) {
         if(!outputs.valid() || callbackInputs<1 || callbackInputs>256 ||
            live.backend.isEmpty() || live.capture.isEmpty() ||
            live.playback.isEmpty() || live.inputMask.isEmpty() ||
@@ -100,28 +109,30 @@ struct MixerDeviceBindingPolicy final {
            newPins.countNumberOfSetBits()!=callbackInputs ||
            mask(live.outputMask).countNumberOfSetBits()!=outputs.activeOutputChannels)
             return "NEEDS_REMAP: callback pin inventory does not match device masks";
-        if(sameBinding(document.binding,live) && sameOutputs(document.outputs,outputs))
-            return {};
-        if(!operatorApproved)
-            return "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O";
+        const auto& saved=document.binding;
+        const bool knownInputChanged=!saved.inputNames.isEmpty()&&saved.inputNames!=live.inputNames;
+        const bool knownOutputChanged=!saved.outputNames.isEmpty()&&saved.outputNames!=live.outputNames;
+        const bool exact=sameBinding(saved,live)&&sameOutputs(document.outputs,outputs)&&
+                         !knownInputChanged&&!knownOutputChanged;
+        if(mode==Mode::exact)
+            return exact?juce::String{}:juce::String(
+                "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O");
 
-        if(oldPins!=newPins) {
-            auto& sources=document.request.sources;
-            if(document.binding.backend!=live.backend || document.binding.capture!=live.capture) {
-                // Different endpoint AND different layout: numerical overlap
-                // cannot establish the identity of a capture pin.
-                sources.clear();
-            } else {
-                std::vector<DynamicSourcePatch> mapped;
-                mapped.reserve(sources.size());
-                for(auto source:sources) {
-                    source.inputL=remapPin(oldPins,newPins,source.inputL);
-                    if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
-                    if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
-                        mapped.push_back(source);
-                }
-                sources=std::move(mapped);
+        auto& sources=document.request.sources;
+        if(saved.backend!=live.backend || saved.capture!=live.capture ||
+           !samePinNames(saved.inputNames,live.inputNames,live.backend)) {
+            // Matching pin numbers alone cannot identify another capture source.
+            sources.clear();
+        } else if(oldPins!=newPins) {
+            std::vector<DynamicSourcePatch> mapped;
+            mapped.reserve(sources.size());
+            for(auto source:sources) {
+                source.inputL=remapPin(oldPins,newPins,source.inputL);
+                if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
+                if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
+                    mapped.push_back(source);
             }
+            sources=std::move(mapped);
         }
         document.request.physicalInputs=callbackInputs;
         document.binding=live;
@@ -129,6 +140,10 @@ struct MixerDeviceBindingPolicy final {
         return {};
     }
 private:
+    static bool samePinNames(const juce::StringArray& saved,const juce::StringArray& live,
+                             const juce::String& backend) {
+        return saved.isEmpty()?backend!="ASIO":saved==live;
+    }
     static juce::BigInteger mask(const juce::String& text) {
         juce::BigInteger bits;
         bits.parseString(text,16);

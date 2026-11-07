@@ -10,6 +10,7 @@
 
 using namespace armix::mixer;
 using namespace armix::session;
+using BindingMode=MixerDeviceBindingPolicy::Mode;
 using armix::shows::BinaryState;
 
 static MixerSessionDocument makeSession() {
@@ -211,6 +212,30 @@ static void nativeDeviceRecovery() {
     assert(current.inserts.size()==1 && current.inserts[0].catalogId==eqId);
     current.binding=saved.binding;
 
+    // The field failure switched Realtek playback to HDMI while keeping the
+    // same VB-Cable source and a live FX rack. The new epoch has working PCM,
+    // existing WIRE IDs and a repatchable ChannelId graph after one Apply.
+    mixer.deviceStopped();
+    device.rate=44100.;
+    device.frames=512;
+    mixer.prepareDevice(&device);
+    auto hdmi=current.binding;
+    hdmi.playback="LG TV";
+    hdmi.rate=device.rate;hdmi.frames=device.frames;
+    const auto hdmiPair=MixerDeviceBindingPolicy::proposedOutputs(
+        current,hdmi,2,BindingMode::verifiedDeviceApply);
+    assert(MixerDeviceBindingPolicy::apply(current,hdmi,hdmiPair,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(current.request.sources.size()==1 && current.request.sources[0].stereo);
+    assert(current.roster.find({1})->sends[1].edgeId==101);
+    current.request.maxFrames=512;
+    assert(restore(current,currentStates,true).isEmpty());
+    process(true);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    assert(mixer.channelIdPhysicalPcmActive());
+    process(false);
+    assert(outL.back()>.02f && outR.back()>.02f);
+
     mixer.deviceStopped();
     device.inputMask.clearBit(1);
     device.rate=44100.;
@@ -219,8 +244,8 @@ static void nativeDeviceRecovery() {
     auto nextBinding=current.binding;
     nextBinding.inputMask="1";nextBinding.rate=device.rate;nextBinding.frames=device.frames;
     const auto pair=MixerDeviceBindingPolicy::proposedOutputs(current,nextBinding,2);
-    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,false).isNotEmpty());
-    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,true).isEmpty());
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,BindingMode::exact).isNotEmpty());
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,BindingMode::verifiedDeviceApply).isEmpty());
     assert(current.request.sources.empty()); // lost stereo half is never borrowed
     assert(current.roster.find({1})->sends[1].edgeId==101);
     current.request.maxFrames=512;
@@ -281,21 +306,38 @@ int main(){
     VerifiedNativeOutputs verifiedPair={2,1,0,-1,-1,false};
     const auto graphBefore=Codec::encode(remap);
     auto refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
-                                                 verifiedPair,2,false);
+                                                 verifiedPair,2,BindingMode::exact);
     assert(refusal.startsWith("NEEDS_REMAP"));
     assert(Codec::encode(remap)==graphBefore);
     refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
-                                            verifiedPair,1,true);
+                                            verifiedPair,1,BindingMode::verifiedDeviceApply);
     assert(refusal.startsWith("NEEDS_REMAP"));
     assert(Codec::encode(remap)==graphBefore);
     assert(MixerDeviceBindingPolicy::apply(remap,replacement,
-                                           verifiedPair,2,true).isEmpty());
+                                           verifiedPair,2,BindingMode::verifiedDeviceApply).isEmpty());
     assert(remap.binding.backend=="WASAPI" && remap.outputs.mainL==1);
     assert(remap.roster.revision()==d.roster.revision());
     assert(remap.roster.find({1})->sends.size()==2 &&
            remap.roster.find({1})->sends[0].edgeId==100);
+    auto captureChanged=d;
+    auto identicalMasks=d.binding;
+    identicalMasks.capture="Another capture";
+    assert(MixerDeviceBindingPolicy::apply(captureChanged,identicalMasks,d.outputs,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(captureChanged.request.sources.empty());
+    assert(captureChanged.roster.find({1})->sends[0].edgeId==100);
+
+    auto reordered=d;
+    reordered.binding.inputNames={"In 1","In 2"};
+    auto reorderedPins=reordered.binding;
+    reorderedPins.inputNames={"In 2","In 1"};
+    assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
+        BindingMode::exact).isNotEmpty());
+    assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(reordered.request.sources.empty());
     auto exact=d;
-    assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,false)
+    assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());
     assert(Codec::encode(exact)==graphBefore);
     ChannelEdit newChannel;

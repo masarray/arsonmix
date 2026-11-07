@@ -215,8 +215,7 @@ def main():
             # Late readback from the disconnected epoch cannot re-admit audio.
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
-            # A new WASAPI pair is inspected before exposing a separate,
-            # explicit confirmation for the retained numbered pin mapping.
+            # One explicit Apply accepts the verified replacement binding.
             page.locator('[data-native-io]').click()
             backend='Windows Audio'
             active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
@@ -234,16 +233,7 @@ def main():
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':'old','state':'NEEDS_REMAP',
                 'active':active,'canReusePins':True})
             assert remap.is_hidden()
-            emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'state':'NEEDS_REMAP',
-                'active':active,'canReusePins':True})
-            remap.click()
-            binding=page.evaluate(read_apply)
-            assert binding['config']['confirmRetainedPinMapping'] is True
-            assert binding['expectedDeviceGeneration']==12
-            assert binding['config']['captureDevice']=='New Capture'
-            assert binding['config']['playbackDevice']=='New Playback'
-            assert binding['config']['sampleRate']==48000 and binding['config']['bufferSize']==256
-            emit(page,'arMixAudioDeviceApplyAck',{'requestId':binding['requestId'],'ok':True,
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'ok':True,
                 'state':'ACCEPTED_MUTED','active':active,'mixerBound':True})
             assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
@@ -257,6 +247,13 @@ def main():
             assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='false'
             assert page.locator('#tracks .strip').count()==4
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
+            assert strip.locator('select[data-field="input"]').is_enabled()
+            assert strip.locator('select[data-field="output"]').is_enabled()
+            strip.locator('.wire-node-out').click()
+            assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_enabled()
+            strip.locator('.fx-section .fx-pick.empty').click()
+            assert page.locator('#fastPicker [data-fast-id="test-vst-64"]').is_visible()
+            page.locator('#fastClose').click()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')

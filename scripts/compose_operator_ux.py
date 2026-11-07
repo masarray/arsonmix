@@ -81,6 +81,8 @@ OPERATOR_CSS = """
 .command-bar .mixer-file-tool{display:inline-flex;align-items:center;gap:5px}
 .command-bar .mixer-file-tool img{display:block;flex:none;pointer-events:none}
 .command-bar #densitySelect,.command-bar [for="densitySelect"],.command-bar #mode{display:none!important}
+#channelIdentity .identity-head{cursor:move;touch-action:none}
+#channelIdentity .identity-head button{cursor:pointer}
 /* Every console floating editor uses one square Material close key. */
 :is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose){
   box-sizing:border-box!important;flex:0 0 29px!important;width:29px!important;
@@ -208,21 +210,44 @@ sendControlSurface.addEventListener('lostpointercapture',e=>finishSendKnob(e,tru
         "place editor under body outside scrolling app")
     html = once(html,
         "function openChannelIdentity(t,anchor){",
-        """function positionChannelIdentity(dialog,anchor){
- // One geometry read on explicit open, not in the live meter/PCM path.
+        """function channelIdentityViewport(){
  const visual=window.visualViewport;
- const vx=visual?.offsetLeft??0,vy=visual?.offsetTop??0;
- const vw=visual?.width||window.innerWidth,vh=visual?.height||window.innerHeight;
- const gap=8;
- dialog.style.maxWidth=Math.max(1,vw-2*gap)+'px';
- dialog.style.maxHeight=Math.max(1,vh-2*gap)+'px';
- const box=dialog.getBoundingClientRect(),a=anchor?.getBoundingClientRect?.();
- const preferredX=a?a.left+a.width/2-box.width/2:vx+gap;
- const preferredY=a?a.top+18:vy+gap;
- const x=Math.max(vx+gap,Math.min(vx+vw-box.width-gap,preferredX));
- const y=Math.max(vy+gap,Math.min(vy+vh-box.height-gap,preferredY));
- dialog.style.left=x+'px';dialog.style.top=y+'px';
+ return {left:visual?.offsetLeft??0,top:visual?.offsetTop??0,
+  width:visual?.width||window.innerWidth,height:visual?.height||window.innerHeight};
 }
+function placeChannelIdentity(dialog,box,view,x,y){
+ const gap=8;
+ dialog.style.left=Math.max(view.left+gap,Math.min(view.left+view.width-box.width-gap,x))+'px';
+ dialog.style.top=Math.max(view.top+gap,Math.min(view.top+view.height-box.height-gap,y))+'px';
+}
+function positionChannelIdentity(dialog,anchor){
+ // One geometry read on explicit open, not in the live meter/PCM path.
+ const view=channelIdentityViewport();
+ dialog.style.maxWidth=Math.max(1,view.width-16)+'px';
+ dialog.style.maxHeight=Math.max(1,view.height-16)+'px';
+ const box=dialog.getBoundingClientRect(),a=anchor?.getBoundingClientRect?.();
+ placeChannelIdentity(dialog,box,view,a?a.left+(a.width-box.width)/2:view.left+8,
+  a?a.top+18:view.top+8);
+}
+const channelIdentityCard=document.getElementById('channelIdentity');
+const channelIdentityHandle=channelIdentityCard.querySelector('.identity-head');
+let channelIdentityDrag=null;
+channelIdentityHandle.addEventListener('pointerdown',e=>{
+ if(e.button!==0||!e.isPrimary||e.target.closest('button'))return;
+ const box=channelIdentityCard.getBoundingClientRect();
+ channelIdentityDrag={id:e.pointerId,box,x:e.clientX-box.left,y:e.clientY-box.top};
+ channelIdentityHandle.setPointerCapture(e.pointerId);
+ e.preventDefault();
+});
+channelIdentityHandle.addEventListener('pointermove',e=>{
+ const drag=channelIdentityDrag;
+ if(!drag||drag.id!==e.pointerId)return;
+ placeChannelIdentity(channelIdentityCard,drag.box,channelIdentityViewport(),
+  e.clientX-drag.x,e.clientY-drag.y);
+});
+channelIdentityHandle.addEventListener('lostpointercapture',e=>{
+ if(channelIdentityDrag?.id===e.pointerId)channelIdentityDrag=null;
+});
 function openChannelIdentity(t,anchor){""",
         "install measured viewport positioning")
     html = once(html,
@@ -233,7 +258,9 @@ function openChannelIdentity(t,anchor){""",
  }
  document.getElementById('identityName').focus?.();""",
         """ positionChannelIdentity(dialog,anchor);
- document.getElementById('identityName').focus({preventScroll:true});""",
+ const name=document.getElementById('identityName');
+ name.focus({preventScroll:true});
+ name.select();""",
         "remove mixer-relative geometry and focus scroll")
     targets = ("identityClose","pluginClose","fastClose",
                "wireConfigClose","wireWsClose","routeChoiceClose")
