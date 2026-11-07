@@ -205,10 +205,30 @@ public:
           onStartupStage_ (std::move (onStartupStage)),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
-              .withEventListener ("arMixGuiReady", [this] (juce::var)
+              .withEventListener ("arMixGuiReady", [this] (juce::var ready)
               {
                   browser_.loaded = true;
                   guiReadyTick_ = juce::Time::getMillisecondCounter();
+                  // WebView2 may finish its first navigation while this
+                  // DocumentWindow is still hidden behind the splash. On
+                  // 125%/150% DPI its child controller can keep that *old*
+                  // bounds even though JUCE has already resized the content.
+                  // Reapply actual browser bounds on the message thread,
+                  // once after the native peer is visible: NO audio work.
+                  const int cssWidth = static_cast<int> (ready.getProperty ("viewportWidth", 0));
+                  const int cssHeight = static_cast<int> (ready.getProperty ("viewportHeight", 0));
+                  if ((cssWidth > 0 && std::abs (cssWidth - browser_.getWidth()) > 2) ||
+                      (cssHeight > 0 && std::abs (cssHeight - browser_.getHeight()) > 2))
+                      diagnostics_.record ("WEBVIEW2_INITIAL_BOUNDS",
+                          juce::String (cssWidth) + "x" + juce::String (cssHeight) +
+                          " host=" + juce::String (browser_.getWidth()) + "x" +
+                          juce::String (browser_.getHeight()));
+                  juce::MessageManager::callAsync (
+                      [safe = juce::Component::SafePointer<ConsoleWindow> (this)]
+                      {
+                          if (safe && safe->browser_.isShowing())
+                              safe->browser_.resized();
+                      });
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
@@ -241,7 +261,15 @@ public:
         setResizable (true, true);
         setResizeLimits (1100, 650, 3840, 2160);
         setContentNonOwned (&browser_, false);
-        centreWithSize (1650, 930);
+        // A fixed 1650x930 initial HWND exceeds the *logical* Windows work
+        // area on high-DPI laptops. Clamp BEFORE WebView2 first navigation,
+        // instead of letting Windows resize the outer peer without matching
+        // the child compositor during its hidden first-frame startup.
+        const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+        const auto available = display != nullptr
+            ? display->userArea : juce::Rectangle<int> (0, 0, 1650, 930);
+        centreWithSize (juce::jlimit (1100, 1650, available.getWidth() - 24),
+                        juce::jlimit (650, 930, available.getHeight() - 24));
         // Keep native main window hidden during its expensive initial WebView2
         // construction. The opaque always-on-top splash owns first paint.
         // After one control tick, reveal the PEER behind splash if WebView2
@@ -257,6 +285,16 @@ public:
         // an authenticated GUI handshake and initial compositor paint.
         // Defer initial scan until explicitly requested in Plugin Manager.
         // Startup must not spend seconds enumerating third-party VST3 modules.
+    }
+
+    // Rebind the embedded WebView2 controller whenever its JUCE content
+    // window is resized. This catches the hidden-peer/show path, DPI moves
+    // and normal operator window drags without a per-frame polling timer.
+    void resized() override
+    {
+        juce::DocumentWindow::resized();
+        if (getContentComponent() == &browser_ && browser_.isShowing())
+            browser_.resized();
     }
 
     ~ConsoleWindow() override
@@ -3380,6 +3418,7 @@ private:
             webViewPeerWarmed_ = true;
             setVisible (true);
             toBack();
+            browser_.resized(); // first visible HWND, not its pre-splash size
         }
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.

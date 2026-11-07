@@ -13,6 +13,51 @@ CLOSE_ICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
               '<path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/>'
               '</svg>')
 
+SPLIT_BOOTSTRAP = """
+// One console layout authority. CSS percent flex tracks were resolving against
+// differing ancestors during WebView2 first show, causing 48:52 and clipped
+// faders. Measure the real console once at boot and on actual size/fold changes.
+// No timer, PCM access, animation loop, or per-meter layout work.
+(function installConsoleSplit(){
+  const root=document.querySelector('.console-body');
+  if(!root || root.__armixBalancedSplitInstalled)return;
+  root.__armixBalancedSplitInstalled=true;
+  let scheduled=false,previous='';
+  function update(){
+    scheduled=false;
+    const rail=root.querySelector('.section-rail');
+    if(!rail)return;
+    const h=root.getBoundingClientRect().height;
+    if(!(h>0))return;
+    const height=selector=>rail.querySelector(selector)?.getBoundingClientRect().height||0;
+    const pan=height('.rail-cell.pan'),
+          switches=height('.rail-cell.switch'),
+          footer=height('.rail-cell.footer'),
+          identity=height('.rail-cell.identity'),
+          route=height('.rail-cell.route'),
+          send=height('.rail-cell.send');
+    // Panels remain equal halves when upper racks are expanded. If all upper
+    // modules fold, the existing flex fader may use the deliberately freed bay.
+    const half=Math.round(h/2);
+    const fader=Math.max(130,Math.round(half-pan-switches-footer));
+    const fx=Math.max(125,Math.round(half-identity-route-send));
+    const signature=fader+':'+fx;
+    if(signature===previous)return;
+    previous=signature;
+    root.style.setProperty('--v13-fader-h',fader+'px','important');
+    root.style.setProperty('--ux-fx-balanced-h',fx+'px','important');
+  }
+  function queue(){
+    if(scheduled)return;
+    scheduled=true;requestAnimationFrame(update);
+  }
+  update(); // before first paint, not after operator starts using the mixer
+  if(window.ResizeObserver)new ResizeObserver(queue).observe(root);
+  new MutationObserver(queue).observe(root,{attributes:true,attributeFilter:['class']});
+  window.addEventListener('resize',queue,{passive:true});
+})();
+"""
+
 OPERATOR_CSS = """
 /* V29 adaptive 50/50 console, authored for the same rail/strip/Master tokens.
    At very short heights preserve minimum usable controls and scroll vertically. */
@@ -142,6 +187,7 @@ def apply_operator_ux(html: str, assets: Path) -> str:
                "background:#962f38!important;background-color:#962f38!important;"
                "border-color:#e6505d!important;color:#fff!important}\n")
     plugin_path.write_text(plugin,encoding="utf-8")
+    html = once(html, "restorePluginPreferences();init();", SPLIT_BOOTSTRAP+"\nrestorePluginPreferences();init();", "startup geometry bootstrap")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:
         raise ValueError("Operator UX DOM invariants rejected")
     return html
