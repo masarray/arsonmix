@@ -30,9 +30,9 @@ def main():
             emit(page,'arMixConsoleSnapshot',state)
             def row(channel,slot):return page.locator(f'#tracks .strip[data-id="{channel}"] .fxslot-row[data-slot="{slot}"]')
             def move(source,slot,destination,target_slot,after=False):
-                grip=row(source,slot).locator('.fx-grip').bounding_box();target=row(destination,target_slot).bounding_box()
-                assert grip and target
-                page.mouse.move(grip['x']+grip['width']/2,grip['y']+grip['height']/2);page.mouse.down()
+                surface=row(source,slot).locator('.fx-pick').bounding_box();target=row(destination,target_slot).bounding_box()
+                assert surface and target
+                page.mouse.move(surface['x']+surface['width']/2,surface['y']+surface['height']/2);page.mouse.down()
                 x=target['x']+target['width']/2;y=target['y']+target['height']*(.8 if after else .2)
                 page.mouse.move(x,y,steps=10);page.wait_for_timeout(60)
                 ghost=page.locator('.fx-drag-ghost');assert ghost.count()==1
@@ -49,11 +49,25 @@ def main():
                 ack(page,state,request);emit(page,'arMixConsoleSnapshot',state)
                 page.wait_for_function('()=>!window.__ARMIX_NATIVE_M2__.state().pending')
             # Escape cancels presentation without committing an audio edit.
-            grip=row(1,0).locator('.fx-grip').bounding_box();assert grip
-            page.mouse.move(grip['x']+5,grip['y']+5);page.mouse.down();page.mouse.move(450,50,steps=10)
+            assert page.locator('.fx-grip').count()==0,'retired handle must never appear'
+            surface=row(1,0).locator('.fx-pick').bounding_box();assert surface
+            page.mouse.move(surface['x']+5,surface['y']+5);page.mouse.down();page.mouse.move(450,50,steps=10)
             page.wait_for_timeout(40);assert page.locator('.fx-drag-ghost').count()==1
             page.keyboard.press('Escape');page.mouse.up()
             assert page.locator('.fx-drag-ghost').count()==0
+            assert page.evaluate('()=>window.__nativeIntents.length')==0
+            # POWER/DELETE remain dedicated click targets, not drag origins.
+            for action in ("slotPower","removeFx"):
+                rect=row(1,0).locator(f'[data-action="{action}"]').bounding_box()
+                assert rect
+                page.mouse.move(rect['x']+rect['width']/2,rect['y']+rect['height']/2)
+                page.mouse.down();page.mouse.move(450,50,steps=6)
+                assert page.locator('.fx-drag-ghost').count()==0,action
+                page.mouse.up()
+                assert page.evaluate('()=>window.__nativeIntents.length')==0,action
+            # A short click on the name still opens the real native editor.
+            row(1,0).locator('.fx-pick').click()
+            assert page.evaluate("()=>window.__actions.at(-1)?.action")=="routingFxEditor"
             assert page.evaluate('()=>window.__nativeIntents.length')==0
             # Drag lower within the same rack: exact plugin follows pointer.
             request=move(1,0,1,1,True)
@@ -82,6 +96,6 @@ def main():
             assert not errors,errors
             page.screenshot(path=f'native-fx-edit-{width}.png');page.close()
         browser.close()
-    print('PASS native FX pointer ghost, reorder, cross-channel move, delete, editor token and quiet MAIN; 3 sizes')
+    print('PASS native handle-free FX pointer ghost, reorder, cross-channel move, delete, editor token and quiet MAIN; 3 sizes')
 
 if __name__=='__main__':main()

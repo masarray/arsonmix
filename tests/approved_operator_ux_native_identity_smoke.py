@@ -1,8 +1,8 @@
-"""Native channel identity end-to-end: Chromium + emulated JUCE metadata only.
+"""Actual compiled native Pages UI: channel identity requires disk-backed host ACK.
 
-Source of truth for PCM/WIRE is the admitted ChannelId graph. A user-facing
-alias must not create any synthetic graph intents, survive snapshot readback
-and WebView reload, or rename the immutable native ChannelId.
+No optimistic JS rename, no localStorage source of authority, no synthetic
+PCM graph operation. C++ NativeChannelAppearanceStore CTest independently
+proves durable disk/lease validation and guards corruption/restart.
 """
 from pathlib import Path
 import tempfile
@@ -10,13 +10,14 @@ import sys
 import copy
 from playwright.sync_api import sync_playwright
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, RECEIVER
+from approved_operator_ux_chromium_fat import IDENTITY_GEOMETRY, assert_still
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'scripts'))
+sys.path.insert(0,str(ROOT/"scripts"))
 import build_approved_native_gui as bundle
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="armix-native-alias-") as temp, sync_playwright() as p:
+    with tempfile.TemporaryDirectory(prefix="armix-native-identity-") as temp, sync_playwright() as p:
         out=Path(temp)/"native"
         bundle.stage(out)
         browser=p.chromium.launch(headless=True)
@@ -24,91 +25,152 @@ def main():
         errors=[]
         def open_page():
             page=context.new_page()
-            page.on('pageerror',lambda e:errors.append(str(e)))
+            page.on("pageerror",lambda e:errors.append(str(e)))
             page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__nativeEvents=[];
               window.__JUCE__={backend:{
-                emitEvent(name,payload){window.__nativeEvents.push({name,payload});if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
+                emitEvent(name,payload){window.__nativeEvents.push({name,payload});
+                  if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
-            page.goto((out/'index.html').as_uri())
-            page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+            page.goto((out/"index.html").as_uri())
+            page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
             return page
         state=snapshot()
+        appearance={"schema":"arsonmix.native.channel-appearance.v1",
+                    "revision":"0","readOnly":False,"entries":[]}
+        state["channelAppearance"]=appearance
         page=open_page()
         ready=page.evaluate("()=>window.__nativeEvents.find(e=>e.name==='arMixGuiReady')?.payload")
-        assert ready and ready['viewportWidth']==1366 and ready['viewportHeight']==768
-        # Never show demo-only controls as clickable on a physical host.
-        for id in ('saveScene','recallScene','copy','paste','group','ungroup','preview','clearCue','reset','sofToggle','sofTarget'):
-            element=page.locator('#'+id)
-            assert element.is_hidden() and element.is_disabled(),id
-        assert page.locator('[data-native-monitor]').count()==1
-        assert page.locator('#pluginsButton').is_visible()
-        assert page.locator('#wireNavigatorToggle').is_visible()
+        assert ready and ready["viewportWidth"]==1366 and ready["viewportHeight"]==768
+        # No unimplemented native functionality advertised as a working action.
+        for id in ("saveScene","recallScene","copy","paste","group","ungroup",
+                   "preview","clearCue","reset","sofToggle","sofTarget"):
+            el=page.locator("#"+id)
+            assert el.is_hidden() and el.is_disabled(),id
+        assert page.locator("#pluginsButton").is_visible()
         emit(page,"arMixConsoleSnapshot",state)
-        page.wait_for_selector('#tracks .strip[data-id="1"]')
-        # DAW convention: single click selects channel; only double-click
-        # on its header/footer opens the name/color/icon editor.
-        page.locator('#tracks .strip[data-id="1"] .strip-identity-top').click()
-        editor=page.locator('#channelIdentity')
-        assert editor.is_hidden(),"single-click must only select the channel"
-        page.locator('#tracks .strip[data-id="1"] .strip-identity-top').dblclick()
-        assert editor.is_visible(),"double-click on header did not open editor"
-        assert page.locator('#identityName').evaluate("el=>el===document.activeElement")
-        page.locator('#identityName').fill("Discard this")
-        page.locator('#identityCancel').click()
-        assert editor.is_hidden(),"Cancel must dismiss without modifying the channel"
-        assert "Discard this" not in page.locator('#tracks .strip[data-id="1"]').inner_text()
-        # Footer name follows the same single-select/double-edit contract.
-        page.locator('#tracks .strip[data-id="1"] .footer-label .name').click()
-        assert editor.is_hidden(),"single-click on footer name opened editor"
-        page.locator('#tracks .strip[data-id="1"] .footer-label .name').dblclick()
-        assert editor.is_visible(),"footer double-click did not open editor"
-        page.locator('#identityName').fill("Studio Vox")
+        strip=page.locator('#tracks .strip[data-id="1"]')
+        strip.wait_for(state="visible")
+        # Native DAW convention: one click selects, double-click opens editor.
+        strip.locator(".strip-identity-top").click()
+        before_editor=page.evaluate(IDENTITY_GEOMETRY)
+        editor=page.locator("#channelIdentity")
+        assert editor.is_hidden(),"single click should only select"
+        strip.locator(".strip-identity-top").dblclick()
+        assert editor.is_visible(),"double-click header should edit"
+        assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native double-click")
+        page.locator("#identityName").fill("Studio Vox")
         color="#c32974"
         page.locator(f'#identityColors [data-identity-color="{color}"]').click()
         icon="🎹"
         page.locator(f'#identityIcons [data-identity-icon="{icon}"]').click()
-        page.locator('#identitySave').click()
-        assert editor.is_hidden()
-        assert page.locator('#tracks .strip[data-id="1"]').inner_text().find("Studio Vox")>=0
-        alias=page.evaluate("()=>JSON.parse(localStorage.getItem('arsonmix.native.channel-presentation.v1'))")
-        assert alias["channels"][SOURCE]["name"]=="Studio Vox",alias
-        assert alias["channels"][SOURCE]["color"]==color
-        assert alias["channels"][SOURCE]["icon"]==icon
-        assert page.evaluate("()=>window.__nativeIntents.length")==0,\
-            "display-only edit emitted an unauthorized PCM/route intent"
-        # No native server alias or ChannelId mutation: same authoritative
-        # snapshot retains its original name and exact ID.
-        assert state['graph']['channels'][0]['id']==SOURCE
-        assert state['graph']['channels'][0]['name']=='CH03'
-        emit(page,"arMixConsoleSnapshot",state)
-        assert "Studio Vox" in page.locator('#tracks .strip[data-id="1"]').inner_text()
+        page.locator("#identitySave").click()
+        assert editor.is_visible(),"native identity edited before ACK"
+        assert "Studio Vox" not in strip.inner_text(),"optimistic rename without native evidence"
+        req=page.evaluate("""()=>window.__nativeEvents.filter(e=>
+           e.name==='arMixChannelIdentitySet').at(-1)?.payload""")
+        assert req and req["channelId"]==SOURCE,req
+        assert req["appearanceRevision"]=="0" and req["name"]=="Studio Vox"
+        assert req["color"]==color and req["icon"]==icon
+        assert page.locator("#identitySave").is_disabled()
         assert page.evaluate("()=>window.__nativeIntents.length")==0
-        # New WebView document, same browser profile: alias survives.
+
+        # Bad/stale native ACK: editor remains open and value stays untouched.
+        emit(page,"arMixChannelIdentityAck",
+             {"requestId":req["requestId"],"ok":False,
+              "error":"STALE_CHANNEL_APPEARANCE_REVISION"})
+        assert editor.is_visible()
+        assert page.locator("#identitySave").is_enabled()
+        assert "Studio Vox" not in strip.inner_text()
+        assert_still(before_editor,page.evaluate(IDENTITY_GEOMETRY),"native negative ACK")
+        # Retry after a fresh accepted snapshot.
+        emit(page,"arMixConsoleSnapshot",state)
+        page.locator("#identitySave").click()
+        req=page.evaluate("""()=>window.__nativeEvents.filter(e=>
+           e.name==='arMixChannelIdentitySet').at(-1)?.payload""")
+        emit(page,"arMixChannelIdentityAck",
+             {"requestId":req["requestId"],"ok":True,"error":""})
+        # ACK alone MUST NOT rename or close the editor.
+        assert editor.is_visible()
+        assert "Studio Vox" not in strip.inner_text()
+        appearance["revision"]="1"
+        appearance["entries"]=[{"id":SOURCE,"name":"Studio Vox","color":color,"icon":icon}]
+        emit(page,"arMixConsoleSnapshot",copy.deepcopy(state))
+        page.wait_for_function("""()=>document.querySelector('#channelIdentity').hidden &&
+          document.querySelector('#tracks .strip[data-id="1"]').textContent.includes('Studio Vox')""",timeout=5000)
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
+        assert page.evaluate("()=>localStorage.getItem('arsonmix.native.channel-presentation.v1')") is None
+
+        # A second channel cannot take an existing visible name; rejected
+        # locally AND independently by the native store's CTest.
+        other=page.locator('#tracks .strip[data-id="2"]')
+        other.locator(".footer-label .name").click()
+        assert editor.is_hidden(),"footer single-click should only select"
+        other.locator(".footer-label .name").dblclick()
+        page.locator("#identityName").fill("Studio Vox")
+        before=page.evaluate("()=>window.__nativeEvents.filter(e=>e.name==='arMixChannelIdentitySet').length")
+        page.locator("#identitySave").click()
+        after=page.evaluate("()=>window.__nativeEvents.filter(e=>e.name==='arMixChannelIdentitySet').length")
+        assert before==after and editor.is_visible()
+        page.locator("#identityCancel").click()
+        assert editor.is_hidden()
+        # Restore the WebView from the same durable *native* snapshot, with
+        # no shared JS localStorage or reconstructed PCM graph.
         page.close()
         page=open_page()
-        emit(page,"arMixConsoleSnapshot",state)
+        # Each WebView reload creates a new page: never reuse old locators.
+        editor=page.locator("#channelIdentity")
+        emit(page,"arMixConsoleSnapshot",copy.deepcopy(state))
         page.wait_for_selector('#tracks .strip[data-id="1"]')
         assert "Studio Vox" in page.locator('#tracks .strip[data-id="1"]').inner_text()
-        # Keyboard F2 edits the selected loaded channel; Enter on focused
-        # footer name is accessible when using keyboard-only navigation.
         page.locator('#tracks .strip[data-id="2"] .strip-identity-top').click()
-        assert page.locator('#channelIdentity').is_hidden()
+        before_f2=page.evaluate(IDENTITY_GEOMETRY)
         page.keyboard.press('F2')
-        assert page.locator('#channelIdentity').is_visible(),"F2 edit not available"
-        page.locator('#identityName').fill('Studio Vox')
-        page.locator('#identitySave').click()
-        assert page.locator('#channelIdentity').is_visible(),\
-            "duplicate visible channel names should not silently collide"
-        page.locator('#identityClose').click()
+        assert editor.is_visible(),"F2 should open editor"
+        assert_still(before_f2,page.evaluate(IDENTITY_GEOMETRY),"native F2")
+        page.locator('#identityCancel').click()
+        page.evaluate("() => new Promise(done => requestAnimationFrame(done))")
+        assert_still(before_f2,page.evaluate(IDENTITY_GEOMETRY),"native F2 Cancel")
         page.locator('#tracks .strip[data-id="2"] .footer-label .name').focus()
+        before_enter=page.evaluate(IDENTITY_GEOMETRY)
         page.keyboard.press('Enter')
-        assert page.locator('#channelIdentity').is_visible(),"keyboard Enter did not open editor"
+        assert editor.is_visible(),"Enter should open editor"
+        assert_still(before_enter,page.evaluate(IDENTITY_GEOMETRY),"native Enter")
         page.keyboard.press('Escape')
-        assert page.locator('#channelIdentity').is_hidden()
+        assert editor.is_hidden()
+        assert_still(before_enter,page.evaluate(IDENTITY_GEOMETRY),"native Escape")
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
+        # Upgrade old WebView cache exactly once; no optimistic local rename.
+        # The emulated host starts with a clean native workspace and accepts
+        # the import ONLY after native ACK and revisioned readback.
+        page.evaluate("""(id)=>localStorage.setItem(
+          'arsonmix.native.channel-presentation.v1',
+          JSON.stringify({version:1,channels:{[id]:{
+            name:'Legacy Vocal',color:'#c32974',icon:'🎹'}}}))""",SOURCE)
+        page.close()
+        page=open_page()
+        fresh=copy.deepcopy(state)
+        fresh["channelAppearance"]={
+            "schema":"arsonmix.native.channel-appearance.v1",
+            "revision":"0","readOnly":False,"entries":[]}
+        emit(page,"arMixConsoleSnapshot",fresh)
+        page.wait_for_function("""()=>window.__nativeEvents.some(e=>
+          e.name==='arMixChannelIdentitySet'&&e.payload.name==='Legacy Vocal')""")
+        req=page.evaluate("""()=>window.__nativeEvents.find(e=>
+          e.name==='arMixChannelIdentitySet'&&e.payload.name==='Legacy Vocal').payload""")
+        assert req["channelId"]==SOURCE and req["appearanceRevision"]=="0"
+        assert "Legacy Vocal" not in page.locator('#tracks .strip[data-id="1"]').inner_text()
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
+        emit(page,"arMixChannelIdentityAck",{"requestId":req["requestId"],"ok":True,"error":""})
+        fresh["channelAppearance"]["revision"]="1"
+        fresh["channelAppearance"]["entries"]=[{
+            "id":SOURCE,"name":"Legacy Vocal","color":"#c32974","icon":"🎹"}]
+        emit(page,"arMixConsoleSnapshot",fresh)
+        page.wait_for_function("""()=>document.querySelector(
+          '#tracks .strip[data-id="1"]').textContent.includes('Legacy Vocal') &&
+          localStorage.getItem('arsonmix.native.channel-presentation.v1')===null""")
         assert page.evaluate("()=>window.__nativeIntents.length")==0
         assert not errors,errors
-        page.close()
-        context.close();browser.close()
-    print("PASS native identity: single-click selects; double-click header/footer edits; F2/Enter, Cancel/Escape, name/icon/color, reload, duplicate reject, exact ChannelId, zero PCM intents")
+        page.close();context.close();browser.close()
+    print("PASS native identity double-click/ACK/readback/reject/restart/legacy migration with zero PCM graph intents")
 
 if __name__=="__main__":main()

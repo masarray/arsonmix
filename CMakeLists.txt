@@ -67,6 +67,12 @@ juce_add_binary_data(ARMixAssets SOURCES
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+# Explicit UTF-8 source decoding: native channel icons are Unicode, and
+# MSVC's machine-specific ANSI source charset corrupts emoji literals.
+# Limit the flag to C++ (not Windows .rc/resource compilation).
+if(MSVC)
+  target_compile_options(ARMixConsole PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+endif()
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_WIN_WEBVIEW2=1
@@ -340,6 +346,17 @@ if(BUILD_TESTING)
       juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
+  # Presentation-only native identity; no audio-thread access.
+  juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")
+  target_sources(ARMixChannelAppearanceTests PRIVATE
+      tests/native_channel_appearance_store_test.cpp src/NativeChannelAppearanceStore.h)
+  target_link_libraries(ARMixChannelAppearanceTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixChannelAppearanceTests PRIVATE cxx_std_20)
+  if(MSVC)
+    target_compile_options(ARMixChannelAppearanceTests PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+  endif()
+  add_test(NAME NativeChannelIdentityDiskAckAndExactId COMMAND ARMixChannelAppearanceTests)
 
   # Eight-band native PEQ: deterministic sweep, stereo isolation, RT no-heap,
   # smoothing and Nyquist guards. Built with the existing Windows native lane.

@@ -33,6 +33,7 @@
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
 #include "NativeShowSaveWorker.h"
+#include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
 #include <algorithm>
 #include <cstring>
@@ -233,6 +234,9 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
+              .withEventListener ("arMixChannelIdentitySet", [this] (juce::var args) {
+                  handleNativeChannelIdentitySet(args);
+              })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
                   consoleSubscribed_ = true;
@@ -331,6 +335,7 @@ private:
     juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
+    armix::appearance::Store channelAppearance_{settingsDirectory()};
     armix::storage::NativePresetArchive presets_;
     std::function<void(int)> onStartupStage_;
     Browser browser_;
@@ -388,6 +393,7 @@ private:
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
     juce::StringArray acceptedControlRequests_; // bounded request replay fence
+    juce::StringArray acceptedAppearanceRequests_; // identity request replay fence
     bool webViewPeerWarmed_ = false;
     bool webViewStartupNoticeSent_ = false;
     juce::uint32 webViewStartupTick_ = 0;
@@ -955,6 +961,8 @@ private:
             (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         // Sole control-thread SessionSnapshot from the installed PCM publisher.
         armix::console::publishAuthoritativeMixerSession(accepted);
+        if(auto* obj=accepted.getDynamicObject())
+            obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
         return accepted;
     }
 
@@ -968,6 +976,35 @@ private:
         if (consoleSubscribed_ && browser_.loaded)
             browser_.emitEventIfBrowserIsVisible (
                 "arMixConsoleSnapshot", approvedNativeSnapshot());
+    }
+
+    // UI-only native transaction. No PCM mutation; never arm an output.
+    void handleNativeChannelIdentitySet(const juce::var& request)
+    {
+        const auto v=request.getProperty("requestId",{});
+        const auto id=v.isString()?v.toString():juce::String{};
+        juce::String error;
+        if(id.isEmpty()||id.length()>120)
+            error="INVALID_CHANNEL_APPEARANCE_REQUEST_ID";
+        else if(acceptedAppearanceRequests_.contains(id))
+            error="DUPLICATE_CHANNEL_APPEARANCE_REQUEST_ID";
+        else {
+            acceptedAppearanceRequests_.add(id);
+            if(acceptedAppearanceRequests_.size()>256)
+                acceptedAppearanceRequests_.remove(0);
+            error=channelAppearance_.apply(request,approvedNativeSnapshot());
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",id);
+        ack->setProperty("ok",error.isEmpty());
+        ack->setProperty("error",error);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixChannelIdentityAck",juce::var(ack.release()));
+        if(error.isEmpty()) {
+            diagnostics_.record("NATIVE_CHANNEL_APPEARANCE_SAVED",
+                request.getProperty("channelId","").toString());
+            emitApprovedNativeSnapshot();
+        } else diagnostics_.record("NATIVE_CHANNEL_APPEARANCE_REJECTED",error);
     }
 
     // One native dispatcher; the source of truth is the already installed
