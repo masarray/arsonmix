@@ -959,7 +959,7 @@
     const available=track?canCreateNativeTrack(accepted):
       session?.authority==="CHANNEL_ID" && accepted?.admitted &&
       capabilities?.includes("CREATE_GROUP");
-    if(pendingBusCreate||!available)return false;
+    if(pendingBusCreate||pendingTrackDelete||!available)return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
     const epoch=hardware.device.epoch;
     const bootstrap=track && session.authority==="NONE";
@@ -2182,7 +2182,7 @@
     if(addBus){
       addBus.hidden=!nativeAdmitted ||
         !caps?.supportedOps?.includes("CREATE_GROUP");
-      addBus.disabled=!!pendingBusCreate;
+      addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
     }
     if (nativeAdmitted && !activeNativeSource && pendingNativeSources.size) {
       // A rejected/timeout source command may leave the graph revision
