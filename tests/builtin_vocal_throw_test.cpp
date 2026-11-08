@@ -184,6 +184,27 @@ static void twoTailsStayLive(double rate) {
     run(overlap,0.f,0.f,static_cast<int>(rate*.8),l,r);
     check(overlap.throwCount()==2);
 }
+static void autoThenManualMustNotDoubleEcho() {
+    VocalThrow fx;check(fx.prepare(48000));
+    auto s=fx.settingsForTests();
+    s.mode=2;s.silenceMs=120;s.captureMs=250;
+    check(fx.resetUnpublished(s));
+    float l=0.f,r=0.f;
+    run(fx,.5f,.25f,14400,l,r);
+    run(fx,0.f,0.f,12000,l,r);
+    check(fx.throwCount()==1);
+    noHeap.store(true);
+    const bool duplicated=fx.throwNow();
+    noHeap.store(false);
+    check(!duplicated&&fx.throwCount()==1);
+    // A fresh phrase re-arms the manual path: previous auto trigger must
+    // not poison legitimate new cues when the singer starts again.
+    run(fx,.5f,.25f,12000,l,r);
+    noHeap.store(true);
+    const bool newPhrase=fx.throwNow();
+    noHeap.store(false);
+    check(newPhrase&&fx.throwCount()==2);
+}
 static void denseRepeatsStayBounded() {
     VocalThrow fx;check(fx.prepare(48000));
     auto settings=fx.settingsForTests();
@@ -239,6 +260,7 @@ int main() {
     twoTailsStayLive(48000);
     twoTailsStayLive(96000);
     manualOverrideSuppressesAuto();
+    autoThenManualMustNotDoubleEcho();
     denseRepeatsStayBounded();
     std::puts("PASS: vocal-throw native dry/rolling capture/phrase/echo/tempo/no-heap");
 }
