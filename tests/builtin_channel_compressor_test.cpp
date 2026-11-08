@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/ChannelCompressor.h"
+#include "../engine/builtin_fx/CompressorMeterMath.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -34,6 +35,16 @@ void operator delete[](void* ptr,std::size_t) noexcept {std::free(ptr);}
 using armix::builtin_fx::ChannelCompressor;
 using armix::builtin_fx::CompressorSettings;
 
+static void testMeasuredPeakDbfs() {
+    using armix::builtin_fx::peakToDbfs;
+    check(peakToDbfs(0.f)==-72.f);
+    check(peakToDbfs(-3.f)==-72.f);
+    check(peakToDbfs(std::numeric_limits<float>::quiet_NaN())==-72.f);
+    check(std::abs(peakToDbfs(1.f))<.00001f);
+    check(std::abs(peakToDbfs(.5f)+6.0206f)<.001f);
+    check(peakToDbfs(2.f)>6.f);
+    check(peakToDbfs(100.f)==12.f);
+}
 static void testValidationAndLatency() {
     ChannelCompressor compressor;
     check(ChannelCompressor::addedLatencySamples==0);
@@ -157,6 +168,7 @@ static void testFirstSampleAndNoHeapInCallback() {
     }
 }
 int main(){
+    testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();
     testValidationAndLatency();testTransferAndStereo();
     testDryAndBypass();testSoftKneeAndRuntimeEdits();
