@@ -47,6 +47,18 @@ test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and do
   assert.match(notes,/Orbit/);
 });
 
+test('Published Windows alpha may dispatch exactly one authorized Pages refresh',()=>{
+  const release=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  const pages=readFileSync(new URL('../.github/workflows/pages-publish.yml',import.meta.url),'utf8');
+  assert.ok(release.includes('permissions:\n  contents: write\n') && release.includes('  actions: write\n'));
+  const first=pages.split('  push:')[1]?.split('  workflow_dispatch:')[0]||'';
+  assert.ok(first.includes("'.github/workflows/alpha-preview-publish.yml'"));
+  assert.ok(first.includes("'tests/release_ci_dispatch_contract.test.mjs'"));
+  const gate=pages.split('while IFS= read -r path; do')[1]?.split('esac')[0]||'';
+  assert.ok(gate.includes('.github/workflows/alpha-preview-publish.yml'));
+  assert.ok(gate.includes('tests/release_ci_dispatch_contract.test.mjs'));
+});
+
 test('Only exact owner issue comment is recognized',()=>{
   assert.deepEqual(parseReleaseCommand('/arsonmix-release '+TAG+' '+SHA),{
     tag:TAG,sha:SHA,branch:BRANCH});

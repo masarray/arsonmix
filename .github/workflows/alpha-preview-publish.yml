@@ -16,6 +16,8 @@ on:
 
 permissions:
   contents: write
+  # Release publisher may dispatch one Pages catalog refresh after asset upload.
+  actions: write
 
 concurrency:
   group: alpha-preview-${{ inputs.release_tag }}
