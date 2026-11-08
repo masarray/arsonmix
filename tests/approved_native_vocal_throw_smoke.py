@@ -132,10 +132,14 @@ def main():
             # hardware rotary controls are displayed at desktop AND mobile.
             assert editor.locator("#vtWetDial").is_visible()
             assert editor.locator('.vt-encoder[data-key="captureMs"] button').is_visible()
-            for component in ["rotor","encoder","push"]:
-                assert page.evaluate("""name=>fetch('assets/arson-vocal-hardware-'+name+'.svg')
-                  .then(r=>r.ok&&r.headers.get('content-type')?.includes('svg'))""",
-                  component)
+            # Inspect the rendered CSS backgrounds: the real WebView and
+            # local file:// Chromium source cannot use fetch() for SVG URLs.
+            for selector,name in [("#vtWetDial","rotor"),
+                                  ('.vt-encoder-face',"encoder"),
+                                  ("#vtThrow","push")]:
+                bg=editor.locator(selector).first.evaluate(
+                    "(el)=>getComputedStyle(el).backgroundImage")
+                assert "arson-vocal-hardware-"+name+".svg" in bg,(selector,bg)
             page.screenshot(path="arsonmix-vocal-throw-"+str(width)+".png")
             editor.screenshot(path="arsonmix-vocal-throw-editor-"+str(width)+".png")
             if width==1366:
