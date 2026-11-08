@@ -1,18 +1,25 @@
 name: Publish verified ArSonMix Alpha Preview
 
-# A release branch push triggers one exact-SHA build + actual Inno installation.
+# Owner-comment dispatch only; no build on release candidate branch push.
 # No GitHub Release or tag is created unless every native and distribution gate passes.
 on:
-  push:
-    branches:
-      - 'releases/alpha/**'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+        description: Approved immutable alpha tag
+      expected_sha:
+        type: string
+        required: true
+        description: Approved 40-character candidate commit
 
 permissions:
   contents: write
 
 concurrency:
-  group: alpha-preview-${{ github.ref }}
-  cancel-in-progress: true
+  group: alpha-preview-${{ inputs.release_tag }}
+  cancel-in-progress: false
 
 jobs:
   alpha:
@@ -25,11 +32,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.expected_sha }}
 
       - name: Verify release identity and immutable source
         shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $tag = ($env:GITHUB_REF_NAME -split '/')[-1]
+          if ($tag -ne $env:RELEASE_TAG -or $env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw "Release controller tag/SHA does not match branch and verified inputs"
+          }
           if ($env:GITHUB_REF_NAME -ne "releases/alpha/$tag" -or
               $tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.[0-9]+$') {
             throw "Release must use releases/alpha/vX.Y.Z-alpha.N"
@@ -44,8 +59,8 @@ jobs:
             throw "Release notes missing: $notes"
           }
           $actual = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) {
-            throw "Unpinned release checkout: expected=$env:GITHUB_SHA got=$actual"
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA) {
+            throw "Unpinned release checkout: expected=$env:EXPECTED_SHA got=$actual"
           }
           $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0 -or -not $remote) {
@@ -54,6 +69,10 @@ jobs:
           $remoteSha = ($remote -split '\s+')[0]
           if ($remoteSha -ne $actual) {
             throw "Stale release branch commit rejected: remote=$remoteSha checked-out=$actual"
+          }
+          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release already exists; do not rebuild or overwrite immutable assets"
           }
           "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
@@ -176,7 +195,20 @@ jobs:
           }
           $assets = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name | ForEach-Object FullName)
           if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
+          $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0 -or -not $remote -or ($remote -split '\s+')[0] -ne $env:GITHUB_SHA) {
+            throw "Release branch advanced during qualification; stale promotion rejected"
+          }
           & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Refresh official landing catalog after publishing real verified binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          & gh workflow run pages-publish.yml --repo $env:GITHUB_REPOSITORY --ref main
+          if ($LASTEXITCODE -ne 0) { throw "Release published but landing sync dispatch failed" }
+          Write-Host "ARSONMIX_LANDING_CATALOG_REFRESH_DISPATCHED"

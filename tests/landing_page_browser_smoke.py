@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 LANDING = ROOT / "dist-pages/index.html"
-DOWNLOAD_PATTERN = "**/repos/masarray/arsonmix/releases?per_page=15"
+DOWNLOAD_PATTERN = "**/release-catalog.json*"
 OFFICIAL = "https://github.com/masarray/arsonmix/releases/download/v0.9.0/"
 
 def browser_check(page):
@@ -30,38 +30,36 @@ def main():
             errors = []
             page.on("pageerror",lambda e:errors.append(str(e)))
             page.route(DOWNLOAD_PATTERN,lambda route:route.fulfill(
-                status=200,content_type="application/json",headers={"Access-Control-Allow-Origin":"*"},body="[]"))
+                status=200,content_type="application/json",body=json.dumps({"schemaVersion":1,"platforms":{"windows":None,"linux":None,"macos":None}})))
             page.goto(LANDING.resolve().as_uri())
-            page.wait_for_function("document.getElementById('release-summary').textContent.includes('No public desktop')")
+            page.wait_for_function("document.getElementById('release-summary').textContent.includes('No supported desktop')")
             browser_check(page)
             assert page.locator(".os-card.is-available").count() == 0, "Fake download"
+            assert page.locator("a[data-release-link][href]").count() == 0, "Missing binary must not lead anywhere"
             assert not errors,errors
             page.screenshot(path="landing-v1-"+label+".png",full_page=True,animations="disabled")
             page.close()
-        fake=[{"draft":False,"prerelease":False,"tag_name":"v0.9.0","assets":[
-            {"name":"ArSonMix-Windows-x64-FAT-UNQUALIFIED.zip","size":123456,
-             "browser_download_url":OFFICIAL+"ArSonMix-Windows-x64-FAT-UNQUALIFIED.zip"},
-            {"name":"ArSonMix-Windows-x64.exe","size":65000000,
-             "browser_download_url":OFFICIAL+"ArSonMix-Windows-x64.exe"},
-            {"name":"ArSonMix-Windows-x64.zip","size":68000000,
-             "browser_download_url":OFFICIAL+"ArSonMix-Windows-x64.zip"},
-            {"name":"ArSonMix-Linux-x64.AppImage","size":60000000,
-             "browser_download_url":OFFICIAL+"ArSonMix-Linux-x64.AppImage"},
-            {"name":"ArSonMix-macOS-arm64.dmg","size":61000000,
-             "browser_download_url":OFFICIAL+"ArSonMix-macOS-arm64.dmg"},
-        ]}]
+        def entry(platform_suffix):
+            name="ArSonMix-v0.9.0-"+platform_suffix
+            return {"tag":"v0.9.0","name":name,"url":OFFICIAL+name,
+                    "size":65000000,"sha256":"a"*64,"prerelease":True,
+                    "publishedAt":"2026-11-08T00:00:00Z"}
+        fake={"schemaVersion":1,"platforms":{
+            "windows":entry("Windows-x64-Setup.exe"),
+            "linux":entry("Linux-x86_64.AppImage"),
+            "macos":entry("macOS-universal.dmg")}}
         page=browser.new_page(viewport={"width":1366,"height":768})
         page.route(DOWNLOAD_PATTERN,lambda route:route.fulfill(
-            status=200,content_type="application/json",headers={"Access-Control-Allow-Origin":"*"},body=json.dumps(fake)))
+            status=200,content_type="application/json",body=json.dumps(fake)))
         page.goto(LANDING.resolve().as_uri())
         page.wait_for_function("document.querySelectorAll('.os-card.is-available').length === 3")
         browser_check(page)
         windows=page.locator("[data-platform=windows] [data-release-link]")
-        assert windows.get_attribute("href")==OFFICIAL+"ArSonMix-Windows-x64.zip"
+        assert windows.get_attribute("href")==OFFICIAL+"ArSonMix-v0.9.0-Windows-x64-Setup.exe"
         assert "UNQUALIFIED" not in windows.get_attribute("href")
         for os in ("linux","macos"):
             assert page.locator("[data-platform="+os+"] [data-release-link]").get_attribute("href").startswith(OFFICIAL)
-        assert page.locator("#release-summary").inner_text().startswith("Verified against")
+        assert page.locator("#release-summary").inner_text().startswith("Latest verified downloads")
         page.close()
         browser.close()
     print("PASS landing: responsive screenshots, release-gated OS downloads")

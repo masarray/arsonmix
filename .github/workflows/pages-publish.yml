@@ -11,8 +11,14 @@ on:
       - 'site/downloads.js'
       - 'site/media/**'
       - 'scripts/build_landing_assets.py'
+      - 'scripts/build_release_catalog.py'
+      - 'tests/test_release_catalog.py'
       - '.github/workflows/pages-publish.yml'
   workflow_dispatch:
+  # Owner-published releases also sync Pages. Releases made by GITHUB_TOKEN
+  # explicitly dispatch this workflow after upload (GitHub event limitation).
+  release:
+    types: [published]
   workflow_run:
     workflows: ["UI smoke (Chromium)"]
     types: [completed]
@@ -23,7 +29,7 @@ permissions:
 
 concurrency:
   group: arsonmix-production-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -77,14 +83,18 @@ jobs:
         if: ${{ steps.guard.outputs.fresh == 'true' }}
         with:
           python-version: '3.12'
-      - name: Build static landing and approved mixer preview
+      - name: Build static landing, verified release catalog and approved mixer preview
         if: ${{ steps.guard.outputs.fresh == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           SOURCE_SHA="$(git rev-parse HEAD)"
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
           python scripts/build_landing_assets.py dist-pages
+          python tests/test_release_catalog.py
+          python scripts/build_release_catalog.py --output dist-pages/release-catalog.json
           # The ONLY public mixer is /preview/, generated with the approved
           # PNG controls. Old links redirect to it; they never show other GUI.
           python tests/single_preview_publication_contract_test.py dist-pages

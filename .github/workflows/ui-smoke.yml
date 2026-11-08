@@ -8,7 +8,8 @@ on:
     paths:
       - 'web/**'
       - 'integration/console-v6/**'
-      - 'site/**'
+      - 'site/preview-v2/**'
+      - 'site/preview-buttons/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
       # GUI-only changes: do not start Chromium for native C++ or PCM tests.
@@ -32,7 +33,8 @@ on:
     paths:
       - 'web/**'
       - 'integration/console-v6/**'
-      - 'site/**'
+      - 'site/preview-v2/**'
+      - 'site/preview-buttons/**'
       - 'AR-MIX-Live-FX-Host-Standalone-v0.3.html'
       - 'scripts/build_pages.py'
       - 'tests/*.py'

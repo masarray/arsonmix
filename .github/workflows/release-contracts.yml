@@ -1,0 +1,49 @@
+name: Smart Release/Download Contracts (fast only)
+on:
+  pull_request:
+    paths:
+      - 'site/index.html'
+      - 'site/downloads.js'
+      - 'scripts/build_release_catalog.py'
+      - 'scripts/release_ci_dispatch.mjs'
+      - 'scripts/check_platform_portability.py'
+      - 'tests/test_release_catalog.py'
+      - 'tests/release_ci_dispatch_contract.test.mjs'
+      - '.github/workflows/release-control.yml'
+      - '.github/workflows/alpha-preview-publish.yml'
+      - '.github/workflows/crossplatform-native-qualification.yml'
+      - '.github/workflows/release-contracts.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build_release_catalog.py'
+      - 'scripts/release_ci_dispatch.mjs'
+      - 'tests/test_release_catalog.py'
+      - 'tests/release_ci_dispatch_contract.test.mjs'
+      - '.github/workflows/release-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: No native compiler; owner authorization, catalog integrity and YAML shape
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Release identity and browser contract
+        run: |
+          node --check site/downloads.js
+          node --check scripts/release_ci_dispatch.mjs
+          node --test tests/release_ci_dispatch_contract.test.mjs
+          python tests/test_release_catalog.py
+          python -m py_compile scripts/build_release_catalog.py scripts/check_platform_portability.py
+          ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p) }' .github/workflows/alpha-preview-publish.yml .github/workflows/release-control.yml .github/workflows/crossplatform-native-qualification.yml .github/workflows/pages-publish.yml

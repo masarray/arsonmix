@@ -1,0 +1,31 @@
+name: ArSonMix Smart Release Controller
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: read
+  actions: write
+
+# Serialize release approvals so two owner comments cannot both queue heavy CI.
+concurrency:
+  group: arsonmix-release-controller
+  cancel-in-progress: false
+
+jobs:
+  release-controller:
+    if: ${{ github.repository == 'masarray/arsonmix' && github.event.issue.number == 450 && !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate owner/SHA release dispatcher contracts (no paid runners)
+        run: node --test tests/release_ci_dispatch_contract.test.mjs
+      - name: Authorize and deduplicate exact-SHA release request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release_ci_dispatch.mjs
