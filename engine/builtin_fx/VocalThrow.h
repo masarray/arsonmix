@@ -95,10 +95,10 @@ public:
     // AUDIO: triggers the most recent word/phrase, preferring the latest
     // vocal end if the singer stopped within the last 700 ms.
     bool throwNow() noexcept {
-        if(!ready_||recorded_==0)return false;
+        if(!ready_||recorded_==0||lastSoundEnd_==0||clock_<lastSoundEnd_)return false;
         const auto recent=static_cast<std::uint64_t>(rate_*.7);
-        const bool ended=lastSoundEnd_>0 && clock_>=lastSoundEnd_ &&
-                         clock_-lastSoundEnd_<=recent && quiet_>0;
+        if(clock_-lastSoundEnd_>recent)return false; // reject stale/silent cues
+        const bool ended=quiet_>0;
         return freezeAt(ended?lastSoundEnd_:clock_);
     }
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
