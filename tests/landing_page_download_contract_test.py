@@ -24,8 +24,10 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("media/console-routing.jpg", html)
             self.assertIn("media/console-faders.jpg", html)
             self.assertIn("prefers-reduced-motion", css)
-            self.assertIn("masarray/arsonmix/releases", js)
-            self.assertIn("browser_download_url", js)
+            self.assertNotIn("https://github.com", html)  # Never navigate to GitHub UI.
+            self.assertIn("release-catalog.json", js)
+            self.assertNotIn("api.github.com", js)
+            self.assertIn("github.com", js)  # Only fixed, validated direct binary URLs.
             self.assertIn("unqualified", js.lower())
             self.assertNotIn("browser_download_url", html) # No hardcoded unverified links.
             self.assertEqual(html.count('data-platform="'), 3)
@@ -45,7 +47,8 @@ class LandingReleaseContract(unittest.TestCase):
     def test_no_unverified_binaries(self):
         js = (ROOT / "site/downloads.js").read_text("utf-8")
         self.assertIn("validUrl", js)
-        self.assertIn("asset.size > 0", js)
+        self.assertIn("data.size < 2097152", js)
+        self.assertIn("aria-disabled", js)
         html = (ROOT / "site/index.html").read_text("utf-8")
         self.assertNotIn("FAT-UNQUALIFIED", html)
         for key in ("windows", "linux", "macos"):
