@@ -123,13 +123,6 @@ def main():
                 reply_snapshot(page,state,{**DEFAULTS,"mode":0},count=1,tail=True)
                 assert editor.locator("#vtCount").inner_text()=="1 throws"
                 assert editor.locator("#vtStatus").inner_text()=="ECHO TAIL"
-                # The next changed graph invalidates the old editor instance.
-                state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
-                state["graph"].update(revision="4",rosterRevision="4")
-                state["mixerSession"].update(routeRevision="4",rosterRevision="4",
-                    channels=copy.deepcopy(state["graph"]["channels"]))
-                emit(page,"arMixConsoleSnapshot",state)
-                page.wait_for_function("""()=>document.querySelector('#vtThrow')?.disabled""",timeout=2000)
             # Real native tempo-source command (not a browser-only BPM guess).
             source_menu=editor.locator("#vtMusicSource")
             assert source_menu.locator('option[value="'+RECEIVER+'"]').count()==1
@@ -145,6 +138,14 @@ def main():
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
             assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
+            if width==1366:
+                    # The next changed graph invalidates the old editor instance.
+                    state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
+                    state["graph"].update(revision="4",rosterRevision="4")
+                    state["mixerSession"].update(routeRevision="4",rosterRevision="4",
+                        channels=copy.deepcopy(state["graph"]["channels"]))
+                    emit(page,"arMixConsoleSnapshot",state)
+                    page.wait_for_function("""()=>document.querySelector('#vtThrow')?.disabled""",timeout=2000)
             editor.locator("#vtClose").click()
             assert editor.is_hidden(),"standard close must dismiss editor"
             assert not errors,(width,errors)
