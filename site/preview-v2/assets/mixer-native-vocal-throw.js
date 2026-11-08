@@ -30,28 +30,40 @@ panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
 panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");
 panel.setAttribute("aria-label","ArSon Vocal Throw");
 panel.innerHTML=[
- '<header><span class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span></span><span class="channel" id="vtChannel"></span>',
- '<select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select>',
+ '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span><span class="brand-type">PHRASE DELAY</span></div><span class="channel" id="vtChannel"></span>',
+ '<label class="vt-preset"><span>PRESET</span><select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
  '<button class="mx-comp-power armix-builtin-fx-power" id="vtPower" data-fx-state="unknown" aria-pressed="false" aria-label="Vocal Throw state unavailable" type="button" disabled>⏻</button><button class="mx-comp-close armix-floating-close armix-builtin-fx-close" id="vtClose" aria-label="Close Vocal Throw" title="Close Vocal Throw" type="button">×</button></header>',
- '<div class="body"><div class="lcd" aria-label="Vocal Throw tempo display"><div class="lcd-top"><span>ARSON / PHRASE ENGINE</span><span id="vtClockLabel">MANUAL CLOCK</span></div><div class="lcd-numbers"><output id="vtDisplayBpm">120</output><span class="lcd-unit">BPM</span><span class="lcd-division" id="vtRhythm">1/4 · HYBRID</span></div><div class="lcd-beats" id="vtBeatRail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div></div><div class="row"><span class="label">TRIGGER MODE</span><select id="vtMode" aria-label="Trigger mode"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
- '<div class="topline"><div class="field"><label for="vtBpm">TEMPO · BPM</label><input id="vtBpm" type="number" min="60" max="200" step="1"></div>',
- '<div class="field"><label for="vtDivision">BEAT</label><select id="vtDivision"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select></div>',
- '<div class="field"><label for="vtRepeats">REPEATS</label><input id="vtRepeats" type="number" min="1" max="6" step="1"></div></div>',
- '<div class="music-source"><label for="vtMusicSource">MUSIC TEMPO SOURCE</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">Manual BPM fallback</span></div>',
- '<div class="manual"><button id="vtThrow" class="throw" type="button">THROW</button><button id="vtTap" class="tap" type="button">TAP BPM</button></div>',
- '<div class="hint" id="vtHint">Native DSP · waiting for accepted channel</div>',
- '<details class="detail"><summary>Phrase & echo shaping</summary><div class="ranges" id="vtRanges"></div></details>',
- '<div class="status"><span><span class="dot" id="vtDot"></span><span id="vtStatus">FX READY</span></span><span id="vtCount">0 throws</span></div></div>'
+ '<div class="body vt-hardware"><section class="vt-console" aria-label="Vocal Throw hardware controls">',
+ '<div class="vt-console-eyebrow"><span>SMART PHRASE / LIVE ENGINE</span><span class="vt-unit-id">AS·VT 01 <i></i> ZERO DRY LATENCY</span></div>',
+ '<div class="vt-instrument"><div class="vt-encoder-bank" id="vtEncodersLeft"></div>',
+ '<div class="vt-center"><div class="vt-hero-plate"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET MIX</small><output id="vtWetValue">42%</output></span></button></div><span class="vt-dial-note">ECHO RETURN LEVEL</span></div>',
+ '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
+ '<div class="vt-performance"><button id="vtThrow" class="vt-throw-button" type="button"><span class="vt-throw-main">THROW</span><small>FIRE PHRASE</small></button>',
+ '<div class="vt-trigger"><span class="vt-small-label">TRIGGER</span><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
+ '<button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></section>',
+ '<section class="vt-transport" aria-label="Tempo and music clock"><div class="vt-tempo"><span class="vt-small-label">TEMPO CLOCK</span><div class="vt-clock-screen"><output id="vtDisplayBpm">120</output><span>BPM</span><span id="vtClockLabel">MANUAL CLOCK</span></div><label class="vt-manual-bpm"><span>MANUAL</span><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM"></label></div>',
+ '<div class="vt-pulse"><span class="vt-small-label">DELAY DIVISION</span><div class="vt-division-buttons" role="group" aria-label="Delay division"><button type="button" data-division="0">1/4</button><button type="button" data-division="1">1/8</button><button type="button" data-division="2">1/8 D</button><button type="button" data-division="3">1/2</button></div><select id="vtDivision" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select><input id="vtRepeats" class="vt-virtual-input" type="number" min="1" max="6" step="1" tabindex="-1" aria-hidden="true"><div id="vtBeatRail" class="vt-repeat-leds" aria-label="Echo repeat count"><i></i><i></i><i></i><i></i><i></i><i></i><span id="vtRhythm">1/4 · HYBRID</span></div></div>',
+ '<div class="vt-music-source"><label for="vtMusicSource" class="vt-small-label">MUSIC CLOCK SOURCE</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">Manual BPM / TAP</span></div></section>',
+ '<footer class="vt-status-rail"><span class="vt-device"><i class="dot" id="vtDot"></i><span id="vtStatus">NATIVE DSP</span></span><span class="vt-hint" id="vtHint" role="status">Native DSP · waiting for accepted channel</span><span id="vtCount">0 throws</span></footer></div>'
 ].join("");
 document.body.append(panel);
 const $=id=>panel.querySelector("#"+id);
-for(const [key,[title,unit,step]] of Object.entries(fields)){
- const label=document.createElement("label");label.className="range";label.dataset.key=key;
- label.innerHTML='<span>'+title+'</span><output></output><input type="range">';
- const input=label.querySelector("input"),bounds=ranges[key];
- input.min=String(bounds[0]);input.max=String(bounds[1]);input.step=String(step);
- input.setAttribute("aria-label",title);label.querySelector("output").dataset.unit=unit;
- $("vtRanges").append(label);
+const encoderMeta={
+ captureMs:["CAPTURE","ms",5,"vtEncodersLeft"],
+ silenceMs:["PHRASE END","ms",10,"vtEncodersLeft"],
+ thresholdDb:["VOICE GATE","dB",1,"vtEncodersLeft"],
+ decay:["FEEDBACK","%",.01,"vtEncodersRight"],
+ ducking:["VOCAL DUCK","%",.01,"vtEncodersRight"],
+ repeats:["REPEATS","x",1,"vtEncodersRight"]
+};
+for(const [key,[title,unit,,bank]] of Object.entries(encoderMeta)){
+ const node=document.createElement("div");
+ node.className="vt-encoder";node.dataset.key=key;
+ node.innerHTML='<span class="vt-encoder-name">'+title+'</span>'+
+  '<button class="vt-encoder-face" type="button" role="slider" tabindex="0" aria-label="'+title+'"><span class="vt-encoder-needle" aria-hidden="true"></span></button>'+
+  '<output class="vt-encoder-value"></output>';
+ node.querySelector("output").dataset.unit=unit;
+ $(bank).append(node);
 }
 let current=null,accepted=defaults(),draft=defaults(),pending=null,
  readId="",readSent=0,seq=1,taps=[],windowDrag=null;
