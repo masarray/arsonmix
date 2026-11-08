@@ -1591,10 +1591,7 @@
           padding:17px;display:grid;gap:11px;font:12px system-ui,sans-serif}
         .armix-audio-dialog h2{font-size:14px;font-weight:600;margin:0}
         .armix-audio-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
-        .armix-audio-dialog .armix-floating-close{display:flex;align-items:center;justify-content:center;
-          width:29px;height:29px;min-height:29px;padding:0;border-radius:3px;flex:0 0 29px}
-        .armix-audio-dialog .armix-floating-close:active{background:#a42e3d;border-color:#e75f65;color:#fff}
-        .armix-floating-close svg{width:20px;height:20px;display:block;pointer-events:none}
+        /* Floating close belongs to mixer-contextual-buttons.css. */
         .armix-audio-dialog label{display:grid;gap:5px;color:#a9c5d2}
         .armix-audio-dialog select{background:#09202c;border:1px solid #476778;
           border-radius:4px;color:#edf9ff;min-height:30px;width:100%;padding:3px 7px}

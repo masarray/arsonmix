@@ -100,7 +100,11 @@ def main():
                 emitEvent(name,payload){
                   if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
                   if(name==='arMixAction')window.__actions.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                addEventListener(name,callback){
+                  const prior=window.__nativeListeners.get(name);
+                  window.__nativeListeners.set(name,prior
+                    ?payload=>{prior(payload);callback(payload);}
+                    :callback);}}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeEq")
             state=snapshot()

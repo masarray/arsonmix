@@ -48,7 +48,10 @@ def main():
                   if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
                   if(name==='arMixAction')window.__actions.push(payload);},
                 addEventListener(name,callback){
-                  window.__nativeListeners.set(name,callback);}}};""")
+                  const prior=window.__nativeListeners.get(name);
+                  window.__nativeListeners.set(name,prior
+                    ?payload=>{prior(payload);callback(payload);}
+                    :callback);}}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeCompressor")
             state=snapshot()
@@ -117,6 +120,14 @@ def main():
                 }""")
                 assert visual["width"]=="24px" and visual["height"]=="24px", (selector,visual)
                 assert visual["glyph"]=="0px" and visual["icon"]=="12px",(selector,visual)
+            audio_close=page.evaluate("""()=>{
+              const b=document.createElement('button');
+              b.className='armix-floating-close';b.setAttribute('aria-label','Close Audio I/O');
+              document.body.appendChild(b);const s=getComputedStyle(b);
+              const out={width:s.width,height:s.height,icon:getComputedStyle(b,'::after').width};
+              b.remove();return out;
+            }""")
+            assert audio_close=={"width":"24px","height":"24px","icon":"12px"},audio_close
             power=page.locator(".mx-comp-power")
             assert power.get_attribute("data-fx-state")=="on"
             assert power.get_attribute("aria-pressed")=="true"

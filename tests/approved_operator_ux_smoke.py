@@ -69,7 +69,7 @@ class OperatorConsoleTests(unittest.TestCase):
         comp=(assets/"mixer-native-compressor.js").read_text(encoding="utf-8")
         for name in ("identityClose","pluginClose","fastClose",
                      "wireConfigClose","wireWsClose","routeChoiceClose",
-                     "mx-peq-close","mx-comp-close"):
+                     "mx-peq-close","mx-comp-close","armix-floating-close"):
             self.assertIn(name,shared)
         for state in ("on","off","rack-off","unknown"):
             self.assertIn('data-fx-state="'+state+'"',shared)
@@ -81,6 +81,8 @@ class OperatorConsoleTests(unittest.TestCase):
         self.assertIn('power.dataset.fxState=fxState;',comp)
         self.assertIn('else updateKnobs();',eq)
         self.assertIn('syncPower(); // accepted graph readback',comp)
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertNotIn(".armix-audio-dialog .armix-floating-close{",bridge)
 
     def test_native_hooks_and_audio_input_default(self):
         build=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
