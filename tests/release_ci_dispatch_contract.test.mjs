@@ -217,6 +217,36 @@ test('Public OS publishing rejects SHA mismatch, missing Windows, duplicate and 
   }
 });
 
+test('qualification and public publication are distinct milestones at the same exact OS/SHA', async()=>{
+  const publish='/arsonmix-publish macos '+TAG+' '+SHA;
+  const qualification='/arsonmix-port macos '+BRANCH+' '+SHA;
+  const baseRun={head_sha:SHA,status:'completed',conclusion:'success'};
+  for(const [command,history,mode] of [
+    [publish, [{...baseRun,display_title:'Port macos QUALIFY '+SHA}],TAG],
+    [qualification,[{...baseRun,display_title:'Port macos '+TAG+' '+SHA}],'']
+  ]){
+    const calls=[];
+    const api=async(path,method='GET',data)=>{
+      calls.push({path,method,data});
+      if(path==='/git/ref/heads/'+BRANCH)
+        return {ref:'refs/heads/'+BRANCH,object:{sha:SHA}};
+      if(path.startsWith('/issues/450/comments?'))return [];
+      if(path==='/releases/tags/'+TAG)
+        return {tag_name:TAG,target_commitish:SHA,draft:false,assets:[
+          {name:'ArSonMix-'+TAG+'-Windows-x64-Setup.exe',state:'uploaded'}]};
+      if(path.includes('/runs?event=workflow_dispatch'))
+        return {workflow_runs:history};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('Unexpected route '+path);
+    };
+    const result=await portDispatch({event:ev(command),api});
+    assert.equal(result.kind,'dispatched');
+    const dispatches=calls.filter(x=>x.method==='POST');
+    assert.equal(dispatches.length,1);
+    assert.equal(dispatches[0].data.inputs.release_tag,mode);
+  }
+});
+
 test('Public port workflow includes no commercial signing or push-triggered build',()=>{
   const workflow=readFileSync(new URL('../.github/workflows/crossplatform-native-qualification.yml',import.meta.url),'utf8');
   assert.match(workflow,/workflow_dispatch:/);
