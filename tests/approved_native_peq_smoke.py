@@ -146,6 +146,32 @@ def main():
             editor.wait_for(state="visible")
             assert page.locator(".mx-peq-global").get_attribute("data-fx-state")=="on"
             assert page.locator(".mx-peq-global").get_attribute("aria-pressed")=="true"
+            power=page.locator(".mx-peq-global")
+            assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
+            # The native EQ Power must reflect accepted insertion bypass and
+            # parent rack bypass; do not derive state from optimistic clicks.
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='off'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(233, 155, 159)'""")
+            assert power.get_attribute("aria-pressed")=="false"
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+            state["graph"]["channels"][0]["fxRackBypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='rack-off'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(240, 196, 131)'""")
+            assert power.is_disabled()
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='on'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
+            assert not power.is_disabled()
             values=bands_initial()
             handled=set()
             emit_snapshot(page,state,values)
