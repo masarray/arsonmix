@@ -284,7 +284,7 @@
 .mx-comp-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;
  overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 /* Close and Power inherit the global native FX header chrome owner. */
-.mx-comp-controls{display:grid;grid-template-columns:130px minmax(0,390px) minmax(0,1fr);
+.mx-comp-controls{display:grid;grid-template-columns:130px minmax(0,410px) minmax(0,1fr);
  align-items:stretch;gap:0;min-height:327px;padding:6px;
  background:linear-gradient(165deg,#95a6af,#8296a1 72%,#768b97)}
 .mx-comp-left{min-width:0;display:flex;flex-direction:column;justify-content:space-around;
@@ -296,7 +296,7 @@
 .mx-comp-plot-brand{display:flex;align-items:center;justify-content:center;
  height:27px;color:#cddfe8;font:650 14px/1.1 Inter,'Segoe UI',sans-serif;
  letter-spacing:.075em;text-shadow:0 1px 2px #000a}
-.mx-comp-display{display:grid;grid-template-columns:minmax(0,1fr) 94px;
+.mx-comp-display{display:grid;grid-template-columns:minmax(0,1fr) 114px;
  gap:0;min-width:0;height:282px;border:2px solid #2c4d60;border-radius:2px;
  background:#081923;box-shadow:inset 0 2px 5px #020b12}
 .mx-comp-display svg{display:block;width:100%;height:100%;min-width:0;
@@ -308,7 +308,7 @@
 .mx-comp-tick{fill:#8cafc4;font:10px Inter,'Segoe UI',sans-serif}
 .mx-comp-axis-label{fill:#70a2b8;font:9px Inter,'Segoe UI',sans-serif;letter-spacing:.04em}
 .mx-comp-meter-bank{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
- gap:2px;padding:7px 5px 5px 4px;background:linear-gradient(90deg,#0c2532,#0a1d28);
+ gap:3px;padding:7px 3px 5px;background:linear-gradient(90deg,#0c2532,#0a1d28);
  border-left:1px solid #294857}
 .mx-comp-meter-lane{display:flex;align-items:center;flex-direction:column;
  gap:5px;min-width:0;color:#a2c2d3;font-variant-numeric:tabular-nums}
@@ -329,8 +329,8 @@
  pointer-events:none;opacity:.5}
 .mx-comp-meter-ticks span{font-size:0;display:block;width:100%;height:1px;
  background:#c1deec55}
-.mx-comp-meter-lane output{font-size:9px;color:#9bd8e2;
- white-space:nowrap;min-height:11px;text-align:center}
+.mx-comp-meter-lane output{font-size:8.5px;color:#9bd8e2;
+ white-space:nowrap;min-height:11px;text-align:center;letter-spacing:-.035em}
 .mx-comp-grvalue{color:#e7c88c!important}
 .mx-comp-meter-bank[data-live=false] .mx-comp-meter-fill{opacity:.3;transition:none}
 .mx-comp-right{min-width:0;display:flex;flex-direction:column;justify-content:center;
@@ -374,7 +374,7 @@
 @media(max-width:850px){
  .mx-comp{left:7px;width:min(795px,calc(100vw - 14px))}
  .mx-comp-controls{grid-template-columns:118px minmax(0,1.45fr) minmax(0,1fr)}
- .mx-comp-display{grid-template-columns:minmax(0,1fr) 83px}
+ .mx-comp-display{grid-template-columns:minmax(0,1fr) 96px}
  .mx-comp-right{padding-left:9px}
  .mx-comp-control{grid-template-columns:41px minmax(0,1fr);column-gap:3px}
  .mx-comp-dial{width:40px;height:40px}
@@ -392,7 +392,7 @@
   grid-template-rows:auto auto;gap:8px;padding:8px;min-height:0}
  .mx-comp-visual{grid-column:1/-1;grid-row:1;width:min(100%,390px);justify-self:center}
  .mx-comp-plot{height:284px}
- .mx-comp-display{height:242px;grid-template-columns:minmax(0,1fr) 83px}
+ .mx-comp-display{height:242px;grid-template-columns:minmax(0,1fr) 96px}
  .mx-comp-left{grid-column:1;grid-row:2;justify-content:space-around;padding:0 4px;
   border-right:1px solid #6b8290}
  .mx-comp-right{grid-column:2;grid-row:2;padding:0 2px;gap:6px}
@@ -411,8 +411,9 @@
 @media(max-width:390px){
  .mx-comp-channel{display:none}
  .mx-comp-plot{padding:5px}
- .mx-comp-display{grid-template-columns:minmax(0,1fr) 74px}
- .mx-comp-meter-bank{padding:5px 2px}
+ .mx-comp-display{grid-template-columns:minmax(0,1fr) 96px}
+ .mx-comp-meter-bank{padding:5px 2px;gap:2px}
+ .mx-comp-meter-lane output{font-size:8px;letter-spacing:-.07em}
  .mx-comp-controls{grid-template-columns:1fr 1.7fr;gap:4px;padding:5px}
  .mx-comp-right-controls{gap:2px 1px}
  .mx-comp-control{grid-template-columns:34px minmax(0,1fr);gap:0 2px}

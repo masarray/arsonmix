@@ -215,6 +215,11 @@ def main():
             levels=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
                 els.map(el=>parseFloat(el.style.height))""")
             assert levels[0]>levels[1]>0 and levels[2]>0,levels
+            readout_boxes=page.locator(".mx-comp-meter-lane output").evaluate_all("""els=>
+                els.map(el=>{const r=el.getBoundingClientRect();
+                    return {left:r.left,right:r.right,width:r.width};})""")
+            assert all(readout_boxes[i]["right"]+0.5<=readout_boxes[i+1]["left"]
+                for i in range(2)),("overlapping LCD meter numbers",readout_boxes,width)
             assert page.locator(".mx-comp-preset-select").is_visible()
             assert page.locator(".mx-comp-status").evaluate("""el=>{\n                const s=getComputedStyle(el);return s.clipPath.includes("inset")\n                && el.getBoundingClientRect().width<=1;}"""),"technical status polluted panel"
             rect=editor.bounding_box()
