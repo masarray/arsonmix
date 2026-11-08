@@ -48,11 +48,17 @@ public:
         ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(accepted_);
         if(ready_)rate_=sampleRate;
     }
-    void releaseResources() override{ready_=false;}
+    void releaseResources() override{
+        ready_=false;musicInterval_.store(0,std::memory_order_release);
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
+        // Transport is published by CONTROL as an already prepared sample
+        // interval; AUDIO performs only one atomic read at the block edge.
+        core_.setMusicIntervalSamples(
+            musicInterval_.load(std::memory_order_acquire));
         core_.processStereo(pcm.getWritePointer(0),pcm.getWritePointer(1),
                             static_cast<std::size_t>(pcm.getNumSamples()));
         observedThrows_.store(core_.throwCount(),std::memory_order_relaxed);
@@ -65,6 +71,18 @@ public:
         const bool applied=e.kind==CommandKind::settings?
             core_.applyPrepared(e.prepared):core_.throwNow();
         (void)done_.push({e.id,e.prepared.settings,e.kind,applied});
+    }
+    // CONTROL-thread song/auto BPM, deliberately independent of accepted
+    // serialized preset BPM. No queue ACK storm or GUI state overwrite.
+    void publishMusicBpm(float bpm) noexcept {
+        if(!ready_||!std::isfinite(bpm)||bpm<60.f||bpm>200.f) {
+            musicInterval_.store(0,std::memory_order_release);return;
+        }
+        auto settings=accepted_;settings.bpm=bpm;
+        VocalThrow::PreparedEdit packet{};
+        const auto valid=VocalThrow::prepareEdit(settings,rate_,packet);
+        musicInterval_.store(valid?packet.intervalSamples:0,
+                             std::memory_order_release);
     }
     bool queueSettings(const VocalThrowSettings& settings,std::uint64_t id) noexcept {
         if(!ready_||id==0)return false;
@@ -144,6 +162,7 @@ private:
     FxSpsc<Completion,32> done_{};
     VocalThrowSettings accepted_{};
     std::atomic<unsigned> observedThrows_{0};
+    std::atomic<std::uint32_t> musicInterval_{0};
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
     bool ready_=false,published_=false;
