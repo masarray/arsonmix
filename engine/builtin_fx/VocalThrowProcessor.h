@@ -3,6 +3,7 @@
 #include "VocalThrow.h"
 #include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
+#include "../core/NativeBeatFrameContext.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
 #include <cstdint>
@@ -69,10 +70,25 @@ public:
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override{}
     void consumeRealtimeEdits() noexcept override {
         if(!ready_)return;
-        // One atomic acquire per callback, before queueing the newest throw.
-        // A source change and button click cannot freeze the previous BPM.
-        core_.setMusicIntervalSamples(
-            musicInterval_.load(std::memory_order_acquire));
+        // One bounded attempt, never spin in ASIO. The native PCM callback
+        // is the ONLY owner of a valid block sample clock. A stale epoch,
+        // graph revision, or torn control publication falls back to TAP.
+        const auto block=armix::mixer::NativeBeatFrameScope::current();
+        const auto v0=gridVersion_.load(std::memory_order_acquire);
+        bool valid=block.valid && (v0&1U)==0U;
+        std::uint64_t anchor=0;
+        std::uint32_t interval=0;
+        if(valid) {
+            const auto epoch=gridEpoch_.load(std::memory_order_relaxed);
+            const auto revision=gridRevision_.load(std::memory_order_relaxed);
+            anchor=gridAnchor_.load(std::memory_order_relaxed);
+            interval=musicInterval_.load(std::memory_order_relaxed);
+            const auto v1=gridVersion_.load(std::memory_order_acquire);
+            valid=v0==v1 && block.epoch==epoch &&
+                  block.revision==revision && interval>0 && anchor>0 &&
+                  anchor<=block.startFrame;
+        }
+        core_.setMusicBeatGrid(interval,anchor,block.startFrame,valid);
         Edit e{};
         if(!done_.canPush()||!commands_.pop(e))return;
         const bool applied=e.kind==CommandKind::settings?
@@ -100,6 +116,21 @@ public:
         lastTempoDivision_=valid?accepted_.division:-1;
         musicInterval_.store(valid?packet.intervalSamples:0,
                              std::memory_order_release);
+    }
+    // CONTROL ONLY: one source-derived BPM+phase packet is fenced by the
+    // accepted native PCM epoch/revision. The sample-grid anchor comes from
+    // onset timestamped INSIDE the same audio callback (10ms granularity).
+    // Writer is the existing serialized JUCE timer, not a second thread.
+    void publishMusicGrid(float bpm,std::uint64_t anchorFrame,
+                          std::uint64_t epoch,
+                          std::uint64_t revision) noexcept {
+        gridVersion_.fetch_add(1,std::memory_order_acq_rel); // odd, unstable
+        publishMusicBpm(bpm);
+        gridAnchor_.store(bpm>=60.f&&bpm<=200.f?anchorFrame:0,
+                          std::memory_order_relaxed);
+        gridEpoch_.store(epoch,std::memory_order_relaxed);
+        gridRevision_.store(revision,std::memory_order_relaxed);
+        gridVersion_.fetch_add(1,std::memory_order_release); // even, ready
     }
     bool queueSettings(const VocalThrowSettings& settings,std::uint64_t id) noexcept {
         if(!ready_||id==0)return false;
@@ -180,6 +211,8 @@ private:
     VocalThrowSettings accepted_{};
     std::atomic<unsigned> observedThrows_{0};
     std::atomic<std::uint32_t> musicInterval_{0};
+    std::atomic<std::uint64_t> gridVersion_{0},gridAnchor_{0};
+    std::atomic<std::uint64_t> gridEpoch_{0},gridRevision_{0};
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
     float lastTempoBpm_=0.f; // CONTROL only
