@@ -7,6 +7,9 @@ on:
       - 'scripts/build_release_catalog.py'
       - 'scripts/release_ci_dispatch.mjs'
       - 'scripts/check_platform_portability.py'
+      - 'scripts/package_native_linux.sh'
+      - 'scripts/package_native_macos.sh'
+      - 'tests/test_platform_portability.py'
       - 'tests/test_release_catalog.py'
       - 'tests/release_ci_dispatch_contract.test.mjs'
       - '.github/workflows/release-control.yml'
@@ -46,4 +49,6 @@ jobs:
           node --test tests/release_ci_dispatch_contract.test.mjs
           python tests/test_release_catalog.py
           python -m py_compile scripts/build_release_catalog.py scripts/check_platform_portability.py
+          python tests/test_platform_portability.py
+          bash -n scripts/package_native_linux.sh scripts/package_native_macos.sh
           ruby -e 'require "yaml"; ARGV.each { |p| YAML.load_file(p) }' .github/workflows/alpha-preview-publish.yml .github/workflows/release-control.yml .github/workflows/crossplatform-native-qualification.yml .github/workflows/pages-publish.yml
