@@ -134,12 +134,13 @@ public:
                     armed_=false;
                 }
             }
+            if(copyPending_)copyFrozenChunk(); // fixed real-time budget
             float echoL=0.f,echoR=0.f;
             if(playing_) {
                 // A new manual throw replaces the old tail atomically.
                 // Each voice has a fixed offset in the captured buffer;
                 // multiple phrases may overlap at short note divisions.
-                for(int tap=0;tap<settings_.settings.repeats;++tap) {
+                for(int tap=0;tap<active_.settings.repeats;++tap) {
                     const std::uint64_t start=repeatStarts_[static_cast<std::size_t>(tap)];
                     if(clock_<=start)continue;
                     const std::uint64_t offset=clock_-start-1;
@@ -155,7 +156,7 @@ public:
                     const float gain=repeatGains_[static_cast<std::size_t>(tap)]*std::max(0.f,ramp);
                     echoL+=freezeL_[p]*gain;echoR+=freezeR_[p]*gain;
                 }
-                const auto end=repeatStarts_[static_cast<std::size_t>(settings_.settings.repeats-1)]
+                const auto end=repeatStarts_[static_cast<std::size_t>(active_.settings.repeats-1)]
                                   +freezeCount_;
                 if(clock_>end)playing_=false;
             }
@@ -177,29 +178,39 @@ private:
         const auto available=std::min<std::uint64_t>(end,recorded_);
         const auto count=std::min<std::uint64_t>(available,settings_.captureSamples);
         if(count<static_cast<std::uint64_t>(rate_*.025))return false;
-        const auto from=end-count;
-        for(std::uint64_t i=0;i<count;++i) {
-            const auto source=static_cast<std::size_t>((from+i)%historyL_.size());
-            freezeL_[static_cast<std::size_t>(i)]=historyL_[source];
-            freezeR_[static_cast<std::size_t>(i)]=historyR_[source];
-        }
-        freezeCount_=count;
-        // Wait until the next subdivision after the detected phrase end;
-        // if the silence detector was late, fire immediately (never in past).
-        const std::uint64_t first=std::max(clock_,end+settings_.intervalSamples);
-        float amplitude=1.f;
-        for(int tap=0;tap<settings_.settings.repeats;++tap) {
-            const auto slot=static_cast<std::size_t>(tap);
-            repeatStarts_[slot]=first+static_cast<std::uint64_t>(tap)*settings_.intervalSamples;
-            repeatGains_[slot]=amplitude;amplitude*=settings_.settings.decay;
-        }
-        playing_=true;++throwCount_;
+        // No large memcpy in a 64/128-sample ASIO callback. Copy only a
+        // fixed number of stereo frames per processed sample before playback.
+        copyFrom_=end-count;copyEnd_=end;copyIndex_=0;
+        freezeCount_=count;active_=settings_;
+        playing_=false;copyPending_=true;++throwCount_;
         return true;
+    }
+    void copyFrozenChunk() noexcept {
+        if(!copyPending_)return;
+        for(int n=0;n<24 && copyIndex_<freezeCount_;++n) {
+            const auto source=static_cast<std::size_t>(
+                (copyFrom_+copyIndex_)%historyL_.size());
+            const auto dest=static_cast<std::size_t>(copyIndex_++);
+            freezeL_[dest]=historyL_[source];freezeR_[dest]=historyR_[source];
+        }
+        if(copyIndex_!=freezeCount_)return;
+        copyPending_=false;
+        // The phrase-end interval is authoritative. If capture completion
+        // is later than the first repeat, begin on the next safe sample.
+        const auto first=std::max(clock_,copyEnd_+active_.intervalSamples);
+        float amplitude=1.f;
+        for(int tap=0;tap<active_.settings.repeats;++tap) {
+            const auto slot=static_cast<std::size_t>(tap);
+            repeatStarts_[slot]=first+
+                static_cast<std::uint64_t>(tap)*active_.intervalSamples;
+            repeatGains_[slot]=amplitude;amplitude*=active_.settings.decay;
+        }
+        playing_=true;
     }
     void reset() noexcept {
         clock_=lastSoundEnd_=nextAutoEligible_=0;
-        recorded_=freezeCount_=0;
-        voiced_=quiet_=0;armed_=playing_=false;
+        recorded_=freezeCount_=0;copyFrom_=copyEnd_=copyIndex_=0;
+        voiced_=quiet_=0;armed_=playing_=copyPending_=false;
         envelope_=0.f;duck_=1.f;throwCount_=0;
         if(rate_>0) {
             envAttack_=static_cast<float>(std::exp(-1./(rate_*.004)));
@@ -210,17 +221,17 @@ private:
         std::fill(historyL_.begin(),historyL_.end(),0.f);
         std::fill(historyR_.begin(),historyR_.end(),0.f);
     }
-    PreparedEdit settings_{};
+    PreparedEdit settings_{},active_{};
     std::vector<float> historyL_,historyR_,freezeL_,freezeR_;
     std::array<std::uint64_t,maxRepeats> repeatStarts_{};
     std::array<float,maxRepeats> repeatGains_{};
     std::uint64_t clock_=0,lastSoundEnd_=0,nextAutoEligible_=0;
     std::size_t recorded_=0;
-    std::uint64_t freezeCount_=0;
+    std::uint64_t freezeCount_=0,copyFrom_=0,copyEnd_=0,copyIndex_=0;
     std::uint32_t voiced_=0,quiet_=0;
     float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f,duck_=1.f;
     double rate_=0.;
     unsigned throwCount_=0;
-    bool armed_=false,playing_=false,ready_=false;
+    bool armed_=false,playing_=false,copyPending_=false,ready_=false;
 };
 } // namespace armix::builtin_fx
