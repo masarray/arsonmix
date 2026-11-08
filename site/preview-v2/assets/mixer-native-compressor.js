@@ -155,10 +155,11 @@ function paint(){
   '" r="6" class="mx-comp-handle"/>'+
   '<text x="40" y="14" class="mx-comp-axis">OUTPUT dBFS</text>'+
   '<text x="451" y="14" class="mx-comp-axis" text-anchor="end">INPUT →</text>';
- const c=context(),insert=c?snapshot()?.graph?.channels?.find(x=>x.id===c.channelId)?.inserts?.[current.slot]:null;
- // A bypassed graph node is not rendering PCM; its atomic block meter may
- // still contain its last active value, so never display stale GR as live.
- const shownReduction=insert?.bypassed===true?0:grDb;
+ const c=context(),lane=c?snapshot()?.graph?.channels?.find(x=>x.id===c.channelId):null;
+ const insert=lane?.inserts?.[current.slot];
+ // A bypassed graph node (or entire rack) is not rendering PCM; its atomic
+ // block meter may retain its last value. Never display stale GR as live.
+ const shownReduction=(insert?.bypassed===true||lane?.fxRackBypassed===true)?0:grDb;
  meterFill.style.height=(100*clamp(shownReduction,0,30)/30)+"%";
  meterValue.textContent=shownReduction.toFixed(1)+" dB";
  power.classList.toggle("bypassed",insert?.bypassed===true);
