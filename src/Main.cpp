@@ -3065,24 +3065,24 @@ private:
             if(!armix::core::validOrbitShape(shape)){
                 emitNotice("Orbit path is invalid.",true);return;
             }
-            const double near=static_cast<double>(nearArg),
-                far=static_cast<double>(farArg);
+            const double nearSetpoint=static_cast<double>(nearArg),
+                farSetpoint=static_cast<double>(farArg);
             float normalizedNear=0.f,normalizedFar=1.f;
             const auto unit=args.getProperty("distanceUnit",{}).toString();
             if(unit=="m"){
                 if(distance<0||distance>=plugin->getParameters().size()||
-                   !metresToNormalized(plugin->getParameters()[distance],near,normalizedNear)||
-                   !metresToNormalized(plugin->getParameters()[distance],far,normalizedFar)){
+                   !metresToNormalized(plugin->getParameters()[distance],nearSetpoint,normalizedNear)||
+                   !metresToNormalized(plugin->getParameters()[distance],farSetpoint,normalizedFar)){
                     emitNotice("Orbit metre setpoints do not match the vendor parameter.",true);
                     return;
                 }
             }else if(unit=="%"){
-                if(!std::isfinite(near)||!std::isfinite(far)||
-                   near<0||far>100){
+                if(!std::isfinite(nearSetpoint)||!std::isfinite(farSetpoint)||
+                   nearSetpoint<0||farSetpoint>100){
                     emitNotice("Orbit distance must be 0–100%.",true);return;
                 }
-                normalizedNear=static_cast<float>(near/100.0);
-                normalizedFar=static_cast<float>(far/100.0);
+                normalizedNear=static_cast<float>(nearSetpoint/100.0);
+                normalizedFar=static_cast<float>(farSetpoint/100.0);
             }else{
                 emitNotice("Orbit distance unit is invalid.",true);return;
             }
