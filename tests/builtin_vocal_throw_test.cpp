@@ -183,6 +183,26 @@ static void twoTailsStayLive(double rate) {
     run(overlap,0.f,0.f,static_cast<int>(rate*.8),l,r);
     check(overlap.throwCount()==2);
 }
+static void denseRepeatsStayBounded() {
+    VocalThrow fx;check(fx.prepare(48000));
+    auto settings=fx.settingsForTests();
+    settings.mode=0;settings.bpm=200;settings.division=1;
+    settings.repeats=6;settings.decay=.9f;
+    settings.captureMs=1200.f;settings.wet=1.f;settings.ducking=0.f;
+    check(fx.resetUnpublished(settings));
+    float maxL=0.f,maxR=0.f;
+    run(fx,.75f,.6f,48000,maxL,maxR);
+    noHeap.store(true);
+    const bool fired=fx.throwNow();
+    noHeap.store(false);
+    check(fired);
+    maxL=maxR=0.f;
+    run(fx,0.f,0.f,static_cast<int>(48000*2.5),maxL,maxR);
+    check(maxL>.20f&&maxR>.10f);
+    // An exposed six-tap feedback-like burst must not produce >0dBFS
+    // solely because echo taps overlap (dry path is unchanged).
+    check(maxL<=.751f&&maxR<=.601f);
+}
 static void manualOverrideSuppressesAuto() {
     VocalThrow fx;check(fx.prepare(48000));
     auto s=fx.settingsForTests();
@@ -213,5 +233,6 @@ int main() {
     twoTailsStayLive(48000);
     twoTailsStayLive(96000);
     manualOverrideSuppressesAuto();
+    denseRepeatsStayBounded();
     std::puts("PASS: vocal-throw native dry/rolling capture/phrase/echo/tempo/no-heap");
 }
