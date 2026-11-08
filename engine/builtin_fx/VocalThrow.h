@@ -95,6 +95,12 @@ public:
            edit.silenceSamples==0)return false;
         settings_=edit;return true;
     }
+    // AUDIO: incoming transport interval is already computed on CONTROL.
+    // A zero interval explicitly falls back to accepted song/TAP BPM. Each
+    // frozen tail keeps its interval when a backing track changes tempo.
+    void setMusicIntervalSamples(std::uint32_t samples) noexcept {
+        musicIntervalSamples_=samples;
+    }
     // AUDIO: triggers the most recent word/phrase, preferring the latest
     // vocal end if the singer stopped within the last 700 ms.
     bool throwNow() noexcept {
@@ -231,6 +237,8 @@ private:
         slot->sourceIndex=static_cast<std::size_t>((end-count)%historyL_.size());
         slot->edgeSamples=static_cast<std::uint32_t>(rate_*.004);
         slot->active=settings_;
+        if(musicIntervalSamples_)
+            slot->active.intervalSamples=musicIntervalSamples_;
         slot->copying=true;
         ++throwCount_;
         return true;
@@ -292,6 +300,7 @@ private:
     float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f;
     float duck_=1.f,wetSmoothed_=.42f;
     double rate_=0.;
+    std::uint32_t musicIntervalSamples_=0;
     unsigned throwCount_=0;
     bool armed_=false,manualInCurrentPhrase_=false,ready_=false;
 };
