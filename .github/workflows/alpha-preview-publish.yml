@@ -1,6 +1,6 @@
 name: Publish verified ArSonMix Alpha Preview
 
-# A release branch push triggers one exact-SHA build + actual Inno installation.
+# Only an owner-authorized issue-comment dispatch starts exact-SHA qualification.
 # No GitHub Release or tag is created unless every native and distribution gate passes.
 on:
   # NO automatic alpha compilation on release-branch pushes. Only validated
@@ -44,7 +44,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = ($env:GITHUB_REF_NAME -split '/')[-1]
-          if ($tag -ne $env:RELEASE_TAG -or $env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}
+          if ($tag -ne $env:RELEASE_TAG -or $env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw "Release controller tag/SHA does not match branch and verified inputs"
+          }
           if ($env:GITHUB_REF_NAME -ne "releases/alpha/$tag" -or
               $tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.[0-9]+$') {
             throw "Release must use releases/alpha/vX.Y.Z-alpha.N"
