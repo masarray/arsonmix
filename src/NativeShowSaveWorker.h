@@ -95,7 +95,7 @@ private:
         requestedId_={};
         updateShowId_={};
         requestEpoch_=0;requestRevision_=0;
-        studio_={};
+        studio_=juce::File{};
         finished_={};
     }
     bool reserve(Operation mode,juce::File studio,Completion completion) {
