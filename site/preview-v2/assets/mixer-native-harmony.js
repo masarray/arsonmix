@@ -130,7 +130,7 @@ function paint(){
  else source.value="0";
  el("mxHGuideStatus").textContent=!auto?"MANUAL · KEY LOCKED":
    found?"MUSIC "+keys[detectedKey]+" "+(detectedScale?"MIN":"MAJ")+
-     " · "+Math.round(detectedConfidence*100)+"%":
+     " · ESTIMATED":
    "LISTENING · MANUAL FALLBACK";
  el("mxHPreset").value=preset;
  for(const [key,,] of sliderDefs){
