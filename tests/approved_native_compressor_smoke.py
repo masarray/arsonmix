@@ -152,6 +152,24 @@ def main():
                 return svg.x<meters.x&&meters.right<=frame.right+1;
             }"""),"meters must be inside black LCD to the RIGHT of graph"
             assert page.locator(".mx-comp-control[data-key]").count()==7
+            # One shared SVG per dial, not seven bitmap frames or animated canvases.
+            assert (out/"assets"/"compressor-knob-metal.svg").is_file()
+            dials=page.locator(".mx-comp-dial")
+            assert dials.count()==7
+            appearance=dials.evaluate_all("""nodes=>nodes.map(el=>{
+                const ring=getComputedStyle(el);
+                const face=getComputedStyle(el,'::before');
+                const needle=getComputedStyle(el,'::after');
+                return {face:face.backgroundImage,ring:ring.backgroundImage,
+                    transform:needle.transform,angle:el.style.getPropertyValue('--dial-angle'),
+                    width:el.getBoundingClientRect().width,
+                    filter:ring.filter,animation:ring.animationName};
+            })""")
+            assert all("compressor-knob-metal.svg" in a["face"] for a in appearance),appearance
+            assert all("conic-gradient" in a["ring"] for a in appearance),appearance
+            assert all(a["angle"].endswith("deg") for a in appearance),appearance
+            assert all(a["width"]>=30 and a["filter"]=="none" and
+                a["animation"]=="none" for a in appearance),appearance
             assert page.locator(".mx-comp-control").count()==7
             assert page.locator(".mx-comp-right .mx-comp-control").count()==4
             assert page.locator(".mx-comp-left .mx-comp-control").count()==3

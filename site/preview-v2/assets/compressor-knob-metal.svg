@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+ <defs>
+  <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+   <stop stop-color="#ecf6fa"/><stop offset=".18" stop-color="#9fb7c3"/>
+   <stop offset=".51" stop-color="#2b4859"/><stop offset=".78" stop-color="#8299a4"/>
+   <stop offset="1" stop-color="#122b39"/>
+  </linearGradient>
+  <linearGradient id="edge" x1="0" y1="0" x2=".85" y2="1">
+   <stop stop-color="#283f4d"/><stop offset=".22" stop-color="#91abb8"/>
+   <stop offset=".56" stop-color="#263d4b"/><stop offset="1" stop-color="#061b27"/>
+  </linearGradient>
+  <radialGradient id="face" cx="30%" cy="18%" r="91%">
+   <stop stop-color="#d5e5eb"/><stop offset=".28" stop-color="#a7bac5"/>
+   <stop offset=".7" stop-color="#657f8d"/><stop offset="1" stop-color="#304b5b"/>
+  </radialGradient>
+  <linearGradient id="satin" x1=".12" y1="0" x2=".91" y2="1">
+   <stop stop-color="#f3fcff" stop-opacity=".24"/>
+   <stop offset=".42" stop-color="#e4f2f8" stop-opacity="0"/>
+   <stop offset="1" stop-color="#0a2432" stop-opacity=".35"/>
+  </linearGradient>
+ </defs>
+ <!-- Machined raised bezel; no filters, bitmap texture, or animation. -->
+ <circle cx="40" cy="40" r="39" fill="#0c2533"/>
+ <circle cx="40" cy="40" r="37.5" fill="url(#rim)"/>
+ <circle cx="40" cy="40" r="35.7" fill="#233f4c"/>
+ <circle cx="40" cy="40" r="34" fill="url(#edge)"/>
+ <circle cx="40" cy="40" r="30.7" fill="#183340"/>
+ <circle cx="40" cy="40" r="29" fill="url(#face)"/>
+ <circle cx="40" cy="40" r="28.6" fill="url(#satin)"/>
+ <circle cx="40" cy="40" r="25.8" fill="none" stroke="#e4f3f8" stroke-opacity=".23" stroke-width=".8"/>
+ <path d="M17.5 28.5A25.8 25.8 0 0 1 62.5 28.5" fill="none" stroke="#f9ffff" stroke-opacity=".26" stroke-width="1.3" stroke-linecap="round"/>
+ <path d="M18 51.5A25.8 25.8 0 0 0 62 51.5" fill="none" stroke="#112f3f" stroke-opacity=".38" stroke-width="1.6"/>
+ <circle cx="40" cy="40" r="5" fill="#486574" fill-opacity=".4"/>
+ <circle cx="39.4" cy="39.3" r="2.2" fill="#d1e3e9" fill-opacity=".32"/>
+</svg>
