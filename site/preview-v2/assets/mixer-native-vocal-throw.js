@@ -36,7 +36,7 @@ panel.innerHTML=[
  '<div class="body vt-hardware"><section class="vt-console" aria-label="Vocal Throw hardware controls">',
  '<div class="vt-console-eyebrow"><span>SMART PHRASE / LIVE ENGINE</span><span class="vt-unit-id">AS·VT 01 <i></i> ZERO DRY LATENCY</span></div>',
  '<div class="vt-instrument"><div class="vt-encoder-bank" id="vtEncodersLeft"></div>',
- '<div class="vt-center"><div class="vt-hero-plate"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET MIX</small><output id="vtWetValue">42%</output></span></button></div><span class="vt-dial-note">ECHO RETURN LEVEL</span></div>',
+ '<div class="vt-center"><div class="vt-hero-plate"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET MIX</small><output id="vtWetValue">42%</output></span></button></div></div>',
  '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
  '<div class="vt-performance"><button id="vtThrow" class="vt-throw-button" type="button"><span class="vt-throw-main">THROW</span><small>FIRE PHRASE</small></button>',
  '<div class="vt-trigger"><span class="vt-small-label">TRIGGER</span><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
@@ -119,6 +119,7 @@ function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=state?.graph?.channels?.find(ch=>ch.id===id),fx=lane?.inserts?.[current?.slot];
  const value=!context()?"unknown":lane.fxRackBypassed?"rack-off":fx.bypassed?"off":"on";
+ panel.dataset.fxState=value;
  const btn=$("vtPower");btn.dataset.fxState=value;
  btn.disabled=value==="unknown"||value==="rack-off";
  btn.title=value==="on"?"Active · click to bypass":value==="off"?"Bypassed · click to enable":
