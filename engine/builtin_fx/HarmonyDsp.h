@@ -54,6 +54,11 @@ public:
         if(lowLag_>=highLag_||latency_+3*grain_>=static_cast<int>(capacity))return false;
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
+        // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
+        // into the periodicity detector and destabilizes the live note readback.
+        decimationLowpass_=0.f;
+        const float cutoff=1800.f;
+        decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
@@ -78,9 +83,10 @@ public:
             const float inputR=std::isfinite(r[i])?r[i]:0.f;
             const float mono=0.5f*(inputL+inputR);
             left_[write_]=inputL;right_[write_]=inputR;mono_[write_]=mono;
+            decimationLowpass_+=decimationAlpha_*(mono-decimationLowpass_);
             if(++downCounter_>=decimation_){
                 downCounter_=0;
-                decimated_[downWrite_]=mono;
+                decimated_[downWrite_]=decimationLowpass_;
                 downWrite_=(downWrite_+1)%decimated_.size();
                 ++downSeen_;
             }
@@ -135,6 +141,16 @@ private:
     void detectPitch() noexcept {
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
+        // Reject background noise-floor and silent periods BEFORE correlation.
+        // Normalized correlation alone can report a confident pitch on tiny noise.
+        double energy=0.;
+        for(int j=0;j<span;++j){
+            const auto ix=(downWrite_+decimated_.size()-1-static_cast<std::size_t>(j))%decimated_.size();
+            const double x=decimated_[ix];energy+=x*x;
+        }
+        if(energy/static_cast<double>(span)<1.e-6){
+            voiced_=false;noteHold_=0;candidateNote_=-1;return;
+        }
         float best=-1.f;int bestLag=0;
         std::array<float,231> correlations{};
         for(int lag=lowLag_;lag<=highLag_;++lag){
@@ -158,7 +174,18 @@ private:
             }
         }
         if(bestLag==0||best<=0.77f){voiced_=false;noteHold_=0;return;}
-        const float hz=static_cast<float>(rate_)/(decimation_*bestLag);
+        // Three-point peak interpolation reduces integer-lag tuning steps,
+        // especially at the high end of the supported singing range.
+        float lag=static_cast<float>(bestLag);
+        if(bestLag>lowLag_&&bestLag<highLag_){
+            const float a=correlations[static_cast<std::size_t>(bestLag-1)];
+            const float b=correlations[static_cast<std::size_t>(bestLag)];
+            const float d=correlations[static_cast<std::size_t>(bestLag+1)];
+            const float curvature=a-2.f*b+d;
+            if(curvature < -1.e-6f)
+                lag+=std::clamp(0.5f*(a-d)/curvature,-0.5f,0.5f);
+        }
+        const float hz=static_cast<float>(rate_)/(decimation_*lag);
         const float midi=69.f+12.f*std::log2(hz/440.f);
         if(!std::isfinite(midi)||midi<31.f||midi>96.f){voiced_=false;return;}
         const int degree=nearestDegree(midi,settings_.key,settings_.scale);
@@ -181,6 +208,7 @@ private:
     int downCounter_=0,detectCounter_=0;
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     bool voiced_=false;float voicedGain_=0.f,outputGain_=1.f;
+    float decimationLowpass_=0.f,decimationAlpha_=0.f;
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
