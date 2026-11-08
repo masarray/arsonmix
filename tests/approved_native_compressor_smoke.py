@@ -97,7 +97,7 @@ def main():
                 graph=page.locator(".mx-comp-visual").bounding_box()
                 right=page.locator(".mx-comp-right").bounding_box()
                 assert left and graph and right and left["x"]<graph["x"]<right["x"]
-                assert 780<=editor.bounding_box()["width"]<=860
+                assert 790<=editor.bounding_box()["width"]<=820
 
             assert page.locator(".mx-comp-presets button").count()==5
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
@@ -133,6 +133,26 @@ def main():
                 emit(page,"arMixBuiltinCompAck",{"requestId":after["requestId"],"status":"APPLIED"})
                 emit_snapshot(page,state,{**accepted,"mix":0.0},applied=after["requestId"])
                 assert page.locator('.mx-comp-control[data-key="mix"] output').inner_text()=="0%"
+                # Pointer gesture on the actual native graph edits THRESHOLD,
+                # without inventing a separate UI state or bypassing ACK.
+                bounds=page.locator(".mx-comp-plot svg").bounding_box()
+                assert bounds
+                graph=page.locator(".mx-comp-plot svg")
+                start_x=bounds["x"]+bounds["width"]*0.55
+                end_x=bounds["x"]+bounds["width"]*0.70
+                drag_y=bounds["y"]+bounds["height"]*0.64
+                page.mouse.move(start_x,drag_y)
+                page.mouse.down()
+                page.mouse.move(end_x,drag_y,steps=6)
+                page.mouse.up()
+                gesture=last_action(page,"nativeCompSet")
+                assert gesture["settings"]["thresholdDb"]!=DEFAULTS["thresholdDb"]
+                emit(page,"arMixBuiltinCompQueue",{"requestId":gesture["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinCompAck",{"requestId":gesture["requestId"],"status":"APPLIED"})
+                emit_snapshot(page,state,gesture["settings"],applied=gesture["requestId"])
+                page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
+                    ?.includes('NATIVE DSP ACCEPTED')""")
+
             assert not errors,(width,errors)
             page.close()
         browser.close()
