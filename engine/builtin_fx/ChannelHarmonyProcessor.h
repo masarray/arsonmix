@@ -49,13 +49,15 @@ public:
     void consumeRealtimeEdits() noexcept override {
         Edit next;
         if(!ready_||!completion_.canPush()||!queued_.pop(next))return;
-        const bool applied=dsp_.setSettings(next.settings);
+        const bool applied=dsp_.applyPreparedSettings(next.prepared);
         completion_.push({next.requestId,applied});
     }
     bool queueSettings(const armix::harmony::Settings& settings,
                        std::uint64_t requestId) noexcept {
-        return ready_&&requestId&&armix::harmony::valid(settings)&&
-               queued_.push({requestId,settings});
+        if(!ready_||!requestId)return false;
+        armix::harmony::Engine::PreparedSettings prepared;
+        if(!armix::harmony::Engine::prepareSettings(settings,prepared))return false;
+        return queued_.push({requestId,prepared});
     }
     bool pollCompletion(Completion& completion) noexcept {
         if(!completion_.pop(completion))return false;
@@ -108,7 +110,7 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 private:
-    struct Edit{std::uint64_t requestId=0;armix::harmony::Settings settings;};
+    struct Edit{std::uint64_t requestId=0;armix::harmony::Engine::PreparedSettings prepared;};
     armix::harmony::Engine dsp_{};
     EqSpsc<Edit,32> queued_{};
     EqSpsc<Completion,32> completion_{};
