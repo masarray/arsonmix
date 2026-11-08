@@ -264,6 +264,8 @@ jobs:
         run: python tests/approved_native_peq_smoke.py
       - name: Native Compressor real Chromium FX, transfer curve, ACK and responsive editor
         run: python tests/approved_native_compressor_smoke.py
+      - name: Native Harmony effective-key LCD, Music/Manual ACK, slow readback and geometry
+        run: python tests/approved_native_harmony_smoke.py
       - name: Cold start first WIRE and original-channel VST3 picker editor
         run: python tests/approved_native_cold_start_smoke.py
       - name: Native WIRE gain and OUT share accepted PCM identity (real Chromium)
@@ -551,6 +553,7 @@ jobs:
             pages-v51-portrait-meter-*.png
             pages-fader-rollback-*.png
             mixer-shell-*.png
+            arsonmix-native-harmony-editor-*.png
             pages-v54-*.png
             pages-v55-*.png
             pages-v28-physical-console-owner-v59-*.png
