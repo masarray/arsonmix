@@ -8,6 +8,10 @@ const root=document.createElement("section");
 root.className="mx-harm";root.id="mxNativeHarmony";root.hidden=true;
 root.setAttribute("role","dialog");root.setAttribute("aria-label","ArSon Harmony");
 root.setAttribute("aria-modal","false");
+// Simplified singer/microphone silhouette derived from the supplied SVG concept.
+// Reused as one tiny original inline vector: no image request or heavyweight
+// 800px illustration per button. The numeral is the real audible voice count.
+const voiceGlyph='<svg class="mx-harm-voice-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.4 3.1a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4ZM6.7 11.2c2.2-1.3 5.7-1.3 7.8 0 1.9 1.3 3 4.2 3 7.7H3.8c0-3.5 1.1-6.4 2.9-7.7Z" fill="currentColor"/><path d="M16.7 6.7c.5-.8 1.7-.9 2.3-.2l.8.9a1.7 1.7 0 0 1-.3 2.4l-1 .8-1.9-2.2.1-1.7ZM16.5 10.7l2-1.6 1 1.1-1.9 1.6-1.1-1.1Z" fill="currentColor" opacity=".72"/></svg>';
 root.innerHTML=`
   <header class="mx-harm-head">
    <span class="mx-harm-logo" aria-hidden="true">◈</span>
@@ -16,7 +20,7 @@ root.innerHTML=`
    <select id="mxHPreset" aria-label="Harmony preset" title="Preset">
     <option value="custom">Custom</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
-    <option value="quartet">Wide Quartet</option><option value="choir">Tight Choir</option>
+    <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
    </select>
    <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmony state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
    <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close Harmony"></button>
@@ -27,7 +31,7 @@ root.innerHTML=`
      <strong>HARMONY</strong><small>VOCAL ENGINE</small></div>
     <span class="mx-harm-label">VOICES</span>
     <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmony voice count">
-     <button type="button" data-voices="2">2</button><button type="button" data-voices="3">3</button><button type="button" data-voices="4">4</button>
+     <button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
     </nav>
     <label class="mx-harm-correction"><input id="mxHCorrection" type="checkbox"> PITCH TUNE</label>
    </aside>
@@ -74,7 +78,9 @@ const keys=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 for(let i=0;i<12;++i){
  const b=document.createElement("button");
  b.className="mx-harm-note";b.textContent=keys[i];b.dataset.key=String(i);
- const a=(i/12*2*Math.PI-Math.PI/2),x=50+39*Math.cos(a),y=50+39*Math.sin(a);
+ // Compact note rail with a safe 12-14 px outer rim even in narrow WebView.
+// 33.5% centers the letter-buttons between LCD and wheel edge.
+ const a=(i/12*2*Math.PI-Math.PI/2),x=50+33.5*Math.cos(a),y=50+33.5*Math.sin(a);
  b.style.left=x+"%";b.style.top=y+"%";
  el("mxHWheel").append(b);
 }
@@ -92,6 +98,7 @@ const presets={
  duo:{voices:2,color:.45,space:.35,wet:.31,correction:false,gainDb:0},
  trio:{voices:3,color:.50,space:.56,wet:.40,correction:false,gainDb:0},
  quartet:{voices:4,color:.66,space:.95,wet:.52,correction:true,gainDb:-2},
+ quintet:{voices:5,color:.61,space:.88,wet:.45,correction:true,gainDb:-3},
  choir:{voices:4,color:.24,space:.30,wet:.58,correction:true,gainDb:-3}
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
@@ -123,7 +130,7 @@ const context=()=>{
 const hint=t=>showText(el("mxHStatus"),t);
 const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
  Number.isInteger(s.scale)&&s.scale>=0&&s.scale<=1&&
- Number.isInteger(s.voices)&&s.voices>=2&&s.voices<=4&&
+ Number.isInteger(s.voices)&&s.voices>=2&&s.voices<=5&&
  typeof s.correction==="boolean"&&
  ["wet","space","color"].every(k=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=1)&&
  Number.isFinite(s.gainDb)&&s.gainDb>=-24&&s.gainDb<=12&&
@@ -190,8 +197,11 @@ function paint(){
  if(source.value!==chosen)source.value=chosen;
  for(const b of noteButtons)b.classList.toggle("active",
    reliable&&Number(b.dataset.key)===displayKey);
- for(const b of voiceButtons)b.classList.toggle("active",
-   Number(b.dataset.voices)===v.voices);
+ for(const b of voiceButtons){
+   const active=Number(b.dataset.voices)===v.voices;
+   b.classList.toggle("active",active);
+   b.setAttribute("aria-pressed",String(active));
+ }
  for(const b of scaleButtons)b.classList.toggle("active",
    reliable&&Number(b.dataset.scale)===displayScale);
  el("mxHCorrection").checked=v.correction;
