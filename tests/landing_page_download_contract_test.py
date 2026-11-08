@@ -26,7 +26,11 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("prefers-reduced-motion", css)
             self.assertNotIn("https://github.com", html)  # Never navigate to GitHub UI.
             self.assertIn("release-catalog.json", js)
-            self.assertNotIn("api.github.com", js)
+            self.assertIn("https://api.github.com/repos/masarray/arsonmix/releases?per_page=40", js)
+            self.assertIn("Download installer ZIP", js)
+            self.assertIn("isPreferred", js)
+            self.assertIn("SHA256SUMS.txt", js)
+            self.assertIn("INSTALLER_PROVENANCE.json", js)
             self.assertIn("github.com", js)  # Only fixed, validated direct binary URLs.
             self.assertIn("unqualified", js.lower())
             self.assertNotIn("browser_download_url", html) # No hardcoded unverified links.

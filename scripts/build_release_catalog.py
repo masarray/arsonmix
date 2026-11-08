@@ -18,7 +18,9 @@ TAG = re.compile(r"^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$")
 DIGEST = re.compile(r"^sha256:([a-f0-9]{64})$")
 SHA = re.compile(r"^[a-f0-9]{40}$")
 SUFFIXES = {
-    "windows": ("Windows-x64-Setup.exe",),
+    # New releases present the verified installer INSIDE a ZIP to reduce
+    # browser friction; older signed releases remain reachable as direct EXE.
+    "windows": ("Windows-x64-Setup.zip", "Windows-x64-Setup.exe"),
     "linux": ("Linux-x86_64.AppImage", "Linux-x86_64.tar.gz"),
     "macos": ("macOS-universal.dmg", "macOS-arm64.dmg", "macOS-x64.dmg"),
 }
@@ -42,13 +44,34 @@ def signed_asset(asset, name, tag, binary=False):
     return asset.get("browser_download_url") == url
 
 
+def release_sort_key(release):
+    """Version order, not just upload timestamps (backfilled assets are common).
+
+    Pre-releases are ordered alpha -> beta -> rc -> stable inside each version.
+    Exact tag and GitHub asset digest guards still apply during selection.
+    """
+    if not isinstance(release, dict):
+        return (-1, -1, -1, -1, -1, "")
+    match = re.fullmatch(
+        r"v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?",
+        release.get("tag_name") if isinstance(release.get("tag_name"), str) else "",
+    )
+    if not match:
+        return (-1, -1, -1, -1, -1, "")
+    major, minor, patch, stage, sequence = match.groups()
+    stage_number = {"alpha": 0, "beta": 1, "rc": 2, None: 3}[stage]
+    return (int(major), int(minor), int(patch), stage_number,
+            int(sequence) if sequence else 0, release.get("published_at") or "")
+
+
 def catalog(releases):
     if not isinstance(releases, list):
         raise ValueError("Release API response must be an array")
     selected = {key: None for key in SUFFIXES}
-    # Newest publication per OS, never infer assets of an unqualified platform.
+    # Newest valid VERSION per OS. A backfilled older upload cannot displace
+    # a more recent alpha, while a real ZIP can take priority within one tag.
     ordered = sorted((r for r in releases if isinstance(r, dict)),
-                     key=lambda r: r.get("published_at") or "", reverse=True)
+                     key=release_sort_key, reverse=True)
     for release in ordered:
         if release.get("draft"):
             continue

@@ -258,3 +258,14 @@ test('Public port workflow includes no commercial signing or push-triggered buil
   assert.match(workflow,/SHA256SUMS-macOS.txt/);
   assert.match(workflow,/SHA256SUMS-Linux.txt/);
 });
+
+test('Windows public release ZIP is a verifiable wrapper of the same exact Inno EXE',()=>{
+  const publish=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  assert.match(publish,/Windows-x64-Setup\.zip/);
+  assert.match(publish,/Compress-Archive -LiteralPath \$releasedExe -DestinationPath \$releasedZip/);
+  assert.match(publish,/python scripts\/verify_release_setup_zip\.py --exe \$releasedExe --zip \$releasedZip/);
+  assert.match(publish,/Installer ZIP failed byte-for-byte verification/);
+  assert.match(publish,/if \(\$assets.Count -ne 3\)/);
+  assert.match(publish,/if \(\$assets.Count -ne 7\)/);
+  assert.match(publish,/SHA256SUMS\.txt/);
+});

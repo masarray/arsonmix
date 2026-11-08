@@ -182,13 +182,20 @@ jobs:
           if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
             throw "Missing independently verified installer"
           }
-          Copy-Item -LiteralPath $setup -Destination "release/ArSonMix-$tag-Windows-x64-Setup.exe"
+          $releasedExe = "release/ArSonMix-$tag-Windows-x64-Setup.exe"
+          $releasedZip = "release/ArSonMix-$tag-Windows-x64-Setup.zip"
+          Copy-Item -LiteralPath $setup -Destination $releasedExe
+          # Public landing prefers this ZIP-wrapped installer. Keep the
+          # direct EXE for compatibility. No silent change to its bytes.
+          Compress-Archive -LiteralPath $releasedExe -DestinationPath $releasedZip -CompressionLevel Optimal
+          python scripts/verify_release_setup_zip.py --exe $releasedExe --zip $releasedZip
+          if ($LASTEXITCODE -ne 0) { throw "Installer ZIP failed byte-for-byte verification" }
           Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Optimal
           Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
           Copy-Item -LiteralPath dist/FACTORYFX_STAGE_REPORT.json -Destination release/FACTORYFX_STAGE_REPORT.json
           Copy-Item -LiteralPath installer-output/INSTALLER_PROVENANCE.json -Destination release/INSTALLER_PROVENANCE.json
           $assets = @(Get-ChildItem -LiteralPath release -File | Where-Object { $_.Extension -in '.exe','.zip' })
-          if ($assets.Count -ne 2) { throw "Installer and portable ZIP are both required" }
+          if ($assets.Count -ne 3) { throw "Verified installer EXE, identical installer ZIP and portable ZIP required" }
           $lines = foreach ($asset in $assets) {
             $digest = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$digest  $($asset.Name)"
@@ -207,7 +214,7 @@ jobs:
             throw "Release $tag already exists; never replace immutable published assets"
           }
           $assets = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name | ForEach-Object FullName)
-          if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
+          if ($assets.Count -ne 7) { throw "Unexpected release asset count: $($assets.Count)" }
           $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0 -or -not $remote -or ($remote -split '\s+')[0] -ne $env:GITHUB_SHA) {
             throw "Release branch advanced during qualification; stale promotion rejected"
