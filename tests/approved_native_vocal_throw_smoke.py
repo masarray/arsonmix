@@ -90,8 +90,18 @@ def main():
             editor=page.locator("#mxNativeVocalThrow")
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
-            assert editor.locator("#vtClose.armix-floating-close").count()==1
-            assert editor.locator("#vtPower").get_attribute("data-state")=="on"
+            assert editor.locator("#vtClose.mx-comp-close.armix-floating-close").count()==1
+            assert editor.locator("#vtPower.mx-comp-power").count()==1
+            assert editor.locator("#vtPower").get_attribute("data-fx-state")=="on"
+            assert editor.locator("#vtPower").get_attribute("aria-pressed")=="true"
+            # EQ and Compressor have ONE CSS owner for 24px Close and 26px
+            # Power hit boxes, the same as Vocal Throw (no local overrides).
+            close_box=editor.locator("#vtClose").bounding_box()
+            power_box=editor.locator("#vtPower").bounding_box()
+            assert close_box and power_box
+            assert abs(close_box["width"]-24)<.1 and abs(close_box["height"]-24)<.1
+            assert abs(power_box["width"]-26)<.1 and abs(power_box["height"]-24)<.1
+            assert power_box["x"]+power_box["width"]<=close_box["x"]+1
             assert editor.locator("#vtMode").input_value()=="2"
             initial=last(page,"nativeThrowSnapshot")
             page.wait_for_timeout(300)
@@ -101,10 +111,13 @@ def main():
             assert editor.locator("#vtStatus").inner_text()=="NATIVE DSP"
             assert editor.locator("#vtCount").inner_text()=="0 throws"
             box=editor.bounding_box()
-            assert box and box["width"]<=410 and box["width"]<=width and \
+            assert box and box["width"]<=438 and box["width"]<=width and \
                 box["x"]>=0 and box["x"]+box["width"]<=width+1,(width,box)
             assert editor.evaluate("(el)=>el.scrollWidth<=el.clientWidth+1"),\
-                "compact FX window overflows horizontal viewport"
+                "premium FX editor overflows horizontal viewport"
+            assert editor.locator("#vtDisplayBpm").inner_text()=="120"
+            assert editor.locator("#vtClockLabel").inner_text()=="MANUAL CLOCK"
+            assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             page.screenshot(path="arsonmix-vocal-throw-"+str(width)+".png")
             editor.screenshot(path="arsonmix-vocal-throw-editor-"+str(width)+".png")
             if width==1366:
@@ -141,6 +154,7 @@ def main():
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
             assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
             assert "BPM only" in editor.locator("#vtMusicStatus").inner_text()
+            assert editor.locator("#vtClockLabel").inner_text()=="AUTO BPM"
             # Snapshot transport is request/response, not unsolicited push.
             # Wait for a fresh native read request before testing a second
             # DSP status update; a replay of the prior request is ignored.
@@ -155,6 +169,7 @@ def main():
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85,"grid":True})
             assert "BEAT GRID" in editor.locator("#vtMusicStatus").inner_text()
+            assert editor.locator("#vtClockLabel").inner_text()=="GRID LOCK"
             if width==1366:
                 # The next changed graph invalidates the old editor instance.
                 state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
