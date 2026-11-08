@@ -76,11 +76,21 @@ public:
     // serialized preset BPM. No queue ACK storm or GUI state overwrite.
     void publishMusicBpm(float bpm) noexcept {
         if(!ready_||!std::isfinite(bpm)||bpm<60.f||bpm>200.f) {
-            musicInterval_.store(0,std::memory_order_release);return;
+            if(lastTempoBpm_!=0.f) {
+                lastTempoBpm_=0.f;lastTempoDivision_=-1;
+                musicInterval_.store(0,std::memory_order_release);
+            }
+            return;
         }
+        // The 12Hz message timer may deliver the same accepted tempo many
+        // times. Never recompute power/division or publish redundant atomics.
+        if(lastTempoBpm_==bpm && lastTempoDivision_==accepted_.division)
+            return;
         auto settings=accepted_;settings.bpm=bpm;
         VocalThrow::PreparedEdit packet{};
         const auto valid=VocalThrow::prepareEdit(settings,rate_,packet);
+        lastTempoBpm_=valid?bpm:0.f;
+        lastTempoDivision_=valid?accepted_.division:-1;
         musicInterval_.store(valid?packet.intervalSamples:0,
                              std::memory_order_release);
     }
@@ -165,6 +175,8 @@ private:
     std::atomic<std::uint32_t> musicInterval_{0};
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
+    float lastTempoBpm_=0.f; // CONTROL only
+    int lastTempoDivision_=-1; // CONTROL only
     bool ready_=false,published_=false;
 };
 } // namespace armix::builtin_fx
