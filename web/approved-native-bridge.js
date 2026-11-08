@@ -843,24 +843,40 @@
     nativeToast(pending.name+" deleted · native PCM and WIRE readback verified");
   }
   function nativeOrbitTarget(track,slot){
+    if(!track||!Number.isInteger(slot)||slot<0||slot>=8)return null;
     const next=controller?.state()?.current,id=nativeIdFor(track);
     const channel=next?.graph?.channels?.find(ch=>ch.id===id);
-    const insert=Number.isInteger(slot)&&slot>=0&&slot<8?
-      channel?.inserts?.[slot]:null;
-    if(!next?.admitted||next.retained||!insert?.id||
-       !/dearvr\s*pro\s*2/i.test(insert.name||""))return null;
-    return {channelId:id,insertId:insert.id,slot};
+    const insert=channel?.inserts?.[slot];
+    if(next?.admitted&&!next.retained&&insert?.id&&
+       /dearvr\s*pro\s*2/i.test(insert.name||""))
+      return {authority:"CHANNEL_ID",channelId:id,insertId:insert.id,slot};
+    // Prior to native ChannelId takeover the verified M4 FX lease is the
+    // authoritative processor. Never guess by ordinal from a stale M4 list.
+    if(mixerSession()?.authority!=="M4"||!m4Verified())return null;
+    const picked=verifiedFxFor(track,slot);
+    const catalogName=nativeCatalog.get(picked?.live?.catalogId)?.name||
+      track.fx?.[slot]||"";
+    if(!picked||!/dearvr\s*pro\s*2/i.test(catalogName))return null;
+    return {authority:"M4",channelId:"m4-lane-"+picked.lane,
+      lane:picked.lane,insertId:picked.live.instanceId,slot};
   }
   function nativeOrbitAction(track,slot,kind,values={}){
     const target=nativeOrbitTarget(track,slot),next=controller?.state()?.current;
     if(!target){nativeToast("Orbit target changed · reopen the dearVR FX menu");return false;}
     if(!["inspect","start","stop"].includes(kind))return false;
+    const action=target.authority==="M4"?
+      (kind==="inspect"?"routingM4OrbitInspect":
+        kind==="start"?"routingM4OrbitStart":"routingM4OrbitStop"):
+      (kind==="inspect"?"routingNativeOrbitInspect":
+        kind==="start"?"routingNativeOrbitStart":"routingNativeOrbitStop");
+    const identity=target.authority==="M4"?
+      {channel:target.lane,deviceEpoch:safeNativeCounter(hardware?.device?.epoch),
+       revision:safeNativeCounter(legacy()?.routingRevision)}:
+      {channelId:target.channelId,deviceEpoch:next.device.epoch,
+       graphRevision:next.graph.revision,rosterRevision:next.graph.rosterRevision};
+    if(Object.values(identity).some(v=>v===null||v===undefined))return false;
     backend.emitEvent("arMixAction",{
-      action:kind==="inspect"?"routingNativeOrbitInspect":
-        kind==="start"?"routingNativeOrbitStart":"routingNativeOrbitStop",
-      channelId:target.channelId,instanceId:target.insertId,slot:target.slot,
-      deviceEpoch:next.device.epoch,graphRevision:next.graph.revision,
-      rosterRevision:next.graph.rosterRevision,...values
+      action,...values,...identity,instanceId:target.insertId,slot:target.slot
     });
     return true;
   }
