@@ -431,6 +431,8 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
 });
 test("native right-click track deletion and vendor-specific Orbit are graph-authoritative",()=>{
  const menu=read("web/approved-native-context-menu.js");
+ // Parse the actual deferred WebView2 menu script before any Windows package.
+ assert.doesNotThrow(()=>new (require("node:vm").Script)(menu));
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");
  const lab=read("src/LiveDryRoutingLab.h");
