@@ -133,7 +133,7 @@ static void hybridEditAndNoHeap() {
     check(std::isfinite(l)&&std::isfinite(r));
 }
 // Two separate frozen phrases must coexist. A new cue must not chop the
-// already sounding repeat. All fixtures run as 64/128-ish PCM chunks without
+// already sounding repeat. All fixtures run as bounded PCM chunks without
 // any callback allocations, including at the highest allowed device rate.
 static void twoTailsStayLive(double rate) {
     VocalThrow reference,overlap;
@@ -169,6 +169,7 @@ static void twoTailsStayLive(double rate) {
     const int compareFrames=static_cast<int>(rate*.035);
     for(int done=0;done<compareFrames;done+=128) {
         const auto count=static_cast<std::size_t>(std::min(128,compareFrames-done));
+        refL.fill(0.f);refR.fill(0.f);mixL.fill(0.f);mixR.fill(0.f);
         noHeap.store(true);
         reference.processStereo(refL.data(),refR.data(),count);
         overlap.processStereo(mixL.data(),mixR.data(),count);
