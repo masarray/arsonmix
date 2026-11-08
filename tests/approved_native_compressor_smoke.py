@@ -20,14 +20,17 @@ def last_action(page,kind):
     assert actions,kind+" action absent"
     return actions[-1]
 
-def emit_snapshot(page,state,values,applied=None,gr=0.0):
+def emit_snapshot(page,state,values,applied=None,gr=0.0,
+                  input_db=-72.0,output_db=-72.0,serial=0):
     action=last_action(page,"nativeCompSnapshot")
     packet={"requestId":action["requestId"],"channelId":SOURCE,
             "instanceId":INSTANCE,"slot":0,"status":"ACCEPTED",
             "deviceEpoch":state["device"]["epoch"],
             "graphRevision":state["graph"]["revision"],"schemaVersion":1,
             "sampleRate":48000,"addedLatencySamples":0,
-            "gainReductionDb":gr,"settings":copy.deepcopy(values)}
+            "gainReductionDb":gr,
+            "inputPeakDbfs":input_db,"outputPeakDbfs":output_db,
+            "meterBlockSerial":serial,"settings":copy.deepcopy(values)}
     if applied:packet["appliedRequestId"]=applied
     emit(page,"arMixBuiltinCompSnapshot",packet)
 
@@ -109,6 +112,17 @@ def main():
                 ?.includes('NATIVE DSP ACCEPTED')""",timeout=3000)
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
+            assert page.locator(".mx-comp-plot-brand").count()==1
+            assert page.locator(".mx-comp-display .mx-comp-meter-bank").count()==1
+            assert page.locator(".mx-comp-meter-lane").count()==3
+            assert page.locator(".mx-comp-meter-caption").all_inner_texts()==["IN","OUT","GR"]
+            assert page.locator(".mx-comp-detector-value").inner_text()=="INTERNAL · STEREO LINK"
+            assert page.locator(".mx-comp-display").evaluate("""el=>{
+                const svg=el.querySelector('svg').getBoundingClientRect();
+                const meters=el.querySelector('.mx-comp-meter-bank').getBoundingClientRect();
+                const frame=el.getBoundingClientRect();
+                return svg.x<meters.x&&meters.right<=frame.right+1;
+            }"""),"meters must be inside black LCD to the RIGHT of graph"
             assert page.locator(".mx-comp-control[data-key]").count()==7
             assert page.locator(".mx-comp-control").count()==7
             assert page.locator(".mx-comp-right .mx-comp-control").count()==4
@@ -120,13 +134,15 @@ def main():
             assert page.locator(".mx-comp-preset-select").count()==1
             assert page.locator(".mx-comp-preset-select").input_value()=="DEFAULT"
             assert page.locator(".mx-comp-state-dot").get_attribute("data-state")=="ok"
-            if width>600:
+            if width>650:
                 left=page.locator(".mx-comp-left").bounding_box()
                 graph=page.locator(".mx-comp-visual").bounding_box()
                 right=page.locator(".mx-comp-right").bounding_box()
                 assert left and graph and right and left["x"]<graph["x"]<right["x"]
-                assert 545<=editor.bounding_box()["width"]<=560
-                assert editor.bounding_box()["height"]<=265,editor.bounding_box()
+                size=editor.bounding_box()
+                if width>850: assert 780<=size["width"]<=805,size
+                else: assert 700<=size["width"]<=720,size
+                assert 350<=size["height"]<=415,size
 
             # All floating-window close controls share one computed 24px
             # chrome, independent of their historical SVG/text glyph markup.
@@ -180,6 +196,20 @@ def main():
             page.wait_for_function("""()=>getComputedStyle(
                 document.querySelector('.mx-comp-power')).color==='rgb(118, 240, 185)'""")
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
+            assert page.locator(".mx-comp-invalue").inner_text()=="−∞"
+            assert page.locator(".mx-comp-outvalue").inner_text()=="−∞"
+            # Actual PCM meter snapshots: measured pre/post dBFS and GR travel
+            # through the accepted instance/revision gated native readback.
+            emit_snapshot(page,state,DEFAULTS,gr=6.5,input_db=-10.0,output_db=-16.5,serial=12)
+            page.wait_for_function("""()=>{
+                return document.querySelector('.mx-comp-invalue')?.textContent==='-10.0' &&
+                    document.querySelector('.mx-comp-outvalue')?.textContent==='-16.5' &&
+                    document.querySelector('.mx-comp-grvalue')?.textContent==='6.5 dB';
+            }""")
+            assert page.locator(".mx-comp-meter-bank").get_attribute("data-live")=="true"
+            levels=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
+                els.map(el=>parseFloat(el.style.height))""")
+            assert levels[0]>levels[1]>0 and levels[2]>0,levels
             assert page.locator(".mx-comp-preset-select").is_visible()
             assert page.locator(".mx-comp-status").evaluate("""el=>{\n                const s=getComputedStyle(el);return s.clipPath.includes("inset")\n                && el.getBoundingClientRect().width<=1;}"""),"technical status polluted panel"
             rect=editor.bounding_box()
@@ -188,6 +218,13 @@ def main():
             assert editor.evaluate("(el)=>el.scrollWidth<=el.clientWidth+1"),"editor horizontal clipping"
             page.screenshot(path=f"arsonmix-native-compressor-{width}.png",full_page=True)
             editor.screenshot(path=f"arsonmix-native-compressor-editor-{width}.png")
+            # If native callback serial stalls, frozen PCM levels must decay
+            # to silence rather than misleading the singer during reconnect.
+            page.wait_for_function("""()=>document.querySelector('.mx-comp-meter-bank')
+                ?.dataset.live==='false'""",timeout=2000)
+            assert page.locator(".mx-comp-invalue").inner_text()=="−∞"
+            assert page.locator(".mx-comp-outvalue").inner_text()=="−∞"
+            assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             if width==1366:
                 # CONTROL request is not a DSP ACK: no accepted status until
                 # audio completion + matching revision-bound follow-up readback.
@@ -298,9 +335,9 @@ def main():
             assert not errors,(width,errors)
             page.close()
         browser.close()
-    print("PASS 558px Compressor native bundle: header presets, noise-free"
-          " seven DSP controls, graph gestures, knob precision, native"
-          " ACK/readback, 3 viewports. Browser uses UI test double.")
+    print("PASS full-size Compressor GUI: 3 native PCM meter columns inside"
+          " LCD, stale serial decay, larger EQ-scale panel, preset header,"
+          " DSP ACK/readback, 3 viewports. Browser uses UI test double.")
 
 if __name__=="__main__":
     main()
