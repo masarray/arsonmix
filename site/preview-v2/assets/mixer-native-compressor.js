@@ -32,7 +32,7 @@ const valid=v=>v&&Object.entries(defs).every(([key,r])=>
  Number.isFinite(v[key])&&v[key]>=r.min&&v[key]<=r.max);
 const demos=new Map();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,delayed=null,
- readId="",seq=1,lastSend=0,windowDrag=null,graphDrag=null,grDb=0;
+ readId="",readSentAt=0,seq=1,lastSend=0,windowDrag=null,graphDrag=null,grDb=0;
 const panel=dom("section","mx-comp");panel.hidden=true;panel.id="mxNativeComp";
 panel.setAttribute("role","dialog");
 panel.setAttribute("aria-label","ArSonMix Compressor");
@@ -240,9 +240,14 @@ function syncPower(){
  meterValue.textContent=shownReduction.toFixed(1)+" dB";
 }
 function saveDemo(){if(current)demos.set(current.track.id+":"+current.slot,{...draft});}
-function requestSnapshot(){
+function requestSnapshot(force=false){
  const c=context();if(!c)return;
- readId="compsnap-"+Date.now()+"-"+(++seq);
+ // Never overwrite an in-flight read ID on every 160ms meter poll.
+ // A slow native UI response would otherwise be discarded forever.
+ const now=Date.now();
+ if(!force&&readId&&now-readSentAt<800)return;
+ readId="compsnap-"+now+"-"+(++seq);
+ readSentAt=now;
  backend().emitEvent("arMixAction",{action:"nativeCompSnapshot",requestId:readId,...c});
 }
 function send(){
@@ -322,7 +327,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   current={track,slot,instanceId:null};
-  pending=null;delayed=null;grDb=0;
+  pending=null;delayed=null;grDb=0;readId="";readSentAt=0;
   const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=n?.graph?.channels?.find(c=>c.id===id)?.inserts?.[slot];
   if(native()&&n?.admitted&&insert?.catalogId===ID&&insert.id){
@@ -351,10 +356,12 @@ backend()?.addEventListener?.("arMixBuiltinCompAck",reply=>{
   pending=null;delayed=null;hint("DSP EDIT REJECTED · "+(reply.errorCode||"UNKNOWN"));
   requestSnapshot();return;
  }
- pending.ack=true;requestSnapshot();
+ pending.ack=true;requestSnapshot(true);
 });
 backend()?.addEventListener?.("arMixBuiltinCompSnapshot",reply=>{
  if(panel.hidden||!native()||reply?.requestId!==readId)return;
+ // Release the flight slot even when graph identity validation fails.
+ readId="";readSentAt=0;
  const c=context();
  if(!c||reply.status!=="ACCEPTED"||reply.channelId!==c.channelId||
     reply.instanceId!==c.instanceId||reply.deviceEpoch!==c.deviceEpoch||
@@ -380,7 +387,7 @@ backend()?.addEventListener?.("arMixBuiltinCompSnapshot",reply=>{
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(panel.hidden||!native()||!current?.instanceId)return;
  queueMicrotask(()=>{
-  if(!context()){pending=null;delayed=null;
+  if(!context()){pending=null;delayed=null;readId="";readSentAt=0;
    hint("DEVICE OR GRAPH CHANGED · REOPEN FX");}
   syncPower(); // accepted graph readback, no curve SVG rebuild
  });
