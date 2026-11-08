@@ -7,10 +7,12 @@ on:
     branches: [main]
     paths:
       - 'site/index.html'
+      - 'site/googlec34c43149eef6100.html'
       - 'site/landing.css'
       - 'site/downloads.js'
       - 'site/media/**'
       - 'scripts/build_landing_assets.py'
+      - 'scripts/build_pages.py'
       - 'scripts/build_release_catalog.py'
       - 'tests/test_release_catalog.py'
       - '.github/workflows/pages-publish.yml'
@@ -67,7 +69,7 @@ jobs:
             fi
             while IFS= read -r path; do
               case "$path" in
-                site/index.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
+                site/index.html|site/googlec34c43149eef6100.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
                   ;;
                 *)
                   echo "fresh=false" >> "$GITHUB_OUTPUT"
@@ -101,6 +103,7 @@ jobs:
           node --check web/app.js
           python tests/gui_baseline_lock_test.py
           python scripts/build_pages.py --out dist-pages --sha "$SOURCE_SHA" --branch main
+          test "$(cat dist-pages/googlec34c43149eef6100.html)" = "google-site-verification: googlec34c43149eef6100.html"
           python scripts/build_landing_assets.py dist-pages
           python tests/test_release_catalog.py
           python scripts/build_release_catalog.py --output dist-pages/release-catalog.json
