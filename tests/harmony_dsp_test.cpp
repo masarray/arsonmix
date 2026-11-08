@@ -44,5 +44,41 @@ int main(){
   std::vector<float> zero(4096,0.f),other(4096,0.f);
   silent.process(zero.data(),other.data(),4096);
   need(!silent.voiced(),"silence detected as voiced");
+  // A silent-noise floor must not be transformed into fake pitched backing voices.
+  Engine quiet;need(quiet.prepare(48000),"quiet prepare failed");
+  std::vector<float> ql(48000),qr(48000);
+  for(int i=0;i<48000;++i)ql[i]=qr[i]=0.0001f*std::sin(6.28318530718*440*i/48000);
+  for(int i=0;i<48000;i+=128)quiet.process(ql.data()+i,qr.data()+i,128);
+  need(!quiet.voiced(),"noise-floor pitch misclassified as vocal");
+  // After a live pitch change, the confidence/hold gate must eventually
+  // follow the new diatonic note, then release on silence.
+  Engine changing;need(changing.prepare(48000),"changing prepare failed");
+  std::vector<float> sl(48000),sr(48000);
+  auto feed=[&](double hz,double amp){
+    for(int i=0;i<48000;++i)
+      sl[i]=sr[i]=static_cast<float>(amp*std::sin(6.28318530718*hz*i/48000));
+    for(int i=0;i<48000;i+=128)
+      changing.process(sl.data()+i,sr.data()+i,128);
+  };
+  feed(440.,.20);need(changing.voiced()&&changing.observedMidiNote()==69,
+                      "sustained A4 tracking unstable");
+  feed(523.2511306,.20);need(changing.voiced()&&changing.observedMidiNote()==72,
+                             "sung-note change did not follow C5");
+  feed(440.,0.);need(!changing.voiced(),"silence did not gate harmony");
+  // Wet=0 is an exact declared-latency pass-through, including across
+  // irregular callback chunk boundaries (important for dry/wet PDC).
+  Engine dryEngine;need(dryEngine.prepare(48000),"dry prepare failed");
+  Settings dryOnly;dryOnly.wet=0.f;need(dryEngine.setSettings(dryOnly),
+                                      "dry-only setting rejected");
+  const int n=dryEngine.latencySamples()+1024;
+  std::vector<float> il(n,0.f),ir(n,0.f);il[0]=.5f;ir[0]=-.25f;
+  for(int pos=0;pos<n;pos+=127)
+    dryEngine.process(il.data()+pos,ir.data()+pos,std::min(127,n-pos));
+  for(int i=0;i<n;++i){
+    const float a=i==dryEngine.latencySamples()?.5f:0.f;
+    const float b=i==dryEngine.latencySamples()?-.25f:0.f;
+    need(std::abs(il[i]-a)<1.e-5f&&std::abs(ir[i]-b)<1.e-5f,
+         "dry pass-through did not match declared sample delay");
+  }
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-4 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
