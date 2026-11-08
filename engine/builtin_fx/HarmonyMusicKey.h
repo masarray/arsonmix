@@ -39,7 +39,7 @@ public:
         oscC_.fill(1.f);oscS_.fill(0.f);hist_.fill(0.f);
         downCount_=0;periodCount_=0;normalizeCount_=0;
         framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
-        silentFrames_=0;windowEnergy_=0.;filtered_=0.f;
+        silentFrames_=0;uncertainFrames_=0;windowEnergy_=0.;filtered_=0.f;
         current_={};
     }
     void process(const float* left,const float* right,int count) noexcept {
@@ -102,6 +102,7 @@ private:
             if(++silentFrames_>=10) {
                 current_={};hist_.fill(0.f);
                 framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
+                uncertainFrames_=0;
             }
             return;
         }
@@ -133,8 +134,12 @@ private:
         const float confidence=std::clamp(best-second,0.f,1.f);
         if(best<0.48f||confidence<0.045f) {
             candidate_=-1;candidateScale_=-1;candidateHold_=0;
+            // A new ambiguous musical section cannot retain the previous
+            // accepted key forever. After ~1.5 s fall back to Manual Key.
+            if(++uncertainFrames_>=15)current_={};
             return;
         }
+        uncertainFrames_=0;
         if(bestRoot!=candidate_||bestScale!=candidateScale_){
             candidate_=bestRoot;candidateScale_=bestScale;candidateHold_=1;
         }else if(candidateHold_<12)++candidateHold_;
@@ -143,7 +148,8 @@ private:
             current_={bestRoot,bestScale,confidence};
     }
     int decimation_=0,downCount_=0,period_=0,periodCount_=0,normalizeCount_=0;
-    int framesSeen_=0,silentFrames_=0,candidate_=-1,candidateScale_=-1,candidateHold_=0;
+    int framesSeen_=0,silentFrames_=0,uncertainFrames_=0;
+    int candidate_=-1,candidateScale_=-1,candidateHold_=0;
     float sampleAlpha_=0.f,lowpassAlpha_=0.f,filtered_=0.f;
     double windowEnergy_=0.;
     MusicKeyEstimate current_{};
