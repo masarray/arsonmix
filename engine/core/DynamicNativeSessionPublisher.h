@@ -2,6 +2,7 @@
 #pragma once
 #include "DynamicPreparedMixerBlock.h"
 #include "DynamicConsoleRoutingView.h"
+#include "NativeMusicTempoMonitor.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
 #include <algorithm>
@@ -191,6 +192,10 @@ public:
         // Snapshot ownership pins the M4 instance throughout this callback;
         // only control-thread retirement releases the shared owner.
         const auto dispatch=[&](ChannelId id,float* l,float* r,int n) noexcept {
+            // Analysis source is the installed ChannelId MUSIC PCM, before
+            // its VST rack; never microphone/echo/main unless explicitly
+            // selected and role-checked on CONTROL. No analysis on AUDIO.
+            musicTempo_.capture(id,l,r,n,snap->deviceEpoch,snap->graphRevision);
             const auto& acceptedFx=snap->prepared->fx;
             if(acceptedFx.render)
                 acceptedFx.render(acceptedFx.context,id,l,r,n);
@@ -203,6 +208,25 @@ public:
         return ok;
     }
 
+    // CONTROL ONLY: choose an actual active backing input/GROUP/FX return.
+    // Preserve the one authoritative PCM graph and reject stale selectors.
+    bool setMusicTempoSource(std::uint64_t epoch,std::uint64_t revision,
+                             ChannelId source,double sampleRate) noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        if(!p)return false;
+        if(source.value) {
+            const auto* ch=p->routing.find(source);
+            if(!ch || (ch->role!=ChannelRole::input &&
+                       ch->role!=ChannelRole::group &&
+                       ch->role!=ChannelRole::fxReturn) ||
+               !p->graph.channelScheduled(source))return false;
+        }
+        return musicTempo_.select(source,epoch,revision,sampleRate);
+    }
+    NativeMusicTempoMonitor::State pollMusicTempo(std::uint64_t epoch,
+                                                 std::uint64_t revision) noexcept {
+        return musicTempo_.poll(epoch,revision);
+    }
     // CONTROL ONLY; pointer is valid until the next structural commit.
     // The caller must COPY needed fields before yielding the writer thread.
     // Future WebView event serializes this only after native ACK, never draft.
@@ -289,6 +313,7 @@ public:
     }
 private:
     Publisher publisher_;
+    NativeMusicTempoMonitor musicTempo_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT;
 };
 } // namespace armix::mixer
