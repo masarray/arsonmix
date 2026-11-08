@@ -52,7 +52,7 @@ panel.setAttribute("aria-label","ArSon Vocal Throw");
 panel.innerHTML=[
  '<header><span class="brand">Vocal Throw</span><span class="channel" id="vtChannel"></span>',
  '<select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select>',
- '<button class="power" id="vtPower" aria-label="FX power" type="button">⏻</button><button class="close" id="vtClose" aria-label="Close Vocal Throw" type="button">×</button></header>',
+ '<button class="power" id="vtPower" aria-label="FX power" type="button">⏻</button><button class="close armix-floating-close" id="vtClose" aria-label="Close Vocal Throw" type="button">×</button></header>',
  '<div class="body"><div class="row"><span class="label">TRIGGER MODE</span><select id="vtMode" aria-label="Trigger mode"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
  '<div class="topline"><div class="field"><label for="vtBpm">TEMPO · BPM</label><input id="vtBpm" type="number" min="60" max="200" step="1"></div>',
  '<div class="field"><label for="vtDivision">BEAT</label><select id="vtDivision"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select></div>',
