@@ -86,22 +86,27 @@ def main():
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
             assert page.locator(".mx-comp-control[data-key]").count()==7
-            assert page.locator(".mx-comp-control").count()==8  # input gain is read-only
-            assert page.locator(".mx-comp-sidechain").count()==1
-            assert page.locator(".mx-comp-sidechain-head").inner_text()=="SIDECHAIN"
-            assert page.locator(".mx-comp-sc-tag").inner_text()=="INTERNAL"
-            assert page.locator(".mx-comp-static-flag").count()==5
-            assert page.locator(".mx-comp-readonly input").count()==0
-            if width>680:
+            assert page.locator(".mx-comp-control").count()==7
+            assert page.locator(".mx-comp-right .mx-comp-control").count()==4
+            assert page.locator(".mx-comp-left .mx-comp-control").count()==3
+            # Unsupported input trim, sidechain and auto modes must not
+            # make a noisy panel of dead controls.
+            assert page.locator(".mx-comp-sidechain,.mx-comp-readonly,.mx-comp-auto").count()==0
+            assert page.locator(".mx-comp-foot,.mx-comp-preset").count()==0
+            assert page.locator(".mx-comp-preset-select").count()==1
+            assert page.locator(".mx-comp-preset-select").input_value()=="DEFAULT"
+            assert page.locator(".mx-comp-state-dot").get_attribute("data-state")=="ok"
+            if width>600:
                 left=page.locator(".mx-comp-left").bounding_box()
                 graph=page.locator(".mx-comp-visual").bounding_box()
                 right=page.locator(".mx-comp-right").bounding_box()
                 assert left and graph and right and left["x"]<graph["x"]<right["x"]
-                assert 665<=editor.bounding_box()["width"]<=690
-                assert editor.bounding_box()["height"]<=270,editor.bounding_box()
+                assert 545<=editor.bounding_box()["width"]<=560
+                assert editor.bounding_box()["height"]<=265,editor.bounding_box()
 
-            assert page.locator(".mx-comp-presets button").count()==5
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
+            assert page.locator(".mx-comp-preset-select").is_visible()
+            assert not page.locator(".mx-comp-status").is_visible(), "technical status polluted panel"
             rect=editor.bounding_box()
             assert rect and rect["width"]<=width and rect["height"]<=height,(width,height,rect)
             assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect
@@ -173,6 +178,21 @@ def main():
                 page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                     ?.includes('NATIVE DSP ACCEPTED')""")
                 assert dial.get_attribute("aria-valuetext").endswith(":1")
+                assert page.locator(".mx-comp-preset-select").input_value()=="CUSTOM"
+                # Presets are a standard DAW header dropdown, and must travel
+                # through the same revision-gated native DSP control path.
+                page.locator(".mx-comp-preset-select").select_option("SPEECH")
+                selected=last_action(page,"nativeCompSet")
+                assert selected["settings"]["thresholdDb"]==-24
+                assert selected["settings"]["ratio"]==3
+                assert selected["settings"]["makeupDb"]==3
+                emit(page,"arMixBuiltinCompQueue",{"requestId":selected["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinCompAck",{"requestId":selected["requestId"],"status":"APPLIED"})
+                emit_snapshot(page,state,selected["settings"],applied=selected["requestId"])
+                page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
+                    ?.includes('NATIVE DSP ACCEPTED')""")
+                assert page.locator(".mx-comp-preset-select").input_value()=="SPEECH"
+                assert page.locator(".mx-comp-state-dot").get_attribute("data-state")=="ok"
                 # Mere click without a value change must not reconfigure PCM.
                 before_count=page.evaluate("""()=>window.__actions.filter(x=>
                     x.action==='nativeCompSet').length""")
@@ -182,13 +202,18 @@ def main():
                 after_count=page.evaluate("""()=>window.__actions.filter(x=>
                     x.action==='nativeCompSet').length""")
                 assert after_count==before_count,"no-motion knob click issued DSP write"
+                # Re-selecting the accepted preset must not perform another
+                # audio graph edit or restart the callback.
+                page.locator(".mx-comp-preset-select").dispatch_event("change")
+                assert page.evaluate("""()=>window.__actions.filter(x=>
+                    x.action==='nativeCompSet').length""")==before_count
 
             assert not errors,(width,errors)
             page.close()
         browser.close()
-    print("PASS Compressor native bundle: ordered insert, no optimistic DSP state,"
-          " seven controls, transfer curve, callback ACK/readback, 2 viewports."
-          " UI test double, NOT ASIO hardware evidence.")
+    print("PASS 558px Compressor native bundle: header presets, noise-free"
+          " seven DSP controls, graph gestures, knob precision, native"
+          " ACK/readback, 3 viewports. Browser uses UI test double.")
 
 if __name__=="__main__":
     main()
