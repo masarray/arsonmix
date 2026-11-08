@@ -85,12 +85,21 @@ juce::WebBrowserComponent::Options webViewOptions()
 {
     const auto folder = armix::storage::PortableWorkspace::browserDataRoot();
     folder.createDirectory();
+#if defined(_WIN32)
+    // Windows must keep the proven WebView2 profile, loader and native bridge.
     return juce::WebBrowserComponent::Options{}
         .withBackend (juce::WebBrowserComponent::Options::Backend::webview2)
         .withWinWebView2Options (
             juce::WebBrowserComponent::Options::WinWebView2{}.withUserDataFolder (folder)
             .withBackgroundColour (juce::Colour (0xff101921)))
         .withKeepPageLoadedWhenBrowserIsHidden();
+#else
+    // Same compiled /preview/ resource provider + JUCE native JS ACK/readback.
+    // JUCE 8 uses WKWebView on macOS and WebKitGTK on Linux; no WebView2 fallback.
+    return juce::WebBrowserComponent::Options{}
+        .withBackend (juce::WebBrowserComponent::Options::Backend::defaultBackend)
+        .withKeepPageLoadedWhenBrowserIsHidden();
+#endif
 }
 
 void showWebViewStartupError (const juce::String& detail)
@@ -98,11 +107,18 @@ void showWebViewStartupError (const juce::String& detail)
     juce::NativeMessageBox::showAsync (
         juce::MessageBoxOptions{}
             .withIconType (juce::MessageBoxIconType::WarningIcon)
+#if defined(_WIN32)
             .withTitle ("ArSonMix - WebView2 unavailable")
             .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\\n\\n"
                           + detail + "\\n\\nDownload / repair from Microsoft:\\n"
                           "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\\n\\n"
                           "No VST3, mixer presets or session data were deleted.")
+#else
+            .withTitle ("ArSonMix - native WebKit unavailable")
+            .withMessage ("ArSonMix requires the system WebKit browser backend "
+                          "(WKWebView on macOS, WebKitGTK on Linux).\\n\\n"
+                          + detail + "\\n\\nNo Show, plugin or preset data were deleted.")
+#endif
             .withButton ("Close"),
         [] (int) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
 }
@@ -4433,7 +4449,7 @@ public:
         if (!juce::WebBrowserComponent::areOptionsSupported (webViewOptions()))
         {
             splash_.reset();
-            showWebViewStartupError ("WebView2 Runtime could not be initialized on this machine.");
+            showWebViewStartupError ("The native browser backend could not be initialized on this machine.");
             return;
         }
         window_ = std::make_unique<ConsoleWindow> ([this] (int stage)
