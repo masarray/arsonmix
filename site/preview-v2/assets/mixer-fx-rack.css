@@ -398,107 +398,246 @@
  .mx-comp{top:4px;max-height:calc(100dvh - 8px)}
 }
 
-/* ArSon Harmony: scoped modeless built-in editor in the existing FX style owner. */
-/* SPDX-License-Identifier: AGPL-3.0-only */
-/* Compact modeless built-in FX; isolated from the approved mixer skin. */
-.mx-harm{position:fixed;z-index:2500;top:13%;left:50%;transform:translateX(-50%);
- width:min(630px,calc(100vw - 22px));font:12px/1.4 Inter,Segoe UI,Arial,sans-serif;
- color:#d6e4ec;background:linear-gradient(125deg,#122b36 0%,#182e3b 30%,#233743 70%,#172832 100%);
- border:1px solid #58707d;border-radius:11px;box-shadow:0 24px 65px #020b15a8,0 0 0 1px #09232c;
- overflow:hidden;box-sizing:border-box}
-.mx-harm[hidden]{display:none}
+/* ArSon Harmony — compact, wide musical effects console.
+   Reference-inspired composition: graphite voice module, satin control deck,
+   large key instrument. NO image assets, filters or second renderer. Chrome
+   buttons use the same mixer-contextual-buttons.css owner as EQ/Compressor. */
+.mx-harm{
+ position:fixed;z-index:3102;left:50%;top:clamp(6px,12vh,90px);
+ transform:translateX(-50%);width:min(910px,calc(100vw - 14px));
+ max-height:calc(100dvh - 12px);overflow:auto;box-sizing:border-box;
+ border:1px solid #667e87;border-radius:7px;
+ background:#c6d1d4;color:#273c46;
+ box-shadow:0 16px 38px #030e16c0,0 1px 0 #ffffff6c inset;
+ font:400 10px/1.3 Inter,'Segoe UI',Arial,sans-serif
+}
+.mx-harm[hidden],.mx-harm-source-picker[hidden]{display:none}
 .mx-harm *{box-sizing:border-box}
 .mx-harm button,.mx-harm select,.mx-harm input{font:inherit}
 .mx-harm button{cursor:pointer}
-.mx-harm-head{height:41px;display:flex;align-items:center;gap:10px;padding:0 10px 0 14px;
- background:#0c1b23;border-bottom:1px solid #314b58;user-select:none;touch-action:none}
-.mx-harm-logo{font-size:21px;color:#60e1bf}
-.mx-harm-brand{font-size:14px;font-weight:500;white-space:nowrap;letter-spacing:.1px}
-.mx-harm-brand em{font-style:normal;font-weight:400;color:#6edfc5}
-.mx-harm-channel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
- color:#8eacb8;font-size:10px}
-.mx-harm-head select{width:125px;height:27px;background:#152c39;color:#d7edf1;
- border:1px solid #456373;border-radius:5px;padding:2px 7px;outline:none;font-size:11px}
-.mx-harm-head select:focus-visible{border-color:#5ed5c0}
-.mx-harm-power,.mx-harm-close{width:27px;height:27px;display:grid;place-items:center;
- border:1px solid #3b5562;border-radius:5px;background:#20343d;color:#95a6ac;
- font-size:18px;transition:background .12s,color .12s,border-color .12s}
-.mx-harm-power.on{color:#5de2ba;background:#123e36;border-color:#468c7a}
-.mx-harm-power:hover{background:#305165}
-.mx-harm-close:hover{color:#fff;background:#a52f3c;border-color:#e35d6b}
-/* Compact, accessible mode switch: one calm FX editor, no second UI owner. */
-.mx-harm-source{display:flex;align-items:center;gap:9px;padding:10px 17px 0;min-height:38px}
-.mx-harm-mode{display:inline-flex;flex:none;align-items:center;gap:2px;padding:2px;
- background:#0c202a;border:1px solid #385461;border-radius:9px}
-.mx-harm-mode button{border:1px solid transparent;border-radius:6px;background:transparent;
- color:#98b3bd;padding:5px 12px;font-size:10px;line-height:1.2;font-weight:500;
- letter-spacing:.15px;transition:background .15s,border-color .15s,color .15s}
-.mx-harm-mode button.active{background:#254c51;border-color:#4a817d;color:#e7f8f3;
- box-shadow:inset 0 1px 0 #b7f6e01a,0 1px 3px #06161d50}
-.mx-harm-mode button:hover:not(.active){color:#e5f4f4;background:#1b3741}
-.mx-harm-mode button:focus-visible,.mx-harm-source select:focus-visible{
- outline:2px solid #70c8b5;outline-offset:2px}
-.mx-harm-source-picker{display:flex;flex:1;min-width:0}
-.mx-harm-source-picker[hidden]{display:none}
-.mx-harm-sr{position:absolute;width:1px;height:1px;overflow:hidden;
- clip-path:inset(50%);white-space:nowrap}
-.mx-harm-source select{width:100%;min-width:0;height:28px;background:#112934;
- color:#d7e7e8;border:1px solid #3d5b68;border-radius:6px;padding:3px 8px;
- outline:none;font-size:10px}
-.mx-harm-guide-status{display:inline-flex;align-items:center;justify-content:flex-end;
- min-width:44px;margin-left:auto;gap:6px;white-space:nowrap;
- font-size:9px;font-weight:500;letter-spacing:.6px;color:#94b7b8}
-.mx-harm-guide-status:before{content:"";display:block;width:5px;height:5px;flex:none;
- border-radius:50%;background:#7b979c}
-.mx-harm-guide-status[data-state="auto"]{color:#9cdbc9}
-.mx-harm-guide-status[data-state="auto"]:before{background:#79d9b7}
-.mx-harm-guide-status[data-state="listen"]:before{background:#d1b981}
-.mx-harm-guide-status[data-state="safe"]:before{background:#e0ab87}
-@media(max-width:550px){.mx-harm-source{padding:8px 10px 0;gap:6px}
- .mx-harm-mode button{padding:5px 9px}
+.mx-harm button:focus-visible,.mx-harm select:focus-visible{
+ outline:2px solid #2f9b91;outline-offset:2px
+}
+.mx-harm-head{
+ height:32px;display:flex;align-items:center;gap:8px;padding:0 6px 0 11px;
+ background:linear-gradient(#364f5d,#233945);border-bottom:1px solid #536b76;
+ user-select:none;touch-action:none;cursor:move
+}
+.mx-harm-logo{font-size:15px;color:#8ed9c5}
+.mx-harm-brand{font-size:11px;font-weight:600;letter-spacing:.1px;white-space:nowrap;color:#f2f9fa}
+.mx-harm-brand em{font-style:normal;font-weight:400;color:#9bd8c9}
+.mx-harm-channel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;color:#a1b9c3;font-size:9px}
+.mx-harm-head select{
+ width:120px;height:23px;min-width:0;padding:1px 6px;
+ color:#e4f2f4;background:#304b58;border:1px solid #597483;border-radius:4px;
+ font-size:10px;cursor:pointer
+}
+/* The header Close/Power material, geometry, icon and semantic states are
+   owned EXCLUSIVELY by mixer-contextual-buttons.css. No scoped overrides. */
+.mx-harm-body{
+ display:grid;grid-template-columns:150px minmax(0,1fr) 234px;
+ min-height:232px;background:linear-gradient(145deg,#e0e5e6,#bfcdd1);
+}
+.mx-harm-left{
+ display:flex;flex-direction:column;align-items:stretch;gap:9px;min-width:0;
+ padding:18px 12px 12px;
+ background:radial-gradient(circle at 95% 10%,#315361,#112c38 60%,#102631);
+ color:#c8e0e5;border-right:1px solid #5f7b82
+}
+.mx-harm-signature{display:flex;flex-direction:column;gap:2px;min-height:81px}
+.mx-harm-mark{font-size:10px;letter-spacing:2.1px;color:#81c9bb}
+.mx-harm-signature strong{font-size:17px;font-weight:500;letter-spacing:-.35px;color:#d1ebec}
+.mx-harm-signature small{font-size:8px;letter-spacing:1.1px;color:#86a8b2}
+.mx-harm-label{font-size:9px;letter-spacing:.9px;color:#a3c0c8;font-weight:500}
+.mx-harm-voices{display:flex;gap:4px;width:100%}
+.mx-harm-voices button{
+ flex:1;min-width:0;height:28px;border-radius:4px;
+ border:1px solid #486978;background:#1c404d;color:#bcd6df;font-size:12px
+}
+.mx-harm-voices button.active{
+ background:#367368;color:#f1fffb;border-color:#8acbb8;
+ box-shadow:0 1px 0 #bcefd535 inset
+}
+.mx-harm-correction{
+ display:flex;align-items:center;gap:8px;color:#b8d9df;font-size:9px;
+ letter-spacing:.45px;white-space:nowrap;cursor:pointer;margin-top:auto
+}
+.mx-harm-correction input{accent-color:#57bba4;width:14px;height:14px;margin:0}
+.mx-harm-control-deck{
+ display:flex;align-items:center;justify-content:center;min-width:0;
+ border-right:1px solid #a7b9bf;
+ background:radial-gradient(ellipse at 50% 30%,#e7ecec 0%,#c5d0d2 80%)
+}
+.mx-harm-sliders{
+ display:grid;grid-template-columns:repeat(2,minmax(105px,1fr));
+ width:min(100%,390px);align-items:center;justify-items:center;
+ gap:5px 17px;padding:8px 12px
+}
+.mx-harm-slider{
+ --dial-turn:0deg;display:flex;flex-direction:column;align-items:center;
+ justify-content:center;gap:1px;min-width:0;position:relative;
+ width:100%;height:107px;cursor:ew-resize
+}
+.mx-harm-dial-face{
+ display:grid;place-items:center;position:relative;
+ width:68px;height:68px;border-radius:50%;
+ border:3px solid #83989e;
+ background:radial-gradient(circle at 33% 23%,#fafdfb 0%,#d3d9db 53%,#a9b9bd 100%);
+ box-shadow:0 2px 5px #49616a52,0 0 0 5px #96aeb13b,inset 0 2px 4px #ffffffdf;
+ pointer-events:none
+}
+.mx-harm-dial-face:before{
+ content:"";position:absolute;inset:-6px;border-radius:50%;
+ background:conic-gradient(from 225deg,#5fba9d 0 245deg,#708c9360 245deg 270deg,transparent 270deg 360deg);
+ -webkit-mask:radial-gradient(transparent 66%,black 69%);
+ mask:radial-gradient(transparent 66%,black 69%);
+}
+.mx-harm-dial-pointer{
+ position:absolute;width:3px;height:23px;top:7px;border-radius:3px;
+ background:#375e68;box-shadow:0 0 1px #ffffff;
+ transform-origin:50% 27px;transform:rotate(var(--dial-turn));
+ pointer-events:none
+}
+.mx-harm-dial-label{font-size:9px;letter-spacing:.85px;color:#405963;font-weight:600}
+.mx-harm-slider output{
+ font:500 10px/1.2 Inter,'Segoe UI',sans-serif;
+ font-variant-numeric:tabular-nums;color:#253f49
+}
+.mx-harm-slider input[type=range]{
+ position:absolute;top:1px;left:50%;transform:translateX(-50%);
+ width:79px;height:72px;opacity:0;cursor:ew-resize;
+ touch-action:none;margin:0
+}
+.mx-harm-slider:focus-within .mx-harm-dial-face{
+ outline:2px solid #258f83;outline-offset:5px
+}
+.mx-harm-center{
+ display:flex;flex-direction:column;align-items:center;justify-content:center;
+ gap:5px;min-width:0;padding:8px 12px;
+ background:radial-gradient(ellipse at 40% 20%,#e4e9e8,#bbc9ce)
+}
+.mx-harm-wheel{
+ position:relative;flex:0 0 auto;width:194px;height:194px;
+ border-radius:50%;border:5px solid #e0e8e8;
+ background:conic-gradient(from -15deg,#1f5363,#397082,#214e5f,#1c4554,#285d6c,#1f5363);
+ box-shadow:0 0 0 2px #708c99,0 0 0 7px #dce3e4,
+ 0 6px 13px #344c5657,inset 0 0 13px #071e2f
+}
+.mx-harm-wheel:before{
+ content:"";position:absolute;inset:17px;border:1px solid #c0d3d445;
+ border-radius:50%;pointer-events:none
+}
+.mx-harm-note{
+ position:absolute;transform:translate(-50%,-50%);width:31px;height:25px;
+ border:1px solid transparent;border-radius:4px;
+ background:transparent;color:#c0d6da;font-size:10px;font-weight:500;
+ text-shadow:0 1px 2px #062630
+}
+.mx-harm-note:hover{color:#fff;background:#53958c4a}
+.mx-harm-note.active{
+ background:#6bd6aa;color:#113b37;border-color:#c5f4da;
+ text-shadow:none;font-weight:600;box-shadow:0 0 8px #72d7b450
+}
+.mx-harm-wheel-core{
+ position:absolute;inset:29%;border-radius:50%;
+ display:flex;flex-direction:column;align-items:center;justify-content:center;
+ border:1px solid #587c86;
+ background:radial-gradient(circle at 40% 20%,#143d4c,#102b3a 82%);
+ box-shadow:0 0 0 6px #0b2b38bb,inset 0 2px 8px #051b26
+}
+.mx-harm-wheel-core strong{
+ font-size:27px;line-height:1.1;font-weight:500;letter-spacing:-.9px;
+ color:#dcfaf1;text-shadow:0 0 11px #91d7c14e
+}
+.mx-harm-wheel-core small{font-size:8px;letter-spacing:.9px;color:#9cbec1}
+.mx-harm-scale{display:flex;align-items:center;gap:5px;width:175px;margin-top:7px}
+.mx-harm-scale button{
+ flex:1;height:24px;min-width:0;border:1px solid #91a8ae;border-radius:4px;
+ background:#dbe6e6;color:#435d66;font-size:10px
+}
+.mx-harm-scale button.active{
+ background:#3e7b74;color:#f4fffa;border-color:#3a8b7d
+}
+.mx-harm-source{
+ display:flex;align-items:center;gap:9px;min-height:36px;padding:4px 12px;
+ background:#e0e7e7;border-top:1px solid #a7bcc2;
+}
+.mx-harm-mode{
+ display:inline-flex;flex:none;align-items:center;padding:2px;gap:2px;
+ background:#bdcbcf;border:1px solid #98aeb4;border-radius:7px
+}
+.mx-harm-mode button{
+ height:22px;border:1px solid transparent;border-radius:5px;
+ background:transparent;padding:3px 12px;color:#48656b;font-size:10px
+}
+.mx-harm-mode button.active{
+ background:#3b7e74;color:#f5fffc;border-color:#439184;
+ box-shadow:inset 0 1px 1px #ffffff19
+}
+.mx-harm-mode button:hover:not(.active){background:#cfdcdb}
+.mx-harm-source-picker{display:flex;min-width:0;flex:0 1 220px}
+.mx-harm-sr{
+ position:absolute;width:1px;height:1px;overflow:hidden;
+ clip-path:inset(50%);white-space:nowrap
+}
+.mx-harm-source select{
+ width:100%;min-width:0;height:27px;border-radius:5px;
+ border:1px solid #9aafb6;background:#f0f4f3;color:#38565f;
+ padding:2px 7px;font-size:10px
+}
+.mx-harm-guide-status{
+ display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+ white-space:nowrap;font-size:9px;letter-spacing:.6px;color:#54737b
+}
+.mx-harm-guide-status:before{
+ content:"";width:6px;height:6px;border-radius:50%;background:#779aa0
+}
+.mx-harm-guide-status[data-state="auto"]{color:#237b6b}
+.mx-harm-guide-status[data-state="auto"]:before{background:#36b68a}
+.mx-harm-guide-status[data-state="listen"]:before{background:#bd8b3e}
+.mx-harm-guide-status[data-state="safe"]:before{background:#c37f5b}
+.mx-harm-foot{
+ display:flex;justify-content:space-between;align-items:center;gap:10px;
+ height:23px;padding:0 11px;background:#243b46;color:#a8c2c9;
+ border-top:1px solid #4f6b76;font-size:9px;letter-spacing:.2px
+}
+.mx-harm-foot>span:first-child{
+ min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+@media(max-width:740px){
+ .mx-harm-body{grid-template-columns:126px minmax(0,1fr) 206px;min-height:224px}
+ .mx-harm-left{padding:14px 9px 10px}
+ .mx-harm-signature strong{font-size:15px}
+ .mx-harm-sliders{grid-template-columns:repeat(2,minmax(78px,1fr));gap:4px;padding:5px}
+ .mx-harm-dial-face{width:59px;height:59px}
+ .mx-harm-dial-pointer{height:19px;transform-origin:50% 23px}
+ .mx-harm-slider{height:101px}
+ .mx-harm-center{padding:8px 6px}
+ .mx-harm-wheel{width:172px;height:172px}
+ .mx-harm-note{width:28px;font-size:9px}
+ .mx-harm-head select{width:100px}
+}
+@media(max-width:580px){
+ .mx-harm{top:6px}
+ .mx-harm-body{grid-template-columns:112px minmax(0,1fr);min-height:0}
+ .mx-harm-left{grid-column:1;grid-row:1}
+ .mx-harm-control-deck{grid-column:2;grid-row:1;border-right:0;min-height:222px}
+ .mx-harm-center{
+  grid-column:1/-1;grid-row:2;border-top:1px solid #9eb2ba;
+  padding:14px 8px
+ }
+ .mx-harm-signature{min-height:71px}
+ .mx-harm-voices{gap:2px}
+ .mx-harm-voices button{height:25px}
+ .mx-harm-source{flex-wrap:wrap;gap:5px;padding:5px 8px}
  .mx-harm-source-picker{flex:1}
- .mx-harm-guide-status{font-size:8px;min-width:35px;gap:4px}}
-.mx-harm-body{padding:15px 17px 12px;display:grid;grid-template-columns:minmax(0,1fr) 212px;gap:17px}
-.mx-harm-left{min-width:0;display:grid;gap:11px;align-content:start}
-.mx-harm-label{font-size:10px;letter-spacing:1px;color:#97b1be;font-weight:600}
-.mx-harm-voices{display:flex;align-items:center;gap:5px;margin-top:-5px}
-.mx-harm-voices button,.mx-harm-scale button{flex:1;min-width:0;padding:5px 0;
- background:#142d37;border:1px solid #3c5967;border-radius:5px;color:#9fb6c1;
- font-size:11px;font-weight:500}
-.mx-harm-voices button.active,.mx-harm-scale button.active{background:#15564e;
- border-color:#49b9a4;color:#ddfff7}
-.mx-harm-correction{display:flex;align-items:center;gap:7px;cursor:pointer;
- color:#dce8ed;font-weight:500}
-.mx-harm-correction input{accent-color:#52d3b1;width:14px;height:14px;margin:0}
-.mx-harm-correction span{font-size:10px;color:#7899a8;font-weight:400;margin-left:auto}
-.mx-harm-sliders{display:grid;grid-template-columns:1fr 1fr;column-gap:13px;row-gap:11px}
-.mx-harm-slider{display:grid;grid-template-columns:1fr auto;gap:4px 7px;align-items:center}
-.mx-harm-slider>span{color:#a5bac5;letter-spacing:.5px;font-size:10px}
-.mx-harm-slider output{font:11px Consolas,monospace;color:#c6e5e1}
-.mx-harm-slider input{grid-column:1/3;width:100%;height:4px;accent-color:#51c9b0;cursor:pointer}
-.mx-harm-center{display:flex;flex-direction:column;gap:6px;align-items:center;min-width:0}
-.mx-harm-wheel{position:relative;width:170px;height:170px;flex:none;border-radius:50%;
- border:5px solid #456979;box-shadow:inset 0 0 18px #051923,0 3px 12px #08151f90;
- background:conic-gradient(#193a49,#244e5d,#193a49,#254a5a,#193a49)}
-.mx-harm-note{position:absolute;transform:translate(-50%,-50%);border:0;
- background:#29505e;color:#b4cad4;font-size:11px;width:30px;height:25px;border-radius:5px}
-.mx-harm-note:hover{color:#fff;background:#426c79}
-.mx-harm-note.active{color:#12302e;background:#89d8bd;font-weight:600;
- box-shadow:0 1px 6px #0a1e2090}
-.mx-harm-wheel-core{position:absolute;inset:27%;display:grid;align-content:center;
- text-align:center;border:1px solid #527b7b;border-radius:50%;
- background:radial-gradient(circle at 50% 25%,#203d46,#0c222c 85%);
- box-shadow:0 0 0 5px #09252f,inset 0 1px 10px #061b2570}
-.mx-harm-wheel-core strong{font-size:24px;line-height:1.15;font-weight:500;
- letter-spacing:-.5px;color:#e5f9f4;font-variant-numeric:tabular-nums;
- text-shadow:0 0 12px #81e4c72b}
-.mx-harm-wheel-core small{font-size:8px;letter-spacing:.9px;color:#8abdb5}
-.mx-harm-scale{display:flex;gap:5px;width:170px}
-.mx-harm-foot{height:26px;display:flex;gap:10px;align-items:center;justify-content:space-between;
- padding:0 13px;border-top:1px solid #304c58;background:#10222c;color:#90adb7;font-size:9px;
- letter-spacing:.25px}
-.mx-harm-foot>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:550px){.mx-harm{top:7%;}.mx-harm-body{grid-template-columns:1fr 168px;gap:8px;padding:10px}
- .mx-harm-wheel{width:147px;height:147px}.mx-harm-scale{width:147px}
- .mx-harm-head{gap:5px}.mx-harm-head select{width:100px}.mx-harm-channel{display:none}
- .mx-harm-sliders{column-gap:6px}}
+ .mx-harm-guide-status{font-size:8px}
+ .mx-harm-head{gap:6px}
+ .mx-harm-channel{display:none}
+ .mx-harm-brand{flex:1}
+ .mx-harm-head select{width:102px}
+}
+@media(prefers-reduced-motion:reduce){
+ .mx-harm *{transition:none!important;animation:none!important}
+}
