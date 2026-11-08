@@ -188,8 +188,11 @@ public:
         // Prefer both input pins on a verified stereo endpoint; saved explicit
         // channel masks still take precedence. Outputs remain DISARMED.
         auto error = deviceManager_.initialise (2, 2, savedSettings, !savedRoute);
+#if defined(_WIN32)
         if (error.isNotEmpty() && !savedRoute && deviceManager_.singleAsioPreferred())
         {
+            // Only Windows offers ASIO and WASAPI. Never select this device
+            // on macOS/Linux where CoreAudio/ALSA/JACK must remain authoritative.
             // This was only an automatic FIRST-RUN ASIO preference, not the
             // user's chosen ASIO driver. Keep WASAPI supported if the sole
             // discovered ASIO driver cannot open. Report the provenance.
@@ -204,6 +207,7 @@ public:
             else error = "Automatic ASIO open failed: " + asioError
                        + " | Windows Audio fallback unavailable";
         }
+#endif
         if (error.isNotEmpty()) return error;
         const auto* active = deviceManager_.getCurrentAudioDevice();
         if (active == nullptr)
