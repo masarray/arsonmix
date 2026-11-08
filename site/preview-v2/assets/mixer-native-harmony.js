@@ -146,6 +146,28 @@ function refreshGuideSources(){
  const selected=availableSources.some(ch=>ch.id===wanted)?wanted:"0";
  if(selector.value!==selected)selector.value=selected;
 }
+// Scalar FX bypass changes arrive with the native console snapshot, even
+// in Manual Key mode. Only update the header button if its accepted state
+// changes; never synthesize optimistic ON/OFF while an ACK is pending.
+function syncPower(){
+ const n=state(),ch=n?.graph?.channels?.find(x=>x.id===current?.channelId);
+ const insert=ch?.inserts?.[current?.slot];
+ const fxState=!native()?
+   (current?.track?.slotBypass?.[current?.slot]?"off":"on"):
+   (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
+    typeof insert.bypassed!=="boolean"?"unknown":
+    ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+ const power=el("mxHPower");
+ if(power.dataset.fxState===fxState)return;
+ power.dataset.fxState=fxState;
+ power.disabled=fxState==="unknown"||fxState==="rack-off";
+ power.setAttribute("aria-pressed",String(fxState==="on"));
+ power.title=fxState==="on"?"HARMONY ON · click to bypass":
+  fxState==="off"?"HARMONY BYPASSED · click to enable":
+  fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
+  "HARMONY STATE UNAVAILABLE";
+ power.setAttribute("aria-label",power.title);
+}
 function paint(){
  const v=latest||pending?.settings||settings;
  const auto=v.guideMode===1;
@@ -190,22 +212,7 @@ function paint(){
   input.parentElement.style.setProperty("--dial-turn",(-135+ratio*270)+"deg");
   showText(output,key==="gainDb"?v[key].toFixed(1)+" dB":Math.round(value)+"%");
  }
- const n=state(),ch=n?.graph?.channels?.find(x=>x.id===current?.channelId);
- const insert=ch?.inserts?.[current?.slot];
- const fxState=!nativeView?
-   (current?.track?.slotBypass?.[current?.slot]?"off":"on"):
-   (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
-    typeof insert.bypassed!=="boolean"?"unknown":
-    ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
- const power=el("mxHPower");
- power.dataset.fxState=fxState;
- power.disabled=fxState==="unknown"||fxState==="rack-off";
- power.setAttribute("aria-pressed",String(fxState==="on"));
- power.title=fxState==="on"?"HARMONY ON · click to bypass":
-  fxState==="off"?"HARMONY BYPASSED · click to enable":
-  fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
-  "HARMONY STATE UNAVAILABLE";
- power.setAttribute("aria-label",power.title);
+ syncPower();
  showText(el("mxHLatency"),mode==="NATIVE"?readbackLatency+" samples":"DEMO");
 }
 // One in-flight readback, a bounded retry on the EXISTING 12 Hz console
@@ -375,6 +382,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
      readbackRequest="";
      hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;
    }
+   syncPower();
    const now=Date.now();
    if(pending){
      // A missing ACK must never block the editor forever. Preserve the
