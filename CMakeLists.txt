@@ -118,6 +118,7 @@ if(BUILD_TESTING)
   add_executable(ARMixHarmonyDspTests tests/harmony_dsp_test.cpp)
   target_compile_features(ARMixHarmonyDspTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyMultivoicePitchAndRealtimeFinitePCM COMMAND ARMixHarmonyDspTests)
+  add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
   # Windows native matrix explicitly builds the routing test target.
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
