@@ -177,5 +177,47 @@ int main(){
            "vocal register octave/scale misclassification");
     }
   }
+  // Pitch hysteresis: a sung vibrato around E/F midpoint must not alternate
+  // two harmony notes every analysis hop; a real note change must still pass.
+  need(!pitchChangeHasMargin(64,65,64.55f),"boundary vibrato incorrectly revoiced");
+  need(pitchChangeHasMargin(64,65,64.78f),"valid melodic transition blocked");
+  need(pitchChangeHasMargin(-1,65,64.5f),"phrase onset cannot acquire note");
+  // Re-key while live: previous key's quantizer must not leak into a new scale.
+  auto rekey=std::make_unique<Engine>();
+  need(rekey->prepare(48000),"re-key engine prepare failed");
+  std::vector<float> rkL(48000),rkR(48000);
+  for(int i=0;i<48000;++i)
+    rkL[i]=rkR[i]=.2f*std::sin(6.28318530718*440*i/48000);
+  for(int i=0;i<48000;i+=128)rekey->process(rkL.data()+i,rkR.data()+i,128);
+  need(rekey->voiced(),"re-key baseline pitch not acquired");
+  Settings keyEdit;keyEdit.key=5; // F major: A remains in scale
+  Engine::PreparedSettings keyPacket;
+  need(Engine::prepareSettings(keyEdit,keyPacket)&&
+       rekey->applyPreparedSettings(keyPacket),"key edit was rejected");
+  need(!rekey->voiced()&&rekey->observedMidiNote()==-1,
+       "key edit reused a stale note from previous scale");
+  for(int i=0;i<48000;++i)
+    rkL[i]=rkR[i]=.2f*std::sin(6.28318530718*440*i/48000);
+  for(int i=0;i<48000;i+=128)rekey->process(rkL.data()+i,rkR.data()+i,128);
+  need(rekey->voiced()&&rekey->observedMidiNote()==69,
+       "fresh key did not reacquire stable A4");
+  // Fixed-size reduced audio history must survive repeated wraparound at
+  // the highest supported device rate without changing declared PDC.
+  auto wrap=std::make_unique<Engine>();
+  need(wrap->prepare(192000),"192 kHz ring prepare failed");
+  Settings fullDry;fullDry.wet=0.f;
+  need(wrap->setSettings(fullDry),"192 kHz dry setup failed");
+  constexpr int wraps=65536;
+  std::vector<float> wl(wraps,0.f),wr(wraps,0.f);
+  for(int i=0;i<wraps;i+=16384){wl[i]=.50f;wr[i]=-.25f;}
+  for(int pos=0;pos<wraps;pos+=137)
+    wrap->process(wl.data()+pos,wr.data()+pos,std::min(137,wraps-pos));
+  for(int i=0;i<wraps;++i){
+    const bool impulse=i>=wrap->latencySamples() &&
+      ((i-wrap->latencySamples())%16384==0);
+    need(std::abs(wl[i]-(impulse?.50f:0.f))<1.e-5f &&
+         std::abs(wr[i]-(impulse?-.25f:0.f))<1.e-5f,
+         "reduced 192 kHz history corrupted a wrapped dry impulse");
+  }
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-4 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
