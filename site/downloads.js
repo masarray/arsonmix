@@ -3,13 +3,8 @@
   "use strict";
   const cards = [...document.querySelectorAll("[data-platform]")];
   const summary = document.getElementById("release-summary");
-  const heroDownload = document.getElementById("hero-download");
-  // On Windows, take the user straight to the current installer ZIP.
-  // Other platforms continue to the OS chooser. Never fabricate a URL.
-  const platformName = typeof navigator !== "undefined"
-    ? String(navigator.userAgentData?.platform || navigator.platform || "")
-    : "";
-  const isWindowsVisitor = /win/i.test(platformName);
+  // All top-level Download links are normal #download anchors.
+  // Only the three OS-specific cards may point to verified release files.
   if (!summary || cards.length !== 3) return;
   const keys = ["windows", "linux", "macos"];
   const labels = { windows: "Windows", linux: "Linux", macos: "macOS" };
@@ -133,18 +128,7 @@
       if (validAsset(item, key)) { available(card, item); ++count; }
       else unavailable(card);
     }
-    // Hero CTA is a genuine direct download only after a verified asset
-    // has been selected. On other OSes it stays as the platform chooser.
-    if (heroDownload) {
-      const win = selected.windows;
-      heroDownload.href = isWindowsVisitor && validAsset(win, "windows")
-        ? win.url : "#download";
-      heroDownload.setAttribute("aria-label",
-        isWindowsVisitor && validAsset(win, "windows")
-          ? "Download the latest ArSonMix Windows installer"
-          : "Choose your ArSonMix download");
-    }
-    const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
+js    const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
     summary.textContent = count
       ? "Ready to download · " + availablePlatforms.map(k => labels[k]).join(" · ")
       : "Downloads are being prepared. Explore the mixer in your browser.";
