@@ -450,7 +450,9 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(bridge,/arMixNativeTrackDeleteAck/);
  assert.match(bridge,/function finishNativeTrackDelete\(next\)/);
  assert.match(bridge,/pending\.acked/);
- assert.match(bridge,/action:kind==="inspect"\?"routingNativeOrbitInspect"/);
+ assert.match(bridge,/kind==="inspect"\?"routingNativeOrbitInspect"/);
+ assert.match(bridge,/kind==="inspect"\?"routingM4OrbitInspect"/);
+ assert.match(host,/engine_\.leaseRoutedFxForEditor\(/);
  assert.match(host,/engine_\.removeNativeInputChannel\(ep,rev,roster,/);
  assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
  assert.match(host,/nativeOrbitLease_/);
