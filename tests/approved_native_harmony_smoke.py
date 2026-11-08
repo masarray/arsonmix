@@ -60,7 +60,7 @@ def main():
         out=Path(directory);bundle.stage(out)
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
-            for width,height in ((1366,768),(720,600)):
+            for width,height in ((1366,768),(720,600),(390,844)):
                 page=browser.new_page(viewport={"width":width,"height":height})
                 errors=[]
                 page.on("pageerror",lambda error:errors.append(str(error)))
@@ -83,11 +83,13 @@ def main():
                 state=snapshot()
                 state["graph"]["capabilities"]["supportedOps"] += [
                     "LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
+                state["graph"]["channels"][0]["fxRackBypassed"]=False
                 state["graph"]["channels"][0]["inserts"].append({
                     "id":INSTANCE,"catalogId":ID,"name":"Harmony","bypassed":False})
                 state["mixerSession"]["channels"]=copy.deepcopy(
                     state["graph"]["channels"])
                 emit(page,"arMixConsoleSnapshot",state)
+                if width<=500:page.locator("#bankSelect").select_option("0")
                 strip=page.locator('#tracks .strip[data-id="1"]')
                 row=strip.locator(
                     '.fxslot-row[data-insert-id="harmony-native-1"]')
@@ -102,6 +104,20 @@ def main():
                 assert page.locator("#mxHKeyReadout").inner_text()=="C"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
+                close=page.locator("#mxHClose")
+                power=page.locator("#mxHPower")
+                # This is the EXACT same shared CSS, SVG-less X and header
+                # Power material used by both native EQ and Compressor.
+                closeSkin=close.evaluate("""el=>{
+                  const s=getComputedStyle(el),x=getComputedStyle(el,'::after');
+                  return {w:s.width,h:s.height,icon:x.width,glyph:s.fontSize};
+                }""")
+                assert closeSkin=={"w":"24px","h":"24px","icon":"12px","glyph":"0px"},closeSkin
+                assert power.evaluate("(el)=>getComputedStyle(el).width")=="26px"
+                assert power.get_attribute("data-fx-state")=="on"
+                assert power.get_attribute("aria-pressed")=="true"
+                assert not power.is_disabled()
+                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
                 page.locator('[data-guide-mode="1"]').click()
                 edit=last_action(page,"nativeHarmonySetSettings")
                 assert edit["settings"]["guideMode"]==1
@@ -143,6 +159,26 @@ def main():
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
+                # Power is driven by accepted native graph bypass, not local
+                # DOM optimism, in both Manual and Music modes.
+                state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+                emit(page,"arMixConsoleSnapshot",state)
+                page.wait_for_function(
+                    "()=>document.querySelector('#mxHPower')?.dataset.fxState==='off'")
+                assert power.get_attribute("aria-pressed")=="false"
+                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(233, 155, 159)"
+                state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+                state["graph"]["channels"][0]["fxRackBypassed"]=True
+                emit(page,"arMixConsoleSnapshot",state)
+                page.wait_for_function(
+                    "()=>document.querySelector('#mxHPower')?.dataset.fxState==='rack-off'")
+                assert power.is_disabled()
+                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(240, 196, 131)"
+                state["graph"]["channels"][0]["fxRackBypassed"]=False
+                emit(page,"arMixConsoleSnapshot",state)
+                page.wait_for_function(
+                    "()=>document.querySelector('#mxHPower')?.dataset.fxState==='on'")
+                assert not power.is_disabled()
                 # A slow prior Music readback must never roll LCD back to Am.
                 readback(page,state,selected,9,1,detected=(9,1),
                          request=old_poll)
@@ -154,9 +190,18 @@ def main():
                 assert editor.evaluate(
                     "(el)=>el.scrollWidth<=el.clientWidth+1"),"horizontal clipping"
                 editor.screenshot(path=f"arsonmix-native-harmony-editor-{width}.png")
+                if width==1366:
+                    rectClose=close.bounding_box()
+                    assert rectClose
+                    page.mouse.move(rectClose["x"]+12,rectClose["y"]+12)
+                    page.mouse.down()
+                    bg=close.evaluate("(el)=>getComputedStyle(el).backgroundImage")
+                    assert "204, 71, 83" in bg or "152, 42, 54" in bg,bg
+                    page.mouse.up()
+                    assert editor.is_hidden(),"Harmony Close button failed"
                 page.close()
             browser.close()
-    print("PASS Harmony native editor: stable LCD, Music/Manual ACK, throttled readback, two viewports")
+    print("PASS Harmony native editor: stable LCD, Music/Manual ACK, throttled readback, three viewports")
 
 if __name__=="__main__":
     main()
