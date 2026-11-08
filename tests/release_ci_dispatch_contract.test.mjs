@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReleaseCommand, trustedReleaseComment, releaseDispatch } from '../scripts/release_ci_dispatch.mjs';
+import { parseReleaseCommand, parsePortCommand, trustedReleaseComment, releaseDispatch, portDispatch } from '../scripts/release_ci_dispatch.mjs';
 
 const SHA='a'.repeat(40),TAG='v0.5.0-alpha.2',BRANCH='releases/alpha/'+TAG;
 const ev=(body='/arsonmix-release '+TAG+' '+SHA)=>({
@@ -74,4 +74,36 @@ test('Already running/successful does not run twice; failed same SHA requires so
   const x=fakeApi({runs:[{status:'completed',conclusion:'failure',head_sha:SHA}]});
   await assert.rejects(releaseDispatch({event:ev(),api:x.api}),/RELEASE_FAILED_SAME_SHA/);
   assert.equal(x.calls.some(c=>c.method==='POST'),false);
+});
+
+test('Cross-platform command validates OS, source branch and immutable SHA',async()=>{
+  const cmd='/arsonmix-port linux feat/juce-linux-host '+SHA;
+  assert.deepEqual(parsePortCommand(cmd),
+    {platform:'linux',branch:'feat/juce-linux-host',sha:SHA});
+  assert.equal(parsePortCommand('/arsonmix-port macos ../private '+SHA),null);
+  assert.equal(parsePortCommand('/arsonmix-port windows main '+SHA),null);
+  const event=ev(cmd);
+  const calls=[];
+  const api=async(path,method='GET',data)=>{
+    calls.push({path,method,data});
+    if(path==='/git/ref/heads/feat/juce-linux-host')
+      return {ref:'refs/heads/feat/juce-linux-host',object:{sha:SHA}};
+    if(path.startsWith('/issues/450/comments'))return [];
+    if(path.endsWith('/dispatches'))return null;
+    throw Error('Unexpected path '+path);
+  };
+  const r=await portDispatch({event,api});
+  assert.equal(r.kind,'dispatched');
+  assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.data),[{
+    ref:'feat/juce-linux-host',
+    inputs:{platform:'linux',source_branch:'feat/juce-linux-host',expected_sha:SHA}
+  }]);
+  const dup={...event,comment:{...event.comment,id:102}};
+  const prev={...event.comment,id:100};
+  const noSecond=await portDispatch({event:dup,api:async(path,method)=>{
+    if(path.startsWith('/git/ref/'))return {ref:'refs/heads/feat/juce-linux-host',object:{sha:SHA}};
+    if(path.includes('/comments?'))return [prev];
+    if(method==='POST')throw Error('Unexpected duplicate expensive build');
+  }});
+  assert.equal(noSecond.kind,'skipped');
 });
