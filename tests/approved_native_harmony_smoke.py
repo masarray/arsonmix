@@ -169,9 +169,8 @@ def main():
                 page.wait_for_function("""()=>{
                     const g=document.querySelector('.mx-harm-note[data-key="7"]');
                     const c=document.querySelector('.mx-harm-note[data-key="0"]');
-                    return g&&c&&parseFloat(getComputedStyle(g).fontSize)>=11.4
-                        &&parseFloat(getComputedStyle(g).fontSize)>
-                          parseFloat(getComputedStyle(c).fontSize);
+                    return g&&c&&parseFloat(getComputedStyle(g).fontSize)>
+                          parseFloat(getComputedStyle(c).fontSize)+1.0;
                 }""")
                 geometry=note_g.evaluate("""e=>{
                     const s=getComputedStyle(e);
