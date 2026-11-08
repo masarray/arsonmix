@@ -145,7 +145,7 @@ public:
                     armed_=false;
                 }
             }
-            float echoL=0.f,echoR=0.f;
+            float echoL=0.f,echoR=0.f,activeTapGain=0.f;
             for(auto& voice:voices_) {
                 if(voice.copying)copyFrozenChunk(voice);
                 if(!voice.playing)continue;
@@ -167,6 +167,7 @@ public:
                     const auto p=static_cast<std::size_t>(offset);
                     const float gain=voice.repeatGains[slot]*std::max(0.f,ramp);
                     echoL+=voice.freezeL[p]*gain;echoR+=voice.freezeR[p]*gain;
+                    activeTapGain+=gain;
                 }
                 const auto end=voice.repeatStarts[
                     static_cast<std::size_t>(voice.active.settings.repeats-1)]
@@ -179,7 +180,11 @@ public:
             duck_=duck_*duckCoeff_+duckTarget*(1.f-duckCoeff_);
             wetSmoothed_=wetSmoothed_*duckCoeff_+
                 settings_.settings.wet*(1.f-duckCoeff_);
-            const float echoGain=wetSmoothed_*duck_;
+            // Concert-safe overlap headroom: many closely spaced taps,
+            // including two phrases, must not multiply the wet peak by 6x.
+            // No attenuation for ordinary nonoverlapping delays.
+            const float echoGain=(wetSmoothed_*duck_)/
+                std::max(1.f,activeTapGain*wetSmoothed_);
             left[i]=dryL+echoL*echoGain;
             if(!mono)right[i]=dryR+echoR*echoGain;
         }
