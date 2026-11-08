@@ -372,7 +372,7 @@
  color:#8edfed;background:#263f4f;border:1px solid #527585;
  border-radius:4px;padding:7px 9px;white-space:nowrap;cursor:help}
 @media(max-width:850px){
- .mx-comp{left:clamp(7px,3vw,20px);width:min(795px,calc(100vw - 14px))}
+ .mx-comp{left:7px;width:min(795px,calc(100vw - 14px))}
  .mx-comp-controls{grid-template-columns:118px minmax(0,1.45fr) minmax(0,1fr)}
  .mx-comp-display{grid-template-columns:minmax(0,1fr) 83px}
  .mx-comp-right{padding-left:9px}
