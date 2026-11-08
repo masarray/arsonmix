@@ -55,6 +55,7 @@ static void lockTempo(int bpm,bool hats=false) {
     check(state.tempo.locked);
     check(std::abs(state.tempo.bpm-bpm)<=3.1f);
     check(state.tempo.confidence>=.28f);
+    check(state.tempo.phaseLocked && state.tempo.phaseConfidence>=.50f);
     check(state.tempo.beatAnchorTick>0);
     check(state.tempo.beatAnchorFrame>0);
     check(state.tempo.observationFrame>state.tempo.beatAnchorFrame);
@@ -136,6 +137,7 @@ static void actualGraphSourcePcm() {
     auto state=graph.pollMusicTempo(epoch,1);
     check(state.active&&state.source==music);
     check(state.tempo.locked&&std::abs(state.tempo.bpm-120.f)<=3.f);
+    check(state.tempo.phaseLocked&&state.tempo.phaseConfidence>=.50f);
     check(state.tempo.beatAnchorFrame>0 &&
           state.tempo.beatAnchorFrame<=100000);
     check(state.tempo.observationFrame>=state.tempo.beatAnchorFrame);
@@ -147,6 +149,17 @@ static void actualGraphSourcePcm() {
     state=graph.pollMusicTempo(epoch,2);
     check(state.active&&state.source==music);
     check(!graph.pollMusicTempo(epoch,1).active);
+    const auto newGraphFx=[&](ChannelId,float*,float*,int n) noexcept {
+        const auto block=NativeBeatFrameScope::current();
+        check(block.valid && block.epoch==epoch &&
+              block.revision==2 && block.startFrame==100000 && n==100);
+    };
+    noHeap.store(true,std::memory_order_release);
+    const bool next=graph.render(epoch,physical,1,
+        outL.data(),outR.data(),100,false,newGraphFx);
+    noHeap.store(false,std::memory_order_release);
+    check(next);
+    check(!NativeBeatFrameScope::current().valid);
     graph.unpublish();
     graph.pollRetirement();
 }
