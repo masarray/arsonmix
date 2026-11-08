@@ -797,7 +797,48 @@ static void verifyGroupMuteAffectsRealNativePcm() {
     assert(render()&&near(l[63],audible,1e-4f));
 }
 
+static void verifyNativeDeleteTrackRetainsUnrelatedWires() {
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"TRACK A",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"TRACK B",ProcessingFormat::stereo),
+        add(2,ChannelRole::input,"TRACK C",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);
+    assert(made.ok()&&made.createdIds.size()==4);
+    const auto a=made.createdIds[0],b=made.createdIds[1],
+               c=made.createdIds[2],main=made.createdIds[3];
+    const std::array<ChannelEdit,3> wires{
+        output(a,b),output(b,main),output(c,main)};
+    assert(roster.edit(1,wires).ok());
+    const auto before=roster.revision();
+    assert(roster.removeInputAndDisconnect(before,main).fault==
+           ChannelEditFault::invalidValue);
+    assert(roster.removeInputAndDisconnect(before+1,b).fault==
+           ChannelEditFault::staleRevision);
+    assert(roster.size()==4&&roster.revision()==before);
+    const auto deleted=roster.removeInputAndDisconnect(before,b);
+    assert(deleted.ok()&&roster.size()==3&&!roster.find(b));
+    assert(roster.find(a)&&roster.find(c)&&roster.find(main));
+    // Source A remains present, but its original output cable to B is
+    // removed. C's unrelated MAIN cable remains live with its identity.
+    assert(roster.find(a)->sends.empty());
+    assert(roster.find(c)->sends.size()==1);
+    assert(roster.find(c)->sends.front().destination==main);
+    DynamicGraphRequest route;
+    route.maxFrames=64;route.physicalInputs=1;
+    route.sources={{c,0,-1,false}};
+    DynamicPreparedMixerBlock block;
+    DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(roster,route,block,error));
+    assert(block.channelCount()==3);
+    assert(roster.removeInputAndDisconnect(roster.revision(),b).fault==
+           ChannelEditFault::missingChannel);
+    assert(roster.revision()==before+1);
+}
+
 int main() {
+    verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();
     verifySourceOnlyParallelMainVsExclusivePrimaryPcm();
     verifyHeldDragIntermediatePcmOnOriginalChannels();

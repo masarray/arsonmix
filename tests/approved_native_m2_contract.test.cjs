@@ -429,6 +429,37 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
  assert.match(lab,/nativeStructureLive_=true; \/\/ M4 source roster no longer authoritative/);
  assert.match(engine,/NATIVE_SOURCE_PUBLICATION_EXCEPTION/);
 });
+test("native right-click track deletion and vendor-specific Orbit are graph-authoritative",()=>{
+ const menu=read("web/approved-native-context-menu.js");
+ const bridge=read("web/approved-native-bridge.js");
+ const host=read("src/Main.cpp");
+ const lab=read("src/LiveDryRoutingLab.h");
+ const roster=read("engine/core/DynamicChannelRoster.h");
+ const fxBank=read("engine/core/DynamicChannelFxLeaseBank.h");
+ const installer=read("scripts/build_approved_native_gui.py");
+ assert.match(menu,/document\.addEventListener\("contextmenu"/);
+ assert.match(menu,/e\.preventDefault\(\)/);
+ assert.match(menu,/\.strip-identity-top/);
+ assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
+ assert.match(menu,/Confirm Delete Track/);
+ assert.match(menu,/requestDeleteTrack\(track\)/);
+ assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
+ assert.match(bridge,/action:"routingNativeTrackDelete"/);
+ assert.match(bridge,/arMixNativeTrackDeleteAck/);
+ assert.match(bridge,/function finishNativeTrackDelete\(next\)/);
+ assert.match(bridge,/pending\.acked/);
+ assert.match(bridge,/action:kind==="inspect"\?"routingNativeOrbitInspect"/);
+ assert.match(host,/engine_\.removeNativeInputChannel\(ep,rev,roster,/);
+ assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
+ assert.match(host,/nativeOrbitLease_/);
+ assert.match(host,/arMixNativeOrbitState/);
+ assert.match(lab,/removeNativeInputChannel/);
+ assert.match(lab,/request\.sources/);
+ assert.match(roster,/removeInputAndDisconnect/);
+ assert.match(fxBank,/reuseWithoutChannel/);
+ assert.match(installer,/approved-native-context-menu\.js/);
+});
+
 test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");
