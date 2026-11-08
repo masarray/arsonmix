@@ -37,6 +37,7 @@ panel.innerHTML=[
  '<div class="topline"><div class="field"><label for="vtBpm">TEMPO · BPM</label><input id="vtBpm" type="number" min="60" max="200" step="1"></div>',
  '<div class="field"><label for="vtDivision">BEAT</label><select id="vtDivision"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select></div>',
  '<div class="field"><label for="vtRepeats">REPEATS</label><input id="vtRepeats" type="number" min="1" max="6" step="1"></div></div>',
+ '<div class="music-source"><label for="vtMusicSource">MUSIC TEMPO SOURCE</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">Manual BPM fallback</span></div>',
  '<div class="manual"><button id="vtThrow" class="throw" type="button">THROW</button><button id="vtTap" class="tap" type="button">TAP BPM</button></div>',
  '<div class="hint" id="vtHint">Native DSP · waiting for accepted channel</div>',
  '<details class="detail"><summary>Phrase & echo shaping</summary><div class="ranges" id="vtRanges"></div></details>',
@@ -54,6 +55,7 @@ for(const [key,[title,unit,step]] of Object.entries(fields)){
 }
 let current=null,accepted=defaults(),draft=defaults(),pending=null,
  readId="",readSent=0,seq=1,taps=[],windowDrag=null;
+let tempoPending=null,musicSource="0";
 const context=()=>{
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const fx=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[current?.slot];
@@ -62,6 +64,31 @@ const context=()=>{
   deviceEpoch:state.device.epoch,graphRevision:state.graph.revision};
 };
 const hint=text=>{$("vtHint").textContent=text;};
+function refreshMusicChannels(){
+ const state=snapshot(),ctx=context(),selector=$("vtMusicSource");
+ const selected=tempoPending?.source||musicSource;
+ const candidates=(state?.graph?.channels||[]).filter(ch=>
+  ch&&ch.id&&String(ch.id)!==String(ctx?.channelId)&&
+  ["INPUT","GROUP","FX_RETURN","FXRETURN"].includes(
+   String(ch.role||"").toUpperCase().replaceAll("-","_")));
+ selector.replaceChildren(new Option("Manual / TAP","0"));
+ for(const ch of candidates)selector.add(new Option(
+  String(ch.name||ch.id).slice(0,45),String(ch.id)));
+ if([...selector.options].some(x=>x.value===String(selected)))
+  selector.value=String(selected);
+ else selector.value="0";
+ selector.disabled=!ctx||!native()||Boolean(tempoPending);
+}
+function renderMusicStatus(tempo){
+ const label=$("vtMusicStatus");
+ if(tempoPending){label.textContent="Validating music channel…";return;}
+ if(musicSource==="0"){label.textContent="Manual BPM / TAP";return;}
+ if(!tempo?.musicSourceActive){label.textContent="Source stale · manual fallback";return;}
+ if(!tempo.musicLocked){label.textContent="Listening for beat · manual fallback";return;}
+ const confidence=Math.round(Math.max(0,Math.min(1,Number(tempo.musicConfidence)||0))*100);
+ label.textContent="AUTO "+Math.round(Number(tempo.musicBpm))+
+  " BPM · "+confidence+"% confidence";
+}
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=state?.graph?.channels?.find(ch=>ch.id===id),fx=lane?.inserts?.[current?.slot];
