@@ -71,10 +71,16 @@ int main(){
     juce::MemoryBlock saved;
     live->getStateInformation(saved);
     ChannelHarmonyProcessor restored;
+    // Production NativeMixerSessionFxRestore prepares first, then restores.
+    // Source must be armed at the actual DSP input, not just in accepted UI.
+    restored.prepareToPlay(48000.,128);
+    assert(restored.isReady());
     assert(restored.restoreUnpublishedState(saved.getData(),
                                             static_cast<int>(saved.getSize())));
     assert(restored.acceptedSettings().guideMode==1);
     assert(restored.acceptedSettings().guideChannelId==music.value);
+    assert(restored.musicSourceChannel()==music.value);
+    assert(restored.observedMusicKey()==-1); // no stale old-device estimate
     // Version-1 state still loads as Manual Key with no source binding.
     juce::MemoryBlock old;
     juce::MemoryOutputStream writer(old,false);
@@ -83,10 +89,13 @@ int main(){
     writer.writeBool(false);writer.writeFloat(.5f);writer.writeFloat(.5f);
     writer.writeFloat(.5f);writer.writeFloat(0.f);
     ChannelHarmonyProcessor migrated;
+    migrated.prepareToPlay(48000.,128);
+    assert(migrated.isReady());
     assert(migrated.restoreUnpublishedState(old.getData(),
                                            static_cast<int>(old.getSize())));
     assert(migrated.acceptedSettings().guideMode==0);
     assert(migrated.acceptedSettings().guideChannelId==0);
+    assert(migrated.musicSourceChannel()==0);
     // NOTE: this test verifies real PCM to DSP, not real ASIO ear monitoring
     // or polyphonic pitch-transposition quality.
 }
