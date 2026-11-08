@@ -30,6 +30,7 @@ public:
         float attackCoefficient=0.0f;
         float releaseCoefficient=0.0f;
         float makeupGain=1.0f;
+        float kneeStartLinear=1.0f; // control precomputed detector gate
         bool valid=false;
     };
     static bool validSettings(const CompressorSettings& s) noexcept {
@@ -55,7 +56,11 @@ public:
         // Compute output makeup off realtime, then slew the LINEAR gain.
         next.makeupGain=static_cast<float>(
             std::exp(static_cast<double>(settings.makeupDb)*0.11512925464970229));
-        next.valid=std::isfinite(next.makeupGain);
+        next.kneeStartLinear=static_cast<float>(std::exp(
+            static_cast<double>(settings.thresholdDb-settings.kneeDb*.5f)*
+            0.11512925464970229));
+        next.valid=std::isfinite(next.makeupGain)&&
+                   std::isfinite(next.kneeStartLinear)&&next.kneeStartLinear>0.f;
         output=next;
         return true;
     }
@@ -65,6 +70,7 @@ public:
         sampleRate_=sampleRate;
         fadeSamples_=std::max(1,static_cast<int>(sampleRate*0.008));
         current_=target_=packet;
+        kneeGuardLinear_=packet.kneeStartLinear;
         envelope_=0.f;
         gainReductionDb_=0.f;
         rampRemaining_=0;
@@ -75,6 +81,7 @@ public:
         PreparedEdit edit{};
         if(!ready_||!prepareEdit(settings,sampleRate_,edit))return false;
         current_=target_=edit;
+        kneeGuardLinear_=edit.kneeStartLinear;
         envelope_=0.f;
         gainReductionDb_=0.f;
         rampRemaining_=0;
@@ -85,8 +92,12 @@ public:
            !validSettings(edit.settings)||!std::isfinite(edit.attackCoefficient)||
            !std::isfinite(edit.releaseCoefficient)||
            !std::isfinite(edit.makeupGain)||edit.makeupGain<=0.f||
+           !std::isfinite(edit.kneeStartLinear)||edit.kneeStartLinear<=0.f||
            edit.attackCoefficient<0.f||edit.attackCoefficient>=1.f||
            edit.releaseCoefficient<0.f||edit.releaseCoefficient>=1.f)return false;
+        // During a parameter ramp the minimum of all endpoints is a safe
+        // conservative bound. Never skip legitimate soft-knee compression.
+        kneeGuardLinear_=std::min(kneeGuardLinear_,edit.kneeStartLinear);
         target_=edit;
         rampRemaining_=fadeSamples_;
         return true;
@@ -110,7 +121,9 @@ public:
             if(envelope_<1.0e-25f)envelope_=0.f; // denormal guard
             const auto& s=current_.settings;
             float reduction=0.f;
-            if(s.ratio>1.f&&envelope_>1.0e-10f) {
+            // Quiet samples never require a costly log/exp. The gate is
+            // exact after each edit and conservative throughout its slew.
+            if(s.ratio>1.f&&envelope_>kneeGuardLinear_) {
                 const float above=20.f*std::log10(envelope_)-s.thresholdDb;
                 const float strength=1.f-1.f/s.ratio;
                 if(s.kneeDb<0.0001f)reduction=std::max(0.f,above)*strength;
@@ -140,7 +153,7 @@ public:
 private:
     PreparedEdit current_{},target_{};
     double sampleRate_=0.;
-    float envelope_=0.f,gainReductionDb_=0.f;
+    float envelope_=0.f,gainReductionDb_=0.f,kneeGuardLinear_=1.f;
     int rampRemaining_=0,fadeSamples_=1;
     bool ready_=false;
     void advance() noexcept {
@@ -155,7 +168,10 @@ private:
         slide(current_.attackCoefficient,target_.attackCoefficient);
         slide(current_.releaseCoefficient,target_.releaseCoefficient);
         slide(current_.makeupGain,target_.makeupGain);
-        if(--rampRemaining_==0)current_=target_;
+        if(--rampRemaining_==0){
+            current_=target_;
+            kneeGuardLinear_=target_.kneeStartLinear;
+        }
     }
 };
 } // namespace armix::builtin_fx
