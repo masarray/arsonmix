@@ -5,7 +5,6 @@ An accepted EQ uses the same rack slot, ChannelId, and FX control as VST3.
 CATALOG="armix.builtin.channel-eq.v1"
 SCRIPT='<script defer src="assets/mixer-native-peq.js?v=eq-graph1"></script>'
 HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony1"></script>'
-HARMONY_CSS='<link rel="stylesheet" href="assets/mixer-native-harmony.css?v=harmony1">'
 PICKER_HEAD="function renderFastPicker(){"
 PICKER_FN="""function insertChosenNativeEq(){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
@@ -95,5 +94,4 @@ def apply_native_peq(html: str)->str:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
     html=html.replace('</body>',SCRIPT+'\n'+HARMONY_SCRIPT+'\n</body>',1)
-    html=html.replace('</head>',HARMONY_CSS+'\n</head>',1)
     return html
