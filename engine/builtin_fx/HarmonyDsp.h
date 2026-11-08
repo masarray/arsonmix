@@ -12,10 +12,16 @@ namespace armix::harmony {
 struct Settings {
     int key=0, scale=0, voices=3; // C=0..B=11; 0=major, 1=natural minor; 2..4 voices
     bool correction=false;
+    // Manual is always the trusted fallback. Music follows another accepted
+    // ChannelId only after stable chroma confidence (never a PCM route).
+    int guideMode=0; // 0=Manual Key, 1=Music Track
+    std::uint64_t guideChannelId=0;
     float wet=0.45f, space=0.60f, color=0.50f, gainDb=0.f;
 };
 inline bool valid(const Settings& s) noexcept {
     return s.key>=0&&s.key<12&&s.scale>=0&&s.scale<=1&&
+      s.guideMode>=0&&s.guideMode<=1&&
+      (s.guideMode==0?s.guideChannelId==0:s.guideChannelId>0)&&
       s.voices>=2&&s.voices<=4&&std::isfinite(s.wet)&&s.wet>=0&&s.wet<=1&&
       std::isfinite(s.space)&&s.space>=0&&s.space<=1&&
       std::isfinite(s.color)&&s.color>=0&&s.color<=1&&
@@ -80,6 +86,7 @@ public:
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
+        guideKey_=-1;guideScale_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms continuous control ramp
         processed_=false;settings_=Settings{};
@@ -111,8 +118,14 @@ public:
         // Caller publishes only prepareSettings()-validated packets.
         // A scale/key change must not inherit the previous tonal quantizer
         // candidate or remain held on a now-out-of-scale note.
-        if(next.settings.key!=settings_.key||next.settings.scale!=settings_.scale){
+        if(next.settings.key!=settings_.key||next.settings.scale!=settings_.scale||
+           next.settings.guideMode!=settings_.guideMode||
+           next.settings.guideChannelId!=settings_.guideChannelId){
             candidateNote_=-1;currentNote_=-1;noteHold_=0;voiced_=false;
+        }
+        if(next.settings.guideMode!=settings_.guideMode||
+           next.settings.guideChannelId!=settings_.guideChannelId){
+            guideKey_=-1;guideScale_=-1;
         }
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
@@ -134,6 +147,23 @@ public:
     bool setSettings(const Settings& next) noexcept {
         PreparedSettings prepared;
         return prepareSettings(next,prepared)&&applyPreparedSettings(prepared);
+    }
+    // Called only on the existing audio callback from a separately selected
+    // source channel. Invalid/ambiguous music always restores Manual Key.
+    void setGuideKey(int key,int scale) noexcept {
+        if(settings_.guideMode!=1){key=-1;scale=-1;}
+        if(key<0||key>=12||scale<0||scale>1){key=-1;scale=-1;}
+        const int previousKey=effectiveKey(),previousScale=effectiveScale();
+        guideKey_=key;guideScale_=scale;
+        if(previousKey!=effectiveKey()||previousScale!=effectiveScale()){
+            currentNote_=-1;candidateNote_=-1;noteHold_=0;voiced_=false;
+        }
+    }
+    int effectiveKey() const noexcept {
+        return settings_.guideMode==1&&guideKey_>=0?guideKey_:settings_.key;
+    }
+    int effectiveScale() const noexcept {
+        return settings_.guideMode==1&&guideScale_>=0?guideScale_:settings_.scale;
     }
     const Settings& settings() const noexcept{return settings_;}
     int latencySamples() const noexcept{return latency_;}
@@ -278,11 +308,12 @@ private:
         if(!std::isfinite(midi)||midi<31.f||midi>96.f){
             voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
-        int degree=nearestDegree(midi,settings_.key,settings_.scale);
-        int note=noteAt(degree,settings_.key,settings_.scale);
+        const int activeKey=effectiveKey(),activeScale=effectiveScale();
+        int degree=nearestDegree(midi,activeKey,activeScale);
+        int note=noteAt(degree,activeKey,activeScale);
         if(!pitchChangeHasMargin(currentNote_,note,midi)){
             note=currentNote_;
-            degree=nearestDegree(static_cast<float>(note),settings_.key,settings_.scale);
+            degree=nearestDegree(static_cast<float>(note),activeKey,activeScale);
         }
         if(note!=candidateNote_){candidateNote_=note;noteHold_=1;}
         // Saturate the hold counter: a multi-hour sustained note must not
@@ -295,7 +326,7 @@ private:
         constexpr std::array<int,4> intervals{{2,4,-2,6}};
         for(int v=0;v<maxVoices;++v){
             const int target=noteAt(degree+intervals[static_cast<std::size_t>(v)],
-                                    settings_.key,settings_.scale);
+                                    activeKey,activeScale);
             targetRatio_[static_cast<std::size_t>(v)]=std::clamp(
                 std::pow(2.f,(target-midi)/12.f),0.50f,2.0f);
         }
@@ -305,6 +336,7 @@ private:
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
     int downCounter_=0,detectCounter_=0;
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
+    int guideKey_=-1,guideScale_=-1;
     bool voiced_=false;float voicedGain_=0.f;
     bool processed_=false;
     float smoothingAlpha_=1.f;
