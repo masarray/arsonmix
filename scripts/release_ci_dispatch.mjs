@@ -16,6 +16,13 @@ export function parsePortCommand(body) {
   if (!m || m[2].includes('..') || m[2].includes('//') || m[2].endsWith('/')) return null;
   return {platform:m[1],branch:m[2],sha:m[3]};
 }
+// One explicit OS upload after an identical-source Windows prerelease exists.
+// No matrix, no third-party code signing, no tag creation from this command.
+export function parsePublicPortCommand(body) {
+  const m=/^\\/arsonmix-publish (linux|macos) (v\\d+\\.\\d+\\.\\d+-alpha\\.\\d+) ([0-9a-f]{40})$/.exec(
+    typeof body==='string'?body.trim():'');
+  return m?{platform:m[1],tag:m[2],sha:m[3],branch:'releases/alpha/'+m[2]}:null;
+}
 export function trustedReleaseComment(event) {
   return event?.repository?.full_name===REPO && event?.issue?.number===CONTROL_ISSUE
     && !event.issue.pull_request
@@ -81,7 +88,8 @@ export async function releaseDispatch({event,api}) {
 
 export async function portDispatch({event,api}) {
   if (!trustedReleaseComment(event)) return {kind:'ignored'};
-  const cmd=parsePortCommand(event.comment.body);
+  const publish=parsePublicPortCommand(event.comment.body);
+  const cmd=publish || parsePortCommand(event.comment.body);
   if (!cmd) return {kind:'ignored'};
   const ref=await api('/git/ref/heads/'+cmd.branch);
   if (ref?.ref!=='refs/heads/'+cmd.branch || ref?.object?.sha!==cmd.sha)
@@ -95,13 +103,43 @@ export async function portDispatch({event,api}) {
   }
   if(older.some(c=>c.id<event.comment.id && c.user?.login==='masarray'
       && c.author_association==='OWNER'
-      && parsePortCommand(c.body)?.platform===cmd.platform
-      && parsePortCommand(c.body)?.sha===cmd.sha))
-    return {kind:'skipped',reason:'same platform and SHA already requested',...cmd};
-  // Separate workflow is deliberately manual-dispatch-only: its preflight
-  // fails cheaply on current Windows-only source before any macOS runner.
+      && (publish?parsePublicPortCommand(c.body)?.platform===cmd.platform
+                  &&parsePublicPortCommand(c.body)?.tag===cmd.tag
+              :parsePortCommand(c.body)?.platform===cmd.platform
+                  &&parsePortCommand(c.body)?.sha===cmd.sha)))
+    return {kind:'skipped',reason:'owner already requested this OS/source',...cmd};
+  if(publish) {
+    // Inspect actual Windows release BEFORE any macOS/Linux billed runner.
+    let release;
+    try { release=await api('/releases/tags/'+cmd.tag); }
+    catch(err) {
+      if(String(err).includes('GITHUB_API_404'))throw Error('PORT_WINDOWS_RELEASE_REQUIRED');
+      throw err;
+    }
+    if(release?.draft || release?.tag_name!==cmd.tag || release?.target_commitish!==cmd.sha)
+      throw Error('PORT_RELEASE_SOURCE_SHA_MISMATCH');
+    if(!release?.assets?.some(a=>a.name?.endsWith('Windows-x64-Setup.exe')
+                                    &&a.state==='uploaded'))
+      throw Error('PORT_WINDOWS_ASSET_MISSING');
+    const osPrefix='ArSonMix-'+cmd.tag+(cmd.platform==='linux'?'-Linux-':'-macOS-');
+    if(release.assets.some(a=>a.name?.startsWith(osPrefix)))
+      return {kind:'skipped',reason:'this OS already published',...cmd};
+  }
+  // Workflow run-name includes platform+SHA. Avoid repeats even if an owner
+  // posts a differently worded request or Actions already started.
+  const path='/actions/workflows/crossplatform-native-qualification.yml/runs'
+    +'?event=workflow_dispatch&branch='+encodeURIComponent(cmd.branch)+'&per_page=100';
+  const runs=(await api(path)).workflow_runs||[];
+  const previous=runs.filter(r=>r.head_sha===cmd.sha
+    && String(r.display_title||'').includes('Port '+cmd.platform+' '));
+  if(previous.some(r=>r.status!=='completed'))
+    return {kind:'skipped',reason:'OS qualification already running',...cmd};
+  if(previous.some(r=>r.conclusion==='success'))
+    return {kind:'skipped',reason:'OS source already qualified',...cmd};
+  if(previous.length)throw Error('PORT_FAILED_SAME_SHA_REQUIRES_FIX_NOT_RETRY');
   await api('/actions/workflows/crossplatform-native-qualification.yml/dispatches','POST',
-    {ref:cmd.branch,inputs:{platform:cmd.platform,source_branch:cmd.branch,expected_sha:cmd.sha}});
+    {ref:cmd.branch,inputs:{platform:cmd.platform,source_branch:cmd.branch,
+                             expected_sha:cmd.sha,release_tag:publish?cmd.tag:''}});
   return {kind:'dispatched',...cmd};
 }
 
@@ -123,7 +161,7 @@ async function main() {
     if(!res.ok)throw Error('GITHUB_API_'+res.status+' '+path);
     return res.status===204?null:res.json();
   };
-  const isPort=!!parsePortCommand(event.comment.body);
+  const isPort=!!(parsePortCommand(event.comment.body)||parsePublicPortCommand(event.comment.body));
   const result=isPort?await portDispatch({event,api}):
     await releaseDispatch({event,api});
   console.log('SMART_'+(isPort?'PORT_':'RELEASE_')+result.kind.toUpperCase()+
