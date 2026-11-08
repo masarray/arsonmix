@@ -114,6 +114,21 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("if(power.dataset.fxState===fxState)return;",self.ui)
         self.assertIn(".mx-peq-close,.mx-comp-close,.mx-harm-close",chrome)
         self.assertIn(".mx-peq-global,.mx-comp-power,.mx-harm-power",chrome)
+        # Reference-svg visual direction: flat satin fill, short drop shadow,
+        # fine highlight edge. The knob's static groove and data-bound light
+        # ring share one --dial-sweep variable; don't add JS timers/canvas.
+        self.assertIn(".mx-harm-note.active{",self.css)
+        self.assertIn("border-radius:50%;font-size:11.5px",self.css)
+        self.assertIn("transform:translate(-50%,-50%) scale(1.08)",self.css)
+        self.assertIn("transition:transform .15s ease",self.css)
+        self.assertIn(".mx-harm-dial-face::before,.mx-harm-dial-face::after",self.css)
+        self.assertIn("conic-gradient(from 225deg",self.css)
+        self.assertIn("var(--dial-sweep,0deg)",self.css)
+        self.assertIn("const turn=(-135+ratio*270)+\"deg\",sweep=(ratio*270)+\"deg\"",self.ui)
+        self.assertIn('surface.style.setProperty("--dial-sweep",sweep)',self.ui)
+        self.assertIn('surface.style.setProperty("--dial-turn",turn)',self.ui)
+        self.assertNotIn("new AudioContext",self.ui)
+        self.assertNotIn("setInterval(",self.ui)
         self.assertNotIn(".mx-harm-power.on{",self.css)
         self.assertNotIn(".mx-harm-close:hover{",self.css)
         self.assertIn('id="mxHClose"',self.ui)
