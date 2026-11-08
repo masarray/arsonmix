@@ -16,3 +16,12 @@ The following old preview URLs are **redirect-only**, never independent mixer re
 ENGINE #266/#387 must be stitched beneath the exact **assembled** /preview/ renderer via one JUCE WebView2 native adapter, no redesign. P0 [#389](https://github.com/masarray/arsonmix/issues/389) owns native GUI integration; FAT #270 must verify Windows EXE source/asset hash and screenshot/interaction parity plus actual PCM/VST3. `node scripts/check_console_puzzle.mjs --release` is fail-closed until actual compiled GUI and one engine are verified.
 
 **The Pages UI is a simulation and not proof that hardware audio, VST3 or PCM is production-ready.**
+
+## Cloudflare custom domain
+
+The published site is Cloudflare DNS/proxy compatible; do not fork the Pages
+build or add a second UI deployment. The existing `actions/configure-pages@v5`
+reports the canonical base URL, which automatically rewrites built landing
+canonical/OG links and sitemap for either `/arsonmix/` or custom-domain `/`.
+The approved mixer assets and release catalog remain same-origin relative.
+See [Cloudflare quick setup](CLOUDFLARE_GITHUB_PAGES.md).
