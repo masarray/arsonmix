@@ -2045,6 +2045,11 @@ private:
                 juce::String(std::to_string(s.guideChannelId)));
             reply->setProperty("settings",juce::var(settings.release()));
             reply->setProperty("observedNote",processor->observedNote());
+            // Audio-published, atomic pair: exactly the key/scale used by DSP,
+            // including manual fallback during silence or uncertain music.
+            const int effective=processor->effectiveKeyCode();
+            reply->setProperty("effectiveKey",effective%12);
+            reply->setProperty("effectiveScale",effective/12);
             reply->setProperty("guideDetectedKey",processor->observedMusicKey());
             reply->setProperty("guideDetectedScale",processor->observedMusicScale());
             reply->setProperty("guideConfidence",
