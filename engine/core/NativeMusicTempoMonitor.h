@@ -144,6 +144,23 @@ public:
         config_.fetch_add(1,std::memory_order_release);
         return true;
     }
+    // CONTROL: harmless structural WIRE/FX commits should preserve a valid
+    // music source. If the selected channel disappears, fall back to manual
+    // immediately rather than capturing stale processor/graph PCM.
+    ChannelId selectedSource() const noexcept {
+        return ChannelId{source_.load(std::memory_order_relaxed)};
+    }
+    void onGraphCommitted(std::uint64_t epoch,std::uint64_t previousRevision,
+                          std::uint64_t revision,bool retained) noexcept {
+        if(!selectedSource().value)return;
+        if(!retained || epoch_.load(std::memory_order_relaxed)!=epoch ||
+           revision_.load(std::memory_order_relaxed)!=previousRevision) {
+            (void)select(ChannelId{},epoch,revision,0);
+            return;
+        }
+        revision_.store(revision,std::memory_order_relaxed);
+        config_.fetch_add(1,std::memory_order_release);
+    }
     // AUDIO: invoked once for every scheduled source channel by the existing
     // renderer's pre-FX dispatch. Only the selected ID costs per-sample work.
     void capture(ChannelId id,const float* left,const float* right,int frames,
