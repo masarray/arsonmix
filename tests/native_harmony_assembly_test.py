@@ -34,7 +34,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("arMixBuiltinHarmonyQueue",self.ui)
         self.assertIn("arMixBuiltinHarmonyAck",self.ui)
         self.assertIn("arMixBuiltinHarmonySnapshot",self.ui)
-        self.assertIn("if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id))return;",self.ui)
+        self.assertIn("if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id)){",self.ui)
         for value in ("key","scale","voices","correction","wet","space","color","gainDb"):
             self.assertIn(value,self.ui)
 
@@ -71,9 +71,13 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale",self.ui)
         self.assertIn("!Number.isInteger(snap.effectiveKey)",self.ui)
         self.assertIn("!Number.isInteger(snap.effectiveScale)",self.ui)
-        self.assertIn("if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id))return;",self.ui)
+        self.assertIn("if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id)){",self.ui)
         self.assertNotIn("displayKey=found?detectedKey",self.ui)
         self.assertNotIn("new AudioContext",self.ui)
+        self.assertIn("if(!force&&readbackRequest&&now-readbackSentAt<2500)return;",self.ui)
+        self.assertIn('snapshot(true);',self.ui)
+        self.assertIn('now-pending.startedAt>5000',self.ui)
+        self.assertIn('readbackRequest="";',self.ui)
         self.assertNotIn("setInterval(",self.ui)
 
     def test_quiet_manual_music_mode_and_selector(self):
