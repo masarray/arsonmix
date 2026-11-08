@@ -100,6 +100,22 @@ public:
     // frozen tail keeps its interval when a backing track changes tempo.
     void setMusicIntervalSamples(std::uint32_t samples) noexcept {
         musicIntervalSamples_=samples;
+        gridValid_=false; // BPM-only mode never claims a measured beat grid.
+    }
+    // AUDIO: the JUCE insert reads the one accepted ChannelId block clock
+    // and control-prepared music onset anchor. Onsets are observed in 10ms
+    // windows, so beat-phase is approximate (not sample-perfect detection).
+    // The local->graph sample mapping is taken before every FX processing
+    // block; it works even when the insert was added after playback began.
+    void setMusicBeatGrid(std::uint32_t intervalSamples,
+                          std::uint64_t anchorFrame,
+                          std::uint64_t blockStartFrame,
+                          bool locked) noexcept {
+        musicIntervalSamples_=locked?intervalSamples:0;
+        gridValid_=locked&&intervalSamples>0;
+        gridAnchorFrame_=anchorFrame;
+        gridBlockStartFrame_=blockStartFrame;
+        gridLocalStartFrame_=clock_;
     }
     // AUDIO: triggers the most recent word/phrase, preferring the latest
     // vocal end if the singer stopped within the last 700 ms.
@@ -217,6 +233,8 @@ private:
         std::uint64_t copyEnd=0,freezeCount=0;
         std::size_t copyIndex=0,sourceIndex=0;
         std::uint32_t edgeSamples=0;
+        std::uint64_t gridAnchorFrame=0,gridCueFrame=0,gridCueLocal=0;
+        bool gridValid=false;
         bool copying=false,playing=false;
     };
     bool freezeAt(std::uint64_t end) noexcept {
@@ -239,6 +257,14 @@ private:
         slot->active=settings_;
         if(musicIntervalSamples_)
             slot->active.intervalSamples=musicIntervalSamples_;
+        // Freeze the same accepted beat grid as the captured phrase.
+        // Later tempo changes, stale epochs or an unplugged MUSIC WIRE do
+        // not re-time an already accepted echo tail.
+        slot->gridValid=gridValid_;
+        slot->gridAnchorFrame=gridAnchorFrame_;
+        slot->gridCueFrame=gridBlockStartFrame_+
+            (gridValid_?clock_-gridLocalStartFrame_:0);
+        slot->gridCueLocal=clock_;
         slot->copying=true;
         ++throwCount_;
         return true;
@@ -258,7 +284,24 @@ private:
         if(voice.sourceIndex==historyL_.size())voice.sourceIndex=0;
         if(voice.copyIndex!=voice.freezeCount)return;
         voice.copying=false;
-        const auto first=std::max(clock_,voice.copyEnd+voice.active.intervalSamples);
+        std::uint64_t first=std::max(
+            clock_,voice.copyEnd+voice.active.intervalSamples);
+        if(voice.gridValid && voice.active.intervalSamples &&
+           first>=voice.gridCueLocal) {
+            const auto interval=voice.active.intervalSamples;
+            const auto globalFirst=voice.gridCueFrame+
+                (first-voice.gridCueLocal);
+            // Quantize only the echo onset, never the singer's dry PCM.
+            // Use unsigned arithmetic and bound grid correction to one
+            // subdivision, protecting against a stale/future anchor.
+            if(globalFirst>=voice.gridAnchorFrame) {
+                const auto remainder=
+                    (globalFirst-voice.gridAnchorFrame)%interval;
+                if(remainder)first+=interval-remainder;
+            } else if(voice.gridAnchorFrame-globalFirst<=interval) {
+                first+=voice.gridAnchorFrame-globalFirst;
+            }
+        }
         float amplitude=1.f;
         for(int tap=0;tap<voice.active.settings.repeats;++tap) {
             const auto slot=static_cast<std::size_t>(tap);
@@ -286,6 +329,8 @@ private:
             voice.copyIndex=voice.sourceIndex=0;
             voice.edgeSamples=0;
             voice.copying=voice.playing=false;
+            voice.gridValid=false;
+            voice.gridAnchorFrame=voice.gridCueFrame=voice.gridCueLocal=0;
             voice.repeatStarts.fill(0);voice.repeatGains.fill(0.f);
         }
         std::fill(historyL_.begin(),historyL_.end(),0.f);
@@ -301,6 +346,8 @@ private:
     float duck_=1.f,wetSmoothed_=.42f;
     double rate_=0.;
     std::uint32_t musicIntervalSamples_=0;
+    std::uint64_t gridAnchorFrame_=0,gridBlockStartFrame_=0,gridLocalStartFrame_=0;
+    bool gridValid_=false;
     unsigned throwCount_=0;
     bool armed_=false,manualInCurrentPhrase_=false,ready_=false;
 };
