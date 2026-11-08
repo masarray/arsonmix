@@ -23,6 +23,8 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - name: Validate owner/SHA release dispatcher contracts (no paid runners)
+        run: node --test tests/release_ci_dispatch_contract.test.mjs
       - name: Authorize and deduplicate exact-SHA release request
         env:
           GH_TOKEN: ${{ github.token }}
