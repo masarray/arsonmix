@@ -36,7 +36,9 @@ static void renderWindow(NativeMusicTempoMonitor& tap,int index,int period,
     l.fill(level);r.fill(level);
     // A 10ms bucket is split across 64+36 ASIO callback frames at 10kHz.
     noHeap.store(true,std::memory_order_release);
+    (void)tap.beginAudioBlock(epoch,64);
     tap.capture(ChannelId{301},l.data(),r.data(),64,epoch,revision);
+    (void)tap.beginAudioBlock(epoch,36);
     tap.capture(ChannelId{301},l.data()+64,r.data()+64,36,epoch,revision);
     noHeap.store(false,std::memory_order_release);
     if(index%8==0)(void)tap.poll(epoch,revision); // host timer, not RT
@@ -54,6 +56,8 @@ static void lockTempo(int bpm,bool hats=false) {
     check(std::abs(state.tempo.bpm-bpm)<=3.1f);
     check(state.tempo.confidence>=.28f);
     check(state.tempo.beatAnchorTick>0);
+    check(state.tempo.beatAnchorFrame>0);
+    check(state.tempo.observationFrame>state.tempo.beatAnchorFrame);
     check(state.dropped==0);
     // One second of no music must NOT produce spurious half/double BPM.
     for(int n=1100;n<1200;++n)renderWindow(tap,n,6000);
@@ -112,10 +116,17 @@ static void actualGraphSourcePcm() {
     check(graph.setMusicTempoSource(epoch,1,music,10000));
     std::array<float,128> input{},outL{},outR{};
     const float* physical[]{input.data()};
-    const auto dryFx=[](ChannelId,float*,float*,int) noexcept {};
+    int expectedTick=0;
+    const auto dryFx=[&](ChannelId,float*,float*,int n) noexcept {
+        const auto current=NativeBeatFrameScope::current();
+        check(current.valid && current.epoch==epoch &&
+              current.revision==1 && n==100);
+        check(current.startFrame==static_cast<std::uint64_t>(expectedTick)*100);
+    };
     for(int tick=0;tick<1000;++tick) {
         input.fill((tick%50)==0?.65f:0.f); // 120 BPM from real graph
         noHeap.store(true,std::memory_order_release);
+        expectedTick=tick;
         const bool rendered=graph.render(epoch,physical,1,
             outL.data(),outR.data(),100,false,dryFx);
         noHeap.store(false,std::memory_order_release);
@@ -125,6 +136,10 @@ static void actualGraphSourcePcm() {
     auto state=graph.pollMusicTempo(epoch,1);
     check(state.active&&state.source==music);
     check(state.tempo.locked&&std::abs(state.tempo.bpm-120.f)<=3.f);
+    check(state.tempo.beatAnchorFrame>0 &&
+          state.tempo.beatAnchorFrame<=100000);
+    check(state.tempo.observationFrame>=state.tempo.beatAnchorFrame);
+    check(!NativeBeatFrameScope::current().valid); // callback scope restored
     // The *same* music ChannelId survives a graph revision with no second
     // callback or preserved stale PCM pointers.
     const auto newer=graph.commit(roster,request,1,epoch,epoch,true);
