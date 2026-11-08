@@ -1,4 +1,9 @@
-# ArSonMix GitHub Pages + Cloudflare — short setup
+# ArSonMix GitHub Pages + Cloudflare — DNS-only alternative
+
+**For the Cloudflare Pages GitHub repository build setup shown in the
+Workers & Pages dashboard, use [Cloudflare Pages build instructions](CLOUDFLARE_PAGES_BUILD.md)
+instead.** This document is only for users who want to keep hosting on
+GitHub Pages and use Cloudflare DNS as a frontend.
 
 **Hosting remains GitHub Pages**, not Cloudflare Pages. Cloudflare handles DNS
 (and optionally proxy/HTTPS); no Workers, API tokens, paid signing or second CI
