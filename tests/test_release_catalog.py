@@ -84,10 +84,8 @@ class ReleaseCatalogContract(unittest.TestCase):
 
     def test_zip_first_and_backward_compatible_exe(self):
         tag = "v0.5.0-alpha.5"
-        r = release(tag, suffixes=[
-            ("Windows-x64-Setup.exe", "INSTALLER_PROVENANCE.json"),
-            ("Windows-x64-Setup.zip", "INSTALLER_PROVENANCE.json"),
-        ])
+        r = release(tag)
+        r["assets"].append(asset(tag, f"ArSonMix-{tag}-Windows-x64-Setup.zip"))
         chosen = mod.catalog([r])["platforms"]["windows"]
         self.assertEqual(chosen["name"], f"ArSonMix-{tag}-Windows-x64-Setup.zip")
         r["assets"] = [a for a in r["assets"]
@@ -103,10 +101,8 @@ class ReleaseCatalogContract(unittest.TestCase):
 
     def test_invalid_zip_cannot_displace_verified_exe(self):
         tag = "v0.5.0-alpha.5"
-        r = release(tag, suffixes=[
-            ("Windows-x64-Setup.exe", "INSTALLER_PROVENANCE.json"),
-            ("Windows-x64-Setup.zip", "INSTALLER_PROVENANCE.json"),
-        ])
+        r = release(tag)
+        r["assets"].append(asset(tag, f"ArSonMix-{tag}-Windows-x64-Setup.zip"))
         for a in r["assets"]:
             if a["name"].endswith("Windows-x64-Setup.zip"):
                 a["digest"] = "sha256:invalid"
