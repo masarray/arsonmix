@@ -837,7 +837,50 @@ static void verifyNativeDeleteTrackRetainsUnrelatedWires() {
     assert(roster.revision()==before+1);
 }
 
+static void verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm() {
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,5> create{
+        add(0,ChannelRole::input,"MIC",ProcessingFormat::stereo),
+        add(1,ChannelRole::fxReturn,"AUX 1",ProcessingFormat::stereo),
+        add(2,ChannelRole::group,"BUS 1",ProcessingFormat::stereo),
+        add(3,ChannelRole::input,"UNCHANGED",ProcessingFormat::stereo),
+        add(4,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);
+    assert(made.ok()&&made.createdIds.size()==5);
+    const auto mic=made.createdIds[0],aux=made.createdIds[1],
+        bus=made.createdIds[2],untouched=made.createdIds[3],
+        main=made.createdIds[4];
+    const std::array<ChannelEdit,4> route{
+        output(mic,aux),output(aux,bus),output(bus,main),
+        output(untouched,main)};
+    assert(roster.edit(roster.revision(),route).ok());
+    const auto initialRevision=roster.revision();
+    assert(roster.removeBusAndRestoreSources(initialRevision,main).fault==
+           ChannelEditFault::invalidValue);
+    assert(roster.removeBusAndRestoreSources(initialRevision+1,bus).fault==
+           ChannelEditFault::staleRevision);
+    assert(roster.removeBusAndRestoreSources(initialRevision,bus).ok());
+    assert(!roster.find(bus) && roster.find(aux));
+    assert(roster.find(aux)->sends.size()==1);
+    assert(roster.find(aux)->sends.front().destination==main);
+    assert(roster.removeBusAndRestoreSources(roster.revision(),aux).ok());
+    assert(!roster.find(aux) && roster.find(mic) && roster.find(untouched));
+    assert(roster.find(mic)->sends.size()==1);
+    assert(roster.find(mic)->sends.front().destination==main);
+    assert(roster.find(untouched)->sends.size()==1);
+    assert(roster.find(untouched)->sends.front().destination==main);
+    DynamicGraphRequest request;
+    request.maxFrames=64;
+    request.physicalInputs=2;
+    request.sources={{mic,0,-1,false},{untouched,1,-1,false}};
+    DynamicPreparedMixerBlock pcm;
+    DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(roster,request,pcm,error));
+    assert(pcm.channelCount()==3);
+}
+
 int main() {
+    verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();
     verifySourceOnlyParallelMainVsExclusivePrimaryPcm();
