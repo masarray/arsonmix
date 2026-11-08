@@ -2967,7 +2967,8 @@ private:
             const auto graph=snap.getProperty("graph",{}),
                 device=snap.getProperty("device",{});
             bool matches=false;
-            if(const auto* rows=graph.getProperty("channels",{}).getArray())
+            const auto channels=graph.getProperty("channels",{});
+            if(const auto* rows=channels.getArray())
                 for(const auto& row:*rows)if(row.getProperty("id","").toString()==idText){
                     const auto inserts=row.getProperty("inserts",{});
                     if(const auto* slots=inserts.getArray())
