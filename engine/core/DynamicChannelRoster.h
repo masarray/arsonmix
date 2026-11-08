@@ -594,6 +594,51 @@ public:
         result.revision=++revision_;return result;
     }
 
+    // Delete one INPUT in a single CONTROL-only roster edit. Remove every
+    // incoming WIRE including primary OUTs rather than silently redirecting
+    // other sources to MAIN. The removed channel's outgoing edges disappear
+    // with its descriptor. Unrelated channel/edge IDs never change.
+    ChannelEditResult removeInputAndDisconnect(
+        std::uint64_t expectedRevision,ChannelId id) {
+        ChannelEditResult result;result.revision=revision_;
+        if(expectedRevision!=revision_){
+            result.fault=ChannelEditFault::staleRevision;return result;
+        }
+        if(!id.value||revision_==std::numeric_limits<std::uint64_t>::max()){
+            result.fault=ChannelEditFault::invalidAction;return result;
+        }
+        auto candidate=channels_;
+        const auto target=std::find_if(candidate.begin(),candidate.end(),
+            [id](const auto& row){return row.id==id;});
+        if(target==candidate.end()){
+            result.fault=ChannelEditFault::missingChannel;return result;
+        }
+        if(target->role!=ChannelRole::input){
+            result.fault=ChannelEditFault::invalidValue;return result;
+        }
+        for(auto& row:candidate){
+            if(row.id==id)continue;
+            auto& sends=row.sends;
+            sends.erase(std::remove_if(sends.begin(),sends.end(),
+                [id](const auto& edge){return edge.destination==id;}),
+                sends.end());
+        }
+        candidate.erase(std::find_if(candidate.begin(),candidate.end(),
+            [id](const auto& row){return row.id==id;}));
+        if(!withinBudget(candidate)){
+            result.fault=ChannelEditFault::budgetExceeded;return result;
+        }
+        std::uint64_t stagedNextEdge=nextEdgeId_;
+        if(!assignMissingEdgeIds(candidate,stagedNextEdge)){
+            result.fault=ChannelEditFault::idExhausted;return result;
+        }
+        auto stagedIndex=buildIndex(candidate);
+        channels_.swap(candidate);
+        nextEdgeId_=stagedNextEdge;
+        index_.swap(stagedIndex);
+        result.revision=++revision_;return result;
+    }
+
     // One Studio Console transaction: new independent BUS + multi-source
     // primary output reroute, or FX return + parallel sends. CONTROL THREAD.
     // Caller must compile one native graph and publish with device epoch/ACK.

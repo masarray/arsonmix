@@ -41,6 +41,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)
+            self.assertIn("approved-native-context-menu.js", native)
+            context_menu = (out / "assets/approved-native-context-menu.js").read_text("utf-8")
+            self.assertIn('document.addEventListener("contextmenu"', context_menu)
+            self.assertIn("requestDeleteTrack", context_menu)
+            self.assertIn("orbitAction", context_menu)
+            self.assertNotIn("approved-native-context-menu.js", approved)
             self.assertIn("arMixGuiReady", (out / "assets/approved-native-bridge.js").read_text("utf-8"))
             for asset in (source / "assets").iterdir():
                 self.assertEqual((out / "assets" / asset.name).read_bytes(), asset.read_bytes(),

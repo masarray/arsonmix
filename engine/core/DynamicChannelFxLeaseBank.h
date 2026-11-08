@@ -265,6 +265,33 @@ public:
         return reusePreparedOwners(epoch,revision,prior,destination);
     }
 
+    // Removing a channel must release only that channel's VST3 owners on the
+    // NEW accepted graph. The retired PCM snapshot still holds its leases
+    // until its callback readers are gone. Never inherit orphaned FX across
+    // repeated Add/Delete Track cycles.
+    static Fault reuseWithoutChannel(
+            std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId removed,
+            DynamicChannelFxLeaseBank& destination) {
+        if(!removed.value||!epoch||epoch!=prior.epoch_||
+           revision<=prior.revision_)return Fault::invalidEpoch;
+        std::vector<Assignment> retained;
+        retained.reserve(prior.rows_.size());
+        for(const auto& row:prior.rows_){
+            if(row.id==removed)continue;
+            Assignment item;
+            item.id=row.id;item.format=row.format;
+            item.rackBypassed=row.rackBypassed;
+            item.inserts.reserve(row.count);
+            for(std::size_t slot=0;slot<row.count;++slot)
+                item.inserts.push_back(row.owners[slot]);
+            retained.push_back(std::move(item));
+        }
+        auto external=prior.external_;
+        if(external.id==removed)external={};
+        return prepare(epoch,revision,retained,destination,std::move(external));
+    }
+
     // Caller has independently verified identical negotiated audio format.
     static Fault rebindSameFormat(std::uint64_t epoch,std::uint64_t revision,
                                  const DynamicChannelFxLeaseBank& prior,

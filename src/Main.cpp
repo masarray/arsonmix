@@ -331,6 +331,11 @@ public:
 private:
     LiveAudioEngine engine_;
     VstOrbitController orbit_;
+    // The exact native ChannelId/insert identity retains its VST3 owner
+    // while Orbit's JUCE message-thread timer holds raw parameter pointers.
+    armix::mixer::LiveChannelFxGraph::InstanceLease nativeOrbitLease_;
+    juce::String nativeOrbitChannelId_,nativeOrbitInstanceId_;
+    std::uint64_t nativeOrbitEpoch_=0;
     juce::int64 fxGraphRevision_ = 1; // control-thread monotonic graph generation
     PluginCatalog catalog_;
     DiagnosticsRecorder diagnostics_;
@@ -797,18 +802,31 @@ private:
             normalized);
     }
 
-    void emitOrbitState (int slot,int previewShape=-1)
+    void emitOrbitState (int slot,int previewShape=-1,
+                         juce::AudioPluginInstance* nativePlugin=nullptr,
+                         const juce::String& channelId={},
+                         const juce::String& nativeRevision={},
+                         const juce::String& insertId={})
     {
         auto event = std::make_unique<juce::DynamicObject>();
         event->setProperty ("slot", slot);
-        event->setProperty ("revision", juce::String (fxGraphRevision_));
+        event->setProperty ("revision", nativeRevision.isNotEmpty()?
+            nativeRevision:juce::String (fxGraphRevision_));
+        if(channelId.isNotEmpty()){
+            event->setProperty("channelId",channelId);
+            event->setProperty("instanceId",insertId);
+        }
+        const bool activeTarget=orbit_.active()&&orbit_.slot()==slot&&
+            (channelId.isEmpty()?
+                nativeOrbitChannelId_.isEmpty():
+                nativeOrbitChannelId_==channelId&&nativeOrbitInstanceId_==insertId);
         const auto& stats = orbit_.stats();
         event->setProperty ("controlTicks", static_cast<juce::int64> (stats.ticks));
         event->setProperty ("parameterWrites", static_cast<juce::int64> (stats.writes));
         event->setProperty ("coalesced", static_cast<juce::int64> (stats.coalesced));
         event->setProperty ("lateTicks", static_cast<juce::int64> (stats.lateTicks));
         event->setProperty ("maxGapMs", stats.maxGapMs);
-        event->setProperty ("active", orbit_.active());
+        event->setProperty ("active", activeTarget);
         event->setProperty ("activeSlot", orbit_.slot());
         event->setProperty ("activeParameter", orbit_.parameterIndex());
         event->setProperty ("periodSeconds", orbit_.secondsPerRevolution());
@@ -839,7 +857,8 @@ private:
 
         juce::Array<juce::var> listed;
         int preferred = -1, preferredDistance = -1, preferredElevation = -1;
-        auto* plugin = engine_.isGraphSwitchPending() ? nullptr : engine_.pluginAt (slot);
+        auto* plugin = engine_.isGraphSwitchPending() ? nullptr :
+            (nativePlugin ? nativePlugin : engine_.pluginAt (slot));
         if (plugin != nullptr)
         {
             event->setProperty ("plugin", plugin->getName());
@@ -872,9 +891,9 @@ private:
             }
         }
         event->setProperty ("preferredParameter",
-            orbit_.active() && orbit_.slot() == slot ? orbit_.parameterIndex() : preferred);
+            activeTarget ? orbit_.parameterIndex() : preferred);
         // Display near/far setpoints for the plugin parameter's *actual* units.
-        int setpointParam=orbit_.active()&&orbit_.slot()==slot?
+        int setpointParam=activeTarget?
             orbit_.distanceParameterIndex():preferredDistance;
         auto* dist=setpointParam>=0&&plugin!=nullptr&&
             setpointParam<plugin->getParameters().size()?
@@ -884,7 +903,6 @@ private:
         event->setProperty("distanceUnit",metres?"m":"%");
         event->setProperty("distanceMin",metres?minMetres:0.0);
         event->setProperty("distanceMax",metres?maxMetres:100.0);
-        const bool activeTarget=orbit_.active()&&orbit_.slot()==slot;
         const double nearValue=activeTarget?orbit_.nearDistance():0.2;
         const double farValue=activeTarget?orbit_.farDistance():0.7;
         if(metres){
@@ -903,24 +921,38 @@ private:
         event->setProperty ("preferredElevation",preferredElevation);
         event->setProperty ("parameters", juce::var (listed));
         if (browser_.loaded)
-            browser_.emitEventIfBrowserIsVisible ("arMixOrbitState", juce::var (event.release()));
+            browser_.emitEventIfBrowserIsVisible (channelId.isEmpty()?
+                "arMixOrbitState":"arMixNativeOrbitState",juce::var(event.release()));
     }
 
-    // Stop while the VST3 instance still exists and synchronize its UI state.
+    // Stop before releasing the lease referenced by Orbit's raw vendor
+    // parameter pointers. The old legacy event remains unchanged.
     void stopOrbit()
     {
-        const int previousSlot = orbit_.slot();
-        if (!orbit_.active()) return;
-        const auto result = orbit_.stats();
+        const int previousSlot=orbit_.slot();
+        const auto nativeId=nativeOrbitChannelId_,insertId=nativeOrbitInstanceId_;
+        auto* nativePlugin=nativeOrbitLease_&&nativeOrbitLease_->processor?
+            dynamic_cast<juce::AudioPluginInstance*>(
+                nativeOrbitLease_->processor.get()):nullptr;
+        if(!orbit_.active()){
+            nativeOrbitLease_.reset();nativeOrbitChannelId_.clear();
+            nativeOrbitInstanceId_.clear();nativeOrbitEpoch_=0;
+            return;
+        }
+        const auto result=orbit_.stats();
         orbit_.stop();
-        diagnostics_.record ("FX_ORBIT_CONTROL",
-            "ticks=" + juce::String (static_cast<juce::int64> (result.ticks)) +
-            " writes=" + juce::String (static_cast<juce::int64> (result.writes)) +
-            " coalesced=" + juce::String (static_cast<juce::int64> (result.coalesced)) +
-            " lateTicks=" + juce::String (static_cast<juce::int64> (result.lateTicks)) +
-            " maxTimerGapMs=" + juce::String (result.maxGapMs, 1) +
+        diagnostics_.record("FX_ORBIT_CONTROL",
+            "ticks="+juce::String(static_cast<juce::int64>(result.ticks))+
+            " writes="+juce::String(static_cast<juce::int64>(result.writes))+
+            " coalesced="+juce::String(static_cast<juce::int64>(result.coalesced))+
+            " lateTicks="+juce::String(static_cast<juce::int64>(result.lateTicks))+
+            " maxTimerGapMs="+juce::String(result.maxGapMs,1)+
             " | timer delay is NOT a hardware xrun");
-        emitOrbitState (previousSlot);
+        if(nativeId.isNotEmpty())
+            emitOrbitState(previousSlot,-1,nativePlugin,nativeId,{},insertId);
+        else emitOrbitState(previousSlot);
+        nativeOrbitLease_.reset();nativeOrbitChannelId_.clear();
+        nativeOrbitInstanceId_.clear();nativeOrbitEpoch_=0;
     }
 
     juce::var approvedNativeSnapshot (const juce::var& live)
@@ -2854,6 +2886,229 @@ private:
             return;
         }
 
+        // Native Delete Audio Track uses exact ChannelId and accepted device,
+        // graph and roster revisions, with a single prepared PCM publication.
+        if(action=="routingNativeTrackDelete") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawId=args.getProperty("channelId",{});
+            const auto rawEp=args.getProperty("deviceEpoch",{});
+            const auto rawRev=args.getProperty("graphRevision",{});
+            const auto rawRoster=args.getProperty("rosterRevision",{});
+            std::uint64_t id=0,ep=0,rev=0,roster=0;
+            const auto snap=approvedNativeSnapshot();
+            const auto device=snap.getProperty("device",{});
+            const auto graph=snap.getProperty("graph",{});
+            const auto caps=graph.getProperty("capabilities",{})
+                .getProperty("supportedOps",{});
+            const auto channels=graph.getProperty("channels",{});
+            bool input=false;
+            if(const auto* rows=channels.getArray())
+                for(const auto& row:*rows)
+                    if(row.getProperty("id","").toString()==rawId.toString() &&
+                       row.getProperty("role","").toString()=="INPUT")
+                        input=true;
+            const bool supported=caps.isArray()&&
+                caps.getArray()->contains(juce::String("DELETE_CHANNEL"));
+            const bool valid=request.startsWith("track-delete-")&&
+                request.length()<=64&&!acceptedControlRequests_.contains(request)&&
+                armix::console::approvedNativeId(rawId,id)&&
+                armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                input&&supported&&
+                device.getProperty("epoch","").toString()==rawEp.toString()&&
+                graph.getProperty("revision","").toString()==rawRev.toString()&&
+                graph.getProperty("rosterRevision","").toString()==rawRoster.toString()&&
+                !nativeShowBusy_&&!studioBackupBusy_;
+            LiveDryRoutingLab::NativeBusResult result;
+            result.error="NATIVE_TRACK_DELETE_NOT_ADMITTED_OR_STALE";
+            if(valid){
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                result=engine_.removeNativeInputChannel(ep,rev,roster,
+                    armix::mixer::ChannelId{id});
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("channelId",rawId);
+            ack->setProperty("ok",valid&&result.accepted);
+            ack->setProperty("error",result.error?result.error:"NATIVE_TRACK_DELETE_UNKNOWN");
+            ack->setProperty("graphRevision",
+                juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeTrackDeleteAck",juce::var(ack.release()));
+            if(valid&&result.accepted && orbit_.active() &&
+               nativeOrbitChannelId_==rawId.toString())stopOrbit();
+            if(valid&&result.accepted)
+                diagnostics_.record("NATIVE_DAW_TRACK_DELETE",
+                    "Removed one ChannelId with source, wires and FX leases");
+            else emitNotice("Delete Audio Track rejected: "+
+                juce::String(result.error?result.error:"native error"),true);
+            return;
+        }
+
+
+        // Native VST3 Orbit is bound to a verified ChannelId and a live
+        // instance lease, not the legacy ordinal engine_.pluginAt(slot).
+        if(action=="routingNativeOrbitInspect"||
+           action=="routingNativeOrbitStart"||
+           action=="routingNativeOrbitStop"||
+           action=="routingM4OrbitInspect"||
+           action=="routingM4OrbitStart"||
+           action=="routingM4OrbitStop"){
+            const bool m4=action.startsWith("routingM4Orbit");
+            const auto rawId=args.getProperty("channelId",{}),
+                rawInsert=args.getProperty("instanceId",{}),
+                rawEp=args.getProperty("deviceEpoch",{}),
+                rawRev=args.getProperty(m4?"revision":"graphRevision",{}),
+                rawRoster=args.getProperty("rosterRevision",{});
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const auto idText=m4?
+                "m4-lane-"+juce::String(lane):rawId.toString();
+            const auto insertId=rawInsert.toString();
+            const int nativeSlot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t id=0,ep=0,rev=0,roster=0;
+            const auto snap=approvedNativeSnapshot();
+            const auto graph=snap.getProperty("graph",{}),
+                device=snap.getProperty("device",{});
+            bool nativeMatches=false,m4Matches=false;
+            const auto channels=graph.getProperty("channels",{});
+            if(!m4)if(const auto* rows=channels.getArray())
+                for(const auto& row:*rows)if(row.getProperty("id","").toString()==idText){
+                    const auto inserts=row.getProperty("inserts",{});
+                    if(const auto* slots=inserts.getArray())
+                        if(nativeSlot>=0&&nativeSlot<slots->size()&&
+                           (*slots)[nativeSlot].getProperty("id","").toString()==insertId)
+                            nativeMatches=true;
+                    break;
+                }
+            const auto lab=engine_.status().getProperty("dryRoutingLab",{});
+            if(m4&&lane>=0&&lane<LiveDryRoutingLab::fxSlots){
+                const auto all=lab.getProperty("fxInstances",{});
+                if(const auto* rows=all.getArray())
+                    if(lane<rows->size()){
+                        const auto list=(*rows)[lane];
+                        if(const auto* slots=list.getArray())
+                            if(nativeSlot>=0&&nativeSlot<slots->size()&&
+                               (*slots)[nativeSlot].getProperty("instanceId","").toString()==insertId)
+                                m4Matches=true;
+                    }
+            }
+            const bool counters=armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev);
+            const bool ready=!nativeShowBusy_&&!studioBackupBusy_&&
+                !engine_.isGraphSwitchPending()&&counters&&
+                nativeSlot>=0&&nativeSlot<8&&!insertId.isEmpty();
+            const bool accepted=ready&&(m4?
+                (m4Matches&&
+                 static_cast<bool>(lab.getProperty("active",false))&&
+                 static_cast<bool>(lab.getProperty("hasAcceptedRoute",false))&&
+                 lab.getProperty("epoch",{}).toString()==rawEp.toString()&&
+                 lab.getProperty("revision",{}).toString()==rawRev.toString()):
+                (nativeMatches&&armix::console::approvedNativeId(rawId,id)&&
+                 armix::console::approvedNativeId(rawRoster,roster)&&
+                 device.getProperty("epoch","").toString()==rawEp.toString()&&
+                 graph.getProperty("revision","").toString()==rawRev.toString()&&
+                 graph.getProperty("rosterRevision","").toString()==rawRoster.toString()));
+            if(!accepted){
+                emitNotice("Orbit target is stale or not admitted; reopen the FX menu.",true);
+                return;
+            }
+            const auto lease=m4?
+                engine_.leaseRoutedFxForEditor(lane,nativeSlot,ep,rev,insertId):
+                engine_.leaseNativeVst3Editor(ep,rev,armix::mixer::ChannelId{id},
+                    static_cast<std::size_t>(nativeSlot),insertId);
+            auto* plugin=lease&&lease->processor?
+                dynamic_cast<juce::AudioPluginInstance*>(lease->processor.get()):nullptr;
+            if(!plugin||!armix::core::isDearVrPro2(plugin->getName().toStdString())){
+                emitNotice("Orbit requires the verified dearVR PRO 2 VST3 instance.",true);
+                return;
+            }
+            if(action=="routingNativeOrbitInspect"||
+               action=="routingM4OrbitInspect"){
+                const auto shapeArg=args.getProperty("shape",-1);
+                const int shape=shapeArg.isInt()?static_cast<int>(shapeArg):-1;
+                emitOrbitState(nativeSlot,shape,plugin,idText,rawRev.toString(),insertId);
+                return;
+            }
+            if(action=="routingNativeOrbitStop"||
+               action=="routingM4OrbitStop"){
+                if(orbit_.active()&&nativeOrbitChannelId_==idText&&
+                   nativeOrbitInstanceId_==insertId)stopOrbit();
+                else emitOrbitState(nativeSlot,-1,plugin,idText,rawRev.toString(),insertId);
+                return;
+            }
+            const auto shapeArg=args.getProperty("shape",-1),
+                azArg=args.getProperty("parameterIndex",-1),
+                distArg=args.getProperty("distanceIndex",-1),
+                elevArg=args.getProperty("elevationIndex",-1),
+                nearArg=args.getProperty("nearDistance",-1.0),
+                farArg=args.getProperty("farDistance",-1.0),
+                secondsArg=args.getProperty("seconds",20.0),
+                reverseArg=args.getProperty("reverse",false);
+            if(!shapeArg.isInt()||
+               !(azArg.isInt()||azArg.isInt64())||
+               !(distArg.isInt()||distArg.isInt64())||
+               !(elevArg.isInt()||elevArg.isInt64())||
+               !(nearArg.isDouble()||nearArg.isInt())||
+               !(farArg.isDouble()||farArg.isInt())||
+               !(secondsArg.isDouble()||secondsArg.isInt())||
+               !reverseArg.isBool()){
+                emitNotice("Orbit settings are invalid.",true);return;
+            }
+            const int shape=static_cast<int>(shapeArg),
+                az=static_cast<int>(azArg),
+                distance=static_cast<int>(distArg),
+                elevation=static_cast<int>(elevArg);
+            if(!armix::core::validOrbitShape(shape)){
+                emitNotice("Orbit path is invalid.",true);return;
+            }
+            const double nearSetpoint=static_cast<double>(nearArg),
+                farSetpoint=static_cast<double>(farArg);
+            float normalizedNear=0.f,normalizedFar=1.f;
+            const auto unit=args.getProperty("distanceUnit",{}).toString();
+            if(unit=="m"){
+                if(distance<0||distance>=plugin->getParameters().size()||
+                   !metresToNormalized(plugin->getParameters()[distance],nearSetpoint,normalizedNear)||
+                   !metresToNormalized(plugin->getParameters()[distance],farSetpoint,normalizedFar)){
+                    emitNotice("Orbit metre setpoints do not match the vendor parameter.",true);
+                    return;
+                }
+            }else if(unit=="%"){
+                if(!std::isfinite(nearSetpoint)||!std::isfinite(farSetpoint)||
+                   nearSetpoint<0||farSetpoint>100){
+                    emitNotice("Orbit distance must be 0–100%.",true);return;
+                }
+                normalizedNear=static_cast<float>(nearSetpoint/100.0);
+                normalizedFar=static_cast<float>(farSetpoint/100.0);
+            }else{
+                emitNotice("Orbit distance unit is invalid.",true);return;
+            }
+            if(normalizedNear>normalizedFar){
+                emitNotice("Orbit Near cannot exceed Far.",true);return;
+            }
+            // Old VST3 instance must stop BEFORE its new lease is installed.
+            if(orbit_.active())stopOrbit();
+            const auto error=orbit_.start(plugin,nativeSlot,az,
+                static_cast<double>(secondsArg),
+                static_cast<bool>(reverseArg),shape,distance,elevation,
+                normalizedNear,normalizedFar);
+            if(error.isNotEmpty()){
+                emitNotice("Orbit: "+error,true);return;
+            }
+            nativeOrbitLease_=lease;
+            nativeOrbitChannelId_=idText;
+            nativeOrbitInstanceId_=insertId;
+            nativeOrbitEpoch_=ep;
+            emitOrbitState(nativeSlot,-1,plugin,idText,rawRev.toString(),insertId);
+            diagnostics_.record("NATIVE_DAW_ORBIT",
+                "ChannelId="+idText+" slot="+juce::String(nativeSlot)+
+                " vendor instance="+insertId);
+            return;
+        }
+
         // G5C native per-instance BYPASS never recompiles the graph and
         // does not require muting the output. All identity gates must agree.
         if (action == "routingFxBypass") {
@@ -4070,6 +4325,11 @@ private:
             crackleEvidence_.push (makeEvidenceSample (state));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (state, false));
         }
+        // Guard borrowed VST parameter pointers when a native graph edit,
+        // device epoch change or Show recall retires the instance.
+        if(nativeOrbitLease_ && orbit_.active() &&
+           (!engine_.retainsRoutedFxEditor(nativeOrbitEpoch_,nativeOrbitLease_)))
+            stopOrbit();
         if(routedEditorOwner_ &&
            !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
             closePluginEditor();
