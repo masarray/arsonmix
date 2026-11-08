@@ -86,11 +86,17 @@ int main(){
     assert(restored.observedMusicKey()==-1); // no stale old-device estimate
     // Version-1 state still loads as Manual Key with no source binding.
     juce::MemoryBlock old;
-    juce::MemoryOutputStream writer(old,false);
-    writer.writeInt(0x41484d31);writer.writeInt(1);
-    writer.writeInt(5);writer.writeInt(0);writer.writeInt(3);
-    writer.writeBool(false);writer.writeFloat(.5f);writer.writeFloat(.5f);
-    writer.writeFloat(.5f);writer.writeFloat(0.f);
+    {
+        // JUCE MemoryOutputStream commits its external MemoryBlock on
+        // destruction. Do not decode a fixture before its writer closes:
+        // that used to fail on Windows Release even though v1 parsing worked.
+        juce::MemoryOutputStream writer(old,false);
+        writer.writeInt(0x41484d31);writer.writeInt(1);
+        writer.writeInt(5);writer.writeInt(0);writer.writeInt(3);
+        writer.writeBool(false);writer.writeFloat(.5f);writer.writeFloat(.5f);
+        writer.writeFloat(.5f);writer.writeFloat(0.f);
+    }
+    assert(old.getSize()>0);
     ChannelHarmonyProcessor migrated;
     migrated.prepareToPlay(48000.,128);
     assert(migrated.isReady());
