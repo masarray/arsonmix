@@ -21,7 +21,7 @@ class VerifyInstallerZip(unittest.TestCase):
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
                 z.write(exe, exe.name)
             self.assertEqual(len(verify(exe, archive)), 64)
-            exe.write_bytes(b"Different-Content" * 150000)
+            exe.write_bytes(b"Corrupted-Inno-EXE" * 150000)
             with self.assertRaisesRegex(ValueError, "differs"):
                 verify(exe, archive)
 
@@ -46,6 +46,7 @@ class VerifyInstallerZip(unittest.TestCase):
             folder = pathlib.Path(temp)
             exe = folder / "ArSonMix-v0.5.0-alpha.5-Windows-x64-Setup.exe"
             exe.write_bytes(b"A" * 2200000)
+            (folder / "other.zip").write_bytes(b"x")
             with self.assertRaisesRegex(ValueError, "identity"):
                 verify(exe, folder / "other.zip")
             bad = exe.with_suffix(".zip")
