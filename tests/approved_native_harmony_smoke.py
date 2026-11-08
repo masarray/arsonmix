@@ -159,6 +159,52 @@ def main():
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
+                # G is a literal circle, subtly larger than unselected notes.
+                # Check computed visual CSS, not a class-name-only assertion.
+                note_g=page.locator('.mx-harm-note[data-key="7"]')
+                note_c=page.locator('.mx-harm-note[data-key="0"]')
+                assert "active" in (note_g.get_attribute("class") or "")
+                geometry=note_g.evaluate("""e=>{
+                    const s=getComputedStyle(e);
+                    return {w:s.width,h:s.height,radius:s.borderRadius,
+                      font:parseFloat(s.fontSize),shadow:s.boxShadow,
+                      background:s.backgroundImage};
+                }""")
+                assert geometry["w"]==geometry["h"],geometry
+                assert geometry["radius"]=="50%",geometry
+                assert geometry["font"]>float(note_c.evaluate(
+                    "e=>parseFloat(getComputedStyle(e).fontSize)")),geometry
+                assert geometry["shadow"]!="none" and "gradient" in geometry["background"],geometry
+                # The groove is a dark conic ring behind the lit arc; the
+                # pointer and arc both derive from the SAME accepted knob value.
+                dial=page.locator('.mx-harm-slider input[data-field="wet"]')
+                def dial_visual():
+                    return dial.evaluate("""e=>{
+                        const p=e.parentElement;
+                        const face=p.querySelector('.mx-harm-dial-face');
+                        return {turn:parseFloat(p.style.getPropertyValue('--dial-turn')),
+                          sweep:parseFloat(p.style.getPropertyValue('--dial-sweep')),
+                          groove:getComputedStyle(face,'::before').backgroundImage,
+                          level:getComputedStyle(face,'::after').backgroundImage,
+                          mask:getComputedStyle(face,'::after').maskImage};
+                    }""")
+                arc=dial_visual()
+                assert abs(arc["sweep"]-121.5)<0.0001,arc
+                assert abs(arc["turn"]+13.5)<0.0001,arc
+                assert "conic-gradient" in arc["groove"],arc
+                assert "conic-gradient" in arc["level"],arc
+                assert "radial-gradient" in arc["mask"],arc
+                dial.evaluate("""e=>{
+                    e.value='75';e.dispatchEvent(new Event('input',{bubbles:true}));
+                }""")
+                wet_edit=last_action(page,"nativeHarmonySetSettings")
+                assert abs(wet_edit["settings"]["wet"]-.75)<.0001
+                changed={**locked,"wet":.75}
+                apply_edit(page,state,changed,7,0)
+                arc2=dial_visual()
+                assert abs(arc2["sweep"]-202.5)<.0001,arc2
+                assert abs(arc2["turn"]-67.5)<.0001,arc2
+                assert page.locator("#mxHKeyReadout").inner_text()=="G"
                 # Power is driven by accepted native graph bypass, not local
                 # DOM optimism, in both Manual and Music modes.
                 state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
