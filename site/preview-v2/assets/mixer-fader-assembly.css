@@ -401,10 +401,10 @@
 .console-body[data-density="standard"] .strip .fader-box::before{width:27px!important}
 .console-body[data-density="standard"] .strip .fader-scale{width:28px!important;min-width:28px!important}
 
-/* V51: a single tight, static mechanical drop edge under the approved
-   transparent original PNG. No CSS filter/drop-shadow GPU surface, glow,
-   animation or altered thumb dimensions/collision geometry. */
+/* Owner-requested realistic cast shadow. One static paint on the original
+   transparent PNG fader cap; no CSS filter, animation, extra DOM/layers,
+   will-change or change to input drag / realtime metering. */
 .console-body .strip .fader-travel .cap{
- box-shadow:0 2px 3px -2px #000c,0 4px 3px -4px #000a!important;
+ box-shadow:0 20px 10px -1px #000c,0 4px 3px -4px #000a!important;
  filter:none!important;
 }

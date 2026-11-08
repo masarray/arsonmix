@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner-requested exact rollback to approved pre-V52 fader; V51 meter stays frozen.
+"""Owner-approved pre-V52 fader geometry plus upgraded static cast shadow; V51 meter frozen.
 
 Preserve canonical /preview-v2/, /preview/ and PNG public preview source parity.
 Browser GUI reference only: no PCM, VST3, routing model, or gain logic change.
@@ -13,7 +13,7 @@ HTML=ROOT/"site/preview-v2/index.html"
 FADER=ROOT/"site/preview-v2/assets/mixer-fader-assembly.css"
 METER=ROOT/"site/preview-v2/assets/mixer-meter-display.css"
 APPROVED_V27_METER_BLOB="e168fe3fde3b176ce46f2c637a17db65bc510944"
-APPROVED_PRE_V52_FADER_BLOB="8a2eac41b3508e35d8a6c49855512e8a0868b0e6"
+APPROVED_FADER_SHADOW_BLOB="668f5000238e43d2f06bfb6e061e819d7b0f35c0"
 
 def git_blob(path):
     raw=path.read_bytes()
@@ -26,16 +26,16 @@ def audit_checkpoint():
     html=HTML.read_text(encoding="utf-8")
     assert "function displayMeterDbfs(" in html
     assert "meter-peak-hold" in html and "METER_HOLD_MS=850" in html
-    assert git_blob(FADER)==APPROVED_PRE_V52_FADER_BLOB, (
-        "Owner rejected V52/V54/V55 fader visuals: restore ONLY exact pre-V52 V27 owner CSS"
+    assert git_blob(FADER)==APPROVED_FADER_SHADOW_BLOB, (
+        "Owner-approved original geometry or realistic static cap shadow drift"
     )
     css=FADER.read_text(encoding="utf-8")
     assert "filter:none!important" in css
     assert "color-mix(in srgb,var(--track-color,#6fb4c6) 56%,#164959)" in css, (
         "Original under-thumb teal tail light must be retained"
     )
-    assert "0 2px 3px -2px #000c,0 4px 3px -4px #000a" in css, (
-        "Original low-cost V51 fader shadow must not be replaced by V55 three heavy layers"
+    assert "0 20px 10px -1px #000c,0 4px 3px -4px #000a" in css, (
+        "Owner-requested realistic static fader shadow missing"
     )
     assert '#14232e!important' in css
     assert "mixer-fader-assembly.css?v=css-owner-v27-fader-rollback-pre-v52-tail" in html
@@ -88,8 +88,8 @@ def inspect(page,width,height,density):
         assert abs(float(v["slotWidth"].replace("px",""))-5)<.6,(width,density,"dark slot drift",v)
         assert "linear-gradient" in v["slotBackground"],(
             width,density,"original reactive teal tail light was replaced",v)
-        assert v["thumbShadow"]!="none" and "2px 3px -2px" in v["thumbShadow"] and "4px 3px -4px" in v["thumbShadow"],(
-            width,density,"approved subtle V51 thumb shadow missing",v)
+        assert v["thumbShadow"]!="none" and "20px 10px -1px" in v["thumbShadow"] and "4px 3px -4px" in v["thumbShadow"],(
+            width,density,"owner realistic thumb shadow missing",v)
         assert v["thumbFilter"]=="none",(width,density,"GPU filter forbidden",v)
         assert v["thumbTransition"]=="0s",(width,density,"animated shadow forbidden",v)
         assert abs(v["meterWidth"]-70)<.7 and abs(v["meterFillWidth"]-6)<.8,(
@@ -134,7 +134,7 @@ def main():
             page.close()
         browser.close()
     print("PASS FADER ROLLBACK: V51 meter frozen, exact pre-V52 graphite chassis, 32/27/25px well,"
-          " original teal tail, two lightweight shadows and original pointer drag")
+          " original teal tail, two static cast shadows and original pointer drag")
 
 if __name__=="__main__":
     main()

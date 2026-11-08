@@ -1957,6 +1957,13 @@ private:
             reply->setProperty("settings",juce::var(p.release()));
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
             reply->setProperty("gainReductionDb",processor->observedGainReductionDb());
+            // Actual pre/post Compressor PCM block peaks. Serial increments
+            // only after a processed audio callback; UI can decay stale
+            // meters to silence on device stop without touching realtime.
+            reply->setProperty("inputPeakDbfs",processor->observedInputPeakDbfs());
+            reply->setProperty("outputPeakDbfs",processor->observedOutputPeakDbfs());
+            reply->setProperty("meterBlockSerial",
+                static_cast<juce::int64>(processor->observedBlockSerial()));
             reply->setProperty("addedLatencySamples",processor->getLatencySamples());
             if(instanceId==lastNativeCompInstance_&&
                epoch==lastNativeCompEpoch_&&revision==lastNativeCompRevision_)

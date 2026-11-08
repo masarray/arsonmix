@@ -19,6 +19,12 @@ dst.mkdir(parents=True,exist_ok=True)
 # Publish only the landing and ONE approved /preview/ GUI. Internal GUI seed
 # folders remain in repo for design tests, never as separate public screens.
 shutil.copy2(ROOT/'site/index.html',dst/'index.html')
+# Place the exact Search Console challenge in the published Pages root.
+verification_name='googlec34c43149eef6100.html'
+verification_source=ROOT/'site'/verification_name
+if verification_source.read_text(encoding='utf-8').strip() != 'google-site-verification: '+verification_name:
+    raise SystemExit('invalid Google site verification challenge file')
+shutil.copy2(verification_source,dst/verification_name)
 # Resolve the live Pages base URL (github.io project path or custom host root).
 # Only public SEO metadata changes; all app/asset routes stay relative.
 public_url=normalize_public_url(os.environ.get('ARSONMIX_PUBLIC_URL'))
