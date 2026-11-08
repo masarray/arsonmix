@@ -1,5 +1,7 @@
 #include "../engine/builtin_fx/HarmonyDsp.h"
 #include <algorithm>
+#include <array>
+#include <utility>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -141,8 +143,10 @@ int main(){
   for(int i=0;i<=100;++i){
     const float p=static_cast<float>(i)/100.f;
     const float w=smoothGrainBlend(p);
-    need(w>=0.f&&w<=1.f&&std::abs(w+smoothGrainBlend(.5f-p)-1.f)<1.e-5f,
-         "grain crossfade invalid weight");
+    const float other=p<=.5f?.5f-p:1.5f-p;
+    need(w>=0.f&&w<=1.f&&
+         std::abs(w+smoothGrainBlend(other)-1.f)<1.e-5f,
+         "grain crossfade invalid complementary weight");
     need(std::abs(w-smoothGrainBlend(1.f-p))<1.e-5f,
          "grain crossfade phase asymmetry");
   }
@@ -151,8 +155,10 @@ int main(){
        "grain seam has a sharp first derivative");
   // Male low register and high soprano note tracking at two device rates.
   // Earlier 850 Hz search cap could not classify C6 (1046.5 Hz).
+  const std::array<std::pair<double,int>,2> singerNotes{{
+    {82.406889,40},{1046.502261,84}}};
   for(double rate:{48000.,96000.}){
-    for(const auto item:{{82.406889,40},{1046.502261,84}}){
+    for(const auto& item:singerNotes){
       Engine probe;need(probe.prepare(rate),"vocal register prepare failed");
       const int count=static_cast<int>(rate*.35);
       std::vector<float> pl(static_cast<std::size_t>(count));
