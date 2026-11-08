@@ -278,6 +278,9 @@ function send(){
  if(!native()||!current)return;
  const c=context();if(!c){hint("NATIVE FX INSTANCE UNAVAILABLE");return;}
  if(!valid(draft)){hint("INVALID COMPRESSOR SETTINGS");return;}
+ // Click/no-motion, reselecting the same preset or a duplicate change event
+ // must not enqueue a no-op DSP transaction on this realtime graph.
+ if(!pending&&Object.keys(defs).every(k=>draft[k]===accepted[k]))return;
  if(pending){
   // A slider input + change commonly fires twice at the same value. Keep
   // only a genuinely different final setting; never replay an identical edit.
