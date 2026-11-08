@@ -399,6 +399,7 @@ private:
     } pendingNativeThrow_;
     juce::String lastNativeThrowRequest_,lastNativeThrowInstance_;
     juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
+    armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -1882,6 +1883,17 @@ private:
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            // Accepted native source and analyzer readback; never invent an
+            // AUTO lock from the manual BPM text field.
+            reply->setProperty("musicSourceChannelId",
+                juce::String(std::to_string(lastMusicTempo_.source.value)));
+            reply->setProperty("musicSourceActive",lastMusicTempo_.active);
+            reply->setProperty("musicLocked",lastMusicTempo_.active&&
+                lastMusicTempo_.tempo.locked);
+            reply->setProperty("musicBpm",lastMusicTempo_.tempo.bpm);
+            reply->setProperty("musicConfidence",lastMusicTempo_.tempo.confidence);
+            reply->setProperty("musicDroppedFrames",
+                static_cast<int>(lastMusicTempo_.dropped));
             juce::Array<juce::var> bands;
             for(const auto& band:processor->acceptedBands()){
                 auto item=std::make_unique<juce::DynamicObject>();
@@ -2015,6 +2027,21 @@ private:
         pendingNativeComp_={};
         if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
             "arMixBuiltinCompAck",juce::var(ack.release()));
+    }
+
+    // CONTROL ONLY: drain at most 512 ten-ms music summary frames per 12Hz
+    // host tick. The actual music audio was tapped inside the existing PCM
+    // graph; BPM/onset analysis never touches the ASIO callback. All live
+    // vocal inserts consume a precomputed atomic interval, not a WebView BPM.
+    void serviceNativeMusicTempo() {
+        lastMusicTempo_=engine_.pollNativeMusicTempo();
+        const auto bpm=lastMusicTempo_.active&&lastMusicTempo_.tempo.locked?
+            lastMusicTempo_.tempo.bpm:0.f;
+        engine_.forEachNativeProcessor([bpm](
+            armix::mixer::ChannelId,juce::AudioProcessor* p) {
+            if(auto* vocal=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(p))
+                vocal->publishMusicBpm(bpm);
+        });
     }
 
     // Native Vocal Throw settings, manual cue and auto-trigger readback.
@@ -2364,7 +2391,8 @@ private:
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
             action == "nativeEqSetBand" || action == "nativeCompSet" ||
-            action == "nativeThrowSet" || action == "nativeThrowTrigger"))
+            action == "nativeThrowSet" || action == "nativeThrowTrigger" ||
+            action == "nativeThrowTempoSource"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -2597,7 +2625,7 @@ private:
         // ArSon Vocal Throw: all UI commands reference one exact installed
         // ChannelId + device epoch + graph revision + insert instance.
         if(action=="nativeThrowSnapshot"||action=="nativeThrowSet"||
-           action=="nativeThrowTrigger") {
+           action=="nativeThrowTrigger"||action=="nativeThrowTempoSource") {
             const auto rawChannel=args.getProperty("channelId",{});
             const auto rawEpoch=args.getProperty("deviceEpoch",{});
             const auto rawRevision=args.getProperty("graphRevision",{});
@@ -2621,6 +2649,29 @@ private:
                 emitNativeThrowSnapshot(request,rawChannel.toString(),
                     rawEpoch.toString(),rawRevision.toString(),
                     rawInstance.toString(),processor);
+                return;
+            }
+            if(action=="nativeThrowTempoSource") {
+                // A single shared song clock is selected by stable ChannelId;
+                // the source cannot be this vocal channel, MAIN or MONITOR.
+                const auto rawSource=args.getProperty("sourceChannelId",{});
+                const auto sourceText=rawSource.toString();
+                std::uint64_t source=0;
+                const bool parsed=sourceText=="0" ||
+                    armix::console::approvedNativeId(rawSource,source);
+                const bool chosen=processor && parsed && (!source||source!=ch) &&
+                    !nativeShowBusy_&&!studioBackupBusy_ &&
+                    engine_.selectNativeMusicTempoSource(
+                        ep,rev,armix::mixer::ChannelId{source});
+                if(chosen)serviceNativeMusicTempo();
+                auto reply=std::make_unique<juce::DynamicObject>();
+                reply->setProperty("requestId",request);
+                reply->setProperty("status",chosen?"APPLIED":"REJECTED");
+                reply->setProperty("sourceChannelId",sourceText);
+                reply->setProperty("errorCode",chosen?"NONE":
+                    "INVALID_OR_STALE_MUSIC_CHANNEL");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                    "arMixBuiltinThrowTempoAck",juce::var(reply.release()));
                 return;
             }
             const auto wire=request.startsWith("throw-")?
@@ -4573,6 +4624,7 @@ private:
             guiPerf_.prevTickMs = tickStart;
         }
         ++timerTicks_;
+        serviceNativeMusicTempo();
         servicePendingNativeEq();
         servicePendingNativeComp();
         servicePendingNativeThrow();
