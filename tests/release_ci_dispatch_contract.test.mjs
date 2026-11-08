@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseReleaseCommand, parsePortCommand, trustedReleaseComment, releaseDispatch, portDispatch } from '../scripts/release_ci_dispatch.mjs';
 
 const SHA='a'.repeat(40),TAG='v0.5.0-alpha.2',BRANCH='releases/alpha/'+TAG;
@@ -32,6 +33,20 @@ function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,
   };
   return {calls,api};
 }
+test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and does not leak gh exit 1',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  const first=workflow.split('      - name: Verify release identity and immutable source')[1]
+    ?.split('      - uses: actions/setup-python@v5')[0]||'';
+  assert.match(first,/Invoke-WebRequest -Method Get -Uri \$releaseUri -SkipHttpErrorCheck/);
+  assert.match(first,/\$releaseProbe\.StatusCode -eq 200/);
+  assert.match(first,/\$releaseProbe\.StatusCode -ne 404/);
+  assert.doesNotMatch(first,/& gh release view/);
+  const notes=readFileSync(new URL('../docs/releases/v0.5.0-alpha.4.md',import.meta.url),'utf8');
+  assert.match(notes,/^# ArSonMix v0\.5\.0-alpha\.4/m);
+  assert.match(notes,/Delete Track/);
+  assert.match(notes,/Orbit/);
+});
+
 test('Only exact owner issue comment is recognized',()=>{
   assert.deepEqual(parseReleaseCommand('/arsonmix-release '+TAG+' '+SHA),{
     tag:TAG,sha:SHA,branch:BRANCH});

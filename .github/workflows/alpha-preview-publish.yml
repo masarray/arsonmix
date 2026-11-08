@@ -70,9 +70,20 @@ jobs:
           if ($remoteSha -ne $actual) {
             throw "Stale release branch commit rejected: remote=$remoteSha checked-out=$actual"
           }
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          # A not-yet-published tag is HTTP 404, not a fatal native command
+          # exit. Distinguish that from auth/rate/network failure. The older
+          # gh release view probe leaked LASTEXITCODE=1 to the pwsh runner.
+          $releaseUri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          $releaseProbe = Invoke-WebRequest -Method Get -Uri $releaseUri -SkipHttpErrorCheck -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          if ($releaseProbe.StatusCode -eq 200) {
             throw "Release already exists; do not rebuild or overwrite immutable assets"
+          }
+          if ($releaseProbe.StatusCode -ne 404) {
+            throw "Release existence probe failed HTTP $($releaseProbe.StatusCode)"
           }
           "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
