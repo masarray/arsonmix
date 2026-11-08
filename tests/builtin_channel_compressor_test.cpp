@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <limits>
 #include <new>
-// Release CTests must NOT use check(): NDEBUG would silently disable the test.
+// Release CTests must NOT use assert(): NDEBUG would silently disable the test.
 #define check(expr) do { if(!(expr)) { \
     std::fprintf(stderr,"FAIL:%s:%d: %s\\n",__FILE__,__LINE__,#expr); \
     std::abort(); \
