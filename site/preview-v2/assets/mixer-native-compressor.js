@@ -37,35 +37,53 @@ const panel=dom("section","mx-comp");panel.hidden=true;panel.id="mxNativeComp";
 panel.setAttribute("role","dialog");
 panel.setAttribute("aria-label","ArSonMix Compressor");
 panel.setAttribute("aria-modal","false");
-const header=dom("header","mx-comp-head"),brand=dom("span","mx-comp-brand","ArSonMix  /  COMPRESSOR"),
- channel=dom("span","mx-comp-channel"),power=dom("button","mx-comp-power","⏻"),
+const header=dom("header","mx-comp-head"),
+ brand=dom("span","mx-comp-brand","ARMIX  /  COMPRESSOR"),
+ channel=dom("span","mx-comp-channel"),
+ power=dom("button","mx-comp-power","⏻"),
  close=dom("button","mx-comp-close","×");
-power.type=close.type="button";power.title="Toggle accepted FX insert bypass";
+power.type=close.type="button";
+power.title="Toggle accepted FX insert bypass";
 close.setAttribute("aria-label","Close Compressor");
 header.append(brand,channel,power,close);
+
+// The reference layout is a single compact mixing surface, not seven
+// unrelated horizontal sliders: source controls | display | output controls.
+const controls=dom("div","mx-comp-controls");
+const left=dom("div","mx-comp-left");
 const visual=dom("div","mx-comp-visual");
-const plot=dom("div","mx-comp-plot"),svg=document.createElementNS(NS,"svg");
-svg.setAttribute("viewBox","0 0 480 225");svg.setAttribute("preserveAspectRatio","none");
-svg.setAttribute("aria-label","Compressor input-output transfer curve; drag threshold handle");
+const right=dom("div","mx-comp-right");
+const plot=dom("div","mx-comp-plot");
+const plotBrand=dom("div","mx-comp-plot-brand","ARMIX  Compressor");
+const svg=document.createElementNS(NS,"svg");
+svg.setAttribute("viewBox","0 0 302 218");
+svg.setAttribute("preserveAspectRatio","none");
+svg.setAttribute("aria-label","Input output compression curve; drag to edit threshold");
 svg.setAttribute("role","img");
-plot.append(svg);
 const meter=dom("div","mx-comp-meter");
-const meterName=dom("span","","GR");
+const meterName=dom("span","mx-comp-meter-name","GAIN REDUCTION");
 const meterRail=dom("div","mx-comp-grrail");
-const meterFill=dom("div","mx-comp-grfill");meterRail.append(meterFill);
+const meterFill=dom("div","mx-comp-grfill");
+meterRail.append(meterFill);
 const meterValue=dom("span","mx-comp-grvalue","0.0 dB");
-meter.append(meterName,meterRail,meterValue);
-visual.append(plot,meter);
-const controls=dom("div","mx-comp-controls"),inputs={};
+meter.append(meterName,meterValue,meterRail);
+plot.append(plotBrand,svg,meter);
+visual.append(plot);
+controls.append(left,visual,right);
+
+const inputs={};
 Object.entries(defs).forEach(([key,r])=>{
  const item=dom("label","mx-comp-control");
- const name=dom("span","mx-comp-label",r.label);
+ item.dataset.key=key;
+ const name=dom("span","mx-comp-label",r.label==="MAKEUP"?"GAIN":r.label);
  const output=dom("output","mx-comp-value");
+ const dial=dom("span","mx-comp-dial");
+ dial.setAttribute("aria-hidden","true");
  const input=dom("input","mx-comp-slider");
  input.type="range";input.min=String(r.min);input.max=String(r.max);
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
- input.setAttribute("aria-valuetext",r.label);
- item.append(name,output,input);controls.append(item);inputs[key]={input,output};
+ item.append(name,dial,output,input);
+ inputs[key]={item,input,output,dial};
  input.addEventListener("input",()=>{
   const value=Number(input.value);if(!Number.isFinite(value))return;
   draft={...draft,[key]:value};paint();
@@ -77,6 +95,60 @@ Object.entries(defs).forEach(([key,r])=>{
   if(native())send();else saveDemo();
  });
 });
+left.append(inputs.ratio.item,inputs.thresholdDb.item,inputs.kneeDb.item);
+const safety=dom("div","mx-comp-safety");
+const staticFlag=(label,isOn,why)=>{
+ const row=dom("span","mx-comp-static-flag");
+ row.title=why;row.setAttribute("aria-label",label+": "+(isOn?"On":"Off")+". "+why);
+ const led=dom("span","mx-comp-flag-led"+(isOn?" is-on":""));
+ row.append(led,dom("span","",label));return row;
+};
+safety.append(
+ staticFlag("Look Ahead",false,"Unavailable: this engine uses zero sample lookahead."),
+ staticFlag("Stereo Link",true,"Always on: stereo-linked native detector.")
+);
+left.append(safety);
+
+const mainRight=dom("div","mx-comp-right-main");
+const topRight=dom("div","mx-comp-right-top");
+const trim=dom("div","mx-comp-control mx-comp-readonly");
+trim.title="Input gain is fixed at 0 dB; this parameter is not supported by the native DSP yet.";
+trim.setAttribute("aria-label","Input Gain fixed at 0 dB. Not editable.");
+trim.append(dom("span","mx-comp-label","INPUT GAIN"),
+ dom("span","mx-comp-dial mx-comp-dial-disabled"),
+ dom("output","mx-comp-value","0.0 dB"));
+topRight.append(trim,inputs.makeupDb.item,inputs.mix.item);
+const dynamics=dom("div","mx-comp-right-dynamics");
+const auto=dom("div","mx-comp-auto");
+auto.append(
+ staticFlag("Auto Gain",false,"Automatic makeup gain is not supported; use Gain."),
+ staticFlag("Auto Release",false,"Automatic release is not supported; use Release."),
+ staticFlag("Adaptive",false,"Adaptive release is not supported by the native DSP.")
+);
+dynamics.append(inputs.attackMs.item,inputs.releaseMs.item,auto);
+mainRight.append(topRight,dynamics);
+
+const sidechain=dom("section","mx-comp-sidechain");
+sidechain.setAttribute("aria-label","Sidechain controls");
+const scHead=dom("div","mx-comp-sidechain-head","SIDECHAIN");
+const scBody=dom("div","mx-comp-sidechain-body");
+const scSource=dom("div","mx-comp-sc-source");
+scSource.append(dom("span","mx-comp-sc-small","DETECTOR"),
+ dom("span","mx-comp-sc-tag","INTERNAL"));
+scSource.title="Internal signal detector is active. External sidechain routing is not implemented.";
+const scInactive=(title)=>{
+ const item=dom("div","mx-comp-sc-inactive");
+ item.title="Unavailable until detector filter support is added to native DSP.";
+ item.setAttribute("aria-label",title+" disabled");
+ item.append(dom("span","mx-comp-sc-small",title),
+  dom("span","mx-comp-sc-ring"),
+  dom("span","mx-comp-sc-off","OFF"));
+ return item;
+};
+scBody.append(scSource,scInactive("LOWCUT"),scInactive("HIGHCUT"));
+sidechain.append(scHead,scBody);
+right.append(mainRight,sidechain);
+
 const foot=dom("div","mx-comp-foot");
 const presetButtons=dom("div","mx-comp-presets");
 Object.keys(presets).forEach(name=>{
@@ -94,7 +166,7 @@ reset.addEventListener("click",()=>{draft=defaults();paint();
 presetButtons.append(reset);
 const status=dom("span","mx-comp-status","BROWSER PREVIEW · NO AUDIO");
 foot.append(presetButtons,status);
-panel.append(header,visual,controls,foot);
+panel.append(header,controls,foot);
 function mount(){if(!panel.isConnected)document.body.append(panel);}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 function hint(value){status.textContent=value;}
@@ -132,29 +204,32 @@ function paint(){
   const value=draft[key],r=defs[key];
   c.input.value=String(value);
   c.output.textContent=format(key,value);
-  c.input.style.setProperty("--progress",(100*(value-r.min)/(r.max-r.min))+"%");
+  const fraction=(value-r.min)/(r.max-r.min);
+  c.dial.style.setProperty("--dial-sweep",(fraction*270).toFixed(2)+"deg");
+  c.dial.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
  }
- // Exact static transfer geometry from the native compressor DSP.
- const x=db=>32+(clamp(db,-60,0)+60)/60*425;
- const y=db=>198-(clamp(db,-60,0)+60)/60*176;
+ // Match the dense -60...0 dBFS dual-axis display in the reference.
+ // Transfer shape reflects native threshold / ratio / knee / makeup / mix.
+ const x=db=>31+(clamp(db,-60,0)+60)/60*248;
+ const y=db=>195-(clamp(db,-60,0)+60)/60*154;
  const path=Array.from({length:121},(_,i)=>{
   const v=-60+i*.5;
   return (i?"L":"M")+x(v).toFixed(1)+","+y(compressedOutput(v,draft)).toFixed(1);
  }).join(" ");
  const grid=[];
  for(const d of [-60,-48,-36,-24,-12,0]){
-  grid.push('<line x1="'+x(d)+'" y1="22" x2="'+x(d)+'" y2="198" class="mx-comp-grid"/>');
-  grid.push('<line x1="32" y1="'+y(d)+'" x2="457" y2="'+y(d)+'" class="mx-comp-grid"/>');
-  grid.push('<text x="'+x(d)+'" y="214" class="mx-comp-tick" text-anchor="middle">'+d+'</text>');
-  grid.push('<text x="24" y="'+(y(d)+3)+'" class="mx-comp-tick" text-anchor="end">'+d+'</text>');
+  grid.push('<line x1="'+x(d)+'" y1="41" x2="'+x(d)+'" y2="195" class="mx-comp-grid"/>');
+  grid.push('<line x1="31" y1="'+y(d)+'" x2="279" y2="'+y(d)+'" class="mx-comp-grid"/>');
+  grid.push('<text x="'+x(d)+'" y="207" class="mx-comp-tick" text-anchor="middle">'+d+'</text>');
+  grid.push('<text x="25" y="'+(y(d)+3)+'" class="mx-comp-tick" text-anchor="end">'+d+'</text>');
  }
- svg.innerHTML='<rect width="480" height="225" fill="#0e1e29"/>'+
-  grid.join("")+'<path d="M32 198 L457 22" class="mx-comp-unity"/>'+
+ svg.innerHTML='<rect width="302" height="218" fill="#08141c"/>'+
+  grid.join("")+'<path d="M31 195 L279 41" class="mx-comp-unity"/>'+
   '<path d="'+path+'" class="mx-comp-curve"/>'+
   '<circle cx="'+x(draft.thresholdDb)+'" cy="'+y(compressedOutput(draft.thresholdDb,draft))+
-  '" r="6" class="mx-comp-handle"/>'+
-  '<text x="40" y="14" class="mx-comp-axis">OUTPUT dBFS</text>'+
-  '<text x="451" y="14" class="mx-comp-axis" text-anchor="end">INPUT →</text>';
+  '" r="5" class="mx-comp-handle"/>'+
+  '<text x="35" y="31" class="mx-comp-axis">OUTPUT dBFS</text>'+
+  '<text x="278" y="31" class="mx-comp-axis" text-anchor="end">INPUT →</text>';
  const c=context(),lane=c?snapshot()?.graph?.channels?.find(x=>x.id===c.channelId):null;
  const insert=lane?.inserts?.[current.slot];
  // A bypassed graph node (or entire rack) is not rendering PCM; its atomic
@@ -198,8 +273,8 @@ svg.addEventListener("pointerdown",e=>{
 svg.addEventListener("pointermove",e=>{
  if(graphDrag!==e.pointerId)return;
  const r=svg.getBoundingClientRect();
- const x=(e.clientX-r.left)*480/r.width;
- draft={...draft,thresholdDb:Math.round(clamp(-60+(x-32)*60/425,-60,0)*2)/2};
+ const x=(e.clientX-r.left)*302/r.width;
+ draft={...draft,thresholdDb:Math.round(clamp(-60+(x-31)*60/248,-60,0)*2)/2};
  paint();if(native()&&Date.now()-lastSend>=130)send();
  e.preventDefault();
 });

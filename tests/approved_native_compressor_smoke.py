@@ -85,16 +85,30 @@ def main():
                 ?.includes('NATIVE DSP ACCEPTED')""")
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
-            assert page.locator(".mx-comp-control").count()==7
+            assert page.locator(".mx-comp-control[data-key]").count()==7
+            assert page.locator(".mx-comp-control").count()==8  # input gain is read-only
+            assert page.locator(".mx-comp-sidechain").count()==1
+            assert page.locator(".mx-comp-sidechain-head").inner_text()=="SIDECHAIN"
+            assert page.locator(".mx-comp-sc-tag").inner_text()=="INTERNAL"
+            assert page.locator(".mx-comp-static-flag").count()==5
+            assert page.locator(".mx-comp-readonly input").count()==0
+            if width>760:
+                left=page.locator(".mx-comp-left").bounding_box()
+                graph=page.locator(".mx-comp-visual").bounding_box()
+                right=page.locator(".mx-comp-right").bounding_box()
+                assert left and graph and right and left["x"]<graph["x"]<right["x"]
+                assert 780<=editor.bounding_box()["width"]<=860
+
             assert page.locator(".mx-comp-presets button").count()==5
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             rect=editor.bounding_box()
             assert rect and rect["width"]<=width and rect["height"]<=height,(width,height,rect)
             page.screenshot(path=f"arsonmix-native-compressor-{width}.png",full_page=True)
+            editor.screenshot(path=f"arsonmix-native-compressor-editor-{width}.png")
             if width==1366:
                 # CONTROL request is not a DSP ACK: no accepted status until
                 # audio completion + matching revision-bound follow-up readback.
-                ratio=page.locator('.mx-comp-control').nth(1).locator('input')
+                ratio=page.locator('.mx-comp-control[data-key="ratio"] input')
                 ratio.press("ArrowRight")
                 edit=last_action(page,"nativeCompSet")
                 assert abs(edit["settings"]["ratio"]-3.1)<.0001
@@ -106,10 +120,10 @@ def main():
                 emit_snapshot(page,state,accepted,applied=edit["requestId"])
                 page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                     ?.includes('NATIVE DSP ACCEPTED')""")
-                assert page.locator('.mx-comp-control').nth(1).locator("output").inner_text()=="3.1:1"
+                assert page.locator('.mx-comp-control[data-key="ratio"] output').inner_text()=="3.1:1"
                 # The MIX=0 curve must be geometrically unity, even if
                 # the wet compressor ratio and makeup are not neutral.
-                mix=page.locator('.mx-comp-control').nth(6).locator('input')
+                mix=page.locator('.mx-comp-control[data-key="mix"] input')
                 mix.press("Home")
                 before=page.locator(".mx-comp-curve").get_attribute("d")
                 assert before
@@ -118,7 +132,7 @@ def main():
                 emit(page,"arMixBuiltinCompQueue",{"requestId":after["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinCompAck",{"requestId":after["requestId"],"status":"APPLIED"})
                 emit_snapshot(page,state,{**accepted,"mix":0.0},applied=after["requestId"])
-                assert page.locator('.mx-comp-control').nth(6).locator("output").inner_text()=="0%"
+                assert page.locator('.mx-comp-control[data-key="mix"] output').inner_text()=="0%"
             assert not errors,(width,errors)
             page.close()
         browser.close()
