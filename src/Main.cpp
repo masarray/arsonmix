@@ -1892,6 +1892,11 @@ private:
                 lastMusicTempo_.tempo.locked);
             reply->setProperty("musicBpm",lastMusicTempo_.tempo.bpm);
             reply->setProperty("musicConfidence",lastMusicTempo_.tempo.confidence);
+            reply->setProperty("musicGridAvailable",lastMusicTempo_.active&&
+                lastMusicTempo_.tempo.locked&&
+                lastMusicTempo_.tempo.beatAnchorFrame>0);
+            reply->setProperty("musicBeatAnchorFrame",juce::String(
+                std::to_string(lastMusicTempo_.tempo.beatAnchorFrame)));
             reply->setProperty("musicDroppedFrames",
                 static_cast<int>(lastMusicTempo_.dropped));
             juce::Array<juce::var> bands;
@@ -2035,12 +2040,17 @@ private:
     // vocal inserts consume a precomputed atomic interval, not a WebView BPM.
     void serviceNativeMusicTempo() {
         lastMusicTempo_=engine_.pollNativeMusicTempo();
-        const auto bpm=lastMusicTempo_.active&&lastMusicTempo_.tempo.locked?
-            lastMusicTempo_.tempo.bpm:0.f;
-        engine_.forEachNativeProcessor([bpm](
+        const bool locked=lastMusicTempo_.active&&
+            lastMusicTempo_.tempo.locked&&
+            lastMusicTempo_.tempo.beatAnchorFrame>0;
+        const float bpm=locked?lastMusicTempo_.tempo.bpm:0.f;
+        const auto anchor=locked?lastMusicTempo_.tempo.beatAnchorFrame:0;
+        const auto epoch=lastMusicTempo_.epoch;
+        const auto revision=lastMusicTempo_.revision;
+        engine_.forEachNativeProcessor([bpm,anchor,epoch,revision](
             armix::mixer::ChannelId,juce::AudioProcessor* p) {
             if(auto* vocal=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(p))
-                vocal->publishMusicBpm(bpm);
+                vocal->publishMusicGrid(bpm,anchor,epoch,revision);
         });
     }
 
