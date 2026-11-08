@@ -1744,7 +1744,7 @@ private:
         const auto memory=readMemoryPressure();
         result << "=== WINDOWS MEMORY PRESSURE (MESSAGE THREAD ONLY) ===\n";
         if(memory.systemAvailable)
-            result << "System RAM load: " << memory.systemLoadPercent
+            result << "System RAM load: " << static_cast<juce::int64>(memory.systemLoadPercent)
                    << "% | Physically available: "
                    << static_cast<juce::int64>(memory.availablePhysicalMiB)
                    << " MiB\n";
