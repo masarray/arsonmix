@@ -22,6 +22,8 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('id="fastPicker"'),1)
         self.assertNotIn("preview-v3",self.assembled)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-1"'),1)
+        self.assertEqual(self.assembled.count("function insertChosenNativeCompressor(){"),1)
 
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
@@ -31,6 +33,8 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertNotIn("builtinEq.slotMarkup",self.assembled)
         self.assertNotIn("PRE VST3",self.assembled)
         self.assertEqual(self.assembled.count('data-fast-native-eq="1"'),1)
+        self.assertEqual(self.assembled.count('data-fast-native-comp="1"'),1)
+        self.assertIn("if(t.fx[index]==='Compressor')",self.assembled)
 
     def test_single_style_owner(self):
         # The approved CSS compiler requires exactly 18 component-owner links.
@@ -44,6 +48,12 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('document.createElementNS(NS,"svg")',script)
         self.assertIn('arMixBuiltinEqAck',script)
         self.assertNotIn("new AudioContext",script)
+        compressor=(ROOT/"site/preview-v2/assets/mixer-native-compressor.js").read_text("utf-8")
+        self.assertIn('arMixBuiltinCompAck',compressor)
+        self.assertIn('arMixBuiltinCompSnapshot',compressor)
+        self.assertIn('addedLatencySamples!==0',compressor)
+        self.assertNotIn("new AudioContext",compressor)
+        self.assertIn(".mx-comp[hidden]{display:none}",css)
 
     def test_fail_closed_on_repeat(self):
         with self.assertRaises(ValueError):

@@ -10,6 +10,7 @@
 // owner and ACK/snapshot adapter have actually been integrated.
 namespace armix::builtin_fx {
 inline constexpr std::string_view channelEqId = "armix.builtin.channel-eq.v1";
+inline constexpr std::string_view channelCompressorId = "armix.builtin.channel-compressor.v1";
 
 enum class FilterKind : std::uint8_t { highPass, lowShelf, bell, highShelf, lowPass };
 enum class Slope : std::uint8_t { db12 = 12, db24 = 24 };

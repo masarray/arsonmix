@@ -4,6 +4,7 @@
 #include "VstBusLayout.h"
 #include "Vst3DescriptionCache.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
@@ -76,6 +77,16 @@ public:
                             return "Saved native EQ state rejected; graph unchanged";
                         processor=std::move(eq);
                     } else if(insert.catalogId==
+                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
+                        auto comp=std::make_unique<armix::builtin_fx::ChannelCompressorProcessor>();
+                        comp->prepareToPlay(sampleRate,frames);
+                        if(!comp->isReady()||
+                           !comp->restoreUnpublishedState(
+                               state.bytes.getData(),
+                               static_cast<int>(state.bytes.getSize())))
+                            return "Saved native Compressor state rejected; graph unchanged";
+                        processor=std::move(comp);
+                    } else if(insert.catalogId==
                        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
                         auto harmony=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
                         harmony->prepareToPlay(sampleRate,frames);
@@ -102,6 +113,8 @@ public:
                     }
                     if(insert.catalogId!=
                        armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
+                       insert.catalogId!=
+                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity &&
                        insert.catalogId!=
                        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity)
                         processor->setStateInformation(state.bytes.getData(),

@@ -72,7 +72,10 @@ const head=dom("header","mx-peq-title"),brand=dom("span","mx-peq-brand","ArSonMi
  channel=dom("span","mx-peq-channel"),power=dom("button","mx-peq-global","⏻"),
  close=dom("button","mx-peq-close");power.type=close.type="button";
 close.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg>';close.setAttribute("aria-label","Close Parametric EQ");
- power.title="Toggle accepted insert bypass";close.title="Close EQ";
+ power.title="FX STATE UNAVAILABLE";power.dataset.fxState="unknown";
+ power.setAttribute("aria-pressed","false");power.disabled=true;
+ power.setAttribute("aria-label","EQ state unavailable");
+ close.title="Close EQ";close.setAttribute("aria-label","Close EQ");
  head.append(brand,channel,power,close);
 const body=dom("div","mx-peq-body"),graph=dom("div","mx-peq-graph");
 const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 676 330");
@@ -125,11 +128,20 @@ function updateKnobs(){
  const b=effective()[selected],c=context(),enabled=Boolean(c||!native());
  const ch=c?state()?.graph?.channels?.find(x=>x.id===c.channelId):null;
  const insert=ch?.inserts?.[c?.slot];
- const fxActive=!native()?!current?.track?.slotBypass?.[current?.slot]:
-  Boolean(insert && !insert.bypassed && !ch.fxRackBypassed);
- power.setAttribute("aria-pressed",String(fxActive));
- power.title=fxActive?"Bypass this EQ insert":"Enable this EQ insert";
- power.style.opacity=fxActive?"1":".5";
+ const fxState=!native()?
+  (!current?.track?"unknown":current.track.fxOn===false?"rack-off":
+   current.track.slotBypass?.[current.slot]?"off":"on"):
+  (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
+   typeof insert.bypassed!=="boolean"?"unknown":
+   ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+ power.dataset.fxState=fxState;
+ power.disabled=fxState==="unknown"||fxState==="rack-off";
+ power.setAttribute("aria-pressed",String(fxState==="on"));
+ power.title=fxState==="on"?"EQ ON · click to bypass":
+  fxState==="off"?"EQ BYPASSED · click to enable":
+  fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
+  "FX STATE UNAVAILABLE";
+ power.setAttribute("aria-label",power.title);
  bandName.textContent=names[selected];bandName.style.color=colors[selected];
  for(const [key,k] of Object.entries(knobs)){
   const cut=CUT(selected),disabled=(key==="gainDb"&&cut)||(key==="q"&&SHELF(selected))||(!enabled);
@@ -397,7 +409,10 @@ backend()?.addEventListener?.("arMixBuiltinEqSnapshot",s=>{
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
- queueMicrotask(()=>{if(!context()){pending=null;latest.clear();draft=null;
-  hint("DEVICE/GRAPH CHANGED · REOPEN ACCEPTED FX");draw();}});
+ queueMicrotask(()=>{
+  if(!context()){pending=null;latest.clear();draft=null;
+   hint("DEVICE/GRAPH CHANGED · REOPEN ACCEPTED FX");draw();}
+  else updateKnobs(); // authoritative scalar readback, no EQ curve rebuild
+ });
 });
 })();

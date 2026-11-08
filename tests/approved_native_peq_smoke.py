@@ -100,7 +100,11 @@ def main():
                 emitEvent(name,payload){
                   if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
                   if(name==='arMixAction')window.__actions.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                addEventListener(name,callback){
+                  const prior=window.__nativeListeners.get(name);
+                  window.__nativeListeners.set(name,prior
+                    ?payload=>{prior(payload);callback(payload);}
+                    :callback);}}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeEq")
             state=snapshot()
@@ -124,6 +128,7 @@ def main():
             assert page.locator("#mxNativePeq").is_hidden(),\
                 "editor auto-opened on INSERT"
             state["graph"].update(revision="3",rosterRevision="3")
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
             state["graph"]["channels"][0]["inserts"].append({
                 "id":INSTANCE,"catalogId":EQ_ID,"name":"Parametric EQ","bypassed":False})
             state["mixerSession"].update(routeRevision="3",rosterRevision="3",
@@ -139,9 +144,41 @@ def main():
             row.locator('[data-action="openPlugin"]').click()
             editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
+            # The plugin editor may appear one frame before its first native
+            # DSP snapshot. Prove ON from accepted readback, not a DOM race.
             values=bands_initial()
             handled=set()
             emit_snapshot(page,state,values)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='on'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
+            assert page.locator(".mx-peq-global").get_attribute("aria-pressed")=="true"
+            power=page.locator(".mx-peq-global")
+            assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
+            # The native EQ Power must reflect accepted insertion bypass and
+            # parent rack bypass; do not derive state from optimistic clicks.
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='off'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(233, 155, 159)'""")
+            assert power.get_attribute("aria-pressed")=="false"
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+            state["graph"]["channels"][0]["fxRackBypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='rack-off'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(240, 196, 131)'""")
+            assert power.is_disabled()
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='on'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
+            assert not power.is_disabled()
             assert page.locator(".mx-peq-knob").count()==3
             assert page.locator(".mx-peq-band").count()==8
             assert page.locator(".mx-peq-graph svg").count()==1

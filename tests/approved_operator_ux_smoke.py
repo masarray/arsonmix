@@ -51,20 +51,38 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertNotIn(".plugin-browser.minimized",plugin)
             self.assertIn("calc(100vw - 28px)",plugin)
             self.assertIn("calc(100dvh - 90px)",plugin)
-            self.assertIn("#pluginBrowser #pluginClose:active",plugin)
-            self.assertIn("background:#962f38!important",plugin)
+            self.assertNotIn("#pluginBrowser #pluginClose:active",plugin)
+            shared=(source/"assets/mixer-contextual-buttons.css").read_text(encoding="utf-8")
+            self.assertIn("Single authoritative modal Close",shared)
+            self.assertIn("#pluginClose,#fastClose,#wireConfigClose",shared)
+            self.assertIn("flex:0 0 24px!important",shared)
+            self.assertIn("background:linear-gradient(#cc4753,#982a36)",shared)
             # No extra CSS file, one canonical assembler, source history untouched.
             self.assertEqual((source/"index.html").read_text(encoding="utf-8"),html_before)
             self.assertEqual((source/"assets/mixer-chrome-material.css").read_bytes(),chrome_before)
             self.assertEqual(len(list(assets.iterdir())),2)
-    def test_native_peq_close_matches_mixer_floating_windows(self):
-        peq=(ROOT/"site/preview-v2/assets/mixer-native-peq.js").read_text(encoding="utf-8")
-        css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text(encoding="utf-8")
-        self.assertIn('close.innerHTML=',peq)
-        self.assertIn('M6.4,19L5,17.6L10.6,12',peq)
-        self.assertIn('.mx-peq .mx-peq-close:active',css)
-        self.assertIn('background:#962f38',css)
-        self.assertIn('width:29px;height:29px',css)
+    def test_all_floating_windows_share_close_and_readback_power_chrome(self):
+        assets=ROOT/"site/preview-v2/assets"
+        shared=(assets/"mixer-contextual-buttons.css").read_text(encoding="utf-8")
+        fx=(assets/"mixer-fx-rack.css").read_text(encoding="utf-8")
+        eq=(assets/"mixer-native-peq.js").read_text(encoding="utf-8")
+        comp=(assets/"mixer-native-compressor.js").read_text(encoding="utf-8")
+        for name in ("identityClose","pluginClose","fastClose",
+                     "wireConfigClose","wireWsClose","routeChoiceClose",
+                     "mx-peq-close","mx-comp-close","armix-floating-close"):
+            self.assertIn(name,shared)
+        for state in ("on","off","rack-off","unknown"):
+            self.assertIn('data-fx-state="'+state+'"',shared)
+        self.assertIn("flex:0 0 24px!important",shared)
+        self.assertIn("linear-gradient(#cc4753,#982a36)",shared)
+        self.assertNotIn(".mx-peq .mx-peq-close:active",fx)
+        self.assertNotIn(".mx-comp-power.bypassed",fx)
+        self.assertIn('power.dataset.fxState=fxState;',eq)
+        self.assertIn('power.dataset.fxState=fxState;',comp)
+        self.assertIn('else updateKnobs();',eq)
+        self.assertIn('syncPower(); // accepted graph readback',comp)
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertNotIn(".armix-audio-dialog .armix-floating-close{",bridge)
 
     def test_native_hooks_and_audio_input_default(self):
         build=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")

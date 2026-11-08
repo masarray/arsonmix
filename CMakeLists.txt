@@ -119,7 +119,6 @@ if(BUILD_TESTING)
   target_compile_features(ARMixHarmonyDspTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyMultivoicePitchAndRealtimeFinitePCM COMMAND ARMixHarmonyDspTests)
   add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
-  # Windows native matrix explicitly builds the routing test target.
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
   add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests)
@@ -376,6 +375,14 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeChannelEqTests PRIVATE cxx_std_20)
   add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
+
+  # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
+  # soft knee, dry/wet, parameter validation and variable sample rates.
+  add_executable(ARMixNativeCompressorTests tests/builtin_channel_compressor_test.cpp
+      engine/builtin_fx/ChannelCompressor.h)
+  target_compile_features(ARMixNativeCompressorTests PRIVATE cxx_std_20)
+  add_test(NAME NativeCompressorZeroLatencyAndLinkedStereoPCM COMMAND ARMixNativeCompressorTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorTests)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
