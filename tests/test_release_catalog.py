@@ -82,5 +82,37 @@ class ReleaseCatalogContract(unittest.TestCase):
             mod.catalog({"releases": []})
 
 
+    def test_zip_first_and_backward_compatible_exe(self):
+        tag = "v0.5.0-alpha.5"
+        r = release(tag, suffixes=[
+            ("Windows-x64-Setup.exe", "INSTALLER_PROVENANCE.json"),
+            ("Windows-x64-Setup.zip", "INSTALLER_PROVENANCE.json"),
+        ])
+        chosen = mod.catalog([r])["platforms"]["windows"]
+        self.assertEqual(chosen["name"], f"ArSonMix-{tag}-Windows-x64-Setup.zip")
+        r["assets"] = [a for a in r["assets"]
+                       if not a["name"].endswith("Windows-x64-Setup.zip")]
+        fallback = mod.catalog([r])["platforms"]["windows"]
+        self.assertTrue(fallback["name"].endswith("Windows-x64-Setup.exe"))
+
+    def test_version_order_beats_late_publication_of_old_build(self):
+        early = release("v0.5.0-alpha.5", "2026-11-08T02:00:00Z")
+        late = release("v0.5.0-alpha.4", "2026-11-09T00:00:00Z")
+        result = mod.catalog([late, early])["platforms"]["windows"]
+        self.assertEqual(result["tag"], "v0.5.0-alpha.5")
+
+    def test_invalid_zip_cannot_displace_verified_exe(self):
+        tag = "v0.5.0-alpha.5"
+        r = release(tag, suffixes=[
+            ("Windows-x64-Setup.exe", "INSTALLER_PROVENANCE.json"),
+            ("Windows-x64-Setup.zip", "INSTALLER_PROVENANCE.json"),
+        ])
+        for a in r["assets"]:
+            if a["name"].endswith("Windows-x64-Setup.zip"):
+                a["digest"] = "sha256:invalid"
+        chosen = mod.catalog([r])["platforms"]["windows"]
+        self.assertTrue(chosen["name"].endswith("Windows-x64-Setup.exe"))
+
+
 if __name__ == "__main__":
     unittest.main()
