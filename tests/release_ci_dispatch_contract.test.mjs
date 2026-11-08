@@ -37,12 +37,12 @@ test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and do
   const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const first=workflow.split('      - name: Verify release identity and immutable source')[1]
     ?.split('      - uses: actions/setup-python@v5')[0]||'';
-  assert.match(first,/Invoke-WebRequest -Method Get -Uri \\$releaseUri -SkipHttpErrorCheck/);
-  assert.match(first,/\\$releaseProbe\\.StatusCode -eq 200/);
-  assert.match(first,/\\$releaseProbe\\.StatusCode -ne 404/);
+  assert.match(first,/Invoke-WebRequest -Method Get -Uri \$releaseUri -SkipHttpErrorCheck/);
+  assert.match(first,/\$releaseProbe\.StatusCode -eq 200/);
+  assert.match(first,/\$releaseProbe\.StatusCode -ne 404/);
   assert.doesNotMatch(first,/& gh release view/);
   const notes=readFileSync(new URL('../docs/releases/v0.5.0-alpha.4.md',import.meta.url),'utf8');
-  assert.match(notes,/^# ArSonMix v0\\.5\\.0-alpha\\.4/m);
+  assert.match(notes,/^# ArSonMix v0\.5\.0-alpha\.4/m);
   assert.match(notes,/Delete Track/);
   assert.match(notes,/Orbit/);
 });
