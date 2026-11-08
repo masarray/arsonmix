@@ -163,6 +163,33 @@ static void actualGraphSourcePcm() {
     graph.unpublish();
     graph.pollRetirement();
 }
+static void callbackClockEpochAndNestedScope() {
+    using armix::mixer::NativeBeatFrameScope;
+    NativeMusicTempoMonitor tap;
+    check(!NativeBeatFrameScope::current().valid);
+    noHeap.store(true,std::memory_order_release);
+    check(tap.beginAudioBlock(82,64)==0);
+    check(tap.beginAudioBlock(82,128)==64);
+    {
+        NativeBeatFrameScope outer{82,7,192};
+        const auto a=NativeBeatFrameScope::current();
+        check(a.valid&&a.epoch==82&&a.revision==7&&a.startFrame==192);
+        {
+            NativeBeatFrameScope nested{82,8,320};
+            const auto b=NativeBeatFrameScope::current();
+            check(b.valid&&b.revision==8&&b.startFrame==320);
+        }
+        const auto restored=NativeBeatFrameScope::current();
+        check(restored.valid&&restored.revision==7&&restored.startFrame==192);
+    }
+    check(!NativeBeatFrameScope::current().valid);
+    check(tap.beginAudioBlock(82,256)==192);
+    // Physical device restart must establish a NEW sample origin. This
+    // prevents a beat from the old ASIO epoch appearing on the new device.
+    check(tap.beginAudioBlock(83,64)==0);
+    check(tap.beginAudioBlock(83,128)==64);
+    noHeap.store(false,std::memory_order_release);
+}
 int main() {
     lockTempo(72);
     lockTempo(95);
@@ -170,6 +197,7 @@ int main() {
     lockTempo(160);
     lockTempo(120,true);
     failClosed();
+    callbackClockEpochAndNestedScope();
     actualGraphSourcePcm();
     std::puts("PASS: native music-channel BPM 72/95/120/160, silence holdover, stale graph, no RT heap");
 }
