@@ -85,8 +85,21 @@ def main():
             editor=page.locator("#mxNativeComp")
             editor.wait_for(state="visible")
             emit_snapshot(page,state,DEFAULTS)
+            status_at_first_readback=page.locator(".mx-comp-status").inner_text()
+            if "NATIVE DSP ACCEPTED" not in status_at_first_readback:
+                print("COMP-FIRST-SNAPSHOT-DEBUG",{
+                    "status":status_at_first_readback,
+                    "actions":page.evaluate("""()=>window.__actions.filter(x=>
+                        x.action==='nativeCompSnapshot').slice(-4)"""),
+                    "current":page.evaluate("""()=>{const c=window.__ARMIX_NATIVE_M2__?.state()?.current;
+                        return {admitted:c?.admitted,epoch:c?.device?.epoch,
+                        revision:c?.graph?.revision,first:c?.graph?.channels?.[0]};}"""),
+                    "instance":INSTANCE})
+                # The WebView may have requested a fresher timer readback while
+                # the test replied. Respond to that exact latest request.
+                emit_snapshot(page,state,DEFAULTS)
             page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
-                ?.includes('NATIVE DSP ACCEPTED')""")
+                ?.includes('NATIVE DSP ACCEPTED')""",timeout=3000)
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
             assert page.locator(".mx-comp-control[data-key]").count()==7
