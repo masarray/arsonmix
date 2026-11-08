@@ -25,10 +25,20 @@ def blockers(platform, root=ROOT):
     start = cmake.find("target_compile_definitions(ARMixConsole PRIVATE")
     finish = cmake.find("\nif(WIN32)", start)
     definitions = cmake[start:finish] if start >= 0 and finish > start else cmake
-    if "JUCE_USE_WIN_WEBVIEW2=1" in definitions:
-        found.append("Win WebView2 compile settings still unconditional for all OS")
-    if 'setCurrentAudioDeviceType ("Windows Audio"' in engine:
-        found.append("Device fallback still hardcodes Windows Audio instead of platform backend")
+    if "JUCE_USE_WIN_WEBVIEW2=1" in definitions or "JUCE_ASIO=1" in definitions:
+        found.append("Windows WebView2/ASIO compile settings remain unconditional")
+    fallback = engine.find('setCurrentAudioDeviceType ("Windows Audio"')
+    if fallback >= 0:
+        gate = engine.rfind("#if defined(_WIN32)", 0, fallback)
+        end_gate = engine.find("#endif", gate) if gate >= 0 else -1
+        if gate < 0 or end_gate < fallback:
+            found.append("Windows Audio startup fallback not platform-guarded")
+    if "NEEDS_WEBVIEW2 ${WIN32}" not in cmake:
+        found.append("JUCE WebView2 target requirement not Windows-only")
+    if "Backend::defaultBackend" not in webview:
+        found.append("No platform-native WebKit fallback for Linux/macOS")
+    if "JUCE_PLUGINHOST_VST3=1" not in cmake:
+        found.append("Native VST3 hosting unavailable in cross-platform target")
     package = {
         "linux": "scripts/package_native_linux.sh",
         "macos": "scripts/package_native_macos.sh",
