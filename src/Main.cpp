@@ -2969,7 +2969,8 @@ private:
                 caps.getArray()->contains(juce::String("REMOVE_BUS"));
             bool removable=false;
             auto role=armix::mixer::ChannelRole::group;
-            if(const auto* rows=graph.getProperty("channels",{}).getArray())
+            const auto channelRows=graph.getProperty("channels",{});
+            if(const auto* rows=channelRows.getArray())
                 for(const auto& row:*rows) {
                     if(row.getProperty("id","").toString()!=rawId.toString())
                         continue;
