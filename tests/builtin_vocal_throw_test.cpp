@@ -248,6 +248,42 @@ static void manualOverrideSuppressesAuto() {
     run(fx,0.f,0.f,5000,l,r);
     check(fx.throwCount()==2); // new phrase, after full release + gate
 }
+// Accepted music BPM affects only new frozen tails, never retimes a tail
+// already singing. An unlocked source must use persisted Manual/TAP BPM.
+static void musicTempoChangesOnlyFutureTail() {
+    VocalThrow music,manual;
+    check(music.prepare(48000)&&manual.prepare(48000));
+    auto s=music.settingsForTests();
+    s.mode=0;s.bpm=120.f;s.division=0;s.repeats=1;
+    s.captureMs=120.f;s.wet=1.f;s.ducking=0.f;
+    check(music.resetUnpublished(s)&&manual.resetUnpublished(s));
+    float a=0.f,b=0.f;
+    run(music,.6f,.4f,12000,a,b);
+    run(manual,.6f,.4f,12000,a,b);
+    run(music,0.f,0.f,2880,a,b);
+    run(manual,0.f,0.f,2880,a,b);
+    noHeap.store(true);
+    music.setMusicIntervalSamples(12000); // 1/4 at 240 BPM equivalent
+    const bool firedMusic=music.throwNow();
+    const bool firedManual=manual.throwNow();
+    // The selected backing bus can disappear immediately after the cue.
+    // Its already frozen tail must retain the accepted .25s repeat interval.
+    music.setMusicIntervalSamples(0);
+    noHeap.store(false);
+    check(firedMusic&&firedManual);
+    a=b=0.f;
+    run(music,0.f,0.f,8640,a,b); // 180 ms after cue
+    check(a==0.f&&b==0.f);
+    a=b=0.f;
+    run(music,0.f,0.f,6720,a,b); // repeat around 190-310 ms
+    check(a>.01f&&b>.01f);
+    a=b=0.f;
+    run(manual,0.f,0.f,15360,a,b); // manual .5s must still be silent
+    check(a==0.f&&b==0.f);
+    a=b=0.f;
+    run(manual,0.f,0.f,11520,a,b);
+    check(a>.01f&&b>.01f);
+}
 int main() {
     validation();
     manualAndDry(8000);
@@ -262,5 +298,6 @@ int main() {
     manualOverrideSuppressesAuto();
     autoThenManualMustNotDoubleEcho();
     denseRepeatsStayBounded();
+    musicTempoChangesOnlyFutureTail();
     std::puts("PASS: vocal-throw native dry/rolling capture/phrase/echo/tempo/no-heap");
 }
