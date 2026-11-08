@@ -141,6 +141,13 @@ def main():
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
             assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
             assert "BPM only" in editor.locator("#vtMusicStatus").inner_text()
+            # Snapshot transport is request/response, not unsolicited push.
+            # Wait for a fresh native read request before testing a second
+            # DSP status update; a replay of the prior request is ignored.
+            previous=last(page,"nativeThrowSnapshot")["requestId"]
+            page.wait_for_function(
+                """old=>window.__actions.filter(x=>x.action==='nativeThrowSnapshot').at(-1)?.requestId!==old""",
+                arg=previous,timeout=4000)
             # Confidence-approved grid is a separate native fact; the GUI
             # must never fabricate it from BPM alone.
             reply_snapshot(page,state,
