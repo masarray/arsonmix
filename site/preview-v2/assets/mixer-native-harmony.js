@@ -209,7 +209,15 @@ function paint(){
   const setting=String(value);
   if(input.value!==setting)input.value=setting;
   const ratio=Math.max(0,Math.min(1,(value-Number(input.min))/(Number(input.max)-Number(input.min))));
-  input.parentElement.style.setProperty("--dial-turn",(-135+ratio*270)+"deg");
+  // One numeric source drives the pointer AND the 270-degree illuminated
+  // groove. Only touch CSS variables when the value changes: no extra
+  // animation frame, renderer loop or audio work during native snapshots.
+  const surface=input.parentElement;
+  const turn=(-135+ratio*270)+"deg",sweep=(ratio*270)+"deg";
+  if(surface.style.getPropertyValue("--dial-turn")!==turn)
+    surface.style.setProperty("--dial-turn",turn);
+  if(surface.style.getPropertyValue("--dial-sweep")!==sweep)
+    surface.style.setProperty("--dial-sweep",sweep);
   showText(output,key==="gainDb"?v[key].toFixed(1)+" dB":Math.round(value)+"%");
  }
  syncPower();
