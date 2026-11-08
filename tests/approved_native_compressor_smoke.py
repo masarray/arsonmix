@@ -84,6 +84,13 @@ def main():
             row.locator('[data-action="openPlugin"]').click()
             editor=page.locator("#mxNativeComp")
             editor.wait_for(state="visible")
+            # A pending native snapshot must survive multiple meter-poll ticks.
+            # Previously each 160ms tick changed readId, starving slower DSP
+            # readbacks and causing ON/Bypass UI to remain unconfirmed.
+            first_read=last_action(page,"nativeCompSnapshot")["requestId"]
+            page.wait_for_timeout(360)
+            assert last_action(page,"nativeCompSnapshot")["requestId"]==first_read,\
+                "meter poll overwrote outstanding native readback"
             emit_snapshot(page,state,DEFAULTS)
             status_at_first_readback=page.locator(".mx-comp-status").inner_text()
             if "NATIVE DSP ACCEPTED" not in status_at_first_readback:
