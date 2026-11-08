@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER
 
 ROOT=Path(__file__).resolve().parents[1]
 ID="armix.builtin.vocal-throw.v1"
@@ -20,13 +20,18 @@ def last(page,action):
     assert records, "No "+action+" event"
     return records[-1]
 
-def reply_snapshot(page,state,settings,applied=None,count=0,tail=False):
+def reply_snapshot(page,state,settings,applied=None,count=0,tail=False,music=None):
     act=last(page,"nativeThrowSnapshot")
     data={"requestId":act["requestId"],"channelId":SOURCE,"slot":0,
         "instanceId":INSTANCE,"status":"ACCEPTED","schemaVersion":1,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],"sampleRate":48000,
         "addedLatencySamples":0,"throwCount":count,"tailActive":tail,
+        "musicSourceChannelId":music["source"] if music else "0",
+        "musicSourceActive":bool(music),
+        "musicLocked":bool(music),
+        "musicBpm":music["bpm"] if music else 0,
+        "musicConfidence":music["confidence"] if music else 0,
         "settings":copy.deepcopy(settings)}
     if applied:data["appliedRequestId"]=applied
     emit(page,"arMixBuiltinThrowSnapshot",data)
@@ -125,6 +130,21 @@ def main():
                     channels=copy.deepcopy(state["graph"]["channels"]))
                 emit(page,"arMixConsoleSnapshot",state)
                 page.wait_for_function("""()=>document.querySelector('#vtThrow')?.disabled""",timeout=2000)
+            # Real native tempo-source command (not a browser-only BPM guess).
+            source_menu=editor.locator("#vtMusicSource")
+            assert source_menu.locator('option[value="'+RECEIVER+'"]').count()==1
+            source_menu.select_option(RECEIVER)
+            request=last(page,"nativeThrowTempoSource")
+            assert request["sourceChannelId"]==RECEIVER and request["channelId"]==SOURCE
+            assert editor.locator("#vtMusicStatus").inner_text().startswith("Validating")
+            emit(page,"arMixBuiltinThrowTempoAck",{
+                "requestId":request["requestId"],"status":"APPLIED",
+                "sourceChannelId":RECEIVER})
+            reply_snapshot(page,state,
+                {**DEFAULTS,"mode":0} if width==1366 else DEFAULTS,
+                count=1 if width==1366 else 0,tail=width==1366,
+                music={"source":RECEIVER,"bpm":120,"confidence":.85})
+            assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
             editor.locator("#vtClose").click()
             assert editor.is_hidden(),"standard close must dismiss editor"
             assert not errors,(width,errors)
