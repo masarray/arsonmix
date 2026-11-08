@@ -130,17 +130,34 @@ function syncPower(){
 function paint(){
  $("vtMode").value=String(draft.mode);$("vtBpm").value=String(draft.bpm);
  $("vtDivision").value=String(draft.division);$("vtRepeats").value=String(draft.repeats);
- for(const [key,[,unit]] of Object.entries(fields)){
-  const label=$("vtRanges").querySelector('[data-key="'+key+'"]');
-  label.querySelector("input").value=String(draft[key]);
-  label.querySelector("output").textContent=
+ for(const [key,[,unit]] of Object.entries(encoderMeta)){
+  const node=panel.querySelector('.vt-encoder[data-key="'+key+'"]');
+  const min=ranges[key][0],max=ranges[key][1];
+  const pct=(draft[key]-min)/(max-min);
+  const turn=-130+260*pct;
+  node.style.setProperty("--turn",turn.toFixed(2)+"deg");
+  node.querySelector(".vt-encoder-value").textContent=
    (unit==="%"?Math.round(draft[key]*100):Math.round(draft[key]))+unit;
+  const dial=node.querySelector(".vt-encoder-face");
+  dial.setAttribute("aria-valuemin",String(min));
+  dial.setAttribute("aria-valuemax",String(max));
+  dial.setAttribute("aria-valuenow",String(draft[key]));
+  dial.setAttribute("aria-valuetext",node.querySelector(".vt-encoder-value").textContent);
  }
+ const wetPct=Math.round(draft.wet*100);
+ $("vtWetValue").textContent=wetPct+"%";
+ $("vtWetDial").style.setProperty("--turn",(-130+260*draft.wet).toFixed(2)+"deg");
+ $("vtWetDial").setAttribute("aria-valuenow",String(wetPct));
+ $("vtWetDial").setAttribute("aria-valuetext",wetPct+" percent");
+ for(const b of panel.querySelectorAll(".vt-mode-buttons button"))
+  b.setAttribute("aria-pressed",String(Number(b.dataset.mode)===draft.mode));
+ for(const b of panel.querySelectorAll(".vt-division-buttons button"))
+  b.setAttribute("aria-pressed",String(Number(b.dataset.division)===draft.division));
  $("vtPreset").value=Object.entries(presets).find(([,v])=>same(v,draft))?.[0]||"Custom";
  const rhythmic=["1/4","1/8","DOTTED 1/8","1/2"][accepted.division];
  const modes=["MANUAL","AUTO","HYBRID"];
  $("vtRhythm").textContent=rhythmic+" · "+modes[accepted.mode];
- for(const [index,led] of [...$("vtBeatRail").children].entries())
+ for(const [index,led] of [...$("vtBeatRail").querySelectorAll("i")].entries())
   led.dataset.on=String(index<accepted.repeats);
  renderMusicStatus();
  syncPower();
@@ -170,13 +187,64 @@ for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
   draft={...draft,[key]:Number($(id).value)};paint();send("nativeThrowSet");
  });
 }
-for(const key of Object.keys(fields)){
- const input=$("vtRanges").querySelector('[data-key="'+key+'"] input');
- input.addEventListener("input",()=>{
-  const value=Number(input.value),bounds=ranges[key];
-  draft={...draft,[key]:clamp(value,bounds[0],bounds[1])};paint();
+// Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
+// Update visual locally during movement; issue exactly ONE accepted native
+// settings intent at drag release. No DOM/audio DSP loops are introduced.
+function bindRotary(face,key,step){
+ const [min,max]=ranges[key];
+ const quantize=v=>clamp(Math.round(v/step)*step,min,max);
+ let gesture=null;
+ const update=v=>{if(pending)return;draft={...draft,[key]:quantize(v)};paint();};
+ face.addEventListener("pointerdown",e=>{
+  if(e.button!==0||pending)return;
+  gesture={id:e.pointerId,y:e.clientY,initial:draft[key],changed:false};
+  face.setPointerCapture(e.pointerId);e.preventDefault();
  });
- input.addEventListener("change",()=>send("nativeThrowSet"));
+ face.addEventListener("pointermove",e=>{
+  if(!gesture||gesture.id!==e.pointerId)return;
+  const next=quantize(gesture.initial+(gesture.y-e.clientY)*(max-min)/168);
+  if(next!==draft[key]){gesture.changed=true;update(next);}
+  e.preventDefault();
+ });
+ const finish=e=>{
+  if(!gesture||e.pointerId!==gesture.id)return;
+  const changed=gesture.changed;gesture=null;
+  if(face.hasPointerCapture?.(e.pointerId))face.releasePointerCapture(e.pointerId);
+  if(changed)send("nativeThrowSet");
+ };
+ face.addEventListener("pointerup",finish);
+ face.addEventListener("pointercancel",()=>{gesture=null;paint();});
+ face.addEventListener("wheel",e=>{
+  if(pending)return;
+  e.preventDefault();update(draft[key]+(e.deltaY<0?step:-step));
+  send("nativeThrowSet");
+ },{passive:false});
+ face.addEventListener("keydown",e=>{
+  const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:5,PageDown:-5}[e.key];
+  if(delta===undefined&&e.key!=="Home"&&e.key!=="End")return;
+  e.preventDefault();
+  update(e.key==="Home"?min:e.key==="End"?max:draft[key]+delta*step);
+  send("nativeThrowSet");
+ });
+ face.addEventListener("dblclick",()=>{
+  if(pending)return;
+  update(defaults()[key]);send("nativeThrowSet");
+ });
+}
+for(const [key,[,,step]] of Object.entries(encoderMeta))
+ bindRotary(panel.querySelector('.vt-encoder[data-key="'+key+'"] .vt-encoder-face'),key,step);
+bindRotary($("vtWetDial"),"wet",.01);
+for(const button of panel.querySelectorAll(".vt-mode-buttons button")){
+ button.addEventListener("click",()=>{
+  $("vtMode").value=button.dataset.mode;
+  $("vtMode").dispatchEvent(new Event("change",{bubbles:true}));
+ });
+}
+for(const button of panel.querySelectorAll(".vt-division-buttons button")){
+ button.addEventListener("click",()=>{
+  $("vtDivision").value=button.dataset.division;
+  $("vtDivision").dispatchEvent(new Event("change",{bubbles:true}));
+ });
 }
 $("vtMusicSource").addEventListener("change",()=>{
  const ctx=context(),source=String($("vtMusicSource").value);
