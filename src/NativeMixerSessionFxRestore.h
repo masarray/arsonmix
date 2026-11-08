@@ -2,6 +2,7 @@
 #pragma once
 #include "NativeMixerSessionDocument.h"
 #include "VstBusLayout.h"
+#include "Vst3DescriptionCache.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
@@ -77,12 +78,8 @@ public:
                         if(!format||
                            !format->fileMightContainThisPluginType(insert.path))
                             return "Saved VST3 unavailable: "+insert.catalogId;
-                        juce::OwnedArray<juce::PluginDescription> descriptions;
-                        format->findAllTypesForFile(descriptions,insert.path);
-                        juce::PluginDescription* chosen=nullptr;
-                        for(auto* d:descriptions)
-                            if(d&&d->uniqueId==insert.uid&&!d->isInstrument)
-                                {chosen=d;break;}
+                        const auto chosen=armix::vst::DescriptionCache::resolve(
+                            *format,insert.path,insert.uid);
                         if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
                         juce::String pluginError;
                         processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);

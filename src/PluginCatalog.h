@@ -5,6 +5,7 @@
 #include "PortableWorkspace.h"
 #include "PluginVault.h"
 #include "FactoryFxRegistry.h"
+#include "Vst3DescriptionCache.h"
 #include <algorithm>
 #if JUCE_WINDOWS
  #include <objbase.h>
@@ -310,8 +311,21 @@ private:
                 // real VST3 class; subsequent starts reuse its verified identity.
                 if (! usedVerifiedCache && format.fileMightContainThisPluginType (path))
                 {
-                    juce::OwnedArray<juce::PluginDescription> descriptions;
-                    format.findAllTypesForFile (descriptions, path);
+                    armix::vst::DescriptionCache cache;
+                    auto descriptions=factoryOnly_?cache.read(path):
+                        armix::vst::DescriptionCache::Descriptions{};
+                    const bool missingFactoryType=factoryOnly_&&std::any_of(
+                        factory.candidates.begin(),factory.candidates.end(),[&](const auto& approved){
+                            return approved.path==path&&std::none_of(descriptions.begin(),
+                                descriptions.end(),[&](const auto* entry){
+                                    return entry->uniqueId==approved.hostUniqueId&&!entry->isInstrument;
+                                });
+                        });
+                    if(descriptions.isEmpty()||missingFactoryType) {
+                        descriptions.clear();
+                        format.findAllTypesForFile(descriptions,path);
+                        cache.remember(descriptions);
+                    }
                     for (int i = 0; i < descriptions.size(); ++i)
                     {
                         const auto* desc = descriptions[i];

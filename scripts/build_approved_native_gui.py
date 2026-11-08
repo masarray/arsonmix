@@ -218,7 +218,7 @@ NATIVE_EVENT_HOOKS = (
      "  }\n"
      "  return true;\n"
      " },\n"
-     " make,render,findTrack,displayMeterDbfs,\n"
+     " make,render,findTrack,displayMeterDbfs,revealTrack,\n"
      " openChannelIdentity,closeChannelIdentity,\n"
      " get identityTrackId(){return identityTrackId;},\n"
      " get identityColor(){return identityColor;},get identityIcon(){return identityIcon;},\n"

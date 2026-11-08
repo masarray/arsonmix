@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,6 +45,17 @@ def main():
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
             emit(page,'arMixConsoleSnapshot',g0)
+            add_track=page.locator('.command-bar #addTrack')
+            assert add_track.is_enabled()
+            add_track.click()
+            create='()=>window.__events.filter(e=>e.payload?.action==="routingNativeTrackCreate")'
+            bootstrap=page.evaluate(create)[-1]['payload']
+            assert bootstrap['bootstrapRevision']=='1'
+            assert bootstrap['deviceEpoch']==g0['device']['epoch']
+            assert add_track.is_disabled()
+            emit(page,'arMixNativeBusAck',{'requestId':bootstrap['requestId'],
+                'ok':False,'error':'Test stale starter graph'})
+            assert add_track.is_enabled()
             # Native-only Studio controls must use real JUCE Show I/O; the
             # public Pages scene model must never acknowledge a persisted Show.
             show_panel = "#moreTools .more-tools-panel"
@@ -200,6 +211,7 @@ def main():
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
             assert page.locator('.status-bar .warning').inner_text().startswith('NEEDS REMAP')
             assert page.locator('[data-native-monitor]').is_disabled()
+            assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
             assert 'OUT NEEDS REMAP' in page.locator('#transport').inner_text()
             page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
@@ -215,8 +227,7 @@ def main():
             # Late readback from the disconnected epoch cannot re-admit audio.
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
-            # A new WASAPI pair is inspected before exposing a separate,
-            # explicit confirmation for the retained numbered pin mapping.
+            # One explicit Apply accepts the verified replacement binding.
             page.locator('[data-native-io]').click()
             backend='Windows Audio'
             active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
@@ -234,30 +245,66 @@ def main():
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':'old','state':'NEEDS_REMAP',
                 'active':active,'canReusePins':True})
             assert remap.is_hidden()
-            emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'state':'NEEDS_REMAP',
-                'active':active,'canReusePins':True})
-            remap.click()
-            binding=page.evaluate(read_apply)
-            assert binding['config']['confirmRetainedPinMapping'] is True
-            assert binding['expectedDeviceGeneration']==12
-            assert binding['config']['captureDevice']=='New Capture'
-            assert binding['config']['playbackDevice']=='New Playback'
-            assert binding['config']['sampleRate']==48000 and binding['config']['bufferSize']==256
-            emit(page,'arMixAudioDeviceApplyAck',{'requestId':binding['requestId'],'ok':True,
-                'state':'ACCEPTED_MUTED','active':active,'mixerBound':True})
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'ok':True,
+                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
             assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
-            rebound['device'].update(epoch='93',outputArmed=False)
+            rebound['device'].update(epoch='93',outputArmed=True)
             rebound['graph']['revision']='6'
+            rebound['graph']['capabilities']['supportedOps'].append('CREATE_CHANNEL')
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')
             monitor_events=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')
             emit(page,'arMixConsoleSnapshot',rebound)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.admitted')
             assert page.locator('[data-native-monitor]').is_enabled()
-            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='false'
+            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
             assert page.locator('#tracks .strip').count()==4
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
+            assert strip.locator('select[data-field="input"]').is_enabled()
+            assert strip.locator('select[data-field="output"]').is_enabled()
+            strip.locator('.wire-node-out').click()
+            assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_enabled()
+            strip.locator('.fx-section .fx-pick.empty').click()
+            assert page.locator('#fastPicker [data-fast-id="test-vst-64"]').is_visible()
+            page.locator('#fastClose').click()
+            # Apply again while MAIN is live. The native transaction owns
+            # temporary mute and restoration without an extra browser command.
+            page.locator('[data-native-io]').click()
+            emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
+                {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
+            page.locator('[data-audio-apply]').click()
+            repeated=page.evaluate(read_apply)
+            assert repeated['requestId']!=opened['requestId']
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':repeated['requestId'],'ok':True,
+                'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
+            assert page.locator('.armix-audio-shade').is_hidden()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
+            add_track.click()
+            request=page.evaluate(create)[-1]['payload']
+            assert (request['deviceEpoch'],request['graphRevision'],request['rosterRevision'])==(
+                '93','6',rebound['graph']['rosterRevision'])
+            assert add_track.is_disabled()
+            created_id='9007199254740997'
+            emit(page,'arMixNativeBusAck',{'requestId':request['requestId'],
+                'ok':True,'createdId':created_id,'graphRevision':'7'})
+            assert add_track.is_disabled()
+            assert page.locator('#tracks .strip').count()==4
+            rebound['graph'].update(revision='7',rosterRevision='7')
+            new_track=copy.deepcopy(rebound['graph']['channels'][1])
+            new_track.update(id=created_id,name='Track 11',inserts=[],sends=[])
+            new_track.pop('source',None)
+            rebound['graph']['channels'].insert(-1,new_track)
+            rebound['graph']['edges'].append(dict(edgeId='9223372036854775818',
+                tap='POST_FADER',enabled=True,signalKind='AUDIO',
+                **{'from':created_id,'to':MAIN,'primaryOutput':True,'gainLinear':1}))
+            rebound['mixerSession'].update(routeRevision='7',rosterRevision='7',
+                channels=copy.deepcopy(rebound['graph']['channels']))
+            emit(page,'arMixConsoleSnapshot',rebound)
+            assert add_track.is_enabled()
+            selected=page.locator('#tracks .strip.selected')
+            assert 'Track 11' in selected.inner_text()
+            assert selected.locator('select[data-field="input"]').is_enabled()
+            assert page.locator('[data-native-monitor]').get_attribute('data-armed')=='true'
             assert not errors, errors
             page.screenshot(path=f'native-cold-start-{width}.png')
             page.close()

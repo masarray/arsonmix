@@ -1218,6 +1218,35 @@ private:
         return juce::var(o.release());
     }
 
+    // One-shot on a verified setup or startup, including the first input
+    // patch. A later device epoch or a user MUTE cancels the pending arm.
+    std::uint64_t autoMainEpoch_=0;
+    std::optional<std::uint64_t> autoMainCheckedRevision_;
+    void serviceAutomaticMain() {
+        if(autoMainEpoch_==0)return;
+        if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
+           engine_.isMonitorEnabled()) {
+            autoMainEpoch_=0;
+            return;
+        }
+        if(nativeShowBusy_||studioBackupBusy_||engine_.secondaryArmed()||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        const auto revision=engine_.outputArmRevision();
+        if(autoMainCheckedRevision_==revision)return;
+        if(engine_.isGraphSwitchPending()||!engine_.hasBoundMixerRoute())return;
+        autoMainCheckedRevision_=revision;
+        if(engine_.liveOutputArmFault().isNotEmpty())return;
+        engine_.setMonitorEnabled(true);
+        autoMainEpoch_=0;
+        diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
+    }
+
+    void requestAutomaticMain() {
+        autoMainEpoch_=engine_.dryRoutingLabEpoch();
+        autoMainCheckedRevision_.reset();
+        serviceAutomaticMain();
+    }
+
     void applyCustomAudioDevice(const juce::var& args)
     {
         // Synchronous manager operations stay on JUCE's established message
@@ -1246,12 +1275,13 @@ private:
                 static_cast<double>(oldGeneration))
             return send(false,"REJECTED","Stale device generation; refresh DEVICE / DRIVER");
         const auto nativeRoute=engine_.status().getProperty("dryRoutingLab",{});
-        if(nativeShowBusy_||studioBackupBusy_||engine_.isGraphSwitchPending()||
+        if(nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
+           engine_.isGraphSwitchPending()||
             static_cast<bool>(nativeRoute.getProperty("pending",false))||
             engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
-            !engine_.allOutputsDisarmed())
+            engine_.secondaryArmed())
             return send(false,"REJECTED",
-                "MUTE MAIN and secondary output; finish Show/FX/diagnostic/clock transition first");
+                "Stop STREAM and finish Show/FX/diagnostic/clock transition first");
         const auto config=args.getProperty("config",{});
         if(!config.isObject())return send(false,"REJECTED","Missing device configuration");
         const auto typeName=config.getProperty("backend",{}).toString();
@@ -1289,6 +1319,8 @@ private:
                              &&before.outputDeviceName==playback;
         auto* previousDevice=manager.getCurrentAudioDevice();
         const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
+        const bool previousMixerBound=engine_.hasBoundMixerRoute();
+        const bool previousMonitor=engine_.isMonitorEnabled();
         const auto confirm=config.getProperty("confirmRetainedPinMapping",false);
         if(!confirm.isBool())
             return send(false,"REJECTED","Invalid retained mixer mapping confirmation");
@@ -1304,7 +1336,8 @@ private:
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_REMAP_ACCEPTED",typeName);
-            send(true,"ACCEPTED_MUTED",{});
+            requestAutomaticMain();
+            send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
         }
@@ -1371,6 +1404,7 @@ private:
            !engine_.abandonPendingDirectRestoreForSetup())
             return send(false,"REJECTED","Failed to prepare an explicit replacement for the missing device");
         const auto start=monotonicMilliseconds();
+        autoMainEpoch_=0;
         engine_.beginManualAudioSetup();
         if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
         // JUCE setAudioDeviceSetup() can return success without reopening when
@@ -1410,8 +1444,8 @@ private:
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
-        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer()) {
-            if(engine_.directRouteAuthorized() &&
+        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(true)) {
+            if(!previousMixerBound && engine_.directRouteAuthorized() &&
                (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
                 const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
                 diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
@@ -1419,14 +1453,17 @@ private:
                 emitApprovedNativeSnapshot();
                 return;
             }
-            error="Device opened but direct safe production session was rejected";
+            error=mixerSessionError_.isNotEmpty()?mixerSessionError_:
+                juce::String("Device opened but mixer preparation was rejected");
         }
         if(error.isEmpty()) {
+            startupError_.clear();
             deviceSettingsDirty_=true;
             directRestore_.cancel();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            send(true,"ACCEPTED_MUTED",{});
+            requestAutomaticMain();
+            send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             emitApprovedNativeSnapshot();
             return;
         }
@@ -1459,11 +1496,13 @@ private:
             (previousType!="ASIO"||
              (manager.getCurrentAudioDevice()->getInputChannelNames()==originalInputNames&&
               manager.getCurrentAudioDevice()->getOutputChannelNames()==originalOutputNames))&&
-            engine_.finishManualAudioSetup();
+            finishAudioSetupAndRecoverMixer();
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-        send(false,verified?"RESTORED_MUTED":"RECOVERY_REQUIRED",error);
+        if(verified&&previousMonitor)requestAutomaticMain();
+        send(false,verified?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
+            "RECOVERY_REQUIRED",error);
         emitApprovedNativeSnapshot();
     }
 
@@ -1473,6 +1512,7 @@ private:
         if (setupLaunching_) return;
         // Suspend physical output but retain ALL authored mixer state while
         // the real JUCE device selector is visible (including no-change close).
+        autoMainEpoch_=0;
         engine_.beginManualAudioSetup();
 
         // The native JUCE device list is cached after first construction:
@@ -1496,6 +1536,7 @@ private:
                         if (safe == nullptr) return;
                         if (safe->finishAudioSetupAndRecoverMixer())
                         {
+                            safe->requestAutomaticMain();
                             safe->deviceSettingsDirty_ = true;
                             safe->startupError_.clear();
                             safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
@@ -1875,7 +1916,9 @@ private:
         return armix::session::NativeMixerSessionStore(settingsDirectory()).load(doc,blobs);
     }
 
-    juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false) {
+    juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
+            armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
+                armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         if(!engine_.allOutputsDisarmed() || mixerSessionWorker_.busy() ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
             return "MUTE output and finish Studio IO before restoring mixer";
@@ -1911,14 +1954,16 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
-        const bool resume=startupOnSavedDevice && !usedPrevious && !retained &&
+        const bool resume=startupOnSavedDevice &&
+            bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
+            !usedPrevious && !retained &&
             doc.resumeMain.value_or(true);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         if(static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already active; refusing to replace it";
         }
-        error=engine_.restoreNativeMixerSession(std::move(doc),states);
+        error=engine_.restoreNativeMixerSession(std::move(doc),states,false,nullptr,bindingMode);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";
@@ -1927,8 +1972,7 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        if(resume && engine_.liveOutputArmFault(false).isEmpty())
-            engine_.setMonitorEnabled(true);
+        if(resume)requestAutomaticMain();
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
@@ -2000,6 +2044,7 @@ private:
     }
 
     void openMixerFile(const juce::File& file) {
+        autoMainEpoch_=0;
         const auto chosenEpoch=engine_.dryRoutingLabEpoch();
         auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
         if(!mixerSessionWorker_.load(file,[safe,chosenEpoch,file](juce::String error,
@@ -2710,7 +2755,8 @@ private:
                 juce::String(result.error?result.error:"native error"),true);
             return;
         }
-        if(action=="routingNativeBusCreate") {
+        if(action=="routingNativeBusCreate" || action=="routingNativeTrackCreate") {
+            const bool track=action=="routingNativeTrackCreate";
             const auto request=args.getProperty("requestId",{}).toString();
             const auto rawEp=args.getProperty("deviceEpoch",{});
             const auto rawRev=args.getProperty("graphRevision",{});
@@ -2718,42 +2764,80 @@ private:
             std::uint64_t ep=0,rev=0,roster=0;
             const auto live=engine_.status();
             const auto lab=live.getProperty("dryRoutingLab",{});
-            const auto native=lab.getProperty("nativeBus",{});
+            auto native=lab.getProperty("nativeBus",{});
             const auto before=approvedNativeSnapshot(live);
             const auto caps=before.getProperty("graph",{})
                 .getProperty("capabilities",{}).getProperty("supportedOps",{});
             const bool admitted=caps.isArray()&&
-                caps.getArray()->contains("CREATE_GROUP");
-            const bool valid=request.startsWith("bus-")&&
+                caps.getArray()->contains(juce::String(track?"CREATE_CHANNEL":"CREATE_GROUP"));
+            const auto rawBootstrap=args.getProperty("bootstrapRevision",{});
+            std::uint64_t bootstrapRevision=0;
+            const bool bootstrap=track && !native.isObject() &&
+                !lab.getProperty("retainedNativeBus",{}).isObject() &&
+                !static_cast<bool>(lab.getProperty("hasAcceptedRoute",false)) &&
+                armix::console::approvedNativeId(rawBootstrap,bootstrapRevision) &&
+                juce::String(std::to_string(bootstrapRevision))==
+                    lab.getProperty("revision",{}).toString();
+            const bool currentGraph=admitted &&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                native.getProperty("graphRevision","").toString()==rawRev.toString() &&
+                native.getProperty("rosterRevision","").toString()==rawRoster.toString();
+            const bool valid=request.startsWith(track?"track-":"bus-")&&
                 request.length()<=64 &&
                 !acceptedControlRequests_.contains(request)&&
                 armix::console::approvedNativeId(rawEp,ep)&&
-                armix::console::approvedNativeId(rawRev,rev)&&
-                armix::console::approvedNativeId(rawRoster,roster)&&
                 ep==engine_.dryRoutingLabEpoch() &&
-                native.getProperty("graphRevision","").toString()==rawRev.toString() &&
-                native.getProperty("rosterRevision","").toString()==rawRoster.toString() &&
-                admitted && !nativeShowBusy_ && !studioBackupBusy_;
+                (currentGraph||bootstrap) && !nativeShowBusy_ && !studioBackupBusy_;
             LiveDryRoutingLab::NativeBusResult result;
-            result.error="NATIVE_BUS_NOT_ADMITTED_OR_STALE";
+            result.error="NATIVE_CHANNEL_CREATE_NOT_ADMITTED_OR_STALE";
+            juce::String bootstrapError;
             if(valid) {
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                int count=0;
+                if(bootstrap) {
+                    // Admit the existing silent starter mixer without choosing
+                    // a hardware source, then use the revisions it published.
+                    bootstrapError=engine_.switchDryRoutingLabSource(
+                        0,ep,bootstrapRevision,"NONE",-1,-1);
+                    native=engine_.status().getProperty("dryRoutingLab",{})
+                        .getProperty("nativeBus",{});
+                    if(bootstrapError.isEmpty() &&
+                       (!armix::console::approvedNativeId(native.getProperty("graphRevision",{}),rev) ||
+                        !armix::console::approvedNativeId(native.getProperty("rosterRevision",{}),roster)))
+                        bootstrapError="NATIVE_STARTER_MIXER_NOT_ADMITTED";
+                }
                 const auto channels=native.getProperty("channels",{});
-                if(const auto* rows=channels.getArray())
-                    for(const auto& row:*rows)
+                const auto* rows=channels.getArray();
+                if(track && bootstrapError.isEmpty()) {
+                    juce::StringArray names;
+                    int inputs=0;
+                    if(rows)for(const auto& row:*rows) {
+                        names.add(row.getProperty("name","").toString());
+                        if(row.getProperty("role","").toString()=="INPUT")++inputs;
+                    }
+                    juce::String name;
+                    do { name="Track "+juce::String(++inputs); }
+                    while(names.contains(name,true));
+                    result=engine_.createNativeInputChannel(ep,rev,roster,
+                        name.toStdString(),armix::mixer::ProcessingFormat::stereo);
+                } else if(!track) {
+                    int count=0;
+                    if(rows)for(const auto& row:*rows)
                         if(row.getProperty("role","").toString()=="GROUP")++count;
-                const std::string name="Bus "+std::to_string(count+1);
-                result=engine_.editNativeBus(ep,rev,roster,
-                    armix::mixer::ChannelRole::group,
-                    std::span<const armix::mixer::ChannelId>{},name,1.f);
+                    result=engine_.editNativeBus(ep,rev,roster,
+                        armix::mixer::ChannelRole::group,
+                        std::span<const armix::mixer::ChannelId>{},
+                        "Bus "+std::to_string(count+1),1.f);
+                }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
             ack->setProperty("ok",valid&&result.accepted);
-            ack->setProperty("error",result.error?result.error:"NATIVE_BUS_UNKNOWN");
+            const juce::String error=bootstrapError.isNotEmpty()?bootstrapError:
+                juce::String(result.error?result.error:"NATIVE_CHANNEL_CREATE_UNKNOWN");
+            ack->setProperty("error",error);
             ack->setProperty("createdId",result.accepted?
                 juce::String(std::to_string(result.created.value)):juce::String());
             ack->setProperty("graphRevision",
@@ -2762,10 +2846,11 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixNativeBusAck",juce::var(ack.release()));
             if(valid&&result.accepted)
-                diagnostics_.record("NATIVE_DAW_BUS",
-                    "Created real ChannelId GROUP with MAIN output");
-            else emitNotice("Add BUS rejected: "+
-                juce::String(result.error?result.error:"native error"),true);
+                diagnostics_.record(track?"NATIVE_DAW_TRACK":"NATIVE_DAW_BUS",
+                    track?"Created unpatched stereo input with MAIN output":
+                          "Created real ChannelId GROUP with MAIN output");
+            else emitNotice(juce::String(track?"Add Audio Track rejected: ":"Add BUS rejected: ")+
+                error,true);
             return;
         }
 
@@ -3187,6 +3272,7 @@ private:
                         "Verified native Show routing and VST3 state restored in a newly prepared graph. OUTPUT remains MUTED; verify physical routing and plugin sound before unmuting.");
                 });
             if(!started)return reject("Cannot launch native Show readback worker.");
+            autoMainEpoch_=0;
             nativeShowBusy_=true;
             return;
         }
@@ -3713,6 +3799,7 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
+                autoMainEpoch_=0;
                 engine_.setMonitorEnabled(arm);
                 diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
             }
@@ -3744,15 +3831,18 @@ private:
         }
     }
 
-    bool finishAudioSetupAndRecoverMixer() {
+    bool finishAudioSetupAndRecoverMixer(bool verifiedDeviceApply=false) {
         const bool bound=engine_.finishManualAudioSetup();
         if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)))return true;
         if(engine_.hasRetainedNativeSession() ||
            armix::session::NativeMixerSessionStore(settingsDirectory()).exists()) {
-            const auto error=restoreSavedMixerSession();
+            using BindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
+            const auto error=restoreSavedMixerSession(false,verifiedDeviceApply?
+                BindingMode::verifiedDeviceApply:BindingMode::exact);
             if(error.isNotEmpty()) {
+                mixerSessionError_=error;
                 emitNotice("Mixer retained; "+error,true);
                 return false;
             }
@@ -3827,18 +3917,21 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
-            if(!mixerSessionStartupInspected_) {
-                mixerSessionStartupInspected_=true;
-                if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
-                    mixerSessionRecoveryPending_=true;
-                    const auto error=restoreSavedMixerSession(startupError_.isEmpty());
-                    if(error.isNotEmpty())
-                        emitNotice("Saved mixer retained; "+error,true);
-                    else if(saved==nullptr)
-                        deviceSettingsDirty_=true;
-                }
-            }
             if (onStartupStage_) onStartupStage_ (2);
+        }
+        // Factory entries are published only after asynchronous manifest
+        // verification. Restore once they are visible, never reject a saved
+        // factory insert simply because the startup catalog is still busy.
+        if(!mixerSessionStartupInspected_ && !catalog_.busy()) {
+            mixerSessionStartupInspected_=true;
+            if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
+                mixerSessionRecoveryPending_=true;
+                const auto error=restoreSavedMixerSession(startupError_.isEmpty());
+                if(error.isNotEmpty())
+                    emitNotice("Saved mixer retained; "+error,true);
+                else
+                    deviceSettingsDirty_=true;
+            }else if(startupError_.isEmpty())requestAutomaticMain();
         }
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
@@ -3859,6 +3952,7 @@ private:
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
+        serviceAutomaticMain();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.
         // A performance with armed speakers/stream is never interrupted for

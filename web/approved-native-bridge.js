@@ -804,29 +804,61 @@
       controller?.subscribe();
     },8000);
   }
-  let pendingBusCreate=null,busRequestSerial=0;
-  function requestNativeBusCreate(){
+  let pendingBusCreate=null,stripRequestSerial=0;
+  function canCreateNativeTrack(next){
+    if(next?.retained)return false;
+    if(next?.admitted)
+      return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
+    return mixerSession()?.authority==="NONE" && deviceReady();
+  }
+  function syncAddTrack(next=controller?.state()?.current){
+    const button=document.getElementById("addTrack");
+    if(!button)return;
+    const available=canCreateNativeTrack(next);
+    button.disabled=!available || !!pendingBusCreate;
+    button.title=available?"Add a stereo audio track routed to MAIN":
+      "Connect a verified audio device in Audio I/O to add tracks";
+  }
+  function finishNativeTrack(next){
+    const pending=pendingBusCreate;
+    if(!pending?.track || !pending.createdId || !next?.admitted ||
+       next.device.epoch!==pending.epoch ||
+       BigInt(next.graph.revision)<BigInt(pending.revision))return;
+    const channel=next.graph.channels.find(ch=>ch.id===pending.createdId && ch.role==="INPUT");
+    const id=channel && uiByNativeId.get(channel.id);
+    const strip=scope?.tracks.find(t=>t.id===id);
+    if(!strip||!scope.revealTrack)return;
+    pendingBusCreate=null;
+    syncAddTrack(next);
+    scope.revealTrack(strip);
+    nativeToast(strip.name+" added · choose its IN to receive audio");
+  }
+  function requestNativeBusCreate(track=false){
     const accepted=controller?.state()?.current;
     const session=mixerSession();
     const capabilities=accepted?.graph?.capabilities?.supportedOps;
-    if(pendingBusCreate||session?.authority!=="CHANNEL_ID"||
-       !accepted?.admitted||!Array.isArray(capabilities)||
-       !capabilities.includes("CREATE_GROUP")){
-      nativeToast("BUS needs the verified native ChannelId graph");
-      return false;
-    }
-    const requestId="bus-"+(++busRequestSerial);
-    pendingBusCreate={requestId};
+    const available=track?canCreateNativeTrack(accepted):
+      session?.authority==="CHANNEL_ID" && accepted?.admitted &&
+      capabilities?.includes("CREATE_GROUP");
+    if(pendingBusCreate||!available)return false;
+    const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
+    const epoch=hardware.device.epoch;
+    const bootstrap=track && session.authority==="NONE";
+    pendingBusCreate={requestId,track,epoch};
+    syncAddTrack(accepted);
     backend.emitEvent("arMixAction",{
-      action:"routingNativeBusCreate",requestId,
-      deviceEpoch:accepted.device.epoch,
-      graphRevision:accepted.graph.revision,
-      rosterRevision:accepted.graph.rosterRevision});
-    status("Adding a real stereo BUS → MAIN · native PCM pending");
+      action:track?"routingNativeTrackCreate":"routingNativeBusCreate",requestId,
+      deviceEpoch:epoch,
+      ...(bootstrap?{bootstrapRevision:legacy().routingRevision}:{
+        graphRevision:accepted.graph.revision,
+        rosterRevision:accepted.graph.rosterRevision})});
+    const label=track?"Audio Track":"BUS";
+    status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
       if(pendingBusCreate?.requestId!==requestId)return;
       pendingBusCreate=null;
-      status("Add BUS timed out · old PCM kept");
+      syncAddTrack();
+      status("Add "+label+" timed out · refreshing mixer");
       controller?.subscribe();
     },8000);
     return true;
@@ -1324,7 +1356,7 @@
   function syncMonitorButton(d) {
     const monitorButton=document.querySelector?.("[data-native-monitor]");
     if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"Monitor On":"Monitor Off";
+      monitorButton.textContent=d?.outputArmed?"Mute Output":"Unmute Output";
       monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
       monitorButton.title=d?.outputArmed?
         "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
@@ -1409,7 +1441,7 @@
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceBusy=false,
-      deviceRequest=0,pendingDeviceMute=null,deviceChoice=null,deviceResult="",
+      deviceRequest=0,deviceChoice=null,deviceResult="",
       offeredPinRemap=null;
   let toastTimer=0;
   function nativeToast(message){
@@ -1525,29 +1557,13 @@
         renderDevicePanel();
       });
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
-        if(deviceBusy||pendingDeviceMute||!deviceChoice||!deviceInventory?.active)return;
+        if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
         const draft=deviceChoice,active=deviceInventory.active;
         if(!draft.backend||!draft.capture||!draft.playback)return;
-        if(hardware?.device?.outputArmed){
-          // Correlate one deliberate MUTE to this Apply. An unrelated ACK
-          // must never authorize a hardware switch.
-          const requestId="device-mute-"+(++deviceRequest);
-          pendingDeviceMute={requestId,epoch:String(hardware.device.epoch)};
-          devicePanel.querySelector("[data-audio-apply]").disabled=true;
-          devicePanel.querySelector("[data-audio-active]").textContent=
-            "Muting current output before changing driver…";
-          backend.emitEvent("arMixAction",{action:"monitor",value:false,requestId});
-          window.setTimeout(()=>{
-            if(pendingDeviceMute?.requestId!==requestId)return;
-            pendingDeviceMute=null;
-            deviceResult="Driver change cancelled: no verified MUTE acknowledgement.";
-            renderDevicePanel();
-          },8000);
-        }else sendDeviceApply();
+        sendDeviceApply();
       };
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
-        if(!deviceBusy && !pendingDeviceMute && offeredPinRemap!==null &&
-           !hardware?.device?.outputArmed)
+        if(!deviceBusy && offeredPinRemap!==null)
           sendDeviceApply(true);
       };
       document.body.appendChild(devicePanel);
@@ -1634,11 +1650,11 @@
       "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples":
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
-      !!pendingDeviceMute||!deviceChoice.backend||!deviceChoice.capture||
+      !deviceChoice.backend||!deviceChoice.capture||
       !deviceChoice.playback;
     const remap=devicePanel.querySelector("[data-audio-remap]");
     remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
-    remap.disabled=deviceBusy || !!pendingDeviceMute;
+    remap.disabled=deviceBusy;
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
   function sendDeviceApply(confirmRetainedPinMapping=false){
@@ -1677,14 +1693,16 @@
         ack.active?.open===true && ack.active?.authorized===true &&
         Number.isSafeInteger(ack.active.deviceGeneration)?
           ack.active.deviceGeneration:null;
-      const accepted=ack.ok===true&&ack.state==="ACCEPTED_MUTED" &&
+      const accepted=ack.ok===true&&["ACCEPTED_LIVE","ACCEPTED_MUTED"].includes(ack.state) &&
         ack.active?.open===true && ack.active?.authorized===true &&
         Array.isArray(ack.active.enabledInputs) &&
         ack.active.enabledInputs.length>0 &&
         Array.isArray(ack.active.enabledOutputs) &&
         ack.active.enabledOutputs.length>=2;
+      const outputReady=ack.outputMuted===false;
       deviceResult=accepted?
-        (ack.mixerBound?"Mixer ready · MONITOR OFF":"Audio device ready · choose an IN on any channel"):
+        (outputReady?"Mixer ready · Output live":
+          ack.mixerBound?"Mixer ready · Verify channel IN and output":"Audio device ready · choose a channel IN"):
         ack.state==="NEEDS_REMAP"?
           "NEEDS REMAP · "+ack.error:
           "Device rejected · "+(ack.error||"native hardware readback failed");
@@ -1692,9 +1710,8 @@
       if(accepted){
         devicePanel.hidden=true;
         status("DEVICE READY · "+ack.active.backend+" · "+
-          ack.active.rate+" Hz / "+ack.active.buffer+" samples · MONITOR OFF");
-        nativeToast(ack.mixerBound?"Mixer ready · MONITOR OFF":
-          "Audio device connected · "+ack.active.backend+" · "+ack.active.rate+" Hz · choose channel IN");
+          ack.active.rate+" Hz / "+ack.active.buffer+" samples");
+        nativeToast(deviceResult);
         controller?.subscribe();
       }else renderDevicePanel();
     });
@@ -1956,7 +1973,13 @@
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
-      const monitor=item("button","tool","Monitor Off");
+      const addTrack=document.getElementById("addTrack");
+      if(addTrack){
+        addTrack.textContent="+ Audio Track";
+        toolbar.insertBefore(addTrack,io);
+      }
+      syncAddTrack();
+      const monitor=item("button","tool","Unmute Output");
       monitor.dataset.nativeMonitor="true";
       monitor.addEventListener("click",()=>{
         const armed=hardware?.device?.outputArmed===true;
@@ -1991,9 +2014,7 @@
       rev=safeNativeCounter(legacy()?.routingRevision);
     if(ep===null||rev===null)return;
     const requestId=++sourceSerial;
-    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev,
-      autoListen:legacy()?.routeAccepted!==true &&
-        hardware?.device?.outputArmed!==true};
+    nativeUiSourcePending={requestId,channel,choice,epoch:ep,revision:rev};
     backend.emitEvent("arMixAction",{action:"routingSourceSwitch",
       requestId,channel,mode:choice.mode,left:choice.left,right:choice.right,
       deviceEpoch:ep,revision:rev});
@@ -2033,6 +2054,9 @@
     const caps=next?.graph?.capabilities;
     const nativeAdmitted=session.authority==="CHANNEL_ID" &&
       next.admitted && caps?.callbackOwnsChannelIds===true;
+    if(pendingBusCreate && pendingBusCreate.epoch!==next.device.epoch)
+      pendingBusCreate=null;
+    syncAddTrack(next);
     const addBus=document.getElementById("addBus");
     if(addBus){
       addBus.hidden=!nativeAdmitted ||
@@ -2078,6 +2102,7 @@
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      finishNativeTrack(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
       if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -2091,6 +2116,7 @@
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    finishNativeTrack(next);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
@@ -2198,12 +2224,22 @@
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeBusAck",ack=>{
-      if(!pendingBusCreate||pendingBusCreate.requestId!==ack?.requestId)return;
-      pendingBusCreate=null;
-      if(ack.ok===true && typeof ack.createdId==="string" &&
-         /^[1-9]\d*$/.test(ack.createdId))
-        status("BUS accepted by native PCM · verifying later graph readback");
-      else nativeToast("Add BUS rejected · "+(ack?.error||"native graph error"));
+      const pending=pendingBusCreate;
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      const label=pending.track?"Audio Track":"BUS";
+      if(ack.ok===true && protocol.decimal(ack.createdId) && ack.createdId!=="0" &&
+         (!pending.track || (protocol.decimal(ack.graphRevision) && ack.graphRevision!=="0"))){
+        status(label+" accepted by native PCM · verifying graph readback");
+        if(pending.track){
+          pending.createdId=ack.createdId;
+          pending.revision=ack.graphRevision;
+          finishNativeTrack(controller?.state()?.current);
+        }else pendingBusCreate=null;
+      }else{
+        pendingBusCreate=null;
+        nativeToast("Add "+label+" rejected · "+(ack?.error||"native graph error"));
+      }
+      syncAddTrack();
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
@@ -2242,23 +2278,7 @@
           // Native publisher + engine own the accepted graph; refresh the
           // UI only from a subsequent authoritative snapshot.
           controller.subscribe();
-          const firstListen=p.autoListen && row?.main===true &&
-             (next.nativeChannelIdPcmActive===true ||
-              (Array.isArray(next.channelControls)&&next.channelControls.length===10)) &&
-             hardware?.device?.epoch===String(p.epoch);
-          // Never arm physical audio when the GUI still lacks admitted PCM
-          // controls, or when capture and playback feed the *same* VB Cable.
-          // Native C++ enforces the feedback policy a second time.
-          if(firstListen && !virtualCableFeedbackPair()) {
-            backend.emitEvent("arMixAction",{action:"monitor",value:true,
-              expectedEpoch:p.epoch,expectedRevision:Number(next.revision)});
-          }
-          if(firstListen && virtualCableFeedbackPair())
-            status("MONITOR OFF · VB-Cable feedback loop; select physical playback");
-          else if(p.autoListen && !firstListen)
-            status("CH "+(p.channel+1)+" routed · PCM controls not yet admitted; MONITOR OFF");
-          else
-            status("CH "+(p.channel+1)+" native input accepted");
+          status("CH "+(p.channel+1)+" native input accepted");
         } else {
           status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
           controller.subscribe();
@@ -2385,19 +2405,6 @@
       }
     });
     backend.addEventListener("arMixAudioArmAck", ack=>{
-      if(pendingDeviceMute){
-        // Reject any stale/unrelated ACK and any device epoch change.
-        if(ack?.requestId!==pendingDeviceMute.requestId)return;
-        const epochMatches=String(ack?.deviceEpoch)===pendingDeviceMute.epoch;
-        pendingDeviceMute=null;
-        if(ack?.ok===true && ack?.armed===false && epochMatches)
-          sendDeviceApply();
-        else if(devicePanel){
-          deviceResult="Device change rejected: MUTE or audio epoch not verified.";
-          renderDevicePanel();
-        }
-        return;
-      }
       if(ack?.ok===true){
         status(ack.armed?"NATIVE: user ARM accepted; checking real PCM.":
           "NATIVE: output muted.");
@@ -2896,8 +2903,8 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
-    if(target.id==="addBus"){
-      requestNativeBusCreate();return;
+    if(target.id==="addBus"||target.id==="addTrack"){
+      requestNativeBusCreate(target.id==="addTrack");return;
     }
     status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);
@@ -2967,7 +2974,6 @@
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
     reset:"Demo reset must not erase a live mixer",
-    addTrack:"Native channel creation requires graph admission",
     addFx:"Use a verified FX insert slot on an admitted channel"
   });
   function presentNativeOnlyTools(){

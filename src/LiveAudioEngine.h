@@ -855,11 +855,7 @@ public:
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         if(!(rate>0.0) || frames>maxFrames)
             return "Unsupported device sample rate or buffer quantum";
-        juce::OwnedArray<juce::PluginDescription> descriptions;
-        fmt->findAllTypesForFile(descriptions,filename);
-        juce::PluginDescription* chosen=nullptr;
-        for(auto* d:descriptions)
-            if(d && d->uniqueId==uid && !d->isInstrument) { chosen=d;break; }
+        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid);
         if(!chosen)return "Effect identity not found inside VST3 module";
         juce::String error;
         auto instance=formats_.createPluginInstance(*chosen,rate,frames,error);
@@ -967,13 +963,7 @@ public:
             if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
                 !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
                 return "Plugin is missing or invalid: " + fx.name;
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            fmt->findAllTypesForFile (descriptions, fx.path);
-            juce::PluginDescription* match = nullptr;
-            for (auto* candidate : descriptions)
-                if (candidate != nullptr && candidate->uniqueId == fx.uid &&
-                    !candidate->isInstrument)
-                    { match = candidate; break; }
+            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid);
             if (!match) return "VST3 plugin identity missing: " + fx.name;
 
             juce::String error;
@@ -1478,7 +1468,8 @@ public:
     // Read-only control-thread verification of the currently opened pins.
     juce::String inspectNativeMixerSessionBinding(
             const armix::session::MixerSessionDocument& saved,
-            MixerBindingInspection& out) {
+            MixerBindingInspection& out,
+            armix::session::MixerDeviceBindingPolicy::Mode mode) {
         if(independent_.active()||!attached_||
            !directFence_.permitted()||handoff_.busy()||
            fxMovePhase_.load(std::memory_order_acquire)!=0||
@@ -1507,10 +1498,11 @@ public:
         candidate.live={
             deviceManager_.getCurrentAudioDeviceType(),
             setup.inputDeviceName,setup.outputDeviceName,
-            inputMask.toString(16),outputMask.toString(16),rate,frames};
+            inputMask.toString(16),outputMask.toString(16),rate,frames,
+            device->getInputChannelNames(),device->getOutputChannelNames()};
         candidate.callbackInputs=candidate.pins.inputs.enabledCount;
         candidate.outputs=armix::session::MixerDeviceBindingPolicy::proposedOutputs(
-            saved,candidate.live,candidate.pins.outputCount);
+            saved,candidate.live,candidate.pins.outputCount,mode);
         if(candidate.epoch!=dryRoutingLab_.epoch())
             return "NEEDS_REMAP: device changed during inspection";
         out=std::move(candidate);
@@ -1522,7 +1514,9 @@ public:
     juce::String restoreNativeMixerSession(
             armix::session::MixerSessionDocument document,
             const std::vector<armix::shows::BinaryState>& states,
-            bool replaceActive=false,bool* sameLiveOutputs=nullptr) {
+            bool replaceActive=false,bool* sameLiveOutputs=nullptr,
+            armix::session::MixerDeviceBindingPolicy::Mode mode=
+                armix::session::MixerDeviceBindingPolicy::Mode::exact) {
         if((replaceActive?secondaryOutput_.armed():!allOutputsDisarmed())||
            independent_.active()||!attached_||
            !directFence_.permitted()||handoff_.busy()||
@@ -1532,13 +1526,13 @@ public:
            routeReconfiguring_.load(std::memory_order_acquire))
             return "MUTE output and verify DIRECT before restoring mixer";
         MixerBindingInspection inspected;
-        auto bindingError=inspectNativeMixerSessionBinding(document,inspected);
+        auto bindingError=inspectNativeMixerSessionBinding(document,inspected,mode);
         if(bindingError.isNotEmpty())return bindingError;
         using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
         if(sameLiveOutputs)
             *sameLiveOutputs=dryRoutingLab_.matchesNativeMixerOutputs(inspected.outputs);
         bindingError=BindingPolicy::apply(document,inspected.live,inspected.outputs,
-                                         inspected.callbackInputs,false);
+                                         inspected.callbackInputs,mode);
         if(bindingError.isNotEmpty())return bindingError;
         const auto ep=inspected.epoch;
         const auto next=dryRoutingLab_.nativeGraphRevisionForRestore();
@@ -1738,12 +1732,7 @@ public:
         if(!fmt||!fmt->fileMightContainThisPluginType(path))
             {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
         try {
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            fmt->findAllTypesForFile(descriptions,path);
-            juce::PluginDescription* chosen=nullptr;
-            for(auto* item:descriptions)
-                if(item&&item->uniqueId==uid&&!item->isInstrument)
-                    {chosen=item;break;}
+            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid);
             if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
             juce::String pluginError;
             auto instance=formats_.createPluginInstance(*chosen,rate,
@@ -1813,24 +1802,29 @@ public:
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
             armix::mixer::ProcessingFormat format) {
-        LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="HARDWARE_NOT_DISARMED";
-        if(independent_.active()||!attached_||!directFence_.permitted()||
-           routeReconfiguring_.load(std::memory_order_acquire)||
-           diagnosticRoute_.load(std::memory_order_acquire)!=
-               armix::diagnostics::Route::normal ||
-           !allOutputsDisarmed()||handoff_.busy()||
-           fxMovePhase_.load(std::memory_order_acquire)!=0)
-            return fail;
-        return dryRoutingLab_.createNativeInputChannel(
-            epoch,pcmRevision,rosterRevision,name,format,true);
+        return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
+            "NATIVE_TRACK_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                return dryRoutingLab_.createNativeInputChannel(
+                    epoch,pcmRevision,rosterRevision,name,format,true,beforePublish);
+            });
     }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
             int left,int right,bool stereo) {
+        return editNativeInputTopology(epoch,"NATIVE_SOURCE_DEVICE_UNAVAILABLE",
+            "NATIVE_SOURCE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                return dryRoutingLab_.patchNativeInputSource(
+                    epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
+                    true,beforePublish);
+            });
+    }
+    template<class Edit>
+    LiveDryRoutingLab::NativeBusResult editNativeInputTopology(
+            std::uint64_t epoch,const char* unavailable,const char* exception,
+            Edit&& edit) {
         LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="NATIVE_SOURCE_DEVICE_UNAVAILABLE";
+        fail.error=unavailable;
         if(independent_.active()||!attached_||!directFence_.permitted()||
            secondaryOutput_.armed()||
            routeReconfiguring_.load(std::memory_order_acquire)||
@@ -1841,13 +1835,11 @@ public:
         const bool wasMonitoring=isMonitorEnabled();
         bool publishing=false;
         try{
-            const auto result=dryRoutingLab_.patchNativeInputSource(
-                epoch,pcmRevision,rosterRevision,channel,left,right,stereo,
-                true,[&]{
-                    publishing=true;
-                    if(wasMonitoring)topologyPublicationMute_.store(
-                        true,std::memory_order_release);
-                });
+            const auto result=edit([&]{
+                publishing=true;
+                if(wasMonitoring)topologyPublicationMute_.store(
+                    true,std::memory_order_release);
+            });
             if(publishing){
                 if(wasMonitoring &&
                    !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(
@@ -1863,7 +1855,7 @@ public:
                 setOutputMuted(true);
                 topologyPublicationMute_.store(false,std::memory_order_release);
             }
-            fail.error="NATIVE_SOURCE_PUBLICATION_EXCEPTION";
+            fail.error=exception;
             return fail;
         }
     }
@@ -2192,7 +2184,8 @@ private:
         return {deviceManager_.getCurrentAudioDeviceType(),setup.inputDeviceName,
                 setup.outputDeviceName,device.getActiveInputChannels().toString(16),
                 device.getActiveOutputChannels().toString(16),device.getCurrentSampleRate(),
-                device.getCurrentBufferSizeSamples()};
+                device.getCurrentBufferSizeSamples(),device.getInputChannelNames(),
+                device.getOutputChannelNames()};
     }
     struct WasapiBinding {
         armix::device::EndpointIdentityPolicy::Selection endpoints;

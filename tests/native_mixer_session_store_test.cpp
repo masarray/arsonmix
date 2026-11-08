@@ -10,6 +10,7 @@
 
 using namespace armix::mixer;
 using namespace armix::session;
+using BindingMode=MixerDeviceBindingPolicy::Mode;
 using armix::shows::BinaryState;
 
 static MixerSessionDocument makeSession() {
@@ -121,6 +122,46 @@ static void nativeDeviceRecovery() {
         fresh.prepareDevice(&device);
         assert(fresh.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
         assert(fresh.ready() && !fresh.hasExplicitRoute());
+        const auto epoch=fresh.epoch();
+        assert(fresh.repatchPhysicalSource(0,epoch,fresh.revision(),"NONE",-1,-1,
+            true,false,0,formats,48000.,480).isEmpty());
+        assert(fresh.admitChannelIdFromAcceptedM4(0,480,true));
+        assert(!fresh.hasVerifiedNativeSources());
+        auto native=fresh.nativeBusStatus();
+        const auto graph=static_cast<std::uint64_t>(
+            native.getProperty("graphRevision",{}).toString().getLargeIntValue());
+        const auto roster=static_cast<std::uint64_t>(
+            native.getProperty("rosterRevision",{}).toString().getLargeIntValue());
+        int publications=0;
+        const auto publish=[&]{++publications;};
+        assert(!fresh.createNativeInputChannel(epoch,graph+1,roster,"Stale",
+            ProcessingFormat::stereo,true,publish).accepted);
+        assert(publications==0);
+        const auto added=fresh.createNativeInputChannel(epoch,graph,roster,"Track 11",
+            ProcessingFormat::stereo,true,publish);
+        assert(added.accepted && added.pcmRevision==graph+1 && publications==1);
+        assert(!fresh.hasVerifiedNativeSources());
+        native=fresh.nativeBusStatus();
+        const auto channels=native.getProperty("channels",{});
+        const auto* strips=channels.getArray();
+        assert(strips && strips->size()==16);
+        const auto& track=strips->getReference(14);
+        assert(track.getProperty("id",{}).toString()==juce::String(added.created.value));
+        assert(track.getProperty("name",{}).toString()=="Track 11");
+        assert(track.getProperty("format",{}).toString()=="STEREO");
+        assert(track.getProperty("primaryOutput",{}).toString()==
+               strips->getReference(15).getProperty("id",{}).toString());
+        const auto patched=fresh.patchNativeInputSource(epoch,added.pcmRevision,
+            added.rosterRevision,added.created,0,1,true,true);
+        assert(patched.accepted && fresh.hasVerifiedNativeSources());
+        std::array<float,480> left,right,outLeft{},outRight{};
+        left.fill(.2f);right.fill(.1f);
+        const float* inputs[]={left.data(),right.data()};
+        float* outputs[]={outLeft.data(),outRight.data()};
+        assert(fresh.process(inputs,2,outputs,2,480,1.f,false,
+            nullptr,nullptr,false,nullptr,nullptr,true));
+        assert(outLeft.back()>0.f && outRight.back()>0.f);
+
     }
 
     LiveDryRoutingLab mixer;
@@ -211,6 +252,30 @@ static void nativeDeviceRecovery() {
     assert(current.inserts.size()==1 && current.inserts[0].catalogId==eqId);
     current.binding=saved.binding;
 
+    // The field failure switched Realtek playback to HDMI while keeping the
+    // same VB-Cable source and a live FX rack. The new epoch has working PCM,
+    // existing WIRE IDs and a repatchable ChannelId graph after one Apply.
+    mixer.deviceStopped();
+    device.rate=44100.;
+    device.frames=512;
+    mixer.prepareDevice(&device);
+    auto hdmi=current.binding;
+    hdmi.playback="LG TV";
+    hdmi.rate=device.rate;hdmi.frames=device.frames;
+    const auto hdmiPair=MixerDeviceBindingPolicy::proposedOutputs(
+        current,hdmi,2,BindingMode::verifiedDeviceApply);
+    assert(MixerDeviceBindingPolicy::apply(current,hdmi,hdmiPair,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(current.request.sources.size()==1 && current.request.sources[0].stereo);
+    assert(current.roster.find({1})->sends[1].edgeId==101);
+    current.request.maxFrames=512;
+    assert(restore(current,currentStates,true).isEmpty());
+    process(true);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    assert(mixer.channelIdPhysicalPcmActive());
+    process(false);
+    assert(outL.back()>.02f && outR.back()>.02f);
+
     mixer.deviceStopped();
     device.inputMask.clearBit(1);
     device.rate=44100.;
@@ -219,8 +284,8 @@ static void nativeDeviceRecovery() {
     auto nextBinding=current.binding;
     nextBinding.inputMask="1";nextBinding.rate=device.rate;nextBinding.frames=device.frames;
     const auto pair=MixerDeviceBindingPolicy::proposedOutputs(current,nextBinding,2);
-    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,false).isNotEmpty());
-    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,true).isEmpty());
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,BindingMode::exact).isNotEmpty());
+    assert(MixerDeviceBindingPolicy::apply(current,nextBinding,pair,1,BindingMode::verifiedDeviceApply).isEmpty());
     assert(current.request.sources.empty()); // lost stereo half is never borrowed
     assert(current.roster.find({1})->sends[1].edgeId==101);
     current.request.maxFrames=512;
@@ -256,7 +321,37 @@ static void nativeDeviceRecovery() {
     std::cout<<"Native callback cold restore, muted meters, repeated reopen, FX, sparse remap and PCM: PASS\n";
 }
 
+static void warmVst3Discovery() {
+    const auto root=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixVst3Cache","",false);
+    assert(root.createDirectory().wasOk());
+    const auto module=root.getChildFile("Shell.vst3");
+    assert(module.replaceWithText("module v1"));
+    const auto cacheRoot=root.getChildFile("Cache");
+    armix::vst::DescriptionCache::Descriptions scanned;
+    for(int uid:{31,45,72}) {
+        auto item=std::make_unique<juce::PluginDescription>();
+        item->fileOrIdentifier=module.getFullPathName();
+        item->pluginFormatName="VST3";
+        item->name="Shell class "+juce::String(uid);
+        item->uniqueId=uid;
+        item->deprecatedUid=uid+1000;
+        item->isInstrument=uid==45;
+        scanned.add(item.release());
+    }
+    armix::vst::DescriptionCache(cacheRoot).remember(scanned);
+    const armix::vst::DescriptionCache nextProcess(cacheRoot);
+    const auto cached=nextProcess.find(module.getFullPathName(),72);
+    assert(cached&&cached->name=="Shell class 72"&&cached->deprecatedUid==1072);
+    assert(nextProcess.read(module.getFullPathName())[1]->uniqueId==45);
+    assert(!nextProcess.find(module.getFullPathName(),45));
+    assert(module.appendText("updated module binary"));
+    assert(!nextProcess.find(module.getFullPathName(),72));
+    assert(root.deleteRecursively());
+}
+
 int main(){
+    warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
     const auto before=Codec::encode(d);
@@ -281,21 +376,83 @@ int main(){
     VerifiedNativeOutputs verifiedPair={2,1,0,-1,-1,false};
     const auto graphBefore=Codec::encode(remap);
     auto refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
-                                                 verifiedPair,2,false);
+                                                 verifiedPair,2,BindingMode::exact);
     assert(refusal.startsWith("NEEDS_REMAP"));
     assert(Codec::encode(remap)==graphBefore);
     refusal=MixerDeviceBindingPolicy::apply(remap,replacement,
-                                            verifiedPair,1,true);
+                                            verifiedPair,1,BindingMode::verifiedDeviceApply);
     assert(refusal.startsWith("NEEDS_REMAP"));
     assert(Codec::encode(remap)==graphBefore);
     assert(MixerDeviceBindingPolicy::apply(remap,replacement,
-                                           verifiedPair,2,true).isEmpty());
+                                           verifiedPair,2,BindingMode::verifiedDeviceApply).isEmpty());
     assert(remap.binding.backend=="WASAPI" && remap.outputs.mainL==1);
     assert(remap.roster.revision()==d.roster.revision());
     assert(remap.roster.find({1})->sends.size()==2 &&
            remap.roster.find({1})->sends[0].edgeId==100);
+    auto captureChanged=d;
+    auto identicalMasks=d.binding;
+    identicalMasks.capture="Another capture";
+    assert(MixerDeviceBindingPolicy::apply(captureChanged,identicalMasks,d.outputs,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(captureChanged.request.sources.empty());
+    assert(captureChanged.roster.find({1})->sends[0].edgeId==100);
+
+    // Output 3/4 was explicitly assigned to MAIN. Disabling those pins
+    // must NEVER reassign MAIN to still-enabled 1/2 after Audio I/O Apply:
+    // rejection keeps the original logical/physical saved session intact.
+    auto main34=d;
+    main34.binding.outputMask="f";
+    main34.binding.outputNames={"OUT 1","OUT 2","OUT 3","OUT 4"};
+    main34.outputs={4,2,3,-1,-1,false};
+    const auto main34Before=Codec::encode(main34);
+    auto only12=main34.binding;
+    only12.outputMask="3";
+    const auto missingPair=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only12,2,BindingMode::verifiedDeviceApply);
+    assert(!missingPair.valid()); // never silently return {2,0,1}
+    assert(MixerDeviceBindingPolicy::apply(main34,only12,missingPair,2,
+        BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
+    // Even a caller supplying a syntactically valid but unauthorized MAIN
+    // pair must not bypass the physical-pin identity check.
+    const VerifiedNativeOutputs unauthorized12={2,0,1,-1,-1,false};
+    assert(MixerDeviceBindingPolicy::apply(main34,only12,unauthorized12,2,
+        BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
+    assert(Codec::encode(main34)==main34Before);
+    // If outputs 3/4 remain physically selected, ordinal 2/3 -> 0/1
+    // is a legal SAME-PIN remap, not an automatic route to different jacks.
+    auto only34=main34.binding;
+    only34.outputMask="c";
+    const auto preservedMain=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only34,2,BindingMode::verifiedDeviceApply);
+    assert(preservedMain.valid() && preservedMain.mainL==0 && preservedMain.mainR==1);
+    auto main34Accepted=main34;
+    assert(MixerDeviceBindingPolicy::apply(main34Accepted,only34,preservedMain,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(main34Accepted.outputs.mainL==0 && main34Accepted.outputs.mainR==1);
+    assert(main34Accepted.binding.outputMask=="c");
+    assert(main34Accepted.roster.revision()==main34.roster.revision());
+    // Changed ASIO output identity (or unknown inventory with changed
+    // mask) must fail closed until the user chooses an explicit MAIN pair.
+    auto renamed34=main34.binding;
+    renamed34.outputNames={"Other 1","Other 2","Other 3","Other 4"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,renamed34,4,
+        BindingMode::verifiedDeviceApply).valid());
+    auto newOutputs=main34.binding;
+    newOutputs.playback="Different playback endpoint";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,newOutputs,4,
+        BindingMode::verifiedDeviceApply).valid());
+
+    auto reordered=d;
+    reordered.binding.inputNames={"In 1","In 2"};
+    auto reorderedPins=reordered.binding;
+    reorderedPins.inputNames={"In 2","In 1"};
+    assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
+        BindingMode::exact).isNotEmpty());
+    assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
+        BindingMode::verifiedDeviceApply).isEmpty());
+    assert(reordered.request.sources.empty());
     auto exact=d;
-    assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,false)
+    assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());
     assert(Codec::encode(exact)==graphBefore);
     ChannelEdit newChannel;
