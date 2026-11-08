@@ -191,7 +191,7 @@ private:
             std::clamp(leading/total,0.f,1.f):0.f;
         result_.phaseLocked=anchorFrame>0 &&
             result_.phaseConfidence>=.52f &&
-            competing<leading*.84f;
+            competing<leading*.72f;
     }
 };
 
