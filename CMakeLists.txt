@@ -30,6 +30,10 @@ juce_add_gui_app(ARMixConsole
     ICON_SMALL "${ARMIX_BRAND_DIR}/arsonmix-32.png"
     COMPANY_NAME "AR MIX Open Source"
     BUNDLE_ID "org.armix.studio"
+    # macOS TCC: CoreAudio input must display a valid user-facing privacy prompt.
+    # This is a FREE Info.plist attribute, not a paid Apple signing entitlement.
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Allow ArSonMix to receive audio from microphone and connected audio interfaces."
     NEEDS_WEB_BROWSER TRUE
     NEEDS_WEBVIEW2 ${WIN32}
     NEEDS_CURL FALSE)

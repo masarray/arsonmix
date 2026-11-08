@@ -27,6 +27,14 @@ class PlatformReleaseContractTest(unittest.TestCase):
         self.assertIn("git ls-remote", workflow)
         self.assertNotIn("matrix:", workflow)
 
+    def test_macos_tcc_microphone_permission_required(self):
+        cmake = (ROOT / "CMakeLists.txt").read_text()
+        macos = (ROOT / "scripts/package_native_macos.sh").read_text()
+        self.assertIn("MICROPHONE_PERMISSION_ENABLED TRUE", cmake)
+        self.assertIn("MICROPHONE_PERMISSION_TEXT", cmake)
+        self.assertIn("NSMicrophoneUsageDescription", macos)
+        self.assertIn("Missing macOS microphone privacy prompt", macos)
+
     def test_free_mac_signing_and_real_linux_binary_gates(self):
         mac = (ROOT / "scripts/package_native_macos.sh").read_text()
         linux = (ROOT / "scripts/package_native_linux.sh").read_text()

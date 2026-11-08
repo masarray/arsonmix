@@ -11,6 +11,9 @@ for candidate in "build/ARMixConsole_artefacts/Release/AR MIX Studio.app" "build
 done
 [[ -n "$app" && -f "$app/Contents/Info.plist" ]] || { echo "Exact JUCE GUI app missing"; exit 2; }
 plutil -lint "$app/Contents/Info.plist" >/dev/null
+# CoreAudio input can be killed by TCC if NSMicrophoneUsageDescription is absent.
+permission="$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$app/Contents/Info.plist" 2>/dev/null)" || { echo "Missing macOS microphone privacy prompt" >&2; exit 2; }
+[[ -n "$permission" ]] || { echo "Empty macOS microphone privacy prompt" >&2; exit 2; }
 bundle_exe="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$app/Contents/Info.plist")"
 [[ -f "$app/Contents/MacOS/$bundle_exe" ]] || { echo "Mac bundle executable missing"; exit 2; }
 [[ "$(stat -f %z "$app/Contents/MacOS/$bundle_exe")" -ge 1048576 ]] || { echo "Native GUI too small"; exit 2; }
