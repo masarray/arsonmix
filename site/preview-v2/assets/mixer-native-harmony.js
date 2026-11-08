@@ -95,6 +95,7 @@ const backend=()=>window.__JUCE__?.backend;
 const state=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
+let readbackSentAt=0;
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
 let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
@@ -190,10 +191,15 @@ function paint(){
  el("mxHPower").setAttribute("aria-pressed",String(!bypassed));
  showText(el("mxHLatency"),mode==="NATIVE"?readbackLatency+" samples":"DEMO");
 }
-function snapshot(){
+// One in-flight readback, a bounded retry on the EXISTING 12 Hz console
+// event (no additional timer). A post-ACK verification may replace an older
+// music-poll readback so it never gets trapped behind a slow response.
+function snapshot(force=false){
  const c=context();if(!c)return;
- const id="hsnap-"+Date.now()+"-"+(++seq);
- readbackRequest=id;
+ const now=Date.now();
+ if(!force&&readbackRequest&&now-readbackSentAt<2500)return;
+ const id="hsnap-"+now+"-"+(++seq);
+ readbackRequest=id;readbackSentAt=now;
  backend().emitEvent("arMixAction",{action:"nativeHarmonySnapshot",requestId:id,...c});
 }
 function send(next){
@@ -201,7 +207,7 @@ function send(next){
  if(!c){hint("NATIVE INSTANCE CHANGED · REOPEN FX");return;}
  if(pending){latest=next;hint("DSP APPLYING · LATEST EDIT HELD");paint();return;}
  const id="harm-"+String(Date.now()*1000+(seq++%1000));
- pending={id,settings:next,ack:false,context:c};
+ pending={id,settings:next,ack:false,context:c,startedAt:Date.now()};
  backend().emitEvent("arMixAction",{action:"nativeHarmonySetSettings",
     requestId:id,...c,settings:next});
  hint("DSP QUEUED · AWAITING AUDIO ACK");paint();
@@ -284,6 +290,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;seq++;observedNote=-1;readbackLatency=0;
+  readbackRequest="";readbackSentAt=0;
   detectedKey=-1;detectedScale=-1;detectedConfidence=0;lastGuideRead=0;
   effectiveKey=-1;effectiveScale=-1;sourceSignature="";availableSources=[];
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
@@ -309,8 +316,8 @@ backend()?.addEventListener?.("arMixBuiltinHarmonyQueue",ack=>{
 backend()?.addEventListener?.("arMixBuiltinHarmonyAck",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
  if(ack.status!=="APPLIED"){pending=null;latest=null;
-  hint("DSP NOT APPLIED · "+(ack.errorCode||"UNKNOWN"));snapshot();paint();return;}
- pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");snapshot();
+  hint("DSP NOT APPLIED · "+(ack.errorCode||"UNKNOWN"));snapshot(true);paint();return;}
+ pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");snapshot(true);
 });
 backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  if(!native()||!current||snap?.requestId!==readbackRequest)return;
@@ -320,9 +327,17 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
     snap.graphRevision!==c.graphRevision||!valid(snap.settings)||
     !Number.isInteger(snap.effectiveKey)||snap.effectiveKey<0||snap.effectiveKey>11||
     !Number.isInteger(snap.effectiveScale)||snap.effectiveScale<0||snap.effectiveScale>1) {
+   readbackRequest="";
    hint("HARMONY SNAPSHOT INVALID OR STALE");return;
  }
- if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id))return;
+ // Only an audio-applied request ID can commit GUI settings. If the native
+ // readback races one control tick behind ACK, retry without overwriting
+ // accepted values or retaining the old request token indefinitely.
+ readbackRequest="";
+ if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id)){
+   if(pending.ack)hint("DSP APPLIED · WAITING READBACK");
+   return;
+ }
  settings={...snap.settings};
  effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale;
  detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
@@ -338,10 +353,23 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
  queueMicrotask(()=>{
-   if(!context()){pending=null;latest=null;
-     hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;}
-   if(pending)return;
+   if(!context()){
+     pending=null;latest=null;effectiveKey=-1;effectiveScale=-1;
+     readbackRequest="";
+     hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;
+   }
    const now=Date.now();
+   if(pending){
+     // A missing ACK must never block the editor forever. Preserve the
+     // last accepted DSP state and request fresh authoritative readback.
+     if(!pending.ack&&now-pending.startedAt>5000){
+       pending=null;latest=null;
+       hint("DSP ACK TIMEOUT · READBACK REQUIRED");snapshot(true);paint();
+     }else if(pending.ack&&now-lastGuideRead>750){
+       lastGuideRead=now;snapshot();
+     }
+     return;
+   }
    if(settings.guideMode===1&&now-lastGuideRead>750){
      lastGuideRead=now;snapshot();
    }
