@@ -804,7 +804,66 @@
       controller?.subscribe();
     },8000);
   }
-  let pendingBusCreate=null,stripRequestSerial=0;
+  let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
+  function requestNativeTrackDelete(track){
+    const current=controller?.state()?.current,id=nativeIdFor(track);
+    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
+    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
+       !current?.admitted||current.retained||channel?.role!=="INPUT"||
+       !current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL")){
+      nativeToast("Delete Track unavailable · wait for an admitted native input channel");
+      return false;
+    }
+    const requestId="track-delete-"+(++stripRequestSerial);
+    pendingTrackDelete={requestId,id,name:track.name,epoch:current.device.epoch,
+      revision:current.graph.revision,acked:false};
+    syncAddTrack(current);
+    backend.emitEvent("arMixAction",{
+      action:"routingNativeTrackDelete",requestId,channelId:id,
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+      rosterRevision:current.graph.rosterRevision
+    });
+    status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
+    window.setTimeout(()=>{
+      if(pendingTrackDelete?.requestId!==requestId)return;
+      pendingTrackDelete=null;syncAddTrack();
+      nativeToast("Delete Track timed out · accepted mixer unchanged until readback");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+  function finishNativeTrackDelete(next){
+    const pending=pendingTrackDelete;
+    if(!pending?.acked||!next?.admitted||next.retained||
+       pending.epoch!==next.device.epoch||
+       BigInt(next.graph.revision)<BigInt(pending.revision)||
+       next.graph.channels.some(ch=>ch.id===pending.id))return;
+    pendingTrackDelete=null;
+    syncAddTrack(next);
+    nativeToast(pending.name+" deleted · native PCM and WIRE readback verified");
+  }
+  function nativeOrbitTarget(track,slot){
+    const next=controller?.state()?.current,id=nativeIdFor(track);
+    const channel=next?.graph?.channels?.find(ch=>ch.id===id);
+    const insert=Number.isInteger(slot)&&slot>=0&&slot<8?
+      channel?.inserts?.[slot]:null;
+    if(!next?.admitted||next.retained||!insert?.id||
+       !/dearvr\s*pro\s*2/i.test(insert.name||""))return null;
+    return {channelId:id,insertId:insert.id,slot};
+  }
+  function nativeOrbitAction(track,slot,kind,values={}){
+    const target=nativeOrbitTarget(track,slot),next=controller?.state()?.current;
+    if(!target){nativeToast("Orbit target changed · reopen the dearVR FX menu");return false;}
+    if(!["inspect","start","stop"].includes(kind))return false;
+    backend.emitEvent("arMixAction",{
+      action:kind==="inspect"?"routingNativeOrbitInspect":
+        kind==="start"?"routingNativeOrbitStart":"routingNativeOrbitStop",
+      channelId:target.channelId,instanceId:target.insertId,slot:target.slot,
+      deviceEpoch:next.device.epoch,graphRevision:next.graph.revision,
+      rosterRevision:next.graph.rosterRevision,...values
+    });
+    return true;
+  }
   function canCreateNativeTrack(next){
     if(next?.retained)return false;
     if(next?.admitted)
@@ -815,7 +874,7 @@
     const button=document.getElementById("addTrack");
     if(!button)return;
     const available=canCreateNativeTrack(next);
-    button.disabled=!available || !!pendingBusCreate;
+    button.disabled=!available || !!pendingBusCreate || !!pendingTrackDelete;
     button.title=available?"Add a stereo audio track routed to MAIN":
       "Connect a verified audio device in Audio I/O to add tracks";
   }
@@ -2057,6 +2116,8 @@
     if(pendingBusCreate && pendingBusCreate.epoch!==next.device.epoch)
       pendingBusCreate=null;
     syncAddTrack(next);
+    if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
+      pendingTrackDelete=null;
     const addBus=document.getElementById("addBus");
     if(addBus){
       addBus.hidden=!nativeAdmitted ||
@@ -2074,7 +2135,7 @@
       pendingNativeSources.clear();pendingSourceQueue.clear();
       activeNativeSource=null;nativeUiSourcePending=null;
       pendingOutputPatch=null;pendingNativeFxPower=null;pendingBusCreate=null;
-      pendingFxInsert=null;startupWire=null;activeWireAttempt=null;
+      pendingFxInsert=null;pendingTrackDelete=null;startupWire=null;activeWireAttempt=null;
       pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
       const signature="retained|"+next.identity+"|"+appearanceRevision;
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next))
@@ -2102,7 +2163,7 @@
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
-      finishNativeTrack(next);
+      finishNativeTrack(next);finishNativeTrackDelete(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
       if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -2116,7 +2177,7 @@
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
-    finishNativeTrack(next);
+    finishNativeTrack(next);finishNativeTrackDelete(next);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
@@ -2240,6 +2301,19 @@
         nativeToast("Add "+label+" rejected · "+(ack?.error||"native graph error"));
       }
       syncAddTrack();
+      controller?.subscribe();
+    });
+    backend.addEventListener("arMixNativeTrackDeleteAck",ack=>{
+      const pending=pendingTrackDelete;
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      if(ack.ok!==true||ack.channelId!==pending.id){
+        pendingTrackDelete=null;syncAddTrack();
+        nativeToast("Delete Track rejected · "+(ack?.error||"native graph rejected"));
+      }else{
+        pending.acked=true;
+        status(pending.name+" removal ACKed · verifying accepted graph");
+        finishNativeTrackDelete(controller?.state()?.current);
+      }
       controller?.subscribe();
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
@@ -2414,6 +2488,9 @@
   }
   const nativeHooks=Object.freeze({
     enabled:connected,
+    requestDeleteTrack:requestNativeTrackDelete,
+    orbitTarget:nativeOrbitTarget,
+    orbitAction:nativeOrbitAction,
     inputChoices(t) {
       if(t?.kind!=="audio")return ["None"];
       if(controller?.state()?.current?.retained)return [t.input||"None"];

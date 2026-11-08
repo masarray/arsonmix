@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
-                  '<script defer src="assets/approved-native-bridge.js"></script>')
+                  '<script defer src="assets/approved-native-bridge.js"></script>\n'
+                  '<script defer src="assets/approved-native-context-menu.js"></script>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
 
@@ -327,6 +328,8 @@ def stage(out: Path) -> dict:
         out.mkdir(parents=True)
         shutil.copytree(pages / "assets", out / "assets")
         shutil.copy2(NATIVE_ADAPTER, out / "assets" / "approved-native-bridge.js")
+        shutil.copy2(ROOT / "web" / "approved-native-context-menu.js",
+                     out / "assets" / "approved-native-context-menu.js")
         shutil.copy2(ROOT / "web" / "approved-native-contract.js",
                      out / "assets" / "approved-native-contract.js")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
