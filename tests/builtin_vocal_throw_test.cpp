@@ -284,6 +284,57 @@ static void musicTempoChangesOnlyFutureTail() {
     run(manual,0.f,0.f,7680,a,b);
     check(a>.01f&&b>.01f);
 }
+// M3 beat-phase regression. Vocal PCM remains zero-latency dry, while the
+// first frozen echo is snapped to the accepted source beat lattice. Changing
+// transport AFTER the cue never changes the frozen tail's scheduled onset.
+static void nativeMusicBeatGridQuantization(int quantum) {
+    VocalThrow gridded,unquantized;
+    check(gridded.prepare(48000)&&unquantized.prepare(48000));
+    auto settings=gridded.settingsForTests();
+    settings.mode=0;settings.captureMs=120.f;
+    settings.repeats=1;settings.bpm=120.f;
+    settings.division=0;settings.wet=1.f;settings.ducking=0.f;
+    check(gridded.resetUnpublished(settings));
+    check(unquantized.resetUnpublished(settings));
+    float l=0.f,r=0.f;
+    run(gridded,.65f,.35f,12000,l,r);
+    run(unquantized,.65f,.35f,12000,l,r);
+    run(gridded,0.f,0.f,3000,l,r);
+    run(unquantized,0.f,0.f,3000,l,r);
+    // Both processors have local sample 15000; one backing music onset
+    // anchor is at global sample 8000 (12000 sample quarter beat).
+    gridded.setMusicBeatGrid(12000,8000,15000,true);
+    noHeap.store(true,std::memory_order_release);
+    const auto snapped=gridded.throwNow();
+    const auto plain=unquantized.throwNow();
+    // Simulate late rejection of source / changed BPM immediately following
+    // the cue. The old grid snapshot must remain in this tail.
+    gridded.setMusicBeatGrid(10000,15000,15000,false);
+    noHeap.store(false,std::memory_order_release);
+    check(snapped&&plain);
+    const auto onset=[&](VocalThrow& fx) {
+        std::array<float,256> ll{},rr{};
+        for(int start=0;start<35000;start+=quantum) {
+            const int n=std::min(quantum,35000-start);
+            ll.fill(0.f);rr.fill(0.f);
+            noHeap.store(true,std::memory_order_release);
+            fx.processStereo(ll.data(),rr.data(),static_cast<std::size_t>(n));
+            noHeap.store(false,std::memory_order_release);
+            for(int k=0;k<n;++k) {
+                check(std::isfinite(ll[k])&&std::isfinite(rr[k]));
+                if(std::abs(ll[k])>.0002f)return start+k;
+            }
+        }
+        return -1;
+    };
+    // First graph grid point >= min scheduled echo: frame 32000.
+    // Cue began at graph frame 15000, so observable wet begins at ~17000.
+    const int quantized=onset(gridded);
+    const int fallback=onset(unquantized);
+    check(quantized>=17000&&quantized<17020);
+    check(fallback>=11980&&fallback<13500);
+    check(quantized>fallback+3000);
+}
 int main() {
     validation();
     manualAndDry(8000);
@@ -299,5 +350,7 @@ int main() {
     autoThenManualMustNotDoubleEcho();
     denseRepeatsStayBounded();
     musicTempoChangesOnlyFutureTail();
+    nativeMusicBeatGridQuantization(64);
+    nativeMusicBeatGridQuantization(128);
     std::puts("PASS: vocal-throw native dry/rolling capture/phrase/echo/tempo/no-heap");
 }
