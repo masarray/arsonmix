@@ -152,36 +152,66 @@ def main():
                 return svg.x<meters.x&&meters.right<=frame.right+1;
             }"""),"meters must be inside black LCD to the RIGHT of graph"
             assert page.locator(".mx-comp-control[data-key]").count()==7
-            # Owner-supplied knob.svg reference: white beveled face, 59 radial
-            # ticks, teal active ticks and small rotary dot; never the old
-            # titanium/conic solid ring. Assets must be true self-contained SVG.
+            # The owner-approved physical silver knob stays intact, with
+            # stationary neutral ticks. The *active* value must be one
+            # continuous readable cyan arc, not tiny lit-up tick segments.
             from xml.etree import ElementTree as ET
-            for knob_asset in ("compressor-knob-reference.svg",
-                               "compressor-knob-ticks-mask.svg"):
-                asset=(out/"assets"/knob_asset)
-                assert asset.is_file(),knob_asset
-                xml=asset.read_text(encoding="utf-8")
-                assert "data:image/" not in xml and "<image" not in xml,knob_asset
-                assert len(ET.fromstring(xml).findall(".//{http://www.w3.org/2000/svg}rect"))==59
+            knob_asset=out/"assets"/"compressor-knob-reference.svg"
+            assert knob_asset.is_file()
+            face_xml=knob_asset.read_text(encoding="utf-8")
+            assert "data:image/" not in face_xml and "<image" not in face_xml
+            assert len(ET.fromstring(face_xml).findall(
+                ".//{http://www.w3.org/2000/svg}rect"))==59
+            assert not (out/"assets"/"compressor-knob-ticks-mask.svg").exists(),\
+                "obsolete active-tick overlay should not be packaged"
             dials=page.locator(".mx-comp-dial")
             assert dials.count()==7
+            arcs=page.locator(".mx-comp-arc")
+            assert arcs.count()==7
+            assert page.locator(".mx-comp-arc-progress").count()==7
             appearance=dials.evaluate_all("""nodes=>nodes.map(el=>{
-                const face=getComputedStyle(el),ticks=getComputedStyle(el,'::before'),
-                    marker=getComputedStyle(el,'::after');
-                return {face:face.backgroundImage,progress:ticks.backgroundImage,
-                    mask:ticks.webkitMaskImage||ticks.maskImage,
-                    angle:el.style.getPropertyValue('--dial-angle'),
-                    transform:marker.transform,dot:marker.backgroundColor,
-                    width:el.getBoundingClientRect().width,
+                const face=getComputedStyle(el);
+                const tickStyle=getComputedStyle(el,'::before');
+                const arc=el.querySelector('.mx-comp-arc-progress');
+                const track=el.querySelector('.mx-comp-arc-track');
+                const progress=getComputedStyle(arc);
+                const pointer=getComputedStyle(el,'::after');
+                return {face:face.backgroundImage,
+                    ticks:tickStyle.backgroundImage,
+                    dialWidth:el.getBoundingClientRect().width,
+                    svgWidth:arc.ownerSVGElement.getBoundingClientRect().width,
+                    pathLength:arc.getAttribute('pathLength'),
+                    path:arc.getAttribute('d'),
+                    trackPath:track.getAttribute('d'),
+                    dash:arc.getAttribute('stroke-dasharray'),
+                    cap:progress.strokeLinecap,stroke:progress.stroke,
+                    pointerAngle:el.style.getPropertyValue('--dial-angle'),
+                    pointerTransform:pointer.transform,
                     filter:face.filter,animation:face.animationName};
             })""")
             assert all("compressor-knob-reference.svg" in a["face"] for a in appearance),appearance
-            assert all("compressor-knob-ticks-mask.svg" in a["mask"] for a in appearance),appearance
-            assert all("conic-gradient" in a["progress"] for a in appearance),appearance
-            assert all(a["angle"].endswith("deg") and a["dot"]=="rgb(57, 187, 157)"
+            assert all(a["ticks"]=="none" for a in appearance),appearance
+            assert all(a["pathLength"]=="1000" and a["path"]==a["trackPath"]
                 for a in appearance),appearance
-            assert all(a["width"]>=30 and a["filter"]=="none" and
-                a["animation"]=="none" for a in appearance),appearance
+            assert all(a["cap"]=="round" and a["stroke"]=="rgb(79, 221, 233)"
+                for a in appearance),appearance
+            assert all(a["pointerAngle"].endswith("deg") for a in appearance),appearance
+            assert all(a["dialWidth"]>=30 and
+                abs(a["svgWidth"]-a["dialWidth"])<=1.5 and
+                a["filter"]=="none" and a["animation"]=="none"
+                for a in appearance),appearance
+            def expected_dash(key):
+                ranges={"thresholdDb":(-60,0),"ratio":(1,20),
+                        "attackMs":(.1,100),"releaseMs":(10,2000),
+                        "kneeDb":(0,24),"makeupDb":(-12,24),"mix":(0,1)}
+                minimum,maximum=ranges[key]
+                return (DEFAULTS[key]-minimum)/(maximum-minimum)*1000
+            for key in DEFAULTS:
+                arc=page.locator(f'.mx-comp-control[data-key="{key}"] .mx-comp-arc-progress')
+                measured=float(arc.get_attribute("stroke-dasharray").split()[0])
+                assert abs(measured-expected_dash(key))<.02,(key,measured,expected_dash(key))
+            assert page.locator('.mx-comp-control[data-key="mix"] .mx-comp-arc-progress')\
+                .get_attribute("stroke-dasharray")=="1000.00 1000"
             assert page.locator(".mx-comp-control").count()==7
             assert page.locator(".mx-comp-right .mx-comp-control").count()==4
             assert page.locator(".mx-comp-left .mx-comp-control").count()==3
@@ -326,10 +356,15 @@ def main():
                 ratio=page.locator('.mx-comp-control[data-key="ratio"] input')
                 old_pointer=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-dial').evaluate(
                     "el=>getComputedStyle(el,'::after').transform")
+                ratio_arc=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-arc-progress')
+                old_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 ratio.press("ArrowRight")
                 new_pointer=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-dial').evaluate(
                     "el=>getComputedStyle(el,'::after').transform")
+                new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 assert new_pointer!=old_pointer,"knob dot must track actual control value"
+                assert new_dash>old_dash and abs(new_dash-old_dash-100/19)<.03,\
+                    "rounded cyan arc must track keyboard and native parameter edits"
                 edit=last_action(page,"nativeCompSet")
                 assert abs(edit["settings"]["ratio"]-3.1)<.0001
                 assert edit["instanceId"]==INSTANCE and edit["channelId"]==SOURCE
