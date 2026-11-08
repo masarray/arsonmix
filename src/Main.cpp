@@ -1894,7 +1894,9 @@ private:
             reply->setProperty("musicConfidence",lastMusicTempo_.tempo.confidence);
             reply->setProperty("musicGridAvailable",lastMusicTempo_.active&&
                 lastMusicTempo_.tempo.locked&&
-                lastMusicTempo_.tempo.beatAnchorFrame>0);
+                lastMusicTempo_.tempo.phaseLocked);
+            reply->setProperty("musicPhaseConfidence",
+                lastMusicTempo_.tempo.phaseConfidence);
             reply->setProperty("musicBeatAnchorFrame",juce::String(
                 std::to_string(lastMusicTempo_.tempo.beatAnchorFrame)));
             reply->setProperty("musicDroppedFrames",
@@ -2040,11 +2042,14 @@ private:
     // vocal inserts consume a precomputed atomic interval, not a WebView BPM.
     void serviceNativeMusicTempo() {
         lastMusicTempo_=engine_.pollNativeMusicTempo();
-        const bool locked=lastMusicTempo_.active&&
-            lastMusicTempo_.tempo.locked&&
+        const bool bpmLocked=lastMusicTempo_.active&&
+            lastMusicTempo_.tempo.locked;
+        const bool phaseLocked=bpmLocked&&
+            lastMusicTempo_.tempo.phaseLocked&&
             lastMusicTempo_.tempo.beatAnchorFrame>0;
-        const float bpm=locked?lastMusicTempo_.tempo.bpm:0.f;
-        const auto anchor=locked?lastMusicTempo_.tempo.beatAnchorFrame:0;
+        const float bpm=bpmLocked?lastMusicTempo_.tempo.bpm:0.f;
+        const std::uint64_t anchor=phaseLocked?
+            lastMusicTempo_.tempo.beatAnchorFrame:0;
         const auto epoch=lastMusicTempo_.epoch;
         const auto revision=lastMusicTempo_.revision;
         engine_.forEachNativeProcessor([bpm,anchor,epoch,revision](
