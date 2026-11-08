@@ -15,7 +15,11 @@
       "#armixContext button:hover,#armixContext button:focus-visible{background:#2a4c5b;color:#fff;outline:none}",
       "#armixContext .danger{color:#ffc3bc}#armixContext .detail{font-size:10px;color:#a8bdc6;padding:5px 10px;line-height:1.5}",
       "#armixOrbit{position:fixed;z-index:10018;width:324px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-y:auto;padding:13px;background:#142832;color:#e1eef3;border:1px solid #4b7081;border-radius:8px;box-shadow:0 16px 38px #000b;font:12px Inter,system-ui,sans-serif}",
-      "#armixOrbit .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:14px;font-weight:550}",
+      "#armixOrbit .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:14px;font-weight:550;cursor:grab;touch-action:none}",
+      "#armixOrbit .head:active{cursor:grabbing}",
+      "#armixContext button:disabled{opacity:.35;cursor:default}",
+      "body,body *{-webkit-user-select:none!important;user-select:none!important}",
+      "input,textarea,[contenteditable],[contenteditable] *{-webkit-user-select:text!important;user-select:text!important}",
       "#armixOrbit .sub{color:#9cb8c3;font-size:11px;margin-bottom:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       "#armixOrbit label{display:block;font-size:10px;color:#9ebac6;margin-top:9px}",
       "#armixOrbit select,#armixOrbit input{box-sizing:border-box;width:100%;height:29px;margin-top:3px;border:1px solid #486575;border-radius:4px;background:#0d1c25;color:#e2f3f7;padding:3px 7px;font:12px Inter,system-ui,sans-serif}",
@@ -26,6 +30,22 @@
       "#armixOrbit .state{color:#92e3d3}#armixOrbit button.close{background:transparent;border:0;font-size:16px;padding:1px 6px}"
     ].join("\n");
     document.head.appendChild(css);
+    // Chromium title tooltips look and behave like browser chrome, not a DAW.
+    // Keep aria-labels and actual editor hints; strip only native title bubbles.
+    function clearTitles(root){
+      if(root.nodeType!==1)return;
+      if(root.hasAttribute("title"))root.removeAttribute("title");
+      root.querySelectorAll?.("[title]").forEach(el=>el.removeAttribute("title"));
+    }
+    clearTitles(document.documentElement);
+    new MutationObserver(records=>{
+      for(const entry of records){
+        if(entry.type==="attributes")clearTitles(entry.target);
+        else for(const node of entry.addedNodes)clearTitles(node);
+      }
+    }).observe(document.documentElement,{
+      subtree:true,childList:true,attributes:true,attributeFilter:["title"]
+    });
     const menu=document.createElement("div");
     menu.id="armixContext";menu.hidden=true;menu.setAttribute("role","menu");
     document.body.appendChild(menu);
@@ -48,6 +68,7 @@
     document.body.appendChild(orbit);
     let menuTrack=null,menuSlot=-1,menuTarget=null,confirmation=false;
     let orbitTrack=null,orbitSlot=-1,orbitTarget=null,orbitState=null;
+    let orbitDrag=null;
     const $=id=>document.getElementById(id);
     const dismissMenu=()=>{menu.hidden=true;menuTrack=null;menuSlot=-1;menuTarget=null;confirmation=false;};
     function place(el,x,y){
@@ -56,19 +77,60 @@
     }
     function showMenu(x,y,kind){
       menu.hidden=false;
-      if(kind==="delete"){
+      if(kind==="strip"){
+        const kindName=menuTrack?.kind==="audio"?"Track":
+          menuTrack?.kind==="fx"?"AUX":"BUS";
         if(confirmation){
-          menu.innerHTML='<div class="detail">Remove this audio track, its input, FX, and WIRE connections?</div>'+
-            '<button role="menuitem" class="danger" data-menu="confirm">Confirm Delete Track</button>'+
+          const confirmLabel=kindName==="Track"?"Confirm Delete Track":
+            kindName==="AUX"?"Confirm Delete AUX":"Confirm Delete BUS";
+          menu.innerHTML='<div class="detail">Delete this '+kindName+
+            ' and disconnect its FX/WIRE? Other channels are preserved.</div>'+
+            '<button role="menuitem" class="danger" data-menu="confirm">'+confirmLabel+'</button>'+
             '<button role="menuitem" data-menu="cancel">Cancel</button>';
-        }else menu.innerHTML='<button role="menuitem" class="danger" data-menu="delete">Delete Track…</button>';
+        }else{
+          const canDelete=menuTrack?.kind!=="master" && hooks.canDeleteStrip?.(menuTrack);
+          menu.innerHTML='<button role="menuitem" data-menu="rename">Rename…</button>'+
+            '<button role="menuitem" class="danger" data-menu="delete" '+
+            (canDelete?'':'disabled')+'>Delete…</button>'+
+            (canDelete?'':'<div class="detail">Delete unavailable for this native strip</div>');
+        }
       }else menu.innerHTML='<button role="menuitem" data-menu="orbit">Orbit…</button>';
       place(menu,x,y);
-      menu.querySelector("[role=menuitem]")?.focus({preventScroll:true});
+      menu.querySelector("[role=menuitem]:not(:disabled)")?.focus({preventScroll:true});
     }
     function closeOrbit(){
+      orbitDrag=null;
       orbit.hidden=true;orbitTrack=null;orbitSlot=-1;orbitTarget=null;orbitState=null;
     }
+    function placeOrbitNear(x,y){
+      // Open immediately BELOW the selected Orbit command; if there is
+      // insufficient vertical room, open above it. Never teleport to (0,0)
+      // after hiding the menu (hidden elements have offsetLeft == 0).
+      const height=orbit.offsetHeight||440;
+      const targetY=y+8+height<=window.innerHeight-8?y+8:y-height-8;
+      place(orbit,x,targetY);
+    }
+    const dragBar=orbit.querySelector(".head");
+    dragBar.addEventListener("pointerdown",e=>{
+      if(orbit.hidden||e.button!==0||e.target.closest("button"))return;
+      orbitDrag={id:e.pointerId,startX:e.clientX,startY:e.clientY,
+        left:orbit.offsetLeft,top:orbit.offsetTop};
+      dragBar.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    dragBar.addEventListener("pointermove",e=>{
+      if(!orbitDrag||e.pointerId!==orbitDrag.id)return;
+      place(orbit,orbitDrag.left+e.clientX-orbitDrag.startX,
+        orbitDrag.top+e.clientY-orbitDrag.startY);
+    });
+    const releaseDrag=e=>{
+      if(orbitDrag?.id!==e.pointerId)return;
+      orbitDrag=null;
+      if(dragBar.hasPointerCapture(e.pointerId))dragBar.releasePointerCapture(e.pointerId);
+    };
+    dragBar.addEventListener("pointerup",releaseDrag);
+    dragBar.addEventListener("pointercancel",releaseDrag);
+    dragBar.addEventListener("lostpointercapture",()=>{orbitDrag=null;});
     function orbitStillCurrent(){
       if(!orbitTrack||!orbitTarget)return false;
       const actual=hooks.orbitTarget(orbitTrack,orbitSlot);
@@ -143,9 +205,9 @@
       const row=e.target.closest?.(".fxslot-row:not(.is-empty)");
       if(header){
         const track=scope.findTrack(header);
-        if(track?.kind!=="audio")return; // MAIN/BUS is not an input track.
+        if(!track||!["audio","fx","bus","master"].includes(track.kind))return;
         menuTrack=track;menuSlot=-1;
-        showMenu(e.clientX,e.clientY,"delete");return;
+        showMenu(e.clientX,e.clientY,"strip");return;
       }
       if(row){
         const track=scope.findTrack(row),slot=Number(row.dataset.slot);
@@ -159,11 +221,22 @@
       const btn=e.target.closest("[data-menu]");if(!btn)return;
       const action=btn.dataset.menu,track=menuTrack,slot=menuSlot;
       const selected=menuTarget;
+      // Read coordinates before dismissMenu(): hidden menu offset is zero.
+      const originX=menu.offsetLeft,originY=menu.offsetTop+menu.offsetHeight;
       if(action==="delete"){
-        confirmation=true;showMenu(menu.offsetLeft,menu.offsetTop,"delete");return;
+        if(!hooks.canDeleteStrip?.(track))return;
+        confirmation=true;showMenu(menu.offsetLeft,menu.offsetTop,"strip");return;
       }
       dismissMenu();
-      if(action==="confirm"){hooks.requestDeleteTrack(track);return;}
+      if(action==="rename"){
+        const anchor=document.querySelector('.strip[data-id="'+track?.id+'"] .strip-identity-top');
+        hooks.renameStrip?.(track,anchor);return;
+      }
+      if(action==="confirm"){
+        if(track?.kind==="audio")hooks.requestDeleteTrack(track);
+        else hooks.requestDeleteStrip?.(track);
+        return;
+      }
       if(action!=="orbit")return;
       const actual=hooks.orbitTarget(track,slot);
       if(!selected||selected.insertId!==actual?.insertId||
@@ -174,7 +247,7 @@
       $("armixOrbitTarget").textContent=track.name+" · FX "+(slot+1);
       $("armixOrbitInfo").textContent="Reading verified VST3 parameters…";
       $("armixOrbitStart").disabled=true;$("armixOrbitStop").disabled=true;
-      place(orbit,Math.max(12,menu.offsetLeft-30),Math.max(12,menu.offsetTop-8));
+      placeOrbitNear(originX,originY);
       dispatchOrbit("inspect",{shape:Number($("armixOrbitShape").value)});
     });
     backend.addEventListener("arMixNativeOrbitState",paintOrbit);
