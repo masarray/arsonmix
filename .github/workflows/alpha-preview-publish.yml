@@ -70,9 +70,14 @@ jobs:
           if ($remoteSha -ne $actual) {
             throw "Stale release branch commit rejected: remote=$remoteSha checked-out=$actual"
           }
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            throw "Release already exists; do not rebuild or overwrite immutable assets"
+          # A missing release is the expected HTTP 404, NOT a PowerShell process error.
+          # Treat authentication/rate-limit/server failures as hard errors before spending CI.
+          $releaseResponse = Invoke-WebRequest -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" } -SkipHttpErrorCheck -TimeoutSec 20
+          if ($releaseResponse.StatusCode -ne 404) {
+            if ($releaseResponse.StatusCode -eq 200) {
+              throw "Release already exists; do not rebuild or overwrite immutable assets"
+            }
+            throw "Release existence check failed with HTTP $($releaseResponse.StatusCode)"
           }
           "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
@@ -189,9 +194,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:ARMIX_RELEASE_TAG
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            throw "Release $tag already exists; never replace immutable published assets"
+          # A missing release is the expected HTTP 404, NOT a PowerShell process error.
+          # Treat authentication/rate-limit/server failures as hard errors before spending CI.
+          $releaseResponse = Invoke-WebRequest -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = "application/vnd.github+json"; "X-GitHub-Api-Version" = "2022-11-28" } -SkipHttpErrorCheck -TimeoutSec 20
+          if ($releaseResponse.StatusCode -ne 404) {
+            if ($releaseResponse.StatusCode -eq 200) {
+              throw "Release $tag already exists; never replace immutable published assets"
+            }
+            throw "Release existence check failed with HTTP $($releaseResponse.StatusCode)"
           }
           $assets = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name | ForEach-Object FullName)
           if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
