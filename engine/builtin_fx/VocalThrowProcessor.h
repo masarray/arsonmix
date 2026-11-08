@@ -85,10 +85,16 @@ public:
             interval=musicInterval_.load(std::memory_order_relaxed);
             const auto v1=gridVersion_.load(std::memory_order_acquire);
             valid=v0==v1 && block.epoch==epoch &&
-                  block.revision==revision && interval>0 && anchor>0 &&
-                  anchor<=block.startFrame;
+                  block.revision==revision && interval>0;
         }
-        core_.setMusicBeatGrid(interval,anchor,block.startFrame,valid);
+        // Low-confidence music can provide a real BPM while its beat
+        // position is ambiguous. Keep that useful interval, but do NOT
+        // claim grid quantization. If the whole transport is stale/torn,
+        // fall all the way back to accepted Manual/TAP.
+        if(valid&&anchor>0&&anchor<=block.startFrame)
+            core_.setMusicBeatGrid(interval,anchor,block.startFrame,true);
+        else
+            core_.setMusicIntervalSamples(valid?interval:0);
         Edit e{};
         if(!done_.canPush()||!commands_.pop(e))return;
         const bool applied=e.kind==CommandKind::settings?
