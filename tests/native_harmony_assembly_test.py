@@ -38,6 +38,26 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         for value in ("key","scale","voices","correction","wet","space","color","gainDb"):
             self.assertIn(value,self.ui)
 
+    def test_music_track_is_real_native_accepted_pcm_not_js_audio(self):
+        self.assertIn('id="mxHGuideSource"',self.ui)
+        self.assertIn('Manual Key',self.ui)
+        self.assertIn('guideChannelId',self.ui)
+        self.assertIn('guideDetectedKey',self.ui)
+        self.assertIn('arMixConsoleSnapshot',self.ui)
+        bank=(ROOT/"engine/core/DynamicChannelFxLeaseBank.h").read_text("utf-8")
+        native=(ROOT/"src/Main.cpp").read_text("utf-8")
+        dsp=(ROOT/"engine/builtin_fx/ChannelHarmonyProcessor.h").read_text("utf-8")
+        self.assertIn("musicGuides_",bank)
+        self.assertIn("observeMusicTrack(left,right,frames)",bank)
+        self.assertIn("guide.processor->musicSourceChannel()==id.value",bank)
+        self.assertIn('role=="INPUT"||role=="GROUP"',native)
+        self.assertIn('guideDetectedScale',native)
+        self.assertIn('guideConfidence',native)
+        self.assertIn("MusicKeyDetector guide_",dsp)
+        self.assertIn("guideAge_",dsp)
+        self.assertNotIn("AudioContext",self.ui)
+        self.assertNotIn("getUserMedia",self.ui)
+
     def test_no_fabricated_native_pcm(self):
         self.assertIn("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO",self.ui)
         self.assertIn("if(!native())",self.ui)
