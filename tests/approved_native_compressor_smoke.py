@@ -106,7 +106,7 @@ def main():
 
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             assert page.locator(".mx-comp-preset-select").is_visible()
-            assert not page.locator(".mx-comp-status").is_visible(), "technical status polluted panel"
+            assert page.locator(".mx-comp-status").evaluate("""el=>{\n                const s=getComputedStyle(el);return s.clipPath.includes("inset")\n                && el.getBoundingClientRect().width<=1;}"""),"technical status polluted panel"
             rect=editor.bounding_box()
             assert rect and rect["width"]<=width and rect["height"]<=height,(width,height,rect)
             assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect
