@@ -97,6 +97,27 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertNotIn("KEY SOURCE</span>",self.ui)
         self.assertNotIn("MANUAL · KEY LOCKED",self.ui)
 
+    def test_reference_inspired_wide_harmony_and_exact_shared_fx_chrome(self):
+        chrome=(ROOT/"site/preview-v2/assets/mixer-contextual-buttons.css").read_text("utf-8")
+        self.assertIn('class="mx-harm-control-deck"',self.ui)
+        self.assertIn('class="mx-harm-signature"',self.ui)
+        self.assertIn('class="mx-harm-wheel"',self.ui)
+        self.assertIn('class="mx-harm-dial-face"',self.ui)
+        self.assertIn('class="mx-harm-dial-pointer"',self.ui)
+        self.assertIn("grid-template-columns:150px minmax(0,1fr) 234px",self.css)
+        self.assertIn("grid-template-columns:112px minmax(0,1fr)",self.css)
+        self.assertIn(".mx-harm-wheel-core strong",self.css)
+        self.assertIn("syncPower();",self.ui)
+        self.assertIn('power.dataset.fxState=fxState;',self.ui)
+        self.assertIn('fxState==="unknown"||fxState==="rack-off"',self.ui)
+        self.assertIn('ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on"',self.ui)
+        self.assertIn("if(power.dataset.fxState===fxState)return;",self.ui)
+        self.assertIn(".mx-peq-close,.mx-comp-close,.mx-harm-close",chrome)
+        self.assertIn(".mx-peq-global,.mx-comp-power,.mx-harm-power",chrome)
+        self.assertNotIn(".mx-harm-power.on{",self.css)
+        self.assertNotIn(".mx-harm-close:hover{",self.css)
+        self.assertIn('id="mxHClose"',self.ui)
+
     def test_no_fabricated_native_pcm(self):
         self.assertIn("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO",self.ui)
         self.assertIn("if(!native())",self.ui)
