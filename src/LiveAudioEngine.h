@@ -1799,6 +1799,22 @@ public:
         }
     }
 
+    bool selectNativeMusicTempoSource(std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId musicChannel) noexcept {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||independent_.active()||!attached_||!directFence_.permitted())
+            return false;
+        return dryRoutingLab_.selectMusicTempoSource(epoch,revision,
+                    musicChannel,device->getCurrentSampleRate());
+    }
+    armix::mixer::NativeMusicTempoMonitor::State pollNativeMusicTempo() noexcept {
+        return dryRoutingLab_.pollMusicTempo();
+    }
+    template<class Callback>
+    void forEachNativeProcessor(Callback&& visit) const {
+        dryRoutingLab_.forEachNativeProcessor(std::forward<Callback>(visit));
+    }
+
     // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout
     // work is CONTROL only; the callback receives an immutable fx lease.
     LiveDryRoutingLab::NativeBusResult installNativeVst3(
