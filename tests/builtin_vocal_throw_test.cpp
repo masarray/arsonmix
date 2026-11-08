@@ -132,6 +132,75 @@ static void hybridEditAndNoHeap() {
     run(fx,0,0,200000,l,r);
     check(std::isfinite(l)&&std::isfinite(r));
 }
+// Two separate frozen phrases must coexist. A new cue must not chop the
+// already sounding repeat. All fixtures run as 64/128-ish PCM chunks without
+// any callback allocations, including at the highest allowed device rate.
+static void twoTailsStayLive(double rate) {
+    VocalThrow reference,overlap;
+    check(reference.prepare(rate)&&overlap.prepare(rate));
+    auto s=reference.settingsForTests();
+    s.mode=0;s.bpm=200;s.division=1;s.repeats=3;
+    s.captureMs=300;s.silenceMs=120;
+    check(reference.resetUnpublished(s)&&overlap.resetUnpublished(s));
+    float l=0.f,r=0.f;
+    auto both=[&](float input,int frames) {
+        run(reference,input,input*.5f,frames,l,r);
+        run(overlap,input,input*.5f,frames,l,r);
+    };
+    both(.5f,static_cast<int>(rate*.20));
+    both(0.f,static_cast<int>(rate*.10));
+    noHeap.store(true);
+    const bool firstA=reference.throwNow(),firstB=overlap.throwNow();
+    noHeap.store(false);
+    check(firstA&&firstB);
+    both(.4f,static_cast<int>(rate*.12));
+    both(0.f,static_cast<int>(rate*.03));
+    noHeap.store(true);
+    const bool second=overlap.throwNow();
+    const bool saturated=overlap.throwNow();
+    noHeap.store(false);
+    check(second&&!saturated);
+    check(overlap.throwCount()==2);
+    // From 0.45 to 0.485 s the second voice is preparing, and its first
+    // scheduled echo is still in the future. Output must be IDENTICAL to
+    // the reference's first tail, not abruptly muted by the second cue.
+    std::array<float,128> refL{},refR{},mixL{},mixR{};
+    float maxReference=0.f,maxOverlap=0.f;
+    const int compareFrames=static_cast<int>(rate*.035);
+    for(int done=0;done<compareFrames;done+=128) {
+        const auto count=static_cast<std::size_t>(std::min(128,compareFrames-done));
+        noHeap.store(true);
+        reference.processStereo(refL.data(),refR.data(),count);
+        overlap.processStereo(mixL.data(),mixR.data(),count);
+        noHeap.store(false);
+        for(std::size_t i=0;i<count;++i) {
+            maxReference=std::max(maxReference,std::abs(refL[i]));
+            maxOverlap=std::max(maxOverlap,std::abs(mixL[i]));
+            check(std::abs(refL[i]-mixL[i])<1.e-5f);
+        }
+    }
+    check(maxReference>.001f&&maxOverlap>.001f);
+    run(overlap,0.f,0.f,static_cast<int>(rate*.8),l,r);
+    check(overlap.throwCount()==2);
+}
+static void manualOverrideSuppressesAuto() {
+    VocalThrow fx;check(fx.prepare(48000));
+    auto s=fx.settingsForTests();
+    s.mode=2;s.silenceMs=160;s.captureMs=250;
+    check(fx.resetUnpublished(s));
+    float l=0.f,r=0.f;
+    run(fx,.5f,.25f,12000,l,r); // phrase 1
+    run(fx,0.f,0.f,2400,l,r); // manual cue before auto silence timeout
+    noHeap.store(true);
+    const bool fired=fx.throwNow();
+    noHeap.store(false);
+    check(fired&&fx.throwCount()==1);
+    run(fx,0.f,0.f,12000,l,r);
+    check(fx.throwCount()==1); // same phrase must not double-fire
+    run(fx,.5f,.25f,12000,l,r); // genuinely new phrase
+    run(fx,0.f,0.f,10000,l,r);
+    check(fx.throwCount()==2);
+}
 int main() {
     validation();
     manualAndDry(8000);
@@ -140,5 +209,9 @@ int main() {
     automaticAndHybrid(8000);
     automaticAndHybrid(48000);
     hybridEditAndNoHeap();
+    twoTailsStayLive(8000);
+    twoTailsStayLive(48000);
+    twoTailsStayLive(96000);
+    manualOverrideSuppressesAuto();
     std::puts("PASS: vocal-throw native dry/rolling capture/phrase/echo/tempo/no-heap");
 }
