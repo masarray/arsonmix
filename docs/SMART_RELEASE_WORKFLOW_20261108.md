@@ -41,7 +41,15 @@ to other workflows via release.published).
    portable ZIP checks -> actual Inno install/upgrade/uninstall and private
    Show preservation -> checksum/provenance -> immutable GitHub pre-release.
    Only then request one cheap Pages catalog refresh.
-5. If qualification fails: report exact failing step, do not publish, and
+5. Independent Linux/macOS port qualification is also agent-comment driven:
+   `/arsonmix-port linux <branch> <full 40-character SHA>` or
+   `/arsonmix-port macos <branch> <full 40-character SHA>` to issue #450.
+   The cheap Ubuntu portability gate FIRST checks known Windows-only
+   WebView2/device/packaging blockers. If it fails, no macOS runner or
+   platform compilation is allocated. Only if the source is portable will
+   the chosen OS compile the JUCE executable and run native CTest.
+   A green port probe is NOT a packaged release and has no landing link.
+6. If qualification fails: report exact failing step, do not publish, and
    repair source on a new SHA. Never spam re-runs or force-update an
    already-published tag.
 
