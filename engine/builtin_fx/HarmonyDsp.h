@@ -89,10 +89,10 @@ public:
             const float dryR=tap(right_,static_cast<float>(latency_));
             voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*0.002f;
             float lead=0.f;
-            if(settings_.correction&&voiced_)lead=shifted(4,color);
+            if(settings_.correction&&voicedGain_>0.00001f)lead=shifted(4,color);
             const float leadBlend=settings_.correction?voicedGain_:0.f;
-            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f);
-            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f);
+            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f*voicedGain_);
+            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f*voicedGain_);
             if(voicedGain_>0.00001f){
                 for(int v=0;v<settings_.voices;++v){
                     const float y=shifted(v,color)*harmonyAmp*voicedGain_;
