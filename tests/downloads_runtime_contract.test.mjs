@@ -40,7 +40,7 @@ function card(platform) {
     nodes};
 }
 async function render(staticCatalog, releases, failLive=false, failStatic=false) {
-  const cards=['windows','linux','macos'].map(card),summary=node(),calls=[];
+  const cards=['windows','linux','macos'].map(card),summary=node(),hero=node(),calls=[];
   const fetch=async url=>{
     calls.push(url);
     if(url==='./release-catalog.json'){
@@ -54,16 +54,18 @@ async function render(staticCatalog, releases, failLive=false, failStatic=false)
     return {ok:true,json:async()=>releases};
   };
   runInNewContext(code,{document:{
-    querySelectorAll:()=>cards,getElementById:()=>summary
-  },fetch,URL});
+    querySelectorAll:()=>cards,
+    getElementById:id=>id==='release-summary' ? summary : id==='hero-download' ? hero : null
+  },navigator:{platform:'Win32'},fetch,URL});
   await new Promise(resolve=>setImmediate(resolve));
-  return {cards,summary,calls};
+  return {cards,summary,hero,calls};
 }
 test('new public ZIP replaces stale Pages installer without a redeploy',async()=>{
   const result=await render(local(4),[release(5,['Windows-x64-Setup.exe','Windows-x64-Setup.zip'])]);
   assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.zip$/);
   assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download installer ZIP');
-  assert.match(result.summary.textContent,/Checked GitHub Releases/);
+  assert.match(result.summary.textContent,/Ready to download/);
+  assert.match(result.hero.href,/alpha\.5-Windows-x64-Setup\.zip$/);
   assert.equal(result.calls.length,2);
 });
 test('GitHub API outage retains an existing verified installer',async()=>{
@@ -85,4 +87,10 @@ test('no fake Linux/macOS link from a Windows-only release',async()=>{
   assert.equal(result.cards[1].nodes['[data-release-link]'].href,undefined);
   assert.equal(result.cards[2].nodes['[data-release-link]'].href,undefined);
   assert.equal(result.cards[1].nodes['[data-release-link]'].attr['aria-disabled'],'true');
+});
+
+test('hero never offers an invented installer when no Windows release is published', async()=>{
+  const result=await render(null,[],false,true);
+  assert.equal(result.hero.href,'#download');
+  assert.match(result.summary.textContent,/Downloads are being prepared/);
 });
