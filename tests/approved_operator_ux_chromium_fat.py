@@ -41,20 +41,28 @@ def metrics(page):
 
 def assert_key(page, selector):
     button=page.locator(selector)
-    box=button.bounding_box()
-    assert box and abs(box['width']-box['height'])<=1,(selector,box)
-    assert button.locator('svg path').count()==1,selector
-    assert button.locator('svg path').get_attribute('d').startswith('M6.4,19'),selector
-    # A pressed close must have a visually red background before release.
-    box=button.bounding_box()
+    # Every modeless window uses the ONE 24px Close chrome owner; historical
+    # SVG and text markup may differ but the visible 12px CSS X must not.
+    base=button.evaluate("""e=>{
+      const s=getComputedStyle(e),x=getComputedStyle(e,'::after');
+      const r=e.getBoundingClientRect();
+      return {width:r.width,height:r.height,radius:s.borderRadius,
+        iconWidth:x.width,icon:x.backgroundImage,atRest:s.backgroundImage};
+    }""")
+    assert base["width"]==24 and base["height"]==24,(selector,base)
+    assert base["iconWidth"]=="12px" and "gradient" in base["icon"],(selector,base)
+    box=button.bounding_box();assert box
     page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
     page.mouse.down()
-    color=button.evaluate("e=>getComputedStyle(e).backgroundColor")
-    active=button.evaluate("e=>e.matches(':active')")
-    print("UX_CLOSE_PRESSED",selector,"active",active,"color",color,flush=True)
-    rgb=[int(float(x.strip())) for x in color.replace("rgba(","").replace("rgb(","").split(")")[0].split(",")[:3]]
-    assert active and rgb[0]>=110 and rgb[0]>rgb[1]*1.3 and rgb[0]>rgb[2]*1.2,(
-        selector,active,color)
+    pressed=button.evaluate("""e=>({
+       active:e.matches(':active'),fill:getComputedStyle(e).backgroundImage,
+       width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height
+    })""")
+    print("UX_CLOSE_PRESSED",selector,pressed,flush=True)
+    assert pressed["active"] and "rgb(204, 71, 83)" in pressed["fill"],(
+        selector,"pressed Close is not visually red",pressed)
+    assert (pressed["width"],pressed["height"])==(24,24),(
+        selector,"Close reflowed on press",pressed)
     page.mouse.up()
 
 def wait_balanced(page):
@@ -136,12 +144,17 @@ def inspect_page(page, width, height, scale, label):
     assert_key(page,'#identityClose')
     assert page.locator('#channelIdentity').is_hidden()
     check_identity_zero_reflow(page,width,height,scale,'right-edge')
-    # All other close keys use the SAME SVG and dimensions; hidden popups
-    # cannot be pointer-tested here, but the CSS/DOM invariants are checked.
+    # Hidden windows may differ in source HTML, but must share identical
+    # visual Close geometry and centrally owned pseudo-element icon.
     for id in ('fastClose','wireConfigClose','wireWsClose','routeChoiceClose'):
         el=page.locator('#'+id)
-        assert el.locator('svg path').count()==1,id
-        assert el.evaluate("e=>getComputedStyle(e).width")=="29px",id
+        info=el.evaluate("""e=>{
+          const s=getComputedStyle(e),x=getComputedStyle(e,'::after');
+          return {width:s.width,height:s.height,icon:x.width,
+            image:x.backgroundImage};
+        }""")
+        assert info["width"]==info["height"]=="24px",(id,info)
+        assert info["icon"]=="12px" and "gradient" in info["image"],(id,info)
     page.screenshot(path=str(ROOT / f'operator-ux-{width}x{height}-{scale}.png'),
                     full_page=True)
     return m
