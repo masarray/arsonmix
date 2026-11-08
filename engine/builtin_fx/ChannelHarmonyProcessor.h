@@ -170,6 +170,18 @@ public:
         if(stream.getPosition()!=stream.getTotalLength()||
            !armix::harmony::valid(incoming))return false;
         if(ready_&&!dsp_.setSettings(incoming))return false;
+        // NativeMixerSessionFxRestore restores AFTER prepareToPlay. An accepted
+        // v2 ChannelId must become the actual AUDIO guide source, not merely a
+        // saved GUI value. This is unpublished/control-thread only.
+        if(ready_) {
+            guide_.reset();
+            guideAge_=0;
+            guideSource_.store(incoming.guideMode==1?incoming.guideChannelId:0,
+                               std::memory_order_release);
+            guideObservedKey_.store(-1,std::memory_order_relaxed);
+            guideObservedScale_.store(-1,std::memory_order_relaxed);
+            guideConfidence_.store(0.f,std::memory_order_relaxed);
+        }
         accepted_=incoming;return true;
     }
     void setStateInformation(const void* data,int size) override {
