@@ -39,6 +39,11 @@ int main(){
     assert(live->pollCompletion(applied)&&applied.applied&&applied.requestId==501);
     assert(live->acceptedSettings().guideChannelId==music.value);
     assert(live->musicSourceChannel()==music.value);
+    // The MAIN/no-FX callback may use an empty identity. Never call the
+    // absent legacy external renderer merely because its ID also equals 0.
+    float emptyL[4]{.25f,.25f,.25f,.25f},emptyR[4]{.5f,.5f,.5f,.5f};
+    bank(ChannelId{},emptyL,emptyR,4);
+    assert(emptyL[0]==.25f&&emptyR[0]==.5f);
     for(int block=0;block<1400;++block){
         float l[128]{},r[128]{};
         for(int j=0;j<128;++j) {
