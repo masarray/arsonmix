@@ -314,8 +314,8 @@ static void nativeMusicBeatGridQuantization(int quantum) {
     check(snapped&&plain);
     const auto onset=[&](VocalThrow& fx) {
         std::array<float,256> ll{},rr{};
-        for(int start=0;start<35000;start+=quantum) {
-            const int n=std::min(quantum,35000-start);
+        for(int start=0;start<50000;start+=quantum) {
+            const int n=std::min(quantum,50000-start);
             ll.fill(0.f);rr.fill(0.f);
             noHeap.store(true,std::memory_order_release);
             fx.processStereo(ll.data(),rr.data(),static_cast<std::size_t>(n));
@@ -332,8 +332,8 @@ static void nativeMusicBeatGridQuantization(int quantum) {
     const int quantized=onset(gridded);
     const int fallback=onset(unquantized);
     check(quantized>=17000&&quantized<17020);
-    check(fallback>=11980&&fallback<13500);
-    check(quantized>fallback+3000);
+    check(fallback>=23980&&fallback<25000); // manual 120 BPM / quarter
+    check(quantized+5000<fallback);
 }
 int main() {
     validation();
