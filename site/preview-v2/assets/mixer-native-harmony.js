@@ -10,16 +10,39 @@ root.setAttribute("role","dialog");root.setAttribute("aria-label","ArSon Harmony
 root.setAttribute("aria-modal","false");
 root.innerHTML=`
   <header class="mx-harm-head">
-   <span class="mx-harm-logo">◈</span><span class="mx-harm-brand">ArSon <em>Harmony</em></span>
+   <span class="mx-harm-logo" aria-hidden="true">◈</span>
+   <span class="mx-harm-brand">ArSon <em>Harmony</em></span>
    <span class="mx-harm-channel" id="mxHChannel"></span>
    <select id="mxHPreset" aria-label="Harmony preset" title="Preset">
     <option value="custom">Custom</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="choir">Tight Choir</option>
    </select>
-   <button class="mx-harm-power" id="mxHPower" aria-label="FX power" title="Toggle FX bypass">⏻</button>
-   <button class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close"></button>
+   <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmony state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
+   <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close Harmony"></button>
   </header>
+  <main class="mx-harm-body">
+   <aside class="mx-harm-left" aria-label="Harmony voice settings">
+    <div class="mx-harm-signature"><span class="mx-harm-mark">ARSON</span>
+     <strong>HARMONY</strong><small>VOCAL ENGINE</small></div>
+    <span class="mx-harm-label">VOICES</span>
+    <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmony voice count">
+     <button type="button" data-voices="2">2</button><button type="button" data-voices="3">3</button><button type="button" data-voices="4">4</button>
+    </nav>
+    <label class="mx-harm-correction"><input id="mxHCorrection" type="checkbox"> PITCH TUNE</label>
+   </aside>
+   <section class="mx-harm-control-deck" aria-label="Harmony sound controls">
+    <div class="mx-harm-sliders" id="mxHSliders"></div>
+   </section>
+   <section class="mx-harm-center" aria-label="Musical key">
+    <div class="mx-harm-wheel" id="mxHWheel">
+     <div class="mx-harm-wheel-core"><strong id="mxHKeyReadout">—</strong><small id="mxHNote">KEY</small></div>
+    </div>
+    <div class="mx-harm-scale" role="group" aria-label="Scale">
+      <button type="button" data-scale="0">Major</button><button type="button" data-scale="1">Minor</button>
+    </div>
+   </section>
+  </main>
   <div class="mx-harm-source">
     <div class="mx-harm-mode" role="group" aria-label="Harmony key mode">
      <button type="button" data-guide-mode="0" aria-label="Manual Key" aria-pressed="true">Manual</button>
@@ -33,25 +56,6 @@ root.innerHTML=`
     </label>
     <span class="mx-harm-guide-status" id="mxHGuideStatus" role="status" aria-live="polite">MANUAL</span>
    </div>
-  <main class="mx-harm-body">
-   <aside class="mx-harm-left">
-    <span class="mx-harm-label">VOICES</span>
-    <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmony voice count">
-     <button data-voices="2">2</button><button data-voices="3">3</button><button data-voices="4">4</button>
-    </nav>
-    <label class="mx-harm-correction"><input id="mxHCorrection" type="checkbox"> InTune <span>Pitch correction</span></label>
-    <div class="mx-harm-sliders" id="mxHSliders"></div>
-   </aside>
-   <section class="mx-harm-center">
-    <span class="mx-harm-label">KEY</span>
-    <div class="mx-harm-wheel" id="mxHWheel">
-      <div class="mx-harm-wheel-core"><strong id="mxHKeyReadout">C</strong><small id="mxHNote">KEY</small></div>
-    </div>
-    <div class="mx-harm-scale">
-      <button data-scale="0">Major</button><button data-scale="1">Minor</button>
-    </div>
-   </section>
-  </main>
   <footer class="mx-harm-foot"><span id="mxHStatus">PREVIEW · NO AUDIO</span><span id="mxHLatency"></span></footer>
  `;
 // Cached editor nodes and change-only text: no DOM traversal/paint churn on
@@ -65,7 +69,7 @@ const showText=(node,value)=>{
  const text=String(value);
  if(node.textContent!==text)node.textContent=text;
 };
-el("mxHClose").innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg>';
+// Close icon is owned by mixer-contextual-buttons.css (shared EQ/Comp).
 const keys=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 for(let i=0;i<12;++i){
  const b=document.createElement("button");
@@ -78,7 +82,7 @@ const sliderDefs=[["color","COLOR",0,100,1],["space","SPACE",0,100,1],
                   ["wet","WET",0,100,1],["gainDb","GAIN",-24,12,0.5]];
 for(const [key,label,min,max,step] of sliderDefs){
  const box=document.createElement("label");box.className="mx-harm-slider";
- box.innerHTML=`<span>${label}</span><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}"><output data-out="${key}"></output>`;
+ box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag horizontally or use arrow keys">`;
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,correction:false,
@@ -182,13 +186,26 @@ function paint(){
   const value=key==="gainDb"?v[key]:v[key]*100;
   const setting=String(value);
   if(input.value!==setting)input.value=setting;
-  showText(output,key==="gainDb"?v[key].toFixed(1)+"dB":Math.round(value)+"%");
+  const ratio=Math.max(0,Math.min(1,(value-Number(input.min))/(Number(input.max)-Number(input.min))));
+  input.parentElement.style.setProperty("--dial-turn",(-135+ratio*270)+"deg");
+  showText(output,key==="gainDb"?v[key].toFixed(1)+" dB":Math.round(value)+"%");
  }
  const n=state(),ch=n?.graph?.channels?.find(x=>x.id===current?.channelId);
- const bypassed=nativeView?ch?.inserts?.[current?.slot]?.bypassed:
-       current?.track?.slotBypass?.[current?.slot];
- el("mxHPower").classList.toggle("on",!bypassed);
- el("mxHPower").setAttribute("aria-pressed",String(!bypassed));
+ const insert=ch?.inserts?.[current?.slot];
+ const fxState=!nativeView?
+   (current?.track?.slotBypass?.[current?.slot]?"off":"on"):
+   (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
+    typeof insert.bypassed!=="boolean"?"unknown":
+    ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+ const power=el("mxHPower");
+ power.dataset.fxState=fxState;
+ power.disabled=fxState==="unknown"||fxState==="rack-off";
+ power.setAttribute("aria-pressed",String(fxState==="on"));
+ power.title=fxState==="on"?"HARMONY ON · click to bypass":
+  fxState==="off"?"HARMONY BYPASSED · click to enable":
+  fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
+  "HARMONY STATE UNAVAILABLE";
+ power.setAttribute("aria-label",power.title);
  showText(el("mxHLatency"),mode==="NATIVE"?readbackLatency+" samples":"DEMO");
 }
 // One in-flight readback, a bounded retry on the EXISTING 12 Hz console
