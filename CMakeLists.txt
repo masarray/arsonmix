@@ -371,6 +371,14 @@ if(BUILD_TESTING)
   add_test(NAME NativePEQEightBandsRTAndFrequencyResponse COMMAND ARMixNativeChannelEqTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeChannelEqTests)
 
+  # Zero-lookahead native compressor DSP: zero PDC, stereo-linked peak,
+  # soft knee, dry/wet, parameter validation and variable sample rates.
+  add_executable(ARMixNativeCompressorTests tests/builtin_channel_compressor_test.cpp
+      engine/builtin_fx/ChannelCompressor.h)
+  target_compile_features(ARMixNativeCompressorTests PRIVATE cxx_std_20)
+  add_test(NAME NativeCompressorZeroLatencyAndLinkedStereoPCM COMMAND ARMixNativeCompressorTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorTests)
+
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
   add_test(NAME P1KMeasuredNativeBS1770StereoAnd4xTruePeak COMMAND ARMixNativeMasterLoudnessTests)
