@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 LANDING = ROOT / "dist-pages/index.html"
 DOWNLOAD_PATTERN = "**/release-catalog.json*"
-LIVE_PATTERN = re.compile(r"https://api\\.github\\.com/repos/masarray/arsonmix/releases\\?per_page=40")
+LIVE_PATTERN = re.compile(r"^https://api[.]github[.]com/repos/masarray/arsonmix/releases[?]per_page=40$")
 OFFICIAL = "https://github.com/masarray/arsonmix/releases/download/v0.9.0/"
 
 
