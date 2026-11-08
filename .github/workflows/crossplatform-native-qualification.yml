@@ -88,8 +88,18 @@ jobs:
           repository: juce-framework/JUCE
           ref: 8.0.15
           path: third_party/JUCE
-      - name: Configure native app against JUCE 8
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON
+      - name: Configure native app against JUCE 8 (one universal Apple build)
+        shell: bash
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          if [[ "$PLATFORM" == "macos" ]]; then
+            # One macOS runner compiles BOTH arm64 and x86_64; no paid signing.
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON
+          fi
       - name: Compile actual host executable and registered unit tests
         run: cmake --build build --config Release --parallel 2
       - name: Check native routing, FX, Show and device regressions
