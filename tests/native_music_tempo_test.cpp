@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/NativeMusicTempoMonitor.h"
+#include "../engine/core/DynamicNativeSessionPublisher.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -81,6 +82,59 @@ static void failClosed() {
     check(tap.select(ChannelId{},7,13,0));
     check(!tap.poll(7,13).active);
 }
+static void actualGraphSourcePcm() {
+    using namespace armix::mixer;
+    DynamicChannelRoster roster;
+    ChannelEdit source,main;
+    source.kind=ChannelEdit::Kind::add;source.position=0;
+    source.role=ChannelRole::input;source.text="BACKING";
+    main.kind=ChannelEdit::Kind::add;main.position=1;
+    main.role=ChannelRole::main;main.text="MAIN";
+    main.format=ProcessingFormat::stereo;
+    const std::array<ChannelEdit,2> adds{source,main};
+    const auto created=roster.edit(0,adds);
+    check(created.ok()&&created.createdIds.size()==2);
+    const auto music=created.createdIds[0],master=created.createdIds[1];
+    ChannelEdit output;
+    output.kind=ChannelEdit::Kind::setPrimaryOutput;
+    output.id=music;output.target=master;
+    const std::array<ChannelEdit,1> links{output};
+    check(roster.edit(1,links).ok());
+    DynamicGraphRequest request;
+    request.physicalInputs=1;request.maxFrames=128;
+    request.sources={{music,0,-1,false}};
+    DynamicNativeSessionPublisher graph;
+    constexpr std::uint64_t epoch=7;
+    const auto applied=graph.commit(roster,request,0,epoch,epoch,true);
+    check(applied.ok()&&applied.revision==1);
+    check(!graph.setMusicTempoSource(epoch,1,master,10000)); // MAIN forbidden
+    check(!graph.setMusicTempoSource(epoch-1,1,music,10000));
+    check(graph.setMusicTempoSource(epoch,1,music,10000));
+    std::array<float,128> input{},outL{},outR{};
+    const float* physical[]{input.data()};
+    const auto dryFx=[](ChannelId,float*,float*,int) noexcept {};
+    for(int tick=0;tick<1000;++tick) {
+        input.fill((tick%50)==0?.65f:0.f); // 120 BPM from real graph
+        noHeap.store(true,std::memory_order_release);
+        const bool rendered=graph.render(epoch,physical,1,
+            outL.data(),outR.data(),100,false,dryFx);
+        noHeap.store(false,std::memory_order_release);
+        check(rendered);
+        if(tick%8==0)(void)graph.pollMusicTempo(epoch,1);
+    }
+    auto state=graph.pollMusicTempo(epoch,1);
+    check(state.active&&state.source==music);
+    check(state.tempo.locked&&std::abs(state.tempo.bpm-120.f)<=3.f);
+    // The *same* music ChannelId survives a graph revision with no second
+    // callback or preserved stale PCM pointers.
+    const auto newer=graph.commit(roster,request,1,epoch,epoch,true);
+    check(newer.ok()&&newer.revision==2);
+    state=graph.pollMusicTempo(epoch,2);
+    check(state.active&&state.source==music);
+    check(!graph.pollMusicTempo(epoch,1).active);
+    graph.unpublish();
+    graph.pollRetirement();
+}
 int main() {
     lockTempo(72);
     lockTempo(95);
@@ -88,5 +142,6 @@ int main() {
     lockTempo(160);
     lockTempo(120,true);
     failClosed();
+    actualGraphSourcePcm();
     std::puts("PASS: native music-channel BPM 72/95/120/160, silence holdover, stale graph, no RT heap");
 }
