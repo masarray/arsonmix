@@ -79,7 +79,15 @@ static void testTransferAndStereo() {
     l.fill(0.5f);r.fill(0.25f);
     c.processStereo(l.data(),r.data(),l.size());
     check(std::abs(c.inputPeak()-0.5f)<1.e-6f);
-    check(c.outputPeak()>0.f&&c.outputPeak()<c.inputPeak());
+    // With zero lookahead, the attack transient can initially pass at its
+    // uncompressed peak. The meter must report ACTUAL PCM, not pretend that
+    // block-peak OUT is always smaller than block-peak IN.
+    check(c.outputPeak()>0.f&&c.outputPeak()<=c.inputPeak()+1.e-6f);
+    std::array<float,256> settledL{},settledR{};
+    settledL.fill(.5f);settledR.fill(.25f);
+    c.processStereo(settledL.data(),settledR.data(),settledL.size());
+    check(std::abs(c.inputPeak()-.5f)<1.e-6f);
+    check(c.outputPeak()<c.inputPeak()-.01f); // steady-state compression
     // Feed-forward gain at -6.02 dB, threshold -20, ratio 4 yields
     // about 10.48 dB gain reduction. Both channels share gain exactly.
     check(c.gainReductionDb()>9.5f&&c.gainReductionDb()<11.5f);
