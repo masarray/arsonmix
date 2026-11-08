@@ -46,9 +46,10 @@
       '<div class="foot"><button type="button" data-orbit-start disabled>Start Orbit</button><button type="button" data-orbit-stop>Stop</button></div>'+
       '<div class="info" id="armixOrbitInfo">Reading verified VST3 parameters…</div>';
     document.body.appendChild(orbit);
-    let menuTrack=null,menuSlot=-1,confirmation=false,orbitTrack=null,orbitSlot=-1,orbitState=null;
+    let menuTrack=null,menuSlot=-1,menuTarget=null,confirmation=false;
+    let orbitTrack=null,orbitSlot=-1,orbitTarget=null,orbitState=null;
     const $=id=>document.getElementById(id);
-    const dismissMenu=()=>{menu.hidden=true;menuTrack=null;menuSlot=-1;confirmation=false;};
+    const dismissMenu=()=>{menu.hidden=true;menuTrack=null;menuSlot=-1;menuTarget=null;confirmation=false;};
     function place(el,x,y){
       el.style.left=Math.max(6,Math.min(x,window.innerWidth-(el.offsetWidth||222)-8))+"px";
       el.style.top=Math.max(6,Math.min(y,window.innerHeight-(el.offsetHeight||130)-8))+"px";
@@ -65,7 +66,20 @@
       place(menu,x,y);
       menu.querySelector("[role=menuitem]")?.focus({preventScroll:true});
     }
-    function closeOrbit(){orbit.hidden=true;orbitTrack=null;orbitSlot=-1;orbitState=null;}
+    function closeOrbit(){
+      orbit.hidden=true;orbitTrack=null;orbitSlot=-1;orbitTarget=null;orbitState=null;
+    }
+    function orbitStillCurrent(){
+      if(!orbitTrack||!orbitTarget)return false;
+      const actual=hooks.orbitTarget(orbitTrack,orbitSlot);
+      return actual?.insertId===orbitTarget.insertId &&
+        actual?.channelId===orbitTarget.channelId &&
+        actual?.authority===orbitTarget.authority;
+    }
+    function dispatchOrbit(kind,values={}){
+      if(!orbitStillCurrent()){closeOrbit();return false;}
+      return hooks.orbitAction(orbitTrack,orbitSlot,kind,values);
+    }
     function populate(select,values,chosen,emptyLabel){
       select.replaceChildren();
       if(!values.length){
@@ -87,8 +101,9 @@
         near<=far&&seconds>=2&&seconds<=180&&Number.isFinite(seconds);
     }
     function paintOrbit(state){
-      if(!orbitTrack||state?.channelId!==hooks.orbitTarget(orbitTrack,orbitSlot)?.channelId ||
-         state?.instanceId!==hooks.orbitTarget(orbitTrack,orbitSlot)?.insertId)return;
+      if(!orbitTarget||state?.channelId!==orbitTarget.channelId||
+         state?.instanceId!==orbitTarget.insertId)return;
+      if(!orbitStillCurrent()){closeOrbit();return;}
       const first=!orbitState;
       orbitState=state;
       const params=Array.isArray(state.parameters)?state.parameters:[];
@@ -134,35 +149,41 @@
       }
       if(row){
         const track=scope.findTrack(row),slot=Number(row.dataset.slot);
-        if(!hooks.orbitTarget(track,slot))return;
-        menuTrack=track;menuSlot=slot;
+        const target=hooks.orbitTarget(track,slot);
+        if(!target)return;
+        menuTrack=track;menuSlot=slot;menuTarget={...target};
         showMenu(e.clientX,e.clientY,"orbit");
       }
     },true);
     menu.addEventListener("click",e=>{
       const btn=e.target.closest("[data-menu]");if(!btn)return;
       const action=btn.dataset.menu,track=menuTrack,slot=menuSlot;
+      const selected=menuTarget;
       if(action==="delete"){
         confirmation=true;showMenu(menu.offsetLeft,menu.offsetTop,"delete");return;
       }
       dismissMenu();
       if(action==="confirm"){hooks.requestDeleteTrack(track);return;}
       if(action!=="orbit")return;
-      if(!hooks.orbitTarget(track,slot))return;
-      orbitTrack=track;orbitSlot=slot;orbitState=null;orbit.hidden=false;
+      const actual=hooks.orbitTarget(track,slot);
+      if(!selected||selected.insertId!==actual?.insertId||
+         selected.channelId!==actual?.channelId||
+         selected.authority!==actual?.authority)return;
+      orbitTrack=track;orbitSlot=slot;orbitTarget=selected;
+      orbitState=null;orbit.hidden=false;
       $("armixOrbitTarget").textContent=track.name+" · FX "+(slot+1);
       $("armixOrbitInfo").textContent="Reading verified VST3 parameters…";
       $("armixOrbitStart").disabled=true;$("armixOrbitStop").disabled=true;
       place(orbit,Math.max(12,menu.offsetLeft-30),Math.max(12,menu.offsetTop-8));
-      hooks.orbitAction(track,slot,"inspect",{shape:Number($("armixOrbitShape").value)});
+      dispatchOrbit("inspect",{shape:Number($("armixOrbitShape").value)});
     });
     backend.addEventListener("arMixNativeOrbitState",paintOrbit);
     orbit.addEventListener("click",e=>{
       if(e.target.closest("[data-orbit-close]")){closeOrbit();return;}
       if(!orbitTrack)return;
-      if(e.target.closest("[data-orbit-stop]")){hooks.orbitAction(orbitTrack,orbitSlot,"stop");return;}
+      if(e.target.closest("[data-orbit-stop]")){dispatchOrbit("stop");return;}
       if(!e.target.closest("[data-orbit-start]")||!validOrbitValues())return;
-      hooks.orbitAction(orbitTrack,orbitSlot,"start",{
+      dispatchOrbit("start",{
         shape:Number($("armixOrbitShape").value),
         parameterIndex:Number($("armixOrbitAz").value),
         distanceIndex:Number($("armixOrbitDistance").value),
@@ -176,7 +197,7 @@
     });
     orbit.addEventListener("input",()=>{if(orbitState)$("armixOrbitStart").disabled=!validOrbitValues();});
     $("armixOrbitShape").addEventListener("change",()=>{
-      if(orbitTrack)hooks.orbitAction(orbitTrack,orbitSlot,"inspect",{shape:Number($("armixOrbitShape").value)});
+      if(orbitTrack)dispatchOrbit("inspect",{shape:Number($("armixOrbitShape").value)});
     });
     document.addEventListener("pointerdown",e=>{
       if(!menu.hidden&&!menu.contains(e.target))dismissMenu();
