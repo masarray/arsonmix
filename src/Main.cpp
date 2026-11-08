@@ -385,6 +385,13 @@ private:
     } pendingNativeEq_;
     juce::String lastNativeEqRequest_,lastNativeEqInstance_;
     juce::String lastNativeEqEpoch_,lastNativeEqRevision_;
+    struct PendingNativeHarmony {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeHarmony_;
+    juce::String lastNativeHarmonyRequest_,lastNativeHarmonyInstance_;
+    juce::String lastNativeHarmonyEpoch_,lastNativeHarmonyRevision_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -1064,9 +1071,11 @@ private:
                 const auto catalogId=args.getProperty("catalogId","").toString();
                 const bool builtInEq=catalogId==
                     armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
-                const auto* plugin=builtInEq?nullptr:catalog_.find(catalogId);
+                const bool builtInHarmony=catalogId==
+                    armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
+                const auto* plugin=(builtInEq||builtInHarmony)?nullptr:catalog_.find(catalogId);
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if((!builtInEq&&!plugin)||catalog_.busy()||nativeShowBusy_||
+                if((!builtInEq&&!builtInHarmony&&!plugin)||catalog_.busy()||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(
@@ -1081,6 +1090,9 @@ private:
                 } else {
                     const auto result=builtInEq?
                         engine_.installNativeBuiltInEq(
+                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                        builtInHarmony?
+                        engine_.installNativeBuiltInHarmony(
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
@@ -1917,6 +1929,82 @@ private:
     }
 
 
+
+    // One channel/slot/epoch/revision-bound Harmony state. No browser DSP.
+    void emitNativeHarmonySnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::ChannelHarmonyProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            const auto s=processor->acceptedSettings();
+            auto settings=std::make_unique<juce::DynamicObject>();
+            settings->setProperty("key",s.key);
+            settings->setProperty("scale",s.scale);
+            settings->setProperty("voices",s.voices);
+            settings->setProperty("correction",s.correction);
+            settings->setProperty("wet",s.wet);
+            settings->setProperty("space",s.space);
+            settings->setProperty("color",s.color);
+            settings->setProperty("gainDb",s.gainDb);
+            reply->setProperty("settings",juce::var(settings.release()));
+            reply->setProperty("observedNote",processor->observedNote());
+            reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            reply->setProperty("latencySamples",processor->getLatencySamples());
+            if(instanceId==lastNativeHarmonyInstance_ &&
+               epoch==lastNativeHarmonyEpoch_ &&
+               revision==lastNativeHarmonyRevision_)
+                reply->setProperty("appliedRequestId",lastNativeHarmonyRequest_);
+        }else reply->setProperty("errorCode","HARMONY_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinHarmonySnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeHarmony() {
+        if(!pendingNativeHarmony_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
+            pendingNativeHarmony_.owner->processor.get());
+        if(!processor){pendingNativeHarmony_={};return;}
+        armix::builtin_fx::ChannelHarmonyProcessor::Completion completion{};
+        if(!processor->pollCompletion(completion) &&
+           juce::Time::getMillisecondCounter()-pendingNativeHarmony_.started<3000u)
+            return;
+        const auto request=pendingNativeHarmony_.request;
+        bool applied=completion.applied&&completion.requestId &&
+            request=="harm-"+juce::String(std::to_string(completion.requestId));
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied && pendingNativeHarmony_.deviceEpoch==
+                    device.getProperty("epoch","").toString() &&
+                    pendingNativeHarmony_.revision==
+                    graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeHarmonyRequest_=request;
+            lastNativeHarmonyInstance_=pendingNativeHarmony_.instanceId;
+            lastNativeHarmonyEpoch_=pendingNativeHarmony_.deviceEpoch;
+            lastNativeHarmonyRevision_=pendingNativeHarmony_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeHarmony_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeHarmony_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeHarmony_.revision);
+        ack->setProperty("instanceId",pendingNativeHarmony_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("errorCode",applied?"NONE":"DSP_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeHarmony_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinHarmonyAck",juce::var(ack.release()));
+    }
+
     // Never confuse durable logical ChannelId state with a physical device
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
@@ -1935,9 +2023,10 @@ private:
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
-            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
+               insert.catalogId==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
                 if(insert.path.isNotEmpty() || insert.uid!=0)
-                    return "Saved built-in EQ identity was modified";
+                    return "Saved built-in FX identity was modified";
                 continue;
             }
             const auto* registered=catalog_.find(insert.catalogId);
@@ -2240,6 +2329,84 @@ private:
         // F0: independently acknowledged existing M4 PCM controls during
         // G0, before ChannelId admission. Do not send GUI demo parameters
         // or mutate a second DSP. One control-thread atomic update only.
+
+
+        // Exact native instance lease; queued != audio-applied.
+        if(action=="nativeHarmonySnapshot"||action=="nativeHarmonySetSettings") {
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            const int slot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t ch=0,ep=0,rev=0;
+            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
+                armix::console::approvedNativeId(rawEpoch,ep)&&
+                armix::console::approvedNativeId(rawRevision,rev)&&
+                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
+                slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
+                request.isNotEmpty()&&request.length()<=72;
+            auto owner=valid?engine_.leaseNativeVst3Editor(ep,rev,
+                 armix::mixer::ChannelId{ch},static_cast<std::size_t>(slot),
+                 rawInstance.toString()):
+                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=owner?dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
+                 owner->processor.get()):nullptr;
+            if(action=="nativeHarmonySnapshot"){
+                emitNativeHarmonySnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    rawInstance.toString(),processor);
+                return;
+            }
+            const auto v=args.getProperty("settings",{});
+            const auto k=v.getProperty("key",{}),sc=v.getProperty("scale",{});
+            const auto voices=v.getProperty("voices",{}),tune=v.getProperty("correction",{});
+            auto num=[](const juce::var& value,float& output) {
+                if(!value.isDouble()&&!value.isInt())return false;
+                const auto x=static_cast<double>(value);
+                if(!std::isfinite(x))return false;
+                output=static_cast<float>(x);return std::isfinite(output);
+            };
+            armix::harmony::Settings settings{};
+            const bool typed=k.isInt()&&sc.isInt()&&voices.isInt()&&tune.isBool()&&
+                num(v.getProperty("wet",{}),settings.wet)&&
+                num(v.getProperty("space",{}),settings.space)&&
+                num(v.getProperty("color",{}),settings.color)&&
+                num(v.getProperty("gainDb",{}),settings.gainDb);
+            settings.key=static_cast<int>(k);settings.scale=static_cast<int>(sc);
+            settings.voices=static_cast<int>(voices);settings.correction=static_cast<bool>(tune);
+            bool queued=false;
+            if(typed&&processor&&!pendingNativeHarmony_.owner&&!nativeShowBusy_&&
+               !studioBackupBusy_&&!engine_.independentClockActive()&&
+               armix::harmony::valid(settings)&&request.startsWith("harm-")) {
+                const auto digits=request.substring(5).toStdString();
+                std::uint64_t numeric=0;
+                if(!digits.empty()&&digits.size()<=19&&
+                   digits.find_first_not_of("0123456789")==std::string::npos) {
+                    try{numeric=std::stoull(digits);}catch(...){numeric=0;}
+                }
+                queued=numeric>0&&processor->queueAccepted(settings,numeric);
+                if(queued) {
+                    pendingNativeHarmony_.owner=owner;
+                    pendingNativeHarmony_.request=request;
+                    pendingNativeHarmony_.channelId=rawChannel.toString();
+                    pendingNativeHarmony_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeHarmony_.revision=rawRevision.toString();
+                    pendingNativeHarmony_.instanceId=rawInstance.toString();
+                    pendingNativeHarmony_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("channelId",rawChannel);
+            ack->setProperty("instanceId",rawInstance);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeHarmony_.owner?"HARMONY_CONTROL_BUSY":"INVALID_OR_STALE_NATIVE_HARMONY");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinHarmonyQueue",juce::var(ack.release()));
+            return;
+        }
 
         // Real built-in rack node, not a GUI-only pre-VST channel EQ.
         // All identity fields are validated by the accepted native lease.
@@ -4222,6 +4389,7 @@ private:
         }
         ++timerTicks_;
         servicePendingNativeEq();
+        servicePendingNativeHarmony();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
         // the user sees the completed mixer only after the ready handshake.
