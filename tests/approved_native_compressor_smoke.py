@@ -173,6 +173,15 @@ def main():
                 page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                     ?.includes('NATIVE DSP ACCEPTED')""")
                 assert dial.get_attribute("aria-valuetext").endswith(":1")
+                # Mere click without a value change must not reconfigure PCM.
+                before_count=page.evaluate("""()=>window.__actions.filter(x=>
+                    x.action==='nativeCompSet').length""")
+                center=knob
+                page.mouse.click(center["x"]+center["width"]/2,
+                                 center["y"]+center["height"]/2)
+                after_count=page.evaluate("""()=>window.__actions.filter(x=>
+                    x.action==='nativeCompSet').length""")
+                assert after_count==before_count,"no-motion knob click issued DSP write"
 
             assert not errors,(width,errors)
             page.close()
