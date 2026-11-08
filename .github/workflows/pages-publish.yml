@@ -14,6 +14,10 @@ on:
       - 'scripts/build_release_catalog.py'
       - 'tests/test_release_catalog.py'
       - '.github/workflows/pages-publish.yml'
+      # Release-publisher permission + its exact regression can refresh catalog
+      # after an already-published, validated binary without a Windows rebuild.
+      - '.github/workflows/alpha-preview-publish.yml'
+      - 'tests/release_ci_dispatch_contract.test.mjs'
   workflow_dispatch:
   # Owner-published releases also sync Pages. Releases made by GITHUB_TOKEN
   # explicitly dispatch this workflow after upload (GitHub event limitation).
@@ -63,7 +67,7 @@ jobs:
             fi
             while IFS= read -r path; do
               case "$path" in
-                site/index.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|.github/workflows/pages-publish.yml)
+                site/index.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
                   ;;
                 *)
                   echo "fresh=false" >> "$GITHUB_OUTPUT"
