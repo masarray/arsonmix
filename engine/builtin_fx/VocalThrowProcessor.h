@@ -45,6 +45,10 @@ public:
                layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double sampleRate,int) override {
+        // Each device epoch gets a new frame clock. A previously accepted
+        // auto BPM interval is invalid if the hardware sample rate changed.
+        lastTempoBpm_=0.f;lastTempoDivision_=-1;
+        musicInterval_.store(0,std::memory_order_release);
         ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(accepted_);
         if(ready_)rate_=sampleRate;
     }
@@ -54,11 +58,9 @@ public:
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
+        // consumeRealtimeEdits() snapshots the accepted tempo BEFORE any
+        // manual cue in the same block; bypassed inserts use the same path.
         consumeRealtimeEdits();
-        // Transport is published by CONTROL as an already prepared sample
-        // interval; AUDIO performs only one atomic read at the block edge.
-        core_.setMusicIntervalSamples(
-            musicInterval_.load(std::memory_order_acquire));
         core_.processStereo(pcm.getWritePointer(0),pcm.getWritePointer(1),
                             static_cast<std::size_t>(pcm.getNumSamples()));
         observedThrows_.store(core_.throwCount(),std::memory_order_relaxed);
@@ -66,8 +68,13 @@ public:
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override{}
     void consumeRealtimeEdits() noexcept override {
+        if(!ready_)return;
+        // One atomic acquire per callback, before queueing the newest throw.
+        // A source change and button click cannot freeze the previous BPM.
+        core_.setMusicIntervalSamples(
+            musicInterval_.load(std::memory_order_acquire));
         Edit e{};
-        if(!ready_||!done_.canPush()||!commands_.pop(e))return;
+        if(!done_.canPush()||!commands_.pop(e))return;
         const bool applied=e.kind==CommandKind::settings?
             core_.applyPrepared(e.prepared):core_.throwNow();
         (void)done_.push({e.id,e.prepared.settings,e.kind,applied});
