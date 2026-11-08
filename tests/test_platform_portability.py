@@ -35,6 +35,12 @@ class PlatformReleaseContractTest(unittest.TestCase):
         self.assertIn("NSMicrophoneUsageDescription", macos)
         self.assertIn("Missing macOS microphone privacy prompt", macos)
 
+    def test_native_release_tests_do_not_spawn_chromium_smoke(self):
+        # Change PR native-release tests without queuing unrelated browser runners.
+        ui = (ROOT / ".github/workflows/ui-smoke.yml").read_text()
+        self.assertEqual(2, ui.count("'!tests/test_platform_portability.py'"))
+        self.assertEqual(2, ui.count("'!tests/test_release_catalog.py'"))
+
     def test_free_mac_signing_and_real_linux_binary_gates(self):
         mac = (ROOT / "scripts/package_native_macos.sh").read_text()
         linux = (ROOT / "scripts/package_native_linux.sh").read_text()
