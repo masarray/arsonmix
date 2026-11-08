@@ -164,14 +164,9 @@ def main():
                 note_g=page.locator('.mx-harm-note[data-key="7"]')
                 note_c=page.locator('.mx-harm-note[data-key="0"]')
                 assert "active" in (note_g.get_attribute("class") or "")
-                # Font and scale transition over 150ms; assert the FINAL
-                # computed active size, not the first intermediate frame.
-                page.wait_for_function("""()=>{
-                    const g=document.querySelector('.mx-harm-note[data-key="7"]');
-                    const c=document.querySelector('.mx-harm-note[data-key="0"]');
-                    return g&&c&&parseFloat(getComputedStyle(g).fontSize)>
-                          parseFloat(getComputedStyle(c).fontSize)+1.0;
-                }""")
+                # Font size applies immediately for crisp text; only the
+                # circular material and scale transition over 150ms.
+                page.wait_for_timeout(170)
                 geometry=note_g.evaluate("""e=>{
                     const s=getComputedStyle(e);
                     return {w:s.width,h:s.height,radius:s.borderRadius,
