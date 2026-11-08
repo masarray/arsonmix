@@ -173,6 +173,10 @@ jobs:
         run: python tests/approved_native_compressor_smoke.py
       - name: Verify EQ editor power/Close and actual SVG gestures
         run: python tests/approved_native_peq_smoke.py
+      - name: Verify global Close styling and contextual controls across published GUI
+        run: |
+          python tests/pages_contextual_buttons_smoke.py
+          python tests/pages_contextual_contrast_smoke.py
       - name: Upload exact assembled native editor screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
