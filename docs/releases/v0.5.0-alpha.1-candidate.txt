@@ -1,0 +1,7 @@
+ArSonMix v0.5.0-alpha.1
+PUBLIC TEST ALPHA / WINDOWS X64
+Parent integrated main: 01cd613ff01dd0af896b54b7d3521141013796db
+Includes FactoryFX optional bonus architecture + native Add Audio Track and device rebind.
+Native built-in EQ ships, reviewed Factory VST3 external lock is empty.
+No hardware ASIO field-FAT claim.
+Release publication is permitted ONLY from the exact Windows-tested SHA with verified installer, portable ZIP, SHA256 sums and provenance.
