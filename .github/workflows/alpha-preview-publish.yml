@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: alpha-preview-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   alpha:
@@ -46,6 +46,14 @@ jobs:
           $actual = (& git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) {
             throw "Unpinned release checkout: expected=$env:GITHUB_SHA got=$actual"
+          }
+          $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0 -or -not $remote) {
+            throw "Cannot establish authoritative release branch HEAD"
+          }
+          $remoteSha = ($remote -split '\s+')[0]
+          if ($remoteSha -ne $actual) {
+            throw "Stale release branch commit rejected: remote=$remoteSha checked-out=$actual"
           }
           "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
