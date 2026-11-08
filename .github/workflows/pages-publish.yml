@@ -87,10 +87,15 @@ jobs:
         if: ${{ steps.guard.outputs.fresh == 'true' }}
         with:
           python-version: '3.12'
+      - name: Configure GitHub Pages and resolve canonical site URL
+        if: ${{ steps.guard.outputs.fresh == 'true' }}
+        id: pages
+        uses: actions/configure-pages@v5
       - name: Build static landing, verified release catalog and approved mixer preview
         if: ${{ steps.guard.outputs.fresh == 'true' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          ARSONMIX_PUBLIC_URL: ${{ steps.pages.outputs.base_url }}
         run: |
           SOURCE_SHA="$(git rev-parse HEAD)"
           node --check web/app.js
@@ -103,6 +108,7 @@ jobs:
           # PNG controls. Old links redirect to it; they never show other GUI.
           python tests/single_preview_publication_contract_test.py dist-pages
           python tests/landing_page_download_contract_test.py dist-pages
+          python tests/test_pages_public_origin.py dist-pages
           python -m py_compile scripts/build_landing_assets.py tests/landing_page_browser_smoke.py
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
@@ -113,9 +119,6 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
           python tests/landing_page_browser_smoke.py
-      - name: Configure GitHub Pages
-        if: ${{ steps.guard.outputs.fresh == 'true' }}
-        uses: actions/configure-pages@v5
       - name: Upload site bundle
         if: ${{ steps.guard.outputs.fresh == 'true' }}
         uses: actions/upload-pages-artifact@v3
