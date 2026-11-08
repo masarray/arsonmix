@@ -82,17 +82,44 @@ Object.entries(defs).forEach(([key,r])=>{
  const input=dom("input","mx-comp-slider");
  input.type="range";input.min=String(r.min);input.max=String(r.max);
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
+ input.title="Drag vertically; Shift for fine; arrows for steps; double-click to reset";
  item.append(name,dial,output,input);
  inputs[key]={item,input,output,dial};
- input.addEventListener("input",()=>{
-  const value=Number(input.value);if(!Number.isFinite(value))return;
+ const changeValue=value=>{
+  if(!Number.isFinite(value)||draft[key]===value)return;
   draft={...draft,[key]:value};paint();
   if(!native()){saveDemo();hint("BROWSER PREVIEW · NO AUDIO ENGINE");return;}
   if(Date.now()-lastSend>=130)send();
   else delayed={...draft};
+ };
+ // Preserve range keyboard/assistive technology controls.
+ input.addEventListener("input",()=>changeValue(Number(input.value)));
+ input.addEventListener("change",()=>{if(native())send();else saveDemo();});
+ // In a compact 32px dial, horizontal drag is too coarse. Vertical
+ // scrubbing gives 140px travel, with Shift for 10x finer adjustment.
+ let drag=null;
+ input.addEventListener("pointerdown",e=>{
+  if(e.button!==0)return;
+  drag={id:e.pointerId,y:e.clientY,start:draft[key]};
+  input.setPointerCapture(e.pointerId);
+  e.preventDefault();
  });
- input.addEventListener("change",()=>{
+ input.addEventListener("pointermove",e=>{
+  if(!drag||drag.id!==e.pointerId)return;
+  const delta=(drag.y-e.clientY)*(r.max-r.min)/140*(e.shiftKey ? 0.1 : 1);
+  const raw=clamp(drag.start+delta,r.min,r.max);
+  const adjusted=Number((r.min+Math.round((raw-r.min)/r.step)*r.step).toFixed(5));
+  changeValue(clamp(adjusted,r.min,r.max));e.preventDefault();
+ });
+ const release=e=>{
+  if(!drag||e.pointerId!==drag.id)return;
+  drag=null;try{input.releasePointerCapture(e.pointerId);}catch{}
   if(native())send();else saveDemo();
+ };
+ input.addEventListener("pointerup",release);
+ input.addEventListener("pointercancel",release);
+ input.addEventListener("dblclick",e=>{
+  e.preventDefault();changeValue(defaults()[key]);if(native())send();
  });
 });
 left.append(inputs.ratio.item,inputs.thresholdDb.item,inputs.kneeDb.item);
@@ -204,6 +231,7 @@ function paint(){
   const value=draft[key],r=defs[key];
   c.input.value=String(value);
   c.output.textContent=format(key,value);
+  c.input.setAttribute("aria-valuetext",format(key,value));
   const fraction=(value-r.min)/(r.max-r.min);
   c.dial.style.setProperty("--dial-sweep",(fraction*270).toFixed(2)+"deg");
   c.dial.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");

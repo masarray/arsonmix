@@ -258,7 +258,7 @@
 
 /* Native Compressor, reference-driven studio layout. One approved FX CSS owner.
    Graph stays central; unsupported DSP options are intentionally read-only. */
-.mx-comp{position:fixed;z-index:3102;left:clamp(8px,12vw,240px);top:clamp(8px,12vh,100px);
+.mx-comp{position:fixed;z-index:3102;left:clamp(8px,calc(50vw - 341px),240px);top:clamp(8px,12vh,100px);
  width:min(682px,calc(100vw - 16px));max-height:calc(100dvh - 16px);
  overflow:auto;box-sizing:border-box;border:1px solid #566773;border-radius:5px;
  color:#d2dfe5;background:#81909b;box-shadow:0 18px 44px #020a10cf,0 1px #ffffff30 inset;

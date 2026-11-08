@@ -37,7 +37,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="arsonmix-comp-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
-        for width,height in [(1366,768),(390,844)]:
+        for width,height in [(1366,768),(720,600),(390,844)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda error:errors.append(str(error)))
@@ -92,17 +92,20 @@ def main():
             assert page.locator(".mx-comp-sc-tag").inner_text()=="INTERNAL"
             assert page.locator(".mx-comp-static-flag").count()==5
             assert page.locator(".mx-comp-readonly input").count()==0
-            if width>760:
+            if width>680:
                 left=page.locator(".mx-comp-left").bounding_box()
                 graph=page.locator(".mx-comp-visual").bounding_box()
                 right=page.locator(".mx-comp-right").bounding_box()
                 assert left and graph and right and left["x"]<graph["x"]<right["x"]
-                assert 790<=editor.bounding_box()["width"]<=820
+                assert 665<=editor.bounding_box()["width"]<=690
+                assert editor.bounding_box()["height"]<=270,editor.bounding_box()
 
             assert page.locator(".mx-comp-presets button").count()==5
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             rect=editor.bounding_box()
             assert rect and rect["width"]<=width and rect["height"]<=height,(width,height,rect)
+            assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect
+            assert editor.evaluate("(el)=>el.scrollWidth<=el.clientWidth+1"),"editor horizontal clipping"
             page.screenshot(path=f"arsonmix-native-compressor-{width}.png",full_page=True)
             editor.screenshot(path=f"arsonmix-native-compressor-editor-{width}.png")
             if width==1366:
@@ -152,6 +155,24 @@ def main():
                 emit_snapshot(page,state,gesture["settings"],applied=gesture["requestId"])
                 page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                     ?.includes('NATIVE DSP ACCEPTED')""")
+                # Native pointer capture must allow precise vertical scrubbing
+                # from the tiny knob while keeping revision-gated ACK/readback.
+                dial=page.locator('.mx-comp-control[data-key="ratio"] input')
+                knob=dial.bounding_box()
+                assert knob
+                previous=gesture["settings"]["ratio"]
+                page.mouse.move(knob["x"]+knob["width"]/2,knob["y"]+knob["height"]/2)
+                page.mouse.down()
+                page.mouse.move(knob["x"]+knob["width"]/2,knob["y"]-32,steps=6)
+                page.mouse.up()
+                scrub=last_action(page,"nativeCompSet")
+                assert scrub["settings"]["ratio"]>previous,(previous,scrub)
+                emit(page,"arMixBuiltinCompQueue",{"requestId":scrub["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinCompAck",{"requestId":scrub["requestId"],"status":"APPLIED"})
+                emit_snapshot(page,state,scrub["settings"],applied=scrub["requestId"])
+                page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
+                    ?.includes('NATIVE DSP ACCEPTED')""")
+                assert dial.get_attribute("aria-valuetext").endswith(":1")
 
             assert not errors,(width,errors)
             page.close()
