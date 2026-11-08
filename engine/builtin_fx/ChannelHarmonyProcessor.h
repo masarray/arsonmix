@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "HarmonyDsp.h"
+#include "HarmonyMusicKey.h"
 #include "ChannelEqProcessor.h"  // Existing bounded SPSC mailbox.
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -33,7 +34,12 @@ public:
                b.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double rate,int) override {
-        ready_=dsp_.prepare(rate)&&dsp_.setSettings(accepted_);
+        ready_=dsp_.prepare(rate)&&guide_.prepare(rate)&&dsp_.setSettings(accepted_);
+        guideSource_.store(accepted_.guideMode==1?accepted_.guideChannelId:0,
+                           std::memory_order_release);
+        guideAge_=0;guideObservedKey_.store(-1,std::memory_order_relaxed);
+        guideObservedScale_.store(-1,std::memory_order_relaxed);
+        guideConfidence_.store(0.f,std::memory_order_relaxed);
         if(ready_) {sampleRate_=rate;setLatencySamples(dsp_.latencySamples());}
     }
     void releaseResources() override {ready_=false;}
@@ -41,6 +47,16 @@ public:
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||samples.getNumChannels()<2||samples.getNumSamples()<=0)return;
         consumeRealtimeEdits();
+        // Missing/deleted/disconnected source must not leave a stale accepted
+        // tonal estimate running indefinitely. Manual Key is the fallback.
+        guideAge_=std::min(guideAge_+samples.getNumSamples(),
+                            static_cast<int>(sampleRate_*3.));
+        if(guideAge_>static_cast<int>(sampleRate_*2.)){
+            dsp_.setGuideKey(-1,-1);
+            guideObservedKey_.store(-1,std::memory_order_relaxed);
+            guideObservedScale_.store(-1,std::memory_order_relaxed);
+            guideConfidence_.store(0.f,std::memory_order_relaxed);
+        }
         dsp_.process(samples.getWritePointer(0),samples.getWritePointer(1),
                      samples.getNumSamples());
         observedNote_.store(dsp_.observedMidiNote(),std::memory_order_relaxed);
@@ -49,7 +65,22 @@ public:
     void consumeRealtimeEdits() noexcept override {
         Edit next;
         if(!ready_||!completion_.canPush()||!queued_.pop(next))return;
+        const auto previous=dsp_.settings();
+        const auto& nextSettings=next.prepared.settings;
+        const bool sourceChanged=previous.guideMode!=nextSettings.guideMode||
+            previous.guideChannelId!=nextSettings.guideChannelId;
         const bool applied=dsp_.applyPreparedSettings(next.prepared);
+        if(applied){
+            if(sourceChanged){
+                guide_.reset();guideAge_=0;
+                guideObservedKey_.store(-1,std::memory_order_relaxed);
+                guideObservedScale_.store(-1,std::memory_order_relaxed);
+                guideConfidence_.store(0.f,std::memory_order_relaxed);
+            }
+            guideSource_.store(nextSettings.guideMode==1?
+                               nextSettings.guideChannelId:0,
+                               std::memory_order_release);
+        }
         completion_.push({next.requestId,applied});
     }
     bool queueSettings(const armix::harmony::Settings& settings,
@@ -73,6 +104,31 @@ public:
     }
     armix::harmony::Settings acceptedSettings() const noexcept {return accepted_;}
     int observedNote() const noexcept {return observedNote_.load(std::memory_order_relaxed);}
+    std::uint64_t musicSourceChannel() const noexcept {
+        return guideSource_.load(std::memory_order_acquire);
+    }
+    // Native ChannelId audio callback ONLY, called at another channel's FX
+    // seam. Never copies PCM, mixes audio into vocal, locks or starts a worker.
+    void observeMusicTrack(const float* left,const float* right,int frames) noexcept {
+        if(!ready_||musicSourceChannel()==0||frames<=0)return;
+        guideAge_=0;
+        guide_.process(left,right,frames);
+        const auto estimate=guide_.estimate();
+        dsp_.setGuideKey(estimate.valid()?estimate.key:-1,
+                         estimate.valid()?estimate.scale:-1);
+        guideObservedKey_.store(estimate.valid()?estimate.key:-1,std::memory_order_relaxed);
+        guideObservedScale_.store(estimate.valid()?estimate.scale:-1,std::memory_order_relaxed);
+        guideConfidence_.store(estimate.confidence,std::memory_order_relaxed);
+    }
+    int observedMusicKey() const noexcept {
+        return guideObservedKey_.load(std::memory_order_relaxed);
+    }
+    int observedMusicScale() const noexcept {
+        return guideObservedScale_.load(std::memory_order_relaxed);
+    }
+    float observedMusicConfidence() const noexcept {
+        return guideConfidence_.load(std::memory_order_relaxed);
+    }
     double acceptedSampleRate() const noexcept {return sampleRate_;}
     bool isReady() const noexcept{return ready_;}
     void sealForRealtime() noexcept override {published_=true;}
@@ -82,7 +138,7 @@ public:
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream stream(out,false);
         stream.writeInt(0x41484d31); // AHM1
-        stream.writeInt(1);
+        stream.writeInt(2);
         stream.writeInt(accepted_.key);
         stream.writeInt(accepted_.scale);
         stream.writeInt(accepted_.voices);
@@ -91,16 +147,26 @@ public:
         stream.writeFloat(accepted_.space);
         stream.writeFloat(accepted_.color);
         stream.writeFloat(accepted_.gainDb);
+        stream.writeInt(accepted_.guideMode);
+        stream.writeInt64(static_cast<juce::int64>(accepted_.guideChannelId));
     }
     bool restoreUnpublishedState(const void* bytes,int len) {
         if(published_||!bytes||len<=0||len>128)return false;
         juce::MemoryInputStream stream(bytes,static_cast<std::size_t>(len),false);
-        if(stream.readInt()!=0x41484d31||stream.readInt()!=1)return false;
+        if(stream.readInt()!=0x41484d31)return false;
+        const int version=stream.readInt();
+        if(version!=1&&version!=2)return false;
         armix::harmony::Settings incoming{};
         incoming.key=stream.readInt();incoming.scale=stream.readInt();
         incoming.voices=stream.readInt();incoming.correction=stream.readBool();
         incoming.wet=stream.readFloat();incoming.space=stream.readFloat();
         incoming.color=stream.readFloat();incoming.gainDb=stream.readFloat();
+        if(version==2){
+            incoming.guideMode=stream.readInt();
+            const auto guide=stream.readInt64();
+            if(guide<0)return false;
+            incoming.guideChannelId=static_cast<std::uint64_t>(guide);
+        }
         if(stream.getPosition()!=stream.getTotalLength()||
            !armix::harmony::valid(incoming))return false;
         if(ready_&&!dsp_.setSettings(incoming))return false;
@@ -112,6 +178,13 @@ public:
 private:
     struct Edit{std::uint64_t requestId=0;armix::harmony::Engine::PreparedSettings prepared;};
     armix::harmony::Engine dsp_{};
+    armix::harmony::MusicKeyDetector guide_{};
+    // Requested source is published only by AUDIO after SPSC ACK. Snapshot
+    // revisions retain this exact processor, never a second routing owner.
+    std::atomic<std::uint64_t> guideSource_{0};
+    std::atomic<int> guideObservedKey_{-1},guideObservedScale_{-1};
+    std::atomic<float> guideConfidence_{0.f};
+    int guideAge_=0; // AUDIO-thread exclusive
     EqSpsc<Edit,32> queued_{};
     EqSpsc<Completion,32> completion_{};
     armix::harmony::Settings accepted_{},pendingSettings_{};
