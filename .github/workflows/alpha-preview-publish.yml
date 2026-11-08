@@ -180,3 +180,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Refresh landing page release catalog without a GUI release rebuild
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          & gh workflow run pages-publish.yml --repo $env:GITHUB_REPOSITORY --ref main
+          if ($LASTEXITCODE -ne 0) { throw "Release exists, but landing refresh dispatch failed" }
+          Write-Host "ARSONMIX_LANDING_RELEASE_SYNC_DISPATCHED"
