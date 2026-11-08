@@ -73,8 +73,11 @@ public:
         if(historyFrames>500000||freezeFrames>300000)return false;
         historyL_.assign(historyFrames,0.f);
         historyR_.assign(historyFrames,0.f);
-        freezeL_.assign(freezeFrames,0.f);
-        freezeR_.assign(freezeFrames,0.f);
+        // Two independent tails: new phrases never overwrite an active echo.
+        for(auto& voice:voices_) {
+            voice.freezeL.assign(freezeFrames,0.f);
+            voice.freezeR.assign(freezeFrames,0.f);
+        }
         rate_=rate;ready_=true;settings_=packet;reset();
         return true;
     }
@@ -88,7 +91,7 @@ public:
     bool applyPrepared(const PreparedEdit& edit) noexcept {
         if(!ready_||!edit.valid||edit.sampleRate!=rate_||
            !validSettings(edit.settings)||edit.intervalSamples==0||
-           edit.captureSamples==0||edit.captureSamples>freezeL_.size()||
+           edit.captureSamples==0||edit.captureSamples>voices_[0].freezeL.size()||
            edit.silenceSamples==0)return false;
         settings_=edit;return true;
     }
@@ -99,139 +102,187 @@ public:
         const auto recent=static_cast<std::uint64_t>(rate_*.7);
         if(clock_-lastSoundEnd_>recent)return false; // reject stale/silent cues
         const bool ended=quiet_>0;
-        return freezeAt(ended?lastSoundEnd_:clock_);
+        const bool accepted=freezeAt(ended?lastSoundEnd_:clock_);
+        if(accepted)manualInCurrentPhrase_=true;
+        return accepted;
     }
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right)return;
         const bool mono=left==right;
+        const std::uint32_t maxQuiet=static_cast<std::uint32_t>(rate_);
+        const std::uint32_t phraseGap=static_cast<std::uint32_t>(rate_*.06);
+        const std::uint32_t minVoice=static_cast<std::uint32_t>(rate_*.08);
         for(std::size_t i=0;i<frames;++i) {
             const float dryL=std::isfinite(left[i])?left[i]:0.f;
             const float dryR=mono?dryL:(std::isfinite(right[i])?right[i]:0.f);
-            const auto location=static_cast<std::size_t>(clock_%historyL_.size());
-            historyL_[location]=dryL;historyR_[location]=dryR;
+            historyL_[writeIndex_]=dryL;historyR_[writeIndex_]=dryR;
+            if(++writeIndex_==historyL_.size())writeIndex_=0;
             ++clock_;recorded_=std::min(recorded_+1,historyL_.size());
             const float peak=std::max(std::abs(dryL),std::abs(dryR));
-            // Fast attack, slow release. Singing detector is independent of
-            // output echo, so feedback cannot self-trigger another phrase.
             const float coeff=peak>envelope_?envAttack_:envRelease_;
             envelope_=coeff*envelope_+(1.f-coeff)*peak;
             if(envelope_<1.0e-20f)envelope_=0.f;
             const bool singing=envelope_>=settings_.gateLinear;
             if(singing) {
-                if(quiet_>static_cast<std::uint32_t>(rate_*.06))voiced_=0;
+                if(quiet_>phraseGap) {
+                    voiced_=0;
+                    manualInCurrentPhrase_=false; // genuinely new sung phrase
+                }
                 quiet_=0;
-                voiced_=std::min(voiced_+1,static_cast<std::uint32_t>(rate_));
+                voiced_=std::min(voiced_+1,maxQuiet);
                 lastSoundEnd_=clock_;
-                if(voiced_>=static_cast<std::uint32_t>(rate_*.08))armed_=true;
+                if(voiced_>=minVoice)armed_=true;
             } else {
-                ++quiet_;
+                if(quiet_<maxQuiet)++quiet_; // never wrap during multi-hour sessions
                 if(armed_ && quiet_>=settings_.silenceSamples) {
-                    if(settings_.settings.mode!=0 && clock_>=nextAutoEligible_) {
-                        const bool captured=freezeAt(lastSoundEnd_);
-                        if(captured)nextAutoEligible_=clock_+
-                            static_cast<std::uint64_t>(rate_*.4);
+                    if(settings_.settings.mode!=0 && !manualInCurrentPhrase_
+                        && clock_>=nextAutoEligible_) {
+                        if(freezeAt(lastSoundEnd_)) {
+                            nextAutoEligible_=clock_+
+                                static_cast<std::uint64_t>(rate_*.4);
+                        }
                     }
                     armed_=false;
                 }
             }
-            if(copyPending_)copyFrozenChunk(); // fixed real-time budget
             float echoL=0.f,echoR=0.f;
-            if(playing_) {
-                // A new manual throw replaces the old tail atomically.
-                // Each voice has a fixed offset in the captured buffer;
-                // multiple phrases may overlap at short note divisions.
-                for(int tap=0;tap<active_.settings.repeats;++tap) {
-                    const std::uint64_t start=repeatStarts_[static_cast<std::size_t>(tap)];
+            for(auto& voice:voices_) {
+                if(voice.copying)copyFrozenChunk(voice);
+                if(!voice.playing)continue;
+                // Fixed six-tap limit, constant time; voice owns its capture
+                // and scheduling packet even when BPM changes mid-tail.
+                for(int tap=0;tap<voice.active.settings.repeats;++tap) {
+                    const auto slot=static_cast<std::size_t>(tap);
+                    const std::uint64_t start=voice.repeatStarts[slot];
                     if(clock_<=start)continue;
                     const std::uint64_t offset=clock_-start-1;
-                    if(offset>=freezeCount_)continue;
+                    if(offset>=voice.freezeCount)continue;
                     float ramp=1.f;
-                    const auto edge=static_cast<std::uint64_t>(rate_*.004);
-                    if(edge>0) {
-                        ramp=std::min(ramp,static_cast<float>(offset)/static_cast<float>(edge));
-                        ramp=std::min(ramp,static_cast<float>(freezeCount_-offset-1)/
-                                         static_cast<float>(edge));
+                    if(voice.edgeSamples>0) {
+                        ramp=std::min(ramp,static_cast<float>(offset)/
+                                                   static_cast<float>(voice.edgeSamples));
+                        ramp=std::min(ramp,static_cast<float>(voice.freezeCount-offset-1)/
+                                                   static_cast<float>(voice.edgeSamples));
                     }
                     const auto p=static_cast<std::size_t>(offset);
-                    const float gain=repeatGains_[static_cast<std::size_t>(tap)]*std::max(0.f,ramp);
-                    echoL+=freezeL_[p]*gain;echoR+=freezeR_[p]*gain;
+                    const float gain=voice.repeatGains[slot]*std::max(0.f,ramp);
+                    echoL+=voice.freezeL[p]*gain;echoR+=voice.freezeR[p]*gain;
                 }
-                const auto end=repeatStarts_[static_cast<std::size_t>(active_.settings.repeats-1)]
-                                  +freezeCount_;
-                if(clock_>end)playing_=false;
+                const auto end=voice.repeatStarts[
+                    static_cast<std::size_t>(voice.active.settings.repeats-1)]
+                    +voice.freezeCount;
+                if(clock_>end)voice.playing=false;
             }
-            const float target=singing?1.f-settings_.settings.ducking:1.f;
-            // Fixed 8-ms one-pole gain smoothing: no clicks on duck transitions.
-            duck_=duck_*duckCoeff_+target*(1.f-duckCoeff_);
-            left[i]=dryL+echoL*settings_.settings.wet*duck_;
-            if(!mono)right[i]=dryR+echoR*settings_.settings.wet*duck_;
+            // Slew wet level and ducking independently to avoid zipper
+            // noise on rapid GUI edits and the next vocal entrance.
+            const float duckTarget=singing?1.f-settings_.settings.ducking:1.f;
+            duck_=duck_*duckCoeff_+duckTarget*(1.f-duckCoeff_);
+            wetSmoothed_=wetSmoothed_*duckCoeff_+
+                settings_.settings.wet*(1.f-duckCoeff_);
+            const float echoGain=wetSmoothed_*duck_;
+            left[i]=dryL+echoL*echoGain;
+            if(!mono)right[i]=dryR+echoR*echoGain;
         }
     }
     [[nodiscard]] bool ready() const noexcept{return ready_;}
     [[nodiscard]] VocalThrowSettings settingsForTests() const noexcept{return settings_.settings;}
-    [[nodiscard]] bool echoActive() const noexcept{return playing_;}
+    [[nodiscard]] bool echoActive() const noexcept{
+        for(const auto& voice:voices_)if(voice.playing)return true;
+        return false;
+    }
     [[nodiscard]] unsigned throwCount() const noexcept{return throwCount_;}
     [[nodiscard]] double sampleRate() const noexcept{return rate_;}
 private:
+    struct TailVoice final {
+        std::vector<float> freezeL,freezeR;
+        std::array<std::uint64_t,maxRepeats> repeatStarts{};
+        std::array<float,maxRepeats> repeatGains{};
+        PreparedEdit active{};
+        std::uint64_t copyEnd=0,freezeCount=0;
+        std::size_t copyIndex=0,sourceIndex=0;
+        std::uint32_t edgeSamples=0;
+        bool copying=false,playing=false;
+    };
     bool freezeAt(std::uint64_t end) noexcept {
         if(end==0||end>clock_||historyL_.empty())return false;
+        // Bounded polyphony: do not cut or overwrite an existing phrase.
+        // A full pool rejects a cue (and reports this via native ACK).
+        TailVoice* slot=nullptr;
+        for(auto& voice:voices_) {
+            if(!voice.playing&&!voice.copying){slot=&voice;break;}
+        }
+        if(!slot)return false;
         const auto available=std::min<std::uint64_t>(end,recorded_);
         const auto count=std::min<std::uint64_t>(available,settings_.captureSamples);
         if(count<static_cast<std::uint64_t>(rate_*.025))return false;
-        // No large memcpy in a 64/128-sample ASIO callback. Copy only a
-        // fixed number of stereo frames per processed sample before playback.
-        copyFrom_=end-count;copyEnd_=end;copyIndex_=0;
-        freezeCount_=count;active_=settings_;
-        playing_=false;copyPending_=true;++throwCount_;
+        slot->copyEnd=end;
+        slot->freezeCount=count;
+        slot->copyIndex=0;
+        slot->sourceIndex=static_cast<std::size_t>((end-count)%historyL_.size());
+        slot->edgeSamples=static_cast<std::uint32_t>(rate_*.004);
+        slot->active=settings_;
+        slot->copying=true;
+        ++throwCount_;
         return true;
     }
-    void copyFrozenChunk() noexcept {
-        if(!copyPending_)return;
-        for(int n=0;n<24 && copyIndex_<freezeCount_;++n) {
-            const auto source=static_cast<std::size_t>(
-                (copyFrom_+copyIndex_)%historyL_.size());
-            const auto dest=static_cast<std::size_t>(copyIndex_++);
-            freezeL_[dest]=historyL_[source];freezeR_[dest]=historyR_[source];
-        }
-        if(copyIndex_!=freezeCount_)return;
-        copyPending_=false;
-        // The phrase-end interval is authoritative. If capture completion
-        // is later than the first repeat, begin on the next safe sample.
-        const auto first=std::max(clock_,copyEnd_+active_.intervalSamples);
+    void copyFrozenChunk(TailVoice& voice) noexcept {
+        // A fixed 24-frame budget each sample. Contiguous bulk copying
+        // replaces per-frame division/modulo in the former implementation.
+        const std::size_t left=static_cast<std::size_t>(voice.freezeCount)-voice.copyIndex;
+        const std::size_t n=std::min<std::size_t>({24,left,
+                                        historyL_.size()-voice.sourceIndex});
+        std::copy_n(historyL_.data()+voice.sourceIndex,n,
+                    voice.freezeL.data()+voice.copyIndex);
+        std::copy_n(historyR_.data()+voice.sourceIndex,n,
+                    voice.freezeR.data()+voice.copyIndex);
+        voice.copyIndex+=n;
+        voice.sourceIndex+=n;
+        if(voice.sourceIndex==historyL_.size())voice.sourceIndex=0;
+        if(voice.copyIndex!=voice.freezeCount)return;
+        voice.copying=false;
+        const auto first=std::max(clock_,voice.copyEnd+voice.active.intervalSamples);
         float amplitude=1.f;
-        for(int tap=0;tap<active_.settings.repeats;++tap) {
+        for(int tap=0;tap<voice.active.settings.repeats;++tap) {
             const auto slot=static_cast<std::size_t>(tap);
-            repeatStarts_[slot]=first+
-                static_cast<std::uint64_t>(tap)*active_.intervalSamples;
-            repeatGains_[slot]=amplitude;amplitude*=active_.settings.decay;
+            voice.repeatStarts[slot]=first+
+                static_cast<std::uint64_t>(tap)*voice.active.intervalSamples;
+            voice.repeatGains[slot]=amplitude;
+            amplitude*=voice.active.settings.decay;
         }
-        playing_=true;
+        voice.playing=true;
     }
     void reset() noexcept {
         clock_=lastSoundEnd_=nextAutoEligible_=0;
-        recorded_=freezeCount_=0;copyFrom_=copyEnd_=copyIndex_=0;
-        voiced_=quiet_=0;armed_=playing_=copyPending_=false;
+        recorded_=writeIndex_=0;
+        voiced_=quiet_=0;
+        armed_=manualInCurrentPhrase_=false;
         envelope_=0.f;duck_=1.f;throwCount_=0;
+        wetSmoothed_=settings_.settings.wet;
         if(rate_>0) {
             envAttack_=static_cast<float>(std::exp(-1./(rate_*.004)));
             envRelease_=static_cast<float>(std::exp(-1./(rate_*.018)));
             duckCoeff_=static_cast<float>(std::exp(-1./(rate_*.008)));
         }
-        repeatStarts_.fill(0);repeatGains_.fill(0.f);
+        for(auto& voice:voices_) {
+            voice.copyEnd=voice.freezeCount=0;
+            voice.copyIndex=voice.sourceIndex=0;
+            voice.edgeSamples=0;
+            voice.copying=voice.playing=false;
+            voice.repeatStarts.fill(0);voice.repeatGains.fill(0.f);
+        }
         std::fill(historyL_.begin(),historyL_.end(),0.f);
         std::fill(historyR_.begin(),historyR_.end(),0.f);
     }
-    PreparedEdit settings_{},active_{};
-    std::vector<float> historyL_,historyR_,freezeL_,freezeR_;
-    std::array<std::uint64_t,maxRepeats> repeatStarts_{};
-    std::array<float,maxRepeats> repeatGains_{};
+    PreparedEdit settings_{};
+    std::vector<float> historyL_,historyR_;
+    std::array<TailVoice,2> voices_{};
     std::uint64_t clock_=0,lastSoundEnd_=0,nextAutoEligible_=0;
-    std::size_t recorded_=0;
-    std::uint64_t freezeCount_=0,copyFrom_=0,copyEnd_=0,copyIndex_=0;
+    std::size_t recorded_=0,writeIndex_=0;
     std::uint32_t voiced_=0,quiet_=0;
-    float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f,duck_=1.f;
+    float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f;
+    float duck_=1.f,wetSmoothed_=.42f;
     double rate_=0.;
     unsigned throwCount_=0;
-    bool armed_=false,playing_=false,copyPending_=false,ready_=false;
+    bool armed_=false,manualInCurrentPhrase_=false,ready_=false;
 };
 } // namespace armix::builtin_fx
