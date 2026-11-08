@@ -39,6 +39,7 @@ int main(){
     assert(live->pollCompletion(applied)&&applied.applied&&applied.requestId==501);
     assert(live->acceptedSettings().guideChannelId==music.value);
     assert(live->musicSourceChannel()==music.value);
+    assert(live->effectiveKeyCode()==14); // manual D minor before music
     // The MAIN/no-FX callback may use an empty identity. Never call the
     // absent legacy external renderer merely because its ID also equals 0.
     float emptyL[4]{.25f,.25f,.25f,.25f},emptyR[4]{.5f,.5f,.5f,.5f};
@@ -61,6 +62,7 @@ int main(){
     }
     assert(live->observedMusicKey()==0 && live->observedMusicScale()==0);
     assert(live->observedMusicConfidence()>=.045f);
+    assert(live->effectiveKeyCode()==0); // detected C major
     // Even a source with zero FX inserts guides Harmony. Source absence
     // ages out safely without touching physical routing/output authority.
     for(int i=0;i<950;++i) {
@@ -68,6 +70,7 @@ int main(){
         bank(vocal,l,r,128);
     }
     assert(live->observedMusicKey()==-1);
+    assert(live->effectiveKeyCode()==14); // music absent: manual D minor
     juce::MemoryBlock saved;
     live->getStateInformation(saved);
     ChannelHarmonyProcessor restored;
@@ -115,6 +118,7 @@ int main(){
     assert(live->pollCompletion(applied)&&applied.applied&&applied.requestId==502);
     assert(live->musicSourceChannel()==musicB.value);
     assert(live->observedMusicKey()==-1); // invalidated before first new sample
+    assert(live->effectiveKeyCode()==14); // retarget: manual fallback
     for(int block=0;block<1450;++block){
         float l[128]{},r[128]{};
         for(int j=0;j<128;++j){
@@ -139,6 +143,7 @@ int main(){
         bank2(musicB,l,r,128);
     }
     assert(live->observedMusicKey()==9&&live->observedMusicScale()==1);
+    assert(live->effectiveKeyCode()==21); // detected A minor
     auto locked=changed;locked.guideMode=0;locked.guideChannelId=0;
     locked.key=7;locked.scale=0;
     assert(live->queueAccepted(locked,503));
@@ -161,6 +166,7 @@ int main(){
     assert(live->acceptedSettings().key==7&&
            live->acceptedSettings().scale==0&&
            live->acceptedSettings().guideMode==0);
+    assert(live->effectiveKeyCode()==7); // manual G major remains locked
     // NOTE: this test verifies real PCM to DSP, not real ASIO ear monitoring
     // or polyphonic pitch-transposition quality.
 }
