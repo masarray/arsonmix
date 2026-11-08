@@ -1,20 +1,18 @@
 name: Publish verified ArSonMix Alpha Preview
 
-# Only an owner-authorized issue-comment dispatch starts exact-SHA qualification.
+# Owner-comment dispatch only; no build on release candidate branch push.
 # No GitHub Release or tag is created unless every native and distribution gate passes.
 on:
-  # NO automatic alpha compilation on release-branch pushes. Only validated
-  # owner comment through issue #450 schedules an exact-SHA milestone.
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Immutable alpha tag approved by the release controller
         type: string
         required: true
+        description: Approved immutable alpha tag
       expected_sha:
-        description: Immutable release candidate SHA
         type: string
         required: true
+        description: Approved 40-character candidate commit
 
 permissions:
   contents: write
@@ -74,7 +72,7 @@ jobs:
           }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
           if ($LASTEXITCODE -eq 0) {
-            throw "Release $tag already published; do not rebuild or overwrite immutable assets"
+            throw "Release already exists; do not rebuild or overwrite immutable assets"
           }
           "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
           "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
@@ -199,180 +197,18 @@ jobs:
           if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
           $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0 -or -not $remote -or ($remote -split '\s+')[0] -ne $env:GITHUB_SHA) {
-            throw "Release branch HEAD advanced during qualification; refusing stale promotion"
+            throw "Release branch advanced during qualification; stale promotion rejected"
           }
           & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Refresh landing page release catalog without a GUI release rebuild
+      - name: Refresh official landing catalog after publishing real verified binaries
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           & gh workflow run pages-publish.yml --repo $env:GITHUB_REPOSITORY --ref main
-          if ($LASTEXITCODE -ne 0) { throw "Release exists, but landing refresh dispatch failed" }
-          Write-Host "ARSONMIX_LANDING_RELEASE_SYNC_DISPATCHED"
-) {
-            throw "Release controller tag/SHA does not match branch and verified inputs"
-          }
-          if ($env:GITHUB_REF_NAME -ne "releases/alpha/$tag" -or
-              $tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.[0-9]+$') {
-            throw "Release must use releases/alpha/vX.Y.Z-alpha.N"
-          }
-          $version = $Matches[1]
-          $cmake = Get-Content -LiteralPath CMakeLists.txt -Raw -Encoding UTF8
-          if (-not $cmake.Contains("project(ARMixConsole VERSION $version LANGUAGES")) {
-            throw "Pre-release version does not match native product version"
-          }
-          $notes = "docs/releases/$tag.md"
-          if (-not (Test-Path -LiteralPath $notes -PathType Leaf)) {
-            throw "Release notes missing: $notes"
-          }
-          $actual = (& git rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) {
-            throw "Unpinned release checkout: expected=$env:GITHUB_SHA got=$actual"
-          }
-          $remote = & git ls-remote origin "refs/heads/$env:GITHUB_REF_NAME"
-          if ($LASTEXITCODE -ne 0 -or -not $remote) {
-            throw "Cannot establish authoritative release branch HEAD"
-          }
-          $remoteSha = ($remote -split '\s+')[0]
-          if ($remoteSha -ne $actual) {
-            throw "Stale release branch commit rejected: remote=$remoteSha checked-out=$actual"
-          }
-          "ARMIX_RELEASE_TAG=$tag" >> $env:GITHUB_ENV
-          "ARMIX_RELEASE_NOTES=$notes" >> $env:GITHUB_ENV
-          Write-Host "ALPHA_RELEASE_EXACT_SOURCE=$actual"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Fast GUI, FactoryFX and Windows packaging contracts
-        shell: pwsh
-        run: |
-          node scripts/check_console_puzzle.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/approved_native_m2_contract.test.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Checkout pinned JUCE 8.0.15
-        uses: actions/checkout@v4
-        with:
-          repository: juce-framework/JUCE
-          ref: 8.0.15
-          path: third_party/JUCE
-
-      - name: Install pinned WebView2 SDK
-        shell: pwsh
-        run: |
-          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Configure native application and CTest
-        shell: pwsh
-        run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Build native GUI and all registered tests
-        shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run realtime and native regression tests
-        shell: pwsh
-        run: |
-          ctest --test-dir build -C Release --output-on-failure
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Package exact-SHA portable native mixer
-        shell: pwsh
-        run: |
-          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Stage only independently approved optional first-party VST3
-        shell: pwsh
-        run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Independently audit exact native executable and portable package
-        shell: pwsh
-        run: |
-          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Ensure Inno Setup 6 is available
-        shell: pwsh
-        run: |
-          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
-              -not (Test-Path -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
-            choco install innosetup --yes --no-progress --limit-output
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-      - name: Build, install, upgrade and uninstall exact verified Windows installer
-        shell: pwsh
-        run: |
-          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Create release assets with checksums
-        shell: pwsh
-        run: |
-          $tag = $env:ARMIX_RELEASE_TAG
-          New-Item -ItemType Directory -Force release | Out-Null
-          $setup = 'installer-output/ArSonMix-Windows-x64-Setup-Preview.exe'
-          if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
-            throw "Missing independently verified installer"
-          }
-          Copy-Item -LiteralPath $setup -Destination "release/ArSonMix-$tag-Windows-x64-Setup.exe"
-          Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Optimal
-          Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
-          Copy-Item -LiteralPath dist/FACTORYFX_STAGE_REPORT.json -Destination release/FACTORYFX_STAGE_REPORT.json
-          Copy-Item -LiteralPath installer-output/INSTALLER_PROVENANCE.json -Destination release/INSTALLER_PROVENANCE.json
-          $assets = @(Get-ChildItem -LiteralPath release -File | Where-Object { $_.Extension -in '.exe','.zip' })
-          if ($assets.Count -ne 2) { throw "Installer and portable ZIP are both required" }
-          $lines = foreach ($asset in $assets) {
-            $digest = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$digest  $($asset.Name)"
-          }
-          Set-Content -LiteralPath release/SHA256SUMS.txt -Value $lines -Encoding ascii
-          Write-Host "ALPHA_RELEASE_ARTIFACTS: $($assets.Name -join ', ')"
-
-      - name: Publish verified GitHub prerelease and its Windows binaries
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = $env:ARMIX_RELEASE_TAG
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            throw "Release $tag already exists; never replace immutable published assets"
-          }
-          $assets = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name | ForEach-Object FullName)
-          if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
-          & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
-          if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
-          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Refresh landing page release catalog without a GUI release rebuild
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          & gh workflow run pages-publish.yml --repo $env:GITHUB_REPOSITORY --ref main
-          if ($LASTEXITCODE -ne 0) { throw "Release exists, but landing refresh dispatch failed" }
-          Write-Host "ARSONMIX_LANDING_RELEASE_SYNC_DISPATCHED"
+          if ($LASTEXITCODE -ne 0) { throw "Release published but landing sync dispatch failed" }
+          Write-Host "ARSONMIX_LANDING_CATALOG_REFRESH_DISPATCHED"
