@@ -95,22 +95,22 @@ def main():
                 # CONTROL request is not a DSP ACK: no accepted status until
                 # audio completion + matching revision-bound follow-up readback.
                 ratio=page.locator('.mx-comp-control').nth(1).locator('input')
-                ratio.fill("5")
+                ratio.press("ArrowRight")
                 edit=last_action(page,"nativeCompSet")
-                assert edit["settings"]["ratio"]==5
+                assert abs(edit["settings"]["ratio"]-3.1)<.0001
                 assert edit["instanceId"]==INSTANCE and edit["channelId"]==SOURCE
                 assert not page.locator(".mx-comp-status").inner_text().startswith("NATIVE DSP ACCEPTED")
                 emit(page,"arMixBuiltinCompQueue",{"requestId":edit["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinCompAck",{"requestId":edit["requestId"],"status":"APPLIED"})
-                accepted={**DEFAULTS,"ratio":5.0}
+                accepted={**DEFAULTS,"ratio":3.1}
                 emit_snapshot(page,state,accepted,applied=edit["requestId"])
                 page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                     ?.includes('NATIVE DSP ACCEPTED')""")
-                assert page.locator('.mx-comp-control').nth(1).locator("output").inner_text()=="5.0:1"
+                assert page.locator('.mx-comp-control').nth(1).locator("output").inner_text()=="3.1:1"
                 # The MIX=0 curve must be geometrically unity, even if
                 # the wet compressor ratio and makeup are not neutral.
                 mix=page.locator('.mx-comp-control').nth(6).locator('input')
-                mix.fill("0")
+                mix.press("Home")
                 before=page.locator(".mx-comp-curve").get_attribute("d")
                 assert before
                 after=last_action(page,"nativeCompSet")
