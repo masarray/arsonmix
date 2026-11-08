@@ -3,6 +3,13 @@
   "use strict";
   const cards = [...document.querySelectorAll("[data-platform]")];
   const summary = document.getElementById("release-summary");
+  const heroDownload = document.getElementById("hero-download");
+  // On Windows, take the user straight to the current installer ZIP.
+  // Other platforms continue to the OS chooser. Never fabricate a URL.
+  const platformName = typeof navigator !== "undefined"
+    ? String(navigator.userAgentData?.platform || navigator.platform || "")
+    : "";
+  const isWindowsVisitor = /win/i.test(platformName);
   if (!summary || cards.length !== 3) return;
   const keys = ["windows", "linux", "macos"];
   const labels = { windows: "Windows", linux: "Linux", macos: "macOS" };
@@ -107,7 +114,7 @@
     const zipped = card.dataset.platform === "windows" && item.name.endsWith("-Setup.zip");
     card.classList.add("is-available");
     card.querySelector("[data-release-state]").textContent =
-      item.prerelease ? "PREVIEW AVAILABLE" : "AVAILABLE";
+      item.prerelease ? "EARLY ACCESS" : "AVAILABLE";
     card.querySelector("[data-link-label]").textContent =
       zipped ? "Download installer ZIP" : "Download for " + labels[card.dataset.platform];
     link.href = item.url;
@@ -117,8 +124,7 @@
     link.setAttribute("aria-label", "Download verified " + item.name);
     card.querySelector("[data-release-note]").textContent =
       item.tag + " · " + (item.size / 1048576).toFixed(1) + " MB" +
-      (zipped ? " · Unzip, then run installer" : "") +
-      (item.prerelease ? " · Test release" : "");
+      (zipped ? " · Extract ZIP, run Setup" : "");
   }
   function render(selected, source) {
     let count = 0;
@@ -127,10 +133,21 @@
       if (validAsset(item, key)) { available(card, item); ++count; }
       else unavailable(card);
     }
+    // Hero CTA is a genuine direct download only after a verified asset
+    // has been selected. On other OSes it stays as the platform chooser.
+    if (heroDownload) {
+      const win = selected.windows;
+      heroDownload.href = isWindowsVisitor && validAsset(win, "windows")
+        ? win.url : "#download";
+      heroDownload.setAttribute("aria-label",
+        isWindowsVisitor && validAsset(win, "windows")
+          ? "Download the latest ArSonMix Windows installer"
+          : "Choose your ArSonMix download");
+    }
+    const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
     summary.textContent = count
-      ? "Latest verified downloads · " + count + " platform" + (count === 1 ? "" : "s")
-        + " available" + (source === "live" ? " · Checked GitHub Releases" : "")
-      : "No verified desktop package found. Explore the mixer preview.";
+      ? "Ready to download · " + availablePlatforms.map(k => labels[k]).join(" · ")
+      : "Downloads are being prepared. Explore the mixer in your browser.";
   }
   async function load() {
     let selected = emptyCatalog(), hasStatic = false;
@@ -158,7 +175,7 @@
       render(selected, "live");
     } catch {
       if (!hasStatic && !keys.some(k => validAsset(selected[k], k)))
-        summary.textContent = "Downloads temporarily unavailable. Please try again.";
+        summary.textContent = "Downloads are temporarily unavailable. Please try again.";
     }
   }
   cards.forEach(card => unavailable(card));

@@ -2,12 +2,14 @@
 import json
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 from threading import Thread
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 LANDING = ROOT / "dist-pages/index.html"
 DOWNLOAD_PATTERN = "**/release-catalog.json*"
+LIVE_PATTERN = re.compile(r"https://api\\.github\\.com/repos/masarray/arsonmix/releases\\?per_page=40")
 OFFICIAL = "https://github.com/masarray/arsonmix/releases/download/v0.9.0/"
 
 
@@ -54,9 +56,11 @@ def main():
                                "platforms": {"windows": None, "linux": None, "macos": None}}
                 page.route(DOWNLOAD_PATTERN, lambda route: route.fulfill(
                     status=200, content_type="application/json", body=json.dumps(unavailable)))
+                page.route(LIVE_PATTERN, lambda route: route.fulfill(
+                    status=200, content_type="application/json", body="[]"))
                 page.goto(site)
                 page.wait_for_function(
-                    "document.getElementById('release-summary').textContent.includes('No supported desktop')")
+                    "document.getElementById('release-summary').textContent.includes('Downloads are being prepared')")
                 browser_check(page)
                 assert page.locator(".os-card.is-available").count() == 0
                 assert page.locator("a[data-release-link][href]").count() == 0
@@ -78,6 +82,8 @@ def main():
             page = browser.new_page(viewport={"width": 1366, "height": 768})
             page.route(DOWNLOAD_PATTERN, lambda route: route.fulfill(
                 status=200, content_type="application/json", body=json.dumps(valid)))
+            page.route(LIVE_PATTERN, lambda route: route.fulfill(
+                status=200, content_type="application/json", body="[]"))
             page.goto(site)
             page.wait_for_function(
                 "document.querySelectorAll('.os-card.is-available').length === 3")
@@ -89,7 +95,7 @@ def main():
                 assert page.locator("[data-platform=" + os + "] [data-release-link]").get_attribute(
                     "href").startswith(OFFICIAL)
             assert page.locator("#release-summary").inner_text().startswith(
-                "Latest verified downloads")
+                "Ready to download")
             page.close()
             browser.close()
     finally:
