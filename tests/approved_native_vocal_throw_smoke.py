@@ -91,7 +91,12 @@ def main():
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
             assert editor.locator("#vtClose.mx-comp-close.armix-floating-close").count()==1
-            assert editor.locator("#vtPower.mx-comp-power").count()==1
+            assert editor.locator("#vtPower.mx-comp-power.armix-builtin-fx-power").count()==1
+            assert editor.locator("#vtClose.armix-builtin-fx-close").count()==1
+            assert page.locator("#mxNativePeq .armix-builtin-fx-power").count()==1
+            assert page.locator("#mxNativePeq .armix-builtin-fx-close").count()==1
+            assert page.locator("#mxNativeComp .armix-builtin-fx-power").count()==1
+            assert page.locator("#mxNativeComp .armix-builtin-fx-close").count()==1
             assert editor.locator("#vtPower").get_attribute("data-fx-state")=="on"
             assert editor.locator("#vtPower").get_attribute("aria-pressed")=="true"
             # EQ and Compressor have ONE CSS owner for 24px Close and 26px
