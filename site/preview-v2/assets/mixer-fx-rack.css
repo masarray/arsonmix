@@ -398,107 +398,210 @@
  .mx-comp{top:4px;max-height:calc(100dvh - 8px)}
 }
 
-/* ArSon Vocal Throw: refined compact concert-FX surface. The exact
-   Close/Power hit boxes, icon glyph and state paint are NOT owned here:
-   mixer-contextual-buttons.css owns them jointly with EQ and Compressor. */
-.mx-vthrow{position:fixed;z-index:15001;left:clamp(8px,12vw,190px);top:clamp(8px,11vh,100px);
- width:min(438px,calc(100vw - 16px));max-height:calc(100dvh - 16px);display:flex;flex-direction:column;
- overflow:hidden;box-sizing:border-box;border:1px solid #3d5969;border-radius:8px;
- background:linear-gradient(140deg,#1b303d 0%,#11232f 62%,#142734 100%);color:#e2edf3;
- box-shadow:inset 0 1px #ffffff18,0 2px 6px #0009,0 20px 58px #030b13d9;
- font:400 11px/1.35 Inter,'Segoe UI',sans-serif}
-.mx-vthrow[hidden]{display:none}.mx-vthrow *{box-sizing:border-box}
-.mx-vthrow header{display:flex;flex:0 0 38px;align-items:center;gap:8px;min-width:0;padding:0 8px 0 13px;
- background:linear-gradient(180deg,#2b414e,#1c303e);border-bottom:1px solid #4a6574;
- cursor:move;touch-action:none;user-select:none;box-shadow:inset 0 1px #ffffff16}
-.mx-vthrow .brand{display:inline-flex;align-items:baseline;gap:7px;flex:0 0 auto;white-space:nowrap}
-.mx-vthrow .brand-mark{font-size:9px;font-weight:670;letter-spacing:.12em;color:#6dd3d9}
-.mx-vthrow .brand-name{font-size:11px;font-weight:570;letter-spacing:.032em;color:#f0f6fa}
-.mx-vthrow .channel{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8fb0c0;font-size:10px}
-.mx-vthrow select,.mx-vthrow input{min-height:26px;max-width:100%;border:1px solid #476172;border-radius:4px;
- background:linear-gradient(#152a37,#10232f);color:#ecf6f9;font:inherit;outline:none}
-.mx-vthrow select{padding:2px 5px;cursor:pointer}
-.mx-vthrow input[type=number]{width:100%;padding:4px 7px;text-align:left;font-variant-numeric:tabular-nums}
-.mx-vthrow :is(select,input,button,summary):focus-visible{outline:2px solid #8bdde6;outline-offset:2px}
-.mx-vthrow #vtPreset{width:103px;min-width:0;max-width:103px;flex:0 1 103px;margin-left:auto;font-size:10px;
- background:linear-gradient(#2d4653,#213b4a)}
-.mx-vthrow option{color:#e9f4f7;background:#1c3341}
-.mx-vthrow .body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 13px 11px;
- display:grid;gap:9px;scrollbar-color:#3e5a67 #162835;scrollbar-width:thin}
-.mx-vthrow .lcd{position:relative;min-width:0;display:grid;gap:5px;padding:10px 13px 8px;border:1px solid #355969;
- border-radius:5px;background:radial-gradient(ellipse 80% 60% at 50% 0%,#1b475477,transparent),
- linear-gradient(165deg,#0b1d27,#0a202c 55%,#0d2632);
- box-shadow:inset 0 1px 8px #0009,inset 0 -1px #41667456,0 1px #ffffff0d;overflow:hidden}
-.mx-vthrow .lcd::before{content:"";pointer-events:none;position:absolute;inset:0 0 auto;height:1px;
- background:linear-gradient(90deg,transparent,#7ab5c455,transparent)}
-.mx-vthrow .lcd-top{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;
- color:#6994a8;font-size:9px;letter-spacing:.095em}
-.mx-vthrow #vtClockLabel{color:#7dcbcc;white-space:nowrap;font-size:9px;font-weight:580}
-.mx-vthrow .lcd-numbers{display:flex;align-items:baseline;gap:8px;min-height:45px}
-.mx-vthrow #vtDisplayBpm{color:#d9fff1;font:500 36px/1.1 'Segoe UI',Inter,sans-serif;
- font-variant-numeric:tabular-nums;letter-spacing:-.045em;text-shadow:0 0 18px #66e7ce2b}
-.mx-vthrow .lcd-unit{color:#84b6bd;font-size:10px;letter-spacing:.13em}
-.mx-vthrow .lcd-division{margin-left:auto;color:#c1dce7;font-size:10px;letter-spacing:.05em;white-space:nowrap}
-.mx-vthrow .lcd-beats{height:9px;display:flex;align-items:center;gap:5px;justify-content:flex-end;
- padding-top:6px;border-top:1px solid #37526177}
-.mx-vthrow .lcd-beats i{height:3px;width:21px;display:block;border-radius:2px;background:#2e4a56;
- box-shadow:inset 0 1px #ffffff08}
-.mx-vthrow .lcd-beats i[data-on="true"]{background:linear-gradient(90deg,#3e8c94,#6cc8c7)}
-.mx-vthrow .lcd-beats[data-playing=true] i[data-on="true"]{background:linear-gradient(90deg,#5baaa2,#b1eac5)}
-.mx-vthrow .row{display:flex;justify-content:space-between;align-items:center;gap:10px;min-width:0}
-.mx-vthrow .row #vtMode{width:160px;background:linear-gradient(#273e4c,#182d39);font-size:11px}
-.mx-vthrow .topline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.mx-vthrow .field{display:grid;gap:4px;min-width:0}
-.mx-vthrow :is(label,.label){font-size:9px;letter-spacing:.075em;color:#8aafc1;font-weight:530}
-.mx-vthrow .field input,.mx-vthrow .field select{height:29px;font-size:12px}
-.mx-vthrow .music-source{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
- column-gap:11px;row-gap:5px;align-items:center;padding:9px 0 2px;border-top:1px solid #324c5b}
-.mx-vthrow .music-source label{grid-column:1/-1}
-.mx-vthrow .music-source select{width:100%;min-width:0}
-.mx-vthrow .music-status{min-width:0;color:#8fc7d1;font-size:10px;overflow:hidden;
- white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
-.mx-vthrow button:not(#vtPower):not(#vtClose){font:inherit;cursor:pointer;color:#dceef3;
- border:1px solid #4a6977;border-radius:4px;background:linear-gradient(#2c4654,#203b49);
- box-shadow:inset 0 1px #ffffff17,0 1px 2px #06121a60}
-.mx-vthrow button:not(#vtPower):not(#vtClose):hover:not(:disabled){border-color:#6794a4;
- background:linear-gradient(#365c6c,#2a4c5c)}
-.mx-vthrow button:disabled{opacity:.52;cursor:not-allowed}
-.mx-vthrow .manual{display:grid;grid-template-columns:minmax(0,1fr) 88px;gap:8px}
-.mx-vthrow button.throw{min-height:44px;font-size:13px!important;font-weight:650!important;
- letter-spacing:.15em;color:#eaffff!important;border-color:#3d8b95!important;
- background:linear-gradient(180deg,#20849a,#16677d 72%,#11556a)!important;
- box-shadow:inset 0 1px #9de7ef49,0 2px 5px #00131e9c!important}
-.mx-vthrow button.throw:hover:not(:disabled){background:linear-gradient(#299db1,#1c8298)!important}
-.mx-vthrow button.throw:active:not(:disabled){background:linear-gradient(#155e70,#1d7c8d)!important;
- box-shadow:inset 0 2px 5px #081c29!important}
-.mx-vthrow button.tap{min-height:44px;letter-spacing:.035em}
-.mx-vthrow .hint{min-height:14px;color:#8eaebb;font-size:10px;white-space:nowrap;
- overflow:hidden;text-overflow:ellipsis}
-.mx-vthrow .detail{padding:7px 0 0;border-top:1px solid #2e4755}
-.mx-vthrow details>summary{padding:2px 0 7px;cursor:pointer;color:#b5d5df;font-size:10px}
-.mx-vthrow .ranges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 15px;padding:3px 0 5px}
-.mx-vthrow .range{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;align-items:center}
-.mx-vthrow .range input{grid-column:1/-1;width:100%;height:14px;accent-color:#6cc5d0;cursor:pointer}
-.mx-vthrow .range output{color:#d8e9ef;font-size:10px;font-variant-numeric:tabular-nums}
-.mx-vthrow .status{display:flex;justify-content:space-between;gap:10px;padding-top:8px;
- border-top:1px solid #2d4855;color:#84a8b7;font-size:9px;letter-spacing:.045em}
-.mx-vthrow .dot{display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;
- background:#627f8f;box-shadow:0 0 0 1px #142c39}
-.mx-vthrow .dot.active{background:#71d6b6;box-shadow:0 0 5px #71d6b677}
-@media(max-width:480px){
- .mx-vthrow{top:6px;left:6px;width:calc(100vw - 12px);max-height:calc(100dvh - 12px)}
- .mx-vthrow header{gap:5px;padding:0 6px 0 8px}
- .mx-vthrow .brand{gap:4px}.mx-vthrow .brand-mark{font-size:8px}
- .mx-vthrow .brand-name{font-size:10px}.mx-vthrow .channel{font-size:9px}
- .mx-vthrow #vtPreset{width:88px;flex-basis:88px}
- .mx-vthrow .body{padding:9px;gap:8px}
- .mx-vthrow .lcd{padding:8px 10px}
- .mx-vthrow #vtDisplayBpm{font-size:30px}
+/* ArSon Vocal Throw M4: hardware face from the user's Illustrator control
+   kit. Static vector knobs/buttons, no canvas animation, no browser DSP.
+   Shared Close and Power geometry/state owner: mixer-contextual-buttons.css. */
+.mx-vthrow{position:fixed;z-index:15001;top:clamp(7px,7vh,66px);left:clamp(7px,9vw,175px);
+ width:min(778px,calc(100vw - 14px));max-height:calc(100dvh - 14px);
+ display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;
+ border:1px solid #51545f;border-radius:8px;color:#d4dce3;
+ background:linear-gradient(145deg,#333740,#22272e 35%,#242830 75%,#1d222a);
+ box-shadow:inset 0 1px 0 #ffffff33,inset 0 -1px 0 #090c1199,
+ 0 1px 0 #070910,0 17px 48px #000c;
+ font:400 11px/1.32 Inter,'Segoe UI',sans-serif}
+.mx-vthrow[hidden]{display:none}
+.mx-vthrow *{box-sizing:border-box}
+.mx-vthrow button{font:inherit;cursor:pointer}
+.mx-vthrow :is(button,select,input):focus-visible{outline:2px solid #cf99ee;outline-offset:2px}
+.mx-vthrow .vt-face-header{height:43px;flex:0 0 43px;display:flex;align-items:center;gap:9px;
+ min-width:0;padding:0 10px 0 15px;cursor:move;touch-action:none;user-select:none;
+ background:linear-gradient(#414750,#2b313a);border-bottom:1px solid #151a22;
+ box-shadow:inset 0 1px #ffffff2b,inset 0 -1px #ffffff0a}
+.mx-vthrow .brand{display:flex;align-items:baseline;gap:8px;white-space:nowrap;flex:0 0 auto}
+.mx-vthrow .brand-mark{font-size:9px;font-weight:700;color:#bf80dc;letter-spacing:.12em}
+.mx-vthrow .brand-name{font-size:12px;font-weight:620;color:#edf0f4;letter-spacing:.075em}
+.mx-vthrow .brand-type{font-size:9px;color:#979fab;letter-spacing:.1em}
+.mx-vthrow .channel{min-width:0;max-width:105px;flex:1;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;font-size:9px;color:#b6a0c2}
+.mx-vthrow .vt-preset{display:flex;align-items:center;gap:7px;margin-left:auto;
+ font-size:9px;letter-spacing:.09em;color:#9ca4af}
+.mx-vthrow .vt-preset select{width:110px;height:25px;min-width:0;max-width:110px;
+ padding:0 6px;border:1px solid #555f6b;border-radius:4px;
+ background:linear-gradient(#272d35,#1c222b);color:#dce1e9;font:500 10px Inter,'Segoe UI',sans-serif}
+.mx-vthrow option{color:#e8eaf1;background:#272b34}
+.mx-vthrow .vt-hardware{overflow:auto;overscroll-behavior:contain;min-height:0;display:grid;gap:0;
+ padding:0;scrollbar-width:thin;scrollbar-color:#565563 #22272e}
+.mx-vthrow .vt-console{padding:13px 18px 13px;
+ background:linear-gradient(135deg,#30343b,#242932 66%,#2c3038);
+ border-bottom:1px solid #4b4c55;box-shadow:inset 0 1px #ffffff10}
+.mx-vthrow .vt-console-eyebrow{display:flex;justify-content:space-between;align-items:center;
+ gap:8px;margin:0 0 3px;font-size:9px;letter-spacing:.16em;color:#c49bd9}
+.mx-vthrow .vt-unit-id{color:#7f8c98;letter-spacing:.06em;white-space:nowrap}
+.mx-vthrow .vt-unit-id i{display:inline-block;width:5px;height:5px;border-radius:50%;
+ background:#ac75ce;margin:0 6px 1px}
+.mx-vthrow .vt-instrument{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 244px minmax(0,1fr);
+ align-items:center;gap:5px}
+.mx-vthrow .vt-encoder-bank{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;min-width:0}
+.mx-vthrow .vt-encoder{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0;
+ padding:7px 1px 3px}
+.mx-vthrow .vt-encoder-name{height:12px;line-height:12px;color:#a4acb7;
+ font-size:8px;font-weight:540;letter-spacing:.07em;white-space:nowrap}
+.mx-vthrow .vt-encoder-face{position:relative;display:block;flex:0 0 auto;width:66px;height:66px;
+ padding:0;border:0;background:transparent url("arson-vocal-hardware-encoder.svg") center/contain no-repeat;
+ border-radius:50%;touch-action:none;cursor:ns-resize;filter:drop-shadow(0 4px 5px #060a10bb)}
+.mx-vthrow .vt-encoder-needle{position:absolute;inset:0;transform:rotate(var(--turn,-130deg));pointer-events:none}
+.mx-vthrow .vt-encoder-needle::after{content:"";position:absolute;left:calc(50% - 1.2px);top:17%;
+ width:2.4px;height:12px;border-radius:3px;background:#c989e4;
+ box-shadow:0 0 4px #b468ddaa}
+.mx-vthrow .vt-encoder-value{font:500 11px/14px Inter,'Segoe UI',sans-serif;
+ color:#e6dfec;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mx-vthrow .vt-center{display:flex;flex-direction:column;align-items:center;gap:0;min-width:0}
+.mx-vthrow .vt-hero-plate{width:230px;height:230px;position:relative;display:grid;place-items:center;
+ background:radial-gradient(circle at center,#11161d80,transparent 70%)}
+.mx-vthrow .vt-hero-knob{position:relative;display:grid;place-items:center;width:224px;height:224px;
+ border:0;padding:0;border-radius:50%;outline-offset:-8px!important;cursor:ns-resize;touch-action:none;
+ background:transparent url("arson-vocal-hardware-rotor.svg") center/contain no-repeat;
+ filter:drop-shadow(0 9px 9px #0c111a9c)}
+.mx-vthrow .vt-hero-pointer{position:absolute;inset:0;transform:rotate(var(--turn,-130deg));
+ pointer-events:none}
+.mx-vthrow .vt-hero-pointer::after{content:"";position:absolute;top:22%;left:calc(50% - 3px);
+ width:6px;height:15px;clip-path:polygon(50% 100%,0 0,100% 0);
+ background:#e29aff;filter:drop-shadow(0 0 3px #a44dd4)}
+.mx-vthrow .vt-hero-readout{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;
+ pointer-events:none;margin-top:9px;text-shadow:0 1px #000a}
+.mx-vthrow .vt-hero-readout small{font-size:10px;letter-spacing:.15em;color:#aab3c0}
+.mx-vthrow .vt-hero-readout output{font:500 30px/1.15 'Segoe UI',Inter,sans-serif;
+ color:#f1e5f9;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.mx-vthrow .vt-dial-note{margin-top:-8px;color:#8f99a5;font-size:9px;letter-spacing:.1em}
+.mx-vthrow .vt-performance{display:grid;grid-template-columns:146px minmax(0,1fr) 104px;
+ align-items:stretch;gap:12px;margin-top:2px}
+.mx-vthrow .vt-throw-button{display:flex;flex-direction:column;justify-content:center;align-items:center;
+ gap:2px;height:60px;border:0;border-radius:15px;color:#241629;
+ background:transparent url("arson-vocal-hardware-push.svg") center/100% 100% no-repeat;
+ filter:drop-shadow(0 3px 5px #0008);text-shadow:0 1px #e7b6f154}
+.mx-vthrow .vt-throw-main{font-size:17px;font-weight:700;letter-spacing:.18em;color:#24152c}
+.mx-vthrow .vt-throw-button small{font-size:8px;letter-spacing:.11em;color:#452b52}
+.mx-vthrow .vt-throw-button:active:not(:disabled){filter:brightness(.78) drop-shadow(0 1px 2px #000a)}
+.mx-vthrow .vt-throw-button:disabled{opacity:.46;filter:grayscale(.7)}
+.mx-vthrow .vt-trigger{display:flex;flex-direction:column;justify-content:center;gap:6px;align-items:center;min-width:0}
+.mx-vthrow .vt-small-label{font-size:9px;font-weight:560;letter-spacing:.13em;color:#9ba5b1;white-space:nowrap}
+.mx-vthrow .vt-mode-buttons,.mx-vthrow .vt-division-buttons{display:flex;align-items:center;
+ gap:2px;padding:3px;border:1px solid #171c23;border-radius:7px;
+ background:linear-gradient(#131820,#242a32);box-shadow:inset 0 2px 4px #060b11b8,0 1px #56606a3d}
+.mx-vthrow :is(.vt-mode-buttons,.vt-division-buttons) button{
+ flex:1;min-width:0;min-height:29px;padding:3px 7px;border:1px solid transparent;border-radius:4px;
+ background:linear-gradient(#3b424b,#2d343d);box-shadow:inset 0 1px #ffffff15;
+ color:#a6b0bc;font-size:10px;font-weight:580;letter-spacing:.03em}
+.mx-vthrow :is(.vt-mode-buttons,.vt-division-buttons) button[aria-pressed=true]{
+ color:#f5e4ff;border-color:#784f8b;background:linear-gradient(#6a4c78,#3f344a);
+ box-shadow:inset 0 1px #efbaff2b,0 0 7px #b66bd327}
+.mx-vthrow .vt-tap-button{height:60px;display:flex;flex-direction:column;align-items:center;
+ justify-content:center;gap:1px;color:#c8d0d9;background:linear-gradient(#414852,#262c35);
+ border:1px solid #4c5661;border-radius:12px;box-shadow:inset 0 1px #ffffff21,0 3px 6px #0008}
+.mx-vthrow .vt-tap-button span{font-size:14px;font-weight:640;letter-spacing:.12em}
+.mx-vthrow .vt-tap-button small{font-size:9px;letter-spacing:.12em;color:#a5b0bc}
+.mx-vthrow .vt-tap-button:active{background:linear-gradient(#242931,#353b45);box-shadow:inset 0 2px 5px #000a}
+.mx-vthrow .vt-virtual-input{position:absolute!important;width:1px!important;height:1px!important;
+ padding:0!important;border:0!important;opacity:0!important;overflow:hidden!important;
+ pointer-events:none!important}
+.mx-vthrow .vt-transport{min-width:0;display:grid;grid-template-columns:195px minmax(0,1fr) minmax(0,1fr);
+ gap:14px;padding:13px 18px 12px;background:linear-gradient(#222832,#20252d);
+ border-top:1px solid #0f141b;border-bottom:1px solid #4b525c}
+.mx-vthrow .vt-tempo,.mx-vthrow .vt-pulse,.mx-vthrow .vt-music-source{
+ min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.mx-vthrow .vt-clock-screen{height:43px;display:flex;align-items:baseline;gap:6px;
+ padding:3px 9px 5px;border:1px solid #344856;border-radius:4px;
+ background:linear-gradient(145deg,#07171e,#11232b);box-shadow:inset 0 2px 5px #0009}
+.mx-vthrow #vtDisplayBpm{font:500 29px/34px 'Segoe UI',sans-serif;color:#c9efdd;
+ letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mx-vthrow .vt-clock-screen>span:nth-child(2){font-size:9px;color:#7da99a}
+.mx-vthrow #vtClockLabel{margin-left:auto;align-self:center;color:#bb99c9;font-size:9px;
+ letter-spacing:.06em;text-align:right;max-width:76px}
+.mx-vthrow .vt-manual-bpm{display:flex;align-items:center;gap:6px;color:#8794a1;
+ font-size:8px;letter-spacing:.1em}
+.mx-vthrow .vt-manual-bpm input{width:56px;height:23px;padding:0 4px;border:1px solid #46525d;
+ border-radius:3px;background:#171e26;color:#d8dfea;font:500 11px 'Segoe UI',sans-serif;
+ text-align:center;font-variant-numeric:tabular-nums}
+.mx-vthrow .vt-division-buttons{height:40px}
+.mx-vthrow .vt-division-buttons button{height:31px;padding:3px 4px}
+.mx-vthrow .vt-repeat-leds{display:flex;align-items:center;gap:5px;white-space:nowrap;height:16px}
+.mx-vthrow .vt-repeat-leds i{display:block;width:15px;height:3px;border-radius:2px;background:#3d4550}
+.mx-vthrow .vt-repeat-leds i[data-on=true]{background:#b07ace;box-shadow:0 0 4px #bd7ed04d}
+.mx-vthrow .vt-repeat-leds[data-playing=true] i[data-on=true]{background:#c99ae0}
+.mx-vthrow #vtRhythm{margin-left:auto;color:#8695a1;font-size:8px;letter-spacing:.06em}
+.mx-vthrow .vt-music-source select{height:34px;width:100%;min-width:0;padding:0 7px;
+ border:1px solid #46515e;border-radius:5px;background:linear-gradient(#333a45,#252c36);
+ color:#d8e0e8;font:500 10px Inter,'Segoe UI',sans-serif}
+.mx-vthrow .music-status{height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ font-size:9px;color:#b69ac8}
+.mx-vthrow .vt-status-rail{min-width:0;height:30px;display:flex;align-items:center;
+ justify-content:space-between;gap:14px;padding:0 17px;border-top:1px solid #090d13;
+ background:linear-gradient(#272d36,#232831);font-size:9px;letter-spacing:.045em;color:#929eaa}
+.mx-vthrow .vt-device{flex:0 0 auto;white-space:nowrap}
+.mx-vthrow .dot{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;
+ background:#6f7781;box-shadow:0 0 0 1px #10141a}
+.mx-vthrow .dot.active{background:#b886d5;box-shadow:0 0 5px #b886d55c}
+.mx-vthrow .vt-hint{min-width:0;flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mx-vthrow #vtCount{flex:0 0 auto;white-space:nowrap}
+@media(max-width:770px){
+ .mx-vthrow{left:7px;top:7px}
+ .mx-vthrow .brand-type{display:none}
+ .mx-vthrow .vt-console{padding:10px 10px 12px}
+ .mx-vthrow .vt-instrument{grid-template-columns:minmax(0,1fr) 200px minmax(0,1fr)}
+ .mx-vthrow .vt-hero-plate{width:196px;height:196px}
+ .mx-vthrow .vt-hero-knob{width:193px;height:193px}
+ .mx-vthrow .vt-encoder-face{width:51px;height:51px}
+ .mx-vthrow .vt-encoder-name{font-size:7px}
+ .mx-vthrow .vt-transport{grid-template-columns:160px minmax(0,1fr) minmax(0,1fr);gap:9px;padding:10px}
 }
-@media(max-width:350px){.mx-vthrow .channel{display:none}.mx-vthrow #vtPreset{flex-basis:78px;width:78px}}
-@media(max-height:570px){
+@media(max-width:600px){
+ .mx-vthrow{width:calc(100vw - 10px);max-height:calc(100dvh - 10px);left:5px;top:5px}
+ .mx-vthrow .vt-face-header{height:39px;flex-basis:39px;gap:5px;padding:0 7px}
+ .mx-vthrow .brand{gap:5px}.mx-vthrow .brand-mark{font-size:8px}
+ .mx-vthrow .brand-name{font-size:10px}
+ .mx-vthrow .channel{max-width:42px;font-size:8px}
+ .mx-vthrow .vt-preset{gap:3px;font-size:0}
+ .mx-vthrow .vt-preset select{width:82px;max-width:82px;font-size:9px}
+ .mx-vthrow .vt-console-eyebrow{font-size:8px;letter-spacing:.08em}
+ .mx-vthrow .vt-unit-id{font-size:7px}
+ .mx-vthrow .vt-instrument{display:flex;flex-direction:column;gap:0}
+ .mx-vthrow .vt-center{order:0}
+ .mx-vthrow #vtEncodersLeft{order:1}
+ .mx-vthrow #vtEncodersRight{order:2}
+ .mx-vthrow .vt-hero-plate{width:176px;height:176px}
+ .mx-vthrow .vt-hero-knob{width:174px;height:174px}
+ .mx-vthrow .vt-hero-readout output{font-size:25px}
+ .mx-vthrow .vt-dial-note{font-size:8px}
+ .mx-vthrow .vt-encoder-bank{width:100%;grid-template-columns:repeat(3,minmax(0,1fr));gap:0}
+ .mx-vthrow .vt-encoder{gap:3px;padding:3px 0 2px}
+ .mx-vthrow .vt-encoder-face{width:53px;height:53px}
+ .mx-vthrow .vt-encoder-name{font-size:8px}
+ .mx-vthrow .vt-encoder-value{font-size:10px}
+ .mx-vthrow .vt-performance{grid-template-columns:96px minmax(0,1fr) 65px;gap:5px;margin-top:8px}
+ .mx-vthrow .vt-throw-button,.mx-vthrow .vt-tap-button{height:51px}
+ .mx-vthrow .vt-throw-main{font-size:13px;letter-spacing:.1em}
+ .mx-vthrow .vt-trigger{gap:4px}
+ .mx-vthrow .vt-mode-buttons button{font-size:8px;min-height:24px;padding:1px 3px}
+ .mx-vthrow .vt-tap-button span{font-size:11px}
+ .mx-vthrow .vt-transport{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .mx-vthrow .vt-music-source{grid-column:1/-1}
+ .mx-vthrow .vt-clock-screen{height:37px}
+ .mx-vthrow #vtDisplayBpm{font-size:24px}
+ .mx-vthrow .vt-division-buttons{height:34px}
+ .mx-vthrow .vt-division-buttons button{font-size:8px;height:26px}
+ .mx-vthrow .vt-music-source select{height:29px}
+ .mx-vthrow .vt-status-rail{gap:7px;padding:0 9px}
+}
+@media(max-width:350px){
+ .mx-vthrow .channel{display:none}
+ .mx-vthrow .brand-name{font-size:9px}
+ .mx-vthrow .vt-preset select{width:72px}
+ .mx-vthrow .vt-unit-id{display:none}
+}
+@media(max-height:590px) and (min-width:601px){
  .mx-vthrow{top:4px;max-height:calc(100dvh - 8px)}
- .mx-vthrow .body{padding-top:6px;gap:6px}
- .mx-vthrow .lcd{padding:6px 9px}
- .mx-vthrow #vtDisplayBpm{font-size:27px}
+ .mx-vthrow .vt-console{padding-top:5px;padding-bottom:6px}
+ .mx-vthrow .vt-hero-plate{height:178px;width:178px}
+ .mx-vthrow .vt-hero-knob{height:176px;width:176px}
+ .mx-vthrow .vt-instrument{grid-template-columns:minmax(0,1fr) 190px minmax(0,1fr)}
 }
