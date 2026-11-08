@@ -121,7 +121,11 @@ function compressedOutput(inputDb,s){
  else if(distance>=s.kneeDb/2)reduction=distance*strength;
  else if(distance>-s.kneeDb/2)
   reduction=(distance+s.kneeDb/2)**2/(2*s.kneeDb)*strength;
- return inputDb-reduction+s.makeupDb;
+ // The displayed transfer curve must match the *actual* parallel wet/dry
+ // output. At MIX=0 this becomes exact unity, even with makeup enabled.
+ const wetGain=Math.pow(10,(-reduction+s.makeupDb)/20);
+ const outputGain=(1-s.mix)+s.mix*wetGain;
+ return inputDb+20*Math.log10(Math.max(1e-12,outputGain));
 }
 function paint(){
  for(const [key,c] of Object.entries(inputs)){
@@ -151,9 +155,12 @@ function paint(){
   '" r="6" class="mx-comp-handle"/>'+
   '<text x="40" y="14" class="mx-comp-axis">OUTPUT dBFS</text>'+
   '<text x="451" y="14" class="mx-comp-axis" text-anchor="end">INPUT →</text>';
- meterFill.style.height=(100*clamp(grDb,0,30)/30)+"%";
- meterValue.textContent=grDb.toFixed(1)+" dB";
  const c=context(),insert=c?snapshot()?.graph?.channels?.find(x=>x.id===c.channelId)?.inserts?.[current.slot]:null;
+ // A bypassed graph node is not rendering PCM; its atomic block meter may
+ // still contain its last active value, so never display stale GR as live.
+ const shownReduction=insert?.bypassed===true?0:grDb;
+ meterFill.style.height=(100*clamp(shownReduction,0,30)/30)+"%";
+ meterValue.textContent=shownReduction.toFixed(1)+" dB";
  power.classList.toggle("bypassed",insert?.bypassed===true);
  power.title=insert?.bypassed?"Enable compressor":"Bypass compressor";
 }
