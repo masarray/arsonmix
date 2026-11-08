@@ -38,6 +38,13 @@ inline int nearestDegree(float midi,int key,int scale) noexcept {
     }
     return best;
 }
+// Complementary overlap-add seam with zero slope at every grain boundary.
+// A triangular seam has a slope discontinuity that can color sustained vowels.
+// Precondition: phase is owned by Engine and always in [0,1].
+inline float smoothGrainBlend(float phase) noexcept {
+    const float u=1.f-std::abs(2.f*phase-1.f);
+    return u*u*(3.f-2.f*u);
+}
 class Engine final {
 public:
     static constexpr int maxVoices=4;
@@ -186,8 +193,7 @@ private:
         // Cubic smoothstep over the complementary two-grain windows.
         // Unlike the triangular seam, both endpoints have zero slope:
         // reduced grain-edge modulation without sin/cos in audio callback.
-        const float u=1.f-std::abs(2.f*p-1.f);
-        const float w=u*u*(3.f-2.f*u);
+        const float w=smoothGrainBlend(p);
         float y=w*tap(mono_,delayA)+(1.f-w)*tap(mono_,delayB);
         const float coef=0.07f+color*0.77f;
         float& f=filtered_[static_cast<std::size_t>(voice)];
