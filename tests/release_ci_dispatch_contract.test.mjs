@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseReleaseCommand, parsePortCommand, trustedReleaseComment, releaseDispatch, portDispatch } from '../scripts/release_ci_dispatch.mjs';
+import { parseReleaseCommand, parsePortCommand, parsePublicPortCommand, trustedReleaseComment, releaseDispatch, portDispatch } from '../scripts/release_ci_dispatch.mjs';
 
 const SHA='a'.repeat(40),TAG='v0.5.0-alpha.2',BRANCH='releases/alpha/'+TAG;
 const ev=(body='/arsonmix-release '+TAG+' '+SHA)=>({
@@ -136,6 +136,7 @@ test('Cross-platform command validates OS, source branch and immutable SHA',asyn
     if(path==='/git/ref/heads/feat/juce-linux-host')
       return {ref:'refs/heads/feat/juce-linux-host',object:{sha:SHA}};
     if(path.startsWith('/issues/450/comments'))return [];
+    if(path.includes('/runs?event=workflow_dispatch'))return {workflow_runs:[]};
     if(path.endsWith('/dispatches'))return null;
     throw Error('Unexpected path '+path);
   };
@@ -143,7 +144,7 @@ test('Cross-platform command validates OS, source branch and immutable SHA',asyn
   assert.equal(r.kind,'dispatched');
   assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.data),[{
     ref:'feat/juce-linux-host',
-    inputs:{platform:'linux',source_branch:'feat/juce-linux-host',expected_sha:SHA}
+    inputs:{platform:'linux',source_branch:'feat/juce-linux-host',expected_sha:SHA,release_tag:''}
   }]);
   const dup={...event,comment:{...event.comment,id:102}};
   const prev={...event.comment,id:100};
@@ -153,4 +154,77 @@ test('Cross-platform command validates OS, source branch and immutable SHA',asyn
     if(method==='POST')throw Error('Unexpected duplicate expensive build');
   }});
   assert.equal(noSecond.kind,'skipped');
+});
+
+test('macOS/Linux public comment is exact-source, owner-only and one OS, never a matrix',async()=>{
+  const cmd='/arsonmix-publish macos '+TAG+' '+SHA;
+  assert.deepEqual(parsePublicPortCommand(cmd),{
+    platform:'macos',tag:TAG,sha:SHA,branch:BRANCH
+  });
+  assert.equal(parsePublicPortCommand('/arsonmix-publish windows '+TAG+' '+SHA),null);
+  assert.equal(parsePublicPortCommand('/arsonmix-publish macos '+TAG+' '+'bad'),null);
+  const calls=[];
+  const api=async(path,method='GET',data)=>{
+    calls.push({path,method,data});
+    if(path==='/git/ref/heads/'+BRANCH)return {ref:'refs/heads/'+BRANCH,object:{sha:SHA}};
+    if(path.startsWith('/issues/450/comments?'))return [];
+    if(path==='/releases/tags/'+TAG)return {tag_name:TAG,target_commitish:SHA,draft:false,
+      assets:[{name:'ArSonMix-'+TAG+'-Windows-x64-Setup.exe',state:'uploaded'}]};
+    if(path.includes('/runs?event=workflow_dispatch'))return {workflow_runs:[]};
+    if(path.endsWith('/dispatches'))return null;
+    throw Error('Unexpected API '+path);
+  };
+  const result=await portDispatch({event:ev(cmd),api});
+  assert.equal(result.kind,'dispatched');
+  assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.data),[{
+    ref:BRANCH,
+    inputs:{platform:'macos',source_branch:BRANCH,expected_sha:SHA,release_tag:TAG}
+  }]);
+});
+
+test('Public OS publishing rejects SHA mismatch, missing Windows, duplicate and active run',async()=>{
+  const cmd='/arsonmix-publish linux '+TAG+' '+SHA;
+  for(const fixture of [
+    {release:{tag_name:TAG,target_commitish:'b'.repeat(40),assets:[]},message:/PORT_RELEASE_SOURCE_SHA_MISMATCH/},
+    {release:{tag_name:TAG,target_commitish:SHA,assets:[]},message:/PORT_WINDOWS_ASSET_MISSING/},
+  ]){
+    const calls=[];
+    const api=async(path,method='GET',data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/git/ref/'))return {ref:'refs/heads/'+BRANCH,object:{sha:SHA}};
+      if(path.startsWith('/issues/450/comments?'))return [];
+      if(path==='/releases/tags/'+TAG)return fixture.release;
+      throw Error('unexpected '+path);
+    };
+    await assert.rejects(portDispatch({event:ev(cmd),api}),fixture.message);
+    assert.equal(calls.filter(c=>c.method==='POST').length,0);
+  }
+  const release={tag_name:TAG,target_commitish:SHA,draft:false,assets:[
+    {name:'ArSonMix-'+TAG+'-Windows-x64-Setup.exe',state:'uploaded'}]};
+  for(const run of [{head_sha:SHA,status:'in_progress',display_title:'Port linux '+TAG+' '+SHA},
+                    {head_sha:SHA,status:'completed',conclusion:'success',display_title:'Port linux '+TAG+' '+SHA}]){
+    const calls=[];
+    const api=async(path,method='GET',data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/git/ref/'))return {ref:'refs/heads/'+BRANCH,object:{sha:SHA}};
+      if(path.startsWith('/issues/450/comments?'))return [];
+      if(path==='/releases/tags/'+TAG)return release;
+      if(path.includes('/runs?event=workflow_dispatch'))return {workflow_runs:[run]};
+      throw Error('Unexpected '+path);
+    };
+    assert.equal((await portDispatch({event:ev(cmd),api})).kind,'skipped');
+    assert.equal(calls.filter(c=>c.method==='POST').length,0);
+  }
+});
+
+test('Public port workflow includes no commercial signing or push-triggered build',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/crossplatform-native-qualification.yml',import.meta.url),'utf8');
+  assert.match(workflow,/workflow_dispatch:/);
+  assert.doesNotMatch(workflow,/\n  push:/);
+  assert.doesNotMatch(workflow,/\n  schedule:/);
+  assert.doesNotMatch(workflow,/\n\s+matrix:/);
+  assert.match(workflow,/bash "scripts\/package_native_\$PLATFORM.sh"/);
+  assert.match(workflow,/gh release upload "\$TAG"/);
+  assert.match(workflow,/SHA256SUMS-macOS.txt/);
+  assert.match(workflow,/SHA256SUMS-Linux.txt/);
 });
