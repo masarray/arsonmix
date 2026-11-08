@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V51 owner reference: portrait segmented LEDs, stepped dBFS, color-matched peak hold and quiet fader shadow.
+"""V51 meter reference: portrait LEDs and peak hold, owner-approved static fader shadow.
 
 This tests SIMULATED Pages values only, never physical PCM or JUCE telemetry.
 """
@@ -44,7 +44,7 @@ def inspect_geometry(page,density,w):
         assert e['ramp']==e['peakRamp'],(w,density,'peak must match full-height gradient',e)
         assert '12px' in e['offCells'] and '14px' in e['offCells'],(w,density,'portrait pitch',e)
         assert '12px' in e['segmentMask'] and '14px' in e['segmentMask'],(w,density,'step separation',e)
-        assert e['faderFilter']=='none' and e['faderShadow']!='none',(w,density,'quiet thumb shadow',e)
+        assert e['faderFilter']=='none' and e['faderShadow']!='none',(w,density,'static owner thumb shadow',e)
     return data
 
 def inspect_motion(page):

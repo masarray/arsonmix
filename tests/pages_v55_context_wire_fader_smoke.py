@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V55 context-aware physical WIRE dot paint; preserve owner-restored V51 fader shadow."""
+"""V55 context WIRE dot paint; preserve owner-approved realistic static cap shadow."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
@@ -27,10 +27,14 @@ def main():
                             assert v["connected"] is None,(w,density,"MAIN must not light custom OUT",ch,v)
                             assert page.locator(f'#tracks .strip[data-id="{ch}"] .wire-node-out').get_attribute("data-wire-main-edge")
                         assert v["color"]=="rgb(75, 83, 91)",(w,density,ch,direction,v)
-                cap=page.locator('#tracks .strip[data-id="1"] .fader-travel .cap').first
-                shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
-                assert "2px 3px -2px" in shadow and "4px 3px -4px" in shadow,(w,density,"approved V51 small static thumb shadow",shadow)
-                assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
+                for selector in ('#tracks .strip[data-id="1"] .fader-travel .cap',
+                                 '#master .strip .fader-travel .cap'):
+                    cap=page.locator(selector).first
+                    shadow=cap.evaluate("(el)=>getComputedStyle(el).boxShadow")
+                    assert "20px 10px -1px" in shadow and "4px 3px -4px" in shadow,(
+                        w,density,selector,"static owner fader depth",shadow)
+                    assert cap.evaluate("(el)=>getComputedStyle(el).filter")=="none"
+                    assert cap.evaluate("(el)=>getComputedStyle(el).transitionDuration")=="0s"
                 if density=="comfort":
                     if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
                         page.locator('.section-rail [data-section="send"]').click()
@@ -52,5 +56,5 @@ def main():
                     assert node(page,3,"in")["paint"]=="idle"
                 page.close()
         browser.close()
-    print("PASS V55: dark idle nodes, accepted WIRE paint and undo; V51 fader shadow rollback intact")
+    print("PASS V55: WIRE route/undo and realistic static cap shadow on channel and MASTER")
 if __name__=="__main__":main()
