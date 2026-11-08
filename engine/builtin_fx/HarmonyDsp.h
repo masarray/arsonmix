@@ -49,8 +49,10 @@ public:
         latency_=2*grain_;
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
-        lowLag_=std::max(8,static_cast<int>(rate/(decimation_*850.)));
-        highLag_=std::min(230,static_cast<int>(rate/(decimation_*85.)));
+        // Support bass through soprano fundamentals; keep Nyquist/finiteness guards.
+        // Earlier 850 Hz cap failed to track high soprano notes (e.g. C6).
+        lowLag_=std::max(8,static_cast<int>(rate/(decimation_*1200.)));
+        highLag_=std::min(230,static_cast<int>(rate/(decimation_*65.)));
         if(lowLag_>=highLag_||latency_+3*grain_>=static_cast<int>(capacity))return false;
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
@@ -181,7 +183,11 @@ private:
         const float pB=p<0.5f?p+0.5f:p-0.5f;
         const float delayA=2.f*grain_+(1.f-currentRatio)*p*grain_;
         const float delayB=2.f*grain_+(1.f-currentRatio)*pB*grain_;
-        const float w=1.f-std::abs(2.f*p-1.f);
+        // Cubic smoothstep over the complementary two-grain windows.
+        // Unlike the triangular seam, both endpoints have zero slope:
+        // reduced grain-edge modulation without sin/cos in audio callback.
+        const float u=1.f-std::abs(2.f*p-1.f);
+        const float w=u*u*(3.f-2.f*u);
         float y=w*tap(mono_,delayA)+(1.f-w)*tap(mono_,delayB);
         const float coef=0.07f+color*0.77f;
         float& f=filtered_[static_cast<std::size_t>(voice)];
