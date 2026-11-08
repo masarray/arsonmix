@@ -32,8 +32,8 @@ def reply_snapshot(page,state,settings,applied=None,count=0,tail=False,music=Non
         "musicLocked":bool(music),
         "musicBpm":music["bpm"] if music else 0,
         "musicConfidence":music["confidence"] if music else 0,
-        "musicGridAvailable":music["grid"] if music else False,
-        "musicPhaseConfidence":music["confidence"] if music and music["grid"] else 0,
+        "musicGridAvailable":music.get("grid",False) if music else False,
+        "musicPhaseConfidence":music["confidence"] if music and music.get("grid",False) else 0,
         "settings":copy.deepcopy(settings)}
     if applied:data["appliedRequestId"]=applied
     emit(page,"arMixBuiltinThrowSnapshot",data)
