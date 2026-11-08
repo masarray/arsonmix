@@ -152,22 +152,34 @@ def main():
                 return svg.x<meters.x&&meters.right<=frame.right+1;
             }"""),"meters must be inside black LCD to the RIGHT of graph"
             assert page.locator(".mx-comp-control[data-key]").count()==7
-            # One shared SVG per dial, not seven bitmap frames or animated canvases.
-            assert (out/"assets"/"compressor-knob-metal.svg").is_file()
+            # Owner-supplied knob.svg reference: white beveled face, 59 radial
+            # ticks, teal active ticks and small rotary dot; never the old
+            # titanium/conic solid ring. Assets must be true self-contained SVG.
+            from xml.etree import ElementTree as ET
+            for knob_asset in ("compressor-knob-reference.svg",
+                               "compressor-knob-ticks-mask.svg"):
+                asset=(out/"assets"/knob_asset)
+                assert asset.is_file(),knob_asset
+                xml=asset.read_text(encoding="utf-8")
+                assert "data:image/" not in xml and "<image" not in xml,knob_asset
+                assert len(ET.fromstring(xml).findall(".//{http://www.w3.org/2000/svg}rect"))==59
             dials=page.locator(".mx-comp-dial")
             assert dials.count()==7
             appearance=dials.evaluate_all("""nodes=>nodes.map(el=>{
-                const ring=getComputedStyle(el);
-                const face=getComputedStyle(el,'::before');
-                const needle=getComputedStyle(el,'::after');
-                return {face:face.backgroundImage,ring:ring.backgroundImage,
-                    transform:needle.transform,angle:el.style.getPropertyValue('--dial-angle'),
+                const face=getComputedStyle(el),ticks=getComputedStyle(el,'::before'),
+                    marker=getComputedStyle(el,'::after');
+                return {face:face.backgroundImage,progress:ticks.backgroundImage,
+                    mask:ticks.webkitMaskImage||ticks.maskImage,
+                    angle:el.style.getPropertyValue('--dial-angle'),
+                    transform:marker.transform,dot:marker.backgroundColor,
                     width:el.getBoundingClientRect().width,
-                    filter:ring.filter,animation:ring.animationName};
+                    filter:face.filter,animation:face.animationName};
             })""")
-            assert all("compressor-knob-metal.svg" in a["face"] for a in appearance),appearance
-            assert all("conic-gradient" in a["ring"] for a in appearance),appearance
-            assert all(a["angle"].endswith("deg") for a in appearance),appearance
+            assert all("compressor-knob-reference.svg" in a["face"] for a in appearance),appearance
+            assert all("compressor-knob-ticks-mask.svg" in a["mask"] for a in appearance),appearance
+            assert all("conic-gradient" in a["progress"] for a in appearance),appearance
+            assert all(a["angle"].endswith("deg") and a["dot"]=="rgb(57, 187, 157)"
+                for a in appearance),appearance
             assert all(a["width"]>=30 and a["filter"]=="none" and
                 a["animation"]=="none" for a in appearance),appearance
             assert page.locator(".mx-comp-control").count()==7
@@ -312,7 +324,12 @@ def main():
                 # CONTROL request is not a DSP ACK: no accepted status until
                 # audio completion + matching revision-bound follow-up readback.
                 ratio=page.locator('.mx-comp-control[data-key="ratio"] input')
+                old_pointer=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-dial').evaluate(
+                    "el=>getComputedStyle(el,'::after').transform")
                 ratio.press("ArrowRight")
+                new_pointer=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-dial').evaluate(
+                    "el=>getComputedStyle(el,'::after').transform")
+                assert new_pointer!=old_pointer,"knob dot must track actual control value"
                 edit=last_action(page,"nativeCompSet")
                 assert abs(edit["settings"]["ratio"]-3.1)<.0001
                 assert edit["instanceId"]==INSTANCE and edit["channelId"]==SOURCE
