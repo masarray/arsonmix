@@ -379,6 +379,12 @@ if(BUILD_TESTING)
   add_test(NAME NativeCompressorZeroLatencyAndLinkedStereoPCM COMMAND ARMixNativeCompressorTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorTests)
 
+  add_executable(ARMixNativeVocalThrowTests tests/builtin_vocal_throw_test.cpp
+      engine/builtin_fx/VocalThrow.h)
+  target_compile_features(ARMixNativeVocalThrowTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalThrowPhraseCaptureManualAutoAndNoHeap COMMAND ARMixNativeVocalThrowTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeVocalThrowTests)
+
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
   add_test(NAME P1KMeasuredNativeBS1770StereoAnd4xTruePeak COMMAND ARMixNativeMasterLoudnessTests)
