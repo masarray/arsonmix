@@ -30,10 +30,10 @@ panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
 panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");
 panel.setAttribute("aria-label","ArSon Vocal Throw");
 panel.innerHTML=[
- '<header><span class="brand">Vocal Throw</span><span class="channel" id="vtChannel"></span>',
+ '<header><span class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span></span><span class="channel" id="vtChannel"></span>',
  '<select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select>',
- '<button class="power" id="vtPower" aria-label="FX power" type="button">⏻</button><button class="close armix-floating-close" id="vtClose" aria-label="Close Vocal Throw" type="button">×</button></header>',
- '<div class="body"><div class="row"><span class="label">TRIGGER MODE</span><select id="vtMode" aria-label="Trigger mode"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
+ '<button class="mx-comp-power" id="vtPower" data-fx-state="unknown" aria-pressed="false" aria-label="Vocal Throw state unavailable" type="button" disabled>⏻</button><button class="mx-comp-close armix-floating-close" id="vtClose" aria-label="Close Vocal Throw" title="Close Vocal Throw" type="button">×</button></header>',
+ '<div class="body"><div class="lcd" aria-label="Vocal Throw tempo display"><div class="lcd-top"><span>ARSON / PHRASE ENGINE</span><span id="vtClockLabel">MANUAL CLOCK</span></div><div class="lcd-numbers"><output id="vtDisplayBpm">120</output><span class="lcd-unit">BPM</span><span class="lcd-division" id="vtRhythm">1/4 · HYBRID</span></div><div class="lcd-beats" id="vtBeatRail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div></div><div class="row"><span class="label">TRIGGER MODE</span><select id="vtMode" aria-label="Trigger mode"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
  '<div class="topline"><div class="field"><label for="vtBpm">TEMPO · BPM</label><input id="vtBpm" type="number" min="60" max="200" step="1"></div>',
  '<div class="field"><label for="vtDivision">BEAT</label><select id="vtDivision"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select></div>',
  '<div class="field"><label for="vtRepeats">REPEATS</label><input id="vtRepeats" type="number" min="1" max="6" step="1"></div></div>',
@@ -55,7 +55,7 @@ for(const [key,[title,unit,step]] of Object.entries(fields)){
 }
 let current=null,accepted=defaults(),draft=defaults(),pending=null,
  readId="",readSent=0,seq=1,taps=[],windowDrag=null;
-let tempoPending=null,musicSource="0";
+let tempoPending=null,musicSource="0",musicReadback=null;
 const context=()=>{
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const fx=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[current?.slot];
@@ -80,25 +80,39 @@ function refreshMusicChannels(){
  selector.disabled=!ctx||!native()||Boolean(tempoPending);
 }
 function renderMusicStatus(tempo){
- const label=$("vtMusicStatus");
- if(tempoPending){label.textContent="Validating music channel…";return;}
- if(musicSource==="0"){label.textContent="Manual BPM / TAP";return;}
- if(!tempo?.musicSourceActive){label.textContent="Source stale · manual fallback";return;}
- if(!tempo.musicLocked){label.textContent="Listening for beat · manual fallback";return;}
- const confidence=Math.round(Math.max(0,Math.min(1,Number(tempo.musicConfidence)||0))*100);
- label.textContent="AUTO "+Math.round(Number(tempo.musicBpm))+
-  " BPM · "+(tempo.musicGridAvailable===true?"BEAT GRID":"BPM only")+
+ if(tempo)musicReadback=tempo;
+ const label=$("vtMusicStatus"),clock=$("vtClockLabel");
+ if(tempoPending){label.textContent="Validating music channel…";clock.textContent="SOURCE CHECK";return;}
+ if(musicSource==="0"){
+  label.textContent="Manual BPM / TAP";clock.textContent="MANUAL CLOCK";
+  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
+ }
+ if(!musicReadback?.musicSourceActive){
+  label.textContent="Source stale · manual fallback";clock.textContent="MANUAL CLOCK";
+  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
+ }
+ if(!musicReadback.musicLocked){
+  label.textContent="Listening for beat · manual fallback";clock.textContent="LISTENING";
+  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
+ }
+ const confidence=Math.round(Math.max(0,Math.min(1,Number(musicReadback.musicConfidence)||0))*100);
+ const beatGrid=musicReadback.musicGridAvailable===true;
+ label.textContent="AUTO "+Math.round(Number(musicReadback.musicBpm))+
+  " BPM · "+(beatGrid?"BEAT GRID":"BPM only")+
   " · "+confidence+"%";
+ clock.textContent=beatGrid?"GRID LOCK":"AUTO BPM";
+ $("vtDisplayBpm").textContent=String(Math.round(Number(musicReadback.musicBpm)));
 }
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=state?.graph?.channels?.find(ch=>ch.id===id),fx=lane?.inserts?.[current?.slot];
  const value=!context()?"unknown":lane.fxRackBypassed?"rack-off":fx.bypassed?"off":"on";
- const btn=$("vtPower");btn.dataset.state=value;
+ const btn=$("vtPower");btn.dataset.fxState=value;
  btn.disabled=value==="unknown"||value==="rack-off";
  btn.title=value==="on"?"Active · click to bypass":value==="off"?"Bypassed · click to enable":
   value==="rack-off"?"FX rack bypassed":"Native FX unavailable";
  btn.setAttribute("aria-pressed",String(value==="on"));
+ btn.setAttribute("aria-label",btn.title);
  $("vtThrow").disabled=value!=="on"||!!pending;
 }
 function paint(){
@@ -111,6 +125,12 @@ function paint(){
    (unit==="%"?Math.round(draft[key]*100):Math.round(draft[key]))+unit;
  }
  $("vtPreset").value=Object.entries(presets).find(([,v])=>same(v,draft))?.[0]||"Custom";
+ const rhythmic=["1/4","1/8","DOTTED 1/8","1/2"][accepted.division];
+ const modes=["MANUAL","AUTO","HYBRID"];
+ $("vtRhythm").textContent=rhythmic+" · "+modes[accepted.mode];
+ for(const [index,led] of [...$("vtBeatRail").children].entries())
+  led.dataset.on=String(index<accepted.repeats);
+ renderMusicStatus();
  syncPower();
 }
 function requestSnapshot(force=false){
@@ -197,7 +217,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  id:ID,
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
-  current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";readId="";
+  current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
   if(native()&&state?.admitted&&insert?.catalogId===ID&&insert.id){
@@ -247,6 +267,7 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
  }
  $("vtCount").textContent=String(reply.throwCount||0)+" throws";
  $("vtDot").classList.toggle("active",reply.tailActive===true);
+ $("vtBeatRail").dataset.playing=String(reply.tailActive===true);
  $("vtStatus").textContent=reply.tailActive?"ECHO TAIL":"NATIVE DSP";
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.requestId)return;
