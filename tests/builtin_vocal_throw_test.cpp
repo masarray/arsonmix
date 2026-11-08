@@ -219,8 +219,13 @@ static void manualOverrideSuppressesAuto() {
     run(fx,0.f,0.f,12000,l,r);
     check(fx.throwCount()==1); // same phrase must not double-fire
     run(fx,.5f,.25f,12000,l,r); // genuinely new phrase
-    run(fx,0.f,0.f,10000,l,r);
-    check(fx.throwCount()==2);
+    // The 18ms release envelope must fall below the voice gate BEFORE
+    // the 160ms silence threshold begins. 208ms total is insufficient
+    // with a sustained 0.5 peak and threshold -35dB.
+    run(fx,0.f,0.f,9000,l,r);
+    check(fx.throwCount()==1); // no premature false-positive throw
+    run(fx,0.f,0.f,5000,l,r);
+    check(fx.throwCount()==2); // new phrase, after full release + gate
 }
 int main() {
     validation();
