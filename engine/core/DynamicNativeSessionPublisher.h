@@ -3,6 +3,7 @@
 #include "DynamicPreparedMixerBlock.h"
 #include "DynamicConsoleRoutingView.h"
 #include "NativeMusicTempoMonitor.h"
+#include "NativeBeatFrameContext.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
 #include <algorithm>
@@ -202,6 +203,11 @@ public:
         if(!exclusive) {
             clearOutputs();return false;
         }
+        // One sample domain for all ChannelIds and their FX racks. This
+        // fixed-time callback-local scope also fences bypassed/stale inserts;
+        // no second transport thread, allocation or callback is introduced.
+        const auto startFrame=musicTempo_.beginAudioBlock(deviceEpoch,frames);
+        NativeBeatFrameScope frameScope{deviceEpoch,snap->graphRevision,startFrame};
         // Prepared FX takes precedence over the legacy external callback.
         // NEVER invoke both: that would double-compress or double-reverb.
         // Snapshot ownership pins the M4 instance throughout this callback;
