@@ -29,6 +29,7 @@ public:
         double sampleRate=0.0;
         float attackCoefficient=0.0f;
         float releaseCoefficient=0.0f;
+        float makeupGain=1.0f;
         bool valid=false;
     };
     static bool validSettings(const CompressorSettings& s) noexcept {
@@ -51,7 +52,10 @@ public:
             std::exp(-1000.0/(static_cast<double>(settings.attackMs)*sampleRate)));
         next.releaseCoefficient=static_cast<float>(
             std::exp(-1000.0/(static_cast<double>(settings.releaseMs)*sampleRate)));
-        next.valid=true;
+        // Compute output makeup off realtime, then slew the LINEAR gain.
+        next.makeupGain=static_cast<float>(
+            std::exp(static_cast<double>(settings.makeupDb)*0.11512925464970229));
+        next.valid=std::isfinite(next.makeupGain);
         output=next;
         return true;
     }
@@ -80,6 +84,7 @@ public:
         if(!ready_||!edit.valid||edit.sampleRate!=sampleRate_||
            !validSettings(edit.settings)||!std::isfinite(edit.attackCoefficient)||
            !std::isfinite(edit.releaseCoefficient)||
+           !std::isfinite(edit.makeupGain)||edit.makeupGain<=0.f||
            edit.attackCoefficient<0.f||edit.attackCoefficient>=1.f||
            edit.releaseCoefficient<0.f||edit.releaseCoefficient>=1.f)return false;
         target_=edit;
@@ -95,7 +100,8 @@ public:
         float maxReduction=0.f;
         for(std::size_t i=0;i<frames;++i) {
             advance();
-            const float dryL=left[i],dryR=mono?dryL:right[i];
+            const float dryL=std::isfinite(left[i])?left[i]:0.f;
+            const float dryR=mono?dryL:(std::isfinite(right[i])?right[i]:0.f);
             const float peak=std::max(std::abs(dryL),std::abs(dryR));
             // One shared peak detector guarantees stable stereo placement.
             const float coefficient=peak>envelope_?
@@ -116,8 +122,7 @@ public:
             }
             const float attenuation=reduction>0.f?
                 std::exp(reduction*(-0.11512925464970229f)):1.f;
-            const float wetGain=attenuation*
-                std::exp(s.makeupDb*0.11512925464970229f);
+            const float wetGain=attenuation*current_.makeupGain;
             const float outputGain=(1.f-s.mix)+s.mix*wetGain;
             left[i]=dryL*outputGain;
             if(!mono)right[i]=dryR*outputGain;
@@ -149,6 +154,7 @@ private:
         slide(a.mix,b.mix);
         slide(current_.attackCoefficient,target_.attackCoefficient);
         slide(current_.releaseCoefficient,target_.releaseCoefficient);
+        slide(current_.makeupGain,target_.makeupGain);
         if(--rampRemaining_==0)current_=target_;
     }
 };
