@@ -66,26 +66,37 @@ public:
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
     }
-    bool setSettings(const Settings& next) noexcept {
+    // Prepared on the CONTROL thread. Immutable edit data is copied through
+    // the existing SPSC; applying it on the callback needs only fixed copies.
+    struct PreparedSettings {
+        Settings settings{};
+        float gain=1.f;
+        float mixL[maxVoices]{},mixR[maxVoices]{};
+    };
+    static bool prepareSettings(const Settings& next,PreparedSettings& out) noexcept {
         if(!valid(next))return false;
-        settings_=next;
-        targetWet_=next.wet;targetColor_=next.color;
-        targetGain_=std::pow(10.f,next.gainDb/20.f);
-        targetCorrection_=next.correction?1.f:0.f;
-        // Operator-thread or once-per-block edit, never inside the sample loop.
-        // Muted/removed voices ramp out instead of disappearing on one sample.
+        PreparedSettings prepared;
+        prepared.settings=next;
+        prepared.gain=std::pow(10.f,next.gainDb/20.f);
         constexpr float pi=3.14159265358979323846f;
         const float amplitude=next.wet*0.65f/std::sqrt(static_cast<float>(next.voices));
+        for(int v=0;v<next.voices;++v){
+            const float pan=next.space*(2.f*static_cast<float>(v)/(next.voices-1)-1.f);
+            const float angle=(pan+1.f)*pi*0.25f;
+            prepared.mixL[v]=amplitude*std::cos(angle);
+            prepared.mixR[v]=amplitude*std::sin(angle);
+        }
+        out=prepared;return true;
+    }
+    bool applyPreparedSettings(const PreparedSettings& next) noexcept {
+        // Caller publishes only prepareSettings()-validated packets.
+        settings_=next.settings;
+        targetWet_=next.settings.wet;targetColor_=next.settings.color;
+        targetGain_=next.gain;
+        targetCorrection_=next.settings.correction?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
-            float left=0.f,right=0.f;
-            if(v<next.voices){
-                const float pan=next.space*(2.f*static_cast<float>(v)/(next.voices-1)-1.f);
-                const float angle=(pan+1.f)*pi*0.25f;
-                left=amplitude*std::cos(angle);
-                right=amplitude*std::sin(angle);
-            }
-            targetMixL_[static_cast<std::size_t>(v)]=left;
-            targetMixR_[static_cast<std::size_t>(v)]=right;
+            targetMixL_[static_cast<std::size_t>(v)]=next.mixL[v];
+            targetMixR_[static_cast<std::size_t>(v)]=next.mixR[v];
         }
         if(!processed_){
             wet_=targetWet_;color_=targetColor_;gain_=targetGain_;
@@ -93,6 +104,12 @@ public:
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
         return true;
+    }
+    // Control-thread lifecycle and standalone test entry only. The realtime
+    // FX mailbox invokes applyPreparedSettings(), never this trig/pow path.
+    bool setSettings(const Settings& next) noexcept {
+        PreparedSettings prepared;
+        return prepareSettings(next,prepared)&&applyPreparedSettings(prepared);
     }
     const Settings& settings() const noexcept{return settings_;}
     int latencySamples() const noexcept{return latency_;}
