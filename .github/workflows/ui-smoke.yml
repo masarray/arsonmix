@@ -154,6 +154,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  compressor-preview:
+    name: Native Compressor actual Chromium screenshot and ACK FAT
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/native-zero-latency-compressor-20261108' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium (one scoped compressor UI test)
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Render real approved GUI, insert compressor and verify DSP ACK/readback
+        run: python tests/approved_native_compressor_smoke.py
+      - name: Upload exact assembled native editor screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Native-Compressor-Approved-GUI-${{ github.run_id }}
+          path: arsonmix-native-compressor-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   frontend:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
