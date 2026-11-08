@@ -19,7 +19,7 @@ export function parsePortCommand(body) {
 // One explicit OS upload after an identical-source Windows prerelease exists.
 // No matrix, no third-party code signing, no tag creation from this command.
 export function parsePublicPortCommand(body) {
-  const m=/^\\/arsonmix-publish (linux|macos) (v\\d+\\.\\d+\\.\\d+-alpha\\.\\d+) ([0-9a-f]{40})$/.exec(
+  const m=/^\/arsonmix-publish (linux|macos) (v\d+\.\d+\.\d+-alpha\.\d+) ([0-9a-f]{40})$/.exec(
     typeof body==='string'?body.trim():'');
   return m?{platform:m[1],tag:m[2],sha:m[3],branch:'releases/alpha/'+m[2]}:null;
 }
