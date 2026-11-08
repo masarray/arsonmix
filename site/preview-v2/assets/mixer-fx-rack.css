@@ -426,6 +426,16 @@
 .mx-harm-power.on{color:#5de2ba;background:#123e36;border-color:#468c7a}
 .mx-harm-power:hover{background:#305165}
 .mx-harm-close:hover{color:#fff;background:#a52f3c;border-color:#e35d6b}
+.mx-harm-source{display:flex;align-items:center;gap:10px;padding:10px 17px 0;min-height:37px}
+.mx-harm-source .mx-harm-label{flex:none}
+.mx-harm-source select{flex:0 1 210px;min-width:0;height:27px;background:#122e39;
+ color:#d3e8ec;border:1px solid #496878;border-radius:5px;padding:3px 7px;
+ outline:none;font-size:11px}
+.mx-harm-source select:focus-visible{border-color:#5ed5c0}
+.mx-harm-guide-status{min-width:0;flex:1;white-space:nowrap;text-overflow:ellipsis;
+ overflow:hidden;text-align:right;color:#77c7ba;font-size:10px;letter-spacing:.25px}
+@media(max-width:550px){.mx-harm-source{padding:8px 10px 0;gap:6px}
+ .mx-harm-source select{flex:1}.mx-harm-guide-status{font-size:9px;max-width:95px}}
 .mx-harm-body{padding:15px 17px 12px;display:grid;grid-template-columns:minmax(0,1fr) 212px;gap:17px}
 .mx-harm-left{min-width:0;display:grid;gap:11px;align-content:start}
 .mx-harm-label{font-size:10px;letter-spacing:1px;color:#97b1be;font-weight:600}
