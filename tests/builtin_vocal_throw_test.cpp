@@ -96,6 +96,10 @@ static void manualAndDry(double rate) {
     check(peakL>.01f&&peakR>.005f);
     // Recorded stereo is preserved (same gain on both channels).
     check(peakL>peakR*1.4f);
+    noHeap.store(true);
+    const bool staleCue=fx.throwNow();
+    noHeap.store(false);
+    check(!staleCue); // 700ms after last vocal: never report an empty throw
 }
 static void automaticAndHybrid(double rate) {
     VocalThrow fx;check(fx.prepare(rate));
