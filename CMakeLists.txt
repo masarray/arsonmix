@@ -384,6 +384,12 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeVocalThrowTests PRIVATE cxx_std_20)
   add_test(NAME NativeVocalThrowPhraseCaptureManualAutoAndNoHeap COMMAND ARMixNativeVocalThrowTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeVocalThrowTests)
+  add_executable(ARMixNativeMusicTempoTests tests/native_music_tempo_test.cpp
+      engine/core/NativeMusicTempoMonitor.h)
+  target_compile_features(ARMixNativeMusicTempoTests PRIVATE cxx_std_20)
+  add_test(NAME NativeMusicTempoSourceOnsetsAndFallback COMMAND ARMixNativeMusicTempoTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeMusicTempoTests)
+
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
