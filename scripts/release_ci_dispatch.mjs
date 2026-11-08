@@ -9,6 +9,13 @@ export function parseReleaseCommand(body) {
     typeof body==='string'?body.trim():'');
   return m?{tag:m[1],sha:m[2],branch:'releases/alpha/'+m[1]}:null;
 }
+// One OS per explicitly requested milestone; no automatic platform matrix.
+export function parsePortCommand(body) {
+  const m=/^\/arsonmix-port (linux|macos) ([a-zA-Z0-9][a-zA-Z0-9._/-]{0,94}) ([0-9a-f]{40})$/.exec(
+    typeof body==='string'?body.trim():'');
+  if (!m || m[2].includes('..') || m[2].includes('//') || m[2].endsWith('/')) return null;
+  return {platform:m[1],branch:m[2],sha:m[3]};
+}
 export function trustedReleaseComment(event) {
   return event?.repository?.full_name===REPO && event?.issue?.number===CONTROL_ISSUE
     && !event.issue.pull_request
@@ -54,6 +61,32 @@ export async function releaseDispatch({event,api}) {
   return {kind:'dispatched',...cmd};
 }
 
+export async function portDispatch({event,api}) {
+  if (!trustedReleaseComment(event)) return {kind:'ignored'};
+  const cmd=parsePortCommand(event.comment.body);
+  if (!cmd) return {kind:'ignored'};
+  const ref=await api('/git/ref/heads/'+cmd.branch);
+  if (ref?.ref!=='refs/heads/'+cmd.branch || ref?.object?.sha!==cmd.sha)
+    throw Error('PORT_STALE_SHA_OR_BRANCH');
+  const older=[];
+  for(let page=1;page<=10;page++) {
+    const chunk=await api('/issues/'+CONTROL_ISSUE+'/comments?per_page=100&page='+page);
+    older.push(...chunk);
+    if(chunk.length<100)break;
+    if(page===10)throw Error('PORT_COMMENT_LIMIT');
+  }
+  if(older.some(c=>c.id<event.comment.id && c.user?.login==='masarray'
+      && c.author_association==='OWNER'
+      && parsePortCommand(c.body)?.platform===cmd.platform
+      && parsePortCommand(c.body)?.sha===cmd.sha))
+    return {kind:'skipped',reason:'same platform and SHA already requested',...cmd};
+  // Separate workflow is deliberately manual-dispatch-only: its preflight
+  // fails cheaply on current Windows-only source before any macOS runner.
+  await api('/actions/workflows/crossplatform-native-qualification.yml/dispatches','POST',
+    {ref:cmd.branch,inputs:{platform:cmd.platform,source_branch:cmd.branch,expected_sha:cmd.sha}});
+  return {kind:'dispatched',...cmd};
+}
+
 async function main() {
   const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
   if(!trustedReleaseComment(event))return;
@@ -72,8 +105,11 @@ async function main() {
     if(!res.ok)throw Error('GITHUB_API_'+res.status+' '+path);
     return res.status===204?null:res.json();
   };
-  const result=await releaseDispatch({event,api});
-  console.log('SMART_RELEASE_'+result.kind.toUpperCase()+' tag='+(result.tag||'')+
+  const isPort=!!parsePortCommand(event.comment.body);
+  const result=isPort?await portDispatch({event,api}):
+    await releaseDispatch({event,api});
+  console.log('SMART_'+(isPort?'PORT_':'RELEASE_')+result.kind.toUpperCase()+
+    ' tag='+(result.tag||'')+' platform='+(result.platform||'')+
     ' sha='+(result.sha||'')+' '+(result.reason||''));
 }
 if(process.argv[1]?.endsWith('release_ci_dispatch.mjs'))
