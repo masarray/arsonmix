@@ -80,5 +80,58 @@ int main(){
     need(std::abs(il[i]-a)<1.e-5f&&std::abs(ir[i]-b)<1.e-5f,
          "dry pass-through did not match declared sample delay");
   }
+  // AUDIO callback receives only precomputed control packets. A 24 dB
+  // gain change must ramp rather than step at an arbitrary block boundary.
+  Engine automated;need(automated.prepare(48000),"parameter engine prepare failed");
+  Settings neutral;neutral.wet=0.f;
+  need(automated.setSettings(neutral),"neutral settings failed");
+  std::vector<float> al(4096,.25f),ar(4096,.25f);
+  for(int i=0;i<4096;i+=128)automated.process(al.data()+i,ar.data()+i,128);
+  Settings quieter=neutral;quieter.gainDb=-24.f;
+  Engine::PreparedSettings prepared;
+  need(Engine::prepareSettings(quieter,prepared),"prepared settings rejected");
+  need(automated.applyPreparedSettings(prepared),"prepared DSP edit failed");
+  float firstL=.25f,firstR=.25f;
+  automated.process(&firstL,&firstR,1);
+  need(std::abs(firstL-.25f)<.015f&&std::abs(firstR-.25f)<.015f,
+       "gain edit produced an instantaneous click");
+  std::vector<float> tailL(4096,.25f),tailR(4096,.25f);
+  for(int i=0;i<4096;i+=113)
+    automated.process(tailL.data()+i,tailR.data()+i,std::min(113,4096-i));
+  const float expected=.25f*std::pow(10.f,-24.f/20.f);
+  need(std::abs(tailL.back()-expected)<.002f&&
+       std::abs(tailR.back()-expected)<.002f,
+       "smoothed output gain did not settle at accepted value");
+  Settings rejected=quieter;rejected.space=std::nanf("");
+  need(!Engine::prepareSettings(rejected,prepared),
+       "invalid realtime edit was prepared");
+  // Runtime voice-count, stereo-space and wet changes are executed while
+  // pitch-shifted voices are active. This also exercises released voice tails.
+  Engine active;need(active.prepare(48000),"automation voice engine failed");
+  Settings initial;initial.wet=.5f;
+  need(active.setSettings(initial),"initial voices rejected");
+  std::vector<float> vl(48000),vr(48000);
+  for(int i=0;i<48000;++i)
+    vl[i]=vr[i]=.2f*std::sin(6.28318530718*440*i/48000);
+  for(int i=0;i<48000;i+=128)active.process(vl.data()+i,vr.data()+i,128);
+  for(int edit=0;edit<36;++edit){
+    Settings next=initial;next.voices=2+edit%3;
+    next.wet=(edit%2)?1.f:0.f;
+    next.space=(edit%3)?1.f:0.f;
+    next.color=(edit%2)?0.f:1.f;
+    next.gainDb=(edit%2)?-9.f:0.f;
+    next.correction=(edit%2)!=0;
+    Engine::PreparedSettings packet;
+    need(Engine::prepareSettings(next,packet)&&active.applyPreparedSettings(packet),
+         "prepared live automation failed");
+    float lbuf[257],rbuf[257];
+    for(int j=0;j<257;++j)
+      lbuf[j]=rbuf[j]=.2f*std::sin(6.28318530718*440*(edit*257+j)/48000);
+    active.process(lbuf,rbuf,257);
+    for(int j=0;j<257;++j)
+      need(std::isfinite(lbuf[j])&&std::isfinite(rbuf[j])&&
+           std::abs(lbuf[j])<=4.f&&std::abs(rbuf[j])<=4.f,
+           "live control ramp produced invalid PCM");
+  }
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-4 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
