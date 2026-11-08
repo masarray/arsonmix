@@ -17,7 +17,8 @@ namespace armix::mixer {
 class MusicTempoEstimator final {
 public:
     struct Result final {
-        float bpm=0.f,confidence=0.f;
+        float bpm=0.f,confidence=0.f,phaseConfidence=0.f;
+        bool phaseLocked=false;
         std::uint64_t beatAnchorTick=0,observationTick=0;
         // Both are authoritative native callback sample-frame positions.
         // Onset is quantized by the 10ms summary window; not sample-perfect
@@ -50,6 +51,7 @@ public:
         if(endingFrame)result_.observationFrame=endingFrame;
         if(result_.locked && tick>lastHit_+320) {
             result_.locked=false;result_.confidence=0.f;
+            result_.phaseLocked=false;result_.phaseConfidence=0.f;
             candidateBpm_=stableCount_=0;
         }
         if(tick>=lastScan_+50) {
@@ -130,6 +132,28 @@ private:
         result_.beatAnchorFrame=anchorFrame;
         result_.observationTick=lastTick_;
         result_.locked=true;
+        // A reliable BPM is not enough to claim a stable downbeat phase.
+        // Quantize only if a majority of transient strength agrees on the
+        // detected pulse lattice. Secondary off-beat hats lower confidence;
+        // syncopated mixes safely stay BPM-only (no fabricated grid).
+        float total=0.f,coherent=0.f;
+        const float tolerance=std::max(1.6f,period*.075f);
+        for(std::size_t i=0;i<count_;++i) {
+            const auto& h=at(i);
+            if(lastTick_-h.tick>1100)continue;
+            const float weight=h.strength;
+            const float elapsed=std::abs(static_cast<float>(h.tick)-
+                                          static_cast<float>(anchor));
+            const float cycles=std::round(elapsed/period);
+            const float difference=std::abs(elapsed-cycles*period);
+            total+=weight;
+            if(difference<tolerance)
+                coherent+=weight*(1.f-difference/tolerance);
+        }
+        result_.phaseConfidence=total>0.f?
+            std::clamp(coherent/total,0.f,1.f):0.f;
+        result_.phaseLocked=anchorFrame>0 &&
+            result_.phaseConfidence>=.50f;
     }
 };
 
