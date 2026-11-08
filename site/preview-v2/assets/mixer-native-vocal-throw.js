@@ -145,6 +145,15 @@ for(const key of Object.keys(fields)){
  });
  input.addEventListener("change",()=>send("nativeThrowSet"));
 }
+$("vtMusicSource").addEventListener("change",()=>{
+ const ctx=context(),source=String($("vtMusicSource").value);
+ if(!ctx||!native()||tempoPending){refreshMusicChannels();return;}
+ const requestId="tempo-"+Date.now()+"-"+(++seq);
+ tempoPending={requestId,source,created:Date.now()};
+ backend().emitEvent("arMixAction",{
+  action:"nativeThrowTempoSource",requestId,sourceChannelId:source,...ctx});
+ renderMusicStatus();refreshMusicChannels();
+});
 $("vtPreset").addEventListener("change",()=>{
  const p=presets[$("vtPreset").value];if(!p)return;
  draft={...p};paint();send("nativeThrowSet");
@@ -166,7 +175,7 @@ $("vtPower").addEventListener("click",()=>{
  if(current&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(
   current.track,"slotPower",{dataset:{slot:String(current.slot)}});
 });
-$("vtClose").addEventListener("click",()=>{panel.hidden=true;pending=null;readId="";});
+$("vtClose").addEventListener("click",()=>{panel.hidden=true;pending=null;tempoPending=null;readId="";});
 window.addEventListener("keydown",e=>{
  if(e.key==="Escape"&&!panel.hidden){panel.hidden=true;pending=null;readId="";}
 });
@@ -187,7 +196,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  id:ID,
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
-  current={track,slot,instanceId:null};pending=null;readId="";
+  current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";readId="";
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
   if(native()&&state?.admitted&&insert?.catalogId===ID&&insert.id){
@@ -197,9 +206,18 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
    hint("Browser preview only · no PCM");}
   else hint("Native FX instance unavailable");
   $("vtChannel").textContent=track.name||"CH";
-  panel.hidden=false;paint();requestSnapshot(true);
+  panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
  close(){panel.hidden=true;}
+});
+backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
+ if(!tempoPending||reply?.requestId!==tempoPending.requestId)return;
+ if(reply.status==="APPLIED"){
+  musicSource=tempoPending.source;
+  hint("Music tempo source accepted by native PCM graph");
+ }else hint("Tempo source rejected · "+(reply.errorCode||"STALE"));
+ tempoPending=null;refreshMusicChannels();renderMusicStatus();
+ requestSnapshot(true);
 });
 backend()?.addEventListener?.("arMixBuiltinThrowQueue",reply=>{
  if(!pending||reply?.requestId!==pending.requestId)return;
@@ -222,6 +240,10 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
     reply.instanceId!==ctx.instanceId||reply.deviceEpoch!==ctx.deviceEpoch||
     reply.graphRevision!==ctx.graphRevision||!valid(reply.settings)||
     reply.addedLatencySamples!==0){hint("Stale FX graph · reopen editor");return;}
+ if(reply.musicSourceChannelId!==undefined) {
+  musicSource=String(reply.musicSourceChannelId||"0");
+  refreshMusicChannels();renderMusicStatus(reply);
+ }
  $("vtCount").textContent=String(reply.throwCount||0)+" throws";
  $("vtDot").classList.toggle("active",reply.tailActive===true);
  $("vtStatus").textContent=reply.tailActive?"ECHO TAIL":"NATIVE DSP";
@@ -234,12 +256,18 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(panel.hidden)return;
- if(native()&&!context()){pending=null;hint("FX graph changed · reopen");}
- syncPower();
+ if(native()&&!context()){
+  pending=null;tempoPending=null;
+  hint("FX graph changed · reopen");
+ }
+ refreshMusicChannels();syncPower();
 });
 window.setInterval(()=>{
  if(panel.hidden)return;
  if(pending&&Date.now()-pending.created>3500){hint("DSP ACK timeout");pending=null;}
+ if(tempoPending&&Date.now()-tempoPending.created>3500){
+  hint("Tempo source ACK timeout");tempoPending=null;refreshMusicChannels();
+ }
  if(native())requestSnapshot();
  syncPower();
 },250);
