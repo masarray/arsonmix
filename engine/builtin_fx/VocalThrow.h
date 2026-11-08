@@ -203,7 +203,7 @@ private:
         envelope_=0.f;duck_=1.f;throwCount_=0;
         if(rate_>0) {
             envAttack_=static_cast<float>(std::exp(-1./(rate_*.004)));
-            envRelease_=static_cast<float>(std::exp(-1./(rate_*.060)));
+            envRelease_=static_cast<float>(std::exp(-1./(rate_*.018)));
             duckCoeff_=static_cast<float>(std::exp(-1./(rate_*.008)));
         }
         repeatStarts_.fill(0);repeatGains_.fill(0.f);
