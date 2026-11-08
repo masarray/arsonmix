@@ -318,6 +318,8 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("DELETE_CHANNEL"));
     if(has("NATIVE_CREATE_GROUP_SELECTED"))
         available.add(juce::String("CREATE_GROUP"));
+    if(has("NATIVE_REMOVE_BUS"))
+        available.add(juce::String("REMOVE_BUS"));
     const auto graph=snapshot.getProperty("graph",{});
     const auto caps=graph.getProperty("capabilities",{});
     if (auto* props=caps.getDynamicObject())
