@@ -56,8 +56,9 @@ stateDot.setAttribute("aria-label","DSP state");
 const power=dom("button","mx-comp-power","⏻");
 const close=dom("button","mx-comp-close","×");
 power.type=close.type="button";
-power.title="Toggle compressor bypass";
-power.setAttribute("aria-label","Toggle compressor bypass");
+power.title="FX STATE UNAVAILABLE";power.dataset.fxState="unknown";
+power.disabled=true;power.setAttribute("aria-pressed","false");
+power.setAttribute("aria-label","Compressor state unavailable");
 close.setAttribute("aria-label","Close Compressor");
 header.append(brand,channel,presetSelect,stateDot,power,close);
 const controls=dom("div","mx-comp-controls");
@@ -215,15 +216,28 @@ function paint(){
   '<path d="'+path+'" class="mx-comp-curve"/>'+
   '<circle cx="'+x(draft.thresholdDb)+'" cy="'+y(compressedOutput(draft.thresholdDb,draft))+
   '" r="5" class="mx-comp-handle"/>';
+ syncPower();
+}
+function syncPower(){
  const c=context(),lane=c?snapshot()?.graph?.channels?.find(x=>x.id===c.channelId):null;
- const insert=lane?.inserts?.[current.slot];
- // A bypassed graph node (or entire rack) is not rendering PCM; its atomic
- // block meter may retain its last value. Never display stale GR as live.
- const shownReduction=(insert?.bypassed===true||lane?.fxRackBypassed===true)?0:grDb;
+ const insert=lane?.inserts?.[current?.slot];
+ const fxState=!native()?
+  (!current?.track?"unknown":current.track.fxOn===false?"rack-off":
+   current.track.slotBypass?.[current.slot]?"off":"on"):
+  (!lane||typeof lane.fxRackBypassed!=="boolean"||!insert||
+   typeof insert.bypassed!=="boolean"?"unknown":
+   lane.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+ power.dataset.fxState=fxState;
+ power.disabled=fxState==="unknown"||fxState==="rack-off";
+ power.setAttribute("aria-pressed",String(fxState==="on"));
+ power.title=fxState==="on"?"COMPRESSOR ON · click to bypass":
+  fxState==="off"?"COMPRESSOR BYPASSED · click to enable":
+  fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
+  "FX STATE UNAVAILABLE";
+ power.setAttribute("aria-label",power.title);
+ const shownReduction=fxState==="on"?grDb:0;
  meterFill.style.height=(100*clamp(shownReduction,0,30)/30)+"%";
  meterValue.textContent=shownReduction.toFixed(1)+" dB";
- power.classList.toggle("bypassed",insert?.bypassed===true);
- power.title=insert?.bypassed?"Enable compressor":"Bypass compressor";
 }
 function saveDemo(){if(current)demos.set(current.track.id+":"+current.slot,{...draft});}
 function requestSnapshot(){
@@ -368,6 +382,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  queueMicrotask(()=>{
   if(!context()){pending=null;delayed=null;
    hint("DEVICE OR GRAPH CHANGED · REOPEN FX");}
+  syncPower(); // accepted graph readback, no curve SVG rebuild
  });
 });
 // 6 Hz metering only while visible. Never poll while closed, never touch PCM.
