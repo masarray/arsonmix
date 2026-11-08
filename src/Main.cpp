@@ -2017,6 +2017,90 @@ private:
             "arMixBuiltinCompAck",juce::var(ack.release()));
     }
 
+    // Native Vocal Throw settings, manual cue and auto-trigger readback.
+    // Settings and triggers are not accepted until the AUDIO-owned SPSC
+    // completion is drained on JUCE's message thread.
+    void emitNativeThrowSnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::VocalThrowProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            auto settings=std::make_unique<juce::DynamicObject>();
+            const auto s=processor->acceptedSettings();
+            settings->setProperty("mode",s.mode);
+            settings->setProperty("bpm",s.bpm);
+            settings->setProperty("division",s.division);
+            settings->setProperty("repeats",s.repeats);
+            settings->setProperty("captureMs",s.captureMs);
+            settings->setProperty("silenceMs",s.silenceMs);
+            settings->setProperty("thresholdDb",s.thresholdDb);
+            settings->setProperty("wet",s.wet);
+            settings->setProperty("decay",s.decay);
+            settings->setProperty("ducking",s.ducking);
+            reply->setProperty("settings",juce::var(settings.release()));
+            reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            reply->setProperty("throwCount",static_cast<int>(processor->observedThrowCount()));
+            reply->setProperty("tailActive",processor->observedTailActive());
+            reply->setProperty("addedLatencySamples",processor->getLatencySamples());
+            if(instanceId==lastNativeThrowInstance_&&
+               epoch==lastNativeThrowEpoch_&&revision==lastNativeThrowRevision_)
+                reply->setProperty("appliedRequestId",lastNativeThrowRequest_);
+        } else reply->setProperty("error","NATIVE_THROW_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinThrowSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeThrow() {
+        if(!pendingNativeThrow_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(
+            pendingNativeThrow_.owner->processor.get());
+        if(!processor){pendingNativeThrow_={};return;}
+        armix::builtin_fx::VocalThrowProcessor::Completion completion{};
+        if(!processor->pollCompletion(completion)&&
+           juce::Time::getMillisecondCounter()-pendingNativeThrow_.started<3000u)
+            return;
+        const auto request=pendingNativeThrow_.request;
+        bool applied=completion.applied&&completion.requestId!=0&&
+            request=="throw-"+juce::String(std::to_string(completion.requestId));
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied&&pendingNativeThrow_.deviceEpoch==
+                    device.getProperty("epoch","").toString()&&
+                    pendingNativeThrow_.revision==
+                    graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeThrowRequest_=request;
+            lastNativeThrowInstance_=pendingNativeThrow_.instanceId;
+            lastNativeThrowEpoch_=pendingNativeThrow_.deviceEpoch;
+            lastNativeThrowRevision_=pendingNativeThrow_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeThrow_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeThrow_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeThrow_.revision);
+        ack->setProperty("instanceId",pendingNativeThrow_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("command",completion.kind==
+            armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+            "TRIGGER":"SETTINGS");
+        ack->setProperty("errorCode",applied?"NONE":
+            completion.kind==armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+            "NO_CAPTURE_OR_STALE_GRAPH":"DSP_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeThrow_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinThrowAck",juce::var(ack.release()));
+    }
+
     // Never confuse durable logical ChannelId state with a physical device
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
