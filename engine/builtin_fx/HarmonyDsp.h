@@ -62,11 +62,36 @@ public:
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
-        outputGain_=1.f;return true;
+        smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms continuous control ramp
+        processed_=false;settings_=Settings{};
+        return setSettings(settings_);
     }
     bool setSettings(const Settings& next) noexcept {
         if(!valid(next))return false;
-        settings_=next;outputGain_=std::pow(10.f,next.gainDb/20.f);
+        settings_=next;
+        targetWet_=next.wet;targetColor_=next.color;
+        targetGain_=std::pow(10.f,next.gainDb/20.f);
+        targetCorrection_=next.correction?1.f:0.f;
+        // Operator-thread or once-per-block edit, never inside the sample loop.
+        // Muted/removed voices ramp out instead of disappearing on one sample.
+        constexpr float pi=3.14159265358979323846f;
+        const float amplitude=next.wet*0.65f/std::sqrt(static_cast<float>(next.voices));
+        for(int v=0;v<maxVoices;++v){
+            float left=0.f,right=0.f;
+            if(v<next.voices){
+                const float pan=next.space*(2.f*static_cast<float>(v)/(next.voices-1)-1.f);
+                const float angle=(pan+1.f)*pi*0.25f;
+                left=amplitude*std::cos(angle);
+                right=amplitude*std::sin(angle);
+            }
+            targetMixL_[static_cast<std::size_t>(v)]=left;
+            targetMixR_[static_cast<std::size_t>(v)]=right;
+        }
+        if(!processed_){
+            wet_=targetWet_;color_=targetColor_;gain_=targetGain_;
+            correctionMix_=targetCorrection_;
+            mixL_=targetMixL_;mixR_=targetMixR_;
+        }
         return true;
     }
     const Settings& settings() const noexcept{return settings_;}
@@ -75,10 +100,20 @@ public:
     bool voiced() const noexcept{return voiced_;}
     void process(float* l,float* r,int frames) noexcept {
         if(!l||!r||frames<=0||rate_<=0.)return;
-        constexpr float pi=3.14159265358979323846f;
-        const float wet=settings_.wet,space=settings_.space,color=settings_.color;
-        const float harmonyAmp=wet*0.65f/std::sqrt(static_cast<float>(settings_.voices));
+        processed_=true;
         for(int i=0;i<frames;++i) {
+            // The audio thread never calls trig or rebuilds panning geometry.
+            // A 5 ms one-pole ramp suppresses automation/preset zipper clicks.
+            const float a=smoothingAlpha_;
+            wet_+=a*(targetWet_-wet_);
+            color_+=a*(targetColor_-color_);
+            gain_+=a*(targetGain_-gain_);
+            correctionMix_+=a*(targetCorrection_-correctionMix_);
+            for(int v=0;v<maxVoices;++v){
+                const auto ix=static_cast<std::size_t>(v);
+                mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
+                mixR_[ix]+=a*(targetMixR_[ix]-mixR_[ix]);
+            }
             const float inputL=std::isfinite(l[i])?l[i]:0.f;
             const float inputR=std::isfinite(r[i])?r[i]:0.f;
             const float mono=0.5f*(inputL+inputR);
@@ -95,20 +130,21 @@ public:
             const float dryR=tap(right_,static_cast<float>(latency_));
             voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*0.002f;
             float lead=0.f;
-            if(settings_.correction&&voicedGain_>0.00001f)lead=shifted(4,color);
-            const float leadBlend=settings_.correction?voicedGain_:0.f;
-            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f*voicedGain_);
-            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet*0.65f*voicedGain_);
+            if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
+                lead=shifted(4,color_);
+            const float leadBlend=correctionMix_*voicedGain_;
+            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
+            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
             if(voicedGain_>0.00001f){
-                for(int v=0;v<settings_.voices;++v){
-                    const float y=shifted(v,color)*harmonyAmp*voicedGain_;
-                    const float pan=space*(2.f*static_cast<float>(v)/(settings_.voices-1)-1.f);
-                    const float a=(pan+1.f)*pi*0.25f;
-                    outL+=y*std::cos(a);outR+=y*std::sin(a);
+                for(int v=0;v<maxVoices;++v){
+                    const auto ix=static_cast<std::size_t>(v);
+                    if(std::abs(mixL_[ix])+std::abs(mixR_[ix])<1.e-5f)continue;
+                    const float y=shifted(v,color_)*voicedGain_;
+                    outL+=y*mixL_[ix];outR+=y*mixR_[ix];
                 }
             }
-            l[i]=std::clamp(outL*outputGain_,-4.f,4.f);
-            r[i]=std::clamp(outR*outputGain_,-4.f,4.f);
+            l[i]=std::clamp(outL*gain_,-4.f,4.f);
+            r[i]=std::clamp(outR*gain_,-4.f,4.f);
             write_=(write_+1)%capacity;
         }
     }
@@ -207,7 +243,12 @@ private:
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
     int downCounter_=0,detectCounter_=0;
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
-    bool voiced_=false;float voicedGain_=0.f,outputGain_=1.f;
+    bool voiced_=false;float voicedGain_=0.f;
+    bool processed_=false;
+    float smoothingAlpha_=1.f;
+    float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
+    float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
+    std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
