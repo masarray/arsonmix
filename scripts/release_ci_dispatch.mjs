@@ -130,8 +130,11 @@ export async function portDispatch({event,api}) {
   const path='/actions/workflows/crossplatform-native-qualification.yml/runs'
     +'?event=workflow_dispatch&branch='+encodeURIComponent(cmd.branch)+'&per_page=100';
   const runs=(await api(path)).workflow_runs||[];
+  // A qualification run is NOT a publication. Preserve reuse/anti-duplicate
+  // within each mode while allowing one later publish from the same SHA.
+  const runLabel='Port '+cmd.platform+' '+(publish?cmd.tag:'QUALIFY')+' ';
   const previous=runs.filter(r=>r.head_sha===cmd.sha
-    && String(r.display_title||'').includes('Port '+cmd.platform+' '));
+    && String(r.display_title||'').startsWith(runLabel));
   if(previous.some(r=>r.status!=='completed'))
     return {kind:'skipped',reason:'OS qualification already running',...cmd};
   if(previous.some(r=>r.conclusion==='success'))
