@@ -116,17 +116,30 @@ def main():
             assert editor.locator("#vtStatus").inner_text()=="NATIVE DSP"
             assert editor.locator("#vtCount").inner_text()=="0 throws"
             box=editor.bounding_box()
-            assert box and box["width"]<=438 and box["width"]<=width and \
+            assert box and box["width"]<=778 and box["width"]<=width and \
                 box["x"]>=0 and box["x"]+box["width"]<=width+1,(width,box)
             assert editor.evaluate("(el)=>el.scrollWidth<=el.clientWidth+1"),\
                 "premium FX editor overflows horizontal viewport"
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
             assert editor.locator("#vtClockLabel").inner_text()=="MANUAL CLOCK"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
+            assert editor.locator(".vt-encoder-face").count()==6
+            assert editor.locator("#vtWetDial[role='slider']").count()==1
+            assert editor.locator(".vt-throw-button").count()==1
+            assert editor.locator(".vt-mode-buttons button").count()==3
+            assert editor.locator(".vt-division-buttons button").count()==4
+            # No browser form hiding of basic parameters: real accessible
+            # hardware rotary controls are displayed at desktop AND mobile.
+            assert editor.locator("#vtWetDial").is_visible()
+            assert editor.locator('.vt-encoder[data-key="captureMs"] button').is_visible()
+            for component in ["rotor","encoder","push"]:
+                assert page.evaluate("""name=>fetch('assets/arson-vocal-hardware-'+name+'.svg')
+                  .then(r=>r.ok&&r.headers.get('content-type')?.includes('svg'))""",
+                  component)
             page.screenshot(path="arsonmix-vocal-throw-"+str(width)+".png")
             editor.screenshot(path="arsonmix-vocal-throw-editor-"+str(width)+".png")
             if width==1366:
-                editor.locator("#vtMode").select_option("0")
+                editor.locator('.vt-mode-buttons button[data-mode="0"]').click()
                 edit=last(page,"nativeThrowSet")
                 assert edit["settings"]["mode"]==0 and edit["instanceId"]==INSTANCE
                 assert edit["channelId"]==SOURCE
@@ -134,13 +147,26 @@ def main():
                 emit(page,"arMixBuiltinThrowAck",{"requestId":edit["requestId"],"status":"APPLIED"})
                 reply_snapshot(page,state,{**DEFAULTS,"mode":0},applied=edit["requestId"])
                 assert editor.locator("#vtMode").input_value()=="0"
+                assert editor.locator('.vt-mode-buttons button[data-mode="0"]').get_attribute("aria-pressed")=="true"
+                # Rotary wheel edits actually send settings through the native
+                # request/ACK/readback contract, not a CSS-only animation.
+                dial=editor.locator("#vtWetDial")
+                dial.hover()
+                page.mouse.wheel(0,-120)
+                rotary=last(page,"nativeThrowSet")
+                assert rotary["settings"]["wet"]>.42 and rotary["settings"]["wet"]<=.44
+                emit(page,"arMixBuiltinThrowQueue",{"requestId":rotary["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{"requestId":rotary["requestId"],"status":"APPLIED"})
+                updated={**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]}
+                reply_snapshot(page,state,updated,applied=rotary["requestId"])
+                assert "%" in editor.locator("#vtWetValue").inner_text()
                 editor.locator("#vtThrow").click()
                 cue=last(page,"nativeThrowTrigger")
                 assert cue["instanceId"]==INSTANCE and cue["channelId"]==SOURCE
                 assert cue["slot"]==0
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":cue["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinThrowAck",{"requestId":cue["requestId"],"status":"APPLIED"})
-                reply_snapshot(page,state,{**DEFAULTS,"mode":0},count=1,tail=True)
+                reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},count=1,tail=True)
                 assert editor.locator("#vtCount").inner_text()=="1 throws"
                 assert editor.locator("#vtStatus").inner_text()=="ECHO TAIL"
             # Real native tempo-source command (not a browser-only BPM guess).
@@ -154,7 +180,7 @@ def main():
                 "requestId":request["requestId"],"status":"APPLIED",
                 "sourceChannelId":RECEIVER})
             reply_snapshot(page,state,
-                {**DEFAULTS,"mode":0} if width==1366 else DEFAULTS,
+                {**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]} if width==1366 else DEFAULTS,
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
             assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
@@ -170,7 +196,7 @@ def main():
             # Confidence-approved grid is a separate native fact; the GUI
             # must never fabricate it from BPM alone.
             reply_snapshot(page,state,
-                {**DEFAULTS,"mode":0} if width==1366 else DEFAULTS,
+                {**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]} if width==1366 else DEFAULTS,
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85,"grid":True})
             assert "BEAT GRID" in editor.locator("#vtMusicStatus").inner_text()
