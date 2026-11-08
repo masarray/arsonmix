@@ -567,7 +567,7 @@
  text-shadow:0 1px 1px #082c34c0;
  box-shadow:0 1px 2px #092b3520;
  transition:transform .15s ease,background .15s ease,
-   box-shadow .15s ease,color .15s ease,font-size .15s ease
+   box-shadow .15s ease,color .15s ease
 }
 .mx-harm-note:hover:not(.active){
  color:#f3fffc;background:linear-gradient(#619e9d85,#39716e8a);
