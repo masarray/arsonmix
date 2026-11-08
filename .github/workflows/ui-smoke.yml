@@ -157,7 +157,7 @@ jobs:
   compressor-preview:
     name: Native Compressor actual Chromium screenshot and ACK FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || startsWith(github.head_ref, 'feature/compressor-')) }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || (startsWith(github.head_ref, 'feature/compressor-') || startsWith(github.head_ref, 'fix/compressor-'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
