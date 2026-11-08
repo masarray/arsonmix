@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseReleaseCommand, parsePortCommand, trustedReleaseComment, releaseDispatch, portDispatch } from '../scripts/release_ci_dispatch.mjs';
 
 const SHA='a'.repeat(40),TAG='v0.5.0-alpha.2',BRANCH='releases/alpha/'+TAG;
@@ -126,4 +127,13 @@ test('Cross-platform command validates OS, source branch and immutable SHA',asyn
     if(method==='POST')throw Error('Unexpected duplicate expensive build');
   }});
   assert.equal(noSecond.kind,'skipped');
+});
+
+test('Windows prerelease probes treat missing release as HTTP 404, never a leaked CLI exit 1', () => {
+  const yaml=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml', import.meta.url),'utf8');
+  // Recheck both before expensive build and immediately before immutable upload.
+  assert.equal((yaml.match(/\$releaseResponse\.StatusCode -ne 404/g)||[]).length,2);
+  assert.equal((yaml.match(/-SkipHttpErrorCheck -TimeoutSec 20/g)||[]).length,2);
+  assert.equal((yaml.match(/Release existence check failed with HTTP/g)||[]).length,2);
+  assert.doesNotMatch(yaml, /gh release view \$tag/);
 });
