@@ -5,6 +5,7 @@
 #include "Vst3DescriptionCache.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
 #include <atomic>
@@ -85,6 +86,16 @@ public:
                                static_cast<int>(state.bytes.getSize())))
                             return "Saved native Compressor state rejected; graph unchanged";
                         processor=std::move(comp);
+                    } else if(insert.catalogId==
+                       armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
+                        auto throwFx=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
+                        throwFx->prepareToPlay(sampleRate,frames);
+                        if(!throwFx->isReady()||
+                           !throwFx->restoreUnpublishedState(
+                               state.bytes.getData(),
+                               static_cast<int>(state.bytes.getSize())))
+                            return "Saved native Vocal Throw state rejected; graph unchanged";
+                        processor=std::move(throwFx);
                     } else {
                         if(!format||
                            !format->fileMightContainThisPluginType(insert.path))
@@ -104,7 +115,9 @@ public:
                     if(insert.catalogId!=
                        armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
                        insert.catalogId!=
-                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity)
+                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity &&
+                       insert.catalogId!=
+                       armix::builtin_fx::VocalThrowProcessor::catalogIdentity)
                         processor->setStateInformation(state.bytes.getData(),
                              static_cast<int>(state.bytes.getSize()));
                     const int latency=processor->getLatencySamples();
