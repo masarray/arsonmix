@@ -3,6 +3,9 @@
 // No fake browser audio, no second callback or audible music route.
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
+#if defined(NDEBUG)
+#undef NDEBUG // Windows Release CTest must execute assertions, never remove them.
+#endif
 #include <cassert>
 #include <cmath>
 #include <memory>
