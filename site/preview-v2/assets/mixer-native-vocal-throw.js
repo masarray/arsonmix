@@ -87,7 +87,8 @@ function renderMusicStatus(tempo){
  if(!tempo.musicLocked){label.textContent="Listening for beat · manual fallback";return;}
  const confidence=Math.round(Math.max(0,Math.min(1,Number(tempo.musicConfidence)||0))*100);
  label.textContent="AUTO "+Math.round(Number(tempo.musicBpm))+
-  " BPM · "+confidence+"% confidence";
+  " BPM · "+(tempo.musicGridAvailable===true?"BEAT GRID":"BPM only")+
+  " · "+confidence+"%";
 }
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
