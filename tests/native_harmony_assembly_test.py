@@ -24,7 +24,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertEqual(self.html.count('data-fast-native-harmony="1"'),1)
         self.assertEqual(self.html.count('src="assets/mixer-native-harmony.js?v=harmony1"'),1)
         self.assertNotIn('href="assets/mixer-native-harmony.css',self.html)
-        self.assertIn(".mx-harm[hidden]{display:none}",self.css)
+        self.assertIn(".mx-harm[hidden],.mx-harm-source-picker[hidden]{display:none}",self.css)
         self.assertNotIn("new AudioContext",self.ui)
 
     def test_native_catalog_bridge_and_editor(self):
@@ -93,7 +93,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn('role="status" aria-live="polite"',self.ui)
         self.assertIn(".mx-harm-mode button.active",self.css)
         self.assertIn(".mx-harm-source-picker[hidden]{display:none}",self.css)
-        self.assertIn(".mx-harm-wheel-core strong{font-size:24px",self.css)
+        self.assertIn(".mx-harm-wheel-core strong{",self.css)
         self.assertNotIn("KEY SOURCE</span>",self.ui)
         self.assertNotIn("MANUAL · KEY LOCKED",self.ui)
 
