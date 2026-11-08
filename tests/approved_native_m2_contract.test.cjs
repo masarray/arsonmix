@@ -464,6 +464,41 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(installer,/approved-native-context-menu\.js/);
 });
 
+test("all native strip menus bind true AUX/BUS deletion and persistent Rename, Orbit anchors and moves",()=>{
+ const menu=read("web/approved-native-context-menu.js");
+ const bridge=read("web/approved-native-bridge.js");
+ const host=read("src/Main.cpp");
+ const lab=read("src/LiveDryRoutingLab.h");
+ const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
+ const cmake=read("CMakeLists.txt");
+ assert.doesNotThrow(()=>new (require("node:vm").Script)(menu));
+ assert.match(menu,/\["audio","fx","bus","master"\]/);
+ assert.match(menu,/data-menu="rename"/);
+ assert.match(menu,/data-menu="delete"/);
+ assert.match(menu,/hooks\.renameStrip\?\.\(track,anchor\)/);
+ assert.match(menu,/hooks\.requestDeleteStrip\?\.\(track\)/);
+ assert.match(menu,/const originX=menu\.offsetLeft,originY=menu\.offsetTop\+menu\.offsetHeight/);
+ assert.match(menu,/placeOrbitNear\(originX,originY\)/);
+ assert.match(menu,/setPointerCapture\(e\.pointerId\)/);
+ assert.match(menu,/pointermove/);
+ assert.match(menu,/user-select:none/);
+ assert.match(menu,/clearTitles\(document\.documentElement\)/);
+ assert.match(menu,/attributeFilter:\["title"\]/);
+ assert.match(bridge,/action:"routingNativeBusDelete"/);
+ assert.match(bridge,/requestDeleteStrip:requestNativeStripDelete/);
+ assert.match(bridge,/renameStrip:openNativeIdentity/);
+ assert.match(bridge,/canDeleteStrip:canDeleteNativeStrip/);
+ assert.match(bridge,/pending\.acked/);
+ assert.match(host,/if\(action=="routingNativeBusDelete"\)/);
+ assert.match(host,/engine_\.editNativeBus\(ep,rev,roster,role,/);
+ assert.match(host,/arMixNativeTrackDeleteAck/);
+ assert.match(lab,/reuseWithoutChannel/);
+ assert.match(lab,/nativeStructureLive_=true;/);
+ assert.doesNotMatch(lab,/FIXED_M4_AUX_NOT_REMOVABLE/);
+ assert.match(projection,/available\.add\(juce::String\("REMOVE_BUS"\)\)/);
+ assert.match(cmake,/web\/approved-native-context-menu\.js/);
+});
+
 test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");
