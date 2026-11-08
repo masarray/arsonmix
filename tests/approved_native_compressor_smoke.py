@@ -140,7 +140,8 @@ def main():
             page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
                 ?.dataset.fxState==='off'""")
             assert power.get_attribute("aria-pressed")=="false"
-            assert "rgb(233, 155, 159)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            page.wait_for_function("""()=>getComputedStyle(
+                document.querySelector('.mx-comp-power')).color==='rgb(233, 155, 159)'""")
             state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
             state["graph"]["channels"][0]["fxRackBypassed"]=True
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
@@ -148,13 +149,16 @@ def main():
             page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
                 ?.dataset.fxState==='rack-off'""")
             assert power.is_disabled()
-            assert "rgb(240, 196, 131)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            page.wait_for_function("""()=>getComputedStyle(
+                document.querySelector('.mx-comp-power')).color==='rgb(240, 196, 131)'""")
             state["graph"]["channels"][0]["fxRackBypassed"]=False
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
             emit(page,"arMixConsoleSnapshot",state)
             page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
                 ?.dataset.fxState==='on'""")
             assert not power.is_disabled()
+            page.wait_for_function("""()=>getComputedStyle(
+                document.querySelector('.mx-comp-power')).color==='rgb(118, 240, 185)'""")
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             assert page.locator(".mx-comp-preset-select").is_visible()
             assert page.locator(".mx-comp-status").evaluate("""el=>{\n                const s=getComputedStyle(el);return s.clipPath.includes("inset")\n                && el.getBoundingClientRect().width<=1;}"""),"technical status polluted panel"
