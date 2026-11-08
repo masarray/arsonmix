@@ -41,6 +41,13 @@ inline int nearestDegree(float midi,int key,int scale) noexcept {
 // Complementary overlap-add seam with zero slope at every grain boundary.
 // A triangular seam has a slope discontinuity that can color sustained vowels.
 // Precondition: phase is owned by Engine and always in [0,1].
+// Avoid alternating adjacent scale notes when sung vibrato hovers near a
+// semitone boundary. Only move after the candidate wins by a small margin.
+inline bool pitchChangeHasMargin(int held,int candidate,float midi) noexcept {
+    return held<0||held==candidate||
+      std::abs(midi-static_cast<float>(candidate))+0.20f<
+      std::abs(midi-static_cast<float>(held));
+}
 inline float smoothGrainBlend(float phase) noexcept {
     const float u=1.f-std::abs(2.f*phase-1.f);
     return u*u*(3.f-2.f*u);
@@ -48,7 +55,10 @@ inline float smoothGrainBlend(float phase) noexcept {
 class Engine final {
 public:
     static constexpr int maxVoices=4;
-    static constexpr std::size_t capacity=32768;
+    // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
+    // history = 15360, so 16384 frames retain the full rate/ratio budget.
+    // Halves the three large audio rings per instance without RT allocation.
+    static constexpr std::size_t capacity=16384;
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         rate_=rate;
@@ -99,6 +109,11 @@ public:
     }
     bool applyPreparedSettings(const PreparedSettings& next) noexcept {
         // Caller publishes only prepareSettings()-validated packets.
+        // A scale/key change must not inherit the previous tonal quantizer
+        // candidate or remain held on a now-out-of-scale note.
+        if(next.settings.key!=settings_.key||next.settings.scale!=settings_.scale){
+            candidateNote_=-1;currentNote_=-1;noteHold_=0;voiced_=false;
+        }
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetGain_=next.gain;
@@ -206,27 +221,33 @@ private:
     void detectPitch() noexcept {
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
-        // Reject background noise-floor and silent periods BEFORE correlation.
-        // Normalized correlation alone can report a confident pitch on tiny noise.
+        // Gather a contiguous fixed-size pitch window ONCE per analysis hop.
+        // Previously every candidate/lag re-indexed circular history in the
+        // inner O(lags * span) loop: unpredictable CPU peaks on tiny ASIO buffers.
+        std::array<float,span+231> samples{};
+        auto ix=(downWrite_+decimated_.size()-1)%decimated_.size();
+        for(int j=0;j<span+highLag_;++j){
+            samples[static_cast<std::size_t>(j)]=decimated_[ix];
+            ix=ix==0?decimated_.size()-1:ix-1;
+        }
         double energy=0.;
         for(int j=0;j<span;++j){
-            const auto ix=(downWrite_+decimated_.size()-1-static_cast<std::size_t>(j))%decimated_.size();
-            const double x=decimated_[ix];energy+=x*x;
+            const double x=samples[static_cast<std::size_t>(j)];
+            energy+=x*x;
         }
         if(energy/static_cast<double>(span)<1.e-6){
-            voiced_=false;noteHold_=0;candidateNote_=-1;return;
+            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
         float best=-1.f;int bestLag=0;
         std::array<float,231> correlations{};
         for(int lag=lowLag_;lag<=highLag_;++lag){
-            double xy=0.,xx=0.,yy=0.;
+            double xy=0.,yy=0.;
             for(int j=0;j<span;++j){
-                const auto a=(downWrite_+decimated_.size()-1-static_cast<std::size_t>(j))%decimated_.size();
-                const auto b=(a+decimated_.size()-static_cast<std::size_t>(lag))%decimated_.size();
-                const float x=decimated_[a],y=decimated_[b];
-                xy+=x*y;xx+=x*x;yy+=y*y;
+                const double x=samples[static_cast<std::size_t>(j)];
+                const double y=samples[static_cast<std::size_t>(j+lag)];
+                xy+=x*y;yy+=y*y;
             }
-            const float correlation=static_cast<float>(xy/std::sqrt(xx*yy+1.e-14));
+            const float correlation=static_cast<float>(xy/std::sqrt(energy*yy+1.e-14));
             correlations[static_cast<std::size_t>(lag)]=correlation;
             if(correlation>best){best=correlation;bestLag=lag;}
         }
@@ -238,7 +259,9 @@ private:
                 }
             }
         }
-        if(bestLag==0||best<=0.77f){voiced_=false;noteHold_=0;return;}
+        if(bestLag==0||best<=0.77f){
+            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+        }
         // Three-point peak interpolation reduces integer-lag tuning steps,
         // especially at the high end of the supported singing range.
         float lag=static_cast<float>(bestLag);
@@ -252,14 +275,22 @@ private:
         }
         const float hz=static_cast<float>(rate_)/(decimation_*lag);
         const float midi=69.f+12.f*std::log2(hz/440.f);
-        if(!std::isfinite(midi)||midi<31.f||midi>96.f){voiced_=false;return;}
-        const int degree=nearestDegree(midi,settings_.key,settings_.scale);
-        const int note=noteAt(degree,settings_.key,settings_.scale);
+        if(!std::isfinite(midi)||midi<31.f||midi>96.f){
+            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+        }
+        int degree=nearestDegree(midi,settings_.key,settings_.scale);
+        int note=noteAt(degree,settings_.key,settings_.scale);
+        if(!pitchChangeHasMargin(currentNote_,note,midi)){
+            note=currentNote_;
+            degree=nearestDegree(static_cast<float>(note),settings_.key,settings_.scale);
+        }
         if(note!=candidateNote_){candidateNote_=note;noteHold_=1;}
         // Saturate the hold counter: a multi-hour sustained note must not
         // overflow a signed int in the realtime thread.
         else if(noteHold_<3)++noteHold_;
-        if(noteHold_<2&&currentNote_>=0)return;
+        // Two consistent windows for both phrase onset and melodic transitions;
+        // do not generate provisional harmony on a single noisy transient.
+        if(noteHold_<2)return;
         currentNote_=note;voiced_=true;
         constexpr std::array<int,4> intervals{{2,4,-2,6}};
         for(int v=0;v<maxVoices;++v){
