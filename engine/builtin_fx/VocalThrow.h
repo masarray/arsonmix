@@ -102,6 +102,9 @@ public:
         const auto recent=static_cast<std::uint64_t>(rate_*.7);
         if(clock_-lastSoundEnd_>recent)return false; // reject stale/silent cues
         const bool ended=quiet_>0;
+        // Auto already threw this finished phrase. A late manual click must
+        // not produce a second identical echo in Hybrid mode.
+        if(ended && lastSoundEnd_==autoTriggeredPhraseEnd_)return false;
         const bool accepted=freezeAt(ended?lastSoundEnd_:clock_);
         if(accepted)manualInCurrentPhrase_=true;
         return accepted;
@@ -127,6 +130,7 @@ public:
                 if(quiet_>phraseGap) {
                     voiced_=0;
                     manualInCurrentPhrase_=false; // genuinely new sung phrase
+                    autoTriggeredPhraseEnd_=0;
                 }
                 quiet_=0;
                 voiced_=std::min(voiced_+1,maxQuiet);
@@ -138,6 +142,7 @@ public:
                     if(settings_.settings.mode!=0 && !manualInCurrentPhrase_
                         && clock_>=nextAutoEligible_) {
                         if(freezeAt(lastSoundEnd_)) {
+                            autoTriggeredPhraseEnd_=lastSoundEnd_;
                             nextAutoEligible_=clock_+
                                 static_cast<std::uint64_t>(rate_*.4);
                         }
@@ -257,7 +262,7 @@ private:
         voice.playing=true;
     }
     void reset() noexcept {
-        clock_=lastSoundEnd_=nextAutoEligible_=0;
+        clock_=lastSoundEnd_=nextAutoEligible_=autoTriggeredPhraseEnd_=0;
         recorded_=writeIndex_=0;
         voiced_=quiet_=0;
         armed_=manualInCurrentPhrase_=false;
@@ -281,7 +286,7 @@ private:
     PreparedEdit settings_{};
     std::vector<float> historyL_,historyR_;
     std::array<TailVoice,2> voices_{};
-    std::uint64_t clock_=0,lastSoundEnd_=0,nextAutoEligible_=0;
+    std::uint64_t clock_=0,lastSoundEnd_=0,nextAutoEligible_=0,autoTriggeredPhraseEnd_=0;
     std::size_t recorded_=0,writeIndex_=0;
     std::uint32_t voiced_=0,quiet_=0;
     float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f;
