@@ -5,6 +5,8 @@ on:
       - 'site/index.html'
       - 'site/downloads.js'
       - 'scripts/build_release_catalog.py'
+      - 'scripts/verify_release_setup_zip.py'
+      - 'tests/test_release_setup_zip.py'
       - 'scripts/release_ci_dispatch.mjs'
       - 'scripts/check_platform_portability.py'
       - 'scripts/package_native_linux.sh'
@@ -22,6 +24,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/build_release_catalog.py'
+      - 'scripts/verify_release_setup_zip.py'
+      - 'tests/test_release_setup_zip.py'
       - 'scripts/release_ci_dispatch.mjs'
       - 'tests/test_release_catalog.py'
       - 'tests/downloads_runtime_contract.test.mjs'
@@ -53,6 +57,7 @@ jobs:
           node --check scripts/release_ci_dispatch.mjs
           node --test tests/release_ci_dispatch_contract.test.mjs
           python tests/test_release_catalog.py
+          python tests/test_release_setup_zip.py
           python -m py_compile scripts/build_release_catalog.py scripts/check_platform_portability.py
           python tests/test_platform_portability.py
           bash -n scripts/package_native_linux.sh scripts/package_native_macos.sh

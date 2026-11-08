@@ -17,6 +17,7 @@ on:
       # Packaging/port release tests do not change Chromium GUI behaviour.
       - '!tests/test_platform_portability.py'
       - '!tests/test_release_catalog.py'
+      - '!tests/test_release_setup_zip.py'
       - 'tests/gui_workflow_contract_test.mjs'
       - 'tests/*gui*contract*.mjs'
       - 'tests/native_ui_contract_test.mjs'
@@ -44,6 +45,7 @@ on:
       # Packaging/port release tests do not change Chromium GUI behaviour.
       - '!tests/test_platform_portability.py'
       - '!tests/test_release_catalog.py'
+      - '!tests/test_release_setup_zip.py'
       - 'tests/gui_workflow_contract_test.mjs'
       - 'tests/*gui*contract*.mjs'
       - 'tests/native_ui_contract_test.mjs'

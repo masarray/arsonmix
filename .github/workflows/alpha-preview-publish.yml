@@ -188,21 +188,7 @@ jobs:
           # Public landing prefers this ZIP-wrapped installer. Keep the
           # direct EXE for compatibility. No silent change to its bytes.
           Compress-Archive -LiteralPath $releasedExe -DestinationPath $releasedZip -CompressionLevel Optimal
-          @'
-          import hashlib, pathlib, sys, zipfile
-          exe, wrapped = map(pathlib.Path, sys.argv[1:])
-          with zipfile.ZipFile(wrapped) as archive:
-              entries = archive.infolist()
-              if len(entries) != 1 or entries[0].filename != exe.name:
-                  raise SystemExit("Installer ZIP must contain exactly one expected EXE")
-              if entries[0].file_size != exe.stat().st_size:
-                  raise SystemExit("Installer ZIP EXE size mismatch")
-              with archive.open(entries[0]) as contents:
-                  embedded = hashlib.file_digest(contents, "sha256").hexdigest()
-          if embedded != hashlib.sha256(exe.read_bytes()).hexdigest():
-              raise SystemExit("Installer ZIP content differs from verified Inno Setup EXE")
-          print("ALPHA_SETUP_ZIP_VERIFIED", wrapped.name, embedded)
-          '@ | python - $releasedExe $releasedZip
+          python scripts/verify_release_setup_zip.py --exe $releasedExe --zip $releasedZip
           if ($LASTEXITCODE -ne 0) { throw "Installer ZIP failed byte-for-byte verification" }
           Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Optimal
           Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
