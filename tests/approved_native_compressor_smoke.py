@@ -34,6 +34,31 @@ def emit_snapshot(page,state,values,applied=None,gr=0.0,
     if applied:packet["appliedRequestId"]=applied
     emit(page,"arMixBuiltinCompSnapshot",packet)
 
+def apply_native_edit_chain(page,state,first,limit=8):
+    """Complete ordered realtime DSP edits, including one coalesced final drag.
+
+    A pointer can emit an initial control request and a delayed final setting.
+    The native stub must acknowledge BOTH (and read back each matching ID);
+    asserting after the first ACK would mistake valid DSP coalescing for a hang.
+    """
+    command=first
+    seen=set()
+    for _ in range(limit):
+        request=command["requestId"]
+        assert request not in seen,("duplicate DSP control request",request)
+        seen.add(request)
+        emit(page,"arMixBuiltinCompQueue",{"requestId":request,"status":"QUEUED"})
+        emit(page,"arMixBuiltinCompAck",{"requestId":request,"status":"APPLIED"})
+        emit_snapshot(page,state,command["settings"],applied=request)
+        latest=last_action(page,"nativeCompSet")
+        if latest["requestId"]!=request:
+            command=latest
+            continue
+        page.wait_for_function("""()=>document.querySelector('.mx-comp-status')
+            ?.textContent?.includes('NATIVE DSP ACCEPTED')""",timeout=3500)
+        return command
+    raise AssertionError("native DSP edit coalescer did not drain within bounded ACKs")
+
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
     bundle=importlib.util.module_from_spec(spec);spec.loader.exec_module(bundle)
@@ -307,11 +332,8 @@ def main():
                 page.mouse.up()
                 gesture=last_action(page,"nativeCompSet")
                 assert gesture["settings"]["thresholdDb"]!=DEFAULTS["thresholdDb"]
-                emit(page,"arMixBuiltinCompQueue",{"requestId":gesture["requestId"],"status":"QUEUED"})
-                emit(page,"arMixBuiltinCompAck",{"requestId":gesture["requestId"],"status":"APPLIED"})
-                emit_snapshot(page,state,gesture["settings"],applied=gesture["requestId"])
-                page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
-                    ?.includes('NATIVE DSP ACCEPTED')""")
+                final_gesture=apply_native_edit_chain(page,state,gesture)
+                assert final_gesture["settings"]["thresholdDb"]!=DEFAULTS["thresholdDb"]
                 # Native pointer capture must allow precise vertical scrubbing
                 # from the tiny knob while keeping revision-gated ACK/readback.
                 dial=page.locator('.mx-comp-control[data-key="ratio"] input')
@@ -324,11 +346,8 @@ def main():
                 page.mouse.up()
                 scrub=last_action(page,"nativeCompSet")
                 assert scrub["settings"]["ratio"]>previous,(previous,scrub)
-                emit(page,"arMixBuiltinCompQueue",{"requestId":scrub["requestId"],"status":"QUEUED"})
-                emit(page,"arMixBuiltinCompAck",{"requestId":scrub["requestId"],"status":"APPLIED"})
-                emit_snapshot(page,state,scrub["settings"],applied=scrub["requestId"])
-                page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
-                    ?.includes('NATIVE DSP ACCEPTED')""")
+                final_scrub=apply_native_edit_chain(page,state,scrub)
+                assert final_scrub["settings"]["ratio"]>=scrub["settings"]["ratio"]
                 assert dial.get_attribute("aria-valuetext").endswith(":1")
                 assert page.locator(".mx-comp-preset-select").input_value()=="CUSTOM"
                 # Presets are a standard DAW header dropdown, and must travel
