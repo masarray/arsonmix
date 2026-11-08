@@ -125,8 +125,23 @@ public:
         const auto status=publisher_.publish(std::move(next),
                                              expectedRevision,activeDeviceEpoch);
         switch(status) {
-            case Publisher::Result::applied:
+            case Publisher::Result::applied: {
+                const auto source=musicTempo_.selectedSource();
+                if(source.value) {
+                    const auto* published=publisher_.controlPrepared(
+                        proposedDeviceEpoch,expectedRevision+1);
+                    const auto* channel=published?
+                        published->routing.find(source):nullptr;
+                    const bool retained=published&&channel&&
+                        (channel->role==ChannelRole::input||
+                         channel->role==ChannelRole::group||
+                         channel->role==ChannelRole::fxReturn)&&
+                        published->graph.channelScheduled(source);
+                    musicTempo_.onGraphCommitted(proposedDeviceEpoch,
+                        expectedRevision,expectedRevision+1,retained);
+                }
                 report.revision=expectedRevision+1;return report;
+            }
             case Publisher::Result::staleDevice:
                 report.fault=Fault::staleDevice;break;
             case Publisher::Result::staleRevision:
