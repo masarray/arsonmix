@@ -411,6 +411,10 @@
 .mx-vthrow .body{padding:11px;display:grid;gap:10px}.mx-vthrow .row{display:flex;align-items:center;justify-content:space-between;gap:9px}
 .mx-vthrow .topline{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.mx-vthrow .field{display:grid;gap:4px;min-width:0}
 .mx-vthrow label,.mx-vthrow .label{color:#9fb6c5;font-size:10px;letter-spacing:.035em}.mx-vthrow .field input{width:100%;padding:4px 7px}
+.mx-vthrow .music-source{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px 9px;align-items:center;border-top:1px solid #344957;padding-top:7px}
+.mx-vthrow .music-source label{grid-column:1/-1}
+.mx-vthrow .music-source select{min-width:0;width:100%;font-size:11px}
+.mx-vthrow .music-status{font-size:10px;color:#91b6c4;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .mx-vthrow .manual{display:grid;grid-template-columns:1fr 80px;gap:9px}.mx-vthrow .throw{background:#277d9b;font-size:13px;font-weight:600;min-height:46px;letter-spacing:.07em}.mx-vthrow .throw:hover{background:#2b9ebf}.mx-vthrow .tap{min-height:46px}
 .mx-vthrow .hint{color:#8fb1c2;min-height:15px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mx-vthrow .detail{border-top:1px solid #334b5b;padding-top:8px}
 .mx-vthrow details>summary{cursor:pointer;color:#bad1df;padding-bottom:7px;font-size:11px}.mx-vthrow .ranges{display:grid;grid-template-columns:1fr 1fr;gap:8px 13px}
