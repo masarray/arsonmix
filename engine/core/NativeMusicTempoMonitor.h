@@ -81,6 +81,10 @@ private:
         if(at(count_-1).tick-at(0).tick<300)return;
         int bestBpm=0;
         float bestScore=0.f;
+        // CONTROL-owned fixed stack scratch; no heap or unbounded history.
+        // Retain the incumbent candidate's score so a transient half/double
+        // time accent cannot steal an already convincing song clock.
+        std::array<float,121> candidates{};
         // CONTROL ONLY: bounded 121 candidates x 128 onsets. Emphasize
         // one-beat matches; harmonics, half- and double-time are penalized.
         for(int bpm=60;bpm<=180;++bpm) {
@@ -103,9 +107,22 @@ private:
                         (cycles==1?1.f:cycles==2?1.6f:2.25f);
                 }
             }
+            candidates[static_cast<std::size_t>(bpm-60)]=score;
             if(score>bestScore) {bestScore=score;bestBpm=bpm;}
         }
         if(bestBpm==0 || bestScore<2.0f)return;
+        if(result_.locked) {
+            const int previous=static_cast<int>(std::lround(result_.bpm));
+            const bool octave=std::abs(2*previous-bestBpm)<=3 ||
+                              std::abs(previous-2*bestBpm)<=3;
+            if(octave && previous>=60 && previous<=180 &&
+               candidates[static_cast<std::size_t>(previous-60)]>=
+                   bestScore*.70f) {
+                // The rhythmic subdivision is ambiguous. Stay on the song
+                // BPM until a genuine, repeatedly stronger tempo emerges.
+                bestBpm=previous;
+            }
+        }
         if(std::abs(bestBpm-candidateBpm_)<=2)++stableCount_;
         else {candidateBpm_=bestBpm;stableCount_=1;}
         // A proven lock resists transient alternate half/double-time peaks.
@@ -116,44 +133,65 @@ private:
         result_.confidence=std::clamp(bestScore/
             static_cast<float>(std::max<std::size_t>(7,count_))*.9f,0.f,1.f);
         if(result_.confidence<.28f)return;
-        // The strongest recent transient is a practical pulse anchor;
-        // explicit "beat-phase certified" remains a separate field FAT.
-        float strength=0.f;
+        // CONTROL: phase is a separate decision from the BPM estimate.
+        // Search the bounded onset set for the strongest coherent pulse
+        // lattice, not simply the most recent loud snare / clap.
+        const float period=6000.f/result_.bpm;
+        const float tolerance=std::max(1.6f,period*.075f);
+        const auto matches=[&](std::uint64_t a,std::uint64_t b) noexcept {
+            const float elapsed=static_cast<float>(a>b?a-b:b-a);
+            const float cycles=std::round(elapsed/period);
+            const float difference=std::abs(elapsed-cycles*period);
+            return std::max(0.f,1.f-difference/tolerance);
+        };
+        float total=0.f;
+        for(std::size_t i=0;i<count_;++i)
+            if(lastTick_-at(i).tick<=1100)total+=at(i).strength;
+        float leading=0.f;
         std::uint64_t anchor=0,anchorFrame=0;
-        const auto period=6000.f/result_.bpm;
-        for(std::size_t i=0;i<count_;++i) {
-            const auto& h=at(i);
-            if(lastTick_-h.tick>period*1.8f)continue;
-            if(h.strength>=strength) {
-                strength=h.strength;anchor=h.tick;anchorFrame=h.frame;
+        if(total>0.f)for(std::size_t candidate=0;candidate<count_;++candidate) {
+            const auto& center=at(candidate);
+            if(lastTick_-center.tick>1100)continue;
+            float coherence=0.f;
+            for(std::size_t i=0;i<count_;++i) {
+                const auto& h=at(i);
+                if(lastTick_-h.tick<=1100)
+                    coherence+=h.strength*matches(h.tick,center.tick);
             }
+            // Prefer a more recent coherent beat anchor on ties, not a
+            // historical frame from before a long musical break.
+            if(coherence>leading+.0001f ||
+               (std::abs(coherence-leading)<=.0001f &&
+                center.tick>anchor)) {
+                leading=coherence;
+                anchor=center.tick;
+                anchorFrame=center.frame;
+            }
+        }
+        // Competing off-beat cohorts mean the quarter-note phase is not
+        // established, even when interval BPM itself is reliable.
+        float competing=0.f;
+        if(anchor)for(std::size_t candidate=0;candidate<count_;++candidate) {
+            const auto& center=at(candidate);
+            if(lastTick_-center.tick>1100 ||
+               matches(center.tick,anchor)>.15f)continue;
+            float coherence=0.f;
+            for(std::size_t i=0;i<count_;++i) {
+                const auto& h=at(i);
+                if(lastTick_-h.tick<=1100)
+                    coherence+=h.strength*matches(h.tick,center.tick);
+            }
+            competing=std::max(competing,coherence);
         }
         result_.beatAnchorTick=anchor;
         result_.beatAnchorFrame=anchorFrame;
         result_.observationTick=lastTick_;
         result_.locked=true;
-        // A reliable BPM is not enough to claim a stable downbeat phase.
-        // Quantize only if a majority of transient strength agrees on the
-        // detected pulse lattice. Secondary off-beat hats lower confidence;
-        // syncopated mixes safely stay BPM-only (no fabricated grid).
-        float total=0.f,coherent=0.f;
-        const float tolerance=std::max(1.6f,period*.075f);
-        for(std::size_t i=0;i<count_;++i) {
-            const auto& h=at(i);
-            if(lastTick_-h.tick>1100)continue;
-            const float weight=h.strength;
-            const float elapsed=std::abs(static_cast<float>(h.tick)-
-                                          static_cast<float>(anchor));
-            const float cycles=std::round(elapsed/period);
-            const float difference=std::abs(elapsed-cycles*period);
-            total+=weight;
-            if(difference<tolerance)
-                coherent+=weight*(1.f-difference/tolerance);
-        }
         result_.phaseConfidence=total>0.f?
-            std::clamp(coherent/total,0.f,1.f):0.f;
+            std::clamp(leading/total,0.f,1.f):0.f;
         result_.phaseLocked=anchorFrame>0 &&
-            result_.phaseConfidence>=.50f;
+            result_.phaseConfidence>=.52f &&
+            competing<leading*.84f;
     }
 };
 
