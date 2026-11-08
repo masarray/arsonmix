@@ -301,9 +301,9 @@ static void nativeMusicBeatGridQuantization(int quantum) {
     run(unquantized,.65f,.35f,12000,l,r);
     run(gridded,0.f,0.f,3000,l,r);
     run(unquantized,0.f,0.f,3000,l,r);
-    // Both processors have local sample 15000; one backing music onset
-    // anchor is at global sample 8000 (12000 sample quarter beat).
-    gridded.setMusicBeatGrid(12000,8000,15000,true);
+    // Both processors have local sample 15000. Music tempo is 180 BPM
+    // (16000 sample quarter) with an observed beat at graph frame 100.
+    gridded.setMusicBeatGrid(16000,100,15000,true);
     noHeap.store(true,std::memory_order_release);
     const auto snapped=gridded.throwNow();
     const auto plain=unquantized.throwNow();
@@ -327,11 +327,11 @@ static void nativeMusicBeatGridQuantization(int quantum) {
         }
         return -1;
     };
-    // First graph grid point >= min scheduled echo: frame 32000.
-    // Cue began at graph frame 15000, so observable wet begins at ~17000.
+    // First native music grid point >= intended onset: frame 32100.
+    // Cue at graph frame 15000 => first wet sample around offset 17100.
     const int quantized=onset(gridded);
     const int fallback=onset(unquantized);
-    check(quantized>=17000&&quantized<17020);
+    check(quantized>=17100&&quantized<17120);
     check(fallback>=23980&&fallback<25000); // manual 120 BPM / quarter
     check(quantized+5000<fallback);
 }
