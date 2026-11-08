@@ -56,6 +56,24 @@ export async function releaseDispatch({event,api}) {
     return {kind:'skipped',reason:'qualification already active',...cmd};
   if(old.some(r=>r.head_sha===cmd.sha && r.status==='completed'))
     throw Error('RELEASE_FAILED_SAME_SHA_REQUIRES_FIX_NOT_RETRY');
+  // Reject incomplete release candidates before allocating a Windows runner.
+  // Both checks read from the exact immutable SHA, never moving main.
+  let notes;
+  try {
+    notes=await api('/contents/docs/releases/'+cmd.tag+'.md?ref='+cmd.sha);
+  } catch(err) {
+    if(String(err).includes('GITHUB_API_404'))
+      throw Error('RELEASE_NOTES_MISSING_PRECHECK');
+    throw err;
+  }
+  if(notes?.type!=='file'||!Number.isSafeInteger(notes.size)||notes.size<100)
+    throw Error('RELEASE_NOTES_EMPTY_PRECHECK');
+  const cmake=await api('/contents/CMakeLists.txt?ref='+cmd.sha);
+  const version=cmd.tag.match(/^v(\d+\.\d+\.\d+)-alpha\./)?.[1];
+  if(cmake?.type!=='file'||cmake.encoding!=='base64'||!version||
+      !Buffer.from(cmake.content||'','base64').toString('utf8')
+        .includes('project(ARMixConsole VERSION '+version+' LANGUAGES'))
+    throw Error('RELEASE_CMAKE_VERSION_PRECHECK');
   await api('/actions/workflows/alpha-preview-publish.yml/dispatches','POST',
     {ref:cmd.branch, inputs:{release_tag:cmd.tag, expected_sha:cmd.sha}});
   return {kind:'dispatched',...cmd};
