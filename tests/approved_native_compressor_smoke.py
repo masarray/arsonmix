@@ -200,6 +200,11 @@ def main():
             assert page.locator(".mx-comp-outvalue").inner_text()=="−∞"
             # Actual PCM meter snapshots: measured pre/post dBFS and GR travel
             # through the accepted instance/revision gated native readback.
+            # Every message must respond to its own distinct in-flight ID.
+            first_live_request=last_action(page,"nativeCompSnapshot")["requestId"]
+            page.wait_for_function("""id=>window.__actions.filter(x=>
+                x.action==='nativeCompSnapshot').slice(-1)[0]?.requestId!==id""",
+                arg=first_live_request,timeout=3000)
             emit_snapshot(page,state,DEFAULTS,gr=6.5,input_db=-10.0,output_db=-16.5,serial=12)
             page.wait_for_function("""()=>{
                 return document.querySelector('.mx-comp-invalue')?.textContent==='-10.0' &&
