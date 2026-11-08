@@ -69,6 +69,57 @@ static void lockTempo(int bpm,bool hats=false) {
     state=tap.poll(7,13);
     check(!state.tempo.locked);
 }
+// A full backing groove can carry snare/hi-hat accents on the eighth-note
+// offbeat. Its BPM may be correct while a quarter-note phase is ambiguous.
+static void harmonicAndPhaseAmbiguity() {
+    NativeMusicTempoMonitor tap;
+    check(tap.select(ChannelId{301},7,13,10000));
+    const auto groove=[&](int index,float offbeat) {
+        std::array<float,128> left{},right{};
+        const int p=index%50; // quarter note at 120 BPM
+        const float value=p==0?.78f:p==25?offbeat:0.f;
+        left.fill(value);right.fill(value);
+        noHeap.store(true,std::memory_order_release);
+        (void)tap.beginAudioBlock(7,64);
+        tap.capture(ChannelId{301},left.data(),right.data(),64,7,13);
+        (void)tap.beginAudioBlock(7,36);
+        tap.capture(ChannelId{301},left.data()+64,right.data()+64,36,7,13);
+        noHeap.store(false,std::memory_order_release);
+        if(index%8==0)(void)tap.poll(7,13);
+    };
+    for(int i=0;i<1150;++i)groove(i,.035f);
+    auto baseline=tap.poll(7,13);
+    check(baseline.tempo.locked && std::abs(baseline.tempo.bpm-120.f)<=3.f);
+    check(baseline.tempo.phaseLocked);
+    // For 11s, the equal-strength offbeat pulse could be mistaken for a
+    // new beat lattice; do not switch to 60 BPM, or claim a phase lock.
+    for(int i=1150;i<2450;++i)groove(i,.78f);
+    auto ambiguous=tap.poll(7,13);
+    check(ambiguous.tempo.locked);
+    check(std::abs(ambiguous.tempo.bpm-120.f)<=3.f);
+    check(!ambiguous.tempo.phaseLocked);
+    // The music clears; the true quarter-note lattice should recover.
+    for(int i=2450;i<3650;++i)groove(i,.035f);
+    auto recovered=tap.poll(7,13);
+    check(recovered.tempo.locked);
+    check(std::abs(recovered.tempo.bpm-120.f)<=3.f);
+    check(recovered.tempo.phaseLocked);
+    check(recovered.dropped==0);
+}
+static void steadyPadIsNotAClock() {
+    NativeMusicTempoMonitor tap;
+    check(tap.select(ChannelId{301},7,13,10000));
+    std::array<float,128> pcm{};pcm.fill(.22f);
+    for(int index=0;index<1200;++index) {
+        noHeap.store(true);
+        (void)tap.beginAudioBlock(7,100);
+        tap.capture(ChannelId{301},pcm.data(),pcm.data(),100,7,13);
+        noHeap.store(false);
+        if(index%8==0)(void)tap.poll(7,13);
+    }
+    const auto state=tap.poll(7,13);
+    check(!state.tempo.locked);
+}
 static void failClosed() {
     NativeMusicTempoMonitor tap;
     check(tap.select(ChannelId{301},7,13,48000));
@@ -196,6 +247,8 @@ int main() {
     lockTempo(120);
     lockTempo(160);
     lockTempo(120,true);
+    harmonicAndPhaseAmbiguity();
+    steadyPadIsNotAClock();
     failClosed();
     callbackClockEpochAndNestedScope();
     actualGraphSourcePcm();
