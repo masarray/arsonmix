@@ -111,7 +111,7 @@ public:
         writer.writeFloat(accepted_.ducking);
     }
     bool restoreUnpublishedState(const void* data,int bytes) {
-        if(published_||!data||bytes!=44||!commands_.empty()||!done_.empty())
+        if(published_||!data||bytes!=48||!commands_.empty()||!done_.empty())
             return false;
         juce::MemoryInputStream reader(data,static_cast<std::size_t>(bytes),false);
         if(reader.readInt()!=0x41565448||reader.readInt()!=1)return false;
