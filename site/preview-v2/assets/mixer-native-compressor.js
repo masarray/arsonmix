@@ -174,9 +174,16 @@ function send(){
  if(!native()||!current)return;
  const c=context();if(!c){hint("NATIVE FX INSTANCE UNAVAILABLE");return;}
  if(!valid(draft)){hint("INVALID COMPRESSOR SETTINGS");return;}
- if(pending){delayed={...draft};return;}
+ if(pending){
+  // A slider input + change commonly fires twice at the same value. Keep
+  // only a genuinely different final setting; never replay an identical edit.
+  delayed=Object.keys(defs).every(k=>draft[k]===pending.settings[k])?
+   null:{...draft};
+  return;
+ }
+ delayed=null;
  const id="comp-"+String(Date.now()*1000+(seq++%1000));
- pending={id,ack:false,context:c};
+ pending={id,ack:false,context:c,settings:{...draft}};
  lastSend=Date.now();
  backend().emitEvent("arMixAction",{action:"nativeCompSet",requestId:id,
   settings:{...draft},...c});
