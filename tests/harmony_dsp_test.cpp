@@ -133,5 +133,39 @@ int main(){
            std::abs(lbuf[j])<=4.f&&std::abs(rbuf[j])<=4.f,
            "live control ramp produced invalid PCM");
   }
+  // Smooth complementary grain crossfade: seam and center values, symmetry,
+  // unity-sum weights and bounded slope at reset/half-grain transitions.
+  need(std::abs(smoothGrainBlend(0.f))<1.e-7f&&
+       std::abs(smoothGrainBlend(.5f)-1.f)<1.e-7f&&
+       std::abs(smoothGrainBlend(1.f))<1.e-7f,"bad grain seam endpoints");
+  for(int i=0;i<=100;++i){
+    const float p=static_cast<float>(i)/100.f;
+    const float w=smoothGrainBlend(p);
+    need(w>=0.f&&w<=1.f&&std::abs(w+smoothGrainBlend(.5f-p)-1.f)<1.e-5f,
+         "grain crossfade invalid weight");
+    need(std::abs(w-smoothGrainBlend(1.f-p))<1.e-5f,
+         "grain crossfade phase asymmetry");
+  }
+  need(smoothGrainBlend(.001f)<2.e-5f&&
+       (1.f-smoothGrainBlend(.499f))<2.e-5f,
+       "grain seam has a sharp first derivative");
+  // Male low register and high soprano note tracking at two device rates.
+  // Earlier 850 Hz search cap could not classify C6 (1046.5 Hz).
+  for(double rate:{48000.,96000.}){
+    for(const auto item:{{82.406889,40},{1046.502261,84}}){
+      Engine probe;need(probe.prepare(rate),"vocal register prepare failed");
+      const int count=static_cast<int>(rate*.35);
+      std::vector<float> pl(static_cast<std::size_t>(count));
+      std::vector<float> pr(static_cast<std::size_t>(count));
+      for(int i=0;i<count;++i)
+        pl[static_cast<std::size_t>(i)]=pr[static_cast<std::size_t>(i)]=
+          .2f*std::sin(6.28318530718*item.first*i/rate);
+      for(int i=0;i<count;i+=127)
+        probe.process(pl.data()+i,pr.data()+i,std::min(127,count-i));
+      need(probe.voiced(),"vocal register not voiced");
+      need(std::abs(probe.observedMidiNote()-item.second)<=1,
+           "vocal register octave/scale misclassification");
+    }
+  }
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-4 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
