@@ -219,6 +219,16 @@ def main():
             levels=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
                 els.map(el=>parseFloat(el.style.height))""")
             assert levels[0]>levels[1]>0 and levels[2]>0,levels
+            # The 110ms meter animation must settle before reading rendered
+            # geometry. getComputedStyle(bottom) is a USED pixel offset even
+            # when the CSS declaration is 'auto' for a top-anchored bar.
+            page.wait_for_function("""()=>{
+                const bar=document.querySelector('.mx-comp-meter-gr');
+                if(!bar)return false;
+                const rail=bar.parentElement.getBoundingClientRect();
+                return rail.height>20&&
+                    bar.getBoundingClientRect().height/rail.height>=.19;
+            }""",timeout=2500)
             geometry=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
                 els.map(el=>{
                     const bar=el.getBoundingClientRect();
@@ -227,9 +237,11 @@ def main():
                     return {top:bar.top,railTop:rail.top,railHeight:rail.height,
                         bottom:css.bottom,cssTop:css.top,height:bar.height};
                 })""")
-            # 6.5 dB GR fills about 21.7% of the rail, DOWN from 0.
+            # 6.5 dB GR occupies 21.7% of rail, anchored at TOP zero.
+            # IN/OUT remain bottom-anchored as conventional audio levels.
             assert geometry[0]["bottom"]==geometry[1]["bottom"]=="0px",geometry
-            assert geometry[2]["bottom"]=="auto" and geometry[2]["cssTop"]=="2px",geometry
+            assert geometry[2]["cssTop"]=="2px",geometry
+            assert geometry[2]["bottom"]!="0px",geometry
             assert 1<=geometry[2]["top"]-geometry[2]["railTop"]<=5,geometry
             assert .19<=geometry[2]["height"]/geometry[2]["railHeight"]<=.24,geometry
             assert page.locator(".mx-comp-meter-gr").get_attribute("aria-valuenow")=="6.5"
