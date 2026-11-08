@@ -60,6 +60,7 @@ power.title="FX STATE UNAVAILABLE";power.dataset.fxState="unknown";
 power.disabled=true;power.setAttribute("aria-pressed","false");
 power.setAttribute("aria-label","Compressor state unavailable");
 close.setAttribute("aria-label","Close Compressor");
+power.classList.add("armix-builtin-fx-power");close.classList.add("armix-builtin-fx-close");
 header.append(brand,channel,presetSelect,stateDot,power,close);
 const controls=dom("div","mx-comp-controls");
 const left=dom("div","mx-comp-left");
