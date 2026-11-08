@@ -2954,60 +2954,87 @@ private:
         // instance lease, not the legacy ordinal engine_.pluginAt(slot).
         if(action=="routingNativeOrbitInspect"||
            action=="routingNativeOrbitStart"||
-           action=="routingNativeOrbitStop"){
+           action=="routingNativeOrbitStop"||
+           action=="routingM4OrbitInspect"||
+           action=="routingM4OrbitStart"||
+           action=="routingM4OrbitStop"){
+            const bool m4=action.startsWith("routingM4Orbit");
             const auto rawId=args.getProperty("channelId",{}),
                 rawInsert=args.getProperty("instanceId",{}),
                 rawEp=args.getProperty("deviceEpoch",{}),
-                rawRev=args.getProperty("graphRevision",{}),
+                rawRev=args.getProperty(m4?"revision":"graphRevision",{}),
                 rawRoster=args.getProperty("rosterRevision",{});
-            const auto idText=rawId.toString(),insertId=rawInsert.toString();
+            const int lane=static_cast<int>(args.getProperty("channel",-1));
+            const auto idText=m4?
+                "m4-lane-"+juce::String(lane):rawId.toString();
+            const auto insertId=rawInsert.toString();
             const int nativeSlot=static_cast<int>(args.getProperty("slot",-1));
             std::uint64_t id=0,ep=0,rev=0,roster=0;
             const auto snap=approvedNativeSnapshot();
             const auto graph=snap.getProperty("graph",{}),
                 device=snap.getProperty("device",{});
-            bool matches=false;
+            bool nativeMatches=false,m4Matches=false;
             const auto channels=graph.getProperty("channels",{});
-            if(const auto* rows=channels.getArray())
+            if(!m4)if(const auto* rows=channels.getArray())
                 for(const auto& row:*rows)if(row.getProperty("id","").toString()==idText){
                     const auto inserts=row.getProperty("inserts",{});
                     if(const auto* slots=inserts.getArray())
                         if(nativeSlot>=0&&nativeSlot<slots->size()&&
                            (*slots)[nativeSlot].getProperty("id","").toString()==insertId)
-                            matches=true;
+                            nativeMatches=true;
                     break;
                 }
-            const bool accepted=armix::console::approvedNativeId(rawId,id)&&
-                armix::console::approvedNativeId(rawEp,ep)&&
-                armix::console::approvedNativeId(rawRev,rev)&&
-                armix::console::approvedNativeId(rawRoster,roster)&&
-                nativeSlot>=0&&nativeSlot<8&&!insertId.isEmpty()&&
-                matches&&
-                device.getProperty("epoch","").toString()==rawEp.toString()&&
-                graph.getProperty("revision","").toString()==rawRev.toString()&&
-                graph.getProperty("rosterRevision","").toString()==rawRoster.toString()&&
-                !nativeShowBusy_&&!studioBackupBusy_&&
-                !engine_.isGraphSwitchPending();
+            const auto lab=engine_.status().getProperty("dryRoutingLab",{});
+            if(m4&&lane>=0&&lane<LiveDryRoutingLab::fxSlots){
+                const auto all=lab.getProperty("fxInstances",{});
+                if(const auto* rows=all.getArray())
+                    if(lane<rows->size()){
+                        const auto list=(*rows)[lane];
+                        if(const auto* slots=list.getArray())
+                            if(nativeSlot>=0&&nativeSlot<slots->size()&&
+                               (*slots)[nativeSlot].getProperty("instanceId","").toString()==insertId)
+                                m4Matches=true;
+                    }
+            }
+            const bool counters=armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev);
+            const bool ready=!nativeShowBusy_&&!studioBackupBusy_&&
+                !engine_.isGraphSwitchPending()&&counters&&
+                nativeSlot>=0&&nativeSlot<8&&!insertId.isEmpty();
+            const bool accepted=ready&&(m4?
+                (m4Matches&&
+                 static_cast<bool>(lab.getProperty("active",false))&&
+                 static_cast<bool>(lab.getProperty("hasAcceptedRoute",false))&&
+                 lab.getProperty("epoch",{}).toString()==rawEp.toString()&&
+                 lab.getProperty("revision",{}).toString()==rawRev.toString()):
+                (nativeMatches&&armix::console::approvedNativeId(rawId,id)&&
+                 armix::console::approvedNativeId(rawRoster,roster)&&
+                 device.getProperty("epoch","").toString()==rawEp.toString()&&
+                 graph.getProperty("revision","").toString()==rawRev.toString()&&
+                 graph.getProperty("rosterRevision","").toString()==rawRoster.toString()));
             if(!accepted){
                 emitNotice("Orbit target is stale or not admitted; reopen the FX menu.",true);
                 return;
             }
-            const auto lease=engine_.leaseNativeVst3Editor(
-                ep,rev,armix::mixer::ChannelId{id},
-                static_cast<std::size_t>(nativeSlot),insertId);
+            const auto lease=m4?
+                engine_.leaseRoutedFxForEditor(lane,nativeSlot,ep,rev,insertId):
+                engine_.leaseNativeVst3Editor(ep,rev,armix::mixer::ChannelId{id},
+                    static_cast<std::size_t>(nativeSlot),insertId);
             auto* plugin=lease&&lease->processor?
                 dynamic_cast<juce::AudioPluginInstance*>(lease->processor.get()):nullptr;
             if(!plugin||!armix::core::isDearVrPro2(plugin->getName().toStdString())){
                 emitNotice("Orbit requires the verified dearVR PRO 2 VST3 instance.",true);
                 return;
             }
-            if(action=="routingNativeOrbitInspect"){
+            if(action=="routingNativeOrbitInspect"||
+               action=="routingM4OrbitInspect"){
                 const auto shapeArg=args.getProperty("shape",-1);
                 const int shape=shapeArg.isInt()?static_cast<int>(shapeArg):-1;
                 emitOrbitState(nativeSlot,shape,plugin,idText,rawRev.toString(),insertId);
                 return;
             }
-            if(action=="routingNativeOrbitStop"){
+            if(action=="routingNativeOrbitStop"||
+               action=="routingM4OrbitStop"){
                 if(orbit_.active()&&nativeOrbitChannelId_==idText&&
                    nativeOrbitInstanceId_==insertId)stopOrbit();
                 else emitOrbitState(nativeSlot,-1,plugin,idText,rawRev.toString(),insertId);
