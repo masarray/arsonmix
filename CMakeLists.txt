@@ -30,8 +30,12 @@ juce_add_gui_app(ARMixConsole
     ICON_SMALL "${ARMIX_BRAND_DIR}/arsonmix-32.png"
     COMPANY_NAME "AR MIX Open Source"
     BUNDLE_ID "org.armix.studio"
+    # macOS TCC: CoreAudio input must display a valid user-facing privacy prompt.
+    # This is a FREE Info.plist attribute, not a paid Apple signing entitlement.
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Allow ArSonMix to receive audio from microphone and connected audio interfaces."
     NEEDS_WEB_BROWSER TRUE
-    NEEDS_WEBVIEW2 TRUE
+    NEEDS_WEBVIEW2 ${WIN32}
     NEEDS_CURL FALSE)
 
 # The approved operator GUI is generated from the EXACT Pages sources at
@@ -74,20 +78,20 @@ target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOr
 if(MSVC)
   target_compile_options(ARMixConsole PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 endif()
+# One JUCE mixer/PCM host on all three desktops. Device backends are OS owned.
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
-    JUCE_USE_WIN_WEBVIEW2=1
-    # Use JUCE 8 pinned NuGet static WebView2 loader, so the portable EXE
-    # cannot silently fall back to Internet Explorer when loader DLL is absent.
-    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_USE_CURL=0
-    JUCE_ASIO=1
-    JUCE_WASAPI=1
-    JUCE_DIRECTSOUND=1
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="0.5.0-p2")
 if(WIN32)
+  # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
+  # Never link Windows loader or sound APIs into macOS/Linux builds.
+  target_compile_definitions(ARMixConsole PRIVATE
+      JUCE_USE_WIN_WEBVIEW2=1
+      JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
+      JUCE_ASIO=1 JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
   target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32)
 endif()
 

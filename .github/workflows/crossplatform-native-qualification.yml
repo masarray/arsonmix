@@ -1,4 +1,5 @@
-name: ArSonMix Native Cross-Platform Qualification (opt-in only)
+name: ArSonMix Native Cross-Platform Qualification (comment only)
+run-name: Port ${{ inputs.platform }} ${{ inputs.release_tag || 'QUALIFY' }} ${{ inputs.expected_sha }}
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +13,14 @@ on:
       expected_sha:
         required: true
         type: string
+      release_tag:
+        required: false
+        type: string
+        default: ''
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 concurrency:
   group: port-${{ inputs.platform }}-${{ inputs.expected_sha }}
@@ -36,11 +42,32 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_PLATFORM: ${{ inputs.platform }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_SHA"
           python scripts/check_platform_portability.py --platform "$TARGET_PLATFORM"
+          bash -n scripts/package_native_linux.sh scripts/package_native_macos.sh
+          if [[ -n "$RELEASE_TAG" ]]; then
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+            test "$SOURCE_BRANCH" = "releases/alpha/$RELEASE_TAG"
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > /tmp/armix-release.json
+            python3 - "$EXPECTED_SHA" "$RELEASE_TAG" "$TARGET_PLATFORM" <<'PY'
+          import json,sys
+          r=json.load(open("/tmp/armix-release.json",encoding="utf-8"))
+          sha,tag,platform=sys.argv[1:]
+          if r.get("tag_name")!=tag or r.get("target_commitish")!=sha or r.get("draft"):
+              raise SystemExit("Release tag/source SHA mismatch")
+          if not any(a.get("name","").endswith("Windows-x64-Setup.exe")
+                     and a.get("state")=="uploaded" for a in r.get("assets",[])):
+              raise SystemExit("Exact-SHA Windows preview must be published first")
+          prefix="ArSonMix-"+tag+("-Linux-" if platform=="linux" else "-macOS-")
+          if any(a.get("name","").startswith(prefix) for a in r.get("assets",[])):
+              raise SystemExit("Platform binary is already published")
+          PY
+          fi
 
   native:
     name: Actual platform JUCE compile and core CTest
@@ -55,15 +82,88 @@ jobs:
         if: ${{ inputs.platform == 'linux' }}
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libasound2-dev libjack-jackd2-dev libfreetype-dev libwebkit2gtk-4.1-dev libgtk-3-dev libgl1-mesa-dev libx11-dev libxinerama-dev libxrandr-dev libxcursor-dev libcurl4-openssl-dev
+          sudo apt-get install -y --no-install-recommends libasound2-dev libjack-jackd2-dev libfreetype-dev libwebkit2gtk-4.1-dev libgtk-3-dev libgl1-mesa-dev libx11-dev libxcomposite-dev libxext-dev libxrender-dev libxi-dev libxinerama-dev libxrandr-dev libxcursor-dev libcurl4-openssl-dev
       - uses: actions/checkout@v4
         with:
           repository: juce-framework/JUCE
           ref: 8.0.15
           path: third_party/JUCE
-      - name: Configure native app against JUCE 8
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON
-      - name: Compile actual host executable and registered unit tests
+      - name: Configure native app against JUCE 8 (one universal Apple build)
+        shell: bash
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          if [[ "$PLATFORM" == "macos" ]]; then
+            # One macOS runner compiles BOTH arm64 and x86_64; no paid signing.
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON
+          fi
+      - name: Compile native ArSonMix GUI before expensive regression executables
+        run: cmake --build build --config Release --target ARMixConsole --parallel 2
+      - name: Compile registered regression tests after GUI target succeeds
         run: cmake --build build --config Release --parallel 2
       - name: Check native routing, FX, Show and device regressions
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Exact-SHA unsigned Linux / free ad-hoc macOS package
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.expected_sha }}
+          TAG: ${{ inputs.release_tag }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TAG" ]]; then TAG=v0.5.0-alpha.0; fi
+          bash "scripts/package_native_$PLATFORM.sh" "$SOURCE_SHA" "$TAG" "dist-$PLATFORM"
+      - name: Store candidate for inspection (not proof of physical audio)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-${{ inputs.platform }}-${{ inputs.expected_sha }}
+          path: dist-${{ inputs.platform }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish genuine OS binary only to matching already published Windows tag
+        if: ${{ inputs.release_tag != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.expected_sha }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TAG: ${{ inputs.release_tag }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > /tmp/armix-release-check.json
+          python3 - "$SOURCE_SHA" "$TAG" "$PLATFORM" <<'PY'
+          import json,sys
+          r=json.load(open("/tmp/armix-release-check.json",encoding="utf-8"))
+          sha,tag,platform=sys.argv[1:]
+          if r.get("target_commitish")!=sha or r.get("tag_name")!=tag:
+              raise SystemExit("Different release source; never upload")
+          prefix="ArSonMix-"+tag+("-Linux-" if platform=="linux" else "-macOS-")
+          if any(a.get("name","").startswith(prefix) for a in r.get("assets",[])):
+              raise SystemExit("OS asset already exists; never clobber")
+          PY
+          shopt -s nullglob
+          if [[ "$PLATFORM" == "linux" ]]; then
+            assets=(dist-linux/ArSonMix-*.tar.gz)
+            extras=(dist-linux/LINUX_PROVENANCE.json dist-linux/SHA256SUMS-Linux.txt)
+          else
+            assets=(dist-macos/ArSonMix-*.dmg)
+            extras=(dist-macos/MACOS_PROVENANCE.json dist-macos/SHA256SUMS-macOS.txt)
+          fi
+          test "${#assets[@]}" -eq 1
+          for asset in "${extras[@]}"; do test -s "$asset"; done
+          gh release upload "$TAG" "${assets[@]}" "${extras[@]}" --repo "$GITHUB_REPOSITORY"
+      - name: Refresh official landing catalog only after successful upload
+        if: ${{ inputs.release_tag != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh workflow run pages-publish.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+            echo "::warning::Published binary is immutable; repair landing sync separately without an OS rebuild."
+          fi
