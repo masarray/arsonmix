@@ -112,7 +112,10 @@ def main():
                 ?.includes('NATIVE DSP ACCEPTED')""",timeout=3000)
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
-            assert page.locator(".mx-comp-plot-brand").count()==1
+            assert page.locator(".mx-comp-brand").inner_text()=="Compressor"
+            assert page.locator(".mx-comp-plot-brand").count()==0
+            assert "ARMIX   COMPRESSOR" not in page.locator(".mx-comp-plot").inner_text()
+            assert page.locator(".mx-comp-display").bounding_box()["height"]>=260
             assert page.locator(".mx-comp-display .mx-comp-meter-bank").count()==1
             assert page.locator(".mx-comp-meter-lane").count()==3
             assert page.locator(".mx-comp-meter-caption").all_inner_texts()==["IN","OUT","GR"]
@@ -196,6 +199,7 @@ def main():
             page.wait_for_function("""()=>getComputedStyle(
                 document.querySelector('.mx-comp-power')).color==='rgb(118, 240, 185)'""")
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
+            assert page.locator(".mx-comp-meter-gr").get_attribute("aria-valuenow")=="0.0"
             assert page.locator(".mx-comp-invalue").inner_text()=="−∞"
             assert page.locator(".mx-comp-outvalue").inner_text()=="−∞"
             # Actual PCM meter snapshots: measured pre/post dBFS and GR travel
@@ -215,6 +219,20 @@ def main():
             levels=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
                 els.map(el=>parseFloat(el.style.height))""")
             assert levels[0]>levels[1]>0 and levels[2]>0,levels
+            geometry=page.locator(".mx-comp-meter-fill").evaluate_all("""els=>
+                els.map(el=>{
+                    const bar=el.getBoundingClientRect();
+                    const rail=el.parentElement.getBoundingClientRect();
+                    const css=getComputedStyle(el);
+                    return {top:bar.top,railTop:rail.top,railHeight:rail.height,
+                        bottom:css.bottom,cssTop:css.top,height:bar.height};
+                })""")
+            # 6.5 dB GR fills about 21.7% of the rail, DOWN from 0.
+            assert geometry[0]["bottom"]==geometry[1]["bottom"]=="0px",geometry
+            assert geometry[2]["bottom"]=="auto" and geometry[2]["cssTop"]=="2px",geometry
+            assert 1<=geometry[2]["top"]-geometry[2]["railTop"]<=5,geometry
+            assert .19<=geometry[2]["height"]/geometry[2]["railHeight"]<=.24,geometry
+            assert page.locator(".mx-comp-meter-gr").get_attribute("aria-valuenow")=="6.5"
             readout_boxes=page.locator(".mx-comp-meter-lane output").evaluate_all("""els=>
                 els.map(el=>{const r=el.getBoundingClientRect();
                     return {left:r.left,right:r.right,width:r.width};})""")

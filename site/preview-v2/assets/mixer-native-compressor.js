@@ -67,7 +67,6 @@ const left=dom("div","mx-comp-left");
 const visual=dom("div","mx-comp-visual");
 const right=dom("div","mx-comp-right");
 const plot=dom("div","mx-comp-plot");
-const plotBrand=dom("div","mx-comp-plot-brand","ARMIX   COMPRESSOR");
 const display=dom("div","mx-comp-display");
 const svg=document.createElementNS(NS,"svg");
 svg.setAttribute("viewBox","0 0 290 256");
@@ -82,7 +81,14 @@ function makeMeter(name,valueClass){
  const rail=dom("div","mx-comp-meter-rail");
  const fill=dom("div","mx-comp-meter-fill mx-comp-meter-"+name.toLowerCase());
  const ticks=dom("div","mx-comp-meter-ticks");
- ticks.append(dom("span","","0"),dom("span","","−24"),dom("span","","−60"));
+ // Audio meters rise from bottom; reduction uses zero at the top.
+ if(name==="GR"){
+  ticks.append(...["0","−6","−12","−18","−24","−30"].map(v=>dom("span","",v)));
+  rail.title="Gain reduction · 0 dB at top, 30 dB at bottom";
+  fill.setAttribute("role","meter");
+  fill.setAttribute("aria-label","Gain reduction, descending from zero");
+  fill.setAttribute("aria-valuemin","0");fill.setAttribute("aria-valuemax","30");
+ }else ticks.append(dom("span","","0"),dom("span","","−24"),dom("span","","−60"));
  rail.append(fill,ticks);
  const value=dom("output",valueClass,name==="GR"?"0.0 dB":"−∞");
  lane.append(caption,rail,value);meterBank.append(lane);
@@ -93,7 +99,7 @@ const outputMeter=makeMeter("OUT","mx-comp-outvalue");
 const grMeter=makeMeter("GR","mx-comp-grvalue");
 const meterValue=grMeter.value;
 display.append(svg,meterBank);
-plot.append(plotBrand,display);
+plot.append(display);
 visual.append(plot);
 controls.append(left,visual,right);
 const inputs={};
@@ -277,7 +283,9 @@ function paintMeters(){
   meter.lane.dataset.clip=db>=0?"true":"false";
  };
  meterFill(inputMeter,input);meterFill(outputMeter,output);
+ // Unlike upward IN/OUT levels, GR is attenuation from 0 dB at the top.
  grMeter.fill.style.height=(100*clamp(reduction/30,0,1)).toFixed(1)+"%";
+ grMeter.fill.setAttribute("aria-valuenow",reduction.toFixed(1));
  meterValue.textContent=reduction.toFixed(1)+" dB";
  meterBank.dataset.live=active?"true":"false";
 }

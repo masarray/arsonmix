@@ -290,14 +290,11 @@
 .mx-comp-left{min-width:0;display:flex;flex-direction:column;justify-content:space-around;
  gap:7px;padding:9px 7px 11px 2px;border-right:1px solid #718895}
 .mx-comp-visual{min-width:0;position:relative;z-index:1}
-.mx-comp-plot{height:327px;min-width:0;padding:8px;
+.mx-comp-plot{display:flex;flex-direction:column;height:327px;min-width:0;padding:8px;
  border:1px solid #496674;border-radius:3px;background:linear-gradient(#1a3442,#0c1e2b);
  box-shadow:0 0 0 2px #435d6b,0 3px 8px #132d3b75,inset 0 1px #a8bac63b}
-.mx-comp-plot-brand{display:flex;align-items:center;justify-content:center;
- height:27px;color:#cddfe8;font:650 14px/1.1 Inter,'Segoe UI',sans-serif;
- letter-spacing:.075em;text-shadow:0 1px 2px #000a}
 .mx-comp-display{display:grid;grid-template-columns:minmax(0,1fr) 114px;
- gap:0;min-width:0;height:282px;border:2px solid #2c4d60;border-radius:2px;
+ gap:0;flex:1;min-width:0;min-height:0;border:2px solid #2c4d60;border-radius:2px;
  background:#081923;box-shadow:inset 0 2px 5px #020b12}
 .mx-comp-display svg{display:block;width:100%;height:100%;min-width:0;
  background:#081923;touch-action:none;cursor:crosshair}
@@ -321,8 +318,10 @@
  border-radius:1px;transition:height .11s linear;
  background:linear-gradient(0deg,#247eac,#54d4d0 66%,#a7e3a8 88%,#efc16f);
  box-shadow:0 0 5px #43bde071}
-.mx-comp-meter-gr{background:linear-gradient(0deg,#3d8ece,#6ee0c7 65%,#e7b66a);
- box-shadow:0 0 4px #7ed6cb77}
+/* Compressor attenuation is top-anchored, unlike bottom-anchored IN/OUT. */
+.mx-comp-meter-gr{top:2px;bottom:auto;
+ background:linear-gradient(180deg,#eac989,#d99250 62%,#c96b5e);
+ box-shadow:0 0 5px #e9b06e66}
 .mx-comp-meter-lane[data-clip=true] .mx-comp-meter-fill{background:#f08073}
 .mx-comp-meter-ticks{position:absolute;inset:2px 0;
  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
@@ -392,7 +391,7 @@
   grid-template-rows:auto auto;gap:8px;padding:8px;min-height:0}
  .mx-comp-visual{grid-column:1/-1;grid-row:1;width:min(100%,390px);justify-self:center}
  .mx-comp-plot{height:284px}
- .mx-comp-display{height:242px;grid-template-columns:minmax(0,1fr) 96px}
+ .mx-comp-display{grid-template-columns:minmax(0,1fr) 96px}
  .mx-comp-left{grid-column:1;grid-row:2;justify-content:space-around;padding:0 4px;
   border-right:1px solid #6b8290}
  .mx-comp-right{grid-column:2;grid-row:2;padding:0 2px;gap:6px}
