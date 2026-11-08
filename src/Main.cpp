@@ -2950,6 +2950,77 @@ private:
         }
 
 
+        // AUX/Bus removal is an exact ChannelId native PCM edit. Incoming
+        // primary routes are reconnected to MAIN by the roster transaction,
+        // parallel sends are detached, and the removed VST3 lease is retired.
+        if(action=="routingNativeBusDelete") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto rawId=args.getProperty("channelId",{});
+            const auto rawEp=args.getProperty("deviceEpoch",{});
+            const auto rawRev=args.getProperty("graphRevision",{});
+            const auto rawRoster=args.getProperty("rosterRevision",{});
+            std::uint64_t id=0,ep=0,rev=0,roster=0;
+            const auto snap=approvedNativeSnapshot();
+            const auto device=snap.getProperty("device",{});
+            const auto graph=snap.getProperty("graph",{});
+            const auto caps=graph.getProperty("capabilities",{})
+                .getProperty("supportedOps",{});
+            const bool supported=caps.isArray()&&
+                caps.getArray()->contains(juce::String("REMOVE_BUS"));
+            bool removable=false;
+            auto role=armix::mixer::ChannelRole::group;
+            const auto channelRows=graph.getProperty("channels",{});
+            if(const auto* rows=channelRows.getArray())
+                for(const auto& row:*rows) {
+                    if(row.getProperty("id","").toString()!=rawId.toString())
+                        continue;
+                    const auto kind=row.getProperty("role","").toString();
+                    if(kind=="GROUP")removable=true;
+                    if(kind=="FX_RETURN"){
+                        removable=true;role=armix::mixer::ChannelRole::fxReturn;
+                    }
+                }
+            const bool valid=request.startsWith("bus-delete-")&&
+                request.length()<=64&&!acceptedControlRequests_.contains(request)&&
+                armix::console::approvedNativeId(rawId,id)&&
+                armix::console::approvedNativeId(rawEp,ep)&&
+                armix::console::approvedNativeId(rawRev,rev)&&
+                armix::console::approvedNativeId(rawRoster,roster)&&
+                removable&&supported&&
+                device.getProperty("epoch","").toString()==rawEp.toString()&&
+                graph.getProperty("revision","").toString()==rawRev.toString()&&
+                graph.getProperty("rosterRevision","").toString()==rawRoster.toString()&&
+                !nativeShowBusy_&&!studioBackupBusy_;
+            LiveDryRoutingLab::NativeBusResult result;
+            result.error="NATIVE_BUS_DELETE_NOT_ADMITTED_OR_STALE";
+            if(valid) {
+                acceptedControlRequests_.add(request);
+                if(acceptedControlRequests_.size()>512)
+                    acceptedControlRequests_.remove(0);
+                result=engine_.editNativeBus(ep,rev,roster,role,
+                    std::span<const armix::mixer::ChannelId>{},"",1.f,
+                    armix::mixer::ChannelId{id});
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("channelId",rawId);
+            ack->setProperty("ok",valid&&result.accepted);
+            ack->setProperty("error",result.error?result.error:"NATIVE_BUS_DELETE_UNKNOWN");
+            ack->setProperty("graphRevision",
+                juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixNativeTrackDeleteAck",juce::var(ack.release()));
+            if(valid&&result.accepted&&orbit_.active()&&
+               nativeOrbitChannelId_==rawId.toString())stopOrbit();
+            if(valid&&result.accepted)
+                diagnostics_.record("NATIVE_DAW_BUS_DELETE",
+                    "Removed accepted GROUP/FX_RETURN and native VST3 lease");
+            else emitNotice("Delete BUS/AUX rejected: "+
+                juce::String(result.error?result.error:"native error"),true);
+            return;
+        }
+
         // Native VST3 Orbit is bound to a verified ChannelId and a live
         // instance lease, not the legacy ordinal engine_.pluginAt(slot).
         if(action=="routingNativeOrbitInspect"||

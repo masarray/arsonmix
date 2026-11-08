@@ -1438,9 +1438,9 @@ public:
         if(!remove.value && role==ChannelRole::fxReturn) {
             reply.error="FX_RETURN_REQUIRES_NATIVE_VST3_OWNER";return reply;
         }
-        if(remove.value && originalM4Aux(remove)) {
-            reply.error="FIXED_M4_AUX_NOT_REMOVABLE";return reply;
-        }
+        // Original AUX lanes become ordinary native ChannelId FX returns
+        // after accepted graph admission. Their immutable processor owner
+        // must be released with the channel, never left orphaned in the bank.
         try {
             auto next=nativeAccepted_.graph.roster; // CONTROL only
             ChannelEditResult changed;
@@ -1461,10 +1461,14 @@ public:
             // owners. Reuse every current instance incl. original CH1
             // without duplicating, releasing or instantiating a processor.
             DynamicChannelFxLeaseBank bank;
-            if(DynamicChannelFxLeaseBank::reuseRevision(
-                  expectedEpoch,expectedPcmRevision+1,
-                  *nativeAccepted_.fxOwners,bank)!=
-                     DynamicChannelFxLeaseBank::Fault::none) {
+            const auto leaseFault=remove.value?
+                DynamicChannelFxLeaseBank::reuseWithoutChannel(
+                    expectedEpoch,expectedPcmRevision+1,
+                    *nativeAccepted_.fxOwners,remove,bank):
+                DynamicChannelFxLeaseBank::reuseRevision(
+                    expectedEpoch,expectedPcmRevision+1,
+                    *nativeAccepted_.fxOwners,bank);
+            if(leaseFault!=DynamicChannelFxLeaseBank::Fault::none) {
                 reply.error="NATIVE_FX_LEASE_REJECTED";return reply;
             }
             auto owner=std::make_shared<DynamicChannelFxLeaseBank>(
@@ -1496,9 +1500,10 @@ public:
             // The native publisher remains the authoritative PCM, and a
             // failed scalar mirror MUST fault silent rather than reselect
             // an incompatible legacy route.
-            nativeStructureLive_=nativeAccepted_.graph.roster.size()>
-                static_cast<std::size_t>(fxSlots+1+
-                    (nativeAccepted_.hardware.monitorEnabled?1:0));
+            // Deletion of an original AUX changes the fixed M4 roster even
+            // when the resulting graph is smaller. Never demote the sole
+            // ChannelId PCM renderer back to stale ordinal/M4 routing.
+            nativeStructureLive_=true;
             reply.accepted=true;reply.error="";
             reply.pcmRevision=published.revision;
             reply.rosterRevision=nativeAccepted_.graph.roster.revision();

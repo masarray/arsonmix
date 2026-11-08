@@ -832,6 +832,50 @@
     },8000);
     return true;
   }
+  // BUS and FX_RETURN use their actual ChannelId; never remove them from
+  // browser state before the native publisher ACK and independent graph readback.
+  function requestNativeBusDelete(track){
+    const current=controller?.state()?.current,id=nativeIdFor(track);
+    const channel=current?.graph?.channels?.find(ch=>ch.id===id);
+    if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
+       !current?.admitted||current.retained||
+       !["GROUP","FX_RETURN"].includes(channel?.role)||
+       !current.graph.capabilities.supportedOps.includes("REMOVE_BUS")){
+      nativeToast("Delete unavailable · wait for an admitted native AUX/BUS");
+      return false;
+    }
+    const requestId="bus-delete-"+(++stripRequestSerial);
+    pendingTrackDelete={requestId,id,name:track.name,role:channel.role,
+      epoch:current.device.epoch,revision:current.graph.revision,acked:false};
+    syncAddTrack(current);
+    backend.emitEvent("arMixAction",{
+      action:"routingNativeBusDelete",requestId,channelId:id,
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+      rosterRevision:current.graph.rosterRevision
+    });
+    status("Deleting "+track.name+" · waiting for native PCM ACK/readback");
+    window.setTimeout(()=>{
+      if(pendingTrackDelete?.requestId!==requestId)return;
+      pendingTrackDelete=null;syncAddTrack();
+      nativeToast("Delete timed out · accepted graph preserved until readback");
+      controller?.subscribe();
+    },8000);
+    return true;
+  }
+  function requestNativeStripDelete(track){
+    if(track?.kind==="audio")return requestNativeTrackDelete(track);
+    if(track?.kind==="bus"||track?.kind==="fx")return requestNativeBusDelete(track);
+    nativeToast("MASTER cannot be deleted");
+    return false;
+  }
+  function canDeleteNativeStrip(track){
+    const current=controller?.state()?.current,id=nativeIdFor(track);
+    const ch=current?.graph?.channels?.find(row=>row.id===id);
+    return Boolean(current?.admitted&&!current.retained&&ch&&
+      ((ch.role==="INPUT"&&current.graph.capabilities.supportedOps.includes("DELETE_CHANNEL"))||
+       (["GROUP","FX_RETURN"].includes(ch.role)&&
+        current.graph.capabilities.supportedOps.includes("REMOVE_BUS"))));
+  }
   function finishNativeTrackDelete(next){
     const pending=pendingTrackDelete;
     if(!pending?.acked||!next?.admitted||next.retained||
@@ -915,7 +959,7 @@
     const available=track?canCreateNativeTrack(accepted):
       session?.authority==="CHANNEL_ID" && accepted?.admitted &&
       capabilities?.includes("CREATE_GROUP");
-    if(pendingBusCreate||!available)return false;
+    if(pendingBusCreate||pendingTrackDelete||!available)return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
     const epoch=hardware.device.epoch;
     const bootstrap=track && session.authority==="NONE";
@@ -2138,7 +2182,7 @@
     if(addBus){
       addBus.hidden=!nativeAdmitted ||
         !caps?.supportedOps?.includes("CREATE_GROUP");
-      addBus.disabled=!!pendingBusCreate;
+      addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
     }
     if (nativeAdmitted && !activeNativeSource && pendingNativeSources.size) {
       // A rejected/timeout source command may leave the graph revision
@@ -2505,6 +2549,9 @@
   const nativeHooks=Object.freeze({
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
+    requestDeleteStrip:requestNativeStripDelete,
+    canDeleteStrip:canDeleteNativeStrip,
+    renameStrip:openNativeIdentity,
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
