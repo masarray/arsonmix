@@ -41,6 +41,12 @@ class PlatformReleaseContractTest(unittest.TestCase):
         self.assertEqual(2, ui.count("'!tests/test_platform_portability.py'"))
         self.assertEqual(2, ui.count("'!tests/test_release_catalog.py'"))
 
+    def test_native_gui_compiles_before_regression_executables(self):
+        workflow = (ROOT / ".github/workflows/crossplatform-native-qualification.yml").read_text()
+        gui = workflow.index("cmake --build build --config Release --target ARMixConsole --parallel 2")
+        suites = workflow.index("cmake --build build --config Release --parallel 2")
+        self.assertLess(gui, suites)
+
     def test_free_mac_signing_and_real_linux_binary_gates(self):
         mac = (ROOT / "scripts/package_native_macos.sh").read_text()
         linux = (ROOT / "scripts/package_native_linux.sh").read_text()

@@ -100,7 +100,9 @@ jobs:
           else
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_ROOT="$GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON
           fi
-      - name: Compile actual host executable and registered unit tests
+      - name: Compile native ArSonMix GUI before expensive regression executables
+        run: cmake --build build --config Release --target ARMixConsole --parallel 2
+      - name: Compile registered regression tests after GUI target succeeds
         run: cmake --build build --config Release --parallel 2
       - name: Check native routing, FX, Show and device regressions
         run: ctest --test-dir build -C Release --output-on-failure
