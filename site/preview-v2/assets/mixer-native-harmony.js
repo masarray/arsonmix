@@ -21,11 +21,17 @@ root.innerHTML=`
    <button class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close"></button>
   </header>
   <div class="mx-harm-source">
-    <span class="mx-harm-label">KEY SOURCE</span>
-    <select id="mxHGuideSource" aria-label="Harmony key source">
-      <option value="0">Manual Key</option>
-    </select>
-    <span class="mx-harm-guide-status" id="mxHGuideStatus">MANUAL · KEY LOCKED</span>
+    <div class="mx-harm-mode" role="group" aria-label="Harmony key mode">
+     <button type="button" data-guide-mode="0" aria-label="Manual Key" aria-pressed="true">Manual</button>
+     <button type="button" data-guide-mode="1" aria-label="Music Key Detection" aria-pressed="false">Music</button>
+    </div>
+    <label class="mx-harm-source-picker" id="mxHSourcePicker" hidden>
+     <span class="mx-harm-sr">Music source</span>
+     <select id="mxHGuideSource" aria-label="Music source channel">
+      <option value="0">Choose track</option>
+     </select>
+    </label>
+    <span class="mx-harm-guide-status" id="mxHGuideStatus" role="status" aria-live="polite">MANUAL</span>
    </div>
   <main class="mx-harm-body">
    <aside class="mx-harm-left">
@@ -48,7 +54,17 @@ root.innerHTML=`
   </main>
   <footer class="mx-harm-foot"><span id="mxHStatus">PREVIEW · NO AUDIO</span><span id="mxHLatency"></span></footer>
  `;
-const el=id=>root.querySelector("#"+id);
+// Cached editor nodes and change-only text: no DOM traversal/paint churn on
+// native readback ticks while the user sings.
+const nodes=new Map();
+const el=id=>{
+ if(!nodes.has(id))nodes.set(id,root.querySelector("#"+id));
+ return nodes.get(id);
+};
+const showText=(node,value)=>{
+ const text=String(value);
+ if(node.textContent!==text)node.textContent=text;
+};
 el("mxHClose").innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg>';
 const keys=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 for(let i=0;i<12;++i){
@@ -81,6 +97,15 @@ const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
 let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
+let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
+const noteButtons=[...root.querySelectorAll("[data-key]")];
+const voiceButtons=[...root.querySelectorAll("[data-voices]")];
+const scaleButtons=[...root.querySelectorAll("[data-scale]")];
+const guideButtons=[...root.querySelectorAll("[data-guide-mode]")];
+const sliders=sliderDefs.map(([key])=>({
+ key,input:root.querySelector('[data-field="'+key+'"]'),
+ output:root.querySelector('[data-out="'+key+'"]')
+}));
 const context=()=>{
  const n=state();
  if(!current||!native()||!n?.admitted)return null;
@@ -90,7 +115,7 @@ const context=()=>{
  return {channelId:current.channelId,deviceEpoch:n.device.epoch,
          graphRevision:n.graph.revision,slot:current.slot,instanceId:current.instanceId};
 };
-const hint=t=>{el("mxHStatus").textContent=t;};
+const hint=t=>showText(el("mxHStatus"),t);
 const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
  Number.isInteger(s.scale)&&s.scale>=0&&s.scale<=1&&
  Number.isInteger(s.voices)&&s.voices>=2&&s.voices<=4&&
@@ -103,49 +128,67 @@ const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
 function refreshGuideSources(){
  const selector=el("mxHGuideSource");
  const accepted=state()?.graph?.channels||[];
- const offered=accepted.filter(ch=>ch.id!==current?.channelId &&
-   (ch.role==="INPUT"||ch.role==="GROUP"));
- const old=selector.value;
- selector.replaceChildren(new Option("Manual Key","0"));
- for(const ch of offered)selector.add(new Option((ch.name||ch.role)+" · "+ch.id,ch.id));
+ availableSources=accepted.filter(ch=>ch.id!==current?.channelId &&
+   typeof ch.id==="string" && (ch.role==="INPUT"||ch.role==="GROUP"));
+ const signature=availableSources.map(ch=>ch.id+":"+ch.name).join("|");
+ if(signature!==sourceSignature){
+   sourceSignature=signature;
+   selector.replaceChildren(new Option("Choose track","0"));
+   for(const ch of availableSources)
+     selector.add(new Option((ch.name||ch.role)+" · "+ch.id,ch.id));
+ }
  const wanted=(latest||pending?.settings||settings).guideChannelId;
- if([...selector.options].some(o=>o.value===wanted))selector.value=wanted;
- else if([...selector.options].some(o=>o.value===old))selector.value=old;
- else selector.value="0";
+ const selected=availableSources.some(ch=>ch.id===wanted)?wanted:"0";
+ if(selector.value!==selected)selector.value=selected;
 }
 function paint(){
- const v=latest||(pending?.settings)||settings;
+ const v=latest||pending?.settings||settings;
  const auto=v.guideMode===1;
- const found=auto&&detectedKey>=0&&detectedScale>=0;
- const displayKey=found?detectedKey:v.key;
- root.querySelectorAll("[data-key]").forEach(b=>b.classList.toggle("active",Number(b.dataset.key)===displayKey));
- root.querySelectorAll("[data-voices]").forEach(b=>b.classList.toggle("active",Number(b.dataset.voices)===v.voices));
- root.querySelectorAll("[data-scale]").forEach(b=>b.classList.toggle("active",Number(b.dataset.scale)===(found?detectedScale:v.scale)));
- el("mxHCorrection").checked=v.correction;
- el("mxHKeyReadout").textContent=keys[displayKey];
- el("mxHNote").textContent=observedNote<0?(found?"MUSIC":"KEY"):"NOTE "+keys[((observedNote%12)+12)%12];
+ // Native LCD never guesses from music confidence or pending UI edits.
+ // One atomic native readback is the actual effective DSP key+scale pair.
+ const nativeView=native();
+ const displayKey=nativeView?effectiveKey:v.key;
+ const displayScale=nativeView?effectiveScale:v.scale;
+ const reliable=displayKey>=0&&displayKey<12&&displayScale>=0&&displayScale<=1;
+ const inGraph=availableSources.some(ch=>ch.id===v.guideChannelId);
+ const detected=auto&&detectedKey>=0&&detectedScale>=0;
+ for(const b of guideButtons){
+   const active=Number(b.dataset.guideMode)===v.guideMode;
+   b.classList.toggle("active",active);
+   b.setAttribute("aria-pressed",String(active));
+ }
+ el("mxHSourcePicker").hidden=!auto;
  const source=el("mxHGuideSource");
- if([...source.options].some(o=>o.value===v.guideChannelId))
-   source.value=v.guideChannelId;
- else source.value="0";
- el("mxHGuideStatus").textContent=!auto?"MANUAL · KEY LOCKED":
-   found?"MUSIC "+keys[detectedKey]+" "+(detectedScale?"MIN":"MAJ")+
-     " · ESTIMATED":
-   "LISTENING · MANUAL FALLBACK";
- el("mxHPreset").value=preset;
- for(const [key,,] of sliderDefs){
-  const input=root.querySelector('[data-field="'+key+'"]');
-  const output=root.querySelector('[data-out="'+key+'"]');
+ const chosen=inGraph?v.guideChannelId:"0";
+ if(source.value!==chosen)source.value=chosen;
+ for(const b of noteButtons)b.classList.toggle("active",
+   reliable&&Number(b.dataset.key)===displayKey);
+ for(const b of voiceButtons)b.classList.toggle("active",
+   Number(b.dataset.voices)===v.voices);
+ for(const b of scaleButtons)b.classList.toggle("active",
+   reliable&&Number(b.dataset.scale)===displayScale);
+ el("mxHCorrection").checked=v.correction;
+ showText(el("mxHKeyReadout"),reliable?keys[displayKey]+(displayScale?"m":""):"—");
+ showText(el("mxHNote"),reliable?(displayScale?"MINOR":"MAJOR"):"KEY");
+ el("mxHKeyReadout").setAttribute("aria-label",
+   reliable?"Active Harmony key "+keys[displayKey]+(displayScale?" minor":" major"):
+   "Harmony key awaiting native readback");
+ const status=!auto?"MANUAL":!inGraph?"SAFE":detected?"AUTO":"LISTEN";
+ showText(el("mxHGuideStatus"),status);
+ el("mxHGuideStatus").dataset.state=status.toLowerCase();
+ if(el("mxHPreset").value!==preset)el("mxHPreset").value=preset;
+ for(const {key,input,output} of sliders){
   const value=key==="gainDb"?v[key]:v[key]*100;
-  input.value=String(value);
-  output.textContent=key==="gainDb"?v[key].toFixed(1)+"dB":Math.round(value)+"%";
+  const setting=String(value);
+  if(input.value!==setting)input.value=setting;
+  showText(output,key==="gainDb"?v[key].toFixed(1)+"dB":Math.round(value)+"%");
  }
  const n=state(),ch=n?.graph?.channels?.find(x=>x.id===current?.channelId);
- const bypassed=native()?ch?.inserts?.[current?.slot]?.bypassed:
+ const bypassed=nativeView?ch?.inserts?.[current?.slot]?.bypassed:
        current?.track?.slotBypass?.[current?.slot];
  el("mxHPower").classList.toggle("on",!bypassed);
  el("mxHPower").setAttribute("aria-pressed",String(!bypassed));
- el("mxHLatency").textContent=mode==="NATIVE"?readbackLatency+" samples":"DEMO";
+ showText(el("mxHLatency"),mode==="NATIVE"?readbackLatency+" samples":"DEMO");
 }
 function snapshot(){
  const c=context();if(!c)return;
@@ -175,17 +218,27 @@ function edit(patch){
  else hint("NATIVE HARMONY NOT ACCEPTED");
  paint();
 }
-root.querySelectorAll("[data-key]").forEach(b=>b.addEventListener("click",()=>
+noteButtons.forEach(b=>b.addEventListener("click",()=>
  edit({key:Number(b.dataset.key),guideMode:0,guideChannelId:"0"})));
-root.querySelectorAll("[data-voices]").forEach(b=>b.addEventListener("click",()=>edit({voices:Number(b.dataset.voices)})));
-root.querySelectorAll("[data-scale]").forEach(b=>b.addEventListener("click",()=>
+voiceButtons.forEach(b=>b.addEventListener("click",()=>edit({voices:Number(b.dataset.voices)})));
+scaleButtons.forEach(b=>b.addEventListener("click",()=>
  edit({scale:Number(b.dataset.scale),guideMode:0,guideChannelId:"0"})));
+guideButtons.forEach(b=>b.addEventListener("click",()=>{
+ const auto=Number(b.dataset.guideMode)===1;
+ if(!auto){edit({guideMode:0,guideChannelId:"0"});return;}
+ refreshGuideSources();
+ const preferred=(latest||pending?.settings||settings).guideChannelId;
+ const channel=availableSources.some(ch=>ch.id===preferred)?
+     preferred:availableSources[0]?.id;
+ if(!channel){hint("ADD MUSIC INPUT TRACK");return;}
+ edit({guideMode:1,guideChannelId:channel});
+}));
 el("mxHGuideSource").addEventListener("change",e=>{
  const source=e.target.value;
  edit({guideMode:source==="0"?0:1,guideChannelId:source});
 });
 el("mxHCorrection").addEventListener("change",e=>edit({correction:e.target.checked}));
-root.querySelectorAll("[data-field]").forEach(input=>input.addEventListener("input",()=>{
+sliders.forEach(({input})=>input.addEventListener("input",()=>{
  const k=input.dataset.field,x=Number(input.value);
  edit({[k]:k==="gainDb"?x:x/100});
 }));
@@ -232,6 +285,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
  open(track,slot){
   pending=null;latest=null;seq++;observedNote=-1;readbackLatency=0;
   detectedKey=-1;detectedScale=-1;detectedConfidence=0;lastGuideRead=0;
+  effectiveKey=-1;effectiveScale=-1;sourceSignature="";availableSources=[];
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
   current={track,slot,channelId:null,instanceId:null};
@@ -263,11 +317,14 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  const c=context();
  if(!c||snap.status!=="ACCEPTED"||snap.instanceId!==c.instanceId||
     snap.channelId!==c.channelId||snap.deviceEpoch!==c.deviceEpoch||
-    snap.graphRevision!==c.graphRevision||!valid(snap.settings)) {
+    snap.graphRevision!==c.graphRevision||!valid(snap.settings)||
+    !Number.isInteger(snap.effectiveKey)||snap.effectiveKey<0||snap.effectiveKey>11||
+    !Number.isInteger(snap.effectiveScale)||snap.effectiveScale<0||snap.effectiveScale>1) {
    hint("HARMONY SNAPSHOT INVALID OR STALE");return;
  }
  if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id))return;
  settings={...snap.settings};
+ effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale;
  detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
  detectedScale=Number.isInteger(snap.guideDetectedScale)?snap.guideDetectedScale:-1;
  detectedConfidence=Number.isFinite(snap.guideConfidence)?snap.guideConfidence:0;
@@ -285,7 +342,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
      hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;}
    if(pending)return;
    const now=Date.now();
-   if(settings.guideMode===1&&now-lastGuideRead>1100){
+   if(settings.guideMode===1&&now-lastGuideRead>750){
      lastGuideRead=now;snapshot();
    }
  });
