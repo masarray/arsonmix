@@ -2027,7 +2027,7 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",1);
+        reply->setProperty("schemaVersion",2);
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             const auto s=processor->acceptedSettings();
@@ -2040,8 +2040,15 @@ private:
             settings->setProperty("space",s.space);
             settings->setProperty("color",s.color);
             settings->setProperty("gainDb",s.gainDb);
+            settings->setProperty("guideMode",s.guideMode);
+            settings->setProperty("guideChannelId",
+                juce::String(std::to_string(s.guideChannelId)));
             reply->setProperty("settings",juce::var(settings.release()));
             reply->setProperty("observedNote",processor->observedNote());
+            reply->setProperty("guideDetectedKey",processor->observedMusicKey());
+            reply->setProperty("guideDetectedScale",processor->observedMusicScale());
+            reply->setProperty("guideConfidence",
+                static_cast<double>(processor->observedMusicConfidence()));
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
             reply->setProperty("latencySamples",processor->getLatencySamples());
             if(instanceId==lastNativeHarmonyInstance_ &&
@@ -2461,8 +2468,38 @@ private:
                 num(v.getProperty("gainDb",{}),settings.gainDb);
             settings.key=static_cast<int>(k);settings.scale=static_cast<int>(sc);
             settings.voices=static_cast<int>(voices);settings.correction=static_cast<bool>(tune);
+            // Exact ChannelId is never parsed from a JS number. Validate
+            // against the currently admitted native graph, not a UI track
+            // index or a remembered localStorage name.
+            const auto modeValue=v.getProperty("guideMode",{});
+            const auto sourceValue=v.getProperty("guideChannelId",{});
+            bool guideValid=modeValue.isInt()&&sourceValue.isString();
+            if(guideValid){
+                settings.guideMode=static_cast<int>(modeValue);
+                const auto sourceText=sourceValue.toString();
+                if(settings.guideMode==0)guideValid=sourceText=="0";
+                else if(settings.guideMode==1){
+                    std::uint64_t source=0;
+                    guideValid=armix::console::approvedNativeId(sourceValue,source)&&
+                        source!=ch && source<=static_cast<std::uint64_t>(
+                            std::numeric_limits<std::int64_t>::max());
+                    if(guideValid){
+                        const auto live=approvedNativeSnapshot();
+                        const auto channels=live.getProperty("graph",{}).getProperty("channels",{}); 
+                        auto* list=channels.getArray();
+                        bool found=false;
+                        if(list)for(const auto& item:*list){
+                            const auto role=item.getProperty("role","").toString();
+                            if(item.getProperty("id","").toString()==sourceText &&
+                               (role=="INPUT"||role=="GROUP")){found=true;break;}
+                        }
+                        guideValid=found;
+                    }
+                    if(guideValid)settings.guideChannelId=source;
+                }else guideValid=false;
+            }
             bool queued=false;
-            if(typed&&processor&&!pendingNativeHarmony_.owner&&!nativeShowBusy_&&
+            if(typed&&guideValid&&processor&&!pendingNativeHarmony_.owner&&!nativeShowBusy_&&
                !studioBackupBusy_&&!engine_.independentClockActive()&&
                armix::harmony::valid(settings)&&request.startsWith("harm-")) {
                 const auto digits=request.substring(5).toStdString();
