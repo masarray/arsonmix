@@ -4,6 +4,7 @@
 #include "VstBusLayout.h"
 #include "Vst3DescriptionCache.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
 #include <atomic>
@@ -74,6 +75,15 @@ public:
                              static_cast<int>(state.bytes.getSize())))
                             return "Saved native EQ state rejected; graph unchanged";
                         processor=std::move(eq);
+                    } else if(insert.catalogId==
+                       armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
+                        auto harmony=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
+                        harmony->prepareToPlay(sampleRate,frames);
+                        if(!harmony->isReady()||
+                           !harmony->restoreUnpublishedState(
+                             state.bytes.getData(),static_cast<int>(state.bytes.getSize())))
+                            return "Saved native Harmony state rejected; graph unchanged";
+                        processor=std::move(harmony);
                     } else {
                         if(!format||
                            !format->fileMightContainThisPluginType(insert.path))
@@ -91,7 +101,9 @@ public:
                         processor->prepareToPlay(sampleRate,frames);
                     }
                     if(insert.catalogId!=
-                       armix::builtin_fx::ChannelEqProcessor::catalogIdentity)
+                       armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
+                       insert.catalogId!=
+                       armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity)
                         processor->setStateInformation(state.bytes.getData(),
                              static_cast<int>(state.bytes.getSize()));
                     const int latency=processor->getLatencySamples();
