@@ -106,6 +106,7 @@ jobs:
           node --check web/approved-native-contract.js
           node --check site/preview-v2/assets/gui-perf-probe.js
           node --check site/preview-v2/assets/mixer-native-peq.js
+          node --check site/preview-v2/assets/mixer-native-compressor.js
           python tests/native_peq_assembly_test.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
