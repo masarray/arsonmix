@@ -106,8 +106,8 @@ test('independent release gate rejects old self-consistent web hash artifact',()
 test('native bridge authenticates UI readiness but never hallucinates PCM/VST3 LIVE',()=>{
   assert.match(cmake,/JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1/);
   // Windows still requires WebView2, but other native platforms must not.
-  assert.match(cmake,/NEEDS_WEBVIEW2 (?:TRUE|\\$\\{WIN32\\})/);
-  assert.match(cmake,/if\\(WIN32\\)[\\s\\S]*JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1/);
+  assert.ok(cmake.includes('NEEDS_WEBVIEW2 ${WIN32}') || cmake.includes('NEEDS_WEBVIEW2 TRUE'));
+  assert.ok(cmake.includes('if(WIN32)') && cmake.includes('JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1'));
   assert.match(nativeMain,/WebBrowserComponent::areOptionsSupported \(webViewOptions\(\)\)/);
   assert.match(nativeMain,/WEBVIEW2_GUI_READY_TIMEOUT/);
   assert.match(nativeMain,/withEventListener \("arMixGuiReady"/);
