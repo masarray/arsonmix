@@ -244,7 +244,9 @@ private:
         const int degree=nearestDegree(midi,settings_.key,settings_.scale);
         const int note=noteAt(degree,settings_.key,settings_.scale);
         if(note!=candidateNote_){candidateNote_=note;noteHold_=1;}
-        else ++noteHold_;
+        // Saturate the hold counter: a multi-hour sustained note must not
+        // overflow a signed int in the realtime thread.
+        else if(noteHold_<3)++noteHold_;
         if(noteHold_<2&&currentNote_>=0)return;
         currentNote_=note;voiced_=true;
         constexpr std::array<int,4> intervals{{2,4,-2,6}};
