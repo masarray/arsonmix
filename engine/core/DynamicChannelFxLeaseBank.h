@@ -405,7 +405,7 @@ public:
     void operator()(ChannelId id,float* left,float* right,int frames) const noexcept {
         if(!left||!right||left==right||frames<=0)return;
         const Row* row=find(id);
-        if(external_.id==id) {
+        if(external_.id.value && external_.id==id && external_.render) {
             external_.render(external_.context,left,right,frames);
         }else if(row){
             const bool rackOff=row->rackBypassed &&
