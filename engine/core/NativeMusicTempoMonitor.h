@@ -19,6 +19,10 @@ public:
     struct Result final {
         float bpm=0.f,confidence=0.f;
         std::uint64_t beatAnchorTick=0,observationTick=0;
+        // Both are authoritative native callback sample-frame positions.
+        // Onset is quantized by the 10ms summary window; not sample-perfect
+        // transient detection or DAW-wide delay compensation.
+        std::uint64_t beatAnchorFrame=0,observationFrame=0;
         bool locked=false;
     };
     void reset() noexcept {
@@ -26,7 +30,8 @@ public:
         lastHit_=lastScan_=lastTick_=0;
         stableCount_=0;candidateBpm_=0;result_={};
     }
-    void ingest(float energy,std::uint64_t tick) noexcept {
+    void ingest(float energy,std::uint64_t tick,
+                std::uint64_t endingFrame=0) noexcept {
         if(!std::isfinite(energy)||energy<0.f)energy=0.f;
         if(lastTick_ && (tick<=lastTick_ || tick-lastTick_>4))reset();
         lastTick_=tick;
@@ -36,12 +41,13 @@ public:
         // every 10ms. 80ms refractory rejects the same drum's ringing.
         if(tick>=lastHit_+8 && energy>.003f &&
            rise>std::max(.005f,floor_*.45f)) {
-            hits_[write_]={tick,std::min(1.f,rise)};
+            hits_[write_]={tick,std::min(1.f,rise),endingFrame};
             write_=(write_+1)%hits_.size();
             count_=std::min(count_+1,hits_.size());
             lastHit_=tick;
         }
         previous_=energy;
+        if(endingFrame)result_.observationFrame=endingFrame;
         if(result_.locked && tick>lastHit_+320) {
             result_.locked=false;result_.confidence=0.f;
             candidateBpm_=stableCount_=0;
@@ -53,7 +59,11 @@ public:
     }
     Result result() const noexcept {return result_;}
 private:
-    struct Hit {std::uint64_t tick=0;float strength=0.f;};
+    struct Hit {
+        std::uint64_t tick=0;
+        float strength=0.f;
+        std::uint64_t frame=0;
+    };
     std::array<Hit,128> hits_{};
     std::size_t count_=0,write_=0;
     std::uint64_t lastHit_=0,lastScan_=0,lastTick_=0;
@@ -107,14 +117,17 @@ private:
         // The strongest recent transient is a practical pulse anchor;
         // explicit "beat-phase certified" remains a separate field FAT.
         float strength=0.f;
-        std::uint64_t anchor=0;
+        std::uint64_t anchor=0,anchorFrame=0;
         const auto period=6000.f/result_.bpm;
         for(std::size_t i=0;i<count_;++i) {
             const auto& h=at(i);
             if(lastTick_-h.tick>period*1.8f)continue;
-            if(h.strength>=strength) {strength=h.strength;anchor=h.tick;}
+            if(h.strength>=strength) {
+                strength=h.strength;anchor=h.tick;anchorFrame=h.frame;
+            }
         }
         result_.beatAnchorTick=anchor;
+        result_.beatAnchorFrame=anchorFrame;
         result_.observationTick=lastTick_;
         result_.locked=true;
     }
@@ -161,6 +174,19 @@ public:
         revision_.store(revision,std::memory_order_relaxed);
         config_.fetch_add(1,std::memory_order_release);
     }
+    // AUDIO ONLY: the accepted publisher calls this ONCE per successfully
+    // admitted render block before traversing its ChannelId lanes. Revisions
+    // do not reset this clock; a physical epoch change always does.
+    std::uint64_t beginAudioBlock(std::uint64_t epoch,int frames) noexcept {
+        if(audioEpoch_!=epoch) {
+            audioEpoch_=epoch;
+            audioFrameClock_=0;
+        }
+        const auto start=audioFrameClock_;
+        if(frames>0)audioFrameClock_+=static_cast<std::uint64_t>(frames);
+        blockStartFrame_=start;
+        return start;
+    }
     // AUDIO: invoked once for every scheduled source channel by the existing
     // renderer's pre-FX dispatch. Only the selected ID costs per-sample work.
     void capture(ChannelId id,const float* left,const float* right,int frames,
@@ -181,7 +207,8 @@ public:
             const float r=std::isfinite(right[i])?std::abs(right[i]):0.f;
             energySum_+=.5f*(l+r);
             if(++bucketSamples_==window) {
-                const Frame f{generation,++audioTick_,energySum_/window};
+                const Frame f{generation,++audioTick_,energySum_/window,
+                    blockStartFrame_+static_cast<std::uint64_t>(i)+1};
                 if(!frames_.push(f))
                     dropped_.fetch_add(1,std::memory_order_relaxed);
                 bucketSamples_=0;energySum_=0.f;
@@ -196,7 +223,8 @@ public:
         }
         Frame f{};
         for(int i=0;i<512 && frames_.pop(f);++i)
-            if(f.generation==generation)estimator_.ingest(f.energy,f.tick);
+            if(f.generation==generation)
+                estimator_.ingest(f.energy,f.tick,f.frameEnd);
         State out{};
         out.source.value=source_.load(std::memory_order_relaxed);
         out.epoch=epoch_.load(std::memory_order_relaxed);
@@ -212,6 +240,7 @@ private:
         std::uint32_t generation=0;
         std::uint64_t tick=0;
         float energy=0.f;
+        std::uint64_t frameEnd=0;
     };
     armix::builtin_fx::FxSpsc<Frame,2048> frames_{};
     MusicTempoEstimator estimator_{}; // CONTROL owner only
@@ -221,6 +250,7 @@ private:
     std::uint32_t audioGeneration_=0,bucketSamples_=0;
     float energySum_=0.f;
     std::uint64_t audioTick_=0;
+    std::uint64_t audioEpoch_=0,audioFrameClock_=0,blockStartFrame_=0;
     std::uint32_t controlGeneration_=0; // CONTROL only
 };
 } // namespace armix::mixer
