@@ -40,6 +40,7 @@ public:
         guideAge_=0;guideObservedKey_.store(-1,std::memory_order_relaxed);
         guideObservedScale_.store(-1,std::memory_order_relaxed);
         guideConfidence_.store(0.f,std::memory_order_relaxed);
+        publishEffectiveKey();
         if(ready_) {sampleRate_=rate;setLatencySamples(dsp_.latencySamples());}
     }
     void releaseResources() override {ready_=false;}
@@ -60,6 +61,7 @@ public:
         dsp_.process(samples.getWritePointer(0),samples.getWritePointer(1),
                      samples.getNumSamples());
         observedNote_.store(dsp_.observedMidiNote(),std::memory_order_relaxed);
+        publishEffectiveKey();
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
@@ -80,6 +82,7 @@ public:
             guideSource_.store(nextSettings.guideMode==1?
                                nextSettings.guideChannelId:0,
                                std::memory_order_release);
+            publishEffectiveKey();
         }
         completion_.push({next.requestId,applied});
     }
@@ -104,6 +107,12 @@ public:
     }
     armix::harmony::Settings acceptedSettings() const noexcept {return accepted_;}
     int observedNote() const noexcept {return observedNote_.load(std::memory_order_relaxed);}
+    // One atomic pair (scale*12+key) published by the single audio owner.
+    // Main/JS must not read non-atomic DSP state or independently guess the
+    // effective manual/music fallback. Values are always 0..23 when ready.
+    int effectiveKeyCode() const noexcept {
+        return effectiveKeyCode_.load(std::memory_order_relaxed);
+    }
     std::uint64_t musicSourceChannel() const noexcept {
         return guideSource_.load(std::memory_order_acquire);
     }
@@ -119,6 +128,7 @@ public:
         guideObservedKey_.store(estimate.valid()?estimate.key:-1,std::memory_order_relaxed);
         guideObservedScale_.store(estimate.valid()?estimate.scale:-1,std::memory_order_relaxed);
         guideConfidence_.store(estimate.confidence,std::memory_order_relaxed);
+        publishEffectiveKey();
     }
     int observedMusicKey() const noexcept {
         return guideObservedKey_.load(std::memory_order_relaxed);
@@ -181,6 +191,7 @@ public:
             guideObservedKey_.store(-1,std::memory_order_relaxed);
             guideObservedScale_.store(-1,std::memory_order_relaxed);
             guideConfidence_.store(0.f,std::memory_order_relaxed);
+            publishEffectiveKey();
         }
         accepted_=incoming;return true;
     }
@@ -188,6 +199,10 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 private:
+    void publishEffectiveKey() noexcept {
+        effectiveKeyCode_.store(dsp_.effectiveScale()*12+dsp_.effectiveKey(),
+                                std::memory_order_relaxed);
+    }
     struct Edit{std::uint64_t requestId=0;armix::harmony::Engine::PreparedSettings prepared;};
     armix::harmony::Engine dsp_{};
     armix::harmony::MusicKeyDetector guide_{};
@@ -202,6 +217,7 @@ private:
     armix::harmony::Settings accepted_{},pendingSettings_{};
     std::uint64_t pendingId_=0; // control-only, no callback reads
     std::atomic<int> observedNote_{-1};
+    std::atomic<int> effectiveKeyCode_{0};
     double sampleRate_=0.;bool ready_=false,published_=false;
 };
 } // namespace armix::builtin_fx
