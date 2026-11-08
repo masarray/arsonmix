@@ -263,7 +263,7 @@ static void musicTempoChangesOnlyFutureTail() {
     run(music,0.f,0.f,2880,a,b);
     run(manual,0.f,0.f,2880,a,b);
     noHeap.store(true);
-    music.setMusicIntervalSamples(12000); // 1/4 at 240 BPM equivalent
+    music.setMusicIntervalSamples(16000); // quarter-note at 180 BPM
     const bool firedMusic=music.throwNow();
     const bool firedManual=manual.throwNow();
     // The selected backing bus can disappear immediately after the cue.
@@ -272,16 +272,16 @@ static void musicTempoChangesOnlyFutureTail() {
     noHeap.store(false);
     check(firedMusic&&firedManual);
     a=b=0.f;
-    run(music,0.f,0.f,8640,a,b); // 180 ms after cue
+    run(music,0.f,0.f,12960,a,b); // 270 ms after cue
     check(a==0.f&&b==0.f);
     a=b=0.f;
-    run(music,0.f,0.f,6720,a,b); // repeat around 190-310 ms
+    run(music,0.f,0.f,8160,a,b); // repeat around 290-410 ms
     check(a>.01f&&b>.01f);
     a=b=0.f;
-    run(manual,0.f,0.f,15360,a,b); // manual .5s must still be silent
+    run(manual,0.f,0.f,17760,a,b); // manual .5s must still be silent
     check(a==0.f&&b==0.f);
     a=b=0.f;
-    run(manual,0.f,0.f,11520,a,b);
+    run(manual,0.f,0.f,7680,a,b);
     check(a>.01f&&b>.01f);
 }
 int main() {
