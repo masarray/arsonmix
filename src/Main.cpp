@@ -392,6 +392,13 @@ private:
     } pendingNativeComp_;
     juce::String lastNativeCompRequest_,lastNativeCompInstance_;
     juce::String lastNativeCompEpoch_,lastNativeCompRevision_;
+    struct PendingNativeThrow {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeThrow_;
+    juce::String lastNativeThrowRequest_,lastNativeThrowInstance_;
+    juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -1073,9 +1080,12 @@ private:
                     armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
                 const bool builtInComp=catalogId==
                     armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity;
-                const auto* plugin=(builtInEq||builtInComp)?nullptr:catalog_.find(catalogId);
+                const bool builtInThrow=catalogId==
+                    armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
+                const auto* plugin=(builtInEq||builtInComp||builtInThrow)?
+                    nullptr:catalog_.find(catalogId);
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if((!builtInEq&&!builtInComp&&!plugin)||catalog_.busy()||nativeShowBusy_||
+                if((!builtInEq&&!builtInComp&&!builtInThrow&&!plugin)||catalog_.busy()||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(
@@ -1093,6 +1103,9 @@ private:
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         builtInComp?
                         engine_.installNativeBuiltInCompressor(
+                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                        builtInThrow?
+                        engine_.installNativeBuiltInVocalThrow(
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
@@ -2023,7 +2036,8 @@ private:
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
             if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
-               insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
+               insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
+               insert.catalogId==armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
                 if(insert.path.isNotEmpty() || insert.uid!=0)
                     return "Saved built-in FX identity was modified";
                 continue;
@@ -2265,7 +2279,8 @@ private:
             action == "routingNativeFxRackBypass" ||
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
-            action == "nativeEqSetBand" || action == "nativeCompSet"))
+            action == "nativeEqSetBand" || action == "nativeCompSet" ||
+            action == "nativeThrowSet" || action == "nativeThrowTrigger"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -4390,6 +4405,7 @@ private:
         ++timerTicks_;
         servicePendingNativeEq();
         servicePendingNativeComp();
+        servicePendingNativeThrow();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
         // the user sees the completed mixer only after the ready handshake.
