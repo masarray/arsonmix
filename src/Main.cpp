@@ -2594,6 +2594,92 @@ private:
             return;
         }
 
+        // ArSon Vocal Throw: all UI commands reference one exact installed
+        // ChannelId + device epoch + graph revision + insert instance.
+        if(action=="nativeThrowSnapshot"||action=="nativeThrowSet"||
+           action=="nativeThrowTrigger") {
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            const int throwSlot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t ch=0,ep=0,rev=0;
+            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
+                armix::console::approvedNativeId(rawEpoch,ep)&&
+                armix::console::approvedNativeId(rawRevision,rev)&&
+                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
+                throwSlot>=0&&throwSlot<LiveDryRoutingLab::maxFxPerLane&&
+                request.isNotEmpty()&&request.length()<=72;
+            auto owner=valid?engine_.leaseNativeVst3Editor(ep,rev,
+                armix::mixer::ChannelId{ch},static_cast<std::size_t>(throwSlot),
+                rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=owner?dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(
+                owner->processor.get()):nullptr;
+            if(action=="nativeThrowSnapshot") {
+                emitNativeThrowSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    rawInstance.toString(),processor);
+                return;
+            }
+            const auto wire=request.startsWith("throw-")?
+                request.substring(6).toStdString():std::string();
+            std::uint64_t numeric=0;
+            if(!wire.empty()&&wire.size()<=19&&
+               wire.find_first_not_of("0123456789")==std::string::npos) {
+                try{numeric=std::stoull(wire);}catch(...){numeric=0;}
+            }
+            const bool isSettings=action=="nativeThrowSet";
+            const auto values=args.getProperty("settings",{});
+            armix::builtin_fx::VocalThrowSettings settings{};
+            auto read=[&values](const char* key,float& out) {
+                const auto value=values.getProperty(key,{});
+                if(!value.isInt()&&!value.isDouble())return false;
+                const auto v=static_cast<double>(value);
+                if(!std::isfinite(v))return false;
+                out=static_cast<float>(v);
+                return std::isfinite(out);
+            };
+            auto integer=[&read](const char* key,int& out) {
+                float candidate=0.f;
+                if(!read(key,candidate)||candidate!=std::floor(candidate)||
+                   candidate<0.f||candidate>1000.f)return false;
+                out=static_cast<int>(candidate);return true;
+            };
+            const bool settingsValid=!isSettings || (values.isObject()&&
+                integer("mode",settings.mode)&&read("bpm",settings.bpm)&&
+                integer("division",settings.division)&&integer("repeats",settings.repeats)&&
+                read("captureMs",settings.captureMs)&&read("silenceMs",settings.silenceMs)&&
+                read("thresholdDb",settings.thresholdDb)&&read("wet",settings.wet)&&
+                read("decay",settings.decay)&&read("ducking",settings.ducking)&&
+                armix::builtin_fx::VocalThrow::validSettings(settings));
+            bool queued=false;
+            if(processor&&numeric>0&&settingsValid&&!pendingNativeThrow_.owner&&
+               !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()) {
+                queued=isSettings?processor->queueSettings(settings,numeric):
+                                  processor->queueTrigger(numeric);
+                if(queued) {
+                    pendingNativeThrow_.owner=owner;
+                    pendingNativeThrow_.request=request;
+                    pendingNativeThrow_.channelId=rawChannel.toString();
+                    pendingNativeThrow_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeThrow_.revision=rawRevision.toString();
+                    pendingNativeThrow_.instanceId=rawInstance.toString();
+                    pendingNativeThrow_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeThrow_.owner?"THROW_CONTROL_BUSY":
+                "INVALID_OR_STALE_NATIVE_THROW");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinThrowQueue",juce::var(ack.release()));
+            return;
+        }
+
         // Route the approved channel FX picker to the SAME prepared M4
         // graph as physical IN/OUT. ID resolves exclusively in the JUCE
         // catalog; browser paths/names are never trusted as plugin identity.
