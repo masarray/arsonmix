@@ -96,6 +96,71 @@ int main(){
     assert(migrated.acceptedSettings().guideMode==0);
     assert(migrated.acceptedSettings().guideChannelId==0);
     assert(migrated.musicSourceChannel()==0);
+    // Music-source retarget must not bleed the old channel's guide into the
+    // new source. After switching to Manual the other-channel PCM must never
+    // change the selected manual key. A third row owns no FX and no audible WIRE.
+    constexpr ChannelId musicB{6003};
+    std::array<DynamicChannelFxLeaseBank::Assignment,3> moreRows{};
+    moreRows[0].id=music;moreRows[0].format=ProcessingFormat::stereo;
+    moreRows[1].id=vocal;moreRows[1].format=ProcessingFormat::stereo;
+    moreRows[1].inserts.push_back(fx);
+    moreRows[2].id=musicB;moreRows[2].format=ProcessingFormat::stereo;
+    DynamicChannelFxLeaseBank bank2;
+    assert(DynamicChannelFxLeaseBank::prepare(1,2,moreRows,bank2)==
+           DynamicChannelFxLeaseBank::Fault::none);
+    auto changed=settings;changed.guideChannelId=musicB.value;
+    assert(live->queueAccepted(changed,502));
+    float targetL[128]{},targetR[128]{};
+    bank2(vocal,targetL,targetR,128);
+    assert(live->pollCompletion(applied)&&applied.applied&&applied.requestId==502);
+    assert(live->musicSourceChannel()==musicB.value);
+    assert(live->observedMusicKey()==-1); // invalidated before first new sample
+    for(int block=0;block<1450;++block){
+        float l[128]{},r[128]{};
+        for(int j=0;j<128;++j){
+            const double t=static_cast<double>(block*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.09*(
+                std::sin(6.28318530718*261.625565*t)+
+                std::sin(6.28318530718*329.627557*t)+
+                std::sin(6.28318530718*391.995436*t)));
+        }
+        bank2(music,l,r,128); // old source: intentionally ignored
+    }
+    assert(live->observedMusicKey()==-1);
+    for(int block=0;block<1450;++block){
+        float l[128]{},r[128]{};
+        for(int j=0;j<128;++j){
+            const double t=static_cast<double>(block*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.09*(
+                std::sin(6.28318530718*220.*t)+
+                std::sin(6.28318530718*261.625565*t)+
+                std::sin(6.28318530718*329.627557*t)));
+        }
+        bank2(musicB,l,r,128);
+    }
+    assert(live->observedMusicKey()==9&&live->observedMusicScale()==1);
+    auto locked=changed;locked.guideMode=0;locked.guideChannelId=0;
+    locked.key=7;locked.scale=0;
+    assert(live->queueAccepted(locked,503));
+    bank2(vocal,targetL,targetR,128);
+    assert(live->pollCompletion(applied)&&applied.applied&&applied.requestId==503);
+    assert(live->musicSourceChannel()==0);
+    assert(live->observedMusicKey()==-1);
+    for(int block=0;block<400;++block){
+        float l[128]{},r[128]{};
+        for(int j=0;j<128;++j){
+            const double t=static_cast<double>(block*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.09*(
+                std::sin(6.28318530718*220.*t)+
+                std::sin(6.28318530718*261.625565*t)+
+                std::sin(6.28318530718*329.627557*t)));
+        }
+        bank2(musicB,l,r,128);
+    }
+    assert(live->observedMusicKey()==-1);
+    assert(live->acceptedSettings().key==7&&
+           live->acceptedSettings().scale==0&&
+           live->acceptedSettings().guideMode==0);
     // NOTE: this test verifies real PCM to DSP, not real ASIO ear monitoring
     // or polyphonic pitch-transposition quality.
 }
