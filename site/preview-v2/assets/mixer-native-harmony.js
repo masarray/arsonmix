@@ -20,6 +20,13 @@ root.innerHTML=`
    <button class="mx-harm-power" id="mxHPower" aria-label="FX power" title="Toggle FX bypass">⏻</button>
    <button class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close"></button>
   </header>
+  <div class="mx-harm-source">
+    <span class="mx-harm-label">KEY SOURCE</span>
+    <select id="mxHGuideSource" aria-label="Harmony key source">
+      <option value="0">Manual Key</option>
+    </select>
+    <span class="mx-harm-guide-status" id="mxHGuideStatus">MANUAL · KEY LOCKED</span>
+   </div>
   <main class="mx-harm-body">
    <aside class="mx-harm-left">
     <span class="mx-harm-label">VOICES</span>
@@ -59,6 +66,7 @@ for(const [key,label,min,max,step] of sliderDefs){
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,correction:false,
+                   guideMode:0,guideChannelId:"0",
                    color:0.5,space:0.6,wet:0.45,gainDb:0});
 const presets={
  duo:{voices:2,color:.45,space:.35,wet:.31,correction:false,gainDb:0},
@@ -72,6 +80,7 @@ const state=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
+let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 const context=()=>{
  const n=state();
  if(!current||!native()||!n?.admitted)return null;
@@ -87,15 +96,42 @@ const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
  Number.isInteger(s.voices)&&s.voices>=2&&s.voices<=4&&
  typeof s.correction==="boolean"&&
  ["wet","space","color"].every(k=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=1)&&
- Number.isFinite(s.gainDb)&&s.gainDb>=-24&&s.gainDb<=12;
+ Number.isFinite(s.gainDb)&&s.gainDb>=-24&&s.gainDb<=12&&
+ Number.isInteger(s.guideMode)&&[0,1].includes(s.guideMode)&&
+ typeof s.guideChannelId==="string"&&/^(0|[1-9][0-9]{0,18})$/.test(s.guideChannelId)&&
+ (s.guideMode===0?s.guideChannelId==="0":s.guideChannelId!=="0");
+function refreshGuideSources(){
+ const selector=el("mxHGuideSource");
+ const accepted=state()?.graph?.channels||[];
+ const offered=accepted.filter(ch=>ch.id!==current?.channelId &&
+   (ch.role==="INPUT"||ch.role==="GROUP"));
+ const old=selector.value;
+ selector.replaceChildren(new Option("Manual Key","0"));
+ for(const ch of offered)selector.add(new Option((ch.name||ch.role)+" · "+ch.id,ch.id));
+ const wanted=(latest||pending?.settings||settings).guideChannelId;
+ if([...selector.options].some(o=>o.value===wanted))selector.value=wanted;
+ else if([...selector.options].some(o=>o.value===old))selector.value=old;
+ else selector.value="0";
+}
 function paint(){
  const v=latest||(pending?.settings)||settings;
- root.querySelectorAll("[data-key]").forEach(b=>b.classList.toggle("active",Number(b.dataset.key)===v.key));
+ const auto=v.guideMode===1;
+ const found=auto&&detectedKey>=0&&detectedScale>=0;
+ const displayKey=found?detectedKey:v.key;
+ root.querySelectorAll("[data-key]").forEach(b=>b.classList.toggle("active",Number(b.dataset.key)===displayKey));
  root.querySelectorAll("[data-voices]").forEach(b=>b.classList.toggle("active",Number(b.dataset.voices)===v.voices));
- root.querySelectorAll("[data-scale]").forEach(b=>b.classList.toggle("active",Number(b.dataset.scale)===v.scale));
+ root.querySelectorAll("[data-scale]").forEach(b=>b.classList.toggle("active",Number(b.dataset.scale)===(found?detectedScale:v.scale)));
  el("mxHCorrection").checked=v.correction;
- el("mxHKeyReadout").textContent=keys[v.key];
- el("mxHNote").textContent=observedNote<0?"KEY":"NOTE "+keys[((observedNote%12)+12)%12];
+ el("mxHKeyReadout").textContent=keys[displayKey];
+ el("mxHNote").textContent=observedNote<0?(found?"MUSIC":"KEY"):"NOTE "+keys[((observedNote%12)+12)%12];
+ const source=el("mxHGuideSource");
+ if([...source.options].some(o=>o.value===v.guideChannelId))
+   source.value=v.guideChannelId;
+ else source.value="0";
+ el("mxHGuideStatus").textContent=!auto?"MANUAL · KEY LOCKED":
+   found?"MUSIC "+keys[detectedKey]+" "+(detectedScale?"MIN":"MAJ")+
+     " · "+Math.round(detectedConfidence*100)+"%":
+   "LISTENING · MANUAL FALLBACK";
  el("mxHPreset").value=preset;
  for(const [key,,] of sliderDefs){
   const input=root.querySelector('[data-field="'+key+'"]');
@@ -139,9 +175,15 @@ function edit(patch){
  else hint("NATIVE HARMONY NOT ACCEPTED");
  paint();
 }
-root.querySelectorAll("[data-key]").forEach(b=>b.addEventListener("click",()=>edit({key:Number(b.dataset.key)})));
+root.querySelectorAll("[data-key]").forEach(b=>b.addEventListener("click",()=>
+ edit({key:Number(b.dataset.key),guideMode:0,guideChannelId:"0"})));
 root.querySelectorAll("[data-voices]").forEach(b=>b.addEventListener("click",()=>edit({voices:Number(b.dataset.voices)})));
-root.querySelectorAll("[data-scale]").forEach(b=>b.addEventListener("click",()=>edit({scale:Number(b.dataset.scale)})));
+root.querySelectorAll("[data-scale]").forEach(b=>b.addEventListener("click",()=>
+ edit({scale:Number(b.dataset.scale),guideMode:0,guideChannelId:"0"})));
+el("mxHGuideSource").addEventListener("change",e=>{
+ const source=e.target.value;
+ edit({guideMode:source==="0"?0:1,guideChannelId:source});
+});
 el("mxHCorrection").addEventListener("change",e=>edit({correction:e.target.checked}));
 root.querySelectorAll("[data-field]").forEach(input=>input.addEventListener("input",()=>{
  const k=input.dataset.field,x=Number(input.value);
@@ -189,6 +231,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;seq++;observedNote=-1;readbackLatency=0;
+  detectedKey=-1;detectedScale=-1;detectedConfidence=0;lastGuideRead=0;
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
   current={track,slot,channelId:null,instanceId:null};
@@ -200,7 +243,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
     hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
   }else{mode="UNAVAILABLE";settings=fresh();hint("NATIVE HARMONY SLOT NOT ACCEPTED");}
   el("mxHChannel").textContent=track.name+" · FX "+(slot+1);
-  root.hidden=false;paint();
+  root.hidden=false;refreshGuideSources();paint();
  },
  close(){root.hidden=true;}
 });
@@ -225,16 +268,26 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  }
  if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id))return;
  settings={...snap.settings};
+ detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
+ detectedScale=Number.isInteger(snap.guideDetectedScale)?snap.guideDetectedScale:-1;
+ detectedConfidence=Number.isFinite(snap.guideConfidence)?snap.guideConfidence:0;
  observedNote=Number.isInteger(snap.observedNote)?snap.observedNote:-1;
  readbackLatency=Number.isInteger(snap.latencySamples)?snap.latencySamples:0;
  pending=null;
  if(latest){const next=latest;latest=null;send(next);}
- else hint("NATIVE DSP ACCEPTED · "+c.instanceId);
- paint();
+ else hint(settings.guideMode===1?"NATIVE · LIVE MUSIC GUIDE":"NATIVE DSP ACCEPTED · "+c.instanceId);
+ refreshGuideSources();paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
- queueMicrotask(()=>{if(!context()){pending=null;latest=null;
-  hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();}});
+ queueMicrotask(()=>{
+   if(!context()){pending=null;latest=null;
+     hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;}
+   if(pending)return;
+   const now=Date.now();
+   if(settings.guideMode===1&&now-lastGuideRead>1100){
+     lastGuideRead=now;snapshot();
+   }
+ });
 });
 })();
