@@ -2738,6 +2738,8 @@
           if(current?.admitted&&insert?.id&&Number.isInteger(slot)&&slot>=0&&slot<8) {
             if(insert.catalogId==='armix.builtin.channel-eq.v1') {
               window.ArSonMixNativeEq?.open(t,slot);
+            } else if(insert.catalogId==='armix.builtin.arson-harmony.v1') {
+              window.ArSonMixNativeHarmony?.open(t,slot);
             } else backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
               instanceId:insert.id,deviceEpoch:current.device.epoch,revision:current.graph.revision});
           } else {discoverFxOnFirstPickerOpen();scope?.openFastPicker?.(t,slot,btn);}
@@ -2933,7 +2935,8 @@
     insertPlugin(id,target){
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
       const plugin=nativeCatalog.get(id) ||
-        (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:null);
+        (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:
+         id==='armix.builtin.arson-harmony.v1'?{id,name:'ArSon Harmony'}:null);
       const track=scope?.tracks?.find(x=>x.id===target?.channelId)||
         (scope?.master?.id===target?.channelId?scope.master:null);
       const channel=m4Index(track),slot=Number(target?.slot);
