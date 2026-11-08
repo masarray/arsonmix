@@ -120,9 +120,11 @@ def main():
                 assert editor.locator("#vtStatus").inner_text()=="ECHO TAIL"
                 # The next changed graph invalidates the old editor instance.
                 state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
-                state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+                state["graph"].update(revision="4",rosterRevision="4")
+                state["mixerSession"].update(routeRevision="4",rosterRevision="4",
+                    channels=copy.deepcopy(state["graph"]["channels"]))
                 emit(page,"arMixConsoleSnapshot",state)
-                assert editor.locator("#vtThrow").is_disabled()
+                page.wait_for_function("""()=>document.querySelector('#vtThrow')?.disabled""",timeout=2000)
             editor.locator("#vtClose").click()
             assert editor.is_hidden(),"standard close must dismiss editor"
             assert not errors,(width,errors)
