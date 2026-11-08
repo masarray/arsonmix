@@ -72,7 +72,7 @@ public:
         current_=target_=packet;
         kneeGuardLinear_=packet.kneeStartLinear;
         envelope_=0.f;
-        gainReductionDb_=0.f;
+        gainReductionDb_=0.f;inputPeak_=outputPeak_=0.f;
         rampRemaining_=0;
         ready_=true;
         return true;
@@ -83,7 +83,7 @@ public:
         current_=target_=edit;
         kneeGuardLinear_=edit.kneeStartLinear;
         envelope_=0.f;
-        gainReductionDb_=0.f;
+        gainReductionDb_=0.f;inputPeak_=outputPeak_=0.f;
         rampRemaining_=0;
         return true;
     }
@@ -108,12 +108,13 @@ public:
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right||frames==0)return;
         const bool mono=left==right;
-        float maxReduction=0.f;
+        float maxReduction=0.f,maxInput=0.f,maxOutput=0.f;
         for(std::size_t i=0;i<frames;++i) {
             advance();
             const float dryL=std::isfinite(left[i])?left[i]:0.f;
             const float dryR=mono?dryL:(std::isfinite(right[i])?right[i]:0.f);
             const float peak=std::max(std::abs(dryL),std::abs(dryR));
+            maxInput=std::max(maxInput,peak);
             // One shared peak detector guarantees stable stereo placement.
             const float coefficient=peak>envelope_?
                 current_.attackCoefficient:current_.releaseCoefficient;
@@ -139,12 +140,18 @@ public:
             const float outputGain=(1.f-s.mix)+s.mix*wetGain;
             left[i]=dryL*outputGain;
             if(!mono)right[i]=dryR*outputGain;
+            maxOutput=std::max(maxOutput,peak*std::abs(outputGain));
             maxReduction=std::max(maxReduction,reduction);
         }
-        // A block-peak GR reading, never a GUI read of live DSP histories.
+        // Pre/post PCM and GR measured in the original stereo DSP pass:
+        // no extra audio scan, lookahead, allocations or log conversion.
+        inputPeak_=maxInput;
+        outputPeak_=maxOutput;
         gainReductionDb_=maxReduction;
     }
     [[nodiscard]] float gainReductionDb() const noexcept {return gainReductionDb_;}
+    [[nodiscard]] float inputPeak() const noexcept {return inputPeak_;}
+    [[nodiscard]] float outputPeak() const noexcept {return outputPeak_;}
     [[nodiscard]] bool isReady() const noexcept {return ready_;}
     [[nodiscard]] double sampleRate() const noexcept {return sampleRate_;}
     [[nodiscard]] CompressorSettings settingsForOfflineTests() const noexcept {
@@ -154,6 +161,7 @@ private:
     PreparedEdit current_{},target_{};
     double sampleRate_=0.;
     float envelope_=0.f,gainReductionDb_=0.f,kneeGuardLinear_=1.f;
+    float inputPeak_=0.f,outputPeak_=0.f;
     int rampRemaining_=0,fadeSamples_=1;
     bool ready_=false;
     void advance() noexcept {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "ChannelCompressor.h"
+#include "CompressorMeterMath.h"
 #include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -45,15 +46,27 @@ public:
     void prepareToPlay(double sampleRate,int) override {
         ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(accepted_);
         if(ready_)rate_=sampleRate;
+        inputPeak_.store(0.f,std::memory_order_relaxed);
+        outputPeak_.store(0.f,std::memory_order_relaxed);
+        meter_.store(0.f,std::memory_order_relaxed);
+        // Keep the block serial monotonic across device restart; silence is
+        // inferred on the UI thread when the serial stops advancing.
     }
     void releaseResources() override {ready_=false;}
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals denormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
-        core_.processStereo(pcm.getWritePointer(0),pcm.getWritePointer(1),
-                            static_cast<std::size_t>(pcm.getNumSamples()));
+        const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
+        auto* const left=pcm.getWritePointer(0);
+        auto* const right=pcm.getWritePointer(1);
+        // Instrument in the existing stereo compressor pass; do not scan
+        // PCM twice or perform logarithmic meter conversion in the callback.
+        core_.processStereo(left,right,frames);
+        inputPeak_.store(core_.inputPeak(),std::memory_order_relaxed);
+        outputPeak_.store(core_.outputPeak(),std::memory_order_relaxed);
         meter_.store(core_.gainReductionDb(),std::memory_order_relaxed);
+        processedBlocks_.fetch_add(1,std::memory_order_release);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
@@ -78,6 +91,17 @@ public:
     [[nodiscard]] double acceptedSampleRate() const noexcept {return rate_;}
     [[nodiscard]] float observedGainReductionDb() const noexcept {
         return meter_.load(std::memory_order_relaxed);
+    }
+    // Snapshot/UI thread only. The callback publishes linear block peaks,
+    // avoiding extra per-sample transcendental math in the audio path.
+    [[nodiscard]] float observedInputPeakDbfs() const noexcept {
+        return peakToDbfs(inputPeak_.load(std::memory_order_relaxed));
+    }
+    [[nodiscard]] float observedOutputPeakDbfs() const noexcept {
+        return peakToDbfs(outputPeak_.load(std::memory_order_relaxed));
+    }
+    [[nodiscard]] std::uint64_t observedBlockSerial() const noexcept {
+        return processedBlocks_.load(std::memory_order_acquire);
     }
     [[nodiscard]] bool isReady() const noexcept {return ready_;}
     void sealForRealtime() noexcept override {published_=true;}
@@ -124,6 +148,8 @@ private:
     FxSpsc<Completion,32> completion_{};
     CompressorSettings accepted_{};
     std::atomic<float> meter_{0.f};
+    std::atomic<float> inputPeak_{0.f},outputPeak_{0.f};
+    std::atomic<std::uint64_t> processedBlocks_{0};
     double rate_=0.;
     bool ready_=false,published_=false;
 };

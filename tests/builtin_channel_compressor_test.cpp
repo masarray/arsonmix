@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/ChannelCompressor.h"
+#include "../engine/builtin_fx/CompressorMeterMath.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -34,6 +35,16 @@ void operator delete[](void* ptr,std::size_t) noexcept {std::free(ptr);}
 using armix::builtin_fx::ChannelCompressor;
 using armix::builtin_fx::CompressorSettings;
 
+static void testMeasuredPeakDbfs() {
+    using armix::builtin_fx::peakToDbfs;
+    check(peakToDbfs(0.f)==-72.f);
+    check(peakToDbfs(-3.f)==-72.f);
+    check(peakToDbfs(std::numeric_limits<float>::quiet_NaN())==-72.f);
+    check(std::abs(peakToDbfs(1.f))<.00001f);
+    check(std::abs(peakToDbfs(.5f)+6.0206f)<.001f);
+    check(peakToDbfs(2.f)>6.f);
+    check(peakToDbfs(100.f)==12.f);
+}
 static void testValidationAndLatency() {
     ChannelCompressor compressor;
     check(ChannelCompressor::addedLatencySamples==0);
@@ -67,6 +78,16 @@ static void testTransferAndStereo() {
     std::array<float,4800> l{},r{};
     l.fill(0.5f);r.fill(0.25f);
     c.processStereo(l.data(),r.data(),l.size());
+    check(std::abs(c.inputPeak()-0.5f)<1.e-6f);
+    // With zero lookahead, the attack transient can initially pass at its
+    // uncompressed peak. The meter must report ACTUAL PCM, not pretend that
+    // block-peak OUT is always smaller than block-peak IN.
+    check(c.outputPeak()>0.f&&c.outputPeak()<=c.inputPeak()+1.e-6f);
+    std::array<float,256> settledL{},settledR{};
+    settledL.fill(.5f);settledR.fill(.25f);
+    c.processStereo(settledL.data(),settledR.data(),settledL.size());
+    check(std::abs(c.inputPeak()-.5f)<1.e-6f);
+    check(c.outputPeak()<c.inputPeak()-.01f); // steady-state compression
     // Feed-forward gain at -6.02 dB, threshold -20, ratio 4 yields
     // about 10.48 dB gain reduction. Both channels share gain exactly.
     check(c.gainReductionDb()>9.5f&&c.gainReductionDb()<11.5f);
@@ -84,6 +105,8 @@ static void testDryAndBypass() {
     std::array<float,128> mono{};
     mono.fill(0.45f);
     c.processMono(mono.data(),mono.size());
+    check(std::abs(c.inputPeak()-.45f)<1.e-6f);
+    check(std::abs(c.outputPeak()-.45f)<1.e-6f);
     for(float value:mono)check(value==0.45f); // exact mix=0 dry
     s.mix=1;s.ratio=1;s.makeupDb=0;
     check(c.resetUnpublished(s));
@@ -141,6 +164,8 @@ static void testFirstSampleAndNoHeapInCallback() {
     prohibitHeap.store(false,std::memory_order_release);
     check(accepted);
     check(left[0]>.0f&&left[0]<=.75f); // first sample without delay
+    check(core.inputPeak()==.75f);
+    check(core.outputPeak()==left[0]);
     check(right[0]==-left[0]); // stereo link even under attack
     for(int frames:{1,3,17,32,63,128,257,511}) {
         left.fill(.3f);right.fill(-.15f);
@@ -151,6 +176,7 @@ static void testFirstSampleAndNoHeapInCallback() {
     }
 }
 int main(){
+    testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();
     testValidationAndLatency();testTransferAndStereo();
     testDryAndBypass();testSoftKneeAndRuntimeEdits();

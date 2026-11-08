@@ -32,7 +32,8 @@ const valid=v=>v&&Object.entries(defs).every(([key,r])=>
  Number.isFinite(v[key])&&v[key]>=r.min&&v[key]<=r.max);
 const demos=new Map();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,delayed=null,
- readId="",readSentAt=0,seq=1,lastSend=0,windowDrag=null,graphDrag=null,grDb=0;
+ readId="",readSentAt=0,seq=1,lastSend=0,windowDrag=null,graphDrag=null,grDb=0,
+ inputDbfs=-72,outputDbfs=-72,meterSerial=null,meterUpdatedAt=0;
 const panel=dom("section","mx-comp");panel.hidden=true;panel.id="mxNativeComp";
 panel.setAttribute("role","dialog");
 panel.setAttribute("aria-label","ArSonMix Compressor");
@@ -66,19 +67,39 @@ const left=dom("div","mx-comp-left");
 const visual=dom("div","mx-comp-visual");
 const right=dom("div","mx-comp-right");
 const plot=dom("div","mx-comp-plot");
+const display=dom("div","mx-comp-display");
 const svg=document.createElementNS(NS,"svg");
-svg.setAttribute("viewBox","0 0 252 202");
+svg.setAttribute("viewBox","0 0 290 256");
 svg.setAttribute("preserveAspectRatio","none");
 svg.setAttribute("aria-label","Input/output compression curve, drag to edit threshold");
 svg.setAttribute("role","img");
-const meter=dom("div","mx-comp-meter");
-const meterName=dom("span","mx-comp-meter-name","GR");
-const meterRail=dom("div","mx-comp-grrail");
-const meterFill=dom("div","mx-comp-grfill");
-meterRail.append(meterFill);
-const meterValue=dom("span","mx-comp-grvalue","0.0 dB");
-meter.append(meterName,meterValue,meterRail);
-plot.append(svg,meter);
+const meterBank=dom("div","mx-comp-meter-bank");
+meterBank.setAttribute("aria-label","Native compressor input, output and gain-reduction meters");
+function makeMeter(name,valueClass){
+ const lane=dom("div","mx-comp-meter-lane");
+ const caption=dom("span","mx-comp-meter-caption",name);
+ const rail=dom("div","mx-comp-meter-rail");
+ const fill=dom("div","mx-comp-meter-fill mx-comp-meter-"+name.toLowerCase());
+ const ticks=dom("div","mx-comp-meter-ticks");
+ // Audio meters rise from bottom; reduction uses zero at the top.
+ if(name==="GR"){
+  ticks.append(...["0","−6","−12","−18","−24","−30"].map(v=>dom("span","",v)));
+  rail.title="Gain reduction · 0 dB at top, 30 dB at bottom";
+  fill.setAttribute("role","meter");
+  fill.setAttribute("aria-label","Gain reduction, descending from zero");
+  fill.setAttribute("aria-valuemin","0");fill.setAttribute("aria-valuemax","30");
+ }else ticks.append(dom("span","","0"),dom("span","","−24"),dom("span","","−60"));
+ rail.append(fill,ticks);
+ const value=dom("output",valueClass,name==="GR"?"0.0 dB":"−∞");
+ lane.append(caption,rail,value);meterBank.append(lane);
+ return {lane,fill,value};
+}
+const inputMeter=makeMeter("IN","mx-comp-invalue");
+const outputMeter=makeMeter("OUT","mx-comp-outvalue");
+const grMeter=makeMeter("GR","mx-comp-grvalue");
+const meterValue=grMeter.value;
+display.append(svg,meterBank);
+plot.append(display);
 visual.append(plot);
 controls.append(left,visual,right);
 const inputs={};
@@ -129,7 +150,14 @@ Object.entries(defs).forEach(([key,r])=>{
  });
 });
 left.append(inputs.ratio.item,inputs.thresholdDb.item,inputs.kneeDb.item);
-right.append(inputs.makeupDb.item,inputs.mix.item,inputs.attackMs.item,inputs.releaseMs.item);
+const rightControls=dom("div","mx-comp-right-controls");
+rightControls.append(inputs.makeupDb.item,inputs.mix.item,
+ inputs.attackMs.item,inputs.releaseMs.item);
+const sidechainInfo=dom("div","mx-comp-detector");
+sidechainInfo.title="Internal stereo-linked detector. External sidechain is not implemented.";
+sidechainInfo.append(dom("span","mx-comp-detector-label","SIDECHAIN"),
+ dom("span","mx-comp-detector-value","INTERNAL · STEREO LINK"));
+right.append(rightControls,sidechainInfo);
 const presetFor=settings=>{
  const equal=target=>Object.keys(defs).every(k=>Math.abs(settings[k]-target[k])<1e-5);
  if(equal(defaults()))return "DEFAULT";
@@ -196,26 +224,28 @@ function paint(){
   c.dial.style.setProperty("--dial-sweep",(fraction*270).toFixed(2)+"deg");
   c.dial.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
  }
- // A restrained four-line -60...0 dBFS grid keeps the graph legible at
- // true plug-in size without duplicating large axis titles or labels.
- const x=db=>28+(clamp(db,-60,0)+60)/60*206;
- const y=db=>184-(clamp(db,-60,0)+60)/60*150;
+ // Reference-style LCD transfer curve in a larger, dedicated graph region.
+ // The meter bank sits on the right INSIDE the same black display.
+ const x=db=>30+(clamp(db,-60,0)+60)/60*244;
+ const y=db=>231-(clamp(db,-60,0)+60)/60*186;
  const path=Array.from({length:121},(_,i)=>{
   const v=-60+i*.5;
   return (i?"L":"M")+x(v).toFixed(1)+","+y(compressedOutput(v,draft)).toFixed(1);
  }).join(" ");
  const grid=[];
- for(const d of [-60,-40,-20,0]){
-  grid.push('<line x1="'+x(d)+'" y1="34" x2="'+x(d)+'" y2="184" class="mx-comp-grid"/>');
-  grid.push('<line x1="28" y1="'+y(d)+'" x2="234" y2="'+y(d)+'" class="mx-comp-grid"/>');
-  grid.push('<text x="'+x(d)+'" y="195" class="mx-comp-tick" text-anchor="middle">'+d+'</text>');
-  grid.push('<text x="23" y="'+(y(d)+3)+'" class="mx-comp-tick" text-anchor="end">'+d+'</text>');
+ for(const d of [-60,-48,-36,-24,-12,0]){
+  grid.push('<line x1="'+x(d)+'" y1="45" x2="'+x(d)+'" y2="231" class="mx-comp-grid"/>');
+  grid.push('<line x1="30" y1="'+y(d)+'" x2="274" y2="'+y(d)+'" class="mx-comp-grid"/>');
+  grid.push('<text x="'+x(d)+'" y="244" class="mx-comp-tick" text-anchor="middle">'+d+'</text>');
+  grid.push('<text x="25" y="'+(y(d)+3)+'" class="mx-comp-tick" text-anchor="end">'+d+'</text>');
  }
- svg.innerHTML='<rect width="252" height="202" fill="#0a1822"/>'+
-  grid.join("")+'<path d="M28 184 L234 34" class="mx-comp-unity"/>'+
+ svg.innerHTML='<rect width="290" height="256" fill="#081923"/>'+
+  grid.join("")+'<path d="M30 231 L274 45" class="mx-comp-unity"/>'+
   '<path d="'+path+'" class="mx-comp-curve"/>'+
   '<circle cx="'+x(draft.thresholdDb)+'" cy="'+y(compressedOutput(draft.thresholdDb,draft))+
-  '" r="5" class="mx-comp-handle"/>';
+  '" r="4.5" class="mx-comp-handle"/>'+
+  '<text x="34" y="23" class="mx-comp-axis-label">OUTPUT dB</text>'+
+  '<text x="272" y="23" text-anchor="end" class="mx-comp-axis-label">INPUT →</text>';
  syncPower();
 }
 function syncPower(){
@@ -235,9 +265,29 @@ function syncPower(){
   fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":
   "FX STATE UNAVAILABLE";
  power.setAttribute("aria-label",power.title);
- const shownReduction=fxState==="on"?grDb:0;
- meterFill.style.height=(100*clamp(shownReduction,0,30)/30)+"%";
- meterValue.textContent=shownReduction.toFixed(1)+" dB";
+ paintMeters();
+}
+function paintMeters(){
+ const fxActive=power.dataset.fxState==="on";
+ // PCM serial changes only after actual blocks pass the Compressor. When a
+ // device stops or a graph node is bypassed, hide stale levels after 520 ms.
+ const moving=meterSerial!==null&&meterSerial>0&&
+  (Date.now()-meterUpdatedAt)<520;
+ const active=fxActive&&moving;
+ const input=active?inputDbfs:-72;
+ const output=active?outputDbfs:-72;
+ const reduction=active?grDb:0;
+ const meterFill=(meter,db)=>{
+  meter.fill.style.height=(100*clamp((db+60)/60,0,1)).toFixed(1)+"%";
+  meter.value.textContent=db<=-71.9?"−∞":db.toFixed(1);
+  meter.lane.dataset.clip=db>=0?"true":"false";
+ };
+ meterFill(inputMeter,input);meterFill(outputMeter,output);
+ // Unlike upward IN/OUT levels, GR is attenuation from 0 dB at the top.
+ grMeter.fill.style.height=(100*clamp(reduction/30,0,1)).toFixed(1)+"%";
+ grMeter.fill.setAttribute("aria-valuenow",reduction.toFixed(1));
+ meterValue.textContent=reduction.toFixed(1)+" dB";
+ meterBank.dataset.live=active?"true":"false";
 }
 function saveDemo(){if(current)demos.set(current.track.id+":"+current.slot,{...draft});}
 function requestSnapshot(force=false){
@@ -280,8 +330,8 @@ svg.addEventListener("pointerdown",e=>{
 svg.addEventListener("pointermove",e=>{
  if(graphDrag!==e.pointerId)return;
  const r=svg.getBoundingClientRect();
- const x=(e.clientX-r.left)*252/r.width;
- draft={...draft,thresholdDb:Math.round(clamp(-60+(x-28)*60/206,-60,0)*2)/2};
+ const x=(e.clientX-r.left)*290/r.width;
+ draft={...draft,thresholdDb:Math.round(clamp(-60+(x-30)*60/244,-60,0)*2)/2};
  paint();if(native()&&Date.now()-lastSend>=130)send();
  e.preventDefault();
 });
@@ -328,6 +378,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
  open(track,slot){
   current={track,slot,instanceId:null};
   pending=null;delayed=null;grDb=0;readId="";readSentAt=0;
+  inputDbfs=outputDbfs=-72;meterSerial=null;meterUpdatedAt=0;
   const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=n?.graph?.channels?.find(c=>c.id===id)?.inserts?.[slot];
   if(native()&&n?.admitted&&insert?.catalogId===ID&&insert.id){
@@ -369,8 +420,17 @@ backend()?.addEventListener?.("arMixBuiltinCompSnapshot",reply=>{
     reply.addedLatencySamples!==0){
   hint("NATIVE COMPRESSOR READBACK STALE");return;
  }
- if(Number.isFinite(reply.gainReductionDb))
-  grDb=clamp(reply.gainReductionDb,0,30);
+ const serial=Number(reply.meterBlockSerial);
+ if(Number.isSafeInteger(serial)&&serial>=0&&serial!==meterSerial){
+  meterSerial=serial;meterUpdatedAt=Date.now();
+  if(Number.isFinite(reply.inputPeakDbfs))
+   inputDbfs=clamp(reply.inputPeakDbfs,-72,12);
+  if(Number.isFinite(reply.outputPeakDbfs))
+   outputDbfs=clamp(reply.outputPeakDbfs,-72,12);
+  if(Number.isFinite(reply.gainReductionDb))
+   grDb=clamp(reply.gainReductionDb,0,30);
+ }
+ paintMeters();
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.id){paint();return;}
   pending=null;
@@ -388,12 +448,15 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(panel.hidden||!native()||!current?.instanceId)return;
  queueMicrotask(()=>{
   if(!context()){pending=null;delayed=null;readId="";readSentAt=0;
+   meterSerial=null;meterUpdatedAt=0;inputDbfs=outputDbfs=-72;grDb=0;
    hint("DEVICE OR GRAPH CHANGED · REOPEN FX");}
   syncPower(); // accepted graph readback, no curve SVG rebuild
  });
 });
 // 6 Hz metering only while visible. Never poll while closed, never touch PCM.
 window.setInterval(()=>{
- if(!panel.hidden&&native()&&context())requestSnapshot();
+ if(panel.hidden)return;
+ paintMeters();
+ if(native()&&context())requestSnapshot();
 },160);
 })();
