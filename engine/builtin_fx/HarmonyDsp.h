@@ -10,7 +10,7 @@
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
 namespace armix::harmony {
 struct Settings {
-    int key=0, scale=0, voices=3; // C=0..B=11; 0=major, 1=natural minor; 2..4 voices
+    int key=0, scale=0, voices=3; // C=0..B=11; 0=major, 1=natural minor; 2..5 voices
     bool correction=false;
     // Manual is always the trusted fallback. Music follows another accepted
     // ChannelId only after stable chroma confidence (never a PCM route).
@@ -22,7 +22,7 @@ inline bool valid(const Settings& s) noexcept {
     return s.key>=0&&s.key<12&&s.scale>=0&&s.scale<=1&&
       s.guideMode>=0&&s.guideMode<=1&&
       (s.guideMode==0?s.guideChannelId==0:s.guideChannelId>0)&&
-      s.voices>=2&&s.voices<=4&&std::isfinite(s.wet)&&s.wet>=0&&s.wet<=1&&
+      s.voices>=2&&s.voices<=5&&std::isfinite(s.wet)&&s.wet>=0&&s.wet<=1&&
       std::isfinite(s.space)&&s.space>=0&&s.space<=1&&
       std::isfinite(s.color)&&s.color>=0&&s.color<=1&&
       std::isfinite(s.gainDb)&&s.gainDb>=-24&&s.gainDb<=12;
@@ -60,7 +60,7 @@ inline float smoothGrainBlend(float phase) noexcept {
 }
 class Engine final {
 public:
-    static constexpr int maxVoices=4;
+    static constexpr int maxVoices=5;
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
@@ -202,7 +202,7 @@ public:
             voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*0.002f;
             float lead=0.f;
             if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
-                lead=shifted(4,color_);
+                lead=shifted(maxVoices,color_);
             const float leadBlend=correctionMix_*voicedGain_;
             float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
             float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
@@ -323,14 +323,16 @@ private:
         // do not generate provisional harmony on a single noisy transient.
         if(noteHold_<2)return;
         currentNote_=note;voiced_=true;
-        constexpr std::array<int,4> intervals{{2,4,-2,6}};
+        // Fifth harmony voice is a lower sixth in key; keep each voice
+        // independent and normalize its level against the total count.
+        constexpr std::array<int,maxVoices> intervals{{2,4,-2,6,-4}};
         for(int v=0;v<maxVoices;++v){
             const int target=noteAt(degree+intervals[static_cast<std::size_t>(v)],
                                     activeKey,activeScale);
             targetRatio_[static_cast<std::size_t>(v)]=std::clamp(
                 std::pow(2.f,(target-midi)/12.f),0.50f,2.0f);
         }
-        targetRatio_[4]=std::clamp(std::pow(2.f,(note-midi)/12.f),0.75f,1.34f);
+        targetRatio_[maxVoices]=std::clamp(std::pow(2.f,(note-midi)/12.f),0.75f,1.34f);
     }
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
@@ -347,6 +349,6 @@ private:
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
-    std::array<float,5> filtered_{},phase_{},ratio_{},targetRatio_{};
+    std::array<float,maxVoices+1> filtered_{},phase_{},ratio_{},targetRatio_{};
 };
 } // namespace armix::harmony
