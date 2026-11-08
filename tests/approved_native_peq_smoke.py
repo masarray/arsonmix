@@ -144,7 +144,14 @@ def main():
             row.locator('[data-action="openPlugin"]').click()
             editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
-            assert page.locator(".mx-peq-global").get_attribute("data-fx-state")=="on"
+            # The plugin editor may appear one frame before its first native
+            # DSP snapshot. Prove ON from accepted readback, not a DOM race.
+            values=bands_initial()
+            handled=set()
+            emit_snapshot(page,state,values)
+            page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
+                ?.dataset.fxState==='on'&&getComputedStyle(
+                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
             assert page.locator(".mx-peq-global").get_attribute("aria-pressed")=="true"
             power=page.locator(".mx-peq-global")
             assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
@@ -172,9 +179,6 @@ def main():
                 ?.dataset.fxState==='on'&&getComputedStyle(
                 document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
             assert not power.is_disabled()
-            values=bands_initial()
-            handled=set()
-            emit_snapshot(page,state,values)
             assert page.locator(".mx-peq-knob").count()==3
             assert page.locator(".mx-peq-band").count()==8
             assert page.locator(".mx-peq-graph svg").count()==1
