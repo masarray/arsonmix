@@ -67,6 +67,8 @@ static void testTransferAndStereo() {
     std::array<float,4800> l{},r{};
     l.fill(0.5f);r.fill(0.25f);
     c.processStereo(l.data(),r.data(),l.size());
+    check(std::abs(c.inputPeak()-0.5f)<1.e-6f);
+    check(c.outputPeak()>0.f&&c.outputPeak()<c.inputPeak());
     // Feed-forward gain at -6.02 dB, threshold -20, ratio 4 yields
     // about 10.48 dB gain reduction. Both channels share gain exactly.
     check(c.gainReductionDb()>9.5f&&c.gainReductionDb()<11.5f);
@@ -84,6 +86,8 @@ static void testDryAndBypass() {
     std::array<float,128> mono{};
     mono.fill(0.45f);
     c.processMono(mono.data(),mono.size());
+    check(std::abs(c.inputPeak()-.45f)<1.e-6f);
+    check(std::abs(c.outputPeak()-.45f)<1.e-6f);
     for(float value:mono)check(value==0.45f); // exact mix=0 dry
     s.mix=1;s.ratio=1;s.makeupDb=0;
     check(c.resetUnpublished(s));
@@ -141,6 +145,8 @@ static void testFirstSampleAndNoHeapInCallback() {
     prohibitHeap.store(false,std::memory_order_release);
     check(accepted);
     check(left[0]>.0f&&left[0]<=.75f); // first sample without delay
+    check(core.inputPeak()==.75f);
+    check(core.outputPeak()==left[0]);
     check(right[0]==-left[0]); // stereo link even under attack
     for(int frames:{1,3,17,32,63,128,257,511}) {
         left.fill(.3f);right.fill(-.15f);

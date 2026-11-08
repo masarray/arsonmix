@@ -60,14 +60,11 @@ public:
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* const left=pcm.getWritePointer(0);
         auto* const right=pcm.getWritePointer(1);
-        // Actual pre/post native insert PCM, not channel VU or a guessed
-        // transfer curve. Two linear block-peak scans, no allocations or dB
-        // log on the realtime thread.
-        const float input=stereoBlockPeak(left,right,frames);
+        // Instrument in the existing stereo compressor pass; do not scan
+        // PCM twice or perform logarithmic meter conversion in the callback.
         core_.processStereo(left,right,frames);
-        const float output=stereoBlockPeak(left,right,frames);
-        inputPeak_.store(input,std::memory_order_relaxed);
-        outputPeak_.store(output,std::memory_order_relaxed);
+        inputPeak_.store(core_.inputPeak(),std::memory_order_relaxed);
+        outputPeak_.store(core_.outputPeak(),std::memory_order_relaxed);
         meter_.store(core_.gainReductionDb(),std::memory_order_relaxed);
         processedBlocks_.fetch_add(1,std::memory_order_release);
     }
