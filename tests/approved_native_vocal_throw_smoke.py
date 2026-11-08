@@ -32,6 +32,8 @@ def reply_snapshot(page,state,settings,applied=None,count=0,tail=False,music=Non
         "musicLocked":bool(music),
         "musicBpm":music["bpm"] if music else 0,
         "musicConfidence":music["confidence"] if music else 0,
+        "musicGridAvailable":music["grid"] if music else False,
+        "musicPhaseConfidence":music["confidence"] if music and music["grid"] else 0,
         "settings":copy.deepcopy(settings)}
     if applied:data["appliedRequestId"]=applied
     emit(page,"arMixBuiltinThrowSnapshot",data)
@@ -138,6 +140,14 @@ def main():
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
             assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
+            assert "BPM only" in editor.locator("#vtMusicStatus").inner_text()
+            # Confidence-approved grid is a separate native fact; the GUI
+            # must never fabricate it from BPM alone.
+            reply_snapshot(page,state,
+                {**DEFAULTS,"mode":0} if width==1366 else DEFAULTS,
+                count=1 if width==1366 else 0,tail=width==1366,
+                music={"source":RECEIVER,"bpm":120,"confidence":.85,"grid":True})
+            assert "BEAT GRID" in editor.locator("#vtMusicStatus").inner_text()
             if width==1366:
                 # The next changed graph invalidates the old editor instance.
                 state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
