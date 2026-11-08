@@ -7,7 +7,7 @@ const ev=(body='/arsonmix-release '+TAG+' '+SHA)=>({
   repository:{full_name:'masarray/arsonmix'},issue:{number:450},
   comment:{id:100,body,author_association:'OWNER',user:{login:'masarray'}}
 });
-function fakeApi({refSha=SHA,comments=[],runs=[],released=false}={}) {
+function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,notesSize=200,nativeVersion='0.5.0'}={}) {
   const calls=[];
   const api=async(path,method='GET',data)=>{
     calls.push({path,method,data});
@@ -18,6 +18,14 @@ function fakeApi({refSha=SHA,comments=[],runs=[],released=false}={}) {
       if(released)return {tag_name:TAG};
       throw Error('GITHUB_API_404');
     }
+    if(path==='/contents/docs/releases/'+TAG+'.md?ref='+SHA) {
+      if(!notesReady)throw Error('GITHUB_API_404');
+      return {type:'file',size:notesSize};
+    }
+    if(path==='/contents/CMakeLists.txt?ref='+SHA)
+      return {type:'file',encoding:'base64',content:Buffer.from(
+        'project(ARMixConsole VERSION '+nativeVersion+' LANGUAGES C CXX)'
+      ).toString('base64')};
     if(path.includes('/runs?event=workflow_dispatch'))return {workflow_runs:runs};
     if(path.endsWith('/dispatches'))return null;
     throw Error('unexpected API path '+path);
@@ -74,6 +82,18 @@ test('Already running/successful does not run twice; failed same SHA requires so
   const x=fakeApi({runs:[{status:'completed',conclusion:'failure',head_sha:SHA}]});
   await assert.rejects(releaseDispatch({event:ev(),api:x.api}),/RELEASE_FAILED_SAME_SHA/);
   assert.equal(x.calls.some(c=>c.method==='POST'),false);
+});
+
+test('Missing release notes or wrong native version fails before paid Windows dispatch',async()=>{
+  for(const [candidate,expected] of [
+    [{notesReady:false},/RELEASE_NOTES_MISSING_PRECHECK/],
+    [{notesSize:0},/RELEASE_NOTES_EMPTY_PRECHECK/],
+    [{nativeVersion:'0.4.9'},/RELEASE_CMAKE_VERSION_PRECHECK/],
+  ]) {
+    const gate=fakeApi(candidate);
+    await assert.rejects(releaseDispatch({event:ev(),api:gate.api}),expected);
+    assert.equal(gate.calls.filter(c=>c.method==='POST').length,0);
+  }
 });
 
 test('Cross-platform command validates OS, source branch and immutable SHA',async()=>{
