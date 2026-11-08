@@ -83,21 +83,7 @@ OPERATOR_CSS = """
 .command-bar #densitySelect,.command-bar [for="densitySelect"],.command-bar #mode{display:none!important}
 #channelIdentity .identity-head{cursor:move;touch-action:none}
 #channelIdentity .identity-head button{cursor:pointer}
-/* Every console floating editor uses one square Material close key. */
-:is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose){
-  box-sizing:border-box!important;flex:0 0 29px!important;width:29px!important;
-  height:29px!important;min-width:29px!important;min-height:29px!important;
-  max-width:29px!important;max-height:29px!important;padding:0!important;
-  display:inline-flex!important;align-items:center!important;justify-content:center!important;
-  background:#253944!important;border:1px solid #57717f!important;border-radius:3px!important;
-  color:#d7e6eb!important;line-height:1!important;cursor:pointer!important;
-}
-:is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose):hover{
- background:#355161!important;color:#fff!important}
-:is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose):active{
- background:#962f38!important;border-color:#e6505d!important;color:#fff!important}
-:is(#pluginClose,#identityClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose) svg{
- width:20px;height:20px;display:block;pointer-events:none}
+/* Modal Close chrome is solely owned by mixer-contextual-buttons.css. */
 @media(max-width:1050px){
  .window-title .file-name{max-width:25vw}
  .window-title .right{max-width:57%;font-size:9px}
@@ -309,11 +295,7 @@ function openChannelIdentity(t,anchor){""",
     if count != 1:
         raise ValueError("Operator UX obsolete minimized CSS drift")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
-    # Same plugin-browser CSS owner: pressed state outranks the legacy
-    # .plugin-close transparent background after Stage C compilation.
-    plugin += ("\n#pluginBrowser #pluginClose:active{"
-               "background:#962f38!important;background-color:#962f38!important;"
-               "border-color:#e6505d!important;color:#fff!important}\n")
+    # V9: unified modal close material is compiled from its sole CSS owner.
     plugin_path.write_text(plugin,encoding="utf-8")
     html = once(html, "restorePluginPreferences();init();", SPLIT_BOOTSTRAP+"\nrestorePluginPreferences();init();", "startup geometry bootstrap")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:

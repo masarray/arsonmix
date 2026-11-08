@@ -68,6 +68,7 @@ def main():
             assert page.locator('#mxNativeComp').is_hidden(),"editor opened before DSP insert"
             assert strip.locator('.fxslot-row[data-insert-id="compressor-native-1"]').count()==0
             state["graph"].update(revision="3",rosterRevision="3")
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
             state["graph"]["channels"][0]["inserts"].append({
                 "id":INSTANCE,"catalogId":ID,"name":"Compressor","bypassed":False})
             state["mixerSession"].update(routeRevision="3",rosterRevision="3",
@@ -104,6 +105,45 @@ def main():
                 assert 545<=editor.bounding_box()["width"]<=560
                 assert editor.bounding_box()["height"]<=265,editor.bounding_box()
 
+            # All floating-window close controls share one computed 24px
+            # chrome, independent of their historical SVG/text glyph markup.
+            for selector in ("#identityClose","#pluginClose","#fastClose",
+                             "#wireConfigClose","#wireWsClose","#routeChoiceClose",
+                             ".mx-peq-close",".mx-comp-close"):
+                visual=page.locator(selector).evaluate("""el=>{
+                  const s=getComputedStyle(el),icon=getComputedStyle(el,'::after');
+                  return {width:s.width,height:s.height,rounded:s.borderRadius,
+                    glyph:s.fontSize,icon:icon.width,iconContent:icon.content};
+                }""")
+                assert visual["width"]=="24px" and visual["height"]=="24px", (selector,visual)
+                assert visual["glyph"]=="0px" and visual["icon"]=="12px",(selector,visual)
+            power=page.locator(".mx-comp-power")
+            assert power.get_attribute("data-fx-state")=="on"
+            assert power.get_attribute("aria-pressed")=="true"
+            assert not power.is_disabled()
+            assert "rgb(118, 240, 185)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            # Scalar bypass readbacks must not rebuild the structural FX rack.
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
+                ?.dataset.fxState==='off'""")
+            assert power.get_attribute("aria-pressed")=="false"
+            assert "rgb(233, 155, 159)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
+            state["graph"]["channels"][0]["fxRackBypassed"]=True
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
+                ?.dataset.fxState==='rack-off'""")
+            assert power.is_disabled()
+            assert "rgb(240, 196, 131)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>document.querySelector('.mx-comp-power')
+                ?.dataset.fxState==='on'""")
+            assert not power.is_disabled()
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             assert page.locator(".mx-comp-preset-select").is_visible()
             assert page.locator(".mx-comp-status").evaluate("""el=>{\n                const s=getComputedStyle(el);return s.clipPath.includes("inset")\n                && el.getBoundingClientRect().width<=1;}"""),"technical status polluted panel"
@@ -208,6 +248,18 @@ def main():
                 assert page.evaluate("""()=>window.__actions.filter(x=>
                     x.action==='nativeCompSet').length""")==before_count
 
+            if width==1366:
+                # Press Close (not hover): global button must visibly turn red
+                # while pointer is held and close the dialog on release.
+                closer=page.locator(".mx-comp-close")
+                box=closer.bounding_box();assert box
+                x,y=box["x"]+box["width"]/2,box["y"]+box["height"]/2
+                page.mouse.move(x,y);page.mouse.down()
+                red=closer.evaluate("(el)=>getComputedStyle(el).backgroundImage")
+                assert "rgb(204, 71, 83)" in red,red
+                page.screenshot(path="arsonmix-close-pressed-red.png")
+                page.mouse.up()
+                assert editor.is_hidden(), "native Compressor Close did not dismiss"
             assert not errors,(width,errors)
             page.close()
         browser.close()

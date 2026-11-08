@@ -171,6 +171,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Render real approved GUI, insert compressor and verify DSP ACK/readback
         run: python tests/approved_native_compressor_smoke.py
+      - name: Verify EQ editor power/Close and actual SVG gestures
+        run: python tests/approved_native_peq_smoke.py
       - name: Upload exact assembled native editor screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

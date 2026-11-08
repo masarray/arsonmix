@@ -124,6 +124,7 @@ def main():
             assert page.locator("#mxNativePeq").is_hidden(),\
                 "editor auto-opened on INSERT"
             state["graph"].update(revision="3",rosterRevision="3")
+            state["graph"]["channels"][0]["fxRackBypassed"]=False
             state["graph"]["channels"][0]["inserts"].append({
                 "id":INSTANCE,"catalogId":EQ_ID,"name":"Parametric EQ","bypassed":False})
             state["mixerSession"].update(routeRevision="3",rosterRevision="3",
@@ -139,6 +140,8 @@ def main():
             row.locator('[data-action="openPlugin"]').click()
             editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
+            assert page.locator(".mx-peq-global").get_attribute("data-fx-state")=="on"
+            assert page.locator(".mx-peq-global").get_attribute("aria-pressed")=="true"
             values=bands_initial()
             handled=set()
             emit_snapshot(page,state,values)
