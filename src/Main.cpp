@@ -385,6 +385,13 @@ private:
     } pendingNativeEq_;
     juce::String lastNativeEqRequest_,lastNativeEqInstance_;
     juce::String lastNativeEqEpoch_,lastNativeEqRevision_;
+    struct PendingNativeComp {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeComp_;
+    juce::String lastNativeCompRequest_,lastNativeCompInstance_;
+    juce::String lastNativeCompEpoch_,lastNativeCompRevision_;
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -1064,9 +1071,11 @@ private:
                 const auto catalogId=args.getProperty("catalogId","").toString();
                 const bool builtInEq=catalogId==
                     armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
-                const auto* plugin=builtInEq?nullptr:catalog_.find(catalogId);
+                const bool builtInComp=catalogId==
+                    armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity;
+                const auto* plugin=(builtInEq||builtInComp)?nullptr:catalog_.find(catalogId);
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if((!builtInEq&&!plugin)||catalog_.busy()||nativeShowBusy_||
+                if((!builtInEq&&!builtInComp&&!plugin)||catalog_.busy()||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(
@@ -1081,6 +1090,9 @@ private:
                 } else {
                     const auto result=builtInEq?
                         engine_.installNativeBuiltInEq(
+                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                        builtInComp?
+                        engine_.installNativeBuiltInCompressor(
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
@@ -1917,6 +1929,81 @@ private:
     }
 
 
+
+    // Native compressor readback is CONTROL-thread-only for accepted settings.
+    // The gain-reduction meter is one atomic block summary from AUDIO.
+    void emitNativeCompSnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::ChannelCompressorProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            auto p=std::make_unique<juce::DynamicObject>();
+            const auto s=processor->acceptedSettings();
+            p->setProperty("thresholdDb",s.thresholdDb);
+            p->setProperty("ratio",s.ratio);
+            p->setProperty("attackMs",s.attackMs);
+            p->setProperty("releaseMs",s.releaseMs);
+            p->setProperty("kneeDb",s.kneeDb);
+            p->setProperty("makeupDb",s.makeupDb);
+            p->setProperty("mix",s.mix);
+            reply->setProperty("settings",juce::var(p.release()));
+            reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            reply->setProperty("gainReductionDb",processor->observedGainReductionDb());
+            reply->setProperty("addedLatencySamples",processor->getLatencySamples());
+            if(instanceId==lastNativeCompInstance_&&
+               epoch==lastNativeCompEpoch_&&revision==lastNativeCompRevision_)
+                reply->setProperty("appliedRequestId",lastNativeCompRequest_);
+        }else reply->setProperty("error","NATIVE_COMP_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinCompSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeComp() {
+        if(!pendingNativeComp_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::ChannelCompressorProcessor*>(
+            pendingNativeComp_.owner->processor.get());
+        if(!processor){pendingNativeComp_={};return;}
+        armix::builtin_fx::ChannelCompressorProcessor::Completion completion{};
+        if(!processor->pollCompletion(completion) &&
+           juce::Time::getMillisecondCounter()-pendingNativeComp_.started<3000u)
+            return;
+        const auto request=pendingNativeComp_.request;
+        bool applied=completion.applied&&completion.requestId!=0 &&
+            request=="comp-"+juce::String(std::to_string(completion.requestId));
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied && pendingNativeComp_.deviceEpoch==
+                    device.getProperty("epoch","").toString() &&
+                    pendingNativeComp_.revision==
+                    graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeCompRequest_=request;
+            lastNativeCompInstance_=pendingNativeComp_.instanceId;
+            lastNativeCompEpoch_=pendingNativeComp_.deviceEpoch;
+            lastNativeCompRevision_=pendingNativeComp_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeComp_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeComp_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeComp_.revision);
+        ack->setProperty("instanceId",pendingNativeComp_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("errorCode",applied?"NONE":"DSP_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeComp_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinCompAck",juce::var(ack.release()));
+    }
+
     // Never confuse durable logical ChannelId state with a physical device
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
@@ -1935,9 +2022,10 @@ private:
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
-            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
+               insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
                 if(insert.path.isNotEmpty() || insert.uid!=0)
-                    return "Saved built-in EQ identity was modified";
+                    return "Saved built-in FX identity was modified";
                 continue;
             }
             const auto* registered=catalog_.find(insert.catalogId);
@@ -2177,7 +2265,7 @@ private:
             action == "routingNativeFxRackBypass" ||
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
-            action == "nativeEqSetBand"))
+            action == "nativeEqSetBand" || action == "nativeCompSet"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -2325,6 +2413,85 @@ private:
                 pendingNativeEq_.owner?"EQ_CONTROL_BUSY":"INVALID_OR_STALE_NATIVE_EQ");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixBuiltinEqQueue",juce::var(ack.release()));
+            return;
+        }
+
+
+        // Each accepted compressor edit stays on this ChannelId's ordered
+        // native insert. No GUI mutation until callback ACK + graph readback.
+        if(action=="nativeCompSnapshot"||action=="nativeCompSet") {
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            const int compSlot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t ch=0,ep=0,rev=0;
+            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
+                armix::console::approvedNativeId(rawEpoch,ep)&&
+                armix::console::approvedNativeId(rawRevision,rev)&&
+                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
+                compSlot>=0&&compSlot<LiveDryRoutingLab::maxFxPerLane &&
+                request.isNotEmpty()&&request.length()<=72;
+            auto owner=valid?engine_.leaseNativeVst3Editor(ep,rev,
+                armix::mixer::ChannelId{ch},static_cast<std::size_t>(compSlot),
+                rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=owner?dynamic_cast<armix::builtin_fx::ChannelCompressorProcessor*>(
+                owner->processor.get()):nullptr;
+            if(action=="nativeCompSnapshot") {
+                emitNativeCompSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    rawInstance.toString(),processor);
+                return;
+            }
+            const auto values=args.getProperty("settings",{});
+            armix::builtin_fx::CompressorSettings settings{};
+            auto number=[&values](const char* key,float& out) {
+                const auto v=values.getProperty(key,{});
+                if(!v.isDouble()&&!v.isInt())return false;
+                const double n=static_cast<double>(v);
+                if(!std::isfinite(n))return false;
+                out=static_cast<float>(n);
+                return std::isfinite(out);
+            };
+            const auto wire=request.startsWith("comp-")?
+                request.substring(5).toStdString():std::string();
+            std::uint64_t numeric=0;
+            if(!wire.empty()&&wire.size()<=19&&
+               wire.find_first_not_of("0123456789")==std::string::npos) {
+                try{numeric=std::stoull(wire);}catch(...){numeric=0;}
+            }
+            const bool parameters=values.isObject()&&
+                number("thresholdDb",settings.thresholdDb)&&
+                number("ratio",settings.ratio)&&
+                number("attackMs",settings.attackMs)&&
+                number("releaseMs",settings.releaseMs)&&
+                number("kneeDb",settings.kneeDb)&&
+                number("makeupDb",settings.makeupDb)&&
+                number("mix",settings.mix);
+            bool queued=false;
+            if(processor&&numeric>0&&parameters&&
+               !pendingNativeComp_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
+               !engine_.independentClockActive()) {
+                queued=processor->queueSettings(settings,numeric);
+                if(queued) {
+                    pendingNativeComp_.owner=owner;
+                    pendingNativeComp_.request=request;
+                    pendingNativeComp_.channelId=rawChannel.toString();
+                    pendingNativeComp_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeComp_.revision=rawRevision.toString();
+                    pendingNativeComp_.instanceId=rawInstance.toString();
+                    pendingNativeComp_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeComp_.owner?"COMP_CONTROL_BUSY":"INVALID_OR_STALE_COMP");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinCompQueue",juce::var(ack.release()));
             return;
         }
 
@@ -4222,6 +4389,7 @@ private:
         }
         ++timerTicks_;
         servicePendingNativeEq();
+        servicePendingNativeComp();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
         // the user sees the completed mixer only after the ready handshake.
