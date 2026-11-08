@@ -166,7 +166,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "Release $tag already exists; never replace immutable published assets"
           }
-          & gh release create $tag 'release/*' --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
+          $assets = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name | ForEach-Object FullName)
+          if ($assets.Count -ne 6) { throw "Unexpected release asset count: $($assets.Count)" }
+          & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
