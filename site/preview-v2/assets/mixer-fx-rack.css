@@ -605,3 +605,12 @@
  .mx-vthrow .vt-hero-knob{height:176px;width:176px}
  .mx-vthrow .vt-instrument{grid-template-columns:minmax(0,1fr) 190px minmax(0,1fr)}
 }
+
+/* FX power material follows accepted native graph readback, not CSS toggles.
+   Bypassed hardware remains editable but LEDs and controls recede visually. */
+.mx-vthrow[data-fx-state="off"] :is(.vt-hero-knob,.vt-encoder-face,.vt-throw-button),
+.mx-vthrow[data-fx-state="rack-off"] :is(.vt-hero-knob,.vt-encoder-face,.vt-throw-button){
+ opacity:.55;filter:grayscale(.55) brightness(.77)}
+.mx-vthrow[data-fx-state="off"] .vt-console-eyebrow,
+.mx-vthrow[data-fx-state="rack-off"] .vt-console-eyebrow{color:#96939e}
+@media(max-width:600px){.mx-vthrow .vt-center{margin-bottom:8px}}
