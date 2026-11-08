@@ -128,7 +128,7 @@
       if (validAsset(item, key)) { available(card, item); ++count; }
       else unavailable(card);
     }
-js    const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
+    const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
     summary.textContent = count
       ? "Ready to download · " + availablePlatforms.map(k => labels[k]).join(" · ")
       : "Downloads are being prepared. Explore the mixer in your browser.";
