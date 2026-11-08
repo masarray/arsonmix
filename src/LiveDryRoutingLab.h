@@ -1679,6 +1679,81 @@ public:
         }
     }
 
+    // One atomic prepared PCM publication for Delete Audio Track. The
+    // accepted native source patch, inbound/outbound wires, and VST3 owner
+    // references are removed together only after a successful graph commit.
+    NativeBusResult removeNativeInputChannel(std::uint64_t expectedEpoch,
+            std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
+            armix::mixer::ChannelId id,bool outputsDisarmed=false,
+            const std::function<void()>& beforePublish={}) {
+        using namespace armix::mixer;
+        NativeBusResult reply{};
+        reply.pcmRevision=nativeAccepted_.pcmRevision;
+        reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        if(!outputsDisarmed){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
+        if(!channelIdPhysicalPcmActive()||!ready()||
+           expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
+           !nativeAccepted_.fxOwners||
+           expectedPcmRevision!=nativeAccepted_.pcmRevision||
+           expectedRosterRevision!=nativeAccepted_.graph.roster.revision()){
+            reply.error="STALE_NATIVE_TRACK_DELETE";return reply;
+        }
+        const auto* target=nativeAccepted_.graph.roster.find(id);
+        if(!target||target->role!=ChannelRole::input){
+            reply.error="NATIVE_INPUT_ID_UNAVAILABLE";return reply;
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            const auto edited=roster.removeInputAndDisconnect(expectedRosterRevision,id);
+            if(!edited.ok()){
+                reply.error="NATIVE_TRACK_DELETE_EDIT_REJECTED";return reply;
+            }
+            auto request=nativeAccepted_.graph.request;
+            auto& inputs=request.sources;
+            inputs.erase(std::remove_if(inputs.begin(),inputs.end(),
+                [id](const auto& source){return source.id==id;}),
+                inputs.end());
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseWithoutChannel(
+                   expectedEpoch,expectedPcmRevision+1,
+                   *nativeAccepted_.fxOwners,id,bank)!=
+                   DynamicChannelFxLeaseBank::Fault::none){
+                reply.error="NATIVE_TRACK_FX_RELEASE_REJECTED";return reply;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=std::static_pointer_cast<void>(owner);
+            fx.context=owner.get();
+            fx.render=+[](void* ctx,ChannelId channel,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(channel,l,r,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId channel) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(channel);
+            };
+            fx.deviceEpoch=expectedEpoch;
+            fx.graphRevision=expectedPcmRevision+1;
+            if(beforePublish)beforePublish();
+            const auto published=nativePublisher_.commit(
+                roster,request,expectedPcmRevision,
+                expectedEpoch,epoch(),true,std::move(fx));
+            if(!published.ok()){
+                reply.error="NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
+            }
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.graph.request=std::move(request);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=published.revision;
+            nativeStructureLive_=true;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            reply.accepted=true;reply.error="";
+            reply.pcmRevision=published.revision;
+            reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+            return reply;
+        }catch(...){
+            reply.error="NATIVE_TRACK_DELETE_PREPARE_FAILED";return reply;
+        }
+    }
+
     // Wire a verified physical capture pin to a dynamically CREATED input.
     // M4-owned CH1–10 keep the original device/VST continuity contract.
     // Prepared topology + lease revision is published once; never patch an
@@ -2200,7 +2275,7 @@ public:
         if(!retained)
           for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
-                             "NATIVE_CREATE_CHANNEL","NATIVE_PATCH_CHANNEL",
+                             "NATIVE_CREATE_CHANNEL","NATIVE_DELETE_CHANNEL","NATIVE_PATCH_CHANNEL",
                              "NATIVE_SET_PRIMARY_OUT",
                              "NATIVE_APPLY_WIRE_TRANSACTION",
                              "NATIVE_SET_WIRE_GAIN",

@@ -1808,6 +1808,15 @@ public:
                     epoch,pcmRevision,rosterRevision,name,format,true,beforePublish);
             });
     }
+    LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(
+            std::uint64_t epoch,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+        return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
+            "NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                return dryRoutingLab_.removeNativeInputChannel(
+                    epoch,pcmRevision,rosterRevision,id,true,beforePublish);
+            });
+    }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,
