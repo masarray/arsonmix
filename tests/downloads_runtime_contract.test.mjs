@@ -19,6 +19,8 @@ const release = (n, files=['Windows-x64-Setup.exe']) => {
   return { tag_name:t, target_commitish:'f'.repeat(40), prerelease:true,
     published_at:'2026-11-08T02:00:00Z', draft:false,
     assets:[sidecar(t,'SHA256SUMS.txt'),sidecar(t,'INSTALLER_PROVENANCE.json'),
+      ...(files.includes('Linux-x86_64.tar.gz')?[sidecar(t,'LINUX_PROVENANCE.json')]:[]),
+      ...(files.includes('macOS-universal.dmg')?[sidecar(t,'MACOS_PROVENANCE.json')]:[]),
       ...files.map(f=>asset(t,f))] };
 };
 function local(n, suffix='Windows-x64-Setup.exe') {
@@ -41,6 +43,7 @@ function card(platform) {
 }
 async function render(staticCatalog, releases, failLive=false, failStatic=false) {
   const cards=['windows','linux','macos'].map(card),summary=node(),hero=node(),calls=[];
+  hero.href='#download';
   const fetch=async url=>{
     calls.push(url);
     if(url==='./release-catalog.json'){
@@ -65,7 +68,7 @@ test('new public ZIP replaces stale Pages installer without a redeploy',async()=
   assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.zip$/);
   assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download installer ZIP');
   assert.match(result.summary.textContent,/Ready to download/);
-  assert.match(result.hero.href,/alpha\.5-Windows-x64-Setup\.zip$/);
+  assert.equal(result.hero.href,'#download');
   assert.equal(result.calls.length,2);
 });
 test('GitHub API outage retains an existing verified installer',async()=>{
@@ -89,8 +92,22 @@ test('no fake Linux/macOS link from a Windows-only release',async()=>{
   assert.equal(result.cards[1].nodes['[data-release-link]'].attr['aria-disabled'],'true');
 });
 
-test('hero never offers an invented installer when no Windows release is published', async()=>{
+test('hero never auto-downloads a platform even when Windows is detected', async()=>{
   const result=await render(null,[],false,true);
   assert.equal(result.hero.href,'#download');
   assert.match(result.summary.textContent,/Downloads are being prepared/);
+});
+
+test('three actual OS artifacts expose separate download buttons without automatic platform redirect',async()=>{
+  const result=await render(local(5,'Windows-x64-Setup.zip'),[
+    release(5,['Windows-x64-Setup.zip','Linux-x86_64.tar.gz','macOS-universal.dmg'])
+  ]);
+  const links=result.cards.map(c=>c.nodes['[data-release-link]'].href);
+  assert.match(links[0],/Windows-x64-Setup\.zip$/);
+  assert.match(links[1],/Linux-x86_64\.tar\.gz$/);
+  assert.match(links[2],/macOS-universal\.dmg$/);
+  assert.notEqual(links[0],links[1]);
+  assert.notEqual(links[1],links[2]);
+  assert.equal(result.hero.href,'#download');
+  assert.match(result.summary.textContent,/Windows · Linux · macOS/);
 });
