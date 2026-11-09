@@ -62,9 +62,16 @@ public:
         consumeRealtimeEdits();
         // Missing/deleted/disconnected source must not leave a stale accepted
         // tonal estimate running indefinitely. Manual Key is the fallback.
+        const int guideTimeout=static_cast<int>(sampleRate_*2.);
+        const bool guideWasFresh=guideAge_<=guideTimeout;
         guideAge_=std::min(guideAge_+samples.getNumSamples(),
                             static_cast<int>(sampleRate_*3.));
-        if(guideAge_>static_cast<int>(sampleRate_*2.)){
+        if(guideWasFresh && guideAge_>guideTimeout){
+            // Disconnected ChannelId must reacquire from fresh music, rather
+            // than instantly reinstating the pre-dropout detector estimate
+            // when source PCM resumes. Reset exactly once at the timeout;
+            // repeated missing-source callbacks do no detector housekeeping.
+            guide_.reset();
             dsp_.setGuideKey(-1,-1);
             guideObservedKey_.store(-1,std::memory_order_relaxed);
             guideObservedScale_.store(-1,std::memory_order_relaxed);
