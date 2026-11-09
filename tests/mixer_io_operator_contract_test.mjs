@@ -211,7 +211,7 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  assert.match(open,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
  assert.doesNotMatch(open,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
- assert.match(native,/finishManualAudioSetup\(\)/);
+ assert.match(native,/finishManualAudioSetup\(bindingMode!=MixerBindingMode::verifiedMainPinApply\)/);
  assert.match(native,/RESTORED_MUTED/);
  assert.match(native,/RECOVERY_REQUIRED/);
  assert.match(native,/arMixAudioDeviceApplyAck/);
@@ -230,9 +230,12 @@ test('explicit device Apply restores the authored mixer after driver readback an
  assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(bindingMode\)\)/);
  assert.match(apply,/if\(!previousMixerBound && engine_\.directRouteAuthorized\(\)/);
  assert.match(apply,/finishAudioSetupAndRecoverMixer\(\);/);
- assert.match(apply,/explicitMain\?MixerBindingMode::verifiedMainPinApply/);
+ assert.match(apply,/explicitPairStillIdentified\?MixerBindingMode::verifiedMainPinApply/);
  assert.match(apply,/pinOutput.getArray\(\)->size\(\)!=2/);
  assert.match(main,/restoreSavedMixerSession\(false,bindingMode\)/);
+ assert.match(apply,/if\(refreshedAsio4All\) \{[\s\S]*?openSelectedAudioDevice\(typeName,candidate,true\)/);
+ assert.match(main,/epoch==asioRecoveryEpoch_/);
+ assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
 });
 
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{

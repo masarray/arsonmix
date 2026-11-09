@@ -1275,7 +1275,9 @@ private:
         o->setProperty("open",device!=nullptr&&device->isOpen());
         o->setProperty("authorized",engine_.directRouteAuthorized());
         o->setProperty("outputMuted",engine_.isOutputMuted());
-        o->setProperty("deviceGeneration",engine_.status().getProperty("deviceGeneration",0));
+        const auto live=engine_.status();
+        o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
+        o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
         juce::Array<juce::var> inputNames,outputNames,inputPins,outputPins,rates,buffers;
         if(device!=nullptr&&device->isOpen()) {
             const auto inputs=device->getInputChannelNames();
@@ -1336,9 +1338,9 @@ private:
     bool audioDeviceApplyActive_=false; // JUCE message thread, including nested driver dispatch
 
     juce::String openSelectedAudioDevice(const juce::String& backend,
-        const juce::AudioDeviceManager::AudioDeviceSetup& setup) {
+        const juce::AudioDeviceManager::AudioDeviceSetup& setup,bool resetDefaults=false) {
         auto& manager=engine_.devices();
-        if(manager.getCurrentAudioDeviceType()==backend) {
+        if(manager.getCurrentAudioDeviceType()==backend && !resetDefaults) {
             if(auto* device=manager.getCurrentAudioDevice();device && !device->isOpen())
                 manager.closeAudioDevice();
             return manager.setAudioDeviceSetup(setup,true);
@@ -1572,12 +1574,40 @@ private:
         juce::AudioDeviceManager::AudioDeviceSetup actual;
         manager.getAudioDeviceSetup(actual);
         auto* opened=manager.getCurrentAudioDevice();
-        const bool changedAsioPinLayout=error.isEmpty()&&recovery.verifyAsioPinIdentity&&
+        bool changedAsioPinLayout=error.isEmpty()&&recovery.verifyAsioPinIdentity&&
             opened!=nullptr&&opened->isOpen()&&
             (opened->getInputChannelNames()!=originalInputNames||
              opened->getOutputChannelNames()!=originalOutputNames);
+        const bool refreshedAsio4All=typeName=="ASIO" && playback.startsWithIgnoreCase("ASIO4ALL") &&
+            recovery.reuseActivePins && (changedAsioPinLayout || error.isNotEmpty());
+        bool explicitPairStillIdentified=explicitMain;
+        if(refreshedAsio4All) {
+            // Never replay an index into a newly enumerated ASIO aggregate.
+            // Preserve verified selected names if they still exist, including
+            // VB-Cable capture moved past newly enabled input channels.
+            using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
+            const auto freshInputNames=changedAsioPinLayout?opened->getInputChannelNames():juce::StringArray{};
+            const auto freshOutputNames=changedAsioPinLayout?opened->getOutputChannelNames():juce::StringArray{};
+            const auto capturePins=changedAsioPinLayout?BindingPolicy::translateNamedPins(
+                candidate.inputChannels,originalInputNames,freshInputNames):std::nullopt;
+            const auto playbackPins=changedAsioPinLayout?BindingPolicy::translateNamedPins(
+                candidate.outputChannels,originalOutputNames,freshOutputNames):std::nullopt;
+            candidate.useDefaultInputChannels=!capturePins && !candidate.inputChannels.isZero();
+            candidate.useDefaultOutputChannels=!playbackPins;
+            if(capturePins)candidate.inputChannels=*capturePins;
+            if(playbackPins)candidate.outputChannels=*playbackPins;
+            explicitPairStillIdentified=explicitMain && playbackPins.has_value();
+            diagnostics_.record("CUSTOM_AUDIO_PHASE","REFRESH_ASIO4ALL_INVENTORY");
+            error=openSelectedAudioDevice(typeName,candidate,true);
+            manager.getAudioDeviceSetup(actual);
+            opened=manager.getCurrentAudioDevice();
+            changedAsioPinLayout=error.isEmpty() && opened && opened->isOpen() &&
+                ((capturePins && opened->getInputChannelNames()!=freshInputNames) ||
+                 (playbackPins && opened->getOutputChannelNames()!=freshOutputNames));
+        }
+        asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
         if(changedAsioPinLayout)
-            error="ASIO pin layout changed. Output remains muted; review the NEW capture and playback pins and Apply again";
+            error="ASIO pin layout changed. Output remains muted; review the new playback pins.";
         if(error.isEmpty()&&(opened==nullptr||!opened->isOpen()||
               manager.getCurrentAudioDeviceType()!=typeName||
               actual.inputDeviceName!=capture||actual.outputDeviceName!=playback||
@@ -1592,12 +1622,13 @@ private:
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
         if(error.isEmpty())diagnostics_.record("CUSTOM_AUDIO_PHASE","BIND_MIXER | "+typeName);
-        const auto bindingMode=explicitMain?MixerBindingMode::verifiedMainPinApply:
+        const auto bindingMode=explicitPairStillIdentified?MixerBindingMode::verifiedMainPinApply:
                                             MixerBindingMode::verifiedDeviceApply;
         if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(bindingMode)) {
             if(!previousMixerBound && engine_.directRouteAuthorized() &&
                (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
-                const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
+                const auto needsRemap=mixerSessionError_.isNotEmpty()?mixerSessionError_:
+                    juce::String("Device opened, but the mixer could not bind to its playback pins.");
                 diagnostics_.record("CUSTOM_AUDIO_NEEDS_REMAP",needsRemap);
                 send(false,"NEEDS_REMAP",needsRemap,engine_.stageRetainedWasapiPortMapping());
                 emitApprovedNativeSnapshot();
@@ -1646,6 +1677,7 @@ private:
              (manager.getCurrentAudioDevice()->getInputChannelNames()==originalInputNames&&
               manager.getCurrentAudioDevice()->getOutputChannelNames()==originalOutputNames))&&
             finishAudioSetupAndRecoverMixer();
+        asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
@@ -4623,6 +4655,7 @@ private:
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
                 autoMainEpoch_=0;
+                if(!arm)engine_.cancelAsioResetMonitorIntent();
                 engine_.setMonitorEnabled(arm);
                 diagnostics_.record("OUTPUT_MUTE",arm?"OFF":"ON");
             }
@@ -4655,7 +4688,7 @@ private:
     }
 
     bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
-        const bool bound=engine_.finishManualAudioSetup();
+        const bool bound=engine_.finishManualAudioSetup(bindingMode!=MixerBindingMode::verifiedMainPinApply);
         if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         const bool hasCheckpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
@@ -4673,6 +4706,54 @@ private:
             return true;
         }
         return bound;
+    }
+
+    std::uint64_t asioRecoveryEpoch_=0;
+    void serviceAsioMixerRestart() {
+        const auto epoch=engine_.dryRoutingLabEpoch();
+        if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
+           nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
+           engine_.isGraphSwitchPending() ||
+           (audioSetupWindow_ && audioSetupWindow_->isVisible()))return;
+        auto* device=engine_.devices().getCurrentAudioDevice();
+        if(!device || !device->isOpen() || device->getTypeName()!="ASIO" ||
+           !device->getName().startsWithIgnoreCase("ASIO4ALL"))return;
+        asioRecoveryEpoch_=epoch; // at most one automatic bind per negotiated epoch
+        const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
+        if(!engine_.authorizeRetainedAsioRestart())return;
+        if(const auto corrected=engine_.asioRestartPinCorrection()) {
+            // One bounded correction for JUCE's restart with the old mask.
+            // Keep the approved driver and preserve named physical endpoints.
+            const auto inputNames=device->getInputChannelNames();
+            const auto outputNames=device->getOutputChannelNames();
+            const auto error=openSelectedAudioDevice("ASIO",*corrected);
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            auto* reopened=engine_.devices().getCurrentAudioDevice();
+            if(error.isNotEmpty() || !reopened || !reopened->isOpen() ||
+               reopened->getInputChannelNames()!=inputNames ||
+               reopened->getOutputChannelNames()!=outputNames ||
+               reopened->getActiveInputChannels()!=corrected->inputChannels ||
+               reopened->getActiveOutputChannels()!=corrected->outputChannels ||
+               !engine_.authorizeRetainedAsioRestart()) {
+                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_FAILED",
+                    error.isNotEmpty()?error:juce::String("Readback changed during correction"));
+                emitApprovedNativeSnapshot();
+                return;
+            }
+        }
+        const auto error=engine_.reattachRetainedAsioMixer()?juce::String{}:
+            restoreSavedMixerSession(false,MixerBindingMode::verifiedAsioRestart);
+        if(error.isNotEmpty()) {
+            diagnostics_.record("ASIO4ALL_REATTACH_FAILED",error);
+            emitApprovedNativeSnapshot();
+            return;
+        }
+        mixerSessionStatus_="RESTORED_MUTED";
+        mixerSessionError_.clear();
+        if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain();
+        if(engine_.isMonitorEnabled())mixerSessionStatus_="RESTORED_MONITORING";
+        diagnostics_.record("ASIO4ALL_REATTACHED","Verified driver and original MAIN pair");
+        emitApprovedNativeSnapshot();
     }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
@@ -4780,6 +4861,7 @@ private:
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
+        serviceAsioMixerRestart();
         serviceAutomaticMain();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.

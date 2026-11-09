@@ -396,6 +396,7 @@ public:
     // starts its new callback before the selector window is closed.
     void beginManualAudioSetup() noexcept {
         offeredWasapiBinding_.reset();
+        resumeMainAfterAsioReset_.store(false,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.disarm();
         directFence_.suspend();
@@ -403,7 +404,7 @@ public:
         // device-binding operation, not an implicit CLEAR MIXER command.
         // The JUCE selector may change the driver before its window closes.
     }
-    bool finishManualAudioSetup() {
+    bool finishManualAudioSetup(bool reuseAsioBinding=true) {
         if(!approveDirectRoute())return false;
         using Decision=armix::device::DeviceSessionDecision;
         switch(armix::device::decideDeviceSession(
@@ -414,7 +415,7 @@ public:
             case Decision::createFirstSilentMixer:
                 return startUnpatchedProductionSession().isEmpty();
             case Decision::retainUnboundMixer:
-                return rebindRetainedWasapiSession();
+                return (reuseAsioBinding && reattachRetainedAsioMixer()) || rebindRetainedWasapiSession();
             case Decision::rejectedDevice:
                 return false;
         }
@@ -443,6 +444,79 @@ public:
     }
     bool recoverSameWasapiMixer() {
         return hasRetainedUnboundMixer() && rebindRetainedWasapiSession();
+    }
+    // The JUCE ASIO device may restart itself after a control panel change.
+    // Reauthorize only the previously approved driver class and session.
+    bool authorizeRetainedAsioRestart() {
+        using Policy=armix::session::MixerDeviceBindingPolicy;
+        if(!hasRetainedNativeSession() || !acceptedMixerBinding_ ||
+           !Policy::isAsio4All(*acceptedMixerBinding_) || !asioPinnedRegistration_.valid() ||
+           !allOutputsDisarmed() || independent_.active() || !attached_ || handoff_.busy() ||
+           fxMovePhase_.load(std::memory_order_acquire)!=0 ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute()!=armix::diagnostics::Route::normal)return false;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen() || device->getTypeName()!="ASIO" ||
+           device->getName()!=acceptedMixerBinding_->playback)return false;
+        return approveDirectRoute(&asioPinnedRegistration_);
+    }
+    std::optional<juce::AudioDeviceManager::AudioDeviceSetup> asioRestartPinCorrection() {
+        using Policy=armix::session::MixerDeviceBindingPolicy;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !acceptedMixerBinding_ || !directFence_.permitted())return {};
+        const auto& previous=*acceptedMixerBinding_;
+        const auto live=readMixerBinding(*device);
+        if(live.backend!=previous.backend || live.capture!=previous.capture ||
+           live.playback!=previous.playback)return {};
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        const auto correct=[](const juce::String& oldMask,const juce::StringArray& oldNames,
+                              const juce::StringArray& newNames,juce::BigInteger& mask,
+                              bool& useDefault) {
+            if(oldNames==newNames)return false;
+            juce::BigInteger before;
+            before.parseString(oldMask,16);
+            const auto mapped=Policy::translateNamedPins(before,oldNames,newNames);
+            if(!mapped || *mapped==mask)return false;
+            mask=*mapped;
+            useDefault=false;
+            return true;
+        };
+        const bool input=correct(previous.inputMask,previous.inputNames,live.inputNames,
+                                 setup.inputChannels,setup.useDefaultInputChannels);
+        const bool output=correct(previous.outputMask,previous.outputNames,live.outputNames,
+                                  setup.outputChannels,setup.useDefaultOutputChannels);
+        if(!input && !output)return {};
+        setup.useDefaultInputChannels=false;
+        setup.useDefaultOutputChannels=false;
+        return setup;
+    }
+    bool reattachRetainedAsioMixer() {
+        using Policy=armix::session::MixerDeviceBindingPolicy;
+        if(!acceptedMixerBinding_ || !Policy::isAsio4All(*acceptedMixerBinding_) ||
+           !hasRetainedNativeSession() || !allOutputsDisarmed() ||
+           !directFence_.permitted() || handoff_.busy())return false;
+        const auto* previous=&*acceptedMixerBinding_;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen())return false;
+        const auto epoch=dryRoutingLab_.epoch();
+        const auto live=readMixerBinding(*device);
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!Policy::sameBinding(*previous,live) || previous->inputNames!=live.inputNames ||
+           previous->outputNames.isEmpty() || previous->outputNames!=live.outputNames ||
+           !armix::device::JuceActivePortSnapshot::capture(device,epoch,pins,fault) ||
+           !dryRoutingLab_.matchesSessionDevice(pins) ||
+           !dryRoutingLab_.rebindVerifiedDevice(dryRoutingLab_.retainedNativeEpoch(),
+                                                epoch,live.frames,false))return false;
+        acceptedMixerBinding_=live;
+        return true;
+    }
+    bool takeAsioResetMonitorIntent() noexcept {
+        return resumeMainAfterAsioReset_.exchange(false,std::memory_order_acq_rel);
+    }
+    void cancelAsioResetMonitorIntent() noexcept {
+        resumeMainAfterAsioReset_.store(false,std::memory_order_release);
     }
     bool hasRetainedNativeSession() const noexcept {
         return dryRoutingLab_.hasRetainedNativeSession();
@@ -2442,6 +2516,7 @@ private:
         const auto inputMask=device->getActiveInputChannels().toString (16);
         const auto outputMask=device->getActiveOutputChannels().toString (16);
         armix::device::AsioRegistrationPolicy::Identity candidate;
+        if (backend != "ASIO" && expectedAsio != nullptr)return false;
         if (backend == "ASIO")
         {
             const auto selected = armix::device::AsioRegistryIdentityProbe::resolve (
@@ -2534,6 +2609,7 @@ private:
     // Temporary publication silence never changes operator MONITOR or MAIN MUTE.
     // The DIRECT device fence and physical-output verification remain separate.
     std::atomic<bool> topologyPublicationMute_ { false };
+    std::atomic<bool> resumeMainAfterAsioReset_{false};
     std::atomic<bool> monitor_ { false }, channelMute_ { false }, masterMute_ { false }, masterMono_ { false }, dryTest_ { false };
     std::atomic<float> masterGain_ { 1.f }, channelGain_ { 1.f }, channelPan_ { 0.f };
     std::atomic<float> inputPeak_ { 0.f }, postFxPeak_ { 0.f }, outputPeak_ { 0.f };
@@ -2673,7 +2749,8 @@ private:
 
     void audioDeviceStopped() override
     {
-        setOutputMuted(true);
+        if(monitor_.exchange(false,std::memory_order_acq_rel))
+            resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();

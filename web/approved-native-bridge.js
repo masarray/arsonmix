@@ -1786,8 +1786,11 @@
       }else pins.textContent="Apply this device first to inspect its real enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
+    const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
+      .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
     if(activeText && !deviceBusy)activeText.textContent=deviceResult||(active.open?
-      "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples":
+      "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
+      (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !deviceChoice.backend||(!t?.separate&&!deviceChoice.capture)||

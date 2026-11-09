@@ -65,49 +65,65 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
-    enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply };
+    enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply, verifiedAsioRestart };
+    static bool isAsio4All(const HardwareBinding& binding) {
+        return binding.backend=="ASIO" && binding.playback.startsWithIgnoreCase("ASIO4ALL");
+    }
+    static std::optional<juce::BigInteger> translateNamedPins(
+            const juce::BigInteger& previous,const juce::StringArray& oldNames,
+            const juce::StringArray& newNames) {
+        juce::BigInteger result;
+        for(int pin=previous.findNextSetBit(0);pin>=0;pin=previous.findNextSetBit(pin+1)) {
+            const int next=findSamePin(oldNames,newNames,pin);
+            if(next<0 || next>=64)return {};
+            result.setBit(next);
+        }
+        return result;
+    }
     static VerifiedNativeOutputs proposedOutputs(const MixerSessionDocument& document,
             const HardwareBinding& live,int count,Mode mode=Mode::exact) {
         const auto& saved=document.binding;
+        const VerifiedNativeOutputs unavailable{count,-1,-1,-1,-1,false};
         if(mode==Mode::verifiedMainPinApply ||
            (mode==Mode::verifiedDeviceApply &&
             (saved.backend!=live.backend || saved.playback!=live.playback)))
-            return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:
-                            VerifiedNativeOutputs{count,-1,-1,-1,-1,false};
-        // A matching endpoint name does NOT prove an unchanged physical
-        // jack inventory. Reject rather than silently rebase MAIN to 1/2
-        // if pin labels changed or an unknown ASIO inventory lost pins.
-        if(mode==Mode::verifiedDeviceApply &&
-           ((!saved.outputNames.isEmpty() && saved.outputNames!=live.outputNames) ||
-            (saved.outputNames.isEmpty() && live.backend=="ASIO" &&
-             saved.outputMask!=live.outputMask)))
-            return {count,-1,-1,-1,-1,false};
+            return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:unavailable;
+        if(mode==Mode::verifiedAsioRestart &&
+           (!isAsio4All(live) || saved.backend!=live.backend || saved.playback!=live.playback))
+            return unavailable;
+        if(mode==Mode::verifiedAsioRestart && saved.outputNames.isEmpty())return unavailable;
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
-        if(saved.outputMask!=live.outputMask) {
-            const auto oldPins=mask(saved.outputMask);
-            const auto newPins=mask(live.outputMask);
-            outputs.mainL=remapPin(oldPins,newPins,outputs.mainL);
-            outputs.mainR=remapPin(oldPins,newPins,outputs.mainR);
+        const auto oldPins=mask(saved.outputMask),newPins=mask(live.outputMask);
+        if(mode!=Mode::exact || saved.outputMask!=live.outputMask) {
+            const auto remap=[&](int ordinal) {
+                return remapPin(oldPins,newPins,saved.outputNames,live.outputNames,
+                                ordinal,live.backend=="ASIO");
+            };
+            outputs.mainL=remap(outputs.mainL);
+            outputs.mainR=remap(outputs.mainR);
             if(outputs.monitorEnabled) {
-                outputs.monitorL=remapPin(oldPins,newPins,outputs.monitorL);
-                outputs.monitorR=remapPin(oldPins,newPins,outputs.monitorR);
+                outputs.monitorL=remap(outputs.monitorL);
+                outputs.monitorR=remap(outputs.monitorR);
             }
         }
         if(!outputs.valid()) {
             outputs.monitorL=outputs.monitorR=-1;
             outputs.monitorEnabled=false;
         }
-        // Never substitute the first available pair when the saved MAIN
-        // physical connectors disappear. Audio may only return after the
-        // operator explicitly patches MAIN to available output pins.
+        // An explicit Apply can adopt the sole coherent physical pair that
+        // ASIO4ALL now exposes. An unsolicited restart can only resume the
+        // original named MAIN pair, even if another pair is now available.
+        if(!outputs.valid() && mode==Mode::verifiedDeviceApply &&
+           isAsio4All(live) && count==2 && isNamedSpeakerPair(newPins,live.outputNames))
+            return {count,0,1,-1,-1,false};
         return outputs;
     }
     static juce::String apply(MixerSessionDocument& document,
             const HardwareBinding& live,
             const VerifiedNativeOutputs& outputs,
             int callbackInputs,Mode mode) {
-        if(!outputs.valid() || callbackInputs<0 || callbackInputs>256 ||
+        if(callbackInputs<0 || callbackInputs>256 ||
            live.backend.isEmpty() ||
            (callbackInputs>0 && live.capture.isEmpty()) ||
            live.playback.isEmpty() || live.inputMask.isEmpty() ||
@@ -115,6 +131,8 @@ struct MixerDeviceBindingPolicy final {
            live.rate<8000. || live.rate>384000. ||
            live.frames<16 || live.frames>8192)
             return "NEEDS_REMAP: live device verification incomplete";
+        if(!outputs.valid())
+            return "NEEDS_REMAP: saved MAIN pair unavailable on the active playback pins";
         const auto oldPins=mask(document.binding.inputMask);
         const auto newPins=mask(live.inputMask);
         if(oldPins.countNumberOfSetBits()!=document.request.physicalInputs ||
@@ -135,7 +153,7 @@ struct MixerDeviceBindingPolicy final {
         // ordinals; it never authorizes quietly switching MAIN to another
         // jack. Compare against the policy-computed remap even when a caller
         // supplies a valid but DIFFERENT output pair.
-        if(mode==Mode::verifiedMainPinApply ||
+        if(mode==Mode::verifiedMainPinApply || mode==Mode::verifiedAsioRestart ||
            (saved.backend==live.backend && saved.playback==live.playback)) {
             const auto mapped=proposedOutputs(document,live,outputs.activeOutputChannels,mode);
             if(!mapped.valid() || !sameOutputs(mapped,outputs))
@@ -143,19 +161,27 @@ struct MixerDeviceBindingPolicy final {
         }
 
         auto& sources=document.request.sources;
-        if(saved.backend!=live.backend || saved.capture!=live.capture ||
-           !samePinNames(saved.inputNames,live.inputNames,live.backend)) {
+        if(saved.backend!=live.backend || saved.capture!=live.capture) {
+            if(mode==Mode::verifiedAsioRestart && !sources.empty())
+                return "NEEDS_REMAP: waiting for the previous ASIO capture endpoint";
             // Matching pin numbers alone cannot identify another capture source.
             sources.clear();
-        } else if(oldPins!=newPins) {
+        } else if(oldPins!=newPins || saved.inputNames!=live.inputNames ||
+                  (live.backend=="ASIO" && saved.inputNames.isEmpty())) {
             std::vector<DynamicSourcePatch> mapped;
             mapped.reserve(sources.size());
             for(auto source:sources) {
-                source.inputL=remapPin(oldPins,newPins,source.inputL);
-                if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
+                const auto remap=[&](int ordinal) {
+                    return remapPin(oldPins,newPins,saved.inputNames,live.inputNames,
+                                    ordinal,live.backend=="ASIO");
+                };
+                source.inputL=remap(source.inputL);
+                if(source.stereo)source.inputR=remap(source.inputR);
                 if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
                     mapped.push_back(source);
             }
+            if(mode==Mode::verifiedAsioRestart && mapped.size()!=sources.size())
+                return "NEEDS_REMAP: waiting for the previous ASIO capture pins";
             sources=std::move(mapped);
         }
         document.request.physicalInputs=callbackInputs;
@@ -164,21 +190,47 @@ struct MixerDeviceBindingPolicy final {
         return {};
     }
 private:
-    static bool samePinNames(const juce::StringArray& saved,const juce::StringArray& live,
-                             const juce::String& backend) {
-        return saved.isEmpty()?backend!="ASIO":saved==live;
-    }
     static juce::BigInteger mask(const juce::String& text) {
         juce::BigInteger bits;
         bits.parseString(text,16);
         return bits;
     }
-    static int remapPin(const juce::BigInteger& saved,const juce::BigInteger& current,int ordinal) {
+    static bool isNamedSpeakerPair(const juce::BigInteger& pins,const juce::StringArray& names) {
+        const auto left=names[pins.findNextSetBit(0)].trim().toLowerCase();
+        const auto right=names[pins.getHighestBit()].trim().toLowerCase();
+        return left.endsWith(" 1") && right.endsWith(" 2") &&
+            left.dropLastCharacters(2)==right.dropLastCharacters(2) &&
+            !left.contains("vb-audio") && !left.contains("cable") &&
+            !left.contains("virtual") && !left.contains("loopback") &&
+            (left.contains("realtek") || left.contains("speaker") || left.contains("output with sst"));
+    }
+    static int findSamePin(const juce::StringArray& previous,const juce::StringArray& live,int pin) {
+        const auto name=previous[pin];
+        if(name.isEmpty() || previous.indexOf(name)!=pin ||
+           previous.indexOf(name,false,pin+1)>=0)return -1;
+        const auto next=live.indexOf(name);
+        return next>=0 && live.indexOf(name,false,next+1)<0?next:-1;
+    }
+    static int remapPin(const juce::BigInteger& saved,const juce::BigInteger& current,
+            const juce::StringArray& savedNames,const juce::StringArray& currentNames,
+            int ordinal,bool requireNames) {
         if(ordinal<0)return -1;
         int physical=saved.findNextSetBit(0);
         for(int i=0;i<ordinal && physical>=0;++i)
             physical=saved.findNextSetBit(physical+1);
-        if(physical<0 || !current[physical])return -1;
+        if(physical<0)return -1;
+        if(savedNames!=currentNames || requireNames) {
+            const auto name=savedNames[physical];
+            if(name.isEmpty()) {
+                // Old documents without a label inventory can keep the
+                // exact mask. They cannot identify a newly numbered pin.
+                if(!savedNames.isEmpty() || (requireNames && saved!=current))return -1;
+            } else {
+                physical=findSamePin(savedNames,currentNames,physical);
+                if(physical<0)return -1;
+            }
+        }
+        if(!current[physical])return -1;
         int index=0;
         for(int pin=current.findNextSetBit(0);pin<physical;pin=current.findNextSetBit(pin+1))
             ++index;

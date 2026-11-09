@@ -307,6 +307,31 @@ static void nativeDeviceRecovery() {
     assert(current.inserts.size()==1 && current.inserts[0].catalogId==eqId);
     current.binding=saved.binding;
 
+    // Render actual PCM after a sparse ASIO4ALL re-enumeration. Two compact
+    // callbacks now address physical pins 2 and 3, with MAIN L at ordinal 1.
+    auto aggregate=current;
+    aggregate.binding={"ASIO","ASIO4ALL v2","ASIO4ALL v2","3","3",48000.,480,
+        {"VB-Audio Point 1","VB-Audio Point 2"},{"2nd output with SST 1","2nd output with SST 2"}};
+    auto reenumerated=aggregate.binding;
+    reenumerated.inputMask=reenumerated.outputMask="6";
+    reenumerated.inputNames.insert(0,"Other capture");
+    reenumerated.outputNames={"Other playback","2nd output with SST 2","2nd output with SST 1"};
+    const auto asioPair=MixerDeviceBindingPolicy::proposedOutputs(
+        aggregate,reenumerated,2,BindingMode::verifiedAsioRestart);
+    assert(MixerDeviceBindingPolicy::apply(aggregate,reenumerated,asioPair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    mixer.deviceStopped();
+    device.inputMask.setBit(2);device.inputMask.clearBit(0);
+    device.outputMask=device.inputMask;
+    mixer.prepareDevice(&device);
+    assert(restore(aggregate,currentStates,true).isEmpty());
+    process(true);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    process(false);
+    assert(outL.back()>.02f && outR.back()>outL.back()+.01f);
+    device.inputMask.clearBit(2);device.inputMask.setBit(0);
+    device.outputMask=device.inputMask;
+
     // The field failure switched Realtek playback to HDMI while keeping the
     // same VB-Cable source and a live FX rack. The new epoch has working PCM,
     // existing WIRE IDs and a repatchable ChannelId graph after one Apply.
@@ -533,7 +558,61 @@ int main(){
         BindingMode::exact).isNotEmpty());
     assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
         BindingMode::verifiedDeviceApply).isEmpty());
-    assert(reordered.request.sources.empty());
+    assert(reordered.request.sources.size()==d.request.sources.size());
+    assert(reordered.request.sources.front().inputL==1);
+    assert(reordered.request.sources.front().inputR==-1);
+
+    // ASIO4ALL can reorder the VB-Cable input and the Realtek pair even
+    // though JUCE still reports the same registered driver name.
+    auto asio=d;
+    asio.binding.backend="ASIO";
+    asio.request.sources.front().stereo=true;
+    asio.request.sources.front().inputR=1;
+    asio.binding.capture=asio.binding.playback="ASIO4ALL v2";
+    asio.binding.inputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    asio.binding.outputNames={"2nd output with SST 1","2nd output with SST 2"};
+    asio.binding.outputMask="3";
+    asio.outputs={2,0,1,-1,-1,false};
+    auto shifted=asio.binding;
+    shifted.inputNames={"New input","VB-Audio Point 1","VB-Audio Point 2"};
+    shifted.inputMask="6";
+    shifted.outputNames={"New output","2nd output with SST 2","2nd output with SST 1"};
+    shifted.outputMask="6";
+    const auto shiftedPair=MixerDeviceBindingPolicy::proposedOutputs(asio,shifted,2,
+        BindingMode::verifiedAsioRestart);
+    assert(shiftedPair.valid() && shiftedPair.mainL==1 && shiftedPair.mainR==0);
+    auto shiftedSession=asio;
+    assert(MixerDeviceBindingPolicy::apply(shiftedSession,shifted,shiftedPair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(shiftedSession.request.sources.front().inputL==0);
+    assert(shiftedSession.request.sources.front().inputR==1);
+    assert(shiftedSession.roster.revision()==asio.roster.revision());
+    juce::BigInteger oldCapturePins;
+    oldCapturePins.setRange(0,2,true);
+    const auto translated=MixerDeviceBindingPolicy::translateNamedPins(
+        oldCapturePins,asio.binding.inputNames,shifted.inputNames);
+    assert(translated && translated->toString(16)=="6");
+    auto temporarilyUnavailable=shifted;
+    temporarilyUnavailable.inputMask="3";
+    assert(MixerDeviceBindingPolicy::apply(asio,temporarilyUnavailable,shiftedPair,2,
+        BindingMode::verifiedAsioRestart).contains("previous ASIO capture pins"));
+    assert(asio.binding.inputMask=="3" && asio.request.sources.front().inputR==1);
+
+    auto nextSpeaker=asio.binding;
+    nextSpeaker.outputNames={"Realtek HD Audio output with SST 1","Realtek HD Audio output with SST 2"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,nextSpeaker,2,
+        BindingMode::verifiedAsioRestart).valid());
+    const auto newlyApproved=MixerDeviceBindingPolicy::proposedOutputs(asio,nextSpeaker,2,
+        BindingMode::verifiedDeviceApply);
+    assert(newlyApproved.valid() && newlyApproved.mainL==0 && newlyApproved.mainR==1);
+    auto virtualCable=nextSpeaker;
+    virtualCable.outputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,virtualCable,2,
+        BindingMode::verifiedDeviceApply).valid());
+    auto duplicatePins=shifted;
+    duplicatePins.outputNames.add("2nd output with SST 1");
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,duplicatePins,2,
+        BindingMode::verifiedAsioRestart).valid());
     auto exact=d;
     assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());

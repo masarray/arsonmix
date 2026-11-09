@@ -2494,6 +2494,9 @@ public:
     // CONTROL ONLY: hardware loss makes ready() false but does not erase
     // authored values, FX identity, GROUP/FX_RETURN buses or accepted WIREs.
     // Never downgrade this dynamic document to the fixed 10CH/4AUX schema.
+    std::uint64_t retainedNativeEpoch() const noexcept {
+        return hasRetainedNativeSession()?nativeAccepted_.deviceEpoch:0;
+    }
     bool hasRetainedNativeSession() const noexcept {
         return !channelIdPhysicalPcmActive() && nativeAccepted_.fxOwners && hasAuthoredMixerContent();
     }
