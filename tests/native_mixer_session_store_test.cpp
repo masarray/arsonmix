@@ -413,10 +413,10 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
         "NONE",-1,-1,true,false,0,formats,device.rate,device.frames).isEmpty());
     assert(mixer.admitChannelIdFromAcceptedM4(0,device.frames,true));
     assert(!mixer.hasVerifiedNativeSources()); // player needs no microphone
-    // M4 compatibility controlRevision is NOT the native PCM revision.
-    // The contract for one player-owned publication is exactly +1 on
-    // accepted native graph revision, with unchanged M4 control state.
-    const auto beforeControl=mixer.controlRevision();
+    // Before admission, controlRevision may denote the legacy M4 revision;
+    // once a native MUSIC strip is installed it switches to published PCM.
+    // The invariant is +1 on accepted NATIVE graph and a matching control
+    // revision AFTER publication, not equality to a prior M4 ordinal.
     const auto beforeGraph=mixer.nativeBusStatus().getProperty(
         "graphRevision","0").toString().getLargeIntValue();
     // New virtual MUSIC can publish directly against an ALREADY trusted
@@ -428,7 +428,7 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
     assert(added.pcmRevision==static_cast<std::uint64_t>(beforeGraph)+1);
     assert(mixer.nativeBusStatus().getProperty("graphRevision","0")
             .toString()==juce::String(added.pcmRevision));
-    assert(mixer.controlRevision()==beforeControl);
+    assert(mixer.controlRevision()==added.pcmRevision);
     assert(mixer.playerDeckHasMainPath());
     // A second Play owns the exact existing source; no duplicate MAIN edge.
     const auto again=mixer.ensureNativePlayerA(false,true);
