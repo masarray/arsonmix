@@ -163,8 +163,17 @@ private:
         // double/half-time peak that we explicitly rejected.
         const float acceptedScore=
             candidates[static_cast<std::size_t>(bestBpm-60)];
+        // Only the same LIVE 11-second onset window contributes to the
+        // candidate score. The ring may still contain many old weak hat
+        // attacks from a previous passage. Dividing by all 128 archival
+        // hits permanently depresses confidence even after a convincing
+        // quarter-note pulse returns (observed Windows CTest regression).
+        // Keep numerator and denominator on the identical time horizon.
+        std::size_t recentCount=0;
+        for(std::size_t i=0;i<count_;++i)
+            if(lastTick_-at(i).tick<=1100)++recentCount;
         const float confidence=std::clamp(acceptedScore/
-            static_cast<float>(std::max<std::size_t>(7,count_))*.9f,0.f,1.f);
+            static_cast<float>(std::max<std::size_t>(7,recentCount))*.9f,0.f,1.f);
         if(confidence<.28f) {
             // A busy but low-confidence groove is NOT a stable beat. The
             // previous code kept locked=true (and old beat-phase) while
