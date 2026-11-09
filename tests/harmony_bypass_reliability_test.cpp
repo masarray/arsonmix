@@ -28,6 +28,10 @@ static LiveChannelFxGraph::InstanceLease makeHarmony(
     p->prepareToPlay(rate,quantum);
     const int declaredLatency=2*static_cast<int>(std::round(rate*.016));
     assert(p->isReady() && p->getLatencySamples()==declaredLatency);
+    // Native host reads this JUCE metadata when constructing FxInstance.
+    // Old direct preparation left getSampleRate() unknown/zero, reducing
+    // the 8ms envelope to 64 samples and producing too-fast bypass ramps.
+    assert(std::abs(p->getSampleRate()-rate)<1.e-6);
     armix::harmony::Settings rich;
     rich.voices=5;rich.wet=wet;rich.space=space;
     assert(p->queueAccepted(rich,9001));
@@ -252,6 +256,17 @@ int main() {
         verifiedWet+=wetCount;verifiedDry+=dryCount;
         assert(!cycle.rackBypassed(vocal));
         assert(!b->bypassRequested.load(std::memory_order_acquire));
+        // Validate the envelope actually captured by FxInstance, not a
+        // detached envelope-only fixture with a hard-coded sample rate.
+        // This test fails if the JUCE AudioProcessor metadata is zero/stale.
+        b->bypassFade.request(true);
+        int fadeFrames=0;
+        while(b->bypassFade.transitioning()&&fadeFrames<4096){
+            b->bypassFade.next();++fadeFrames;
+        }
+        assert(fadeFrames<4096);
+        const int expectedFade=static_cast<int>(std::round(cfg.rate*.008));
+        assert(std::abs(fadeFrames-expectedFade)<=1);
     }
     std::cout<<"Harmony multi-rate wet/space bypass matrix PASS; "
              <<"scenarios="<<cases.size()

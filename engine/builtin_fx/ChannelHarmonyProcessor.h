@@ -33,7 +33,7 @@ public:
         return b.getMainInputChannelSet()==juce::AudioChannelSet::stereo() &&
                b.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
-    void prepareToPlay(double rate,int) override {
+    void prepareToPlay(double rate,int maximumExpectedSamplesPerBlock) override {
         ready_=dsp_.prepare(rate)&&guide_.prepare(rate)&&dsp_.setSettings(accepted_);
         guideSource_.store(accepted_.guideMode==1?accepted_.guideChannelId:0,
                            std::memory_order_release);
@@ -41,7 +41,19 @@ public:
         guideObservedScale_.store(-1,std::memory_order_relaxed);
         guideConfidence_.store(0.f,std::memory_order_relaxed);
         publishEffectiveKey();
-        if(ready_) {sampleRate_=rate;setLatencySamples(dsp_.latencySamples());}
+        if(ready_) {
+            // Native built-ins are prepared directly (not by a JUCE plugin
+            // wrapper). Without this CONTROL-side metadata, AudioProcessor's
+            // getSampleRate() may remain zero. FxInstance captures that rate
+            // for its fixed-duration bypass envelope when the lease is built.
+            // A zero rate previously clamped to 8 kHz: an intended 8ms fade
+            // became only 64 frames, i.e. 1.33ms at the real 48 kHz device.
+            // No realtime mutation, graph rebuild, latency change or UI step.
+            setRateAndBufferSizeDetails(rate,
+                std::max(1,maximumExpectedSamplesPerBlock));
+            sampleRate_=rate;
+            setLatencySamples(dsp_.latencySamples());
+        }
     }
     void releaseResources() override {ready_=false;}
     void processBlock(juce::AudioBuffer<float>& samples,juce::MidiBuffer&) override {
