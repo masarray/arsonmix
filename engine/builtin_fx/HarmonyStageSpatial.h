@@ -56,13 +56,22 @@ public:
         const float far=source*(1.f-cross)+delayed*cross;
         const float left=(direction>0.f?far:source)*mixL;
         const float right=(direction<0.f?far:source)*mixR;
+        // Center backing voice otherwise coincides with the center lead.
+        // Recess its *direct* component slightly but retain early and
+        // shared-room sends: a modest DRR cue, not a volume duck on lead.
+        // At Space 0 the original direct output is bit-for-bit unchanged.
+        const float centerAmount=1.f-std::clamp(
+            1.7f*std::abs(direction),0.f,1.f);
+        const float centerRecess=1.f-.17f*
+            std::clamp(space,0.f,1.f)*centerAmount;
         // Early sound spreads in both directions with positive polarity:
         // first reflection is contralateral, second modestly ipsilateral.
         const float earlyLeft=.68f*firstReflection*mixR+
             .32f*secondReflection*(.67f*mixL+.33f*mixR);
         const float earlyRight=.68f*firstReflection*mixL+
             .32f*secondReflection*(.33f*mixL+.67f*mixR);
-        return {left,right,earlyLeft,earlyRight,left,right};
+        return {left*centerRecess,right*centerRecess,
+                earlyLeft,earlyRight,left,right};
     }
     void advance() noexcept {cursor_=(cursor_+1)&(earCapacity-1);}
     std::size_t farEarDelaySamples()const noexcept{return farEarDelay_;}

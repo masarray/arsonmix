@@ -101,7 +101,22 @@ int main(){
         scene(rate,0.f,0,3);
         scene(rate,.8f,4,5);
     }
+    // A center harmony voice competes directly with the lead phantom center.
+    // Center-only direct recession is modest; its room send remains intact.
     for(double rate:{48000.,96000.,192000.}){
+        BackingStageSpatial x;
+        need(x.prepare(rate),"center recession prepare failed");
+        auto zero=x.place(1,.5f,0.f,0.f,.5f,.5f,0.f);
+        x.advance();
+        auto deep=x.place(1,.5f,0.f,0.f,.5f,.5f,1.f);
+        need(std::abs(zero.directL-.25f)<1.e-6f&&
+             std::abs(zero.roomL-.25f)<1.e-6f,
+             "Space0 center direct changed");
+        need(deep.directL<deep.roomL*.86f&&
+             deep.directL>deep.roomL*.80f,
+             "center backing direct did not move behind lead");
+        need(std::abs(deep.roomL-.25f)<1.e-6f,
+             "center stage lost shared-room input");
         const double low=farNearRatio(rate,350.,1.f);
         const double high=farNearRatio(rate,8000.,1.f);
         need(high<low*.85,"far ear missing high-frequency shadow");
