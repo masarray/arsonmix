@@ -5231,9 +5231,48 @@ public:
             }
         });
 #if defined(_WIN32)
-        // An installed (not portable) preview checks official GitHub Releases
-        // in its own short-lived supervisor process. It only installs AFTER
-        // this GUI has exited normally. No audio callback, router or FX work.
+        launchSmartUpdater (false);
+#endif
+        // Opaque cover exactly matches the large HWND, not a small 740×420
+        // card leaving white WebView2 edges exposed during first paint.
+        if (splash_ && window_)
+        {
+            splash_->setBounds (window_->getBounds());
+            splash_->toFront (true);
+        }
+    }
+    void shutdown() override
+    {
+        stopTimer();
+        window_.reset();
+        splash_.reset();
+#if defined(_WIN32)
+        // All session persistence has completed. Only a normal user exit can
+        // apply an already downloaded update. Inno-initiated shutdown must
+        // not launch a competing installer.
+        const bool innoIsClosing = installerShutdownEvent_ != nullptr
+            && ::WaitForSingleObject (installerShutdownEvent_, 0) == WAIT_OBJECT_0;
+        if (!innoIsClosing)
+            launchSmartUpdater (true);
+        if (installerShutdownEvent_ != nullptr)
+        {
+            ::CloseHandle (installerShutdownEvent_);
+            installerShutdownEvent_ = nullptr;
+        }
+        if (updateRunningMutex_ != nullptr)
+        {
+            ::CloseHandle (updateRunningMutex_);
+            updateRunningMutex_ = nullptr;
+        }
+#endif
+    }
+private:
+#if defined(_WIN32)
+    void launchSmartUpdater (bool applyStaged)
+    {
+        // Windows per-user installation only: independent updater process.
+        // On normal exit, apply only a previously prepared transaction.
+        // No audio callback, router or plugin operation.
         const auto installedExe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
         const auto installDir = installedExe.getParentDirectory();
         const auto updaterScript = installDir.getChildFile ("ArSonMixAutoUpdate.ps1");
@@ -5252,40 +5291,16 @@ public:
                 "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
                 "-File", updaterScript.getFullPathName(),
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
+            if (applyStaged)
+                command.add ("-ApplyStaged");
             juce::ChildProcess supervisor;
             // The supervisor is detached from the mixing lifecycle. If it
             // cannot start, the GUI still operates normally; updates are
             // optional and never a reason to lose the live session.
             supervisor.start (command, 0);
         }
-#endif
-        // Opaque cover exactly matches the large HWND, not a small 740×420
-        // card leaving white WebView2 edges exposed during first paint.
-        if (splash_ && window_)
-        {
-            splash_->setBounds (window_->getBounds());
-            splash_->toFront (true);
-        }
     }
-    void shutdown() override
-    {
-        stopTimer();
-        window_.reset();
-        splash_.reset();
-#if defined(_WIN32)
-        if (installerShutdownEvent_ != nullptr)
-        {
-            ::CloseHandle (installerShutdownEvent_);
-            installerShutdownEvent_ = nullptr;
-        }
-        if (updateRunningMutex_ != nullptr)
-        {
-            ::CloseHandle (updateRunningMutex_);
-            updateRunningMutex_ = nullptr;
-        }
 #endif
-    }
-private:
     bool startupAttempted_ = false;
 #if defined(_WIN32)
     HANDLE updateRunningMutex_ = nullptr;
