@@ -76,17 +76,26 @@ def main():
                     "nativeMixerFile"+caption), (width, "file action disconnected", caption)
             # Native-only status presenter must not expose internal FAT,
             # PCM graph revision counters, or simulation copy in the UI.
-            page.evaluate("""()=>{
+            operator_footer = page.evaluate("""async()=>{
               document.getElementById('info').textContent =
                 'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 1 · graph 3 · roster 94';
               document.querySelector('.status-bar .warning').textContent =
                 'NATIVE PCM · HARDWARE FAT PENDING';
+              // MutationObserver reactions run at the microtask checkpoint;
+              // a frame guarantees presentation has completed.
+              await Promise.resolve();
+              await new Promise(requestAnimationFrame);
+              return {
+                info: document.getElementById('info').textContent,
+                warning: document.querySelector('.status-bar .warning').textContent,
+                transport: document.getElementById('transport').textContent
+              };
             }""")
-            page.wait_for_function("""()=>{
-              const footer=document.querySelector('.status-bar').textContent;
-              return !/FAT|PCM|NATIVE|GRAPH|ROSTER|SIMULATED|MOCKUP/i.test(footer) &&
-                footer.includes('Mixer settings updated');
-            }""")
+            visible_footer = " ".join(str(v) for v in operator_footer.values())
+            assert "Mixer settings updated" in operator_footer["info"], (width,operator_footer)
+            assert not __import__("re").search(
+                r"FAT|PCM|NATIVE|GRAPH|ROSTER|SIMULATED|MOCKUP",
+                visible_footer,__import__("re").IGNORECASE), (width,operator_footer)
             more = page.locator("#moreTools>summary")
             more.click()
             assert page.locator("#moreTools").get_attribute("open") is not None, (
