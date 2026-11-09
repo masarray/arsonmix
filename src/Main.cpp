@@ -1894,24 +1894,6 @@ private:
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
-            // Accepted native source and analyzer readback; never invent an
-            // AUTO lock from the manual BPM text field.
-            reply->setProperty("musicSourceChannelId",
-                juce::String(std::to_string(lastMusicTempo_.source.value)));
-            reply->setProperty("musicSourceActive",lastMusicTempo_.active);
-            reply->setProperty("musicLocked",lastMusicTempo_.active&&
-                lastMusicTempo_.tempo.locked);
-            reply->setProperty("musicBpm",lastMusicTempo_.tempo.bpm);
-            reply->setProperty("musicConfidence",lastMusicTempo_.tempo.confidence);
-            reply->setProperty("musicGridAvailable",lastMusicTempo_.active&&
-                lastMusicTempo_.tempo.locked&&
-                lastMusicTempo_.tempo.phaseLocked);
-            reply->setProperty("musicPhaseConfidence",
-                lastMusicTempo_.tempo.phaseConfidence);
-            reply->setProperty("musicBeatAnchorFrame",juce::String(
-                std::to_string(lastMusicTempo_.tempo.beatAnchorFrame)));
-            reply->setProperty("musicDroppedFrames",
-                static_cast<int>(lastMusicTempo_.dropped));
             juce::Array<juce::var> bands;
             for(const auto& band:processor->acceptedBands()){
                 auto item=std::make_unique<juce::DynamicObject>();
@@ -2194,6 +2176,36 @@ private:
             settings->setProperty("ducking",s.ducking);
             reply->setProperty("settings",juce::var(settings.release()));
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            // MUSIC tempo belongs to Vocal Throw, not to the unrelated EQ.
+            // Fence every displayed source/beat to THIS accepted graph.
+            // A retired device may leave a last control-timer snapshot; it
+            // must never appear as a locked beat on a newly opened device.
+            const bool currentMusicGraph=lastMusicTempo_.active&&
+                epoch==juce::String(std::to_string(lastMusicTempo_.epoch))&&
+                revision==juce::String(std::to_string(lastMusicTempo_.revision));
+            reply->setProperty("musicSourceChannelId",
+                currentMusicGraph?
+                  juce::String(std::to_string(lastMusicTempo_.source.value)):
+                  juce::String("0"));
+            reply->setProperty("musicSourceActive",currentMusicGraph);
+            reply->setProperty("musicLocked",currentMusicGraph&&
+                lastMusicTempo_.tempo.locked);
+            reply->setProperty("musicBpm",
+                currentMusicGraph&&lastMusicTempo_.tempo.locked?
+                    lastMusicTempo_.tempo.bpm:0.f);
+            reply->setProperty("musicConfidence",
+                currentMusicGraph?lastMusicTempo_.tempo.confidence:0.f);
+            reply->setProperty("musicGridAvailable",currentMusicGraph&&
+                lastMusicTempo_.tempo.locked&&
+                lastMusicTempo_.tempo.phaseLocked);
+            reply->setProperty("musicPhaseConfidence",
+                currentMusicGraph?lastMusicTempo_.tempo.phaseConfidence:0.f);
+            reply->setProperty("musicBeatAnchorFrame",juce::String(
+                std::to_string(currentMusicGraph?
+                    lastMusicTempo_.tempo.beatAnchorFrame:0)));
+            reply->setProperty("musicDroppedFrames",currentMusicGraph?
+                static_cast<int>(lastMusicTempo_.dropped):0);
+
             reply->setProperty("throwCount",static_cast<int>(processor->observedThrowCount()));
             reply->setProperty("tailActive",processor->observedTailActive());
             reply->setProperty("addedLatencySamples",processor->getLatencySamples());
