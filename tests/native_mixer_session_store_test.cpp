@@ -351,6 +351,21 @@ static void warmVst3Discovery() {
 }
 
 int main(){
+    // Zero-input is a legitimate saved SOURCE NONE workspace, never a fake mic.
+    {
+        auto silent=makeSession();
+        silent.binding={"Windows Audio","","Speakers","0","3",48000.,256};
+        silent.request.sources.clear();silent.request.physicalInputs=0;
+        MixerSessionDocument decoded;
+        assert(Codec::decode(Codec::encode(silent),decoded));
+        assert(decoded.request.physicalInputs==0 && decoded.request.sources.empty());
+        assert(decoded.roster.revision()==silent.roster.revision());
+        assert(MixerDeviceBindingPolicy::apply(decoded,decoded.binding,
+            decoded.outputs,0,BindingMode::exact).isEmpty());
+        auto malformed=juce::JSON::parse(Codec::encode(silent));
+        malformed.getProperty("binding",{}).getDynamicObject()->setProperty("inputMask","3");
+        assert(!Codec::decode(juce::JSON::toString(malformed,false),decoded));
+    }
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();

@@ -174,12 +174,11 @@ public:
         }
         request->setProperty("channels",juce::var(channels));
         const FxSelections none{};
-        // Genuine accepted SOURCE NONE topology: editing does not require
-        // microphone capture. Sound remains zero and unarmed until a verified
-        // source and independently authorized physical output exist.
+        // Keep M4's historical unpatched/fail-silent behavior. Startup
+        // explicitly promotes this same genuine SOURCE NONE graph to PCM.
         return apply(juce::var(request.release()),directPermitted,
                      independentClock,loadedFx,none,formats,
-                     sampleRate,deviceFrames,true);
+                     sampleRate,deviceFrames,false);
     }
 
     juce::String apply (const juce::var& command, bool directPermitted,
@@ -1153,7 +1152,8 @@ public:
     // The published ChannelId snapshot retains this owner until RT retires.
     bool admitChannelIdFromAcceptedM4(int occupiedExternalCh1Fx,
                                      int deviceFrames,bool outputsDisarmed,
-             armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={}) {
+             armix::mixer::DynamicChannelFxLeaseBank::ExternalLease externalCh1={},
+             bool admitSilentUnpatched=false) {
         // E5: a native BUS uses topology that M4 cannot represent. Never
         // demote its renderer on an unsupported legacy re-admission.
         if((nativeStructureLive_ || nativeControlDirty_) &&
@@ -1165,18 +1165,28 @@ public:
         channelIdPcmEpoch_.store(0,std::memory_order_release);
         nativeStructureLive_=false;
         try {
+        const bool silentStarter=admitSilentUnpatched && !hasExplicitRoute() &&
+            sourceTemplate_.isObject() && !userPatched_.load(std::memory_order_acquire);
         if(!outputsDisarmed || occupiedExternalCh1Fx<0 ||
            (occupiedExternalCh1Fx>0)!=externalCh1.populated() ||
-           !hasExplicitRoute()||!ready() ||
+           (!hasExplicitRoute()&&!silentStarter)||!ready() ||
            topologyFault_.load(std::memory_order_acquire))
             return false;
         const auto generation=epoch(),m4Revision=revision();
         const auto* old=publisher_.controlPrepared(generation,m4Revision);
         if(!old || deviceFrames<=0) return false;
+        const auto& route=silentStarter?sourceTemplate_:acceptedRoute_;
+        // This admission never upgrades a draft with unverified capture.
+        if(silentStarter) {
+            const auto* rows=route.getProperty("channels",juce::var()).getArray();
+            if(!rows || rows->size()!=count)return false;
+            for(const auto& row:*rows)
+                if(row.getProperty("mode",{}).toString()!="NONE")return false;
+        }
         armix::mixer::NativeDryRouteCommand decoded;
         juce::String problem;
         if(!armix::mixer::NativeDryRouteCommand::decode(
-              acceptedRoute_,decoded,problem))return false;
+              route,decoded,problem))return false;
         // A native IN is a callback ordinal, not the numerical physical
         // port label. Preserve original order including sparse ASIO pins.
         const int inputs=portCount_.load(std::memory_order_acquire);

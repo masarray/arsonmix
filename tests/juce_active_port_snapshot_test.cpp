@@ -48,7 +48,7 @@ int main(){
     out.clear();
     assert(!JuceActivePortSnapshot::fromMasks(13,in,out,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::emptyOutput);
-    assert(snap.inputs.callbackIndex(9)==previous.inputs.callbackIndex(9));
+    assert(snap.inputs.callbackIndex(9)==-1); // failed 0-OUT preserves accepted zero-input snapshot
     assert(!JuceActivePortSnapshot::capture(nullptr,12,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::nullDevice);
 }

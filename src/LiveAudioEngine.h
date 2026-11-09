@@ -1149,7 +1149,7 @@ public:
             if(!dryRoutingLab_.admitChannelIdFromAcceptedM4(
                    graphOwned_->count,
                    juce::jmax(32,device->getCurrentBufferSizeSamples()),
-                   allOutputsDisarmed(),currentOriginalCh1Lease()))
+                   allOutputsDisarmed(),currentOriginalCh1Lease(),true))
                 return "Prepared silent mixer could not admit native ChannelId graph";
             acceptedMixerBinding_=readMixerBinding(*device);
             acceptedWasapiBinding_=std::move(profile);

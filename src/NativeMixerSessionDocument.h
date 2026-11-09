@@ -349,7 +349,7 @@ public:
         doc.savedMs=static_cast<juce::int64>(ms);
         const auto binding=get(root,"binding");
         if(!textField(get(binding,"backend"),doc.binding.backend,128)||
-           !textField(get(binding,"capture"),doc.binding.capture,256)||
+           !textField(get(binding,"capture"),doc.binding.capture,256,true)||
            !textField(get(binding,"playback"),doc.binding.playback,256)||
            !textField(get(binding,"inputMask"),doc.binding.inputMask,256)||
            !textField(get(binding,"outputMask"),doc.binding.outputMask,256))
@@ -428,13 +428,17 @@ public:
            (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
             return false;
         auto req=get(root,"request");
-        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,1,256)||
+        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,0,256)||
            !integral(get(req,"maxFrames"),doc.request.maxFrames,16,8192)||
            !strictBool(get(req,"mainMonoAfterFx"),doc.request.mainMonoAfterFx))
             return false;
         const auto sourcesVar=get(req,"sources");
         const auto* sources=sourcesVar.getArray();
-        if(!sources||sources->size()>channels->size())return false;
+        if(!sources||sources->size()>channels->size()||
+           (doc.request.physicalInputs==0 && !sources->isEmpty()))return false;
+        if(doc.binding.capture.isEmpty() &&
+           (doc.request.physicalInputs!=0 || doc.binding.inputMask!="0"))
+            return false;
         std::set<std::uint64_t> seenSources;
         for(const auto& src:*sources) {
             DynamicSourcePatch p;
