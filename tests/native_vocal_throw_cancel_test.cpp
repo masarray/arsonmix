@@ -44,9 +44,15 @@ int main(){
     // Expired settings never mutate the DSP or its accepted settings shadow.
     check(p.queueSettings(changed,101));
     p.cancelQueuedRequest(101);
+    // A second expired UI edit must not make the FIRST one executable
+    // again when ASIO eventually resumes.
+    check(p.queueSettings(changed,105));
+    p.cancelQueuedRequest(105);
     render(p,b,m,0.f);
     VocalThrowProcessor::Completion c{};
     check(p.pollCompletion(c)&&c.requestId==101&&!c.applied);
+    render(p,b,m,0.f);
+    check(p.pollCompletion(c)&&c.requestId==105&&!c.applied);
     check(p.acceptedSettings().bpm==old.bpm);
     // A fresh request remains valid even after canceling an older ID.
     check(p.queueSettings(changed,102));

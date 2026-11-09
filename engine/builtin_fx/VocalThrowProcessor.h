@@ -6,6 +6,7 @@
 #include "../core/NativeBeatFrameContext.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
+#include <array>
 #include <cstdint>
 
 // JUCE adapter for the existing ChannelId FX rack. All setting/throw requests
@@ -100,8 +101,14 @@ public:
         // CONTROL can reject an expired UI request while ASIO is stopped.
         // A delayed callback must NEVER play its old vocal cue on resume.
         // One acquire load and one fixed-size completion; no RT clock/heap.
-        const bool expired=e.id==cancelledRequestId_.load(
-            std::memory_order_acquire);
+        // Multiple UI requests may time out while ASIO is suspended.
+        // A single last-cancelled ID is NOT sufficient: later timeouts
+        // would reactivate earlier queued cues. 32 cancellation slots
+        // cover the 32-entry command FIFO with fixed bounded RT reads.
+        bool expired=false;
+        for(const auto& cancelled:cancelledIds_)
+            expired=expired ||
+                cancelled.load(std::memory_order_acquire)==e.id;
         const bool applied=!expired && (e.kind==CommandKind::settings?
             core_.applyPrepared(e.prepared):core_.throwNow());
         (void)done_.push({e.id,e.prepared.settings,e.kind,applied});
@@ -155,7 +162,8 @@ public:
         return commands_.push(e);
     }
     void cancelQueuedRequest(std::uint64_t id) noexcept {
-        if(id)cancelledRequestId_.store(id,std::memory_order_release);
+        if(id)cancelledIds_[cancelWrite_++ % cancelledIds_.size()].store(
+            id,std::memory_order_release); // CONTROL single writer
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!done_.pop(out))return false;
@@ -227,7 +235,8 @@ private:
     std::atomic<std::uint32_t> musicInterval_{0};
     std::atomic<std::uint64_t> gridVersion_{0},gridAnchor_{0};
     std::atomic<std::uint64_t> gridEpoch_{0},gridRevision_{0};
-    std::atomic<std::uint64_t> cancelledRequestId_{0};
+    std::array<std::atomic<std::uint64_t>,32> cancelledIds_{};
+    std::uint32_t cancelWrite_=0; // CONTROL only
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
     float lastTempoBpm_=0.f; // CONTROL only
