@@ -8,6 +8,9 @@
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
+  // Public browser preview keeps its header; the native JUCE caption replaces it.
+  if (backend?.emitEvent && backend?.addEventListener)
+    document.documentElement.classList.add("armix-native-desktop");
   // The old M1 wording is retained as an explicit boot-time fallback for
   // release-train compatibility, NOT a claim that a demo graph is audio.
   const fallback = "M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY";

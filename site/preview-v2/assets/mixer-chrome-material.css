@@ -1489,3 +1489,21 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 .routing-wire-overlay path{filter:none!important;pointer-events:none}
 
 
+
+/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header.
+   The public interactive browser reference keeps its own top identity bar. */
+html.armix-native-desktop .app > .window-title{display:none!important}
+.window-title .logo{display:inline-flex!important;align-items:center;gap:0;letter-spacing:.015em}
+.window-title .logo .armix-brand-ar{color:#48d5f3}
+.window-title .logo .armix-brand-son{color:#eff8fa}
+.window-title .logo .armix-brand-mix{color:#ffad59}
+/* Compact consistent operator toolbar spacing, preserving existing BTN-180 skin. */
+.app .command-bar{
+ min-height:34px!important;align-items:center!important;column-gap:5px!important;
+ padding-left:9px!important;padding-right:9px!important;
+}
+.app .command-bar>.sep{margin-left:2px!important;margin-right:2px!important}
+.app .command-bar .toolbar-label{font-size:9px!important;letter-spacing:.06em}
+@media(max-width:1220px){
+ .app .command-bar{column-gap:3px!important;padding-left:5px!important;padding-right:5px!important}
+}

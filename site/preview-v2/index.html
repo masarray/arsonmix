@@ -30,7 +30,7 @@
 </head>
 <body>
 <div class="app">
-  <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
+  <header class="window-title"><span class="logo" aria-label="ArSonMiX"><span class="armix-brand-ar">Ar</span><span class="armix-brand-son">Son</span><span class="armix-brand-mix">MiX</span></span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
     <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
     <button class="tool wire-command" id="wireNavigatorToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating WIRE Routes navigator">Routes</button>
@@ -2879,10 +2879,41 @@ window.addEventListener('keydown',e=>{
   document.getElementById(e.key==='ArrowRight'?'bankNext':'bankPrev').click();
  }
 });
-let resizeQueued=false;
-window.addEventListener('resize',()=>{
- if(resizeQueued)return;resizeQueued=true;
- requestAnimationFrame(()=>{resizeQueued=false;render();});
+// Desktop maximise, restore, DPI changes and normal resizing are layout events,
+// not mixer/PCM edits. Read the true socket bounds AFTER layout and coalesce
+// concurrent ResizeObserver + viewport events into one animation frame.
+let wireGeometryFrame=0,wireGeometryDirty=false;
+function scheduleWireGeometryReflow(){
+ wireGeometryDirty=true;
+ if(wireGeometryFrame||document.hidden)return;
+ wireGeometryFrame=requestAnimationFrame(()=>{
+  wireGeometryFrame=0;
+  if(document.hidden)return;
+  const viewport=document.getElementById('viewport');
+  if(!viewport||viewport.clientWidth<=0||viewport.clientHeight<=0)return;
+  wireGeometryDirty=false;
+  const root=document.querySelector('.console-body');
+  const drawn=Number(root?.style.getPropertyValue('--bank-capacity'));
+  const required=bankCapacity();
+  if(drawn&&required!==drawn)render(); // structural bank change only
+  else renderWireRouting(); // real pin geometry, zero strip remount/graph edits
+ });
+}
+// WebView2 can resize its child compositor one event AFTER the parent HWND.
+// Observe stable mixer boxes rather than polling or assuming old viewport width.
+if(typeof ResizeObserver==='function'){
+ const wireGeometryObserver=new ResizeObserver(scheduleWireGeometryReflow);
+ for(const id of ['viewport','tracks','master']){
+  const el=document.getElementById(id);
+  if(el)wireGeometryObserver.observe(el);
+ }
+ wireGeometryObserver.observe(document.querySelector('.console-body'));
+}
+window.addEventListener('resize',scheduleWireGeometryReflow,{passive:true});
+window.addEventListener('focus',scheduleWireGeometryReflow,{passive:true});
+window.addEventListener('pageshow',scheduleWireGeometryReflow,{passive:true});
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden)scheduleWireGeometryReflow();
 });
 restorePluginPreferences();init();
 })();
