@@ -78,3 +78,9 @@ Field feedback: the pitch-synchronous singer is now acceptably natural but backi
 With Space `s` in [0,1], direct gain is `1-0.62s`, early send `0.49s`, late return `1.08s`. Positive-polarity stereo image; no exact HRTF or claimed physical metres, no extra audio latency or device, no delay-time modulation, no lead processing changes. An offline-only switch retains old spatial routing to compare against the current pitch engine. The one-knob GUI remains unchanged.
 
 Test `NativeHarmonyBackingStageSpatialDepthAndMonoPDC` validates 32–192k, monotonic early/direct energy, three/five singer first-arrival and mono energy, 64/257 callback parity, declared 1536-sample PDC and Wet0 lead invariance. Aural user validation and physical ASIO xrun still required.
+
+## 2026-11-09 P1 spatial refinement: frequency-dependent far-ear cue
+
+After the stage placement milestone, the fixed 0.22ms far-ear precedence cue used the *same full-band vocal* for near and far ears, so lateral placement could still resemble ordinary pan/doubling rather than a believable backing position. The stage now precomputes one gentle 4.1kHz one-pole for the **contralateral-only** short-delay ring. The near-ear direct path, lead PCM, source pitch-synchronous resynthesis, fixed sample PDC, per-singer reflection timing, shared room, and existing Space control are unchanged. No speculative physical 3D/HRTF distance claims.
+
+At Space 0 the far-ear blend is zero; at higher Space, far ear combines a proportion of the original with a short delayed, spectrally softened replica. Fixed delay and preprepared coefficient prevent audio-control chirps. This is a small independent cue, not new unbounded spectral processing. Synthetic tests compare 350Hz / 8kHz far-to-near energy at 48/96/192k, preserve full-band Space0 parity, plus existing per-singer reflection/DRR, dry polarity, mono and callback-block parity. Real singer/headphones/mono A/B still gate acceptance.

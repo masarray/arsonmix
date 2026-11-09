@@ -62,6 +62,29 @@ static std::vector<float> render(int block,float space,bool wet){
     need(e->latencySamples()==1536,"native PDC changed");
     return l;
 }
+
+// Separate synthetic frequency-band check for the modest head-shadow cue.
+// Compare far/near energy at 350 Hz and 8 kHz while keeping pan and Space
+// constant. Not a binaural localization or human HRTF listening test.
+static double farNearRatio(double rate,double frequency,float space){
+    BackingStageSpatial stage;
+    need(stage.prepare(rate),"head shadow rate prepare failed");
+    const int frames=static_cast<int>(rate*.09);
+    double nearEnergy=0.,farEnergy=0.;
+    for(int t=0;t<frames;++t){
+        const float input=static_cast<float>(.4*std::sin(
+            6.283185307179586*frequency*t/rate));
+        const auto p=stage.place(0,input,0.f,0.f,.28f,.96f,space);
+        if(t>static_cast<int>(rate*.04)){
+            // Compare against direct ear gains to remove normal panning.
+            nearEnergy+=(p.directR/.96f)*(p.directR/.96f);
+            farEnergy+=(p.directL/.28f)*(p.directL/.28f);
+        }
+        stage.advance();
+    }
+    need(nearEnergy>1.e-5&&farEnergy>0.,"head shadow null output");
+    return farEnergy/nearEnergy;
+}
 int main(){
     for(double rate:{32000.,44100.,48000.,96000.,192000.}){
         double previous=-1.;
@@ -77,6 +100,16 @@ int main(){
         }
         scene(rate,0.f,0,3);
         scene(rate,.8f,4,5);
+    }
+    for(double rate:{48000.,96000.,192000.}){
+        const double low=farNearRatio(rate,350.,1.f);
+        const double high=farNearRatio(rate,8000.,1.f);
+        need(high<low*.85,"far ear missing high-frequency shadow");
+        need(high>.08,"far ear over-attenuated or disappeared");
+        need(std::abs(farNearRatio(rate,350.,0.f)-1.)<.015,
+             "Space zero changed neutral stereo signal");
+        need(std::abs(farNearRatio(rate,8000.,0.f)-1.)<.015,
+             "Space zero changed high-frequency signal");
     }
     for(float space:{0.f,.6f,1.f})
         need(render(64,space,true)==render(257,space,true),

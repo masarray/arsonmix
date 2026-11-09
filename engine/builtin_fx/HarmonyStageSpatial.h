@@ -23,6 +23,13 @@ public:
         const auto delay=static_cast<std::size_t>(std::lround(rate*.00022));
         if(delay<2||delay>=earCapacity)return false;
         farEarDelay_=delay;
+        // Head-shadow proxy: the contralateral signal is gently softened
+        // before a fixed precedence delay. Prepared once per device rate.
+        // Not a measured HRTF and never applied to the original dry lead.
+        farEarLowpassAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*4100./rate));
+        if(!(farEarLowpassAlpha_>0.f&&farEarLowpassAlpha_<1.f))return false;
+        farEarLowpassState_.fill(0.f);
         for(auto& ring:farEarHistory_)ring.fill(0.f);
         cursor_=0;
         return true;
@@ -33,7 +40,12 @@ public:
         // Engine calls with validated singer indices [0,4].
         const auto i=static_cast<std::size_t>(singer);
         auto& ring=farEarHistory_[i];
-        ring[cursor_]=source;
+        float& filtered=farEarLowpassState_[i];
+        filtered+=farEarLowpassAlpha_*(source-filtered);
+        // Store filtered signal for the far ear only. The near ear keeps the
+        // original pitch-synchronous PCM unchanged. Reuse the old fixed ring:
+        // no extra audio buffer, allocation or reported latency.
+        ring[cursor_]=filtered;
         const float delayed=ring[(cursor_+earCapacity-farEarDelay_)&(earCapacity-1)];
         const float sum=std::abs(mixL)+std::abs(mixR);
         const float direction=sum>1.e-9f?(mixR-mixL)/sum:0.f;
@@ -56,6 +68,8 @@ public:
     std::size_t farEarDelaySamples()const noexcept{return farEarDelay_;}
 private:
     std::array<std::array<float,earCapacity>,voices> farEarHistory_{};
+    std::array<float,voices> farEarLowpassState_{};
+    float farEarLowpassAlpha_=0.f;
     std::size_t cursor_=0,farEarDelay_=0;
 };
 } // namespace armix::harmony
