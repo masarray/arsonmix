@@ -47,11 +47,18 @@ public:
                layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double sampleRate,int) override {
+        // CONTROL/device thread, only after the prior audio callback stops.
+        // The DSP may already have APPLIED an edit whose completion is still
+        // waiting in the AUDIO->CONTROL SPSC. Rebuilding from accepted_
+        // would silently undo that change on a buffer/device/rate restart.
+        // Preserve the actual last DSP target, just like Compressor does.
+        // Cold Show restore (not yet prepared) takes accepted_ instead.
+        const auto latest=core_.ready()?core_.settingsForTests():accepted_;
         // Each device epoch gets a new frame clock. A previously accepted
         // auto BPM interval is invalid if the hardware sample rate changed.
         lastTempoBpm_=0.f;lastTempoDivision_=-1;
         musicInterval_.store(0,std::memory_order_release);
-        ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(accepted_);
+        ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(latest);
         if(ready_)rate_=sampleRate;
     }
     void releaseResources() override{
