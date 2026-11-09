@@ -20,7 +20,7 @@
      4974954.ai Illustrator PDF at PDF rect x=53..77, y=100..124.
      The PDF has rasterized masks; keep its original lighting in this tiny
      embedded image, with editable vector hardware housing around it. -->
-<defs><clipPath id="aiLens"><circle cx="128" cy="128" r="44.5"/></clipPath></defs>
-<image x="80" y="80" width="96" height="96" clip-path="url(#aiLens)"
+<defs><clipPath id="aiLens"><circle cx="128" cy="128" r="46"/></clipPath></defs>
+<image x="66" y="66" width="124" height="124" clip-path="url(#aiLens)"
  href="data:image/webp;base64,UklGRsoDAABXRUJQVlA4IL4DAADQFwCdASpgAGAAPikSh0MhoQleqlYMAUJQBmQIN9V+8n4pZhNyz/j/uk7V/mAfqJ/cfsY4RH6uf6r+V+wB+qvYAf2r/D9YB6Ev6m+qb/x/Ys/Wj9l/gM/VHSmImhDSHTVbn+j/0Y6C+en+Cvd3SoeJB1izoT3Zal/Fy6n58PUFZh0COEpRqgfZxsYNpqbQOGrLa5HC0+VkpTTLSDu3UUDceh5fLfIIeuyFvctjt3pmFM/FuNn1gab21UB2HUbCI7aXXW6m6KYgAP7/HrVrhqKvmzrNQiDU1bUbv1kbTgyMGRt/xqcSYB+ZoM4uKEuQWJ0IS5aeomwAPeqKFnFGtufKTKZCoruOfwBYx4ygtoxiE4n30qOw/+FB22VGCG3n5uxamyQaev4F0H9/nJugzkkQcwbZi/Tbgi+f/+rml1i9JiWsxh5jgPPbsi5Szi+KYGlHZPDE6ozUkNtdMl+dk6NVtdJ/skmwSN1ubrO+n67ydcbzw+lWW+3+Bo1T3kZAMTY3WHpqs2XvpovoW8Z+8y7FP0mQSH4DmjMNHTAf79WLoKV8cdfP19OmlZ1JxrUaqLXkBTuluOJgn43vj3WD3L/d5IOi/t3ve9Z2Y+fcTPAJ6h6XUFrVO5BmmMzEr4XmfrxxcCfp8FOLHAy8/i6yjcQylnMJ0eBGwbmQBbjXsJenDrj3SrL2+bQF4Vsx7VyBxQo6mvtQfVe7zOpWfmqtgb3raZXCSK99uNFilVFcNXv2zq2FaMqQVcB8uiE0FyuNc05UKl6uXdvVT15woaqlYBCJV/Cg553+lQkbh9HgUccrqMqo7h3UAqRmgEW43gc0b9Y1TOQuZphZ+dMi1nnj4NmKuZ6Sn7lstxaKCJdZ3zpNdhR56xeuOiezY01XKmenchMbbb05sd2+Il7Pobi8kHH0ZFxR4iIMTOuEciouxORXqim9ALGc/h4gdMZQ3dfHmjxBIMVPdaeb9l88J7/DhE7gpKtK2qGh7+gf/8xFaIVaWrA/i+1TluxT5OxQpKVylnYBuPP2Pu9h/Nwnc5omgvkUGk4FcFD9WR4Be0NOfj7SpzHHr2ptaht/iGnB3+BOftSynjH0ErgYvuNesms2Db+yeygoZ9bDHdt7AsXXjnbestzsvAcjWkbGZ6sp4JOjvc5m3hdi5UEscymToAuzL33qvo8bc9VQtIn3Da/a2VKvlB/1rVZjJtBAFHm9/70X7Ckcg8qB0o0u5zXPX9zNdkbP5hlzJXZtSBV1abzMCbX0XSFh+Fi0J+FVp5SGhgAA"/>
 </svg>
