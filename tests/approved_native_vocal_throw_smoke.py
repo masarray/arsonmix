@@ -213,14 +213,14 @@ def main():
                 # request/ACK/readback contract, not a CSS-only animation.
                 dial=editor.locator("#vtWetDial")
                 before=dial.evaluate("""el=>({
-                   offset:getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset,
+                   offset:parseFloat(getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset),
                    transform:getComputedStyle(el.querySelector('.vt-encoder-needle')).transform,
                    bg:getComputedStyle(el).backgroundImage
                 })""")
                 dial.hover()
                 page.mouse.wheel(0,-120)
                 after=dial.evaluate("""el=>({
-                   offset:getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset,
+                   offset:parseFloat(getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset),
                    transform:getComputedStyle(el.querySelector('.vt-encoder-needle')).transform,
                    bg:getComputedStyle(el).backgroundImage
                 })""")
