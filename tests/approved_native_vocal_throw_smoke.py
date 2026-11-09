@@ -22,13 +22,14 @@ def last(page,action):
     assert records, "No "+action+" event"
     return records[-1]
 
-def reply_snapshot(page,state,settings,applied=None,count=0,tail=False,music=None):
+def reply_snapshot(page,state,settings,applied=None,count=0,tail=False,music=None,armed=False):
     act=last(page,"nativeThrowSnapshot")
     data={"requestId":act["requestId"],"channelId":SOURCE,"slot":0,
         "instanceId":INSTANCE,"status":"ACCEPTED","schemaVersion":1,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],"sampleRate":48000,
         "addedLatencySamples":0,"throwCount":count,"tailActive":tail,
+        "cueArmed":armed,
         "musicSourceChannelId":music["source"] if music else "0",
         "musicSourceActive":bool(music),
         "musicLocked":bool(music),
@@ -136,6 +137,44 @@ def main():
             assert last(page,"nativeThrowSnapshot")["requestId"]==initial["requestId"],\
                 "snapshot polling overwrote outstanding request too early"
             reply_snapshot(page,state,DEFAULTS)
+            if width==1366:
+                # First-ever knob gesture must work without pressing any
+                # MAN/AUTO/HYBRID mode control or waiting for FX re-open.
+                capture=editor.locator('.vt-encoder[data-key="captureMs"] .vt-encoder-face')
+                initial_capture=capture.bounding_box()
+                assert initial_capture
+                px=initial_capture["x"]+initial_capture["width"]/2
+                py=initial_capture["y"]+initial_capture["height"]/2
+                page.mouse.move(px,py)
+                page.mouse.down()
+                page.mouse.move(px,py-23,steps=8)
+                page.mouse.up()
+                first=last(page,"nativeThrowSet")
+                cap1=first["settings"]["captureMs"]
+                assert cap1>DEFAULTS["captureMs"],first
+                # While ACK is outstanding, a real wheel gesture still
+                # changes the encoder visually. Latest edit is coalesced.
+                capture.hover()
+                page.mouse.wheel(0,-120)
+                assert float(capture.get_attribute("aria-valuenow"))>cap1
+                assert last(page,"nativeThrowSet")["requestId"]==first["requestId"]
+                emit(page,"arMixBuiltinThrowQueue",{"requestId":first["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{"requestId":first["requestId"],"status":"APPLIED"})
+                reply_snapshot(page,state,{**DEFAULTS,"captureMs":cap1},applied=first["requestId"])
+                second=last(page,"nativeThrowSet")
+                assert second["requestId"]!=first["requestId"]
+                assert second["settings"]["captureMs"]>cap1,second
+                emit(page,"arMixBuiltinThrowQueue",{"requestId":second["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{"requestId":second["requestId"],"status":"APPLIED"})
+                reply_snapshot(page,state,{**DEFAULTS,"captureMs":second["settings"]["captureMs"]},
+                               applied=second["requestId"])
+                # Reset CAPTURE for later existing preset/tempo regressions.
+                capture.dblclick()
+                restored=last(page,"nativeThrowSet")
+                assert restored["settings"]["captureMs"]==DEFAULTS["captureMs"]
+                emit(page,"arMixBuiltinThrowQueue",{"requestId":restored["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{"requestId":restored["requestId"],"status":"APPLIED"})
+                reply_snapshot(page,state,DEFAULTS,applied=restored["requestId"])
             assert editor.locator("#vtStatus").inner_text()=="LIVE"
             assert editor.locator("#vtCount").inner_text()=="0"
             box=editor.bounding_box()
@@ -311,14 +350,46 @@ def main():
                 updated={**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]}
                 reply_snapshot(page,state,updated,applied=rotary["requestId"])
                 assert "%" in editor.locator("#vtWetValue").inner_text()
-                editor.locator("#vtThrow").click()
-                assert editor.locator("#vtThrow").is_disabled(), "no repeated stage cue until native ACK"
+                # Pointer down MUST NOT shrink the original SVG or bezel.
+                trigger=editor.locator("#vtThrow")
+                outer=trigger.evaluate("""el=>{
+                  const r=el.getBoundingClientRect();
+                  return {x:r.x,y:r.y,width:r.width,height:r.height,
+                    filter:getComputedStyle(el).filter,
+                    ring:getComputedStyle(el.querySelector('.vt-throw-aura')).boxShadow};
+                }""")
+                tb=trigger.bounding_box();assert tb
+                page.mouse.move(tb["x"]+tb["width"]/2,tb["y"]+tb["height"]/2)
+                page.mouse.down()
+                pressed=trigger.evaluate("""el=>{
+                  const r=el.getBoundingClientRect();
+                  return {x:r.x,y:r.y,width:r.width,height:r.height,
+                    filter:getComputedStyle(el).filter,
+                    ring:getComputedStyle(el.querySelector('.vt-throw-aura')).boxShadow,
+                    cap:getComputedStyle(el,'::after').transform};
+                }""")
+                for axis in ("x","y","width","height"):
+                    assert abs(pressed[axis]-outer[axis])<.01,(axis,outer,pressed)
+                assert pressed["filter"]==outer["filter"]
+                assert pressed["ring"]!=outer["ring"]
+                assert pressed["cap"]!="none"
+                page.mouse.up() # real pointer click -> actual native request
+                assert trigger.is_disabled(), "no repeated stage cue until native ACK"
                 cue=last(page,"nativeThrowTrigger")
                 assert cue["instanceId"]==INSTANCE and cue["channelId"]==SOURCE
                 assert cue["slot"]==0
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":cue["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinThrowAck",{"requestId":cue["requestId"],"status":"APPLIED"})
-                reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},count=1,tail=True)
+                reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},
+                               count=0,tail=False,armed=True)
+                assert editor.locator("#vtThrow").get_attribute("data-armed")=="true"
+                assert editor.locator("#vtStatus").inner_text()=="ARMED"
+                last_snap=last(page,"nativeThrowSnapshot")["requestId"]
+                page.wait_for_function("""old=>window.__actions.filter(
+                  x=>x.action==='nativeThrowSnapshot').at(-1)?.requestId!==old""",
+                  arg=last_snap,timeout=4000)
+                reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},
+                               count=1,tail=True,armed=False)
                 assert editor.locator("#vtCount").inner_text()=="1"
                 assert editor.locator("#vtStatus").inner_text()=="TAIL"
                 assert editor.locator("#vtThrow").get_attribute("data-tail")=="true"
