@@ -2,9 +2,10 @@
 # ArSonMix automatic update supervisor. Installed next to ArSonMix.exe by Inno.
 # Independent of JUCE/audio callback; starts from an installed GUI only.
 # Downloads while the host is active; applies ONLY after normal host exit.
-param([Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$OwnerProcessId,
+param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$PolicySelfTest,
-      [switch]$ApplyStaged)
+      [switch]$ApplyStaged,
+      [switch]$RecoveryMode)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -228,13 +229,80 @@ function Owns-Exe([int]$processId) {
         } finally {$process.Dispose()}
     } catch {return $false}
 }
-function Run-Installer([string]$file) {
+
+function Test-NoActiveMixer {
+    foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
+        try {
+            if([string]::Equals([IO.Path]::GetFullPath($process.MainModule.FileName),
+                $exe,[StringComparison]::OrdinalIgnoreCase)){return $false}
+        } catch {return $false} # Unreadable image identity cannot authorize file replacement.
+        finally {$process.Dispose()}
+    }
+    return $true
+}
+function Show-RecoveryFailure([string]$reason) {
+    Log-Result ('RECOVERY_FAILED '+$reason)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $nl=[Environment]::NewLine
+        [Windows.Forms.MessageBox]::Show(
+            "ArSonMix could not repair itself safely."+$nl+$nl+
+            "Your Studio sessions and plugins were not deleted."+$nl+$nl+
+            "Use the official ArSonMix installer if this continues."+$nl+$nl+
+            "Reason: "+$reason,
+            'ArSonMix - Safe Recovery',
+            [Windows.Forms.MessageBoxButtons]::OK,
+            [Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    } catch { }
+}
+function Restore-InstalledRelease([string]$sourceSha) {
+    if(-not (Test-NoActiveMixer)){throw 'Another ArSonMix session is still active'}
+    # A separately invoked recovery shortcut works when EXE is missing.
+    # Match current SHA against GitHub's actual published release rather
+    # than trusting local update state as installation authority.
+    $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
+               'X-GitHub-Api-Version'='2022-11-28'}
+    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $sourceRelease=$null
+    foreach($release in $releases) {
+        if([string]$release.target_commitish -ceq $sourceSha -and
+           $null -ne (Approved-Installer $release)) {
+            if($null -eq $sourceRelease -or
+               (Compare-Version (Version-Key $release.tag_name)
+                                (Version-Key $sourceRelease.tag_name)) -gt 0){
+                $sourceRelease=$release
+            }
+        }
+    }
+    if($null -eq $sourceRelease){throw 'No published, verified release matches this installation'}
+    $asset=Approved-Installer $sourceRelease
+    $destination=Join-Path (Join-Path $root 'stage') ([string]$asset.name)
+    Download-Release-Verified $sourceRelease $asset $destination
+    if(-not (Test-StagedAsset $destination $asset)){throw 'Recovery installer SHA check failed'}
+    if(-not (Test-NoActiveMixer)){throw 'An active mixer appeared during repair'}
+    # Missing-EXE mode is NOT normal auto-update and never closes a mixer.
+    if(-not (Run-Installer $destination -AllowMissingExeRecovery)){
+        throw 'Verified recovery installer was not accepted by Windows'
+    }
+    if(-not (Test-Path -LiteralPath $exe -PathType Leaf) -or
+       [string](Read-Json $provenance).sourceCommit -cne $sourceSha){
+        throw 'Repair did not restore the expected release'
+    }
+    if(-not (Launch-WithHealth $sourceSha)){
+        throw 'Repaired application did not pass the GUI startup check'
+    }
+    Log-Result ('RECOVERY_HEALTHY '+$sourceRelease.tag_name)
+    # Keep verified installer cached for next recovery; no Studio cleanup.
+}
+
+function Run-Installer([string]$file,[switch]$AllowMissingExeRecovery) {
     # Inno performs exact-path process shutdown and EXE replacement preflight.
     # Its silent [Run] is disabled: only this supervisor relaunches once.
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){return $false}
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=$file
     $info.Arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOCLOSEAPPLICATIONS /ARSONMIXAUTOUPDATE /DIR="'+$PSScriptRoot+'"'
+    if($AllowMissingExeRecovery){$info.Arguments+=' /ARSONMIXRECOVERY'}
     $info.UseShellExecute=$false
     $info.CreateNoWindow=$true
     $process=[Diagnostics.Process]::Start($info)
@@ -386,14 +454,20 @@ if($PolicySelfTest) {
 }
 
 try {
-    if(-not (Test-Path -LiteralPath $exe -PathType Leaf) -or
-       -not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
-       (-not $ApplyStaged -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
+    if(-not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
+       (-not $RecoveryMode -and -not (Test-Path -LiteralPath $exe -PathType Leaf)) -or
+       (-not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
     # No update worker from portable builds, different installation roots,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
     if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'portable_mode.txt')){exit 0}
     $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
-    $locked=$mutex.WaitOne($(if($ApplyStaged){60000}else{0}))
+    try {
+        $locked=$mutex.WaitOne($(if($ApplyStaged -or $RecoveryMode){60000}else{0}))
+    } catch [Threading.AbandonedMutexException] {
+        # Previous worker was killed. WaitOne owns the mutex despite throwing.
+        $locked=$true
+        Log-Result 'ABANDONED_MUTEX_RECLAIMED'
+    }
     if(-not $locked){exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance
@@ -416,6 +490,19 @@ try {
         foreach($key in @('lastCheckUtc','lastAttemptUtc','blockedTag','lastInstalledTag','phase','operation','installAttempts','retryAfterUtc','candidateTag','candidateSha','previousSha','previousTag','newAsset','previousAsset')) {
             if($null -ne $read -and $read.PSObject.Properties.Name -contains $key){$state.$key=$read.$key}
         }
+    }
+    if($RecoveryMode) {
+        # Invoked from the installed fallback shortcut, even with missing EXE.
+        try {
+            if((Get-InstalledImageStatus $file) -ceq 'healthy') {
+                if(-not (Test-NoActiveMixer)){throw 'ArSonMix is already running'}
+                [Diagnostics.Process]::Start($exe) | Out-Null
+                Log-Result 'RECOVERY_NOT_REQUIRED_LAUNCHED_HEALTHY_EXE'
+            } else {
+                Restore-InstalledRelease $installedSha
+            }
+        } catch {Show-RecoveryFailure $_.Exception.Message}
+        exit 0
     }
     $recovery=Classify-InterruptedTransaction ([string]$state.phase) $installedSha ([string]$state.previousSha) ([string]$state.candidateSha)
     if($recovery) {
