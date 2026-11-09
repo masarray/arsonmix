@@ -170,6 +170,14 @@ def main():
                 assert "active" in (note_g.get_attribute("class") or "")
                 # Reduced note rail radius leaves an actual margin inside the
                 # wheel, including enlarged selected buttons on mobile.
+                # Inner white pseudo-ring used to cross the musical-key
+                # labels. The blue annulus is now uninterrupted.
+                inner_ring=page.locator("#mxHWheel").evaluate("""e=>{
+                    const s=getComputedStyle(e,'::before');
+                    return {content:s.content,border:s.borderTopWidth};
+                }""")
+                assert inner_ring["content"] in ("none","normal"),inner_ring
+                assert inner_ring["border"]=="0px",inner_ring
                 wheel_box=page.locator("#mxHWheel").bounding_box()
                 note_box=note_g.bounding_box()
                 assert wheel_box and note_box
