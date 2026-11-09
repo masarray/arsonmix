@@ -42,6 +42,8 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <vector>
+#include "../engine/player/PlayerSetlistPolicy.h"
 #include <juce_core/juce_core.h>
 
 namespace
@@ -275,6 +277,7 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
+        restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
         setUsingNativeTitleBar (true);
@@ -372,6 +375,13 @@ private:
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
+    std::unique_ptr<juce::FileChooser> playerFileChooser_;
+    std::vector<juce::File> playerLibrary_; // one compact default setlist
+    int playerSelected_=-1,playerCurrent_=-1;
+    int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
+    bool playerAutoNext_=false;
+    std::uint64_t lastAutoAdvanceGeneration_=0;
+    juce::String playerError_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
     // retained vendor processor lease. No vendor destructor runs on RT.
@@ -1616,9 +1626,18 @@ private:
                             // Refresh native physical port inventory after the user
                             // finishes device selection; never require a restart.
                             safe->emitApprovedNativeSnapshot();
+                            // The operator already pressed Play AND chose a
+                            // physical output. Finish that exact pending Play
+                            // once; never autoplay on ordinary device setup.
+                            const int pending=safe->playerOutputPendingIndex_;
+                            safe->playerOutputPendingIndex_=-1;
+                            if(pending>=0 && pending==safe->playerSelected_ &&
+                               pending<static_cast<int>(safe->playerLibrary_.size()))
+                                safe->playSelectedMusic();
                         }
                         else
                         {
+                            safe->playerOutputPendingIndex_=-1;
                             safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
                                 "No valid full-duplex device; audio remains gated");
                             safe->emitNotice (
@@ -2357,11 +2376,212 @@ private:
             });
     }
 
+    // One native player, one local setlist, one worker decoder, same JUCE
+    // callback. The WebView may only select songs or send transport intents.
+    void restorePlayerLibrary() {
+        const auto file=settingsDirectory().getChildFile("player-library.json");
+        if(!file.existsAsFile())return;
+        auto json=juce::JSON::parse(file.loadFileAsString());
+        if(!json.isObject() ||
+           static_cast<int>(json.getProperty("version",0))!=1) {
+            playerError_="Saved setlist could not be read; music files were not changed";
+            return;
+        }
+        const auto tracks=json.getProperty("files",{});
+        if(const auto* list=tracks.getArray()) {
+            for(const auto& path:*list) {
+                if(playerLibrary_.size()>=2000)break;
+                if(!path.isString())continue;
+                const auto text=path.toString();
+                if(text.isEmpty() || text.length()>4096)continue;
+                const juce::File entry(text);
+                if(!juce::File::isAbsolutePath(text) ||
+                   !entry.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+                   std::find(playerLibrary_.begin(),playerLibrary_.end(),entry)
+                       !=playerLibrary_.end())
+                    continue;
+                playerLibrary_.push_back(entry);
+            }
+        }
+        playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
+            static_cast<bool>(json.getProperty("autoNext",false));
+        if(!playerLibrary_.empty())playerSelected_=0;
+    }
+    void persistPlayerLibrary() {
+        auto document=std::make_unique<juce::DynamicObject>();
+        document->setProperty("version",1);
+        document->setProperty("autoNext",playerAutoNext_);
+        juce::Array<juce::var> files;
+        for(const auto& f:playerLibrary_)
+            files.add(f.getFullPathName());
+        document->setProperty("files",juce::var(files));
+        const auto target=settingsDirectory().getChildFile("player-library.json");
+        juce::TemporaryFile staging(target);
+        if(!staging.getFile().replaceWithText(
+                juce::JSON::toString(juce::var(document.release()),false)) ||
+           !staging.overwriteTargetFileWithTemporary())
+            playerError_="Unable to save setlist; check folder permissions";
+    }
+    void emitPlayerState(bool includeLibrary=false) {
+        if(!browser_.loaded)return;
+        auto obj=std::make_unique<juce::DynamicObject>();
+        obj->setProperty("schema","arsonmix.player.v1");
+        obj->setProperty("transport",engine_.playerStatus());
+        obj->setProperty("selected",playerSelected_);
+        obj->setProperty("current",playerCurrent_);
+        obj->setProperty("autoNext",playerAutoNext_);
+        obj->setProperty("error",playerError_);
+        obj->setProperty("chooseOutput",
+            playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
+            playerError_.containsIgnoreCase("native mixer is preparing"));
+        if(includeLibrary) {
+            juce::Array<juce::var> rows;
+            for(std::size_t i=0;i<playerLibrary_.size();++i) {
+                auto song=std::make_unique<juce::DynamicObject>();
+                song->setProperty("id",static_cast<int>(i));
+                song->setProperty("title",
+                    playerLibrary_[i].getFileNameWithoutExtension());
+                song->setProperty("missing",!playerLibrary_[i].existsAsFile());
+                rows.add(juce::var(song.release()));
+            }
+            obj->setProperty("tracks",juce::var(rows));
+        }
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerState",
+                                               juce::var(obj.release()));
+    }
+    void choosePlayerFiles() {
+        if(playerFileChooser_)return; // one native dialog only
+        playerFileChooser_=std::make_unique<juce::FileChooser>(
+            "Add Music",juce::File::getSpecialLocation(
+                juce::File::userMusicDirectory),
+            "*.wav;*.mp3;*.flac;*.aif;*.aiff;*.ogg",true);
+        const auto flags=juce::FileBrowserComponent::openMode |
+            juce::FileBrowserComponent::canSelectFiles |
+            juce::FileBrowserComponent::canSelectMultipleItems;
+        playerFileChooser_->launchAsync(flags,
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this)]
+            (const juce::FileChooser& picker) {
+                if(!safe)return;
+                const auto files=picker.getResults();
+                std::size_t first=static_cast<std::size_t>(-1);
+                for(const auto& file:files) {
+                    if(!file.existsAsFile() ||
+                       !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))
+                        continue;
+                    const auto found=std::find(safe->playerLibrary_.begin(),
+                        safe->playerLibrary_.end(),file);
+                    if(found!=safe->playerLibrary_.end()) {
+                        if(first==static_cast<std::size_t>(-1))
+                            first=static_cast<std::size_t>(
+                                found-safe->playerLibrary_.begin());
+                        continue;
+                    }
+                    if(safe->playerLibrary_.size()>=2000)break;
+                    if(first==static_cast<std::size_t>(-1))
+                        first=safe->playerLibrary_.size();
+                    safe->playerLibrary_.push_back(file);
+                }
+                if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
+                    safe->playerSelected_=static_cast<int>(first);
+                safe->playerError_.clear();
+                safe->persistPlayerLibrary();
+                safe->emitPlayerState(true);
+                // Do not destroy FileChooser inside its own callback.
+                juce::MessageManager::callAsync([safe] {
+                    if(safe)safe->playerFileChooser_.reset();
+                });
+            });
+    }
+    void playTransportMusic() {
+        const auto phase=engine_.playerStatus().getProperty(
+            "state","EMPTY").toString().toStdString();
+        // Selecting NEXT must not replace a PAUSED CURRENT. Play resumes
+        // the actual deck; double-click / Next explicitly change song.
+        if(armix::player::SetlistPolicy::resumeCurrentOnPlay(
+                phase,playerCurrent_)) {
+            playerError_=engine_.playerPlay();
+            emitPlayerState();
+            return;
+        }
+        playSelectedMusic();
+    }
+    void playSelectedMusic() {
+        if(playerLibrary_.empty()) {
+            playerError_="Add Music to begin";emitPlayerState();return;
+        }
+        if(playerSelected_<0)playerSelected_=0;
+        if(playerSelected_>=static_cast<int>(playerLibrary_.size()))return;
+        const auto phase=engine_.playerStatus().getProperty(
+            "state","EMPTY").toString();
+        if(playerCurrent_==playerSelected_ && phase!="ERROR" &&
+           phase!="EMPTY") {
+            playerError_=engine_.playerPlay();
+        } else {
+            const auto error=engine_.loadPlayerMusic(
+                playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
+            playerError_=error;
+            if(error.isEmpty()) {
+                playerCurrent_=playerSelected_;
+                // A newly native-owned MUSIC ChannelId is visible in the
+                // authoritative mixer immediately after publisher ACK.
+                // The browser never invents a GUI-only strip or meter.
+                emitApprovedNativeSnapshot();
+            }
+        }
+        emitPlayerState(true);
+    }
+    void playNextMusic() {
+        const int next=armix::player::SetlistPolicy::nextTrack(
+            playerCurrent_,playerSelected_,
+            static_cast<int>(playerLibrary_.size()));
+        if(next<0) {
+            engine_.playerStop();emitPlayerState();return;
+        }
+        playerSelected_=next;playSelectedMusic();
+    }
+
     void onAction (const juce::var& args)
     {
-        const auto action = args.getProperty ("action", {}).toString();
+        auto action = args.getProperty ("action", {}).toString();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
+        if(action=="playerChooseOutput") {
+            if(playerSelected_<0 ||
+               playerSelected_>=static_cast<int>(playerLibrary_.size()) ||
+               !(playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
+                 playerError_.containsIgnoreCase("native mixer is preparing")))
+                return emitPlayerState();
+            // Reuse EXACTLY the existing native AUDIO SETUP dispatcher, with
+            // all of its independent-stream/restore/feedback protections.
+            // This is an explicit user-selected endpoint, never a fallback.
+            playerOutputPendingIndex_=playerSelected_;
+            action="audioSetup";
+        }
+        if(action=="playerSubscribe")return emitPlayerState(true);
+        if(action=="playerAdd")return choosePlayerFiles();
+        if(action=="playerPlay")return playTransportMusic();
+        if(action=="playerPause") {
+            engine_.playerPause();emitPlayerState();return;
+        }
+        if(action=="playerStop") {
+            playerOutputPendingIndex_=-1;
+            engine_.playerStop();emitPlayerState();return;
+        }
+        if(action=="playerNext")return playNextMusic();
+        if(action=="playerAutoNext") {
+            playerAutoNext_=value.isBool() && static_cast<bool>(value);
+            persistPlayerLibrary();emitPlayerState(true);return;
+        }
+        if(action=="playerSelect" || action=="playerPlayNow") {
+            const int i=static_cast<int>(value);
+            if(i>=0 && i<static_cast<int>(playerLibrary_.size())) {
+                if(i!=playerSelected_)playerOutputPendingIndex_=-1;
+                playerSelected_=i;
+                if(action=="playerPlayNow")playSelectedMusic();
+                else emitPlayerState(true);
+            }
+            return;
+        }
         // User may adjust live levels, but cannot alter the persisted VST
         // library/preset while a background snapshot is being copied.
         if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith ("preset") ||
@@ -4776,9 +4996,23 @@ private:
             emitScanProgress();
             emitChain();
             emitPresets();
+            emitPlayerState(true);
         }
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
+        if(timerTicks_%3==0) {
+            const auto transport=engine_.playerStatus();
+            if(playerAutoNext_ &&
+               transport.getProperty("state","").toString()=="ENDED") {
+                const auto generation=static_cast<std::uint64_t>(
+                    transport.getProperty("generation","0").toString().getLargeIntValue());
+                if(generation!=lastAutoAdvanceGeneration_) {
+                    lastAutoAdvanceGeneration_=generation;
+                    playNextMusic();
+                }
+            }
+            emitPlayerState();
+        }
         const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
         if (timing)

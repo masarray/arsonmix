@@ -10,6 +10,7 @@
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
+#include "../engine/player/NativePlayerDeck.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
@@ -1572,6 +1573,119 @@ public:
         return {};
     }
 
+    // A single explicit user Play gesture prepares the previously verified
+    // MAIN and creates its owned virtual MUSIC channel if absent. No manual
+    // PATCH, MONITOR or ARM control is part of the ordinary user workflow.
+    juce::String loadPlayerMusic(const juce::File& file) {
+        if(!file.existsAsFile())return "Music file is missing";
+        if(!file.hasFileExtension("wav;aiff;aif;mp3;flac;ogg"))
+            return "Choose a supported music file (WAV, MP3, FLAC, AIFF, OGG)";
+        if(independent_.active() || !attached_ || !directFence_.permitted() ||
+           // The secondary STREAM consumer may copy the same already-verified
+           // native MAIN PCM. PLAYER A never selects/opens its hardware.
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0 ||
+           masterMute_.load(std::memory_order_acquire))
+            return "Choose a verified MAIN output; the music and mixer are preserved";
+        // A clean approved mixer has deliberately unpatched microphone INs.
+        // That is not a reason to require the singer to PATCH a microphone
+        // before music can play. Safely admit the existing silent M4 graph to
+        // ChannelId on the exact verified device; this does NOT arm outputs.
+        if(!dryRoutingLab_.channelIdPhysicalPcmActive() &&
+           allOutputsDisarmed() && dryRoutingLab_.ready()) {
+            (void)dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                graphOwned_->count,
+                juce::jmax(32,deviceManager_.getCurrentAudioDevice()
+                    ?deviceManager_.getCurrentAudioDevice()->getCurrentBufferSizeSamples():512),
+                true,currentOriginalCh1Lease());
+        }
+        if(!dryRoutingLab_.channelIdPhysicalPcmActive())
+            return "The native mixer is preparing; check the verified audio output";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen() ||
+           liveOutputArmFault(false).isNotEmpty())
+            return "Choose a verified MAIN output";
+        const bool monitoring=isMonitorEnabled();
+        bool publishing=false;
+        const auto result=dryRoutingLab_.ensureNativePlayerA(
+            allOutputsDisarmed(),true,[&] {
+                publishing=true;
+                if(monitoring)
+                    topologyPublicationMute_.store(true,std::memory_order_release);
+            });
+        if(publishing)topologyPublicationMute_.store(false,std::memory_order_release);
+        if(!result.accepted) {
+            return result.error&&result.error[0]?
+                juce::String(result.error):juce::String("Unable to prepare MUSIC route");
+        }
+        playerChannelId_=result.created;
+        playerFile_=file;
+        playerBoundEpoch_=dryRoutingLab_.epoch();
+        playerDeck_.load(file,true); // async worker; real PLAYING only after PCM
+        // The fresh PLAY gesture itself authorizes same verified output.
+        // Never override an intentional MAIN MUTE or different physical port.
+        if(!masterMute_.load(std::memory_order_acquire) &&
+           liveOutputArmFault(false).isEmpty())
+            setOutputMuted(false);
+        return {};
+    }
+    juce::String playerPlay() {
+        // An explicit Play after hardware restart automatically rebinds
+        // the user-selected song to the newly VERIFIED device epoch.
+        // Device reopen by itself never starts music or unmutes a port.
+        if((playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+            dryRoutingLab_.nativePlayerSource()!=playerChannelId_) &&
+           playerFile_!=juce::File{})
+            return loadPlayerMusic(playerFile_);
+        if(!playerChannelId_.value || !directFence_.permitted() ||
+           !dryRoutingLab_.channelIdPhysicalPcmActive() ||
+           masterMute_.load(std::memory_order_acquire) ||
+           liveOutputArmFault(false).isNotEmpty())
+            return "Choose a verified MAIN output; player remains ready";
+        setOutputMuted(false);
+        playerDeck_.play();
+        return {};
+    }
+    void playerPause() noexcept {playerDeck_.pause();}
+    void playerStop() noexcept {playerDeck_.stop();}
+    juce::var playerStatus() const {
+        const auto status=playerDeck_.snapshot();
+        const auto* state="EMPTY";
+        using State=armix::player::NativePlayerDeck::State;
+        switch(status.state) {
+            case State::empty:state="EMPTY";break;
+            case State::loading:state="PREPARING";break;
+            case State::ready:state="READY";break;
+            case State::playing:state="PLAYING";break;
+            case State::paused:state="PAUSED";break;
+            case State::stopped:state="STOPPED";break;
+            case State::ended:state="ENDED";break;
+            case State::error:state="ERROR";break;
+        }
+        auto data=std::make_unique<juce::DynamicObject>();
+        data->setProperty("state",state);
+        data->setProperty("title",status.title);
+        data->setProperty("error",status.error);
+        data->setProperty("currentSeconds",status.deviceRate>0?
+            static_cast<double>(status.played)/status.deviceRate:0.0);
+        data->setProperty("durationSeconds",status.deviceRate>0?
+            static_cast<double>(status.duration)/status.deviceRate:0.0);
+        data->setProperty("underrunFrames",juce::String(
+            static_cast<juce::int64>(status.underruns)));
+        data->setProperty("generation",juce::String(
+            static_cast<juce::int64>(status.generation)));
+        data->setProperty("channelId",juce::String(
+            static_cast<juce::int64>(playerChannelId_.value)));
+        const bool physicalReady=directFence_.permitted() &&
+            !isOutputMuted() && !masterMute_.load(std::memory_order_acquire);
+        data->setProperty("outputReady",physicalReady);
+        data->setProperty("routeAudible",
+            physicalReady && dryRoutingLab_.playerDeckHasMainPath());
+        return juce::var(data.release());
+    }
+
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     std::uint64_t outputArmRevision() const noexcept {return dryRoutingLab_.controlRevision();}
@@ -2468,6 +2582,11 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
+    armix::player::NativePlayerDeck playerDeck_; // one asynchronous decoder, no device owner
+    armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
+    juce::File playerFile_; // CONTROL only, last explicitly selected song
+    std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
+    std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
@@ -2580,6 +2699,7 @@ private:
         callbackOutputs_.store(0,std::memory_order_relaxed);
         deviceStartCount_.fetch_add (1, std::memory_order_relaxed);
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
+        playerDeck_.deviceRate(sampleRateHz_); // worker resampler rebind, no ASIO disk I/O
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
         masterLoudness_.prepare (sampleRateHz_); // fixed buffers, 48k DIRECT only
         for (int i = 0; i < maxFx; ++i)
@@ -2616,6 +2736,7 @@ private:
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
+        playerDeck_.deviceRate(0.0); // invalidates old PCM generation
         deviceStopCount_.fetch_add (1, std::memory_order_relaxed);
         callbackInputs_.store(0,std::memory_order_relaxed);
         callbackOutputs_.store(0,std::memory_order_relaxed);
@@ -2838,6 +2959,19 @@ private:
             LegacyChannelOneLease ch1Lease{cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
+            // Deck A is pulled ONCE per hardware callback, independently
+            // from how many ChannelIds have PLAYER A as their IN. The existing
+            // ChannelId FX/WIRE/MAIN graph owns the ONLY mixing/rendering pass.
+            std::array<armix::mixer::DynamicPlayerPcmBlock,1> deckBlocks{};
+            std::size_t deckCount=0;
+            if(samples<=maxFrames && playerDeck_.isPlayingRequested() &&
+               dryRoutingLab_.channelIdPhysicalPcmActive()) {
+                playerDeck_.pull(playerScratch_[0].data(),
+                                 playerScratch_[1].data(),samples);
+                deckBlocks[0]={1,playerScratch_[0].data(),
+                                playerScratch_[1].data()};
+                deckCount=1;
+            }
             const bool routed=dryRoutingLab_.process(inputs,inputChannels,outputs,
                      outputChannels,samples,
                      masterGain_.load(std::memory_order_relaxed),
@@ -2846,7 +2980,9 @@ private:
                      &nativeMainPair,&nativeMonitorPair,
                      activeDiagnosticRoute==armix::diagnostics::Route::normal &&
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
-                     !topologyPublicationMute_.load(std::memory_order_acquire));
+                     !topologyPublicationMute_.load(std::memory_order_acquire),
+                     std::span<const armix::mixer::DynamicPlayerPcmBlock>(
+                         deckBlocks.data(),deckCount));
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(

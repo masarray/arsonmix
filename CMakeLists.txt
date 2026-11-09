@@ -149,6 +149,25 @@ if(BUILD_TESTING)
   add_executable(ARMixDynamicAcceptedSessionTests tests/dynamic_accepted_session_test.cpp)
   target_compile_features(ARMixDynamicAcceptedSessionTests PRIVATE cxx_std_20)
   add_test(NAME M3DAtomicStudioBusFxChannelSessionRollback COMMAND ARMixDynamicAcceptedSessionTests)
+  # ArSon Player M0: virtual stereo PCM source + trusted-MAIN first-sound
+  # planner + SOURCE ONLY and shared-deck fan-out, with zero RT allocations.
+  add_executable(ARMixPlayerVirtualSourceTests tests/player_virtual_source_pcm_test.cpp)
+  target_compile_features(ARMixPlayerVirtualSourceTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerVirtualPcmFirstSoundAndSourceOnly COMMAND ARMixPlayerVirtualSourceTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerVirtualSourceTests)
+  find_package(Threads REQUIRED)
+  add_executable(ARMixPlayerPcmRingTests tests/player_pcm_ring_test.cpp)
+  target_compile_features(ARMixPlayerPcmRingTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixPlayerPcmRingTests PRIVATE Threads::Threads)
+  add_test(NAME ArSonPlayerWorkerToRealtimeStereoRing COMMAND ARMixPlayerPcmRingTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerPcmRingTests)
+  juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
+  target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
+  target_link_libraries(ARMixPlayerDecodeTests PRIVATE
+      juce::juce_audio_formats juce::juce_recommended_config_flags)
+  target_compile_features(ARMixPlayerDecodeTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerRealWavDecodeResampleAndTransport COMMAND ARMixPlayerDecodeTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerDecodeTests)
   # Windows release workflow builds ARMixMixerRoutingTests explicitly, then runs
   # all CTests. Make its native session regression a build dependency so the
   # new executable is actually present (without editing the CI target list).
@@ -404,6 +423,19 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeCompressorTests PRIVATE cxx_std_20)
   add_test(NAME NativeCompressorZeroLatencyAndLinkedStereoPCM COMMAND ARMixNativeCompressorTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorTests)
+  # Real JUCE FX processor lifecycle: retain last AUDIO-applied Compressor
+  # settings across rate/buffer restarts even when CONTROL ACK is unpolled.
+  juce_add_console_app(ARMixNativeCompressorLifecycleTests PRODUCT_NAME
+      "ArSonMix Native Compressor Device Restart Tests")
+  target_sources(ARMixNativeCompressorLifecycleTests PRIVATE
+      tests/native_compressor_processor_lifecycle_test.cpp
+      engine/builtin_fx/ChannelCompressorProcessor.h)
+  target_link_libraries(ARMixNativeCompressorLifecycleTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeCompressorLifecycleTests PRIVATE cxx_std_20)
+  add_test(NAME NativeCompressorDeviceRestartAckAndShowPCM
+      COMMAND ARMixNativeCompressorLifecycleTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorLifecycleTests)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
