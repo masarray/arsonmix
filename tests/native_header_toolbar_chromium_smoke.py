@@ -81,6 +81,8 @@ def main():
                 'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 1 · graph 3 · roster 94';
               document.querySelector('.status-bar .warning').textContent =
                 'NATIVE PCM · HARDWARE FAT PENDING';
+              document.getElementById('transport').textContent =
+                'MONITOR ON · OUT Headphones · NATIVE PCM GRAPH ACCEPTED · FAT PENDING';
               // MutationObserver reactions run at the microtask checkpoint;
               // a frame guarantees presentation has completed.
               await Promise.resolve();
@@ -92,7 +94,9 @@ def main():
               };
             }""")
             visible_footer = " ".join(str(v) for v in operator_footer.values())
-            assert "Mixer settings updated" in operator_footer["info"], (width,operator_footer)
+            assert operator_footer["info"] == "Mixer ready", (width,operator_footer)
+            assert operator_footer["warning"] == "Mixer ready", (width,operator_footer)
+            assert operator_footer["transport"] == "Output enabled", (width,operator_footer)
             assert not __import__("re").search(
                 r"FAT|PCM|NATIVE|GRAPH|ROSTER|SIMULATED|MOCKUP",
                 visible_footer,__import__("re").IGNORECASE), (width,operator_footer)
