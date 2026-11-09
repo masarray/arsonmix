@@ -940,7 +940,7 @@
  .mx-vthrow .vt-face-header{height:40px;flex-basis:40px;gap:6px;padding:0 9px}
  .mx-vthrow .brand{gap:5px}.mx-vthrow .brand-mark{font-size:8px}
  .mx-vthrow .brand-name{font-size:10.5px}
- .mx-vthrow .channel{max-width:47px;font-size:9px}
+ .mx-vthrow .channel{max-width:80px;font-size:9px}
  .mx-vthrow .vt-preset select{width:83px;max-width:83px;font-size:10px}
  .mx-vthrow .vt-console{padding:9px 11px 11px}
  .mx-vthrow .vt-instrument{display:flex;flex-direction:column;gap:0}

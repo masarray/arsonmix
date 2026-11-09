@@ -95,6 +95,11 @@ def main():
             editor=page.locator("#mxNativeVocalThrow")
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
+            # If a name exceeds the available header cell it may ellipsize,
+            # but the actual full source channel remains directly accessible.
+            channel=editor.locator("#vtChannel")
+            assert channel.get_attribute("title")==channel.inner_text()
+            assert channel.get_attribute("aria-label")==channel.inner_text()
             assert editor.locator("#vtClose.mx-comp-close.armix-floating-close").count()==1
             assert editor.locator("#vtPower.mx-comp-power.armix-builtin-fx-power").count()==1
             assert editor.locator("#vtClose.armix-builtin-fx-close").count()==1
