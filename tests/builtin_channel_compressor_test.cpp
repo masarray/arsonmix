@@ -299,11 +299,11 @@ static void testManyInstancesCpuDiagnostic() {
                 elapsed/(instances*frames*blocks),frames,blocks);
 }
 
-// Regression for a prepared edit ending *inside* the callback. The previous
-// implementation always processed one sample at a time; this tests the new
-// split kernel against that exact execution schedule. Three rates plus odd
-// callback quanta expose off-by-one fades, stale knees and block meter drift.
-static void testRampSplitMatchesSingleSampleSchedule() {
+// Regression for prepared control edits ending inside a callback. Compare the
+// block renderer to one-sample scheduling, regardless of its math kernel.
+// Three rates plus odd callback quanta expose off-by-one fades, stale knees
+// and block-meter drift across parameter changes.
+static void testAutomationMatchesSingleSampleSchedule() {
     const std::array<int,10> blocks{1,3,17,63,128,257,511,9,128,511};
     for(double rate:{44100.,48000.,96000.}) {
         ChannelCompressor batched,scalar;
