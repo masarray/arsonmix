@@ -124,50 +124,17 @@ public:
         if(!ready_||!left||!right||frames==0)return;
         const bool mono=left==right;
         float maxReduction=0.f,maxInput=0.f,maxOutput=0.f;
-        for(std::size_t i=0;i<frames;++i) {
-            advance();
-            const float dryL=std::isfinite(left[i])?left[i]:0.f;
-            const float dryR=mono?dryL:(std::isfinite(right[i])?right[i]:0.f);
-            const float peak=std::max(std::abs(dryL),std::abs(dryR));
-            maxInput=std::max(maxInput,peak);
-            // One shared peak detector guarantees stable stereo placement.
-            const float coefficient=peak>envelope_?
-                current_.attackCoefficient:current_.releaseCoefficient;
-            envelope_=coefficient*envelope_+(1.f-coefficient)*peak;
-            if(envelope_<1.0e-25f)envelope_=0.f; // denormal guard
-            const auto& s=current_.settings;
-            float reduction=0.f;
-            // Quiet samples never require a costly log/exp. The gate is
-            // exact after each edit and conservative throughout its slew.
-            if(s.ratio>1.f&&envelope_>kneeGuardLinear_) {
-                const float above=20.f*std::log10(envelope_)-s.thresholdDb;
-                // While a parameter moves, preserve the legacy effective
-                // ratio exactly; when settled, use CONTROL-prepared scalars.
-                const bool slewing=rampRemaining_>0;
-                const float strength=slewing?1.f-1.f/s.ratio:
-                    current_.ratioStrength;
-                if(s.kneeDb<0.0001f)reduction=std::max(0.f,above)*strength;
-                else if(above>=s.kneeDb*0.5f)reduction=above*strength;
-                else if(above> -s.kneeDb*0.5f) {
-                    const float bend=above+s.kneeDb*0.5f;
-                    const float bendScale=slewing?0.5f/s.kneeDb:
-                        current_.halfInverseKnee;
-                    reduction=bend*bend*bendScale*strength;
-                }
-            }
-            // Even at MIX=0 the detector and GR meter must advance, but
-            // evaluating the unused wet attenuation is wasted CPU.
-            const float attenuation=reduction>0.f&&s.mix>0.f?
-                std::exp(reduction*(-0.11512925464970229f)):1.f;
-            const float wetGain=attenuation*current_.makeupGain;
-            const float outputGain=(1.f-s.mix)+s.mix*wetGain;
-            left[i]=dryL*outputGain;
-            if(!mono)right[i]=dryR*outputGain;
-            maxOutput=std::max(maxOutput,peak*std::abs(outputGain));
-            maxReduction=std::max(maxReduction,reduction);
-        }
-        // Pre/post PCM and GR measured in the original stereo DSP pass:
-        // no extra audio scan, lookahead, allocations or log conversion.
+        // First consume the actual 8-ms parameter slew, if any. Only the
+        // remaining frames use the settled kernel: no per-sample ramp check,
+        // coefficient reload, or legacy scalar division in steady state.
+        // Never shift the ramp at a buffer boundary: each sample still
+        // advances exactly once BEFORE detection and gain calculation.
+        const auto slew=std::min(frames,
+            static_cast<std::size_t>(std::max(0,rampRemaining_)));
+        if(slew)renderRange<true>(left,right,mono,0,slew,
+                                  maxInput,maxOutput,maxReduction);
+        if(slew<frames)renderRange<false>(left,right,mono,slew,frames,
+                                          maxInput,maxOutput,maxReduction);
         inputPeak_=maxInput;
         outputPeak_=maxOutput;
         gainReductionDb_=maxReduction;
@@ -187,6 +154,66 @@ private:
     float inputPeak_=0.f,outputPeak_=0.f;
     int rampRemaining_=0,fadeSamples_=1;
     bool ready_=false;
+    // Two compile-time kernels, not two engines or DSP authorities.
+    // Settled parameters are cached once per contiguous range. The ramp
+    // kernel retains the old per-sample arithmetic, including the special
+    // final sample where advance() reaches the prepared target.
+    template<bool Slewing>
+    void renderRange(float* left,float* right,bool mono,
+                     std::size_t begin,std::size_t end,
+                     float& maxInput,float& maxOutput,
+                     float& maxReduction) noexcept {
+        // These copies are exclusively used by the steady-state specialization;
+        // controls are immutable until an explicit realtime applyPrepared().
+        const auto settledSettings=current_.settings;
+        const float settledAttack=current_.attackCoefficient;
+        const float settledRelease=current_.releaseCoefficient;
+        const float settledMakeup=current_.makeupGain;
+        const float settledStrength=current_.ratioStrength;
+        const float settledKneeScale=current_.halfInverseKnee;
+        const float settledGate=kneeGuardLinear_;
+        for(std::size_t i=begin;i<end;++i) {
+            if constexpr (Slewing)advance();
+            const auto& s=Slewing?current_.settings:settledSettings;
+            const float dryL=std::isfinite(left[i])?left[i]:0.f;
+            const float dryR=mono?dryL:(std::isfinite(right[i])?right[i]:0.f);
+            const float peak=std::max(std::abs(dryL),std::abs(dryR));
+            maxInput=std::max(maxInput,peak);
+            const float attack=Slewing?current_.attackCoefficient:settledAttack;
+            const float release=Slewing?current_.releaseCoefficient:settledRelease;
+            const float coefficient=peak>envelope_?attack:release;
+            envelope_=coefficient*envelope_+(1.f-coefficient)*peak;
+            if(envelope_<1.0e-25f)envelope_=0.f;
+            float reduction=0.f;
+            const float gate=Slewing?kneeGuardLinear_:settledGate;
+            if(s.ratio>1.f&&envelope_>gate) {
+                const float above=20.f*std::log10(envelope_)-s.thresholdDb;
+                // The final ramp sample has already committed the prepared
+                // packet, and therefore uses its settled scalar as before.
+                const bool midSlew=Slewing&&rampRemaining_>0;
+                const float strength=midSlew?1.f-1.f/s.ratio:
+                    (Slewing?current_.ratioStrength:settledStrength);
+                if(s.kneeDb<0.0001f)reduction=std::max(0.f,above)*strength;
+                else if(above>=s.kneeDb*0.5f)reduction=above*strength;
+                else if(above> -s.kneeDb*0.5f) {
+                    const float bend=above+s.kneeDb*0.5f;
+                    const float bendScale=midSlew?0.5f/s.kneeDb:
+                        (Slewing?current_.halfInverseKnee:settledKneeScale);
+                    reduction=bend*bend*bendScale*strength;
+                }
+            }
+            // A fully dry mix still advances the detector and publishes GR.
+            const float attenuation=reduction>0.f&&s.mix>0.f?
+                std::exp(reduction*(-0.11512925464970229f)):1.f;
+            const float makeup=Slewing?current_.makeupGain:settledMakeup;
+            const float wetGain=attenuation*makeup;
+            const float outputGain=(1.f-s.mix)+s.mix*wetGain;
+            left[i]=dryL*outputGain;
+            if(!mono)right[i]=dryR*outputGain;
+            maxOutput=std::max(maxOutput,peak*std::abs(outputGain));
+            maxReduction=std::max(maxReduction,reduction);
+        }
+    }
     void advance() noexcept {
         if(rampRemaining_<=0)return;
         const float f=1.f/static_cast<float>(rampRemaining_);

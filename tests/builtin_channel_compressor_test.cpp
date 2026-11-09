@@ -298,6 +298,65 @@ static void testManyInstancesCpuDiagnostic() {
                 "(16 instances x %d frames x %d blocks; non-gating)\\n",
                 elapsed/(instances*frames*blocks),frames,blocks);
 }
+
+// Regression for a prepared edit ending *inside* the callback. The previous
+// implementation always processed one sample at a time; this tests the new
+// split kernel against that exact execution schedule. Three rates plus odd
+// callback quanta expose off-by-one fades, stale knees and block meter drift.
+static void testRampSplitMatchesSingleSampleSchedule() {
+    const std::array<int,10> blocks{1,3,17,63,128,257,511,9,128,511};
+    for(double rate:{44100.,48000.,96000.}) {
+        ChannelCompressor batched,scalar;
+        check(batched.prepare(rate)&&scalar.prepare(rate));
+        CompressorSettings initial{};
+        initial.thresholdDb=-12.f;initial.ratio=2.5f;
+        initial.kneeDb=12.f;initial.attackMs=3.f;
+        check(batched.resetUnpublished(initial));
+        check(scalar.resetUnpublished(initial));
+        std::size_t sample=0;
+        for(std::size_t b=0;b<blocks.size();++b) {
+            if(b==0||b==4||b==7) {
+                CompressorSettings next=initial;
+                next.thresholdDb=b==4?-46.f:(b==7?-22.f:-39.f);
+                next.ratio=b==4?12.f:(b==7?1.f:7.f);
+                next.kneeDb=b==7?0.f:18.f;
+                next.mix=b==4?0.f:(b==7?.65f:1.f);
+                next.makeupDb=b==7?9.f:-3.f;
+                ChannelCompressor::PreparedEdit edit{};
+                check(ChannelCompressor::prepareEdit(next,rate,edit));
+                check(batched.applyPrepared(edit));
+                check(scalar.applyPrepared(edit));
+            }
+            const auto n=static_cast<std::size_t>(blocks[b]);
+            std::array<float,511> left{},right{};
+            for(std::size_t i=0;i<n;++i,++sample) {
+                left[i]=static_cast<float>(
+                    .53*std::sin((sample+13)*.031)+.19*std::cos(sample*.11));
+                right[i]=static_cast<float>(
+                    .39*std::sin((sample+3)*.037)-.12*std::cos(sample*.07));
+            }
+            std::array<float,511> expectedL=left,expectedR=right;
+            float in=0.f,out=0.f,gr=0.f;
+            for(std::size_t i=0;i<n;++i) {
+                scalar.processStereo(&expectedL[i],&expectedR[i],1);
+                in=std::max(in,scalar.inputPeak());
+                out=std::max(out,scalar.outputPeak());
+                gr=std::max(gr,scalar.gainReductionDb());
+            }
+            // This callback sometimes straddles the 8-ms slew boundary.
+            prohibitHeap.store(true,std::memory_order_release);
+            batched.processStereo(left.data(),right.data(),n);
+            prohibitHeap.store(false,std::memory_order_release);
+            for(std::size_t i=0;i<n;++i) {
+                check(std::abs(left[i]-expectedL[i])<1.e-6f);
+                check(std::abs(right[i]-expectedR[i])<1.e-6f);
+            }
+            check(std::abs(batched.inputPeak()-in)<1.e-6f);
+            check(std::abs(batched.outputPeak()-out)<1.e-6f);
+            check(std::abs(batched.gainReductionDb()-gr)<1.e-5f);
+        }
+    }
+}
 int main(){
     testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();
@@ -305,6 +364,7 @@ int main(){
     testDryAndBypass();testSoftKneeAndRuntimeEdits();
     testMultipleRatesAndIndependentChannels();
     testOptimizedMatchesLegacyStablePCM();
+    testRampSplitMatchesSingleSampleSchedule();
     testManyInstancesCpuDiagnostic();
     std::puts("PASS: native zero-buffer compressor stereo linked / GR / parameter validation");
 }
