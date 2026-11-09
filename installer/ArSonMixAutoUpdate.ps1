@@ -663,12 +663,11 @@ try {
     $stage=Join-Path $root 'stage'
     $newPath=Join-Path $stage $newName
     $oldPath=Join-Path $stage $oldName
-    foreach($pair in @(@($newPath,$state.newAsset),@($oldPath,$state.previousAsset))) {
-        $path=[string]$pair[0]
-        $asset=$pair[1]
-        if(-not (Test-StagedAsset $path $asset)) {
-            Fail 'Offline staged install/rollback bytes not verified'
-        }
+    # Validate both independently. Do not build nested arrays here:
+    # PowerShell 5.1 pipeline unrolling can flatten the pair boundaries.
+    if(-not (Test-StagedAsset $newPath $state.newAsset) -or
+       -not (Test-StagedAsset $oldPath $state.previousAsset)) {
+        Fail 'Offline staged install/rollback bytes not verified'
     }
     # Re-query public release to reject a revoked or replaced candidate.
     # No network is needed *during* live audio; if offline on close, defer.
