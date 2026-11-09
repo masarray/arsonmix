@@ -58,10 +58,9 @@ def accepted_pages_html() -> str:
 # HTML at native build time. Every anchor must occur exactly once: no silent
 # breakage if Pages GUI source evolves. No extra layout or simulated PCM.
 NATIVE_EVENT_HOOKS = (
-    # Do not expose the reference mixer while the native host is still starting.
-    ("</head>", "<style id=\"native-mixer-startup\">"
-     "html:not([data-armix-native-roster]) :is(.console-pane,#trackCount){visibility:hidden}"
-     "</style>\n</head>"),
+    # The mixer shell must remain visible even with zero audio endpoints or
+    # before the first accepted roster. Native control intents are still
+    # fenced by the bridge's authoritative ACK/readback; no mock PCM runs.
     ("Mixer · Reference Session", "Mixer · Native Session"),
     ("Interactive visual reference. Changes are local to this mockup.", "Preparing native mixer…"),
     ("SIMULATED METERS · NO REAL AUDIO", "NATIVE AUDIO"),
