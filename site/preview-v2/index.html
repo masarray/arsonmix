@@ -1284,6 +1284,9 @@ function wireJackRect(button){
 /* One accepted CH→MAIN edge is represented by two local cable fragments.
    Physical coordinates are measured from actual sockets; never connect strips
    with a long SVG crossing banks or alter the audio graph. */
+// MAIN mini cables use a separate one-shot dirty flag; ordinary pointer moves
+// must not force layout reads on a stable native viewport.
+let wireFragmentGeometryDirty=false;
 function paintMainWireFragment(strip,edge,isMain){
  const section=strip?.querySelector('.send-section.wire-section');
  if(!section)return;
@@ -1292,9 +1295,9 @@ function paintMainWireFragment(strip,edge,isMain){
   layer?.remove();return;
  }
  // Pointer-motion repaint must not synchronously remeasure every channel.
- // Structural render, bank, density and resize remount the section; a
- // changed accepted edgeId invalidates this tiny projection automatically.
- if(layer?.dataset.edgeId===String(edge.id))return;
+ // A stable edgeId can still move when the host window is resized.
+ // Refresh the physical anchor only on a geometry event (or edge edit).
+ if(layer?.dataset.edgeId===String(edge.id)&&!wireFragmentGeometryDirty)return;
  const jack=section.querySelector(isMain?'.wire-node-in .wire-arrow':'.wire-node-out .wire-pin');
  const sectionRect=section.getBoundingClientRect(),pin=jack?.getBoundingClientRect();
  if(!pin||!sectionRect.width||!sectionRect.height)return;
@@ -1355,6 +1358,7 @@ function syncMainWireFragments(){
 }
 function renderWireRouting(){
  syncMainWireFragments();
+ wireFragmentGeometryDirty=false;
  if(wireWsOpen&&!wireGesture?.active)renderWireWorkspace();
  document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
@@ -2896,7 +2900,12 @@ function scheduleWireGeometryReflow(){
   const drawn=Number(root?.style.getPropertyValue('--bank-capacity'));
   const required=bankCapacity();
   if(drawn&&required!==drawn)render(); // structural bank change only
-  else renderWireRouting(); // real pin geometry, zero strip remount/graph edits
+  else {
+   // Stop a still-running cable spring (its animation closes over old pixels).
+   ++wireMotion.token;wireMotion.key=null;wireMotion.offset=0;
+   wireFragmentGeometryDirty=true;
+   renderWireRouting(); // geometry-only; no native graph/strip edits
+  }
  });
 }
 // WebView2 can resize its child compositor one event AFTER the parent HWND.

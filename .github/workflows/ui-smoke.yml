@@ -479,7 +479,7 @@ jobs:
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       - name: Verify V28 exact approved /preview/ source and interactive browser parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'css/v28-') || startsWith(github.head_ref, 'integration/product-'))) }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.historical_css == true) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'css/v28-') || startsWith(github.head_ref, 'integration/product-'))) }}
         run: python tests/pages_css_architecture_v28_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}

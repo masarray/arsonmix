@@ -22,9 +22,12 @@ assert.match(chrome, /paintPart \("MiX", 27/);
 assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
 assert.match(css, /html\.armix-native-desktop \.app > \.window-title\{display:none!important\}/);
 assert.match(page, /function scheduleWireGeometryReflow\(\)/);
+assert.match(page, /let wireFragmentGeometryDirty=false/);
+assert.match(page, /wireMotion\.token;wireMotion\.key=null/);
+assert.match(page, /if\(layer\?\.dataset\.edgeId===String\(edge\.id\)&&!wireFragmentGeometryDirty\)return/);
 assert.match(page, /new ResizeObserver\(scheduleWireGeometryReflow\)/);
 assert.match(page, /if\(drawn&&required!==drawn\)render\(\)/);
-assert.match(page, /else renderWireRouting\(\)/);
+assert.match(page, /renderWireRouting\(\); \/\/ geometry-only/);
 assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
 console.log('Native titlebar + supplied SVG + WIRE geometry contract PASS');
@@ -45,17 +48,22 @@ const dom={
  addEventListener:(name,handler)=>docEvents.set(name,handler)
 };
 const browser={addEventListener:(name,handler)=>events.set(name,handler)};
+const motion={token:7,key:'stale-edge',offset:3};
 class FakeResizeObserver{constructor(handler){this.handler=handler}observe(){}}
-vm.runInNewContext(page.slice(begin,end),{
+const sandbox={
  document:dom,window:browser,ResizeObserver:FakeResizeObserver,
+ wireMotion:motion,wireFragmentGeometryDirty:false,
  requestAnimationFrame:fn=>{raf.push(fn);return raf.length;},
  bankCapacity:()=>required,render:()=>{renderCount++},
- renderWireRouting:()=>{wireCount++}
-},{filename:'wire-reflow-runtime.js'});
+ renderWireRouting:()=>{wireCount++;assert.equal(sandbox.wireFragmentGeometryDirty,true);sandbox.wireFragmentGeometryDirty=false;}
+};
+vm.runInNewContext(page.slice(begin,end),sandbox,{filename:'wire-reflow-runtime.js'});
 const frame=()=>{assert.equal(raf.length,1);raf.shift()();};
 events.get('resize')();events.get('resize')();
 frame();
 assert.equal(wireCount,1,'two resize events need just one geometry pass');
+assert.equal(motion.token,8,'in-flight wire animation cancels once');
+assert.equal(motion.key,null,'stale wire coordinates are retired');
 assert.equal(renderCount,0,'no full mixer rebuild within a bank');
 required=8;events.get('resize')();frame();
 assert.equal(renderCount,1,'bank boundary requires structural render');
