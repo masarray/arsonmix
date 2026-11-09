@@ -47,3 +47,9 @@ No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, W
 
 ## Same-version Inno repair FAT
 - The Windows Inno fixture creates an isolated artificial installation, intentionally truncates only its synthetic ArSonMix.exe, reruns Inno in unattended auto-update mode, and requires the original SHA-256 executable hash and private Studio sentinel to survive. This proves vendor-program-file repair mechanics; a real JUCE/WebView + ASIO failure scenario still needs a two-version desktop test.
+
+## M3 standalone recovery when the main application cannot launch
+- The installed Start Menu includes Repair ArSonMix. This independent action validates the source commit against a published official GitHub Release, verifies the installer source/digest/checksums and installs vendor program files in place, without deleting any private .smix, Studio or user VST. The repaired app then launches and acknowledges GUI readiness.
+- Automatic updates still reject an absent EXE. Only an explicitly invoked recovery uses the two no-close flags ARSONMIXAUTOUPDATE and ARSONMIXRECOVERY. An exact-image process probe and file lock checks refuse interruption of a running mixer.
+- An abandoned worker mutex may be reclaimed when the prior process crashes. Unknown installed source or absent provenance must fail closed and direct the user to the official installer. No audio callback work, OS service or scheduled task.
+- Windows Inno FAT creates a synthetic missing EXE, verifies ordinary auto-update refuses it, then tests explicit recovery restoring identical SHA while retaining private session sentinels. Code-signing and actual JUCE/ASIO end-to-end recovery remain separate release requirements.
