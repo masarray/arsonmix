@@ -62,7 +62,10 @@ public:
         // compressed PCM sample. The original arithmetic is retained during
         // the short parameter slew for sample-for-sample sonic parity.
         next.ratioStrength=1.f-1.f/settings.ratio;
-        next.halfInverseKnee=settings.kneeDb>0.f?0.5f/settings.kneeDb:0.f;
+        // Below this guard the DSP uses the hard-knee branch. Never
+        // divide by a subnormal, or reject an otherwise valid tiny knee.
+        next.halfInverseKnee=settings.kneeDb>=0.0001f?
+            0.5f/settings.kneeDb:0.f;
         next.kneeStartLinear=static_cast<float>(std::exp(
             static_cast<double>(settings.thresholdDb-settings.kneeDb*.5f)*
             0.11512925464970229));

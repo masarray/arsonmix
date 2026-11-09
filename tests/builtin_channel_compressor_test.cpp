@@ -59,6 +59,20 @@ static void testValidationAndLatency() {
     check(!ChannelCompressor::prepareEdit(s,48000,packet));
     s=CompressorSettings{};
     check(ChannelCompressor::prepareEdit(s,48000,packet));
+    // Tiny positive knees are defined as hard-knee in the DSP. Keeping
+    // 0.5/knee at zero here prevents overflow/Inf in prepared edit packets.
+    s.kneeDb=std::numeric_limits<float>::denorm_min();
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(packet.halfInverseKnee==0.f);
+    check(compressor.resetUnpublished(s));
+    s.kneeDb=.00009f;
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(packet.halfInverseKnee==0.f);
+    s.kneeDb=12.f;
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(std::abs(packet.halfInverseKnee-(.5f/12.f))<1.e-7f);
+    s=CompressorSettings{};
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
     check(!compressor.applyPrepared(ChannelCompressor::PreparedEdit{}));
     auto stale=packet;stale.sampleRate=44100;
     check(!compressor.applyPrepared(stale));
