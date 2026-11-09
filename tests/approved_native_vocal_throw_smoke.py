@@ -127,7 +127,7 @@ def main():
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
             assert editor.locator("#vtClockLabel").inner_text()=="MAN"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
-            assert editor.locator(".vt-encoder-face").count()==6
+            assert editor.locator(".vt-encoder-bank .vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1
             assert editor.locator(".vt-throw-button").count()==1
             trigger=editor.locator("#vtThrow")
