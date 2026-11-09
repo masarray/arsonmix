@@ -164,6 +164,19 @@ def main():
                 note_g=page.locator('.mx-harm-note[data-key="7"]')
                 note_c=page.locator('.mx-harm-note[data-key="0"]')
                 assert "active" in (note_g.get_attribute("class") or "")
+                # Reduced note rail radius leaves an actual margin inside the
+                # wheel, including enlarged selected buttons on mobile.
+                wheel_box=page.locator("#mxHWheel").bounding_box()
+                note_box=note_g.bounding_box()
+                assert wheel_box and note_box
+                wheel_cx=wheel_box["x"]+wheel_box["width"]/2
+                wheel_cy=wheel_box["y"]+wheel_box["height"]/2
+                note_cx=note_box["x"]+note_box["width"]/2
+                note_cy=note_box["y"]+note_box["height"]/2
+                from math import hypot
+                wheel_margin=wheel_box["width"]/2-(
+                    hypot(wheel_cx-note_cx,wheel_cy-note_cy)+note_box["width"]/2)
+                assert wheel_margin>=10,(width,wheel_margin,wheel_box,note_box)
                 # Font size applies immediately for crisp text; only the
                 # circular material and scale transition over 150ms.
                 page.wait_for_timeout(170)
@@ -208,6 +221,41 @@ def main():
                 assert abs(arc2["sweep"]-202.5)<.0001,arc2
                 assert abs(arc2["turn"]-67.5)<.0001,arc2
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                # Tactile Major/Minor: active versus idle surfaces must occupy
+                # exactly the same box and have the same outer shadow offset.
+                major=page.locator('.mx-harm-scale [data-scale="0"]')
+                minor=page.locator('.mx-harm-scale [data-scale="1"]')
+                def face_metrics(locator):
+                    return locator.evaluate("""e=>{
+                      const r=e.getBoundingClientRect(),c=getComputedStyle(e);
+                      return {w:r.width,h:r.height,y:r.y,border:c.borderWidth,
+                        radius:c.borderRadius,outer:c.boxShadow.match(
+                          /\\b0px 1px 0px 0px/)?true:false};
+                    }""")
+                major_face,minor_face=face_metrics(major),face_metrics(minor)
+                assert major_face==minor_face,(major_face,minor_face)
+                assert major_face["outer"],major_face
+                minor.click()
+                minor_edit=last_action(page,"nativeHarmonySetSettings")
+                assert minor_edit["settings"]["scale"]==1
+                minor_values={**changed,"scale":1}
+                apply_edit(page,state,minor_values,7,1)
+                assert face_metrics(major)==face_metrics(minor)
+                major.click()
+                apply_edit(page,state,changed,7,0)
+                assert face_metrics(major)==face_metrics(minor)
+                # Singer icons are authored once as a tiny shared vector.
+                # All three UI choices are REAL audible native voice counts.
+                for count in (3,4,5):
+                    button=page.locator(f'.mx-harm-voices [data-voices="{count}"]')
+                    assert button.locator('svg.mx-harm-voice-glyph').count()==1
+                    button.click()
+                    voice_edit=last_action(page,"nativeHarmonySetSettings")
+                    assert voice_edit["settings"]["voices"]==count
+                    values={**changed,"voices":count}
+                    apply_edit(page,state,values,7,0)
+                    assert button.get_attribute("aria-pressed")=="true"
+                    assert page.locator("#mxHKeyReadout").inner_text()=="G"
                 # Power is driven by accepted native graph bypass, not local
                 # DOM optimism, in both Manual and Music modes.
                 state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
