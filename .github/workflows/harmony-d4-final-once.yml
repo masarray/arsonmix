@@ -1,0 +1,47 @@
+name: Harmony D4 final caption geometry and native FAT once
+on:
+  push:
+    branches: [ci/harmony-d4-final-f02f35-20261109]
+    paths: ['.github/workflows/harmony-d4-final-once.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  verify-native-editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f02f35eee61d601fdaa2bb59ba7c4ca5826330f2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Setup one Chromium for Harmony geometry test
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Native Harmony editor proof for 1366 720 390 px
+        run: python tests/approved_native_harmony_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Harmony-D4-Final-Caption-Viewport-Screenshots
+          path: arsonmix-native-harmony-editor-*.png
+          if-no-files-found: ignore
+          retention-days: 14
+  dispatch-final-msvc:
+    needs: verify-native-editor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Only build exact audited and visually qualified Harmony head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: f02f35eee61d601fdaa2bb59ba7c4ca5826330f2
+        run: |
+          set -euo pipefail
+          head="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$head" = "$EXPECTED_SHA" || { echo "Branch advanced; no stale final artifact"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$EXPECTED_SHA"
+          echo "Exact-source MSVC/CTest/Inno package dispatched"
