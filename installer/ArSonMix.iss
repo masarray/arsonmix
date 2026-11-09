@@ -45,12 +45,17 @@ RestartApplications=no
 ; The shutdown helper is EMBEDDED TEMPORARILY in Setup, never installed.
 ; It handles installed legacy builds that do not implement the new event.
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
+; The updater runs outside JUCE, never in the realtime audio callback.
+Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
+; User-facing fallback when the main EXE cannot even open. The helper
+; authenticates the published current release and repairs in place.
+Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
@@ -94,6 +99,34 @@ begin
     CloseWinHandle(H);
 end;
 
+{ An automatic update must never close a new live-mixing session.
+  Manual/interactive setup retains the existing graceful-close workflow. }
+function IsArSonMixAutoUpdate: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/ARSONMIXAUTOUPDATE') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+function IsArSonMixRecovery: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/ARSONMIXRECOVERY') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Target, HelperPath, PowerShellExe, Params: string;
@@ -102,6 +135,46 @@ var
 begin
   Result := '';
   Target := ExpandConstant('{app}\ArSonMix.exe');
+  if IsArSonMixAutoUpdate then
+  begin
+    { Never send InstallShutdown, CloseMainWindow or WM_CLOSE in auto mode.
+      Exact-path ProbeOnly + locked-PE preflight is strictly fail-closed. }
+    if not FileExists(Target) and not IsArSonMixRecovery then
+    begin
+      Result := 'Automatic update requires an existing ArSonMix installation.';
+      Exit;
+    end;
+    { The recovery flag is allowed only with automatic (no-close) mode.
+      An absent EXE is permitted, but the same exact-image running-process
+      probe and exclusive-image checks are still mandatory. }
+    if CheckForMutexes('Local\ArSonMix.MixerRunning.v1') then
+    begin
+      Result := 'ArSonMix is running; automatic update deferred to a later normal exit.';
+      Exit;
+    end;
+    ExtractTemporaryFile('ArSonMixUpdateShutdown.ps1');
+    HelperPath := ExpandConstant('{tmp}\ArSonMixUpdateShutdown.ps1');
+    PowerShellExe := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    Params := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+      AddQuotes(HelperPath) + ' -TargetPath ' + AddQuotes(Target) +
+      ' -ProbeOnly';
+    ExitCode := -1;
+    if not Exec(PowerShellExe, Params, '', SW_HIDE,
+        ewWaitUntilTerminated, ExitCode) then
+    begin
+      Result := 'Unable to verify that no ArSonMix session is active. No files replaced.';
+      Exit;
+    end;
+    if ExitCode <> 0 then
+    begin
+      Log('Automatic update refused: active/unknown process, probe exit=' + IntToStr(ExitCode));
+      Result := 'ArSonMix session is active or cannot be verified. Automatic update deferred; no files replaced.';
+      Exit;
+    end;
+    if not InstalledExeReplaceable(Target) then
+      Result := 'ArSonMix.exe is occupied; automatic update deferred without closing a live session.';
+    Exit;
+  end;
   if not FileExists(Target) then
     Exit; { first install: there is no existing exe to close }
 

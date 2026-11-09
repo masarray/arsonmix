@@ -2,6 +2,20 @@
 # Fast Windows Inno/Restart Manager smoke, independent of JUCE.
 # The staged .exe is a test-only WinForms window, NOT a product release.
 Set-StrictMode -Version Latest
+# Offline functional policy gate for the actual shipped updater script.
+# This mode never reads an install, touches a live process or calls the network.
+$updaterPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixAutoUpdate.ps1"
+$policyOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $updaterPolicy -OwnerProcessId 1 -PolicySelfTest
+if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'){
+    throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
+}
+Write-Host "ARSONMIX_UPDATER_POLICY_PASS"
+
 $ErrorActionPreference="Stop"
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
@@ -95,6 +109,64 @@ try {
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Legacy upgrade damaged Studio/user files"
     Write-Host "INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS: exact exe process requested WM_CLOSE before replacement"
     $fixtureProcess.Dispose();$fixtureProcess=$null
+
+    # Automatic update MUST NOT close even a healthy existing mixer.
+    # Legacy and native-style active processes both fail before [Files].
+    Remove-Item -LiteralPath $ready,$closed -Force -ErrorAction SilentlyContinue
+    $fixtureProcess=Start-Process -FilePath $installedExe -ArgumentList @(
+        ('"' + $ready + '"'),('"' + $closed + '"'),"legacy") -PassThru
+    for($i=0;$i -lt 75 -and -not (Test-Path -LiteralPath $ready);$i++){
+        $fixtureProcess.Refresh()
+        if($fixtureProcess.HasExited){break}
+        Start-Sleep -Milliseconds 200
+    }
+    Assert-Condition (Test-Path -LiteralPath $ready) "Auto-update active-session fixture not ready"
+    $autoAttempt=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    $fixtureProcess.Refresh()
+    Assert-Condition ($autoAttempt.ExitCode -ne 0 -and -not $fixtureProcess.HasExited) "Auto updater closed/overwrote an active mixer"
+    Assert-Condition (-not (Test-Path -LiteralPath $closed)) "Auto updater unexpectedly sent WM_CLOSE"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto updater modified a locked executable"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto updater damaged user data"
+    Write-Host "INNO_AUTO_UPDATE_LIVE_SESSION_PRESERVED_PASS: no WM_CLOSE, EXE untouched, Studio retained"
+    # Close ONLY this test fixture through the pre-existing exact-path
+    # graceful GUI helper. This is test teardown after proving that the
+    # automatic mode itself NEVER requested WM_CLOSE.
+    $helper=Join-Path $root "installer/ArSonMixUpdateShutdown.ps1"
+    & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -File $helper -TargetPath $installedExe -WaitSeconds 10
+    Assert-Condition ($LASTEXITCODE -eq 0 -and $fixtureProcess.WaitForExit(10000)) "Auto-update test fixture did not close normally"
+    $fixtureProcess.Dispose();$fixtureProcess=$null
+    # A stopped ArSonMix should be eligible for auto update without a
+    # manual dialog, WM_CLOSE, replacement errors or stale-process bias.
+    $autoSuccess=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($autoSuccess.ExitCode -eq 0) "Automatic update rejected an exited ArSonMix installation"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto-install changed expected product bytes"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto-install erased user data"
+    Write-Host "INNO_AUTO_UPDATE_AFTER_NORMAL_EXIT_PASS: silent setup, correct EXE, user data intact"
+
+    # Test-only synthetic corruption: byte-level repair of vendor-owned EXE.
+    # Never run this on a user installation or private Studio content.
+    [IO.File]::WriteAllBytes($installedExe,(New-Object byte[] 4096))
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ne $fixtureHash) "Corrupt fixture unexpectedly matched original binary"
+    $repair=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($repair.ExitCode -eq 0) "Automatic same-version repair installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Same-version repair did not restore verified EXE"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Same-version repair erased Studio or install-local user files"
+    Write-Host "INNO_AUTO_REPAIR_CORRUPT_EXE_PASS: exact verified EXE restored, private Studio and user files retained"
+
+    # Recovery when app EXE cannot start. This is a test-only isolated
+    # installation. User program files must never be deliberately deleted.
+    Remove-Item -LiteralPath $installedExe -Force
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Could not remove synthetic EXE"
+    $ordinary=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($ordinary.ExitCode -ne 0) "Ordinary auto-update accepted a missing program EXE"
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Normal auto-update restored EXE without explicit recovery"
+    $repaired=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE','/ARSONMIXRECOVERY')) -Wait -PassThru
+    Assert-Condition ($repaired.ExitCode -eq 0) "Missing EXE recovery installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Missing EXE recovery did not restore exact SHA"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Missing EXE recovery erased user data"
+    Write-Host "INNO_MISSING_EXE_RECOVERY_PASS: exact EXE recovered, app and Studio retained"
+
+
 
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
     # Upgrade must fail before [Files], leave old EXE and Studio untouched.
