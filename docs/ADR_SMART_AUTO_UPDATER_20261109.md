@@ -59,3 +59,6 @@ After install/repair/rollback, success requires the installed sourceCommit, exeS
 
 ## Genuine two-release installer qualification
 - Opt-in Windows FAT now downloads two **already-published authentic** installer assets (v0.5.0-alpha.4 / v0.5.0-alpha.5), confirms official GitHub digest, source-commit provenance and SHA256SUMS, installs alpha.4 into a disposable runner directory, upgrades to alpha.5 and rolls back to alpha.4, validating installed PE SHA and private .smix plus install-local user sentinel after every step. It is gated to explicit package_fat dispatch on temporary GitHub Windows runners; ordinary PR/branch work never downloads historical packages. This verifies historical Inno compatibility, not live WebView2-ready startup or physical ASIO sound, which remain separately qualified.
+
+## Rollback asset identity safety
+The post-close supervisor rechecks the **previous** published release as well as the **candidate** via GitHub. The staged rollback filename, SHA256, size, tag and original source commit must all agree with current published release metadata before any installer starts. If the published rollback artifact is missing, altered or withdrawn, the update is deferred with the current mixer intact.
