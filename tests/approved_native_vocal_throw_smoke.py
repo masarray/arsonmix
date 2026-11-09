@@ -126,6 +126,17 @@ def main():
                 "premium FX editor overflows horizontal viewport"
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
             assert editor.locator("#vtClockLabel").inner_text()=="MAN"
+            # BPM is one integrated LCD number, not a detached duplicate.
+            # Click the LCD to enter editing; Escape restores the accepted
+            # native setting without issuing a new DSP command.
+            assert editor.locator("#vtBpm").is_hidden()
+            editor.locator("#vtDisplayBpm").click()
+            assert editor.locator("#vtBpm").is_visible()
+            assert editor.locator("#vtBpm").input_value()=="120"
+            editor.locator("#vtBpm").fill("133")
+            editor.locator("#vtBpm").press("Escape")
+            assert editor.locator("#vtBpm").is_hidden()
+            assert editor.locator("#vtDisplayBpm").inner_text()=="120"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             assert editor.locator(".vt-encoder-bank .vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1
@@ -191,6 +202,9 @@ def main():
             assert abs((lcd["y"]+lcd["height"]/2)-(tap["y"]+tap["height"]/2))<=24, \
                 ("LCD/TAP vertical misalignment",lcd,tap)
             assert lcd["width"]>=145 and lcd["height"]>=70
+            rail=editor.locator(".vt-status-rail").bounding_box()
+            assert rail and rail["y"]+rail["height"]<=box["y"]+box["height"]+2, \
+                ("footer clipped beneath mobile controls",width,rail,box)
             # No control may draw past the horizontal plugin bounds.
             for control in ["#vtThrow","#vtTap","#vtWetDial",
                             "#vtClockLabel","#vtDisplayBpm"]:
