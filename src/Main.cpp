@@ -43,6 +43,7 @@
 #include <cmath>
 #include <functional>
 #include <vector>
+#include "../engine/player/PlayerSetlistPolicy.h"
 #include <juce_core/juce_core.h>
 
 namespace
@@ -2460,26 +2461,49 @@ private:
                 });
             });
     }
+    void playTransportMusic() {
+        const auto phase=engine_.playerStatus().getProperty(
+            "state","EMPTY").toString().toStdString();
+        // Selecting NEXT must not replace a PAUSED CURRENT. Play resumes
+        // the actual deck; double-click / Next explicitly change song.
+        if(armix::player::SetlistPolicy::resumeCurrentOnPlay(
+                phase,playerCurrent_)) {
+            playerError_=engine_.playerPlay();
+            emitPlayerState();
+            return;
+        }
+        playSelectedMusic();
+    }
     void playSelectedMusic() {
         if(playerLibrary_.empty()) {
             playerError_="Add Music to begin";emitPlayerState();return;
         }
         if(playerSelected_<0)playerSelected_=0;
         if(playerSelected_>=static_cast<int>(playerLibrary_.size()))return;
-        if(playerCurrent_==playerSelected_) {
+        const auto phase=engine_.playerStatus().getProperty(
+            "state","EMPTY").toString();
+        if(playerCurrent_==playerSelected_ && phase!="ERROR" &&
+           phase!="EMPTY") {
             playerError_=engine_.playerPlay();
         } else {
             const auto error=engine_.loadPlayerMusic(
                 playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
             playerError_=error;
-            if(error.isEmpty())playerCurrent_=playerSelected_;
+            if(error.isEmpty()) {
+                playerCurrent_=playerSelected_;
+                // A newly native-owned MUSIC ChannelId is visible in the
+                // authoritative mixer immediately after publisher ACK.
+                // The browser never invents a GUI-only strip or meter.
+                emitApprovedNativeSnapshot();
+            }
         }
         emitPlayerState(true);
     }
     void playNextMusic() {
-        const int next=playerCurrent_<0?
-            playerSelected_:playerCurrent_+1;
-        if(next<0 || next>=static_cast<int>(playerLibrary_.size())) {
+        const int next=armix::player::SetlistPolicy::nextTrack(
+            playerCurrent_,playerSelected_,
+            static_cast<int>(playerLibrary_.size()));
+        if(next<0) {
             engine_.playerStop();emitPlayerState();return;
         }
         playerSelected_=next;playSelectedMusic();
@@ -2492,7 +2516,7 @@ private:
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerAdd")return choosePlayerFiles();
-        if(action=="playerPlay")return playSelectedMusic();
+        if(action=="playerPlay")return playTransportMusic();
         if(action=="playerPause") {
             engine_.playerPause();emitPlayerState();return;
         }

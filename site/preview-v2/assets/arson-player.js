@@ -40,13 +40,17 @@
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
  const list=$("playerList"),search=$("playerSearch");
- let rendered="";
+ let libraryRevision=0,rendered="";
  function renderTracks(){
-   const q=search.value.trim().toLocaleLowerCase();
-   const songs=model.tracks.filter(x=>String(x.title||"").toLocaleLowerCase().includes(q));
-   const signature=JSON.stringify([songs,model.selected,model.current]);
+   // Avoid serializing and rebuilding a 2,000-song list on every realtime
+   // status tick. The song catalogue changes only on a native full snapshot.
+   const signature=[libraryRevision,model.selected,model.current,
+     search.value].join("|");
    if(rendered===signature)return;
    rendered=signature;
+   const q=search.value.trim().toLocaleLowerCase();
+   const all=model.tracks.filter(x=>String(x.title||"").toLocaleLowerCase().includes(q));
+   const songs=all.slice(0,128);
    list.replaceChildren();
    if(!songs.length){
      const message=document.createElement("div");
@@ -76,7 +80,20 @@
      row.append(index,title,state);
      row.addEventListener("click",()=>send("playerSelect",song.id));
      row.addEventListener("dblclick",()=>send("playerPlayNow",song.id));
+     row.addEventListener("keydown",event=>{
+       if(event.key==="Enter"){
+         event.preventDefault();
+         send("playerPlayNow",song.id);
+       }
+     });
      list.append(row);
+   }
+   if(all.length>songs.length){
+     const hint=document.createElement("div");
+     hint.className="ap-empty";
+     hint.textContent="Showing first "+songs.length+" of "+
+       all.length+" songs · Search to find another";
+     list.append(hint);
    }
  }
  function render(){
@@ -117,7 +134,10 @@
  if(native){
    backend.addEventListener("arMixPlayerState",payload=>{
      if(!payload || payload.schema!=="arsonmix.player.v1")return;
-     if(Array.isArray(payload.tracks))model.tracks=payload.tracks;
+     if(Array.isArray(payload.tracks)){
+       model.tracks=payload.tracks;
+       ++libraryRevision;
+     }
      model={...model,...payload,tracks:model.tracks};
      render();
    });

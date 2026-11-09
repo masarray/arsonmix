@@ -1581,7 +1581,8 @@ public:
         if(!file.hasFileExtension("wav;aiff;aif;mp3;flac;ogg"))
             return "Choose a supported music file (WAV, MP3, FLAC, AIFF, OGG)";
         if(independent_.active() || !attached_ || !directFence_.permitted() ||
-           secondaryOutput_.armed() ||
+           // The secondary STREAM consumer may copy the same already-verified
+           // native MAIN PCM. PLAYER A never selects/opens its hardware.
            routeReconfiguring_.load(std::memory_order_acquire) ||
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal ||
@@ -1620,6 +1621,8 @@ public:
                 juce::String(result.error):juce::String("Unable to prepare MUSIC route");
         }
         playerChannelId_=result.created;
+        playerFile_=file;
+        playerBoundEpoch_=dryRoutingLab_.epoch();
         playerDeck_.load(file,true); // async worker; real PLAYING only after PCM
         // The fresh PLAY gesture itself authorizes same verified output.
         // Never override an intentional MAIN MUTE or different physical port.
@@ -1629,6 +1632,13 @@ public:
         return {};
     }
     juce::String playerPlay() {
+        // An explicit Play after hardware restart automatically rebinds
+        // the user-selected song to the newly VERIFIED device epoch.
+        // Device reopen by itself never starts music or unmutes a port.
+        if((playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+            dryRoutingLab_.nativePlayerSource()!=playerChannelId_) &&
+           playerFile_!=juce::File{})
+            return loadPlayerMusic(playerFile_);
         if(!playerChannelId_.value || !directFence_.permitted() ||
            !dryRoutingLab_.channelIdPhysicalPcmActive() ||
            masterMute_.load(std::memory_order_acquire) ||
@@ -2573,7 +2583,9 @@ private:
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
     armix::player::NativePlayerDeck playerDeck_; // one asynchronous decoder, no device owner
-    armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, owned native identity
+    armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
+    juce::File playerFile_; // CONTROL only, last explicitly selected song
+    std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
     armix::dsp::NativeMasterLoudness masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;

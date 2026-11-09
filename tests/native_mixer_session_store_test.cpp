@@ -413,16 +413,30 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
         "NONE",-1,-1,true,false,0,formats,device.rate,device.frames).isEmpty());
     assert(mixer.admitChannelIdFromAcceptedM4(0,device.frames,true));
     assert(!mixer.hasVerifiedNativeSources()); // player needs no microphone
-    const auto before=mixer.controlRevision();
-    const auto added=mixer.ensureNativePlayerA(true,true);
+    // M4 compatibility controlRevision is NOT the native PCM revision.
+    // The contract for one player-owned publication is exactly +1 on
+    // accepted native graph revision, with unchanged M4 control state.
+    const auto beforeControl=mixer.controlRevision();
+    const auto beforeGraph=mixer.nativeBusStatus().getProperty(
+        "graphRevision","0").toString().getLargeIntValue();
+    // New virtual MUSIC can publish directly against an ALREADY trusted
+    // MAIN, including while the secondary stream copies MAIN. No physical
+    // source pin, output relink, MONITOR ritual or manual arm.
+    const auto added=mixer.ensureNativePlayerA(false,true);
     assert(added.accepted && added.created.value!=0);
-    assert(mixer.controlRevision()==before+1);
+    assert(mixer.nativePlayerSource()==added.created);
+    assert(added.pcmRevision==static_cast<std::uint64_t>(beforeGraph)+1);
+    assert(mixer.nativeBusStatus().getProperty("graphRevision","0")
+            .toString()==juce::String(added.pcmRevision));
+    assert(mixer.controlRevision()==beforeControl);
     assert(mixer.playerDeckHasMainPath());
     // A second Play owns the exact existing source; no duplicate MAIN edge.
     const auto again=mixer.ensureNativePlayerA(false,true);
     assert(again.accepted && again.created==added.created);
-    assert(mixer.controlRevision()==added.pcmRevision);
+    assert(again.pcmRevision==added.pcmRevision);
     const auto accepted=mixer.nativeBusStatus();
+    assert(accepted.getProperty("graphRevision","0").toString()
+           ==juce::String(added.pcmRevision));
     const auto* channels=accepted.getProperty("channels",{}).getArray();
     assert(channels);
     ChannelId main{};

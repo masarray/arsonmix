@@ -1601,6 +1601,19 @@ public:
         }
     }
 
+    // CONTROL-only logical source identity, independent of ASIO pins.
+    // Never infer that yesterday's ChannelId is still the attached deck
+    // after OPEN mixer / graph reload in the SAME hardware epoch.
+    armix::mixer::ChannelId nativePlayerSource(std::uint64_t deckId=1) const noexcept {
+        if(!channelIdPhysicalPcmActive())return {};
+        for(const auto& p:nativeAccepted_.graph.request.sources)
+            if(p.kind==armix::mixer::DynamicSourceKind::playerDeck &&
+               p.deckId==deckId &&
+               nativeAccepted_.graph.roster.find(p.id))
+                return p.id;
+        return {};
+    }
+
     // CONTROL-only truthful audio-readback. A loaded player can be PLAYING
     // with source meters active while SOURCE ONLY intentionally cuts MAIN.
     // Follow BUS/GROUP WIRE graph, never infer output from the source name.

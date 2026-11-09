@@ -46,11 +46,18 @@ public:
     // earlier generation. Worker atomically invalidates that generation.
     void deviceRate(double hz) noexcept {
         const auto rounded=static_cast<int>(std::lround(hz));
-        if(rounded==rate_.load(std::memory_order_acquire))return;
+        // Every aboutToStart/stopped callback is a new device epoch, even
+        // when the sample rate is unchanged. Never replay stale decoded PCM
+        // or silently resume a singer's backing track on hardware reopen.
         ready_.store(false,std::memory_order_release);
+        wantedPlay_.store(false,std::memory_order_release);
         rate_.store(rounded>0?rounded:0,std::memory_order_release);
+        const bool selected=hasFile_.load(std::memory_order_acquire);
+        played_.store(0,std::memory_order_release);
+        error_.store(0,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
-        state_.store(rounded>0?State::loading:State::stopped,
+        state_.store(rounded<=0?State::stopped:
+                         selected?State::loading:State::empty,
                      std::memory_order_release);
         wake_.notify_one();
     }
@@ -61,6 +68,7 @@ public:
             std::lock_guard<std::mutex> lock(commandMutex_);
             selectedFile_=file; // worker owns the reader, not the callback
         }
+        hasFile_.store(file!=juce::File{},std::memory_order_release);
         played_.store(0,std::memory_order_release);
         error_.store(0,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
@@ -180,11 +188,10 @@ private:
         while(!exit_.load(std::memory_order_acquire)) {
             const auto version=generation_.load(std::memory_order_acquire);
             if(version==seen) {
-                // No 3 ms periodic wakeup while idle: songs only change via
-                // control events. The worker sleeps without spending mixer
-                // CPU; no condition-variable operation touches ASIO callback.
+                // Sleep until a real command/device event. No 4Hz idle
+                // timer and no locks/waits whatsoever in JUCE's callback.
                 std::unique_lock<std::mutex> lock(wakeMutex_);
-                wake_.wait_for(lock,std::chrono::milliseconds(250),[&] {
+                wake_.wait(lock,[&] {
                     return exit_.load(std::memory_order_acquire) ||
                            generation_.load(std::memory_order_acquire)!=seen;
                 });
@@ -271,6 +278,7 @@ private:
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
+    std::atomic<bool> hasFile_{false}; // lifecycle read: no control mutex
     std::atomic<std::uint64_t> generation_{0},played_{0},length_{0};
     std::atomic<std::uint32_t> readers_{0};
     std::atomic<int> rate_{0},error_{0};
