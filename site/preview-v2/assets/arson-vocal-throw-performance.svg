@@ -8,12 +8,12 @@
  <filter id="halo" x="-85%" y="-85%" width="270%" height="270%"><feGaussianBlur stdDeviation="8"/></filter>
 </defs>
 <!-- Faithful silhouette from the supplied Illustrator dark play/trigger control:
-     recessed circular housing, four directional markers, illuminated
+     recessed circular housing, unmarked circular face, illuminated
      triangular play sigil. Rebuilt as paths, not a synthetic text button. -->
 <circle cx="128" cy="128" r="124" fill="#13181e" opacity=".82"/>
 <circle cx="128" cy="128" r="121" fill="url(#rim)" stroke="#505866" stroke-width=".9"/>
 <circle cx="128" cy="128" r="116" fill="url(#base)" stroke="#151a22" stroke-width="1.8"/>
-<path d="M128 29 L120 43 L136 43 Z M227 128 L213 120 L213 136 Z M128 227 L120 213 L136 213 Z M29 128 L43 120 L43 136 Z" fill="#0f141b" opacity=".66"/>
+
 <circle cx="128" cy="128" r="51" fill="#141922" stroke="#505660" stroke-width="1.1" opacity=".68"/>
 <circle cx="128" cy="128" r="47" fill="url(#inner)" stroke="#111820" stroke-width="2.3"/>
 <!-- The illuminated center is cropped pixel-for-pixel from the user's
