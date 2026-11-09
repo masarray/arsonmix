@@ -265,3 +265,23 @@ test('healthy install, repair and rollback require real EXE SHA, not provenance 
   assert.match(script, /Same source with changed EXE accepted/);
   assert.match(smoke, /ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS/);
 });
+
+test('two genuine release installers upgrade and roll back only in disposable Windows FAT', () => {
+  const real = read('scripts/test_two_genuine_inno_releases_windows.ps1');
+  const ci = read('.github/workflows/p1-windows.yml');
+  assert.match(real, /REAL_RELEASE_FAT_REQUIRES_DISPOSABLE_GITHUB_WINDOWS_RUNNER/);
+  assert.match(real, /v0\.5\.0-alpha\.4/);
+  assert.match(real, /v0\.5\.0-alpha\.5/);
+  assert.match(real, /GENUINE_RELEASE_BASELINE_PASS/);
+  assert.match(real, /GENUINE_RELEASE_UPGRADE_PASS/);
+  assert.match(real, /GENUINE_RELEASE_ROLLBACK_PASS/);
+  assert.match(real, /INSTALLER_PROVENANCE\.json/);
+  assert.match(real, /SHA256SUMS\.txt/);
+  assert.match(real, /sourceCommit/);
+  assert.match(real, /exeSha256/);
+  assert.match(real, /guiExeBytes/);
+  assert.match(real, /proof-user-session\.smix/);
+  assert.match(ci, /Prove two authentic historical Inno releases upgrade and roll back/);
+  assert.match(ci, /scripts\/test_two_genuine_inno_releases_windows\.ps1/);
+  assert.doesNotMatch(real, /(?:Stop-Process|taskkill|Remove-Item\s+-LiteralPath\s+\$install\s+-Recurse)/);
+});
