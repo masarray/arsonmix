@@ -49,3 +49,23 @@ A 1536-sample lookback at 48 kHz is **32 ms DSP delay**, before device input + o
 - Rubber Band v4 technical docs expose formant options and exact latency API, but licensing, ASIO callback suitability and measured overhead must be independently assessed; do not add by assumption.
 
 **Status:** engineering candidate only; PR stays Draft pending exact-HEAD qualification and physical vocal FAT.
+
+## 2026-11-09 follow-up — pitch CPU and measurable callback budget (post-merge)
+
+- Roll the shifted window's energy from one candidate lag to the next. Keep the existing dot-product, confidence threshold, quantizer and FX/PDC/GUI contracts. Each adjacent lag changes by one outgoing + one incoming squared sample instead of recomputing 160 squares. Only floating-point rounding may differ.
+- Extend deterministic C++ PCM regressions to a multi-harmonic A2 sample with 64/128/257-frame chunks. Existing E2/C6, dry-latency alignment, automation and music-guide tests remain in force.
+- Add `NativeHarmonySyntheticCallbackCpuProfile` to CTest. Synthetic engine-only p50/p95/p99/max data covers 48 kHz (64/128/256 samples), 96 kHz (128 samples), with 2/5 voices. Timing is recorded only outside engine->process(), but Windows runner contention makes absolute timing unsuitable for a CI hard gate.
+- No quantitative speedup claim without controlled before/after on one machine. No ASIO driver, JUCE graph, real-world multichannel CPU, formant quality or ear monitoring is measured by this synthetic profile. Physical singer FAT remains release blocking.
+
+## 2026-11-09 P0 bounded realtime engine milestone
+
+**Release scope**: Stable 48-kHz 1536-sample (32ms) DSP lookback and exact native PDC remain unchanged until recorded singing/listening establishes a safe lower-latency algorithm. No experimental formant shifter or hidden direct monitor path is enabled merely to advertise latency gains.
+
+- Move pitch autocorrelation off one large sample spike: snapshot a fixed decimated window every ~6.7ms, process at most 32 candidate lags per sample-scheduled slice, finish before the next analysis window. All snapshots and per-instance state are fixed-size, and graph/audio ownership is unchanged. This reduces the worst-case single-sample analysis work even at ASIO 64.
+- Keep the sliding lagged energy improvement from previous #485, preserving confidence thresholds, song key readback, five-voice controls and existing tests.
+- Recompute voiced gate and ratio smoothing coefficients on `prepare(rate)` only so physical time constants remain the same across 32–192kHz device reopen; 48kHz response stays calibrated to the earlier engine.
+- Enforce deterministic output for identical stereo singing PCM across 64/127/256 sample callback partitioning and instrument the maximum completed pitch-lag work per sample. Retain all prior E2–C6, cross-channel Music Key and dry 192k latency tests.
+- The synthetic engine-only CPU profile is diagnostic, not a hardware underrun oracle. Next **non-automatable** P0 gate: independent actual Windows ASIO interface, human singing + recorded dry/wet FFT/formant comparison, 48/96k with 64/128/256 periods and 2–5 voices for 30 minutes; callback p95/p99/max, driver XRUNs and measured loopback round trip must be documented.
+- Formant-preserving pitch synchronous synthesis (TD-PSOLA / equivalent) remains a separate replaceable shifter milestone: it must be verified against consonants, onset/off pitch, male/female vowels and CPU/latency tradeoffs before becoming audible default. Never claim today's granular shifter preserves formants.
+
+Project status: P0 **realtime boundedness implementation** awaiting exact-HEAD Windows CTest and singer FAT; not a final professional-quality or latency qualification.

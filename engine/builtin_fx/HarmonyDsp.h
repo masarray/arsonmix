@@ -61,6 +61,7 @@ inline float smoothGrainBlend(float phase) noexcept {
 class Engine final {
 public:
     static constexpr int maxVoices=5;
+    static constexpr int maxPitchLagsPerSlice=32; // upper bound for each callback sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
@@ -72,6 +73,7 @@ public:
         latency_=2*grain_;
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
+        pitchSliceEvery_=std::max(1,detectEvery_/8);
         // Support bass through soprano fundamentals; keep Nyquist/finiteness guards.
         // Earlier 850 Hz cap failed to track high soprano notes (e.g. C6).
         lowLag_=std::max(8,static_cast<int>(rate/(decimation_*1200.)));
@@ -85,10 +87,16 @@ public:
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
-        detectCounter_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
+        detectCounter_=0;pitchSliceCounter_=0;pitchNextLag_=0;
+        pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
+        peakPitchLagWork_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
         guideKey_=-1;guideScale_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
-        smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms continuous control ramp
+        smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
+        // Preserve the established 48k envelope while keeping durations
+        // constant at 32-192k. Exponents computed off the callback.
+        voicedGateAlpha_=static_cast<float>(1.-std::pow(1.-0.002,48000./rate));
+        ratioAlpha_=static_cast<float>(1.-std::pow(1.-0.00045,48000./rate));
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
     }
@@ -169,6 +177,7 @@ public:
     int latencySamples() const noexcept{return latency_;}
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
+    int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
     void process(float* l,float* r,int frames) noexcept {
         if(!l||!r||frames<=0||rate_<=0.)return;
         processed_=true;
@@ -196,10 +205,18 @@ public:
                 downWrite_=(downWrite_+1)%decimated_.size();
                 ++downSeen_;
             }
-            if(++detectCounter_>=detectEvery_){detectCounter_=0;detectPitch();}
+            if(++detectCounter_>=detectEvery_){
+                detectCounter_=0;beginPitchAnalysis();
+            }
+            // Correlation search is spread across the existing sample
+            // callback: never evaluate all 175+ candidate lags at once.
+            // Every 64-sample ASIO period sees a bounded number of slices.
+            if(pitchActive_ && ++pitchSliceCounter_>=pitchSliceEvery_){
+                pitchSliceCounter_=0;continuePitchAnalysis();
+            }
             const float dryL=tap(left_,static_cast<float>(latency_));
             const float dryR=tap(right_,static_cast<float>(latency_));
-            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*0.002f;
+            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*voicedGateAlpha_;
             float lead=0.f;
             if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
                 lead=shifted(maxVoices,color_);
@@ -230,7 +247,7 @@ private:
     }
     float shifted(int voice,float color) noexcept {
         float& currentRatio=ratio_[static_cast<std::size_t>(voice)];
-        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*0.00045f;
+        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*ratioAlpha_;
         const float p=phase_[static_cast<std::size_t>(voice)];
         const float pB=p<0.5f?p+0.5f:p-0.5f;
         const float delayA=2.f*grain_+(1.f-currentRatio)*p*grain_;
@@ -248,39 +265,70 @@ private:
             phase_[static_cast<std::size_t>(voice)]-=1.f;
         return y;
     }
-    void detectPitch() noexcept {
+    // Prepare one immutable, bounded pitch-analysis window every analysis hop.
+    // The subsequent 32-lag correlation slices cannot race PCM history writes:
+    // they only read the frozen fixed-size pitchWindow_.
+    void beginPitchAnalysis() noexcept {
+        pitchActive_=false;
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
-        // Gather a contiguous fixed-size pitch window ONCE per analysis hop.
-        // Previously every candidate/lag re-indexed circular history in the
-        // inner O(lags * span) loop: unpredictable CPU peaks on tiny ASIO buffers.
-        std::array<float,span+231> samples{};
         auto ix=(downWrite_+decimated_.size()-1)%decimated_.size();
         for(int j=0;j<span+highLag_;++j){
-            samples[static_cast<std::size_t>(j)]=decimated_[ix];
+            pitchWindow_[static_cast<std::size_t>(j)]=decimated_[ix];
             ix=ix==0?decimated_.size()-1:ix-1;
         }
-        double energy=0.;
+        pitchEnergy_=0.;
         for(int j=0;j<span;++j){
-            const double x=samples[static_cast<std::size_t>(j)];
-            energy+=x*x;
+            const double x=pitchWindow_[static_cast<std::size_t>(j)];
+            pitchEnergy_+=x*x;
         }
-        if(energy/static_cast<double>(span)<1.e-6){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+        if(pitchEnergy_/static_cast<double>(span)<1.e-6){
+            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;
+            return;
         }
-        float best=-1.f;int bestLag=0;
-        std::array<float,231> correlations{};
-        for(int lag=lowLag_;lag<=highLag_;++lag){
-            double xy=0.,yy=0.;
-            for(int j=0;j<span;++j){
-                const double x=samples[static_cast<std::size_t>(j)];
-                const double y=samples[static_cast<std::size_t>(j+lag)];
-                xy+=x*y;yy+=y*y;
+        pitchCorrelations_.fill(0.f);
+        pitchLagEnergy_=0.;
+        for(int j=0;j<span;++j){
+            const double y=pitchWindow_[static_cast<std::size_t>(j+lowLag_)];
+            pitchLagEnergy_+=y*y;
+        }
+        pitchBest_=-1.f;pitchBestLag_=0;pitchNextLag_=lowLag_;
+        pitchSliceCounter_=0;
+        pitchActive_=true;
+    }
+    void continuePitchAnalysis() noexcept {
+        if(!pitchActive_)return;
+        constexpr int span=160;
+        const int endLag=std::min(highLag_,pitchNextLag_+maxPitchLagsPerSlice-1);
+        const int work=endLag-pitchNextLag_+1;
+        peakPitchLagWork_=std::max(peakPitchLagWork_,work);
+        for(int lag=pitchNextLag_;lag<=endLag;++lag){
+            if(lag>lowLag_){
+                const double leaving=pitchWindow_[static_cast<std::size_t>(lag-1)];
+                const double entering=pitchWindow_[static_cast<std::size_t>(span+lag-1)];
+                pitchLagEnergy_+=entering*entering-leaving*leaving;
             }
-            const float correlation=static_cast<float>(xy/std::sqrt(energy*yy+1.e-14));
-            correlations[static_cast<std::size_t>(lag)]=correlation;
-            if(correlation>best){best=correlation;bestLag=lag;}
+            double xy=0.;
+            for(int j=0;j<span;++j){
+                const double x=pitchWindow_[static_cast<std::size_t>(j)];
+                const double y=pitchWindow_[static_cast<std::size_t>(j+lag)];
+                xy+=x*y;
+            }
+            const float correlation=static_cast<float>(
+                xy/std::sqrt(pitchEnergy_*std::max(0.,pitchLagEnergy_)+1.e-14));
+            pitchCorrelations_[static_cast<std::size_t>(lag)]=correlation;
+            if(correlation>pitchBest_){pitchBest_=correlation;pitchBestLag_=lag;}
         }
+        pitchNextLag_=endLag+1;
+        if(pitchNextLag_>highLag_){
+            pitchActive_=false;
+            finishPitchAnalysis();
+        }
+    }
+    void finishPitchAnalysis() noexcept {
+        const auto& correlations=pitchCorrelations_;
+        float best=pitchBest_;
+        int bestLag=pitchBestLag_;
         // Prefer shortest strong period rather than an octave-multiple peak.
         if(best>0.77f){
             for(int lag=lowLag_;lag<=highLag_;++lag){
@@ -337,11 +385,19 @@ private:
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
     int downCounter_=0,detectCounter_=0;
+    int pitchSliceEvery_=1,pitchSliceCounter_=0,pitchNextLag_=0;
+    int pitchBestLag_=0,peakPitchLagWork_=0;
+    bool pitchActive_=false;
+    float pitchBest_=-1.f;
+    double pitchEnergy_=0.,pitchLagEnergy_=0.;
+    // Fixed PCM snapshots; no allocation or variable work on the callback.
+    std::array<float,160+231> pitchWindow_{};
+    std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;
     bool voiced_=false;float voicedGain_=0.f;
     bool processed_=false;
-    float smoothingAlpha_=1.f;
+    float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};

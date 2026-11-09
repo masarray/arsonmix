@@ -220,5 +220,55 @@ int main(){
          std::abs(wr[i]-(impulse?-.25f:0.f))<1.e-5f,
          "reduced 192 kHz history corrupted a wrapped dry impulse");
   }
+  // Regression for sliding lag-energy normalization: harmonic-rich A2
+  // vocals must remain a stable note at small, irregular ASIO block sizes.
+  for(int block:{64,128,257}){
+    auto pitched=std::make_unique<Engine>();
+    need(pitched->prepare(48000.),"harmonic tracking prepare failed");
+    constexpr int samples=24000;
+    std::vector<float> hl(samples),hr(samples);
+    for(int i=0;i<samples;++i){
+      const double t=static_cast<double>(i)/48000.;
+      hl[i]=hr[i]=static_cast<float>(
+          .17*std::sin(6.283185307179586*110.*t)+
+          .04*std::sin(6.283185307179586*220.*t)+
+          .02*std::sin(6.283185307179586*330.*t));
+    }
+    for(int i=0;i<samples;i+=block)
+      pitched->process(hl.data()+i,hr.data()+i,std::min(block,samples-i));
+    need(pitched->voiced()&&pitched->observedMidiNote()==45,
+         "rolling pitch energy altered singer-like A2 classification");
+  }
+  // P0: alternate ASIO block sizes must produce identical output PCM.
+  // Sliced analysis operates per sample, never depends on callback framing.
+  std::vector<float> referenceL,referenceR;
+  for(int block:{64,127,256}){
+    auto bounded=std::make_unique<Engine>();
+    need(bounded->prepare(48000.),"P0 bounded engine prepare failed");
+    Settings rich;rich.voices=5;rich.wet=.7f;rich.correction=true;
+    need(bounded->setSettings(rich),"P0 quality setup failed");
+    constexpr int frames=48000;
+    std::vector<float> left(frames),right(frames);
+    for(int i=0;i<frames;++i){
+      const double phase=6.283185307179586*220.*i/48000.;
+      left[i]=static_cast<float>(.18*std::sin(phase)+.06*std::sin(2*phase));
+      right[i]=static_cast<float>(.16*std::sin(phase)+.04*std::sin(3*phase));
+    }
+    for(int i=0;i<frames;i+=block)
+      bounded->process(left.data()+i,right.data()+i,std::min(block,frames-i));
+    need(bounded->peakPitchLagWork()>0&&
+         bounded->peakPitchLagWork()<=Engine::maxPitchLagsPerSlice,
+         "P0 pitch analysis overran per-sample lag budget");
+    need(bounded->voiced()&&bounded->observedMidiNote()==57,
+         "P0 bounded singer tone detection failed");
+    if(referenceL.empty()){
+      referenceL=left;referenceR=right;
+    }else for(int i=0;i<frames;++i)
+      need(std::abs(left[i]-referenceL[i])<1.e-6f&&
+           std::abs(right[i]-referenceR[i])<1.e-6f,
+           "P0 pitch output depends on ASIO callback block size");
+  }
+  // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
+  need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
