@@ -44,6 +44,14 @@ assert.match(page, /render\(\); \/\/ structural bank change only/);
 assert.match(page, /renderWireRouting\(\); \/\/ geometry-only/);
 assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
+// Reconciled main Player M3 controls must survive the native caption branch.
+const playerHtml = read('site/preview-v2/assets/mixer-contextual-buttons.js');
+assert.match(main, /struct PlayerTrackSettings/);
+assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
+assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
+assert.match(playerHtml, /id="playerKeyMinus"/);
+assert.match(playerHtml, /id="playerTempoPlus"/);
+assert.match(playerHtml, /armix-brand-mix/);
 console.log('Native titlebar + supplied SVG + WIRE geometry contract PASS');
 
 // Runtime scheduler test with fake DOM; no WebView2, no sound engine and no timer.

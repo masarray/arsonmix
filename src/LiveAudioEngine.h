@@ -1648,6 +1648,11 @@ public:
         playerDeck_.play();
         return {};
     }
+    bool setPlayerPitchTempo(int semitones,int percent) noexcept {
+        // A per-song operator intent. No sample-rate/device reconfiguration:
+        // the decoder worker consumes more/fewer backing-track PCM frames.
+        return playerDeck_.setPitchTempo(semitones,percent);
+    }
     void playerPause() noexcept {playerDeck_.pause();}
     void playerStop() noexcept {playerDeck_.stop();}
     juce::var playerStatus() const {
@@ -1674,6 +1679,12 @@ public:
             static_cast<double>(status.duration)/status.deviceRate:0.0);
         data->setProperty("underrunFrames",juce::String(
             static_cast<juce::int64>(status.underruns)));
+        data->setProperty("keySemitones",status.keySemitones);
+        data->setProperty("tempoPercent",status.tempoPercent);
+        data->setProperty("requestedKey",status.requestedKey);
+        data->setProperty("requestedTempo",status.requestedTempo);
+        data->setProperty("processingChangePending",
+                          status.processingChangePending);
         data->setProperty("generation",juce::String(
             static_cast<juce::int64>(status.generation)));
         data->setProperty("channelId",juce::String(

@@ -53,6 +53,11 @@
     <div class="ap-top"><span class="ap-brand">ArSon Player</span><span class="ap-sub">Music · Setlist</span><button id="playerClose" type="button" class="ap-close" aria-label="Close player">×</button></div>
     <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div><div class="ap-time"><span id="playerElapsed">00:00</span><progress id="playerProgress" max="1" value="0" aria-label="Song progress"></progress><span id="playerDuration">00:00</span></div></div>
     <div class="ap-transport"><button id="playerPlay" type="button">▶ Play</button><button id="playerStop" type="button">■ Stop</button><button id="playerNext" type="button">Next ›</button><button id="playerAutoNext" type="button" aria-pressed="false">Auto Next · Off</button></div>
+    <div class="ap-pitchtempo" aria-label="Music pitch and playback speed">
+      <div class="ap-pitchctrl"><span>KEY</span><button id="playerKeyMinus" type="button" aria-label="Lower music key one semitone">−</button><output id="playerKeyValue" aria-live="polite">0 st</output><button id="playerKeyPlus" type="button" aria-label="Raise music key one semitone">+</button></div>
+      <div class="ap-pitchctrl"><span>TEMPO</span><button id="playerTempoMinus" type="button" aria-label="Slow music by five percent">−</button><output id="playerTempoValue" aria-live="polite">100%</output><button id="playerTempoPlus" type="button" aria-label="Speed music by five percent">+</button></div>
+      <button class="ap-reset" id="playerPitchReset" type="button" title="Reset key and tempo for current song">Reset</button>
+    </div>
     <div class="ap-statusbar"><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerChooseOutput" type="button" hidden>Choose output</button></div>
     <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAdd" type="button">+ Add Music</button></div>
     <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
