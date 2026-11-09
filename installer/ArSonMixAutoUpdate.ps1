@@ -668,12 +668,26 @@ try {
                'X-GitHub-Api-Version'='2022-11-28'}
     $liveReleases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
     $approved=$null
+    $approvedOld=$null
     foreach($release in $liveReleases) {
         if($release.tag_name -ceq $state.candidateTag -and
            $release.target_commitish -ceq $state.candidateSha) {
             $approved=Approved-Installer $release
-            break
         }
+        if($release.tag_name -ceq $state.previousTag -and
+           $release.target_commitish -ceq $state.previousSha) {
+            $approvedOld=Approved-Installer $release
+        }
+    }
+    if($null -eq $approvedOld -or
+       $approvedOld.name -cne $state.previousAsset.name -or
+       $approvedOld.digest -cne $state.previousAsset.digest -or
+       [long]$approvedOld.size -ne [long]$state.previousAsset.size) {
+        # The rollback package is mandatory. Fail closed if its published
+        # source/asset identity was withdrawn or the local cache was altered.
+        # Do not install a newer version without an authentic way back.
+        Log-Result 'ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED'
+        exit 0
     }
     if($null -eq $approved -or $approved.digest -cne $state.newAsset.digest -or
        [long]$approved.size -ne [long]$state.newAsset.size){
