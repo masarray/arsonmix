@@ -471,6 +471,27 @@ public:
         return registered.registration.ok() &&
             asioPinnedRegistration_.sameDriverClass(registered.registration.identity);
     }
+    // A vendor ASIO4ALL restart can leave JUCE with NO current device object.
+    // Only the previously selected, explicitly approved driver name and its
+    // FULL registered CLSID may be reopened; never choose a default endpoint.
+    // CONTROL only: registry lookup and JUCE setup are forbidden in callback.
+    bool selectedRetainedAsioDriverForReopen() {
+        using Policy=armix::session::MixerDeviceBindingPolicy;
+        if(deviceManager_.getCurrentAudioDevice() || !acceptedMixerBinding_ ||
+           !Policy::isAsio4All(*acceptedMixerBinding_) ||
+           !asioPinnedRegistration_.valid() || !attached_ || independent_.active() ||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")return false;
+        juce::AudioDeviceManager::AudioDeviceSetup setup;
+        deviceManager_.getAudioDeviceSetup(setup);
+        if(setup.outputDeviceName.isEmpty() ||
+           setup.outputDeviceName!=acceptedMixerBinding_->playback ||
+           (!setup.inputDeviceName.isEmpty() &&
+            setup.inputDeviceName!=acceptedMixerBinding_->capture))return false;
+        const auto registered=armix::device::AsioRegistryIdentityProbe::resolve(
+            std::wstring(setup.outputDeviceName.toWideCharPointer()));
+        return registered.registration.ok() &&
+            asioPinnedRegistration_.sameDriverClass(registered.registration.identity);
+    }
     bool authorizeRetainedAsioRestart() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
         if(!hasRetainedNativeSession() || !acceptedMixerBinding_ ||

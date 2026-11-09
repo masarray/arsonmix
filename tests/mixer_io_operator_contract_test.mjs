@@ -617,6 +617,23 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
 });
 
+test('ASIO4ALL missing JUCE device can reopen only the pinned user-selected driver',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+  const service=main.slice(main.indexOf('void serviceAsioMixerRestart()'),
+                           main.indexOf('void changeListenerCallback ('));
+  assert.match(service,/else if\(!engine_\.selectedRetainedAsioDriverForReopen\(\)\)/);
+  assert.match(service,/if\(!device \|\| !device->isOpen\(\)/);
+  assert.match(service,/ASIO4ALL_DEVICE_MISSING/);
+  const selected=engine.slice(engine.indexOf('bool selectedRetainedAsioDriverForReopen()'),
+                              engine.indexOf('bool authorizeRetainedAsioRestart()'));
+  assert.match(selected,/deviceManager_\.getCurrentAudioDevice\(\)/);
+  assert.match(selected,/deviceManager_\.getCurrentAudioDeviceType\(\)!="ASIO"/);
+  assert.match(selected,/Policy::isAsio4All\(\*acceptedMixerBinding_\)/);
+  assert.match(selected,/setup\.outputDeviceName!=acceptedMixerBinding_->playback/);
+  assert.match(selected,/setup\.inputDeviceName!=acceptedMixerBinding_->capture/);
+  assert.match(selected,/asioPinnedRegistration_\.sameDriverClass\(registered\.registration\.identity\)/);
+});
+
 test('ASIO restart cannot strand MAIN off after temporary graph readiness faults',()=>{
   const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
   const arm=main.slice(main.indexOf('void serviceAutomaticMain()'),main.indexOf('void requestAutomaticMain('));

@@ -4734,15 +4734,22 @@ private:
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         auto* device=engine_.devices().getCurrentAudioDevice();
-        if(!device || device->getTypeName()!="ASIO" ||
-           !device->getName().startsWithIgnoreCase("ASIO4ALL"))return;
-        if(!engine_.sameRetainedAsioDriver())return; // preserve registered driver identity
+        if(device) {
+            if(device->getTypeName()!="ASIO" ||
+               !device->getName().startsWithIgnoreCase("ASIO4ALL") ||
+               !engine_.sameRetainedAsioDriver())return;
+        } else if(!engine_.selectedRetainedAsioDriverForReopen()) {
+            // The device pointer disappeared: never open an unapproved or
+            // guessed driver name, even if ASIO4ALL happens to be installed.
+            return;
+        }
         const auto now=monotonicMilliseconds();
         asioRecoveryGate_.observeEpoch(epoch,now);
         if(!asioRecoveryGate_.due(now))return; // let ASIO4ALL WDM pin inventory settle
         const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
-        if(!device->isOpen() || device->getActiveOutputChannels().countNumberOfSetBits()<2) {
-            // A closed or output-less ASIO device requires a vendor call.
+        if(!device || !device->isOpen() ||
+           device->getActiveOutputChannels().countNumberOfSetBits()<2) {
+            // A missing, closed or output-less ASIO device requires a vendor call.
             // Never reopen it repeatedly on each UI timer tick.
             if(!asioRecoveryGate_.mayChangeDriver()) {
                 asioRecoveryGate_.waitForReadback(now);
@@ -4754,6 +4761,8 @@ private:
             setup.useDefaultInputChannels=!setup.inputChannels.isZero();
             setup.useDefaultOutputChannels=true;
             asioRecoveryGate_.driverTransaction(now);
+            if(!device)diagnostics_.record("ASIO4ALL_DEVICE_MISSING",
+                "Reopening previously approved registered ASIO driver; no fallback");
             const auto error=openSelectedAudioDevice("ASIO",setup,true);
             asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
