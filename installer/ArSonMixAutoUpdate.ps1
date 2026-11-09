@@ -480,7 +480,10 @@ try {
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance
     $installedSha=[string]$file.sourceCommit
-    if($installedSha -cnotmatch '^[a-f0-9]{40}
+    if($installedSha -cnotmatch '^[a-f0-9]{40}$'){
+        if($RecoveryMode){Show-RecoveryFailure 'Installed source identity is invalid'}
+        exit 0
+    }
     $state=[pscustomobject]@{lastCheckUtc='';lastAttemptUtc='';blockedTag='';lastInstalledTag='';phase='idle';operation='upgrade';installAttempts=0;retryAfterUtc='';
        candidateTag='';candidateSha='';previousSha='';previousTag='';
        newAsset=$null;previousAsset=$null}
