@@ -158,10 +158,30 @@ private:
         if(result_.locked && std::abs(bestBpm-result_.bpm)>5.f &&
            stableCount_<6)return;
         if(stableCount_<3)return;
-        result_.bpm=static_cast<float>(candidateBpm_);
-        result_.confidence=std::clamp(bestScore/
+        // Octave hysteresis can deliberately select a weaker incumbent.
+        // Confidence MUST describe that selected BPM, not an alternate
+        // double/half-time peak that we explicitly rejected.
+        const float acceptedScore=
+            candidates[static_cast<std::size_t>(bestBpm-60)];
+        const float confidence=std::clamp(acceptedScore/
             static_cast<float>(std::max<std::size_t>(7,count_))*.9f,0.f,1.f);
-        if(result_.confidence<.28f)return;
+        if(confidence<.28f) {
+            // A busy but low-confidence groove is NOT a stable beat. The
+            // previous code kept locked=true (and old beat-phase) while
+            // overwriting BPM, which could shift the next singer echo on an
+            // untrusted grid. Fail closed to accepted Manual/TAP, then demand
+            // three fresh good estimates before reacquiring Auto.
+            result_.confidence=confidence;
+            result_.locked=false;
+            result_.phaseLocked=false;
+            result_.phaseConfidence=0.f;
+            result_.beatAnchorFrame=0;
+            result_.beatAnchorTick=0;
+            stableCount_=candidateBpm_=0;
+            return;
+        }
+        result_.bpm=static_cast<float>(bestBpm);
+        result_.confidence=confidence;
         // CONTROL: phase is a separate decision from the BPM estimate.
         // Search the bounded onset set for the strongest coherent pulse
         // lattice, not simply the most recent loud snare / clap.
