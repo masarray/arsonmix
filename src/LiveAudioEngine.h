@@ -2720,6 +2720,11 @@ private:
 
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
+        // Some ASIO implementations announce a new callback before STOP.
+        // Remember the existing MAIN intent before muting this epoch; only
+        // the verified same-driver CONTROL rebind may resume it. No RT work.
+        if(monitor_.load(std::memory_order_acquire))
+            resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.invalidateSource(); // source clock may have changed
         dryRoutingLab_.prepareDevice(d); // exact active mask, before callback

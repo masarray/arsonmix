@@ -612,3 +612,14 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
   assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
 });
+
+test('ASIO restart cannot strand MAIN off after temporary graph readiness faults',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+  const arm=main.slice(main.indexOf('void serviceAutomaticMain()'),main.indexOf('void requestAutomaticMain('));
+  assert.ok(arm.indexOf('liveOutputArmFault(autoMainRequiresInput_)')<
+            arm.indexOf('autoMainCheckedRevision_=revision;'),'only a verified ARM consumes the revision');
+  const begin=engine.slice(engine.indexOf('void audioDeviceAboutToStart ('),engine.indexOf('void audioDeviceStopped()'));
+  assert.match(begin,/if\(monitor_\.load\(std::memory_order_acquire\)\)/);
+  assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
+  assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
+});

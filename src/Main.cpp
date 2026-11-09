@@ -1324,8 +1324,11 @@ private:
         const auto revision=engine_.outputArmRevision();
         if(autoMainCheckedRevision_==revision)return;
         if(engine_.isGraphSwitchPending()||!engine_.hasBoundMixerRoute())return;
-        autoMainCheckedRevision_=revision;
+        // A transient native graph/FX ACK must not permanently consume
+        // the only automatic MAIN attempt for this control revision.
+        // Retry only the cheap CONTROL preflight until it is genuinely safe.
         if(engine_.liveOutputArmFault(autoMainRequiresInput_).isNotEmpty())return;
+        autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
         diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
