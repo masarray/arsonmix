@@ -451,6 +451,91 @@ int main(){
     need(std::isfinite(y)&&std::abs(y)<=4.f,
          "P0 guide PCM overflowed in stereo analysis fold");
   }
+
+  // P1 natural ensemble: each singer owns a distinct stable arrival time,
+  // vibrato phase/rate and early-reflection history. No heap or random PCM
+  // work is introduced, and reflections must not bleed between singers.
+  for(double rate:{32000.,48000.,96000.,192000.}){
+    auto ensemble=std::make_unique<EnsembleSpace>();
+    need(ensemble->prepare(rate),"ensemble prepare rejected supported rate");
+    need(ensemble->arrivalSamples(0)>0.f&&
+         ensemble->arrivalSamples(2)>ensemble->arrivalSamples(1),
+         "independent singer onset offsets not prepared");
+    need(ensemble->reflectionSamples(4)<static_cast<int>(
+             EnsembleSpace::reflectionCapacity),
+         "highest-rate reflection would read outside fixed history");
+    const int delay=ensemble->reflectionSamples(0);
+    for(int i=0;i<=delay+5;++i){
+      for(int v=0;v<EnsembleSpace::voices;++v){
+        const float input=(i==0&&v==0)?1.f:0.f;
+        const float out=ensemble->exchangeReflection(v,input);
+        const float expected=(i==delay&&v==0)?1.f:0.f;
+        need(std::abs(out-expected)<1.e-6f,
+             "ensemble reflection delay or channel isolation broken");
+      }
+      ensemble->advance(true);
+    }
+    float minRatio=2.f,maxRatio=0.f;
+    const int sustain=static_cast<int>(rate*.60);
+    for(int i=0;i<sustain;++i){
+      const float a=ensemble->pitchRatio(0);
+      const float b=ensemble->pitchRatio(1);
+      need(std::isfinite(a)&&std::isfinite(b)&&a>.996f&&a<1.004f&&
+           b>.996f&&b<1.004f,
+           "ensemble vibrato/detune exceeds transparent musical bounds");
+      minRatio=std::min(minRatio,a);maxRatio=std::max(maxRatio,a);
+      ensemble->advance(true);
+    }
+    need(maxRatio-minRatio>0.0004f,
+         "ensemble vocalist lacks independent sustain modulation");
+    ensemble->advance(false);
+  }
+  // At Space=0 mono input stays mono with no reflected crossfeed. At
+  // Space=1, three distinct backing singers must form true stereo PCM,
+  // while the singer's dry path keeps its declared delay and center.
+  for(double rate:{48000.,96000.}){
+    constexpr int samples=48000;
+    std::vector<float> zeroL(samples),zeroR(samples);
+    std::vector<float> wideL(samples),wideR(samples);
+    auto center=std::make_unique<Engine>();
+    auto wide=std::make_unique<Engine>();
+    need(center->prepare(rate)&&wide->prepare(rate),
+         "ensemble space engine prepare failed");
+    Settings narrow; narrow.voices=3;narrow.wet=.6f;narrow.space=0.f;
+    Settings spread=narrow;spread.space=1.f;
+    need(center->setSettings(narrow)&&wide->setSettings(spread),
+         "ensemble controls not accepted");
+    for(int i=0;i<samples;++i){
+      const float x=static_cast<float>(.16*std::sin(
+          6.283185307179586*220.*i/rate)+.05*std::sin(
+          6.283185307179586*440.*i/rate));
+      zeroL[static_cast<std::size_t>(i)]=zeroR[static_cast<std::size_t>(i)]=x;
+      wideL[static_cast<std::size_t>(i)]=wideR[static_cast<std::size_t>(i)]=x;
+    }
+    for(int i=0;i<samples;i+=64){
+      const auto len=std::min(64,samples-i);
+      center->process(zeroL.data()+i,zeroR.data()+i,len);
+      wide->process(wideL.data()+i,wideR.data()+i,len);
+    }
+    double centerDifference=0.,spreadDifference=0.,wideEnergy=0.,foldEnergy=0.;
+    for(int i=samples/2;i<samples;++i){
+      centerDifference+=std::abs(zeroL[static_cast<std::size_t>(i)]-
+                                 zeroR[static_cast<std::size_t>(i)]);
+      spreadDifference+=std::abs(wideL[static_cast<std::size_t>(i)]-
+                                 wideR[static_cast<std::size_t>(i)]);
+      const double x=.5*(wideL[static_cast<std::size_t>(i)]+
+                           wideR[static_cast<std::size_t>(i)]);
+      wideEnergy+=wideL[static_cast<std::size_t>(i)]*
+                  wideL[static_cast<std::size_t>(i)]+
+                  wideR[static_cast<std::size_t>(i)]*
+                  wideR[static_cast<std::size_t>(i)];
+      foldEnergy+=x*x;
+    }
+    need(centerDifference<.0001,
+         "Space zero leaked phase-widened stereo or unbalanced rooms");
+    need(spreadDifference>0.5&&wideEnergy>1.&&foldEnergy>.1,
+         "ensemble room has no stereo depth or loses mono compatibility");
+  }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";

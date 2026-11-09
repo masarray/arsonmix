@@ -44,3 +44,32 @@ This is functional prototype pitch-shifting, **not** a formant-stable choir mode
 5. Actual ASIO physical FAT at 48/96 kHz, 64/128/256 frames: CPU time distribution p95/p99, deadline margin and XRUNs with 2/3/5 voices and multiple mixer plugins, hot graph/device rebind. These results cannot be inferred from ordinary GitHub Actions.
 
 **Non-claim:** The present PR does not yet implement or certify natural formants, an acoustic spatial engine, or a shorter engine PDC. Changing those requires measured code, CTest, render comparisons, audio A/B and physical ASIO proof.
+
+## 2026-11-09 P1 implemented — bounded singer individuation and early room
+
+New `engine/builtin_fx/HarmonyEnsembleSpace.h` defines five deterministic
+backing singer identities, allocated as fixed-size fields and prepared on the
+control thread. Each has its own arrival offset (5–17ms), phase and slight
+detune (~1–3 cents) with onset-ramped, subtle 4.5–5.35Hz vibrato, and a
+mild unique timbre coefficient. Up to five fixed 4096-sample reflection rings
+supply one integer-delay, opposite-side quiet early reflection (12–20ms).
+The same existing `Space` control now governs moderate pan width and
+room amount, without adding another GUI mode or `.smix` schema field.
+
+No `sin`, `pow`, heap allocation, locks, worker or buffered audio queue
+runs inside callback; each singer's LFO uses control-thread sine LUT. All
+reflection histories advance when backing voices are inactive so stale FX
+cannot reappear. No native graph, VST3, ASIO callback owner, slider/preset,
+transport or routing changes. Plugin PDC remains 1536 samples @48k
+(32ms). Vocal backing output is intentionally slightly later than the
+lead, rather than delaying the lead itself: this is *musical onset and
+depth*, NOT an additional reported whole-plugin latency.
+
+Acceptance includes fixed-tap reflection impulse at 32–192k, isolation
+between singers, bounded detune/vibrato and mono-compatible 3-voice
+stereo field at 48/96k. Existing PCM block-partitioning, host bypass,
+anti-phase dry and realtime CPU diagnostic still apply. This is a P1
+ensemble-spatial realism increment, **not a formant-preserving
+resynthesis fix**. The original two-grain pitch shifter can still sound
+robotic on real recorded consonants and wide intervals. It requires a
+separate pitch-synchronous/formant-aware algorithm and A/B acoustic gate.

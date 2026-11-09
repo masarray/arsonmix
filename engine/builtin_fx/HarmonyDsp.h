@@ -7,6 +7,7 @@
 #include <cstdint>
 #include "HarmonyStereoFold.h"
 #include "HarmonyPreparedTone.h"
+#include "HarmonyEnsembleSpace.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -86,10 +87,15 @@ public:
         if(lowLag_>=highLag_||latency_+3*grain_>=static_cast<int>(capacity))return false;
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
+        // Independent grain clocks avoid five identical backing-singer seams.
+        // Lead correction keeps its neutral original phase.
+        for(int v=0;v<maxVoices;++v)
+            phase_[static_cast<std::size_t>(v)]=.157f*static_cast<float>(v);
         // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
-        if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate))return false;
+        if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
+           !ensemble_.prepare(rate))return false;
         pitchIntervals_.prepare();
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -123,7 +129,9 @@ public:
         constexpr float pi=3.14159265358979323846f;
         const float amplitude=next.wet*0.65f/std::sqrt(static_cast<float>(next.voices));
         for(int v=0;v<next.voices;++v){
-            const float pan=next.space*(2.f*static_cast<float>(v)/(next.voices-1)-1.f);
+            // Width is moderate even at the center-friendly default Space.
+            const float pan=.72f*next.space*
+                (2.f*static_cast<float>(v)/(next.voices-1)-1.f);
             const float angle=(pan+1.f)*pi*0.25f;
             prepared.mixL[v]=amplitude*std::cos(angle);
             prepared.mixR[v]=amplitude*std::sin(angle);
@@ -145,6 +153,7 @@ public:
         }
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
+        targetSpace_=next.settings.space;
         targetGain_=next.gain;
         targetCorrection_=next.settings.correction?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
@@ -152,7 +161,8 @@ public:
             targetMixR_[static_cast<std::size_t>(v)]=next.mixR[v];
         }
         if(!processed_){
-            wet_=targetWet_;color_=targetColor_;gain_=targetGain_;
+            wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
+            gain_=targetGain_;
             correctionMix_=targetCorrection_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
@@ -198,6 +208,7 @@ public:
             const float a=smoothingAlpha_;
             wet_+=a*(targetWet_-wet_);
             color_+=a*(targetColor_-color_);
+            space_+=a*(targetSpace_-space_);
             gain_+=a*(targetGain_-gain_);
             correctionMix_+=a*(targetCorrection_-correctionMix_);
             for(int v=0;v<maxVoices;++v){
@@ -241,16 +252,27 @@ public:
             const float leadBlend=correctionMix_*voicedGain_;
             float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
             float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
-            if(voicedGain_>0.00001f){
-                for(int v=0;v<maxVoices;++v){
-                    const auto ix=static_cast<std::size_t>(v);
-                    if(std::abs(mixL_[ix])+std::abs(mixR_[ix])<1.e-5f)continue;
-                    const float y=shifted(v,filterCoef)*voicedGain_;
-                    outL+=y*mixL_[ix];outR+=y*mixR_[ix];
+            // A small, non-negative opposite-side early reflection makes a
+            // backing voice recede without phase widening or extra reverb FX.
+            // All rings advance even while muted, preventing stale FX tails.
+            const float roomAmount=.13f*space_;
+            for(int v=0;v<maxVoices;++v){
+                const auto ix=static_cast<std::size_t>(v);
+                const bool audible=voicedGain_>0.00001f&&
+                    std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f;
+                float voice=0.f;
+                if(audible){
+                    voice=shifted(v,ensemble_.timbreCoefficient(v,filterCoef),
+                                  ensemble_.arrivalSamples(v),
+                                  ensemble_.pitchRatio(v))*voicedGain_;
                 }
+                const float reflection=ensemble_.exchangeReflection(v,voice);
+                outL+=voice*mixL_[ix]+reflection*mixR_[ix]*roomAmount;
+                outR+=voice*mixR_[ix]+reflection*mixL_[ix]*roomAmount;
             }
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
+            ensemble_.advance(voiced_);
             write_=(write_+1)%capacity;
         }
     }
@@ -263,13 +285,15 @@ private:
         const auto a1=(a0+capacity-1)%capacity;
         return a[a0]*(1.f-f)+a[a1]*f;
     }
-    float shifted(int voice,float filterCoef) noexcept {
+    float shifted(int voice,float filterCoef,float arrival=0.f,
+                  float fineRatio=1.f) noexcept {
         float& currentRatio=ratio_[static_cast<std::size_t>(voice)];
         currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*ratioAlpha_;
+        const float effectiveRatio=std::clamp(currentRatio*fineRatio,.49f,2.01f);
         const float p=phase_[static_cast<std::size_t>(voice)];
         const float pB=p<0.5f?p+0.5f:p-0.5f;
-        const float delayA=2.f*grain_+(1.f-currentRatio)*p*grain_;
-        const float delayB=2.f*grain_+(1.f-currentRatio)*pB*grain_;
+        const float delayA=2.f*grain_+arrival+(1.f-effectiveRatio)*p*grain_;
+        const float delayB=2.f*grain_+arrival+(1.f-effectiveRatio)*pB*grain_;
         // Cubic smoothstep over the complementary two-grain windows.
         // Unlike the triangular seam, both endpoints have zero slope:
         // reduced grain-edge modulation without sin/cos in audio callback.
@@ -423,12 +447,14 @@ private:
     bool processed_=false;
     float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
+    float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};
     RateStableColor toneColor_{};
     PreparedPitchIntervals pitchIntervals_{};
+    EnsembleSpace ensemble_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
