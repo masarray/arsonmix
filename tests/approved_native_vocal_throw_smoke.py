@@ -42,6 +42,9 @@ def main():
     spec=importlib.util.spec_from_file_location(
         "bundle",ROOT/"scripts/build_approved_native_gui.py")
     bundle=importlib.util.module_from_spec(spec);spec.loader.exec_module(bundle)
+    source_svg=(ROOT/"site/preview-v2/assets/arson-vocal-throw-performance.svg").read_text()
+    assert "data:image/webp;base64," in source_svg, "original user Illustrator icon must be embedded"
+    assert 'clip-path="url(#aiLens)"' in source_svg
     with tempfile.TemporaryDirectory(prefix="armix-throw-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
@@ -177,6 +180,7 @@ def main():
                 reply_snapshot(page,state,updated,applied=rotary["requestId"])
                 assert "%" in editor.locator("#vtWetValue").inner_text()
                 editor.locator("#vtThrow").click()
+                assert editor.locator("#vtThrow").is_disabled(), "no repeated stage cue until native ACK"
                 cue=last(page,"nativeThrowTrigger")
                 assert cue["instanceId"]==INSTANCE and cue["channelId"]==SOURCE
                 assert cue["slot"]==0
@@ -185,6 +189,8 @@ def main():
                 reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},count=1,tail=True)
                 assert editor.locator("#vtCount").inner_text()=="1"
                 assert editor.locator("#vtStatus").inner_text()=="TAIL"
+                assert editor.locator("#vtThrow").get_attribute("data-tail")=="true"
+                assert not editor.locator("#vtThrow").is_disabled()
             # Real native tempo-source command (not a browser-only BPM guess).
             source_menu=editor.locator("#vtMusicSource")
             assert source_menu.locator('option[value="'+RECEIVER+'"]').count()==1
