@@ -17,6 +17,7 @@
 #include "DiagnosticsRecorder.h"
 #include "../engine/device/DirectRestoreBackoff.h"
 #include "../engine/device/AudioSetupRecoveryPolicy.h"
+#include "../engine/device/AsioRestartRecoveryGate.h"
 #include "../engine/device/PeriodCapabilityEvidence.h"
 #include "../engine/diagnostics/CrackleEvidenceWindow.h"
 #if defined(_WIN32)
@@ -4723,44 +4724,38 @@ private:
     }
 
     std::uint64_t asioRecoveryEpoch_=0; // last successfully bound generation
-    std::uint64_t asioRecoveryPendingEpoch_=0;
-    unsigned asioRecoveryAttempts_=0;
-    std::uint64_t asioRecoveryRetryAfterMs_=0;
+    armix::device::AsioRestartRecoveryGate asioRecoveryGate_;
 
     void serviceAsioMixerRestart() {
         const auto epoch=engine_.dryRoutingLabEpoch();
         if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
+           audioDeviceApplyActive_ || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         auto* device=engine_.devices().getCurrentAudioDevice();
         if(!device || device->getTypeName()!="ASIO" ||
            !device->getName().startsWithIgnoreCase("ASIO4ALL"))return;
-        if(!engine_.sameRetainedAsioDriver())return; // never change driver class
-        if(asioRecoveryPendingEpoch_!=epoch) {
-            // A real external driver restart starts a fresh bounded recovery.
-            // Internal reopen/correction updates this epoch separately below.
-            asioRecoveryPendingEpoch_=epoch;
-            asioRecoveryAttempts_=0;
-            asioRecoveryRetryAfterMs_=0;
-        }
+        if(!engine_.sameRetainedAsioDriver())return; // preserve registered driver identity
         const auto now=monotonicMilliseconds();
-        if(asioRecoveryAttempts_>=3 || now<asioRecoveryRetryAfterMs_)return;
-        ++asioRecoveryAttempts_;
-        asioRecoveryRetryAfterMs_=now+
-            (asioRecoveryAttempts_==1?300u:asioRecoveryAttempts_==2?1200u:4000u);
-        // Never spin-reopen ASIO on a timer. Three bounded attempts per
-        // external epoch, with no driver work from the PCM callback.
+        asioRecoveryGate_.observeEpoch(epoch,now);
+        if(!asioRecoveryGate_.due(now))return; // let ASIO4ALL WDM pin inventory settle
         const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
         if(!device->isOpen() || device->getActiveOutputChannels().countNumberOfSetBits()<2) {
+            // A closed or output-less ASIO device requires a vendor call.
+            // Never reopen it repeatedly on each UI timer tick.
+            if(!asioRecoveryGate_.mayChangeDriver()) {
+                asioRecoveryGate_.waitForReadback(now);
+                return;
+            }
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             engine_.devices().getAudioDeviceSetup(setup);
-            // Explicitly disabled capture is NOT permission to enable a mic.
-            if(!setup.inputChannels.isZero())setup.useDefaultInputChannels=true;
-            else setup.useDefaultInputChannels=false;
+            // A deliberate 0-IN session remains 0-IN. Never resurrect a mic.
+            setup.useDefaultInputChannels=!setup.inputChannels.isZero();
             setup.useDefaultOutputChannels=true;
+            asioRecoveryGate_.driverTransaction(now);
             const auto error=openSelectedAudioDevice("ASIO",setup,true);
-            asioRecoveryPendingEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
                 diagnostics_.record("ASIO4ALL_REOPEN_FAILED",error);
@@ -4769,14 +4764,24 @@ private:
             }
         }
         if(!engine_.authorizeRetainedAsioRestart()) {
+            // Admission can lag driver restart without any driver call.
+            // It MUST NOT exhaust the bounded reopen/correction allowance.
+            asioRecoveryGate_.waitForReadback(now);
             diagnostics_.record("ASIO4ALL_BIND_NOT_READY","Waiting for verified callback/readback");
             return;
         }
         if(const auto corrected=engine_.asioRestartPinCorrection()) {
+            if(!asioRecoveryGate_.mayChangeDriver()) {
+                asioRecoveryGate_.waitForReadback(now);
+                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_DEFERRED",
+                    "Driver transaction budget exhausted for this physical epoch");
+                return;
+            }
             const auto inputNames=device->getInputChannelNames();
             const auto outputNames=device->getOutputChannelNames();
+            asioRecoveryGate_.driverTransaction(now);
             const auto error=openSelectedAudioDevice("ASIO",*corrected);
-            asioRecoveryPendingEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             auto* reopened=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !reopened || !reopened->isOpen() ||
                reopened->getInputChannelNames()!=inputNames ||
@@ -4793,14 +4798,17 @@ private:
         const auto error=engine_.reattachRetainedAsioMixer()?juce::String{}:
             restoreSavedMixerSession(false,MixerBindingMode::verifiedAsioRestart);
         if(error.isNotEmpty()) {
+            // A native graph/FX lease may become ready after the driver's
+            // current epoch; retry without reopening hardware at an
+            // exponentially bounded CONTROL cadence.
+            asioRecoveryGate_.bindFailed(now);
             diagnostics_.record("ASIO4ALL_REATTACH_FAILED",error);
             emitApprovedNativeSnapshot();
-            return; // keep mixer document, retry only within the bounded budget
+            return;
         }
         asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
-        asioRecoveryPendingEpoch_=asioRecoveryEpoch_;
-        asioRecoveryAttempts_=0;
-        asioRecoveryRetryAfterMs_=0;
+        asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
+        asioRecoveryGate_.recovered();
         mixerSessionStatus_="RESTORED_MUTED";
         mixerSessionError_.clear();
         if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);

@@ -603,12 +603,16 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
 test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verified readback',()=>{
   const src=read('src/Main.cpp');
   const service=src.slice(src.indexOf('void serviceAsioMixerRestart()'),src.indexOf('void changeListenerCallback ('));
-  assert.match(service,/asioRecoveryAttempts_>=3/);
-  assert.match(service,/now<asioRecoveryRetryAfterMs_/);
-  assert.match(service,/asioRecoveryPendingEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
+  assert.match(service,/asioRecoveryGate_\.observeEpoch\(epoch,now\)/);
+  assert.match(service,/asioRecoveryGate_\.due\(now\)/);
+  assert.match(service,/asioRecoveryGate_\.mayChangeDriver\(\)/);
+  assert.match(service,/asioRecoveryGate_\.driverTransaction\(now\)/);
+  assert.match(service,/asioRecoveryGate_\.carryInternalEpoch\(engine_\.dryRoutingLabEpoch\(\)\)/);
+  assert.match(service,/asioRecoveryGate_\.bindFailed\(now\)/);
+  assert.match(service,/audioSetupWindow_->isVisible\(\)/);
   assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
-  assert.match(service,/!setup\.inputChannels\.isZero\(\)/);
+  assert.match(service,/setup\.useDefaultInputChannels=!setup\.inputChannels\.isZero\(\)/);
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
   assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
 });
