@@ -1,6 +1,8 @@
 # ArSonMix — SINGLE APPROVED GUI: /preview/
 **BINDING OWNER CORRECTION 2026-11-04 — overrides prior incorrect /preview-v2/ target.**
 
+**BINDING OWNER DELIVERY POLICY 2026-11-09:** [Autonomous Fast Delivery Contract](docs/AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md). A ChatGPT agent should code autonomously toward one *usable product milestone* with the relevant engine/GUI/tests on one coherent PR; do not stop for a separate architecture-spike approval, Lab/admission, owner to press Actions, or one PR per small patch. Proceed with independent coding while quick CI is pending; resolve real failures before heavy qualification/merge. Run only the relevant exact-SHA milestone UI, native or FAT; when a Windows installer is wanted, choose **FAT instead of a duplicate native** run and deliver user-test build as soon as M1 works. All physical identity, single callback, approved /preview/, branch protection, true CI and physical FAT rules remain mandatory.
+
 **ONLY approved/public/product GUI: https://masarray.github.io/arsonmix/preview/**. There must be ONE public preview, ONE actual rendered GUI, and ONE native Windows GUI. **/preview-v2/ is rejected**: do not display, promote, publish or base native design on it as a separate UI. Do not substitute another console from `web/index.html`, `web/mixer-layout.js`, `web/console-native.html`, PR #278 or old M3/V48 mock. **The JUCE ENGINE must stitch into the EXACT approved /preview/ GUI**, never redesign it.
 
 ## New ChatGPT thread / repository-agent entrypoint — MUST READ FIRST (2026-11-06)
@@ -15,14 +17,18 @@ must **act on the repo**, not ask the owner to operate Actions manually:
 2. Fetch **fresh** `main` SHA, open PRs, latest active integration PR HEAD,
    changed files, CI jobs, artifacts and recent work before any edit. Historical
    handoff SHAs/PR states and old workstream plans are **not live authority**.
-   Continue the existing applicable integration PR (currently P0 #418; verify
-   its state each session), rather than stacking duplicate PRs or redoing
-   completed work. Do not overwrite another agent's newer HEAD; use an
-   expected-SHA lease and reconcile concurrent changes.
-3. Plan one meaningful vertical product milestone; make targeted changes and
-   tests together. Use the GitHub connector to create/commit/update a branch,
-   inspect failures and PR evidence, and merge a **scoped, actually verified**
-   PR when appropriate. Never equate green CI with real physical audio FAT.
+   Reuse a currently active in-scope integration PR if present; **old P0 #418
+   is historical and not a mandatory present-day entrypoint**. For a distinct
+   feature (e.g. native ArSon Player), one scoped integrated product PR is
+   allowed; no stacked mini PRs. Never overwrite another agent's HEAD; use
+   an expected-SHA lease and reconcile concurrent changes.
+3. Execute one meaningful vertical product milestone, with targeted engine,
+   bridge, GUI and tests together; use M0 technical tracing **inside the M1
+   implementation PR**, not as an extra signoff. Continue independent coding
+   while fast CI runs. Use the GitHub connector to commit/reconcile/inspect
+   and merge a scoped, **actually verified** PR when permitted. Deliver the
+   first working installer early via one deliberate FAT lane, not repeated
+   Windows jobs. Never equate green CI with physical audio FAT.
 4. **CI cost contract:** relevant PR pushes get lightweight Linux checks;
    no per-commit Chromium, Windows MSVC or ZIP. Docs/instructions-only edits
    normally need diff and contract inspection, **not** a Windows/Chromium

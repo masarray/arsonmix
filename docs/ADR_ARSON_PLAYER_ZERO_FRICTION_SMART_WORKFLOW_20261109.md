@@ -1,5 +1,5 @@
 # ADR — ArSonMix Smart Zero-Friction Operator Workflow (Player + Mixer)
-**Status:** APPROVED PRODUCT-DIRECTION DESIGN / NOT YET IMPLEMENTED · 2026-11-09
+**Status:** APPROVED PRODUCT-DIRECTION DESIGN / NOT YET IMPLEMENTED · 2026-11-09 · **Autonomous implementation and CI** follow [Fast Delivery Contract](AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md): no standalone M0 gate, one product PR through M1, early exact-SHA FAT artifact, no repeated Windows/Chromium or manual Actions clicks.
 **Owner correction:** No user-facing Lab mode, admission gate, ARM/MONITOR chore, confirmation checkbox, routing-approval dialog, repeated Start, or technical wizard in the normal first-sound/player path.
 
 **Authority:** This ADR clarifies and supersedes contradictory player-workflow sentences in [PRD](PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md), [ARD](ARD_ARSON_PLAYER_NATIVE_AUDIO_ARCHITECTURE_20261109.md), and [agent workpack](workstreams/ARSON_PLAYER_IMPLEMENTATION_WORKPACK_20261109.md). Preserve [single approved /preview/](../AGENTS.md), correct physical output identity, actual PCM ACK and one JUCE render callback. It does **not** claim implementation, and does not authorize unverified hardware rerouting.
