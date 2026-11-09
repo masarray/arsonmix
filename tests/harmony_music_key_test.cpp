@@ -12,7 +12,7 @@ static void need(bool test,const char* reason){
     if(!test){std::cerr<<reason<<"\n";std::exit(2);}
 }
 static void sendChord(MusicKeyDetector& detector,double sampleRate,
-                      const std::vector<double>& pitches,double seconds){
+                      const std::vector<double>& pitches,double seconds,int partition=127){
     const int size=static_cast<int>(seconds*sampleRate);
     std::vector<float> left(static_cast<std::size_t>(size));
     std::vector<float> right(static_cast<std::size_t>(size));
@@ -24,8 +24,9 @@ static void sendChord(MusicKeyDetector& detector,double sampleRate,
         left[static_cast<std::size_t>(i)]=static_cast<float>(sample);
         right[static_cast<std::size_t>(i)]=static_cast<float>(sample);
     }
-    for(int pos=0;pos<size;pos+=127)
-        detector.process(left.data()+pos,right.data()+pos,std::min(127,size-pos));
+    for(int pos=0;pos<size;pos+=partition)
+        detector.process(left.data()+pos,right.data()+pos,
+                         std::min(partition,size-pos));
 }
 int main(){
     // Previously candidateHold_ stopped at 12 while a replacement key needed
@@ -55,6 +56,12 @@ int main(){
         need(estimate.valid()&&estimate.key==0&&estimate.scale==0,
              "C-major music track did not produce stable C major");
         need(estimate.confidence>=.045f,"C-major confidence lower than acceptance");
+        need(c.peakKeyScoresPerSample()>0 &&
+             c.peakKeyScoresPerSample()<=MusicKeyDetector::maxKeyScoresPerDecimatedSample,
+             "music key correlation burst exceeded bounded audio sample budget");
+        need(c.peakRotorNormalizationsPerSample()>0 &&
+             c.peakRotorNormalizationsPerSample()<=MusicKeyDetector::maxRotorNormalizationsPerDecimatedSample,
+             "music rotor maintenance burst exceeded audio sample budget");
         // Source-channel silence invalidates old guidance; Manual is safe.
         sendChord(c,rate,{0.},1.4);
         need(!c.estimate().valid(),"silent music source kept stale key");
@@ -88,6 +95,31 @@ int main(){
         sendChord(opposed,rate,{0.},1.4);
         need(!opposed.estimate().valid(),"opposed source retained stale key");
 
+    }
+    // Real chroma PCM across C major -> A minor -> disconnected guide -> C
+    // major again, with alternate 64/127/256 ASIO-like partitions. This was
+    // missing from the old one-key-per-detector tests and catches stale-key
+    // revisions as well as callback-grain dependence.
+    for(int chunk:{64,127,256}){
+        MusicKeyDetector live;
+        need(live.prepare(48000.),"transition music preparation failed");
+        sendChord(live,48000.,{261.625565,329.627557,391.995436},4.5,chunk);
+        const auto c=live.estimate();
+        need(c.valid()&&c.key==0&&c.scale==0,
+             "C major not acquired in live music transition sequence");
+        sendChord(live,48000.,{220.,261.625565,329.627557},5.0,chunk);
+        const auto a=live.estimate();
+        need(a.valid()&&a.key==9&&a.scale==1,
+             "new A minor key did not replace C major after stable evidence");
+        sendChord(live,48000.,{0.},1.4,chunk);
+        need(!live.estimate().valid(),"stopped guide retained an obsolete key");
+        sendChord(live,48000.,{261.625565,329.627557,391.995436},3.5,chunk);
+        const auto restarted=live.estimate();
+        need(restarted.valid()&&restarted.key==0&&restarted.scale==0,
+             "music restarted on a different key failed to reacquire");
+        need(live.peakKeyScoresPerSample()==
+                 MusicKeyDetector::maxKeyScoresPerDecimatedSample,
+             "tiled tonal evaluation did not exercise its work budget");
     }
     // Manual Key stays unchanged when the music detector has no evidence;
     // selection is an audio-thread-only, valid other-ChannelId control packet.

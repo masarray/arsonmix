@@ -28,6 +28,12 @@ struct MusicKeyEstimate final {
 class MusicKeyDetector final {
 public:
     static constexpr int bins=36; // C3..B5, 3 octaves of music harmonics
+    // A 100ms chroma boundary must never score 24 tonal candidates in ONE
+    // ASIO sample. Spread two scores per decimated sample (<2.1ms total).
+    static constexpr int maxKeyScoresPerDecimatedSample=2;
+    static constexpr int maxRotorNormalizationsPerDecimatedSample=3;
+    int peakKeyScoresPerSample() const noexcept {return peakKeyScores_;}
+    int peakRotorNormalizationsPerSample() const noexcept {return peakNormalizations_;}
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         decimation_=std::max(1,static_cast<int>(std::round(rate/6000.)));
@@ -49,7 +55,10 @@ public:
         stereoFold_.reset();
         inC_.fill(0.f);inS_.fill(0.f);
         oscC_.fill(1.f);oscS_.fill(0.f);hist_.fill(0.f);
-        downCount_=0;periodCount_=0;normalizeCount_=0;
+        downCount_=0;periodCount_=0;normalizeCount_=0;normalizeIndex_=bins;
+        scoringActive_=false;scoringIndex_=0;scoringBest_=-2.f;
+        scoringSecond_=-2.f;scoringRoot_=-1;scoringScale_=-1;
+        scoringHist_.fill(0.f);peakKeyScores_=0;peakNormalizations_=0;
         framesSeen_=0;candidate_=-1;candidateScale_=-1;candidateHold_=0;
         silentFrames_=0;uncertainFrames_=0;windowEnergy_=0.;filtered_=0.f;
         current_={};
@@ -73,20 +82,31 @@ public:
                 oscC_[k]=c*rotorC_[k]-s*rotorS_[k];
                 oscS_[k]=s*rotorC_[k]+c*rotorS_[k];
             }
+            // Rotor housekeeping is also partitioned. Normalizing all 36
+            // oscillators in the same ASIO sample caused an avoidable spike.
             if(++normalizeCount_>=4096){
-                normalizeCount_=0;
-                for(int k=0;k<bins;++k){
-                    const float size=std::sqrt(oscC_[k]*oscC_[k]+oscS_[k]*oscS_[k]);
-                    if(size>0.5f&&std::isfinite(size)){
-                        oscC_[k]/=size;oscS_[k]/=size;
-                    }else {oscC_[k]=1.f;oscS_[k]=0.f;}
-                }
+                normalizeCount_=0;normalizeIndex_=0;
             }
+            int normalized=0;
+            while(normalizeIndex_<bins &&
+                  normalized<maxRotorNormalizationsPerDecimatedSample){
+                const int k=normalizeIndex_++;
+                const float size=std::sqrt(oscC_[k]*oscC_[k]+oscS_[k]*oscS_[k]);
+                if(size>0.5f&&std::isfinite(size)){
+                    oscC_[k]/=size;oscS_[k]/=size;
+                }else {oscC_[k]=1.f;oscS_[k]=0.f;}
+                ++normalized;
+            }
+            peakNormalizations_=std::max(peakNormalizations_,normalized);
             if(++periodCount_>=period_){
                 periodCount_=0;
                 evaluate(static_cast<float>(std::sqrt(windowEnergy_/period_)));
                 windowEnergy_=0.;
             }
+            // Score order matches the historical major-then-minor, root 0..11
+            // loop. The scoring input is a frozen chroma snapshot, so the
+            // answer is independent of host callback partition boundaries.
+            continueScoring();
         }
     }
     MusicKeyEstimate estimate() const noexcept{return current_;}
@@ -110,6 +130,7 @@ private:
         return dot/std::sqrt(cc*pp+1.e-12f);
     }
     void evaluate(float rms) noexcept {
+        scoringActive_=false;
         if(!std::isfinite(rms)||rms<0.002f) {
             if(++silentFrames_>=10) {
                 current_={};hist_.fill(0.f);
@@ -132,18 +153,31 @@ private:
             hist_[k]=hist_[k]*0.91f+0.09f*(chroma[k]/sum);
         if(framesSeen_<1000)++framesSeen_;
         if(framesSeen_<12)return; // at least ~1.2 seconds of music
-        float best=-2.f,second=-2.f;
-        int bestRoot=-1,bestScale=-1;
-        for(int scale=0;scale<2;++scale)
-            for(int root=0;root<12;++root) {
-                const float score=correlation(hist_,scale?minorProfile:majorProfile,root);
-                if(score>best){
-                    second=best;best=score;bestRoot=root;bestScale=scale;
-                } else second=std::max(second,score);
-            }
-        // This is a KEY estimate, not chord detection. Relative minors and
-        // sparse/sustained notes often remain ambiguous: keep manual fallback.
-        const float confidence=std::clamp(best-second,0.f,1.f);
+        scoringHist_=hist_; // fixed-size snapshot; zero allocation
+        scoringIndex_=0;scoringBest_=-2.f;scoringSecond_=-2.f;
+        scoringRoot_=-1;scoringScale_=-1;scoringActive_=true;
+    }
+    void continueScoring() noexcept {
+        if(!scoringActive_)return;
+        int scored=0;
+        while(scoringIndex_<24 && scored<maxKeyScoresPerDecimatedSample){
+            const int scale=scoringIndex_/12,root=scoringIndex_%12;
+            const float score=correlation(scoringHist_,
+                                     scale?minorProfile:majorProfile,root);
+            if(score>scoringBest_){
+                scoringSecond_=scoringBest_;scoringBest_=score;
+                scoringRoot_=root;scoringScale_=scale;
+            } else scoringSecond_=std::max(scoringSecond_,score);
+            ++scoringIndex_;++scored;
+        }
+        peakKeyScores_=std::max(peakKeyScores_,scored);
+        if(scoringIndex_<24)return;
+        scoringActive_=false;
+        const float best=scoringBest_;
+        const int bestRoot=scoringRoot_,bestScale=scoringScale_;
+        // This is KEY estimation, not chord detection. A complete, frozen
+        // evaluation commits atomically only after all 24 candidate scores.
+        const float confidence=std::clamp(best-scoringSecond_,0.f,1.f);
         if(best<0.48f||confidence<0.045f) {
             candidate_=-1;candidateScale_=-1;candidateHold_=0;
             // A new ambiguous musical section cannot retain the previous
@@ -161,6 +195,11 @@ private:
             current_={bestRoot,bestScale,confidence};
     }
     int decimation_=0,downCount_=0,period_=0,periodCount_=0,normalizeCount_=0;
+    int normalizeIndex_=bins,scoringIndex_=0;
+    int scoringRoot_=-1,scoringScale_=-1,peakKeyScores_=0,peakNormalizations_=0;
+    float scoringBest_=-2.f,scoringSecond_=-2.f;
+    bool scoringActive_=false;
+    std::array<float,12> scoringHist_{};
     int framesSeen_=0,silentFrames_=0,uncertainFrames_=0;
     int candidate_=-1,candidateScale_=-1,candidateHold_=0;
     float sampleAlpha_=0.f,lowpassAlpha_=0.f,filtered_=0.f;
