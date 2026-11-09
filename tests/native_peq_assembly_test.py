@@ -66,6 +66,43 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn("armix-floating-close",throw)
         self.assertNotIn("new AudioContext",throw)
 
+    def test_native_tempo_readback_belongs_to_vocal_throw_not_eq(self):
+        # The real C++ dispatcher must populate the exact VocalThrow
+        # snapshot, not an unrelated EQ response. Browser-only mocks cannot
+        # catch a payload sent on the wrong native event.
+        main=(ROOT/"src/Main.cpp").read_text("utf-8")
+        def body(start,finish):
+            self.assertEqual(main.count(start),1)
+            return main.split(start,1)[1].split(finish,1)[0]
+        eq=body("void emitNativeEqSnapshot(",
+                "void servicePendingNativeEq()")
+        vocal=body("void emitNativeThrowSnapshot(",
+                   "void servicePendingNativeThrow()")
+        fields=("musicSourceChannelId","musicSourceActive",
+                "musicLocked","musicBpm","musicConfidence",
+                "musicGridAvailable","musicPhaseConfidence",
+                "musicBeatAnchorFrame","musicDroppedFrames")
+        for field in fields:
+            self.assertIn('reply->setProperty("'+field+'"',vocal,
+                          "missing accepted Vocal Throw BPM field: "+field)
+            self.assertNotIn('reply->setProperty("'+field+'"',eq,
+                             "cross-FX snapshot pollution: "+field)
+        # After device restart or graph change the last control snapshot
+        # is stale. No stale source/phase can be advertised as locked.
+        self.assertIn("const bool currentMusicGraph=lastMusicTempo_.active",vocal)
+        self.assertIn("lastMusicTempo_.epoch",vocal)
+        self.assertIn("lastMusicTempo_.revision",vocal)
+        self.assertIn("currentMusicGraph&&",vocal)
+        self.assertIn("musicBpm",vocal)
+        self.assertIn('juce::String("0")',vocal)
+        self.assertIn('"arMixBuiltinThrowSnapshot"',vocal)
+        self.assertNotIn('"arMixBuiltinThrowSnapshot"',eq)
+        throw_js=(ROOT/"site/preview-v2/assets/mixer-native-vocal-throw.js").read_text("utf-8")
+        for field in ("musicLocked","musicBpm","musicGridAvailable",
+                      "musicSourceChannelId"):
+            self.assertIn(field,throw_js)
+        self.assertNotIn("new AudioContext",throw_js)
+
     def test_fail_closed_on_repeat(self):
         with self.assertRaises(ValueError):
             apply_native_peq(self.assembled)
