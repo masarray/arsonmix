@@ -76,7 +76,8 @@ close.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" wid
  power.setAttribute("aria-pressed","false");power.disabled=true;
  power.setAttribute("aria-label","EQ state unavailable");
  close.title="Close EQ";close.setAttribute("aria-label","Close EQ");
- head.append(brand,channel,power,close);
+ power.classList.add("armix-builtin-fx-power");close.classList.add("armix-builtin-fx-close");
+head.append(brand,channel,power,close);
 const body=dom("div","mx-peq-body"),graph=dom("div","mx-peq-graph");
 const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 676 330");
 svg.setAttribute("preserveAspectRatio","none");svg.setAttribute("role","group");
