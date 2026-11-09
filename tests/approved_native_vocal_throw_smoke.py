@@ -176,10 +176,15 @@ def main():
             assert all([throw,left,right,lcd,tap])
             assert abs((throw["x"]+throw["width"]/2)-(box["x"]+box["width"]/2))<4, \
                 ("THROW is off center",width,throw,box)
-            assert abs(left["y"]-right["y"])<3, ("uneven encoder rows",left,right)
-            assert left["x"]+left["width"]<=throw["x"]+1 and \
-                throw["x"]+throw["width"]<=right["x"]+1, \
-                ("encoders invade singer button",left,throw,right)
+            if width>600:
+                assert abs(left["y"]-right["y"])<3, ("uneven encoder rows",left,right)
+                assert left["x"]+left["width"]<=throw["x"]+1 and \
+                    throw["x"]+throw["width"]<=right["x"]+1, \
+                    ("encoders invade singer button",left,throw,right)
+            else:
+                assert throw["y"]+throw["height"]<left["y"] and \
+                    left["y"]+left["height"]<=right["y"]+1, \
+                    ("portrait controls not ordered cleanly",throw,left,right)
             assert lcd["x"]+lcd["width"]<=tap["x"] and \
                 tap["x"]-(lcd["x"]+lcd["width"])<=17, \
                 ("LCD must sit beside TAP",lcd,tap)
