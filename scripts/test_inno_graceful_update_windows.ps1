@@ -152,6 +152,20 @@ try {
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Same-version repair erased Studio or install-local user files"
     Write-Host "INNO_AUTO_REPAIR_CORRUPT_EXE_PASS: exact verified EXE restored, private Studio and user files retained"
 
+    # Recovery when app EXE cannot start. This is a test-only isolated
+    # installation. User program files must never be deliberately deleted.
+    Remove-Item -LiteralPath $installedExe -Force
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Could not remove synthetic EXE"
+    $ordinary=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($ordinary.ExitCode -ne 0) "Ordinary auto-update accepted a missing program EXE"
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Normal auto-update restored EXE without explicit recovery"
+    $repaired=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE','/ARSONMIXRECOVERY')) -Wait -PassThru
+    Assert-Condition ($repaired.ExitCode -eq 0) "Missing EXE recovery installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Missing EXE recovery did not restore exact SHA"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Missing EXE recovery erased user data"
+    Write-Host "INNO_MISSING_EXE_RECOVERY_PASS: exact EXE recovered, app and Studio retained"
+
+
 
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
     # Upgrade must fail before [Files], leave old EXE and Studio untouched.
