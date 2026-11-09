@@ -74,6 +74,19 @@ def main():
                 button.click()
                 assert page.evaluate("()=>window.__events.at(-1).payload.action") == (
                     "nativeMixerFile"+caption), (width, "file action disconnected", caption)
+            # Native-only status presenter must not expose internal FAT,
+            # PCM graph revision counters, or simulation copy in the UI.
+            page.evaluate("""()=>{
+              document.getElementById('info').textContent =
+                'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 1 · graph 3 · roster 94';
+              document.querySelector('.status-bar .warning').textContent =
+                'NATIVE PCM · HARDWARE FAT PENDING';
+            }""")
+            page.wait_for_function("""()=>{
+              const footer=document.querySelector('.status-bar').textContent;
+              return !/FAT|PCM|NATIVE|GRAPH|ROSTER|SIMULATED|MOCKUP/i.test(footer) &&
+                footer.includes('Mixer settings updated');
+            }""")
             more = page.locator("#moreTools>summary")
             more.click()
             assert page.locator("#moreTools").get_attribute("open") is not None, (
