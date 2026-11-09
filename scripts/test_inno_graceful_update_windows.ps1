@@ -103,6 +103,7 @@ try {
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Legacy upgrade changed verified EXE hash"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Legacy upgrade damaged Studio/user files"
     Write-Host "INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS: exact exe process requested WM_CLOSE before replacement"
+    $fixtureProcess.Dispose();$fixtureProcess=$null
 
     # Automatic update MUST NOT close even a healthy existing mixer.
     # Legacy and native-style active processes both fail before [Files].
@@ -125,7 +126,13 @@ try {
     $fixtureProcess.CloseMainWindow() | Out-Null
     Assert-Condition ($fixtureProcess.WaitForExit(10000)) "Auto-update test fixture did not close normally"
     $fixtureProcess.Dispose();$fixtureProcess=$null
-    $fixtureProcess.Dispose();$fixtureProcess=$null
+    # A stopped ArSonMix should be eligible for auto update without a
+    # manual dialog, WM_CLOSE, replacement errors or stale-process bias.
+    $autoSuccess=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($autoSuccess.ExitCode -eq 0) "Automatic update rejected an exited ArSonMix installation"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto-install changed expected product bytes"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto-install erased user data"
+    Write-Host "INNO_AUTO_UPDATE_AFTER_NORMAL_EXIT_PASS: silent setup, correct EXE, user data intact"
 
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
     # Upgrade must fail before [Files], leave old EXE and Studio untouched.
