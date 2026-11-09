@@ -222,3 +222,19 @@ test('Windows Inno fixture proves unattended in-place repair after binary corrup
   assert.match(smoke,/Same-version repair did not restore verified EXE/);
   assert.match(smoke,/Same-version repair erased Studio or install-local user files/);
 });
+
+test('one-click recovery can restore main EXE without a live app', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(iss, /Name: "\{autoprograms\}\\Repair ArSonMix"/);
+  assert.match(iss, /-RecoveryMode/);
+  assert.match(iss, /function IsArSonMixRecovery: Boolean;/);
+  assert.match(iss, /if not FileExists\(Target\) and not IsArSonMixRecovery then/);
+  assert.match(updater, /\[switch\]\$RecoveryMode/);
+  assert.match(updater, /Restore-InstalledRelease/);
+  assert.match(updater, /-AllowMissingExeRecovery/);
+  assert.match(updater, /\/ARSONMIXRECOVERY/);
+  assert.match(updater, /ABANDONED_MUTEX_RECLAIMED/);
+  assert.match(updater, /Test-NoActiveMixer/);
+  assert.match(isolatedSmoke, /INNO_MISSING_EXE_RECOVERY_PASS/);
+  assert.doesNotMatch(updater, /\bStop-Process\b|\btaskkill\b/);
+});
