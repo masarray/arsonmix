@@ -12,6 +12,7 @@
 #include "../engine/dsp/NativeMasterLoudness.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
@@ -1752,6 +1753,48 @@ public:
                 std::move(lease),true);
         } catch(...) {
             fail.error="NATIVE_COMP_PREPARE_EXCEPTION";return fail;
+        }
+    }
+
+    // One ChannelId native insert. No private callback, engine or pre-VST bank.
+    LiveDryRoutingLab::NativeBusResult installNativeBuiltInHarmony(
+            std::uint64_t ep,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+        LiveDryRoutingLab::NativeBusResult fail{};
+        fail.error="NATIVE_HARMONY_HOST_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(independent_.active()||!attached_||!device||
+           !directFence_.permitted()||secondaryOutput_.armed()||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return fail;
+        if(ep!=dryRoutingLab_.epoch()) {
+            fail.error="NATIVE_HARMONY_DEVICE_CHANGED";return fail;
+        }
+        const auto rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        if(!(rate>=32000.&&rate<=192000.)||
+           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
+            fail.error="NATIVE_HARMONY_UNSUPPORTED_AUDIO_FORMAT";return fail;
+        }
+        try {
+            auto processor=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
+            processor->prepareToPlay(rate,frames);
+            if(!processor->isReady()||
+               processor->getLatencySamples()>armix::dsp::StereoLatencyDelay::maximumSamples) {
+                fail.error="NATIVE_HARMONY_PREPARE_OR_PDC_REJECTED";return fail;
+            }
+            auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
+                std::move(processor),
+                juce::String(armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity),
+                "ArSon Harmony",LiveDryRoutingLab::Block::hardFrameLimit);
+            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
+                rosterRevision,id,
+                armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity,
+                std::move(lease),true);
+        }catch(...) {
+            fail.error="NATIVE_HARMONY_PREPARE_EXCEPTION";return fail;
         }
     }
 

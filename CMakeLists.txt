@@ -71,7 +71,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
 # Limit the flag to C++ (not Windows .rc/resource compilation).
@@ -115,8 +115,21 @@ if(BUILD_TESTING)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
+  add_executable(ARMixHarmonyDspTests tests/harmony_dsp_test.cpp)
+  target_compile_features(ARMixHarmonyDspTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyMultivoicePitchAndRealtimeFinitePCM COMMAND ARMixHarmonyDspTests)
+  add_executable(ARMixHarmonyMusicGuideTests tests/harmony_music_key_test.cpp)
+  target_compile_features(ARMixHarmonyMusicGuideTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyCrossChannelMusicKeyAndManualFallback COMMAND ARMixHarmonyMusicGuideTests)
+  juce_add_console_app(ARMixHarmonyChannelPcmTests PRODUCT_NAME "ArSonMix Native Harmony Music Channel PCM")
+  target_sources(ARMixHarmonyChannelPcmTests PRIVATE tests/harmony_music_bank_test.cpp)
+  target_link_libraries(ARMixHarmonyChannelPcmTests PRIVATE juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixHarmonyChannelPcmTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyMusicFromOtherChannelIdAndStateMigration COMMAND ARMixHarmonyChannelPcmTests)
+  add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
+  add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests)
   add_test(NAME TenStripStaticRoutingAndMaster COMMAND ARMixMixerRoutingTests)
   # M3D atomic native Session: the accepted Console roster cannot advance
   # without a successful epoch/revision-gated PCM publication.

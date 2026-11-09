@@ -2,6 +2,7 @@
 #pragma once
 #include "DynamicChannelRoster.h"
 #include "LiveChannelFxGraph.h"
+#include "../builtin_fx/ChannelHarmonyProcessor.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -133,6 +134,11 @@ public:
                         return Fault::duplicateInstance;
                 row.owners[i]=owner; // owner reference acquired OFF realtime
                 row.raw[i]=owner.get();
+                // Discover each music-guide listener OFF realtime. A lease
+                // owns its processor through the same PCM snapshot lifetime.
+                if(auto* harmony=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
+                        owner->processor.get()))
+                    candidate.musicGuides_.push_back({b.id,harmony});
             }
             candidate.rows_.push_back(std::move(row));
         }
@@ -397,20 +403,30 @@ public:
     // proportional to that node's FX rack, not every Channel in the session.
     // Call only on the native audio thread after epoch/revision graph admission.
     void operator()(ChannelId id,float* left,float* right,int frames) const noexcept {
-        const Row* row=find(id);
-        if(!row)return; // a genuinely dry ChannelId or MASTER
         if(!left||!right||left==right||frames<=0)return;
-        if(external_.id==id) {
+        const Row* row=find(id);
+        if(external_.id.value && external_.id==id && external_.render) {
             external_.render(external_.context,left,right,frames);
-            return; // occupied CH1 is processed exactly once
+        }else if(row){
+            const bool rackOff=row->rackBypassed &&
+                row->rackBypassed->load(std::memory_order_acquire);
+            for(std::size_t i=0;i<row->count;++i)
+                row->raw[i]->render(left,right,frames,rackOff);
         }
-        const bool rackOff=row->rackBypassed &&
-            row->rackBypassed->load(std::memory_order_acquire);
-        for(std::size_t i=0;i<row->count;++i)
-            row->raw[i]->render(left,right,frames,rackOff);
+        // Post-FX / pre-fader PCM tap of the selected OTHER ChannelId.
+        // The guide is read-only: it NEVER creates a WIRE or audible send.
+        // No dynamic casts/refcounting/heap on the callback.
+        for(const auto& guide:musicGuides_)
+            if(guide.target!=id && guide.processor &&
+               guide.processor->musicSourceChannel()==id.value)
+                guide.processor->observeMusicTrack(left,right,frames);
     }
 
 private:
+    struct MusicGuideTarget final {
+        ChannelId target{};
+        armix::builtin_fx::ChannelHarmonyProcessor* processor=nullptr;
+    };
     struct Row final {
         ChannelId id{};
         ProcessingFormat format=ProcessingFormat::stereo;
@@ -425,6 +441,7 @@ private:
         return it!=rows_.end()&&it->id==id?&*it:nullptr;
     }
     std::vector<Row> rows_{};
+    std::vector<MusicGuideTarget> musicGuides_{}; // prepared OFF RT
     ExternalLease external_{}; // PCM snapshot retirement occurs off RT
     std::uint64_t epoch_=0,revision_=0;
 };

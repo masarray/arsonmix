@@ -431,3 +431,320 @@
 @media(prefers-reduced-motion:reduce){
  .mx-comp-meter-fill{transition:none}
 }
+
+/* ArSon Harmony — compact, wide musical effects console.
+   Reference-inspired composition: graphite voice module, satin control deck,
+   large key instrument. Compact 800px shell; no image assets or second renderer. Chrome
+   buttons use the same mixer-contextual-buttons.css owner as EQ/Compressor. */
+.mx-harm{
+ position:fixed;z-index:3102;left:50%;top:clamp(6px,12vh,90px);
+ transform:translateX(-50%);width:min(800px,calc(100vw - 14px));
+ max-height:calc(100dvh - 12px);overflow:auto;box-sizing:border-box;
+ border:1px solid #667e87;border-radius:7px;
+ background:#c6d1d4;color:#273c46;
+ box-shadow:0 16px 38px #030e16c0,0 1px 0 #ffffff6c inset;
+ font:400 10px/1.3 Inter,'Segoe UI',Arial,sans-serif
+}
+.mx-harm[hidden],.mx-harm-source-picker[hidden]{display:none}
+.mx-harm *{box-sizing:border-box}
+.mx-harm button,.mx-harm select,.mx-harm input{font:inherit}
+.mx-harm button{cursor:pointer}
+.mx-harm button:focus-visible,.mx-harm select:focus-visible{
+ outline:2px solid #2f9b91;outline-offset:2px
+}
+.mx-harm-head{
+ height:32px;display:flex;align-items:center;gap:8px;padding:0 6px 0 11px;
+ background:linear-gradient(#364f5d,#233945);border-bottom:1px solid #536b76;
+ user-select:none;touch-action:none;cursor:move
+}
+.mx-harm-logo{font-size:15px;color:#8ed9c5}
+.mx-harm-brand{font-size:11px;font-weight:600;letter-spacing:.1px;white-space:nowrap;color:#f2f9fa}
+.mx-harm-brand em{font-style:normal;font-weight:400;color:#9bd8c9}
+.mx-harm-channel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;color:#a1b9c3;font-size:9px}
+.mx-harm-head select{
+ width:120px;height:23px;min-width:0;padding:1px 6px;
+ color:#e4f2f4;background:#304b58;border:1px solid #597483;border-radius:4px;
+ font-size:10px;cursor:pointer
+}
+/* The header Close/Power material, geometry, icon and semantic states are
+   owned EXCLUSIVELY by mixer-contextual-buttons.css. No scoped overrides. */
+.mx-harm-body{
+ display:grid;grid-template-columns:150px minmax(0,1fr) 234px;
+ min-height:232px;background:linear-gradient(145deg,#e0e5e6,#bfcdd1);
+}
+.mx-harm-left{
+ display:flex;flex-direction:column;align-items:stretch;gap:9px;min-width:0;
+ padding:18px 12px 12px;
+ background:radial-gradient(circle at 95% 10%,#315361,#112c38 60%,#102631);
+ color:#c8e0e5;border-right:1px solid #5f7b82
+}
+.mx-harm-signature{display:flex;flex-direction:column;gap:2px;min-height:81px}
+.mx-harm-mark{font-size:10px;letter-spacing:2.1px;color:#81c9bb}
+.mx-harm-signature strong{font-size:17px;font-weight:500;letter-spacing:-.35px;color:#d1ebec}
+.mx-harm-signature small{font-size:8px;letter-spacing:1.1px;color:#86a8b2}
+.mx-harm-label{font-size:9px;letter-spacing:.9px;color:#a3c0c8;font-weight:500}
+.mx-harm-voices{display:flex;gap:4px;width:100%}
+.mx-harm-voices button{
+ appearance:none;display:flex;align-items:center;justify-content:center;
+ gap:3px;flex:1;min-width:0;height:30px;padding:0 3px;border-radius:5px;
+ border:1px solid #557784;line-height:1;
+ background:linear-gradient(180deg,#365b67,#294953);
+ color:#cfe5e7;font-size:11px;font-weight:500;
+ box-shadow:inset 0 2px 3px #0a263647,inset 0 -1px 0 #a5cad01c,
+  0 1px 0 #132d38,0 2px 4px #0618223f;
+ transition:background .13s ease,box-shadow .13s ease,color .13s ease
+}
+.mx-harm-voice-glyph{display:block;flex:0 0 13px;width:13px;height:13px}
+.mx-harm-voices button span{display:block;font-variant-numeric:tabular-nums}
+.mx-harm-voices button.active{
+ background:linear-gradient(180deg,#438d7d,#326c63);
+ color:#f6fffb;border-color:#77bdac;
+ box-shadow:inset 0 3px 5px #103d358c,inset 0 1px 0 #defff03d,
+  0 1px 0 #132d38,0 2px 4px #0618223f
+}
+.mx-harm-voices button:hover:not(.active){background:linear-gradient(#406c74,#30555e)}
+.mx-harm-voices button:active:not(:disabled){box-shadow:inset 0 3px 6px #09252fb8,0 1px 0 #132d38}
+.mx-harm-correction{
+ display:flex;align-items:center;gap:8px;color:#b8d9df;font-size:9px;
+ letter-spacing:.45px;white-space:nowrap;cursor:pointer;margin-top:auto
+}
+.mx-harm-correction input{accent-color:#57bba4;width:14px;height:14px;margin:0}
+.mx-harm-control-deck{
+ display:flex;align-items:center;justify-content:center;min-width:0;
+ border-right:1px solid #a7b9bf;
+ background:radial-gradient(ellipse at 50% 30%,#e7ecec 0%,#c5d0d2 80%)
+}
+.mx-harm-sliders{
+ display:grid;grid-template-columns:repeat(2,minmax(105px,1fr));
+ width:min(100%,390px);align-items:center;justify-items:center;
+ gap:5px 17px;padding:8px 12px
+}
+.mx-harm-slider{
+ --dial-turn:0deg;display:flex;flex-direction:column;align-items:center;
+ justify-content:center;gap:1px;min-width:0;position:relative;
+ width:100%;height:107px;cursor:ew-resize
+}
+/* Sculpted but FLAT satin face. Recessed outer channel carries two arcs:
+   a dark 270-degree trough, then a finer backlit level arc bound to DSP value.
+   Single static conic gradients: no canvas, animation loop, SVG filters or blur. */
+.mx-harm-dial-face{
+ display:grid;place-items:center;position:relative;
+ width:68px;height:68px;border-radius:50%;
+ border:3px solid #91a6ab;
+ background:radial-gradient(circle at 32% 24%,#f9fbfa,#d5dee0 56%,#b1bfc2);
+ box-shadow:0 2px 0 #768f96,0 4px 8px #354d5757,inset 0 1px 0 #ffffffea;
+ pointer-events:none
+}
+.mx-harm-dial-face::before,.mx-harm-dial-face::after{
+ content:"";position:absolute;inset:-11px;border-radius:50%;
+ pointer-events:none;
+ -webkit-mask:radial-gradient(farthest-side,
+   transparent calc(100% - 7px),#000 calc(100% - 6px),
+   #000 calc(100% - 2px),transparent calc(100% - 1px));
+ mask:radial-gradient(farthest-side,
+   transparent calc(100% - 7px),#000 calc(100% - 6px),
+   #000 calc(100% - 2px),transparent calc(100% - 1px))
+}
+.mx-harm-dial-face::before{
+ /* Shadow trench below the emissive arc, like a fine recess in the panel. */
+ background:conic-gradient(from 225deg,
+   #1f3540 0deg,#2b4750 180deg,#233c46 270deg,transparent 270deg 360deg);
+ box-shadow:inset 0 2px 3px #092833a6,0 1px 0 #f0f8f5a6
+}
+.mx-harm-dial-face::after{
+ /* The sweep is computed only when the real parameter value changes. */
+ background:conic-gradient(from 225deg,
+   #9bf7d4 0deg,#43cda5 var(--dial-sweep,0deg),
+   transparent var(--dial-sweep,0deg) 270deg,transparent 270deg 360deg);
+ box-shadow:0 0 5px #55d8b477,inset 0 0 2px #c7ffdf;
+}
+.mx-harm-dial-pointer{
+ z-index:1;position:absolute;width:3px;height:23px;top:7px;border-radius:3px;
+ background:linear-gradient(90deg,#40646a,#24444f);
+ box-shadow:1px 0 1px #ffffffb3;
+ transform-origin:50% 27px;transform:rotate(var(--dial-turn));
+ pointer-events:none
+}
+.mx-harm-dial-label{font-size:9px;letter-spacing:.85px;color:#405963;font-weight:600}
+.mx-harm-slider output{
+ font:500 10px/1.2 Inter,'Segoe UI',sans-serif;
+ font-variant-numeric:tabular-nums;color:#253f49
+}
+.mx-harm-slider input[type=range]{
+ position:absolute;top:1px;left:50%;transform:translateX(-50%);
+ width:79px;height:72px;opacity:0;cursor:ew-resize;
+ touch-action:none;margin:0
+}
+.mx-harm-slider:focus-within .mx-harm-dial-face{
+ outline:2px solid #258f83;outline-offset:5px
+}
+.mx-harm-center{
+ display:flex;flex-direction:column;align-items:center;justify-content:center;
+ gap:5px;min-width:0;padding:8px 12px;
+ background:radial-gradient(ellipse at 40% 20%,#e4e9e8,#bbc9ce)
+}
+.mx-harm-wheel{
+ position:relative;flex:0 0 auto;width:194px;height:194px;
+ border-radius:50%;border:5px solid #e0e8e8;
+ background:conic-gradient(from -15deg,#1f5363,#397082,#214e5f,#1c4554,#285d6c,#1f5363);
+ box-shadow:0 0 0 2px #708c99,0 0 0 7px #dce3e4,
+ 0 6px 13px #344c5657,inset 0 0 13px #071e2f
+}
+/* Intentionally no inner white ring: the former 17px inset circle cut
+   across the musical-note labels. The outer silver rim, blue annulus and
+   dark LCD core already supply the visual separation at every viewport. */
+/* Musical key switches have circular hit shapes. Selected notes gain a
+   restrained size increase, satin rim, and soft drop shadow — not a raised dome.
+   The ring spacing remains fixed; selected position never reflows neighbors. */
+.mx-harm-note{
+ position:absolute;transform:translate(-50%,-50%);
+ width:31px;height:31px;padding:0;border:1px solid #7babb51c;
+ border-radius:50%;background:linear-gradient(180deg,#376c7a33,#173c4b26);
+ color:#c3d8dd;font-size:10px;font-weight:500;line-height:1;
+ text-shadow:0 1px 1px #082c34c0;
+ box-shadow:0 1px 2px #092b3520;
+ transition:transform .15s ease,background .15s ease,
+   box-shadow .15s ease,color .15s ease
+}
+.mx-harm-note:hover:not(.active){
+ color:#f3fffc;background:linear-gradient(#619e9d85,#39716e8a);
+ box-shadow:0 2px 0 #143845,0 4px 6px #051b2990
+}
+.mx-harm-note.active{
+ transform:translate(-50%,-50%) scale(1.05);
+ background:linear-gradient(160deg,#b5f4d8 0%,#78dcaf 65%,#63cfa5 100%);
+ color:#123b38;border:1px solid #d2ffea;
+ border-radius:50%;font-size:14.5px;font-weight:650;text-shadow:none;
+ box-shadow:inset 0 1px 0 #f6fffeae,0 2px 0 #2e866f,
+   0 4px 8px #061e2ac4,0 0 8px #8aeac66e
+}
+.mx-harm-wheel-core{
+ position:absolute;inset:29%;border-radius:50%;
+ display:flex;flex-direction:column;align-items:center;justify-content:center;
+ border:1px solid #587c86;
+ background:radial-gradient(circle at 40% 20%,#143d4c,#102b3a 82%);
+ box-shadow:0 0 0 6px #0b2b38bb,inset 0 2px 8px #051b26
+}
+.mx-harm-wheel-core strong{
+ font-size:27px;line-height:1.1;font-weight:500;letter-spacing:-.9px;
+ color:#dcfaf1;text-shadow:0 0 11px #91d7c14e
+}
+.mx-harm-wheel-core small{font-size:8px;letter-spacing:.9px;color:#9cbec1}
+/* Major and Minor share the SAME box footprint at idle and active.
+   Recessed shadow gives tactile pressed depth, not a lifted label. */
+.mx-harm-scale{display:flex;align-items:stretch;gap:5px;width:175px;margin-top:7px}
+.mx-harm-scale button{
+ appearance:none;display:flex;align-items:center;justify-content:center;
+ flex:1 1 0;min-width:0;height:27px;padding:0 6px;line-height:1;
+ border:1px solid #a5b8bd;border-radius:5px;
+ background:linear-gradient(180deg,#edf4f2,#d5e1df);
+ color:#405963;font-size:10px;font-weight:500;
+ box-shadow:inset 0 2px 3px #657f8540,inset 0 -1px 0 #ffffffb5,
+  0 1px 0 #81999b,0 2px 4px #415e6440;
+ transform:none;transition:background .13s ease,box-shadow .13s ease,color .13s ease
+}
+.mx-harm-scale button.active{
+ background:linear-gradient(180deg,#58a391,#387c6f);
+ color:#f9fffc;border-color:#459184;
+ box-shadow:inset 0 3px 5px #15493d91,inset 0 1px 0 #d8fff147,
+  0 1px 0 #81999b,0 2px 4px #415e6440
+}
+.mx-harm-scale button:hover:not(.active){background:linear-gradient(#f4f9f7,#dfebe8)}
+.mx-harm-scale button:active:not(:disabled){
+ box-shadow:inset 0 4px 6px #416b6d7d,0 1px 0 #81999b
+}
+.mx-harm-source{
+ display:flex;align-items:center;gap:9px;min-height:36px;padding:4px 12px;
+ background:#e0e7e7;border-top:1px solid #a7bcc2;
+}
+.mx-harm-mode{
+ display:inline-flex;flex:none;align-items:center;padding:2px;gap:2px;
+ background:#bdcbcf;border:1px solid #98aeb4;border-radius:7px
+}
+.mx-harm-mode button{
+ appearance:none;flex:1 1 0;min-width:0;height:24px;
+ border:1px solid #a5b8bd;border-radius:5px;
+ background:linear-gradient(180deg,#e1ebea,#ccd9da);padding:3px 12px;
+ color:#476269;font-size:10px;font-weight:500;
+ box-shadow:inset 0 2px 3px #65838754,inset 0 -1px 0 #f6fffd9c,
+  0 1px 0 #8da7a8,0 2px 4px #52707638;
+ transform:none;transition:background .13s ease,box-shadow .13s ease,color .13s ease
+}
+.mx-harm-mode button.active{
+ background:linear-gradient(180deg,#55a28f,#397b70);
+ color:#f6fffc;border-color:#4a9284;
+ box-shadow:inset 0 3px 5px #21574b9e,inset 0 1px 0 #e6fff255,
+  0 1px 0 #8da7a8,0 2px 4px #52707638
+}
+.mx-harm-mode button:hover:not(.active){background:linear-gradient(#edf5f3,#d8e5e3)}
+.mx-harm-mode button:active:not(:disabled){
+ box-shadow:inset 0 4px 6px #2758538a,0 1px 0 #8da7a8
+}
+.mx-harm-source-picker{display:flex;min-width:0;flex:0 1 220px}
+.mx-harm-sr{
+ position:absolute;width:1px;height:1px;overflow:hidden;
+ clip-path:inset(50%);white-space:nowrap
+}
+.mx-harm-source select{
+ width:100%;min-width:0;height:27px;border-radius:5px;
+ border:1px solid #9aafb6;background:#f0f4f3;color:#38565f;
+ padding:2px 7px;font-size:10px
+}
+.mx-harm-guide-status{
+ display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+ white-space:nowrap;font-size:9px;letter-spacing:.6px;color:#54737b
+}
+.mx-harm-guide-status:before{
+ content:"";width:6px;height:6px;border-radius:50%;background:#779aa0
+}
+.mx-harm-guide-status[data-state="auto"]{color:#237b6b}
+.mx-harm-guide-status[data-state="auto"]:before{background:#36b68a}
+.mx-harm-guide-status[data-state="listen"]:before{background:#bd8b3e}
+.mx-harm-guide-status[data-state="safe"]:before{background:#c37f5b}
+.mx-harm-foot{
+ display:flex;justify-content:space-between;align-items:center;gap:10px;
+ height:23px;padding:0 11px;background:#243b46;color:#a8c2c9;
+ border-top:1px solid #4f6b76;font-size:9px;letter-spacing:.2px
+}
+.mx-harm-foot>span:first-child{
+ min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+@media(max-width:740px){
+ .mx-harm-body{grid-template-columns:126px minmax(0,1fr) 206px;min-height:224px}
+ .mx-harm-left{padding:14px 9px 10px}
+ .mx-harm-signature strong{font-size:15px}
+ .mx-harm-sliders{grid-template-columns:repeat(2,minmax(78px,1fr));gap:4px;padding:5px}
+ .mx-harm-dial-face{width:59px;height:59px}
+ .mx-harm-dial-pointer{height:19px;transform-origin:50% 23px}
+ .mx-harm-slider{height:101px}
+ .mx-harm-center{padding:8px 6px}
+ .mx-harm-wheel{width:172px;height:172px}
+ .mx-harm-note{width:29px;height:29px;font-size:9px}
+ .mx-harm-note.active{font-size:13.3px}
+ .mx-harm-head select{width:100px}
+}
+@media(max-width:580px){
+ .mx-harm{top:6px}
+ .mx-harm-body{grid-template-columns:112px minmax(0,1fr);min-height:0}
+ .mx-harm-left{grid-column:1;grid-row:1}
+ .mx-harm-control-deck{grid-column:2;grid-row:1;border-right:0;min-height:222px}
+ .mx-harm-center{
+  grid-column:1/-1;grid-row:2;border-top:1px solid #9eb2ba;
+  padding:14px 8px
+ }
+ .mx-harm-signature{min-height:71px}
+ .mx-harm-voices{gap:2px}
+ .mx-harm-voices button{height:28px;padding:0 2px;gap:2px}
+ .mx-harm-voice-glyph{width:11px;height:11px;flex-basis:11px}
+ .mx-harm-source{flex-wrap:wrap;gap:5px;padding:5px 8px}
+ .mx-harm-source-picker{flex:1}
+ .mx-harm-guide-status{font-size:8px}
+ .mx-harm-head{gap:6px}
+ .mx-harm-channel{display:none}
+ .mx-harm-brand{flex:1}
+ .mx-harm-head select{width:102px}
+}
+@media(prefers-reduced-motion:reduce){
+ .mx-harm *{transition:none!important;animation:none!important}
+}
