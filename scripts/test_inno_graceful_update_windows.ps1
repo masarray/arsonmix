@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $updaterPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixAutoUpdate.ps1"
 $policyOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $updaterPolicy -OwnerProcessId 1 -PolicySelfTest
 if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
