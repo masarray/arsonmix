@@ -15,14 +15,15 @@ int main(){
   static_assert(sizeof(Engine)>64*1024,"verify test heap-fixture rationale");
   Settings bad;need(valid(bad),"defaults invalid");
   bad.key=12;need(!valid(bad),"invalid key admitted");bad.key=0;
-  bad.voices=5;need(!valid(bad),"invalid voice count admitted");
+  bad.voices=6;need(!valid(bad),"invalid voice count admitted");
+  bad.voices=5;need(valid(bad),"five-voice DSP rejected");
   bad.voices=3;bad.wet=std::nanf("");need(!valid(bad),"NaN accepted");
   need(noteAt(nearestDegree(69.f,0,0),0,0)==69,"A major note mismatch");
   need(noteAt(nearestDegree(69.f,0,1),0,1)==68,"A minor note mismatch");
   for(double sr:{32000.,48000.,96000.,192000.}){
     auto e=std::make_unique<Engine>();need(e->prepare(sr),"prepare failed");
     need(e->latencySamples()>=512,"missing DSP latency declaration");
-    Settings s;s.voices=4;s.space=1.f;s.color=0.7f;s.wet=0.55f;
+    Settings s;s.voices=static_cast<int>(sr==192000.?5:4);s.space=1.f;s.color=0.7f;s.wet=0.55f;
     need(e->setSettings(s),"valid edit rejected");
     constexpr int frames=16384;
     std::vector<float> l(frames),r(frames);
@@ -120,8 +121,8 @@ int main(){
   for(int i=0;i<48000;++i)
     vl[i]=vr[i]=.2f*std::sin(6.28318530718*440*i/48000);
   for(int i=0;i<48000;i+=128)active->process(vl.data()+i,vr.data()+i,128);
-  for(int edit=0;edit<36;++edit){
-    Settings next=initial;next.voices=2+edit%3;
+  for(int edit=0;edit<40;++edit){
+    Settings next=initial;next.voices=2+edit%4;
     next.wet=(edit%2)?1.f:0.f;
     next.space=(edit%3)?1.f:0.f;
     next.color=(edit%2)?0.f:1.f;
@@ -219,5 +220,5 @@ int main(){
          std::abs(wr[i]-(impulse?-.25f:0.f))<1.e-5f,
          "reduced 192 kHz history corrupted a wrapped dry impulse");
   }
-  std::cout<<"Native Harmony DSP: deterministic PCM, 2-4 voices, octave/scale, stereo, silence and 32-192k PASS\n";
+  std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
