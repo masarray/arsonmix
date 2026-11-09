@@ -30,6 +30,8 @@ public:
         float attackCoefficient=0.0f;
         float releaseCoefficient=0.0f;
         float makeupGain=1.0f;
+        float ratioStrength=0.0f; // CONTROL precomputed 1 - 1/ratio
+        float halfInverseKnee=0.0f; // CONTROL precomputed 0.5/knee dB
         float kneeStartLinear=1.0f; // control precomputed detector gate
         bool valid=false;
     };
@@ -56,10 +58,20 @@ public:
         // Compute output makeup off realtime, then slew the LINEAR gain.
         next.makeupGain=static_cast<float>(
             std::exp(static_cast<double>(settings.makeupDb)*0.11512925464970229));
+        // The settled compressor does not need scalar division for each
+        // compressed PCM sample. The original arithmetic is retained during
+        // the short parameter slew for sample-for-sample sonic parity.
+        next.ratioStrength=1.f-1.f/settings.ratio;
+        // Below this guard the DSP uses the hard-knee branch. Never
+        // divide by a subnormal, or reject an otherwise valid tiny knee.
+        next.halfInverseKnee=settings.kneeDb>=0.0001f?
+            0.5f/settings.kneeDb:0.f;
         next.kneeStartLinear=static_cast<float>(std::exp(
             static_cast<double>(settings.thresholdDb-settings.kneeDb*.5f)*
             0.11512925464970229));
         next.valid=std::isfinite(next.makeupGain)&&
+                   std::isfinite(next.ratioStrength)&&
+                   std::isfinite(next.halfInverseKnee)&&
                    std::isfinite(next.kneeStartLinear)&&next.kneeStartLinear>0.f;
         output=next;
         return true;
@@ -92,6 +104,9 @@ public:
            !validSettings(edit.settings)||!std::isfinite(edit.attackCoefficient)||
            !std::isfinite(edit.releaseCoefficient)||
            !std::isfinite(edit.makeupGain)||edit.makeupGain<=0.f||
+           !std::isfinite(edit.ratioStrength)||edit.ratioStrength<0.f||
+           edit.ratioStrength>1.f||
+           !std::isfinite(edit.halfInverseKnee)||edit.halfInverseKnee<0.f||
            !std::isfinite(edit.kneeStartLinear)||edit.kneeStartLinear<=0.f||
            edit.attackCoefficient<0.f||edit.attackCoefficient>=1.f||
            edit.releaseCoefficient<0.f||edit.releaseCoefficient>=1.f)return false;
@@ -126,15 +141,23 @@ public:
             // exact after each edit and conservative throughout its slew.
             if(s.ratio>1.f&&envelope_>kneeGuardLinear_) {
                 const float above=20.f*std::log10(envelope_)-s.thresholdDb;
-                const float strength=1.f-1.f/s.ratio;
+                // While a parameter moves, preserve the legacy effective
+                // ratio exactly; when settled, use CONTROL-prepared scalars.
+                const bool slewing=rampRemaining_>0;
+                const float strength=slewing?1.f-1.f/s.ratio:
+                    current_.ratioStrength;
                 if(s.kneeDb<0.0001f)reduction=std::max(0.f,above)*strength;
                 else if(above>=s.kneeDb*0.5f)reduction=above*strength;
                 else if(above> -s.kneeDb*0.5f) {
                     const float bend=above+s.kneeDb*0.5f;
-                    reduction=bend*bend*(0.5f/s.kneeDb)*strength;
+                    const float bendScale=slewing?0.5f/s.kneeDb:
+                        current_.halfInverseKnee;
+                    reduction=bend*bend*bendScale*strength;
                 }
             }
-            const float attenuation=reduction>0.f?
+            // Even at MIX=0 the detector and GR meter must advance, but
+            // evaluating the unused wet attenuation is wasted CPU.
+            const float attenuation=reduction>0.f&&s.mix>0.f?
                 std::exp(reduction*(-0.11512925464970229f)):1.f;
             const float wetGain=attenuation*current_.makeupGain;
             const float outputGain=(1.f-s.mix)+s.mix*wetGain;
