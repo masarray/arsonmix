@@ -2364,6 +2364,7 @@ private:
 
             reply->setProperty("throwCount",static_cast<int>(processor->observedThrowCount()));
             reply->setProperty("tailActive",processor->observedTailActive());
+            reply->setProperty("cueArmed",processor->observedCueArmed());
             reply->setProperty("addedLatencySamples",processor->getLatencySamples());
             if(instanceId==lastNativeThrowInstance_&&
                epoch==lastNativeThrowEpoch_&&revision==lastNativeThrowRevision_)
