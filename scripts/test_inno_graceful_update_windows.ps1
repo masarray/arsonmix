@@ -6,7 +6,8 @@ Set-StrictMode -Version Latest
 # This mode never reads an install, touches a live process or calls the network.
 $updaterPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixAutoUpdate.ps1"
 $policyOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $updaterPolicy -OwnerProcessId 1 -PolicySelfTest
-if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS'){
+if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'){
     throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
 }
 Write-Host "ARSONMIX_UPDATER_POLICY_PASS"
