@@ -20,6 +20,9 @@ $statePath=Join-Path $root 'state.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
+# Network, hashing and installer orchestration must yield CPU to live ASIO.
+try { [Diagnostics.Process]::GetCurrentProcess().PriorityClass =
+    [Diagnostics.ProcessPriorityClass]::BelowNormal } catch { }
 
 function Log-Result([string]$message) {
     try {
@@ -176,7 +179,11 @@ function Run-Installer([string]$file) {
     $process=[Diagnostics.Process]::Start($info)
     if($null -eq $process){return $false}
     try {
-        if(-not $process.WaitForExit(120000)){return $false}
+        if(-not $process.WaitForExit(120000)){
+            # This Inno process is still able to replace program files.
+            # Never start another GUI or a rollback installer concurrently.
+            Fail 'Installer is still running after timeout; no relaunch or rollback'
+        }
         return $process.ExitCode -eq 0
     } finally {$process.Dispose()}
 }
@@ -190,7 +197,8 @@ function Launch-WithHealth([string]$expectedSha) {
     $info.WorkingDirectory=$PSScriptRoot
     $info.UseShellExecute=$false
     $info.EnvironmentVariables['ARSONMIX_UPDATE_PROBE']=$token
-    $process=[Diagnostics.Process]::Start($info)
+    try {$process=[Diagnostics.Process]::Start($info)}
+    catch {Log-Result 'UPDATED_EXE_FAILED_TO_START';return $false}
     if($null -eq $process){return $false}
     try {
         $deadline=[DateTime]::UtcNow.AddSeconds(75)
