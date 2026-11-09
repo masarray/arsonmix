@@ -44,7 +44,28 @@ def reconstruct():
     for link in brand_head_links:
         assert html.count(link)<=1, "Duplicate approved favicon metadata"
         html=html.replace(link,"",1)
+    # V28 is a HISTORICAL CSS-transfer proof. Reconstruct that unchanged
+    # checkpoint from today's later, explicitly bounded desktop enhancement.
+    # Do not rewrite V28's immutable fixture or pretend subsequent features
+    # were part of its original no-visual-change CSS relocation.
+    desktop_resize="// Desktop maximise, restore, DPI changes and normal resizing are layout events,"
+    assert html.count(desktop_resize)==1,"Desktop WIRE geometry hook missing or duplicated"
+    end_marker="restorePluginPreferences();init();"
+    start=html.index(desktop_resize)
+    end=html.index(end_marker,start)
+    legacy_resize=("let resizeQueued=false;\\n"
+                   "window.addEventListener('resize',()=>{\\n"
+                   " if(resizeQueued)return;resizeQueued=true;\\n"
+                   " requestAnimationFrame(()=>{resizeQueued=false;render();});\\n"
+                   "});\\n")
+    html=html[:start]+legacy_resize+html[end:]
     chrome=OWNER.read_text(encoding="utf-8")
+    desktop_css="\\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
+    assert chrome.count(desktop_css)==1,"Desktop caption CSS marker missing or duplicated"
+    extra_css=chrome[chrome.index(desktop_css):]
+    assert "html.armix-native-desktop .app > .window-title" in extra_css
+    assert len(extra_css)<1600,"Desktop caption CSS unexpectedly includes unrelated rules"
+    chrome=chrome[:chrome.index(desktop_css)]
     assert meta(html)==d["current"]["html"],"V28 HTML changed after checkpoint"
     assert meta(chrome)==d["current"]["chrome"],"V28 Chrome CSS changed after checkpoint"
     moved=d["movedCss"]
