@@ -497,7 +497,7 @@
 .mx-vthrow .vt-clock-tap{display:grid;grid-template-columns:minmax(0,1fr) 83px;
  align-items:center;gap:9px;min-width:0}
 .mx-vthrow .vt-tempo{min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px}
-.mx-vthrow .vt-clock-screen{width:100%;height:79px;min-width:0;display:flex;flex-direction:column;
+.mx-vthrow .vt-clock-screen{position:relative;width:100%;height:79px;min-width:0;display:flex;flex-direction:column;
  justify-content:center;align-items:stretch;gap:1px;padding:7px 11px 5px;
  border:1px solid #42616a;border-radius:6px;color:#cbf8e9;
  background:radial-gradient(ellipse at 50% 15%,#173b40b5,transparent 80%),
@@ -507,15 +507,24 @@
  font-size:9px;letter-spacing:.15em;color:#77aead}
 .mx-vthrow #vtClockLabel{color:#a9dec5;font-size:9px;font-weight:550;letter-spacing:.1em}
 .mx-vthrow .vt-lcd-digits{display:flex;align-items:baseline;gap:8px}
-.mx-vthrow #vtDisplayBpm{font:500 44px/1.04 'Segoe UI',Inter,sans-serif;
+.mx-vthrow #vtDisplayBpm{padding:0;margin:0;border:0;background:none;appearance:none;
+ font:500 44px/1.04 'Segoe UI',Inter,sans-serif;
  color:#d8fff2;letter-spacing:-.05em;font-variant-numeric:tabular-nums;
- text-shadow:0 0 15px #61b7a533}
+ text-shadow:0 0 15px #61b7a533;cursor:text;text-align:left}
+.mx-vthrow #vtDisplayBpm:hover{color:#e8fff7}
+.mx-vthrow .vt-clock-screen[data-editing=true] #vtDisplayBpm{opacity:0;pointer-events:none}
 .mx-vthrow .vt-lcd-digits>span{font-size:10px;color:#7fbeb2;letter-spacing:.07em}
-.mx-vthrow .vt-manual-bpm{height:20px;display:flex;justify-content:flex-end;
- align-items:center;align-self:stretch}
-.mx-vthrow .vt-manual-bpm input{height:20px;width:57px;padding:0 4px;
- border:1px solid #475b63;border-radius:3px;background:#172a33;color:#cfebe3;
- font:500 10px 'Segoe UI',sans-serif;text-align:center;font-variant-numeric:tabular-nums}
+.mx-vthrow .vt-manual-bpm{display:none;position:absolute;left:11px;right:10px;
+ top:25px;height:49px;align-items:center;z-index:1}
+.mx-vthrow .vt-clock-screen[data-editing=true] .vt-manual-bpm{display:flex}
+.mx-vthrow .vt-manual-bpm input{width:100%;max-width:148px;height:49px;margin:0;
+ padding:0;border:0;border-bottom:1px solid #75d5c58f;border-radius:0;
+ outline:0;background:#0b252d;color:#d8fff2;
+ font:500 44px/1.04 'Segoe UI',sans-serif;text-align:left;
+ letter-spacing:-.05em;font-variant-numeric:tabular-nums;
+ appearance:textfield}
+.mx-vthrow .vt-manual-bpm input::-webkit-inner-spin-button,
+.mx-vthrow .vt-manual-bpm input::-webkit-outer-spin-button{appearance:none;margin:0}
 .mx-vthrow .vt-tap-button{height:81px;display:flex;flex-direction:column;
  align-items:center;justify-content:center;gap:1px;color:#c8d0d9;
  background:linear-gradient(#414852,#262c35);border:1px solid #4c5661;border-radius:12px;
