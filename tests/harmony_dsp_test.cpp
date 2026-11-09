@@ -268,6 +268,36 @@ int main(){
            std::abs(right[i]-referenceR[i])<1.e-6f,
            "P0 pitch output depends on ASIO callback block size");
   }
+  // P1: real opposite-phase vocal PCM must not become silent harmony.
+  for(double rate:{48000.,96000.}){
+    auto opposite=std::make_unique<Engine>();
+    need(opposite->prepare(rate),"antiphase singer prepare failed");
+    Settings wet;wet.voices=5;wet.wet=.85f;wet.correction=true;
+    need(opposite->setSettings(wet),"antiphase singer settings failed");
+    const int count=static_cast<int>(rate*.65);
+    std::vector<float> left(static_cast<std::size_t>(count));
+    std::vector<float> right(static_cast<std::size_t>(count));
+    for(int i=0;i<count;++i){
+      const float x=static_cast<float>(
+          .19*std::sin(6.283185307179586*220.*i/rate)+
+          .05*std::sin(6.283185307179586*440.*i/rate));
+      left[static_cast<std::size_t>(i)]=x;
+      right[static_cast<std::size_t>(i)]=-x;
+    }
+    for(int i=0;i<count;i+=257)
+      opposite->process(left.data()+i,right.data()+i,std::min(257,count-i));
+    need(opposite->voiced()&&opposite->observedMidiNote()==57,
+         "phase-opposed singer lost stable A3 pitch");
+    double harmonized=0.;
+    for(int i=count/2;i<count;++i){
+      const float l=left[static_cast<std::size_t>(i)];
+      const float r=right[static_cast<std::size_t>(i)];
+      need(std::isfinite(l)&&std::isfinite(r),"phase-safe PCM not finite");
+      const double recovered=.5*(static_cast<double>(l)+r);
+      harmonized+=recovered*recovered;
+    }
+    need(harmonized>0.005,"opposed stereo produced no harmonized audio");
+  }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";

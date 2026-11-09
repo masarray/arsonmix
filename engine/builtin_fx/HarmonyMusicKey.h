@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include "HarmonyStereoFold.h"
 
 // Audio-thread-only, bounded chroma guide from a DIFFERENT ChannelId's real
 // pre-fader PCM. Not a chord recognizer and never an audible sidechain.
@@ -21,6 +22,7 @@ public:
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         decimation_=std::max(1,static_cast<int>(std::round(rate/6000.)));
+        if(!stereoFold_.prepare(rate))return false;
         const double fs=rate/decimation_;
         sampleAlpha_=static_cast<float>(1.-std::exp(-1./(fs*.18)));
         lowpassAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*1500./rate));
@@ -35,6 +37,7 @@ public:
         reset();return true;
     }
     void reset() noexcept {
+        stereoFold_.reset();
         inC_.fill(0.f);inS_.fill(0.f);
         oscC_.fill(1.f);oscS_.fill(0.f);hist_.fill(0.f);
         downCount_=0;periodCount_=0;normalizeCount_=0;
@@ -47,7 +50,7 @@ public:
         for(int n=0;n<count;++n) {
             const float l=std::isfinite(left[n])?left[n]:0.f;
             const float r=std::isfinite(right[n])?right[n]:0.f;
-            filtered_+=lowpassAlpha_*(0.5f*(l+r)-filtered_);
+            filtered_+=lowpassAlpha_*(stereoFold_.process(l,r)-filtered_);
             if(++downCount_<decimation_)continue;
             downCount_=0;
             const float x=filtered_;
@@ -153,6 +156,7 @@ private:
     float sampleAlpha_=0.f,lowpassAlpha_=0.f,filtered_=0.f;
     double windowEnergy_=0.;
     MusicKeyEstimate current_{};
+    StereoPhaseSafeFold stereoFold_{};
     std::array<float,bins> rotorC_{},rotorS_{},weight_{};
     std::array<float,bins> oscC_{},oscS_{},inC_{},inS_{};
     std::array<float,12> hist_{};

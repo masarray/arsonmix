@@ -69,3 +69,11 @@ A 1536-sample lookback at 48 kHz is **32 ms DSP delay**, before device input + o
 - Formant-preserving pitch synchronous synthesis (TD-PSOLA / equivalent) remains a separate replaceable shifter milestone: it must be verified against consonants, onset/off pitch, male/female vowels and CPU/latency tradeoffs before becoming audible default. Never claim today's granular shifter preserves formants.
 
 Project status: P0 **realtime boundedness implementation** awaiting exact-HEAD Windows CTest and singer FAT; not a final professional-quality or latency qualification.
+
+## 2026-11-09 P1 — stereo phase-resilient Harmony analysis
+
+Both `HarmonyDsp` vocal analysis/grain source and the cross-ChannelId `MusicKeyDetector` used `0.5*(L+R)`. Valid `L=-R` PCM from an extreme stereo widener or polarity-inverting source disappeared completely from both. The read-only music source remained audible elsewhere but Harmony incorrectly fell back to Manual.
+
+`StereoPhaseSafeFold.h` now provides a **per-instance, callback-owned, constant-work** fold with precomputed 20ms polarity evidence and 15ms smoothed recovery, strict -0.78 engage / -0.55 release hysteresis, silence release, and stereo analysis-only polarity repair. Ordinary coherent stereo keeps the existing sum. Neither dry stereo, audio routing, FX rack, SPSC schema, 2–5 voices, output device, declared latency nor GUI changes. No heap, locks, timers or per-sample trigonometry.
+
+PCM regressions: anti-phase singer A3 and nonzero five-voice harmony at 48/96k; anti-phase music C major at 48/96k, silence/Manual fallback; real native other-ChannelId antiphase A-minor guide with read-only source samples, plus preexisting in-phase, rekey, block parity, PDC and state migration. This only prevents destructive analysis cancellation, it is *not* formant preservation or ASIO/ear latency certification. Physical singer FAT remains open.

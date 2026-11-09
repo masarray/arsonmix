@@ -146,7 +146,11 @@ int main(){
                 std::sin(6.28318530718*261.625565*t)+
                 std::sin(6.28318530718*329.627557*t)));
         }
+        // Real anti-phase other-channel PCM remains unmodified by the guide.
+        for(int j=0;j<128;++j)r[j]=-l[j];
+        const float originalL=l[17],originalR=r[17];
         bank2(musicB,l,r,128);
+        assert(l[17]==originalL&&r[17]==originalR);
     }
     assert(live->observedMusicKey()==9&&live->observedMusicScale()==1);
     assert(live->effectiveKeyCode()==21); // detected A minor

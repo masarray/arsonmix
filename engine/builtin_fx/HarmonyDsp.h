@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include "HarmonyStereoFold.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -84,6 +85,7 @@ public:
         // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
+        if(!vocalFold_.prepare(rate))return false;
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
@@ -196,7 +198,7 @@ public:
             }
             const float inputL=std::isfinite(l[i])?l[i]:0.f;
             const float inputR=std::isfinite(r[i])?r[i]:0.f;
-            const float mono=0.5f*(inputL+inputR);
+            const float mono=vocalFold_.process(inputL,inputR);
             left_[write_]=inputL;right_[write_]=inputR;mono_[write_]=mono;
             decimationLowpass_+=decimationAlpha_*(mono-decimationLowpass_);
             if(++downCounter_>=decimation_){
@@ -402,6 +404,7 @@ private:
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
+    StereoPhaseSafeFold vocalFold_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
