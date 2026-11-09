@@ -557,10 +557,9 @@
  box-shadow:0 0 0 2px #708c99,0 0 0 7px #dce3e4,
  0 6px 13px #344c5657,inset 0 0 13px #071e2f
 }
-.mx-harm-wheel:before{
- content:"";position:absolute;inset:17px;border:1px solid #c0d3d445;
- border-radius:50%;pointer-events:none
-}
+/* Intentionally no inner white ring: the former 17px inset circle cut
+   across the musical-note labels. The outer silver rim, blue annulus and
+   dark LCD core already supply the visual separation at every viewport. */
 /* Musical key switches have circular hit shapes. Selected notes gain a
    restrained size increase, satin rim, and soft drop shadow — not a raised dome.
    The ring spacing remains fixed; selected position never reflows neighbors. */
