@@ -391,6 +391,19 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeCompressorTests PRIVATE cxx_std_20)
   add_test(NAME NativeCompressorZeroLatencyAndLinkedStereoPCM COMMAND ARMixNativeCompressorTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorTests)
+  # Real JUCE FX processor lifecycle: retain last AUDIO-applied Compressor
+  # settings across rate/buffer restarts even when CONTROL ACK is unpolled.
+  juce_add_console_app(ARMixNativeCompressorLifecycleTests PRODUCT_NAME
+      "ArSonMix Native Compressor Device Restart Tests")
+  target_sources(ARMixNativeCompressorLifecycleTests PRIVATE
+      tests/native_compressor_processor_lifecycle_test.cpp
+      engine/builtin_fx/ChannelCompressorProcessor.h)
+  target_link_libraries(ARMixNativeCompressorLifecycleTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeCompressorLifecycleTests PRIVATE cxx_std_20)
+  add_test(NAME NativeCompressorDeviceRestartAckAndShowPCM
+      COMMAND ARMixNativeCompressorLifecycleTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorLifecycleTests)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)

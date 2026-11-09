@@ -44,7 +44,12 @@ public:
                layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double sampleRate,int) override {
-        ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(accepted_);
+        // Preserve the last *actually applied* audio-owned target on restart.
+        // accepted_ advances only when CONTROL polls completion ACKs: resetting
+        // from that shadow could silently undo an edit applied just before a
+        // device/buffer/sample-rate restart. A cold Show restore has already
+        // staged its settings on core_ via stageUnpublished().
+        ready_=core_.prepare(sampleRate);
         if(ready_)rate_=sampleRate;
         inputPeak_.store(0.f,std::memory_order_relaxed);
         outputPeak_.store(0.f,std::memory_order_relaxed);
@@ -134,7 +139,9 @@ public:
         s.makeupDb=input.readFloat();
         s.mix=input.readFloat();
         if(!input.isExhausted()||!ChannelCompressor::validSettings(s))return false;
-        if(ready_&&!core_.resetUnpublished(s))return false;
+        // Stage even before the first prepareToPlay (Show loading), and
+        // re-seed a quiescent previously prepared instance after release.
+        if(!core_.stageUnpublished(s))return false;
         accepted_=s;
         return true;
     }
