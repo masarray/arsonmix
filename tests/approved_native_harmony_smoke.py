@@ -313,8 +313,8 @@ def main():
                             x.action==='nativeHarmonySnapshot' &&
                             x.graphRevision===arg.revision &&
                             x.instanceId===arg.instance && x.slot===arg.slot)""",
-                            {"revision":state["graph"]["revision"],
-                             "instance":instance,"slot":slot})
+                            arg={"revision":state["graph"]["revision"],
+                                 "instance":instance,"slot":slot})
                         result=last_action(page,"nativeHarmonySnapshot")
                         assert result["instanceId"]==instance,result
                         assert result["slot"]==slot,result
