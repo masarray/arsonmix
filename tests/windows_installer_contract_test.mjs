@@ -240,7 +240,7 @@ test('one-click recovery can restore main EXE without a live app', () => {
 });
 
 test('updater script has one coherent main try/finally and no duplicated tail', () => {
-  const script = read('installer/ArSonMixAutoUpdate.ps1');
+  const script = read('installer/ArSonMixAutoUpdate.ps1').replace(/\r\n/g, '\n');
   const tail = [
     '} finally {',
     '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
