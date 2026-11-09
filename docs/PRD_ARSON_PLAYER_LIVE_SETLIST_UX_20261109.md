@@ -1,7 +1,7 @@
 # PRD — ArSon Player: Integrated Music, Playlist & Live Setlist
 **Status:** IMPLEMENTATION-READY DESIGN (not implemented) · **Date:** 2026-11-09 · **Owner:** ArSonMix · **Baseline:** `main@975ce7c0da6c5b54e95a5d263e29a42baf1a8289`
 
-> Product decision: A first-class **native audio source inside the ONE approved ArSonMix /preview/ mixer**, with a familiar music library, prepared setlists, safe playback queue, independent pitch/tempo, and direct ChannelId/WIRE/FX routing. Do not ship a separate MP3 window, WebAudio renderer, DAW timeline, or new mixer skin. **This document defines requirements, not shipped functionality.** Technical design: [ARD](ARD_ARSON_PLAYER_NATIVE_AUDIO_ARCHITECTURE_20261109.md). Agent execution: [implementation workpack](workstreams/ARSON_PLAYER_IMPLEMENTATION_WORKPACK_20261109.md).
+> Product decision (revised 2026-11-09): A first-class native player integrated in ONE approved /preview/ mixer. **New binding decision:** [Zero-Friction Smart Workflow ADR](ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md). Drop/select music → Play → the app prepares one owned MUSIC ChannelId, PLAYER A source and default WIRE→already verified MAIN **automatically**, with no user approval checkbox, ARM, MONITOR, Lab, manual route wizard or second Start. Never silently change physical output or overwrite user-authored SOURCE ONLY/BUS routing. This is a design, not implementation.
 
 ## 1. Goals and user value
 
@@ -13,7 +13,7 @@
 - **Streamer / MC / podcast:** background music bed, short cue clips and auto-play with fades, routed into existing mixer/OBS path.
 - **Expert mixer engineer:** source-only auditioning, FX insert chain, bus/aux sends, PFL, explicit output routing, detailed playback diagnostics.
 
-**North-star journey:** open existing mixer → PLAYER → Add Files/Folder → playlist appears → choose song → set KEY -2 → PLAY → existing channel “MUSIC” meters and follows FX/FADER/WIRE to MAIN → song ends, stays stopped until operator acts. **No manual input driver loopback, no additional device wizard, no user MONITOR toggle, no audio reroute on song load.** Preserve existing verified hardware-output safety gate.
+**North-star journey:** Drop song (or Player → Add Music), select if necessary, press PLAY once, hear music through the currently verified MAIN. The app automatically creates/reuses one MUSIC source/channel and its factory default trusted MAIN WIRE, prebuffers and plays with native ACK; imported multiple files become a ready setlist, and KEY/TEMPO adjustments are optional. No engineer-only setup. Existing user-custom routes, MAIN mute and actual device-identity safety are honored.
 
 ## 2. Audited competitor UX (fact / adaptation / rejected)
 
@@ -40,15 +40,15 @@
 5. **PLAYER B** = future optional second audio source for seamless crossfade/preview. Design stable IDs and migration now; do not expose a nonfunctional B control in MVP.
 6. **CHANNEL** = existing mixer ChannelId source / FX / fader / routing. “MUSIC PLAYER” is a *source*, not a new hardware device and not inherently a new mixer/channel role.
 7. **PITCH/KEY** = semitone transposition of audio independent of time. “Tempo/Speed” = playback time rate independent of musical pitch. Original key metadata is **not** automatically known unless analyzed or manually entered.
-8. **Modes:** `PERFORMANCE` (default: STOP AFTER SONG), `CONTINUOUS` (autoplay selected), `ADVANCED` (more controls, not different engine). Explicitly show end behavior in transport; setlist may override by song.
+8. **One Player, no modes:** default stops after song; a small optional Auto Next control supports continuous music; contextual More/Details reveals professional functions without lab/configuration mode or setup gate.
 
 ## 4. Operator workflow contracts
 
-**UX-01 First-use, 3-step happy path.** Existing mixer is running. Click `Player` in the approved console toolbar → compact drawer says `Add Music` → select multiple files or folder → tracks appear in library and a new “Untitled Setlist” with their initial order. Selecting any song highlights its row and can load safely when transport is stopped. Click PLAY; app chooses/creates a *verified* dedicated MUSIC channel source and connects to the existing MAIN only if that route is already explicitly configured/accepted or the user confirms a proposed route. Never bypass output safety. If hardware is not ready, load/setlist still works; show `Output not ready`, PLAY does not claim audible success.
+**UX-01 Two-action first sound.** Drop 1 music file (or choose via native file picker), then click PLAY: owned MUSIC ChannelId+PLAYER A+factory WIRE→existing verified MAIN are prepared and committed automatically, with no checkbox, approval, PATCH, MONITOR, ARM, APPLY or second Start. For many files, the app creates and saves an ordered setlist automatically; first song is READY. If physical output genuinely differs/unverified, present ONE contextual Choose output action and fulfill the original Play request while still current. No silent new-speaker selection or MAIN unmute.
 
 **UX-02 Normal performance.** Compact transport shows Current title, Next title, big legible PLAY/PAUSE/STOP, progress + elapsed/remaining, KEY, TEMPO and explicit `Stop after song` indicator. Space toggles play/pause only when Player panel has keyboard focus (avoid clashing with mixer). On track end, STOP and display `Ready: <next>`. NEXT button or an explicit row `Load Next` moves to selected next track; no auto-next by default.
 
-**UX-03 Selection safety.** Single click row = SELECT/PREPARE NEXT, **not** seek/play/switch CURRENT. Double click while playback active = prompt/explicit `Play Now` action (never hidden unconditional destructive switch). Context menu: Play Now (warn if current playing), Play Next, Add to Queue, Edit Song, Locate Missing File, Remove from Setlist; `Delete from disk` is not available in live UI. A pending NEXT can change while CURRENT continues unchanged.
+**UX-03 Direct familiar selection.** Single-click a row while stopped makes it READY; single-click while another song plays selects/preloads NEXT without interruption. Double-click/Play Now transitions directly via click-free native fade, without warning or consent dialog. Context actions are Play Now, Play Next, Add to Queue, Edit, Locate, Remove; Remove from Setlist supports Undo and never deletes disk media.
 
 **UX-04 Song-specific pitch.** Adjust KEY in integer semitones `-6…+6` (step 1; source key display optional), RESET to 0. Apply to active playback via safe smoothing/buffer generation without pops or tempo change; per-song saved value persists. Optional +/−50 cent fine tuning in Advanced after DSP gate. Show e.g. `Key -2 st`; do not mislabel absolute key if original key not verified.
 
@@ -56,9 +56,9 @@
 
 **UX-06 Setlist editing.** Create, rename, duplicate, reorder via drag + keyboard Move Up/Down; bulk add files, add from library, search/filter; same song may occur repeatedly; persistent ordered entries have distinct IDs. Switch setlists while playing only changes browsing/queue, never CURRENT. Save and restore without losing song settings.
 
-**UX-07 Cue/markers.** Advanced: start/end trims, loop A/B, named cue markers, single click navigate when stopped; seeking during playback is guarded by a configurable `Live Seek Lock` enabled by default. Playing without a cue starts at song's accepted start marker. Song end fades to silence and advances readiness, not actual hardware route.
+**UX-07 Contextual cue/markers.** Start/end trims, A/B loop and cues in song Details. A simple click on progress display does not accidentally seek while PLAYING; purposeful drag on waveform/seek handle or keyboard seek is accepted with audio ramp. No user-facing Live Seek Lock checkbox; no modal confirmation.
 
-**UX-08 Auto / crossfade.** `Continuous` opt-in: preload NEXT before EOF; when auto enabled, next begins according to configured gap or fade. True overlapping crossfade requires TWO prepared audio streams mixed in ONE native renderer, not overlapping file load or swapping active reader inside callback. No autoplay across a “Break” segment or invalid/missing song unless explicitly configured. Auto-mode status unmistakable.
+**UX-08 Auto Next/crossfade.** Auto Next is a single optional inline control, OFF by default; no Performance/Continuous mode chooser. Default singer playback stops after song with NEXT ready; break boundaries respected. Preload NEXT off-RT. Real overlap/crossfade requires future second prepared deck in ONE native callback, not hidden extra player engine.
 
 **UX-09 Mixer channel.** `IN` picker offers `PLAYER A (stereo)` among *source kinds*, not ASIO input ordinals. Default logical channel format stereo, optional mono fold-down via existing rules. SOURCE ONLY (no output WIRE) must show source meter but MAIN silent. Changing source or WIRE must not reset player transport, song state, FX, channel ID, or hardware device. Multiple consumers cannot drain the same FIFO independently; one native producer, shared per-block tap, deterministic fan-out.
 
@@ -74,10 +74,10 @@
 
 **Compact drawer 3-level hierarchy:**
 - Header: `ARSON PLAYER` / setlist selector / `+ Music` / collapse / More.
-- Current transport: title + artist, 1 waveform/progress, remaining timer, tactile Play/Pause (min 40 px hit target), Stop, Next. KEY and TEMPO have matching compact numeric control style (not disparate knobs). Status chips text: `STOP AFTER SONG` (default) or `AUTO NEXT`.
-- Below: tabs `SETLIST | LIBRARY | QUEUE`; search field, virtualized dense song rows, columns Name | Key delta | Duration, leading tiny PLAY/NEXT/DONE markers. NEXT highlighted distinct from SELECT and CURRENT; metadata is readable without hovering.
+- Current transport: compact title, progress, remaining time, tactile PLAY/PAUSE/STOP/NEXT and matching KEY/TEMPO numeric controls **only when DSP works**. Small Stop After Song / Auto Next label; no route config, consent or Lab in first-screen UI.
+- Below: show current setlist directly, with dense Name | Key delta | Duration rows, clear CURRENT/NEXT/DONE. Library and Queue are secondary tabs/links, not first-use decisions. Empty state shows one Add Music action; one-file import does not require a setlist.
 
-**Advanced panel (not MVP default):** waveform with A/B loop + named markers, pitch cents, tempo, fade in/out, gain, key metadata, routing readback, optional Player B/preview. Keep existing premium charcoal/cyan/green hardware aesthetic, low visual noise, 12–14px body text and compact spacing; no oversized cards, icons without labels or misleading fake LEDs. Buttons have consistent tactile idle/hover/pressed/focus states and do not jump in size.
+**Contextual Details, not a mode:** waveform, loop/cues, cents, tempo, fade, gain, routing readback and future Deck B via compact More/Song Details disclosure. No separate user-facing Advanced/Lab mode or setup wizard. Keep approved dark/cyan premium hardware aesthetic, compact spacing/body 12–14px, identical tactile pressed/idle size and readable non-hover actions.
 
 **Interaction and accessibility:** keyboard/real native context menus match approved app (do not show Chromium context menu); Tab/arrow/Enter navigation; visible keyboard focus, screen reader labels, touch targets min 36–40px, tooltips as supplements, pointer drag reorder plus keyboard alternative, reduced-motion support; state changes require readback, no optimistic `PLAYING` on rejected native intent. Responsive screenshots at 1366/1440/1680/1920 widths and 100–150% DPI.
 
@@ -102,7 +102,7 @@ Open LEFT PLAYER drawer
 
 ## 6. Feature priority & non-goals
 
-**P0 product milestone (native usable):** source kind, one Deck A, decoder + prepared playback, library/multi-import, basic persistent setlist, manual queue, source channel routing, Play/Pause/Stop/Next, seek when stopped, song-level KEY ±6 & speed 80–120% after DSP proven, current/next UI/ACK, fail-closed file handling, source and output meters.
+**P0 product milestone (native usable):** first Play automatically provisions one owned MUSIC ChannelId/PLAYER A source/default WIRE→already verified MAIN, native PCM/readback, import/drop single/folder, automatic persistent setlist, safe manual current/next queue, PLAY/PAUSE/STOP/NEXT, source meter, robust error handling, no confirmation/ARM/MONITOR/Lab. Expose KEY ±6 and speed 80–120% only after native DSP passes acoustic/CPU QA. Beginner acceptance B01–B13 in Zero-Friction ADR is mandatory.
 
 **P1:** full tested speed 50–150%, tune ±50c, library indexing/rescan, play history, markers/loop/trims, fade and preloading, configurable Auto Next, song/end behavior, M3U import/export & collect-media flow, optional PFL preview. User-visible controls must not ship without actual native support.
 
@@ -114,7 +114,7 @@ Open LEFT PLAYER drawer
 
 | ID | Evidence/acceptance |
 |---|---|
-| AC-01 | On a clean show: add 20 mixed WAV/MP3/FLAC files, build a saved setlist and play on PLAYER A through a live native ChannelId into MAIN; meter is **native PCM**, not JS animation |
+| AC-01 | Drop 20 files → setlist automatically created. Select one song → single Play action automatically creates/reuses player-owned MUSIC ChannelId and trusted MAIN WIRE, yields **real PCM and audible output** without PATCH/ARM/MONITOR/confirmation or second Start |
 | AC-02 | While A plays, select/change NEXT/another playlist/queue: audio sample progression, live mic, fx & routing **unchanged** |
 | AC-03 | End of song in default mode: silence & STOP with NEXT ready; never surprises singer with autoplay |
 | AC-04 | Pitch -2, +3, reset and speed 90%, 110% produce measured expected pitch/length changes without mic pitch shift, audible clicks or graph restarts |
@@ -123,7 +123,7 @@ Open LEFT PLAYER drawer
 | AC-07 | Missing/corrupt/unsupported file, disk stall, invalid seek & stale generation: bounded failure state, never block ASIO callback, preserve valid graph and last loaded/queued records |
 | AC-08 | Save/restart, portable path move, device close/reopen, 44.1/48/96k, block 64/128/256: no silent source remap or false PLAYING state; explicit output safety applies |
 | AC-09 | Native UI events correlated with native requestId, playerGeneration and deviceEpoch/graphRevision as applicable; no false ACK or demo playing state |
-| AC-10 | Real keyboard/touch/1366-1920 layouts, 150% DPI, click-right menu, visual QA, 30-min mixed music + microphone ASIO soak and independent recording verified; operator can use stage controls without opening Audio Setup |
+| AC-10 | At 1366–1920 widths/150% DPI, keyboard/touch and native context menus work; physical ASIO+mic/OBS FAT performed. For already verified output, ordinary player needs NO Audio Setup or route wizard. Unknown physical output requires only a single inline Choose output action, not consent checkbox or extra START |
 | AC-11 | Same track may appear in multiple sets without duplicate audio files; setlist-specific overrides do not unexpectedly overwrite global song defaults |
 | AC-12 | Automated low-overhead callback tests show **zero locks, allocations, synchronous disk reads, plugin instantiation or JS calls** on realtime thread; underruns counted and isolated |
 
@@ -136,3 +136,7 @@ Open LEFT PLAYER drawer
 - Existing release branch alpha.6 and ongoing Vocal Throw/Harmony PRs must not be rewritten/merged as a side effect.
 - New per-song tempo data may later integrate with Vocal Throw BPM; no hidden dependency on #474/#476, no automatic replacement of manual/TAP fallback.
 - No CI for this docs-only architecture PR; future code milestones use fast scoped tests, then selective exact-SHA `ui`/`native`/`fat` as specified by [AGENTS.md](../AGENTS.md). Physical FAT stays PENDING until performed.
+
+## Operator-first mandatory amendment — 2026-11-09
+
+[Smart Zero-Friction Workflow ADR](ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md), requirements B01–B13, supersedes any older player wording that demands route confirmation, separate user ARM/MONITOR/Apply/Start, Lab mode, or a technical acceptance checkbox. One explicit Play on the *same previously verified output* is sufficient for internal safe prepare/activate; unknown/different endpoint requires one contextual physical output selection. Factory-owned MUSIC→MAIN auto-link is **not** permission to undo user-authored SOURCE ONLY, BUS, MAIN MUTE or existing FX/ChannelId topology. Native ACK and one PCM callback remain mandatory.

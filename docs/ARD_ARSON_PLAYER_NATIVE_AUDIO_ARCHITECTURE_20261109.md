@@ -1,7 +1,7 @@
 # ARD — ArSon Player Native Audio, Mixer Integration & Reliability
 **Status:** PROPOSED ARCHITECTURE · **Date:** 2026-11-09 · **Baseline main:** `975ce7c0da6c5b54e95a5d263e29a42baf1a8289`
 
-> Implements [ArSon Player PRD](PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md) via the existing JUCE callback and approved `/preview/` GUI. **No code in this design PR.** The implementation must first reconcile all touched paths against fresh main and existing active PRs. The exact suggested types/filenames here are *new proposals*, not existing symbols.
+> Implements [ArSon Player PRD](PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md) in ONE JUCE callback and approved /preview/. **Binding owner correction:** [Zero-Friction Smart Workflow ADR](ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md) requires automatic first-PLAY native MUSIC source/channel/default WIRE→already verified MAIN, no confirmation/ARM/MONITOR/Lab/second Start. Preserve custom SOURCE ONLY/BUS, MAIN MUTE and physical output identity. This is a proposed design, NOT implemented; reconcile current live code before implementing.
 
 ## 1. Codebase evidence and boundaries (audited on main)
 
@@ -26,7 +26,7 @@
 4. **Stable source identity:** `SourceId` (deck `A` or future `B`) is distinct from `ChannelId` and hardware pin ordinals. A channel chooses exactly one `primarySource`; SOURCE ONLY means source exists but has no outgoing WIRE/OUT. Multiple channel consumers tap same per-block stream (no double FIFO drain).
 5. **Durable music vs ephemeral audio:** setlist, song-level metadata and routing references live in versioned JSON, not current audio device handle or graph scratch. Device change does not delete playlist or channel.
 6. **Explicit trust:** A GUI press yields acknowledgement only after native validation and accepted transport generation; no simulated PLAYING/readback nor optimistic FX route.
-7. **Safety and rollback:** output remap, new physical endpoints or unverified device require existing hard mute/arm policy. New player generation or missing file cannot silently mutate MAIN routing. Preserve previous accepted graph on rejected source edit.
+7. **Safe operation without visible gates:** Fresh explicit PLAY on exact previously verified physical output authorizes internal prepare/graph publication/audio ramp, not separate user ARM/Start. If endpoint changed/unverified, one contextual Choose output action is needed, never silent output substitution. Factory-owned MUSIC→trusted MAIN can be provisioned once if user never edited that route. Never silently unmute MAIN, rewrite custom SOURCE ONLY/BUS, or replace accepted graph on rejection.
 8. **No regression:** if player feature is inactive, existing console behavior, ASIO monitoring latency, resource footprint and Show/Scene state remain unchanged.
 
 ## 3. Proposed ownership model and audio flow
@@ -81,9 +81,9 @@ Rules:
 - `none`: zero signal, channel/FX/WIRE persistence retained. `physical`: legacy mask/ordinal validity unchanged. `playerDeck`: deck exists, prepared and native generation valid; stereo => L/R, mono conversion follows mixer format rules. Unknown values reject rather than coerce.
 - Keep `ChannelRole::input` and `ProcessingFormat` model; player is independent *source binding*. A future `fxReturn` routing doesn't become a song source automatically.
 - New schema accepts old docs with no player object; migrate physical source records losslessly; require backwards-compat tests. Avoid a breaking aggregate parser; add optional typed field/version rather than mutating all legacy numeric fields at once.
-- Mixer editor `IN` picker has 3 groups: `HARDWARE`, `PLAYERS`, `NONE`; selecting a player applies native source-binding transaction only after accepted graph validation. Do not auto-create a route at playback-time or on deck load.
+- Mixer editor `IN` picker remains available to professionals, but ordinary users never use it. `ensurePlayerFirstSound` on first song/PLAY auto-creates or reuses **owned** MUSIC ChannelId, binds `PLAYER A` and publishes one factory default MUSIC→existing verified MAIN route when not operator-edited. Never steal CH1/CH09 or infer ownership from channel name. Source song load does not recompile graph.
 - Audio callback obtains `PreparedPlayerFrameSource` *before* graph scheduling, once per rendered buffer; all ChannelIds bound to same deck use same PCM slice at the same transport frame. Repeated sends are normal graph fan-out; reading/advancing a FIFO twice is forbidden.
-- Deck playback uses graph render rate and block size. A device switch increments the existing device epoch; suspend/fence old stream, prepare new resampler/buffer, and resume **only if existing accepted-output safety permits**. Do not invent automatic re-arm.
+- Deck playback uses graph render rate/block size. On a fresh PLAY and unchanged previously verified physical endpoint, internal output preparation is allowed without a second user ARM; on different/unverified endpoint prompt ONE Choose output selection and complete only the still-relevant PLAY intent. Device epoch change fences old ring; no ASIO→other-device fallback, user MAIN unmute or surprise delayed resume.
 - Changing playback file is a transport/deck-generation edit, *not* a ChannelId graph recompile. Changing source kind/connection is a graph edit requiring accepted revisions and safe snapshot publication.
 
 ## 5. Player transport finite-state machine
@@ -93,8 +93,8 @@ States: `EMPTY` → `LOADING` → `READY` → `PLAYING` ↔ `PAUSED` → `STOPPE
 | Intent | Precondition | Action and authoritative ACK |
 |---|---|---|
 | `ADD_FILES` | File picker result accepted | Worker imports valid files; per-file results, bounded batch; no transport interruption |
-| `LOAD_TRACK` | Valid songId, file preflight | Async prepare new deck generation; if current PLAYING mark as NEXT only unless explicit `REPLACE_CURRENT` confirmation |
-| `PLAY` | READY/PAUSED + output eligibility | Publish safe play command at callback boundary; ACK resulting `PLAYING` with sample cursor and generation; if output unavailable distinguish `READY_NO_OUTPUT` |
+| `LOAD_TRACK` | Valid songId, file preflight | Single click stopped = READY; while playing = NEXT/preload without interrupt. Explicit double click/Play Now stages new generation and transitions with short de-click fade, no modal confirm |
+| `PLAY` | Selected valid song, DSP/PCM readiness; trusted output or one contextual endpoint choice | Serialize single `ensurePlayerFirstSound` control transaction: prebuffer, owned MUSIC ChannelId, typed PLAYER A, factory-owned route→existing verified MAIN, native accepted revision, callback transport + ramp, truthful ACK. No approval, separate ARM/MONITOR or second Start. Missing output stays PREPARING/READY not false audible Playing |
 | `PAUSE` | PLAYING | Ramp to zero then halt sample cursor; retain buffered/current item |
 | `STOP` | PLAYING/PAUSED | ≤20ms output ramp; reset to trim-start or user-configured cue; retain loaded song |
 | `SEEK` | STOPPED or Live Seek Lock off | Build new decoder/DSP cursor on worker, generation swap at safe boundary; never raw `setPosition` from callback |
@@ -104,7 +104,7 @@ States: `EMPTY` → `LOADING` → `READY` → `PLAYING` ↔ `PAUSED` → `STOPPE
 | `SOURCE_BIND` | Channel exists, graph valid | Native typed binding → accepted graph revision and deviceEpoch; rollback on reject |
 | `RELINK` | Missing song and file picker result | Identity/fingerprint check + update media reference; transport unaffected unless song presently missing |
 
-**Concurrent intents:** one serialized native writer per deck; monotonic `requestId`, `deckGeneration`, `libraryRevision`, `queueRevision`; drop/reject stale operations rather than reorder with timers. `PLAY` must not claim success while deck is LOADING or source not bound to any audible path; show `playing / not routed` separately if engine legitimately runs and current output is SOURCE ONLY.
+**Concurrent intents:** serialized native deck transport with requestId/deckGeneration/libraryRevision/queueRevision. First-sound coordinator is idempotent for 100x Play/Stop and bounded-retries only stale revision conflicts off-RT: never duplicate MUSIC channel, MAIN send or consume Player FIFO twice. True Playing is actual sample advancement; routeAudible and physicalOutputReady are independent native facts. Explicit SOURCE ONLY can play its source and meter while MAIN remains silent; offer one inline Connect to MAIN action and DO NOT automatically override it.
 
 **End behavior:** `STOP_AFTER_SONG` (default); `AUTO_NEXT` opt-in; `REPEAT_ONE` opt-in. `BREAK` boundary always stops unless specifically changed. Never treat selected row as a destructive play intent. Do not loop the last song to first silently.
 
@@ -196,3 +196,11 @@ Document invariants: stable song UUID, stable per-setlist entry ID; reference-co
 - **Open decisions requiring measured prototype, not preference debate:** time-stretch quality/CPU on 64-frame ASIO systems; optimal ring and DSP fade length; exact player meter tap (pre-fx vs post-fx vs both); last-output resume policy under audio device disarm; codec availability across OS.
 
 See [implementation workpack](workstreams/ARSON_PLAYER_IMPLEMENTATION_WORKPACK_20261109.md) for the order, exact stop/go acceptance and agent instructions.
+
+## 11. Smart first-sound orchestration — mandatory addition (2026-11-09)
+
+[Normative ADR](ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md) defines a **control-thread** `PlayerFirstSoundCoordinator` and persisted player-route provenance `FACTORY_DEFAULT_MAIN | USER_CUSTOM_ROUTE | USER_SOURCE_ONLY` (proposed type names). One user PLAY on a valid song must automatically create/reuse a dedicated ChannelId, bind PLAYER A, prepare accepted native PCM and **install factory MAIN WIRE once** if the output is already verified and the user has not changed the route. Do not build a second renderer/callback/UI route authority or fake pin. `requestId`, deviceEpoch/graphRevision and player generation guard race-safe idempotent compile/publish/rollback; ACK only after actually accepted PCM/transport.
+
+**Safety reconciliation:** Existing `ADR_DEVICE_INDEPENDENT_MIXER_SESSION_20261107.md` historically required a separate ARM after restart. The owner's newer requirement supersedes that extra step for fresh user PLAY **only** with exact same verified output identity/pins, while preserving unknown-device fail-closed physical safety. The action PLAY itself is the fresh operator intent; no surprise autoplay on restart and no silent different-speaker mapping. MAIN MUTE and user SOURCE ONLY/BUS are never overridden; missing physical output yields a single inline Choose output action, not a checkbox/Apply/second Start. Preload/index/metadata tasks happen off callback; no locks, disk I/O or FFT on ASIO callback.
+
+**Required readback:** channelProvisioning, routeOrigin, transportPlaying, routeAudible, physicalOutputReady, current song generation and a user-facing suggestedAction (CHOOSE_OUTPUT, LOCATE_FILE, CONNECT_MAIN). UI displays one actionable hint for real failures rather than low-level graph/admission codes. Native state truth is distinct from audible route truth. **Mandatory release gates:** B01–B13 in ADR and both audio proof + novice workflow screenshots; passing CTest alone is insufficient.

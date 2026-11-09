@@ -1,11 +1,11 @@
 # Agent Workpack — ArSon Player Native Music / Setlist
 **Date:** 2026-11-09 · **Scope:** executable vertical implementation plan from [PRD](../PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md) and [ARD](../ARD_ARSON_PLAYER_NATIVE_AUDIO_ARCHITECTURE_20261109.md) · **Status:** PLANNED, NOT IMPLEMENTED.
 
-> **Read the canonical repository [AGENTS.md](../../AGENTS.md) and [Smart CI](../SMART_CI_RUNNER_WORKFLOW.md) first.** Current documents are architectural handoff, not permission to merge untested code, overwrite another agent or publish an alpha release. Must fetch live main, active PRs, latest approved GUI assembly and exact runtime PCM before editing; do not rely on checkpoint SHA as perpetual authority.
+> **Read [AGENTS.md](../../AGENTS.md), [Smart CI](../SMART_CI_RUNNER_WORKFLOW.md), and newer [Zero-Friction Smart Workflow ADR](../ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md).** Binding owner requirement: import → Play → MUSIC PCM to verified MAIN automatically, no Lab, ARM, MONITOR, Apply, checkbox, routing approval or second Start. Preserve user-custom SOURCE ONLY/BUS and unknown physical-output safety. Design only; re-fetch current main/active PRs.
 
 ## 0. One-sentence delivery contract
 
-**One accepted native PLAYER A source**, serving predecoded/pitch-adjusted PCM to an existing ChannelId mixer strip in the ONE JUCE callback, with real waveform-independent transport/playlists and reliable native ACK/readback in exactly `/preview/`; no extra audio engine, hidden manual patch wizard or fake browser playing state.
+**Operator-first contract:** Drop music, click Play once, hear audio on same verified MAIN. Control-plane silently creates/reuses owned MUSIC ChannelId, binds PLAYER A and one factory MAIN WIRE, with real native ACK and one JUCE callback. No extra engine, manual patch, Lab, ARM/MONITOR or approval dialog.
 
 ## 1. Dependencies and commit strategy
 
@@ -13,7 +13,7 @@
 - **UI authority:** native compiled asset is derived from approved `/preview/` assembler; do not work in old `web/index.html`, ship a second player website, or overwrite user-approved mixer artwork.
 - **Concurrency:** PR #468 release alpha.6, #467 Harmony, and #469/#474/#476/#479 Vocal Throw are out-of-scope. Audit current status again; no cherry-pick or speculative conflict resolution. Preserve GUI/native product only after on-main reconciliation.
 - **Suggested source branch:** `feature/arson-player-native-source-m1-YYYYMMDD` from fresh main; integrate one meaningful vertical milestone and tests per PR. Next milestones can follow cleanly without fragmenting dozens of parallel PRs. Do not create a duplicate active integration branch if player implementation work already exists.
-- **No backend bypass:** no unverified logical wire readback, no demo native PCM, no auto-pick physical output, no silent ASIO device restart or Monitor toggles.
+- **No backend bypass, but smart defaults:** Auto-provision logical MUSIC→MAIN only on newly owned factory route and already verified output. Never switch to unknown physical hardware or override intentionally edited BUS/SOURCE ONLY, MAIN mute, or operator FX. Fresh Play on same verified output is sufficient internal authorization.
 
 ## 2. Milestone / independently testable vertical slices
 
@@ -24,25 +24,25 @@ Tasks:
 1. Re-fetch `main`, README, AGENTS, `src/Main.cpp` (JUCE callback & mixer command), `src/LiveAudioEngine.h`, `engine/core/DynamicPreparedMixerBlock.h`, `engine/core/DynamicNativeSessionPublisher.h`, `engine/core/DynamicChannelRoster.h`, `src/NativeMixerSessionDocument.h`, `integration/ApprovedNativeControlIntent.h`, `web/approved-native-bridge.js`, GUI builder scripts and relevant tests.
 2. Trace and document observed `PCM producer → graph compiler → render publisher → callback → device` path and any unused staging code; test baseline Hardware IN → CH → FX → WIRE → MAIN, SOURCE ONLY, independent secondary output, device epoch restart.
 3. Build a minimal deterministic offline virtual-source fixture to prove accepted graph can process a synthetic stereo stream on a ChannelId **without** fake physical pin indices. Verify legacy physical inputs bitwise unaffected.
-4. Choose strong typed `SourceBinding` and callback producer contract; prove two ChannelId consumers of same deck advance one stream once. Produce exact diff/CTest.
+4. Before UI, build deterministic pure `ensurePlayerFirstSound` planner and fixtures: new/existing MUSIC ownership; FACTORY vs user BUS/SOURCE ONLY; MAIN mute; verified vs unknown device; device epoch; repeated Play x100 creates no duplicate channel/edge. Then choose typed `SourceBinding`, prove one FIFO advance for multi-consumer and unchanged hardware PCM golden baseline.
 
-**Exit gate:** a deterministic native PCM sample fixture passes on existing graph, virtual source does not require ASIO pin, no new callback, no changed GUI or device. If P0 routing fails, log the blocker and fix root cause rather than building around it.
+**Exit gate:** legacy input PCM unaffected, native virtual source works, planner auto-provisions exactly one MUSIC→verified MAIN route; user custom routes remain; unknown device cannot be chosen silently. No extra callback or Lab, ARM, MONITOR, approval checkbox in intended operator journey.
 
 ### M1 — One truthful player, library & setlist (meaningful first product milestone)
 **Goal:** usable integrated player with WAV/MP3/FLAC verified formats and manual track transition, **no pitch GUI promise before DSP**.
 
 Native:
 1. Introduce `engine/player/PlayerContracts.h`, `PlayerTransportState.h`, `PreparedPlayerSource.h`, `SourceBindingPlan.h` (names may change if a better existing owner exists).
-2. Implement native `src/NativePlayerController.h`, decoder worker, bounded PCM ring, generation-safe play/pause/stop/load/seek/EOF, rate conversion and short ramps; integrate in **one existing mixer callback** via `playerDeck` SourceBinding. Create no second JUCE AudioDeviceManager.
+2. Implement native controller, decode worker and **PlayerFirstSoundCoordinator**: single Play prebuffers, creates/reuses MUSIC ChannelId, attaches PLAYER A, commits owned factory WIRE→already verified MAIN when not operator edited, then sample-boundary transport and fade; one existing callback, never another device manager.
 3. Establish thread and fault tests including decoder stall, rapid STOP/LOAD and rejected source selection; ensure no heap, disk, locks, waits, window, logs, plugin operation in callback.
 4. Add `PlayerMediaStore` versioned portable Library/Setlist storage and relink safety; default STOP_AFTER_SONG, separate next selection, never delete a source file.
-5. Add proposed player intents/snapshot to existing native WebView bridge with expected revisions / deck generation and no false-playing in demo.
+5. Extend native player intents/readback with graph/device/deck generation, `routeOrigin`, `routeAudible`, `physicalOutputReady` and one actionable inline fault. No fake Playing or admission/PATCH/ARM setup.
 
 UI:
 6. Extend the **approved Pages source and assembler** with toolbar `Player`, mini transport + compact non-modal left drawer, tabs SETLIST/LIBRARY/QUEUE, dense rows & +Music; simple transport current/next/ACK and intuitive error labels. Keep MAIN visible and one renderer.
-7. Use existing CSS token/premium hardware styles. Test responsive layout + pointer and native context menu; no bulky cards, giant bold fonts, or custom Chrome right click.
+7. Keep approved premium CSS: one Add Music/drop empty state, auto-generated setlist and Play controls; Library/Queue contextual, no huge cards, Lab mode, native context menu regression or checkbox wizard.
 
-**Exit gate:** 20-file import, save/reopen, manual NEXT, play/stop, 44.1/48k and SOURCE ONLY vs MAIN PCM evidence; progress and underruns read from actual render; mic ASIO unaffected; no demo audio masquerade. If PITCH/SPEED not ready, hide/disable them with explicit “coming after DSP QA”, never render inert working-looking controls.
+**Exit gate:** novice B01–B13: drop one song → one Play → native PCM via MUSIC→verified MAIN without PATCH, ARM, MONITOR, confirmation or second Start. 20-file auto-setlist; repeated Play/Stop x100 no duplicate route, SOURCE ONLY and BUS preserved, missing output one contextual selection; 44.1/48/96k, mic ASIO/decoder starvation tested. Omit pitch controls until DSP actually works.
 
 ### M2 — Pitch + speed with quality evidence
 **Goal:** native continuous -6…+6 semitone and 80…120% speed, independent of mic sample clock and with click-free change.
@@ -116,11 +116,11 @@ Measure: click samples (>chosen test threshold, disclose), pitch ratio in cents 
 - [ ] Actual fresh main, open PRs, approved GUI, accepted PCM authority and baseline read before edits.
 - [ ] Each milestone has one vertical test fixture *and* product-visible behavior, not just skeleton files and CSS.
 - [ ] No extra callback, WebAudio, browser audio, duplicate source graph, fake input pin or music loopback.
-- [ ] Every transport and player route action either ACKs accepted native state or rejects with specific fault.
-- [ ] SOURCE ONLY + dynamic bus/WIRE + VST3 + fader/solo/mute unchanged from accepted engine.
+- [ ] Play finishes owned MUSIC source/channel/default trusted MAIN routing and actual native transport ACK in one gesture, or provides one contextual actionable failure (not another ARM/Apply).
+- [ ] SOURCE ONLY/custom BUS/WIRE/VST3 and mute/solo remain authoritative; auto route only on factory-owned MUSIC ChannelId and verified MAIN; never select unknown hardware.
 - [ ] Dead or missing media does not block hardware and does not delete playlist entries.
 - [ ] Existing main mixer available and correct when Player pane is hidden.
-- [ ] Library/Setlist/Queue state consistent, persisted and replayed only where safe; restart never auto-PLAY/arm.
+- [ ] Library/Setlist/Queue persist, launch never auto-PLAY; fresh Play on exactly matching known output prepares internally without secondary ARM/START; new endpoint requires one contextual Choose output action.
 - [ ] Relative paths and exact source identity verified; no playback of an unrelated relinked file.
 - [ ] Audio block is allocation-free, no locks/disk/FFT/decoder/JS and cannot let worker starvation stall ASIO.
 - [ ] Visually fits user-approved `/preview/`, no huge cards, giant font, crowding, or displaced MAIN fader.
@@ -143,8 +143,12 @@ Implemented workflow + native audio proof:
 Unit/integration/Chromium gates with exact CI URLs/status:
 Physical FAT: PASS with evidence / PENDING / FAIL
 Known defects + rollback:
-No auto-ARM/second callback/source loss evidence:
+No surprise autoplay/unknown physical output/second callback/source loss evidence:
 Next atomic vertical milestone:
 ```
 
 Do not merge docs or implementation PR into alpha.6 release branch. If reviewer/CI protection disallows merge, leave scoped PR open with a concrete status rather than force.
+
+## 8. Binding beginner-first release gate (owner correction 2026-11-09)
+
+Read [Zero-Friction Smart Workflow ADR](../ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md) and execute B01–B13 before any product completion claim. M0 must test `ensurePlayerFirstSound` decision/planner and idempotency. M1 must prove actual drop single file → one Play → native PCM to owned MUSIC channel → trusted MAIN, without any manual PATCH/ARM/MONITOR/confirmation/second Start or Lab. Hardware identity remains fail-closed when new/unverified, and intentional SOURCE ONLY/BUS/MAIN MUTE remains sovereign. One actual /preview/ GUI and one ASIO callback only. Browser demo screenshots alone do not certify first sound.
