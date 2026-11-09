@@ -364,7 +364,7 @@ int main(){
     testDryAndBypass();testSoftKneeAndRuntimeEdits();
     testMultipleRatesAndIndependentChannels();
     testOptimizedMatchesLegacyStablePCM();
-    testRampSplitMatchesSingleSampleSchedule();
+    testAutomationMatchesSingleSampleSchedule();
     testManyInstancesCpuDiagnostic();
     std::puts("PASS: native zero-buffer compressor stereo linked / GR / parameter validation");
 }
