@@ -67,8 +67,16 @@ int main(){
     // ages out safely without touching physical routing/output authority.
     for(int i=0;i<950;++i) {
         float l[128]{},r[128]{};
-        bank(vocal,l,r,128);
+        for(int j=0;j<128;++j) {
+            const double t=static_cast<double>(i*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.20*std::sin(
+                6.28318530718*220.*t));
+        }
+        bank(vocal,l,r,128); // singer remains live during guide loss
+        for(int j=0;j<128;++j)
+            assert(std::isfinite(l[j])&&std::isfinite(r[j]));
     }
+    assert(live->observedNote()>=0); // no lead/pitch-analysis interruption
     assert(live->observedMusicKey()==-1);
     assert(live->effectiveKeyCode()==14); // music absent: manual D minor
     // Regression: resuming a missing music ChannelId must NOT reuse its
