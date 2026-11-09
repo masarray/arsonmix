@@ -411,6 +411,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
   current={track,slot,channelId:id,instanceId:null,
     boundEpoch:null,boundRevision:null};
+  showText(el("mxHChannel"),track.name+" · FX "+(slot+1));
   if(native()){
     mode="NATIVE";settings=fresh();
     hint("HARMONY · LOCATING ACCEPTED DSP");
@@ -421,7 +422,6 @@ window.ArSonMixNativeHarmony=Object.freeze({
     mode="DEMO";settings={...(demos.get(track.id+":"+slot)||fresh())};
     hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
   }
-  el("mxHChannel").textContent=track.name+" · FX "+(slot+1);
   root.hidden=false;refreshGuideSources();paint();
  },
  close(){root.hidden=true;}
@@ -479,7 +479,7 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
- if(root.hidden||!native()||!current?.instanceId)return;
+ if(root.hidden||!native()||!current)return;
  queueMicrotask(()=>{
    if(!reconcileBinding()){
      hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");
