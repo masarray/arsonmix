@@ -14,6 +14,7 @@
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
+#include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "DiagnosticTone.h"
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
@@ -1910,6 +1911,65 @@ public:
         }catch(...) {
             fail.error="NATIVE_HARMONY_PREPARE_EXCEPTION";return fail;
         }
+    }
+
+    // ArSon Vocal Throw: single native PCM graph, same insert leases, bypass,
+    // ChannelId topology and dry monitoring as EQ/Compressor.
+    LiveDryRoutingLab::NativeBusResult installNativeBuiltInVocalThrow(
+            std::uint64_t ep,std::uint64_t pcmRevision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+        LiveDryRoutingLab::NativeBusResult fail{};
+        fail.error="NATIVE_THROW_HOST_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(independent_.active()||!attached_||!device||
+           !directFence_.permitted()||secondaryOutput_.armed()||
+           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return fail;
+        if(ep!=dryRoutingLab_.epoch()){
+            fail.error="NATIVE_THROW_DEVICE_CHANGED";return fail;
+        }
+        const auto rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        if(!(rate>=8000.&&rate<=192000.)||
+           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
+            fail.error="NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT";return fail;
+        }
+        try {
+            auto processor=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
+            processor->prepareToPlay(rate,frames);
+            if(!processor->isReady()){
+                fail.error="NATIVE_THROW_PREPARE_REJECTED";return fail;
+            }
+            auto lease=std::make_shared<
+                armix::mixer::LiveChannelFxGraph::FxInstance>(
+                std::move(processor),
+                juce::String(armix::builtin_fx::VocalThrowProcessor::catalogIdentity),
+                "ArSon Vocal Throw",LiveDryRoutingLab::Block::hardFrameLimit);
+            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
+                rosterRevision,id,
+                armix::builtin_fx::VocalThrowProcessor::catalogIdentity,
+                std::move(lease),true);
+        } catch(...) {
+            fail.error="NATIVE_THROW_PREPARE_EXCEPTION";return fail;
+        }
+    }
+
+    bool selectNativeMusicTempoSource(std::uint64_t epoch,std::uint64_t revision,
+            armix::mixer::ChannelId musicChannel) noexcept {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||independent_.active()||!attached_||!directFence_.permitted())
+            return false;
+        return dryRoutingLab_.selectMusicTempoSource(epoch,revision,
+                    musicChannel,device->getCurrentSampleRate());
+    }
+    armix::mixer::NativeMusicTempoMonitor::State pollNativeMusicTempo() noexcept {
+        return dryRoutingLab_.pollMusicTempo();
+    }
+    template<class Callback>
+    void forEachNativeProcessor(Callback&& visit) const {
+        dryRoutingLab_.forEachNativeProcessor(std::forward<Callback>(visit));
     }
 
     // User-owned VST3 on a true dynamic ChannelId. Instantiation/scan/layout

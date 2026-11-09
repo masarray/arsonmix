@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" aria-hidden="true">
+<defs>
+ <radialGradient id="base" cx="35%" cy="27%" r="79%"><stop stop-color="#3c4049"/><stop offset=".47" stop-color="#282d36"/><stop offset=".79" stop-color="#1f242c"/><stop offset="1" stop-color="#0f141a"/></radialGradient>
+ <radialGradient id="inner" cx="40%" cy="32%" r="78%"><stop stop-color="#353a44"/><stop offset=".57" stop-color="#292e37"/><stop offset="1" stop-color="#1a1f26"/></radialGradient>
+ <linearGradient id="rim" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#626a76"/><stop offset=".35" stop-color="#262c35"/><stop offset=".7" stop-color="#101820"/><stop offset="1" stop-color="#555b66"/></linearGradient>
+ <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff9bff"/><stop offset=".45" stop-color="#dc24f1"/><stop offset="1" stop-color="#a60dd4"/></linearGradient>
+ <filter id="glow" x="-85%" y="-85%" width="270%" height="270%"><feGaussianBlur stdDeviation="4"/></filter>
+ <filter id="halo" x="-85%" y="-85%" width="270%" height="270%"><feGaussianBlur stdDeviation="8"/></filter>
+</defs>
+<!-- Faithful silhouette from the supplied Illustrator dark play/trigger control:
+     recessed circular housing, unmarked circular face, illuminated
+     triangular play sigil. Rebuilt as paths, not a synthetic text button. -->
+<circle cx="128" cy="128" r="124" fill="#13181e" opacity=".82"/>
+<circle cx="128" cy="128" r="121" fill="url(#rim)" stroke="#505866" stroke-width=".9"/>
+<circle cx="128" cy="128" r="116" fill="url(#base)" stroke="#151a22" stroke-width="1.8"/>
+
+<circle cx="128" cy="128" r="51" fill="#141922" stroke="#505660" stroke-width="1.1" opacity=".68"/>
+<circle cx="128" cy="128" r="47" fill="url(#inner)" stroke="#111820" stroke-width="2.3"/>
+<!-- The illuminated center is cropped pixel-for-pixel from the user's
+     4974954.ai Illustrator PDF at PDF rect x=53..77, y=100..124.
+     The PDF has rasterized masks; keep its original lighting in this tiny
+     embedded image, with editable vector hardware housing around it. -->
+<defs><clipPath id="aiLens"><circle cx="128" cy="128" r="46"/></clipPath></defs>
+<image x="66" y="66" width="124" height="124" clip-path="url(#aiLens)"
+ href="data:image/webp;base64,UklGRsoDAABXRUJQVlA4IL4DAADQFwCdASpgAGAAPikSh0MhoQleqlYMAUJQBmQIN9V+8n4pZhNyz/j/uk7V/mAfqJ/cfsY4RH6uf6r+V+wB+qvYAf2r/D9YB6Ev6m+qb/x/Ys/Wj9l/gM/VHSmImhDSHTVbn+j/0Y6C+en+Cvd3SoeJB1izoT3Zal/Fy6n58PUFZh0COEpRqgfZxsYNpqbQOGrLa5HC0+VkpTTLSDu3UUDceh5fLfIIeuyFvctjt3pmFM/FuNn1gab21UB2HUbCI7aXXW6m6KYgAP7/HrVrhqKvmzrNQiDU1bUbv1kbTgyMGRt/xqcSYB+ZoM4uKEuQWJ0IS5aeomwAPeqKFnFGtufKTKZCoruOfwBYx4ygtoxiE4n30qOw/+FB22VGCG3n5uxamyQaev4F0H9/nJugzkkQcwbZi/Tbgi+f/+rml1i9JiWsxh5jgPPbsi5Szi+KYGlHZPDE6ozUkNtdMl+dk6NVtdJ/skmwSN1ubrO+n67ydcbzw+lWW+3+Bo1T3kZAMTY3WHpqs2XvpovoW8Z+8y7FP0mQSH4DmjMNHTAf79WLoKV8cdfP19OmlZ1JxrUaqLXkBTuluOJgn43vj3WD3L/d5IOi/t3ve9Z2Y+fcTPAJ6h6XUFrVO5BmmMzEr4XmfrxxcCfp8FOLHAy8/i6yjcQylnMJ0eBGwbmQBbjXsJenDrj3SrL2+bQF4Vsx7VyBxQo6mvtQfVe7zOpWfmqtgb3raZXCSK99uNFilVFcNXv2zq2FaMqQVcB8uiE0FyuNc05UKl6uXdvVT15woaqlYBCJV/Cg553+lQkbh9HgUccrqMqo7h3UAqRmgEW43gc0b9Y1TOQuZphZ+dMi1nnj4NmKuZ6Sn7lstxaKCJdZ3zpNdhR56xeuOiezY01XKmenchMbbb05sd2+Il7Pobi8kHH0ZFxR4iIMTOuEciouxORXqim9ALGc/h4gdMZQ3dfHmjxBIMVPdaeb9l88J7/DhE7gpKtK2qGh7+gf/8xFaIVaWrA/i+1TluxT5OxQpKVylnYBuPP2Pu9h/Nwnc5omgvkUGk4FcFD9WR4Be0NOfj7SpzHHr2ptaht/iGnB3+BOftSynjH0ErgYvuNesms2Db+yeygoZ9bDHdt7AsXXjnbestzsvAcjWkbGZ6sp4JOjvc5m3hdi5UEscymToAuzL33qvo8bc9VQtIn3Da/a2VKvlB/1rVZjJtBAFHm9/70X7Ckcg8qB0o0u5zXPX9zNdkbP5hlzJXZtSBV1abzMCbX0XSFh+Fi0J+FVp5SGhgAA"/>
+</svg>
