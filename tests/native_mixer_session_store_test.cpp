@@ -107,6 +107,28 @@ static void outputOnlyNativeStartup() {
     assert(!mixer.admitChannelIdFromAcceptedM4(0,480,true));
     assert(mixer.admitChannelIdFromAcceptedM4(0,480,true,{},true));
     assert(mixer.hasExplicitRoute() && !mixer.hasVerifiedNativeSources());
+    assert(mixer.canReplacePristineStartupMixer());
+    // Startup automatically restores an existing .smix on precisely the
+    // same verified device. The saved Show must win over a never-edited
+    // SOURCE NONE starter, without a second publisher/audio callback.
+    {
+        auto saved=makeSession();
+        saved.binding={"Windows Audio","","Verified WASAPI fixture","0","3",48000.,480};
+        saved.request.physicalInputs=0;
+        saved.request.sources.clear();
+        saved.request.maxFrames=480;
+        saved.rackBypassed.clear();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault;
+        assert(armix::device::JuceActivePortSnapshot::capture(&playback,mixer.epoch(),pins,fault));
+        std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+        const auto prepare=NativeMixerSessionFxRestore::prepare(saved,{},formats,
+            48000.,480,pins.epoch,mixer.nativeGraphRevisionForRestore(),bank);
+        assert(prepare.isEmpty() && bank);
+        assert(mixer.restoreNativeMixerSession(saved,std::move(bank),pins,true,true).isEmpty());
+        assert(!mixer.canReplacePristineStartupMixer()); // saved Show is now authored
+        assert(mixer.hasExplicitRoute() && !mixer.hasVerifiedNativeSources());
+    }
     const auto native=mixer.nativeBusStatus();
     assert(native.isObject());
     const auto graph=static_cast<std::uint64_t>(
@@ -116,6 +138,7 @@ static void outputOnlyNativeStartup() {
     const auto add=mixer.createNativeInputChannel(mixer.epoch(),graph,roster,
         "No Microphone Track",ProcessingFormat::stereo,true);
     assert(add.accepted && !mixer.hasVerifiedNativeSources());
+    assert(!mixer.canReplacePristineStartupMixer()); // edited graph can never be replaced
     std::array<float,480> left{},right{};
     left.fill(1.f);right.fill(1.f); // must be cleared, not fake audio
     float* outputs[]={left.data(),right.data()};

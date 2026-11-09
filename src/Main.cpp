@@ -2217,11 +2217,22 @@ private:
             !usedPrevious && !retained &&
             doc.resumeMain.value_or(true);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
-        if(static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
+        const bool nativeAlreadyActive=static_cast<bool>(
+            live.getProperty("nativeChannelIdPcmActive",false));
+        // A fresh silent ChannelId starter is now admitted before the saved
+        // Show is inspected. Only THAT unmodified bootstrap may be replaced,
+        // and only by this automatic cold-start restore. User-authored FX,
+        // WIRE, BUS and fader edits must never be overwritten by late scan.
+        const bool replacePristineStartup=nativeAlreadyActive &&
+            startupOnSavedDevice && !retained && !usedPrevious &&
+            bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
+            engine_.hasPristineStartupMixer();
+        if(nativeAlreadyActive && !replacePristineStartup) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
-            return "Live native mixer already active; refusing to replace it";
+            return "Live native mixer already edited; refusing to replace it";
         }
-        error=engine_.restoreNativeMixerSession(std::move(doc),states,false,nullptr,bindingMode);
+        error=engine_.restoreNativeMixerSession(std::move(doc),states,
+            replacePristineStartup,nullptr,bindingMode);
         if(error.isNotEmpty()) {
             mixerSessionStatus_=error.contains("NEEDS_REMAP")
                 ?"NEEDS_REMAP":"RESTORE_REJECTED";

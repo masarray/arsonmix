@@ -1242,6 +1242,18 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  assert.equal(paints,2,"an actual VST instance identity change MUST re-project");
 });
 
+test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId",()=>{
+ const main=read('src/Main.cpp');
+ const engine=read('src/LiveAudioEngine.h');
+ const route=read('src/LiveDryRoutingLab.h');
+ assert.match(main,/startupOnSavedDevice && !retained && !usedPrevious/);
+ assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);
+ assert.match(main,/restoreNativeMixerSession\(std::move\(doc\),states,\s*replacePristineStartup/);
+ assert.match(engine,/dryRoutingLab_\.canReplacePristineStartupMixer\(\)/);
+ assert.match(route,/bool canReplacePristineStartupMixer\(\) const noexcept/);
+ assert.match(route,/!nativeControlDirty_ && nativeAccepted_\.fxOwners/);
+});
+
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);

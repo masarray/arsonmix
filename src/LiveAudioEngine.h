@@ -1592,6 +1592,11 @@ public:
         return {};
     }
 
+    // Cold-start restore ONLY: the installed native SOURCE NONE starter has
+    // never been edited, so the durable saved Show can safely take ownership.
+    bool hasPristineStartupMixer() const noexcept {
+        return dryRoutingLab_.canReplacePristineStartupMixer();
+    }
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     std::uint64_t outputArmRevision() const noexcept {return dryRoutingLab_.controlRevision();}

@@ -2438,6 +2438,18 @@ public:
         return channelIdPhysicalPcmActive() && nativeStructureLive_
             ?nativeAccepted_.pcmRevision:revision();
     }
+    // The first accepted SOURCE NONE ChannelId graph is a disposable
+    // bootstrap topology, not an authored Show. A persisted .smix may replace
+    // it once on cold start; any accepted FX, control, WIRE, BUS or source
+    // mutation immediately makes that replacement unsafe.
+    // CONTROL THREAD ONLY: hasAuthoredMixerContent traverses roster/FX.
+    bool canReplacePristineStartupMixer() const noexcept {
+        return channelIdPhysicalPcmActive() && sourceTemplate_.isObject() &&
+               !acceptedRoute_.isObject() && !nativeStructureLive_ &&
+               !nativeControlDirty_ && nativeAccepted_.fxOwners &&
+               nativeAccepted_.graph.request.sources.empty() &&
+               !hasAuthoredMixerContent();
+    }
     bool hasVerifiedNativeSources() const noexcept {
         return channelIdPhysicalPcmActive() && !nativeAccepted_.graph.request.sources.empty();
     }
