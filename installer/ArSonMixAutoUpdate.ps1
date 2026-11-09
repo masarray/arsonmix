@@ -186,6 +186,14 @@ function Get-InstalledImageStatus([object]$build) {
         return 'healthy'
     } catch {return 'unknown'}
 }
+function Test-InstalledRelease([string]$expectedSha) {
+    try {
+        if($expectedSha -cnotmatch '^[a-f0-9]{40}$'){return $false}
+        $manifest=Read-Json $provenance
+        return ([string]$manifest.sourceCommit -ceq $expectedSha -and
+                (Get-InstalledImageStatus $manifest) -ceq 'healthy')
+    } catch {return $false}
+}
 function Classify-InterruptedTransaction([string]$phase,[string]$actual,[string]$previous,[string]$candidate) {
     if(@('installing','installer-failed','health-failed') -cnotcontains $phase){return ''}
     if($previous -cmatch '^[a-f0-9]{40}$' -and $actual -ceq $previous){return 'previous-retained'}
@@ -288,9 +296,8 @@ function Restore-InstalledRelease([string]$sourceSha) {
     if(-not (Run-Installer $destination -AllowMissingExeRecovery)){
         throw 'Verified recovery installer was not accepted by Windows'
     }
-    if(-not (Test-Path -LiteralPath $exe -PathType Leaf) -or
-       [string](Read-Json $provenance).sourceCommit -cne $sourceSha){
-        throw 'Repair did not restore the expected release'
+    if(-not (Test-InstalledRelease $sourceSha)){
+        throw 'Repair did not restore exact authenticated EXE and source manifest'
     }
     if(-not (Launch-WithHealth $sourceSha)){
         throw 'Repaired application did not pass the GUI startup check'
@@ -339,7 +346,7 @@ function Launch-WithHealth([string]$expectedSha) {
             if($process.HasExited){return $false}
             if(Test-Path -LiteralPath $marker -PathType Leaf) {
                 if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY' -and
-                   (Read-Json $provenance).sourceCommit -ceq $expectedSha) {
+                   (Test-InstalledRelease $expectedSha)) {
                     Start-Sleep -Seconds 2
                     $process.Refresh()
                     return (-not $process.HasExited)
@@ -408,6 +415,21 @@ if($PolicySelfTest) {
             $exe=$fixturePath
             $validBuild=[pscustomobject]@{exeSha256=$goodHash;guiExeBytes=2097152}
             if((Get-InstalledImageStatus $validBuild) -cne 'healthy'){throw 'Healthy image rejected'}
+            $savedProvenance=$provenance
+            try {
+                $provenance=Join-Path $tmp 'BUILD_PROVENANCE.json'
+                $sampleSha='1'*40
+                [IO.File]::WriteAllText($provenance,(
+                    @{sourceCommit=$sampleSha;exeSha256=$goodHash;guiExeBytes=2097152} |
+                    ConvertTo-Json -Compress),[Text.Encoding]::UTF8)
+                if(-not (Test-InstalledRelease $sampleSha)){throw 'Authentic installed image rejected'}
+                if(Test-InstalledRelease ('2'*40)){throw 'Incorrect source accepted'}
+                [IO.File]::WriteAllText($provenance,(
+                    @{sourceCommit=$sampleSha;exeSha256=('0'*64);guiExeBytes=2097152} |
+                    ConvertTo-Json -Compress),[Text.Encoding]::UTF8)
+                if(Test-InstalledRelease $sampleSha){throw 'Same source with changed EXE accepted'}
+            } finally {$provenance=$savedProvenance}
+
             $validBuild.exeSha256='0'*64
             if((Get-InstalledImageStatus $validBuild) -cne 'damaged'){throw 'Tampered image not detected'}
             $validBuild.exeSha256=$goodHash
@@ -448,6 +470,7 @@ if($PolicySelfTest) {
     if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
     if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
     if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    Write-Output 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
 
@@ -691,7 +714,7 @@ try {
     $upgradeOK=Run-Installer $newPath
     $actualSha=''
     try {$actualSha=[string](Read-Json $provenance).sourceCommit} catch {}
-    if($upgradeOK -and $actualSha -ceq $new.target_commitish -and
+    if($upgradeOK -and (Test-InstalledRelease ([string]$new.target_commitish)) -and
        (Launch-WithHealth ([string]$new.target_commitish))) {
         $state.lastInstalledTag=$new.tag_name
         $state.phase='idle'
@@ -744,7 +767,7 @@ try {
     # Roll back by running the previously authenticated Inno installer,
     # not by copying arbitrary stale binaries over an installed application.
     if(Run-Installer $oldPath) {
-        if((Read-Json $provenance).sourceCommit -ceq $installedSha) {
+        if(Test-InstalledRelease $installedSha) {
             $state.phase='rolled-back'
             Write-State $state
             Log-Result ('ROLLED_BACK '+$new.tag_name)
