@@ -115,6 +115,28 @@ static void harmonicAndPhaseAmbiguity() {
     check(recovered.tempo.phaseLocked);
     check(recovered.dropped==0);
 }
+// A formerly locked backing can switch to densely accented but weak
+// percussion. This is enough rhythmic activity to score a candidate, yet
+// NOT enough evidence to keep the old beat grid or invent a new one.
+static void weakBusyGrooveMustReleaseBeatGrid() {
+    NativeMusicTempoMonitor tap;
+    check(tap.select(ChannelId{301},7,13,10000));
+    for(int n=0;n<1100;++n)renderWindow(tap,n,50,.78f);
+    auto locked=tap.poll(7,13);
+    check(locked.tempo.locked&&locked.tempo.phaseLocked);
+    for(int n=1100;n<2350;++n)renderWindow(tap,n,8,.10f);
+    const auto ambiguous=tap.poll(7,13);
+    check(ambiguous.active);
+    check(!ambiguous.tempo.locked && !ambiguous.tempo.phaseLocked);
+    check(ambiguous.tempo.confidence<.28f);
+    check(ambiguous.dropped==0);
+    // Once clear music returns the phase can be acquired again.
+    for(int n=2350;n<3550;++n)renderWindow(tap,n,50,.78f);
+    const auto recovered=tap.poll(7,13);
+    check(recovered.tempo.locked &&
+          std::abs(recovered.tempo.bpm-120.f)<=3.f);
+    check(recovered.tempo.phaseLocked);
+}
 static void steadyPadIsNotAClock() {
     NativeMusicTempoMonitor tap;
     check(tap.select(ChannelId{301},7,13,10000));
@@ -260,6 +282,7 @@ int main() {
     lockTempo(160);
     lockTempo(120,true);
     harmonicAndPhaseAmbiguity();
+    weakBusyGrooveMustReleaseBeatGrid();
     steadyPadIsNotAClock();
     failClosed();
     callbackClockEpochAndNestedScope();
