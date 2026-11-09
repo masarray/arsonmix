@@ -113,7 +113,7 @@ private:
         const float fractional=static_cast<float>(
             age-static_cast<double>(whole));
         const auto index=(writeIndex+Capacity-whole)&(Capacity-1);
-        return input[index]*(1.f-fraction)+
+        return input[index]*(1.f-fractional)+
                input[(index+Capacity-1)&(Capacity-1)]*fractional;
     }
     std::array<State,Voices> states_{};
