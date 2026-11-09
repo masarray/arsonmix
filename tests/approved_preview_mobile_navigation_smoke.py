@@ -126,6 +126,19 @@ async def verify_phone(browser, width: int, height: int):
         # contextual output chooser MUST NOT impersonate a device selector.
         assert await page.locator("#playerChooseOutput").is_hidden()
         assert await page.locator("#playerChooseOutput").count() == 1
+        # M2 controls are compact and must never create WebAudio or a
+        # competing callback on public /preview/ without native JUCE.
+        assert await page.locator("#playerKeyValue").inner_text() == "0 st"
+        assert await page.locator("#playerTempoValue").inner_text() == "100%"
+        for control in ("#playerKeyMinus","#playerKeyPlus",
+                        "#playerTempoMinus","#playerTempoPlus",
+                        "#playerPitchReset"):
+            button=page.locator(control)
+            bounds=await button.bounding_box()
+            assert bounds and bounds["x"]>=0 and bounds["x"]+bounds["width"]<=width+2
+        await page.locator("#playerKeyPlus").click()
+        assert "desktop app" in await page.locator("#playerFeedback").inner_text()
+        assert await page.locator("#playerKeyValue").inner_text() == "0 st"
         await page.locator("#playerAdd").click()
         feedback = await page.locator("#playerFeedback").inner_text()
         assert "desktop app" in feedback, ("public preview must not fake playback", feedback)

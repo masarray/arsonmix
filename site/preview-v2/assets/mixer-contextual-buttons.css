@@ -298,3 +298,29 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
  color:#baf2e4;white-space:nowrap;font-size:11px}
 #arsonPlayer #playerChooseOutput:hover{background:#286355}
 #arsonPlayer #playerChooseOutput[hidden]{display:none!important}
+
+/* M2 independent KEY/TEMPO: a single compact instrument-grade control row. */
+#arsonPlayer .ap-pitchtempo{display:flex;align-items:center;gap:6px;
+ padding:8px 11px 7px;border-bottom:1px solid #293f45;
+ background:#182a31;flex-wrap:nowrap;justify-content:space-between}
+#arsonPlayer .ap-pitchctrl{display:flex;align-items:center;gap:3px;
+ min-width:0;flex-shrink:1}
+#arsonPlayer .ap-pitchctrl span{font-size:10px;color:#8eb2b9;
+ letter-spacing:.035em;margin-right:2px}
+#arsonPlayer .ap-pitchctrl button{min-width:24px;width:24px;height:27px;
+ border:1px solid #3e5c64;border-radius:5px;background:#213c44;
+ color:#badfdf;line-height:1;font-size:14px}
+#arsonPlayer .ap-pitchctrl button:hover{background:#29515a}
+#arsonPlayer .ap-pitchctrl output{width:40px;text-align:center;
+ font-variant-numeric:tabular-nums;color:#8ee3c8;font-size:11px}
+#arsonPlayer #playerTempoValue{width:39px}
+#arsonPlayer .ap-reset{border:1px solid #3c555e;background:#20333d;
+ border-radius:5px;padding:5px 6px;font-size:10px;color:#a9bfc3}
+@media(max-width:390px){
+ #arsonPlayer .ap-pitchtempo{padding-left:7px;padding-right:7px;gap:3px}
+ #arsonPlayer .ap-pitchctrl{gap:2px}
+ #arsonPlayer .ap-pitchctrl span{font-size:9px}
+ #arsonPlayer .ap-pitchctrl output{width:35px}
+ #arsonPlayer #playerTempoValue{width:36px}
+ #arsonPlayer .ap-reset{padding:5px}
+}
