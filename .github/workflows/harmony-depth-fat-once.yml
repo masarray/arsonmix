@@ -1,0 +1,23 @@
+name: Harmony spatial-depth exact-SHA Windows qualification
+on:
+  push:
+    branches: [ci/harmony-depth-fat-c0cd439-20261109]
+    paths: ['.github/workflows/harmony-depth-fat-once.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch-native-builder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch immutable Harmony spatial build through canonical Windows CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_SHA: c0cd439f545724e9423102fd3ff7063028a36600
+        run: |
+          set -euo pipefail
+          current="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$current" = "$REQUIRED_SHA" || { echo "Harmony branch advanced; no stale build"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$REQUIRED_SHA"
+          echo "One exact-source spatial-depth Windows FAT dispatched"
