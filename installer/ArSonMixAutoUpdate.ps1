@@ -267,10 +267,14 @@ function Restore-InstalledRelease([string]$sourceSha) {
     foreach($release in $releases) {
         if([string]$release.target_commitish -ceq $sourceSha -and
            $null -ne (Approved-Installer $release)) {
-            if($null -eq $sourceRelease -or
-               (Compare-Version (Version-Key $release.tag_name)
-                                (Version-Key $sourceRelease.tag_name)) -gt 0){
+            if($null -eq $sourceRelease) {
                 $sourceRelease=$release
+            } else {
+                $candidateVersion=Version-Key ([string]$release.tag_name)
+                $chosenVersion=Version-Key ([string]$sourceRelease.tag_name)
+                if((Compare-Version $candidateVersion $chosenVersion) -gt 0) {
+                    $sourceRelease=$release
+                }
             }
         }
     }
