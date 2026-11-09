@@ -5252,7 +5252,10 @@ public:
         // not launch a competing installer.
         const bool innoIsClosing = installerShutdownEvent_ != nullptr
             && ::WaitForSingleObject (installerShutdownEvent_, 0) == WAIT_OBJECT_0;
-        if (!innoIsClosing)
+        // Avoid starting setup while Windows is signing out/shutting down:
+        // Windows may terminate installer midway through file replacement.
+        // A staged transaction remains available on the next normal exit.
+        if (!innoIsClosing && ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
             launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
         {
