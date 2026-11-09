@@ -137,10 +137,14 @@ public:
             if(envelope_<1.0e-25f)envelope_=0.f; // denormal guard
             const auto& s=current_.settings;
             float reduction=0.f;
+            // Exact ratio/knee law, but use native base-2 transcedentals:
+            // 20*log10(x) = 6.020599913279624*log2(x)
+            // exp(-ln(10)/20*GR) = exp2(-log2(10)/20*GR).
+            // A/B and PCM-reference tests bound numerical differences.
             // Quiet samples never require a costly log/exp. The gate is
             // exact after each edit and conservative throughout its slew.
             if(s.ratio>1.f&&envelope_>kneeGuardLinear_) {
-                const float above=20.f*std::log10(envelope_)-s.thresholdDb;
+                const float above=6.020599913279624f*std::log2(envelope_)-s.thresholdDb;
                 // While a parameter moves, preserve the legacy effective
                 // ratio exactly; when settled, use CONTROL-prepared scalars.
                 const bool slewing=rampRemaining_>0;
@@ -158,7 +162,7 @@ public:
             // Even at MIX=0 the detector and GR meter must advance, but
             // evaluating the unused wet attenuation is wasted CPU.
             const float attenuation=reduction>0.f&&s.mix>0.f?
-                std::exp(reduction*(-0.11512925464970229f)):1.f;
+                std::exp2(reduction*(-0.1660964047443681f)):1.f;
             const float wetGain=attenuation*current_.makeupGain;
             const float outputGain=(1.f-s.mix)+s.mix*wetGain;
             left[i]=dryL*outputGain;
