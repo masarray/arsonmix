@@ -251,7 +251,8 @@ function paint(){
    c.arcProgress.setAttribute("stroke-dasharray",dash);
   const visible=fraction>0?"1":"0";
   if(c.arcProgress.style.opacity!==visible)c.arcProgress.style.opacity=visible;
-  // CSS marker only: the owner-provided knob body remains transform:none.\n  c.pointer.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
+  // CSS marker only: the owner-provided knob body remains transform:none.
+  c.pointer.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
  }
  // Reference-style LCD transfer curve in a larger, dedicated graph region.
  // The meter bank sits on the right INSIDE the same black display.
