@@ -5,6 +5,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include "HarmonyStereoFold.h"
+#include "HarmonyPreparedTone.h"
+#include "HarmonyEnsembleSpace.h"
+#include "HarmonyDepthRoom.h"
+#include "HarmonyRoomFocus.h"
+#include "HarmonyStageSpatial.h"
+#include "HarmonyPitchSynchronous.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -61,6 +68,7 @@ inline float smoothGrainBlend(float phase) noexcept {
 class Engine final {
 public:
     static constexpr int maxVoices=5;
+    static constexpr int maxPitchLagsPerSlice=8; // fewer burst MACs per sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
@@ -72,6 +80,10 @@ public:
         latency_=2*grain_;
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
+        // 32 fixed time slices per analysis hop, but only 8 lags/slice.
+        // Even 32k input completes every supported 65-1200 Hz candidate
+        // before the next frozen PCM window. Distributes RT work on ASIO 64.
+        pitchSliceEvery_=std::max(1,detectEvery_/32);
         // Support bass through soprano fundamentals; keep Nyquist/finiteness guards.
         // Earlier 850 Hz cap failed to track high soprano notes (e.g. C6).
         lowLag_=std::max(8,static_cast<int>(rate/(decimation_*1200.)));
@@ -79,16 +91,39 @@ public:
         if(lowLag_>=highLag_||latency_+3*grain_>=static_cast<int>(capacity))return false;
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
+        // Independent grain clocks avoid five identical backing-singer seams.
+        // Lead correction keeps its neutral original phase.
+        for(int v=0;v<maxVoices;++v)
+            phase_[static_cast<std::size_t>(v)]=.157f*static_cast<float>(v);
         // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
+        if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
+           !ensemble_.prepare(rate)||!depthRoom_.prepare(rate)||
+            !stage_.prepare(rate)||!roomFocus_.prepare(rate))return false;
+        pitchIntervals_.prepare();
+        pitchSync_.reset();
+        pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
+        sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
+        pitchSyncReferenceEnabled_=true;
+        stageDepthReferenceEnabled_=true;
+        roomFocusReferenceEnabled_=true;
+        presenceReferenceEnabled_=true;
+        pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
-        detectCounter_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
+        detectCounter_=0;pitchSliceCounter_=0;pitchNextLag_=0;
+        pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
+        peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
+        noteHold_=0;currentNote_=-1;candidateNote_=-1;
         guideKey_=-1;guideScale_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
-        smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms continuous control ramp
+        smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
+        // Preserve the established 48k envelope while keeping durations
+        // constant at 32-192k. Exponents computed off the callback.
+        voicedGateAlpha_=static_cast<float>(1.-std::pow(1.-0.002,48000./rate));
+        ratioAlpha_=static_cast<float>(1.-std::pow(1.-0.00045,48000./rate));
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
     }
@@ -99,15 +134,28 @@ public:
         float gain=1.f;
         float mixL[maxVoices]{},mixR[maxVoices]{};
     };
-    static bool prepareSettings(const Settings& next,PreparedSettings& out) noexcept {
+    // Wet-only musical presence, prepared OFF the audio callback.
+    // 4-voice full Wet rises ~5 dB while dry lead and stage remain unchanged.
+    static float normalizedBackingWetAmplitude(float wet,int voices,
+                                               bool enhanced=true) noexcept {
+        if(!std::isfinite(wet)||wet<=0.f||voices<2||voices>maxVoices)return 0.f;
+        const float w=std::clamp(wet,0.f,1.f);
+        const float presence=enhanced?(.77f+.38f*w):.65f;
+        return w*presence/std::sqrt(static_cast<float>(voices));
+    }
+    static bool prepareSettings(const Settings& next,PreparedSettings& out,
+                                bool enhancedPresence=true) noexcept {
         if(!valid(next))return false;
         PreparedSettings prepared;
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
         constexpr float pi=3.14159265358979323846f;
-        const float amplitude=next.wet*0.65f/std::sqrt(static_cast<float>(next.voices));
+        const float amplitude=normalizedBackingWetAmplitude(
+            next.wet,next.voices,enhancedPresence);
         for(int v=0;v<next.voices;++v){
-            const float pan=next.space*(2.f*static_cast<float>(v)/(next.voices-1)-1.f);
+            // Width is moderate even at the center-friendly default Space.
+            const float pan=.72f*next.space*
+                (2.f*static_cast<float>(v)/(next.voices-1)-1.f);
             const float angle=(pan+1.f)*pi*0.25f;
             prepared.mixL[v]=amplitude*std::cos(angle);
             prepared.mixR[v]=amplitude*std::sin(angle);
@@ -129,6 +177,7 @@ public:
         }
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
+        targetSpace_=next.settings.space;
         targetGain_=next.gain;
         targetCorrection_=next.settings.correction?1.f:0.f;
         for(int v=0;v<maxVoices;++v){
@@ -136,7 +185,8 @@ public:
             targetMixR_[static_cast<std::size_t>(v)]=next.mixR[v];
         }
         if(!processed_){
-            wet_=targetWet_;color_=targetColor_;gain_=targetGain_;
+            wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
+            gain_=targetGain_;
             correctionMix_=targetCorrection_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
@@ -146,7 +196,8 @@ public:
     // FX mailbox invokes applyPreparedSettings(), never this trig/pow path.
     bool setSettings(const Settings& next) noexcept {
         PreparedSettings prepared;
-        return prepareSettings(next,prepared)&&applyPreparedSettings(prepared);
+        return prepareSettings(next,prepared,presenceReferenceEnabled_)&&
+               applyPreparedSettings(prepared);
     }
     // Called only on the existing audio callback from a separately selected
     // source channel. Invalid/ambiguous music always restores Manual Key.
@@ -167,8 +218,38 @@ public:
     }
     const Settings& settings() const noexcept{return settings_;}
     int latencySamples() const noexcept{return latency_;}
+    // Offline A/B harness only: retain the exact legacy granular reference
+    // without introducing a user-facing mode or changing serialized FX state.
+    // Production instances always default to the pitch-synchronous candidate.
+    void setPitchSynchronousCandidateForOfflineReference(bool enabled) noexcept {
+        pitchSyncReferenceEnabled_=enabled;
+    }
+    // Offline A/B only. Default live audio always uses the new stage; no
+    // ordinary GUI control, device transaction or saved setting is added.
+    void setStageDepthForOfflineReference(bool enabled) noexcept {
+        stageDepthReferenceEnabled_=enabled;
+    }
+    void setRoomFocusForOfflineReference(bool enabled) noexcept {
+        roomFocusReferenceEnabled_=enabled;
+    }
+    // Offline-only before process(): same native pitch, stage, room and wet,
+    // but old vs new normalized voice gain, for controlled vocal A/B.
+    bool setBackingPresenceForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        presenceReferenceEnabled_=enabled;
+        return setSettings(settings_);
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
+    int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
+    // Audio-owner telemetry; standalone CTest reads after process() returns.
+    int completedPitchAnalyses() const noexcept{return completedPitchAnalyses_;}
+    int abandonedPitchAnalyses() const noexcept{return abandonedPitchAnalyses_;}
+    // Wet changes are NEVER a hidden sidechain duck on the real lead. Only
+    // explicitly enabled Pitch Tune may substitute corrected lead samples.
+    static float leadPath(float original,float corrected,float correctionMix) noexcept {
+        return original*(1.f-correctionMix)+corrected*correctionMix;
+    }
     void process(float* l,float* r,int frames) noexcept {
         if(!l||!r||frames<=0||rate_<=0.)return;
         processed_=true;
@@ -178,6 +259,7 @@ public:
             const float a=smoothingAlpha_;
             wet_+=a*(targetWet_-wet_);
             color_+=a*(targetColor_-color_);
+            space_+=a*(targetSpace_-space_);
             gain_+=a*(targetGain_-gain_);
             correctionMix_+=a*(targetCorrection_-correctionMix_);
             for(int v=0;v<maxVoices;++v){
@@ -185,9 +267,12 @@ public:
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
                 mixR_[ix]+=a*(targetMixR_[ix]-mixR_[ix]);
             }
-            const float inputL=std::isfinite(l[i])?l[i]:0.f;
-            const float inputR=std::isfinite(r[i])?r[i]:0.f;
-            const float mono=0.5f*(inputL+inputR);
+            // Bound pathological IEEE PCM before adding it to grain/dry
+            // histories; output is already limited to +/-4 in this engine.
+            // Regular [-4,+4] sample parity and stereo polarity are exact.
+            const float inputL=std::clamp(std::isfinite(l[i])?l[i]:0.f,-4.f,4.f);
+            const float inputR=std::clamp(std::isfinite(r[i])?r[i]:0.f,-4.f,4.f);
+            const float mono=vocalFold_.process(inputL,inputR);
             left_[write_]=inputL;right_[write_]=inputR;mono_[write_]=mono;
             decimationLowpass_+=decimationAlpha_*(mono-decimationLowpass_);
             if(++downCounter_>=decimation_){
@@ -196,27 +281,85 @@ public:
                 downWrite_=(downWrite_+1)%decimated_.size();
                 ++downSeen_;
             }
-            if(++detectCounter_>=detectEvery_){detectCounter_=0;detectPitch();}
+            if(++detectCounter_>=detectEvery_){
+                detectCounter_=0;beginPitchAnalysis();
+            }
+            // Correlation search is spread across the existing sample
+            // callback: never evaluate all 175+ candidate lags at once.
+            // Every 64-sample ASIO period sees a bounded number of slices.
+            if(pitchActive_ && ++pitchSliceCounter_>=pitchSliceEvery_){
+                pitchSliceCounter_=0;continuePitchAnalysis();
+            }
             const float dryL=tap(left_,static_cast<float>(latency_));
             const float dryR=tap(right_,static_cast<float>(latency_));
-            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*0.002f;
+            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*voicedGateAlpha_;
+            // Compute the device-rate-correct filter coefficient once per
+            // active sample, not once for each of up to six shifters.
+            const float filterCoef=voicedGain_>0.00001f?
+                toneColor_.coefficient(color_):0.f;
             float lead=0.f;
             if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
-                lead=shifted(maxVoices,color_);
+                lead=shifted(maxVoices,filterCoef);
             const float leadBlend=correctionMix_*voicedGain_;
-            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
-            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
-            if(voicedGain_>0.00001f){
-                for(int v=0;v<maxVoices;++v){
-                    const auto ix=static_cast<std::size_t>(v);
-                    if(std::abs(mixL_[ix])+std::abs(mixR_[ix])<1.e-5f)continue;
-                    const float y=shifted(v,color_)*voicedGain_;
-                    outL+=y*mixL_[ix];outR+=y*mixR_[ix];
+            float outL=leadPath(dryL,lead,leadBlend);
+            float outR=leadPath(dryR,lead,leadBlend);
+            // Direct sound and reflections from backing singers only.
+            // Preserve the exact previous spatial gains in offline reference.
+            const auto stageGain=BackingStageSpatial::gains(space_);
+            const float backingDirect=stageDepthReferenceEnabled_?
+                stageGain.direct:1.f-.38f*space_;
+            const float earlyReturn=stageDepthReferenceEnabled_?
+                stageGain.early:.28f*space_;
+            float roomSendL=0.f,roomSendR=0.f;
+            for(int v=0;v<maxVoices;++v){
+                const auto ix=static_cast<std::size_t>(v);
+                const bool audible=voicedGain_>0.00001f&&
+                    std::abs(mixL_[ix])+std::abs(mixR_[ix])>=1.e-5f;
+                float voice=0.f;
+                if(audible){
+                    voice=shifted(v,ensemble_.timbreCoefficient(v,filterCoef),
+                                  ensemble_.arrivalSamples(v),
+                                  ensemble_.pitchRatio(v))*voicedGain_;
+                }
+                voice=ensemble_.shadeBacking(v,voice,space_);
+                const float reflection=ensemble_.exchangeReflection(v,voice);
+                const float second=ensemble_.secondReflection(v);
+                const float directL=voice*mixL_[ix],directR=voice*mixR_[ix];
+                const auto placed=stage_.place(v,voice,reflection,second,
+                                               mixL_[ix],mixR_[ix],space_);
+                if(stageDepthReferenceEnabled_){
+                    outL+=placed.directL*backingDirect+placed.earlyL*earlyReturn;
+                    outR+=placed.directR*backingDirect+placed.earlyR*earlyReturn;
+                    roomSendL+=placed.roomL;roomSendR+=placed.roomR;
+                }else{
+                    outL+=directL*backingDirect+
+                          reflection*mixR_[ix]*earlyReturn;
+                    outR+=directR*backingDirect+
+                          reflection*mixL_[ix]*earlyReturn;
+                    roomSendL+=directL;roomSendR+=directR;
                 }
             }
+            // One shared backing-only diffuse field. Both its input and
+            // audible return ramp with Space. Wet=0 gates its old tail on
+            // a smooth <=5 ms envelope while the room ring still decays.
+            // Room-only low-cut and musical tail bloom; lead remains untouched.
+            const float sendL=roomSendL*space_,sendR=roomSendR*space_;
+            const auto cleaned=roomFocus_.filterSend(sendL,sendR);
+            const auto room=depthRoom_.process(
+                roomFocusReferenceEnabled_?cleaned.left:sendL,
+                roomFocusReferenceEnabled_?cleaned.right:sendR);
+            const float roomGate=std::min(1.f,wet_*4.f);
+            const float lateReturn=(stageDepthReferenceEnabled_?
+                stageGain.late:.85f*space_)*roomGate;
+            const float focus=roomFocus_.returnGain(dryL,dryR,space_);
+            const float roomReturn=lateReturn*(roomFocusReferenceEnabled_?focus:1.f);
+            outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
+            ensemble_.advance(voiced_);
+            stage_.advance();
             write_=(write_+1)%capacity;
+            ++sampleClock_;
         }
     }
 private:
@@ -228,59 +371,109 @@ private:
         const auto a1=(a0+capacity-1)%capacity;
         return a[a0]*(1.f-f)+a[a1]*f;
     }
-    float shifted(int voice,float color) noexcept {
+    float shifted(int voice,float filterCoef,float arrival=0.f,
+                  float fineRatio=1.f) noexcept {
         float& currentRatio=ratio_[static_cast<std::size_t>(voice)];
-        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*0.00045f;
+        currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*ratioAlpha_;
+        const float effectiveRatio=std::clamp(currentRatio*fineRatio,.49f,2.01f);
         const float p=phase_[static_cast<std::size_t>(voice)];
         const float pB=p<0.5f?p+0.5f:p-0.5f;
-        const float delayA=2.f*grain_+(1.f-currentRatio)*p*grain_;
-        const float delayB=2.f*grain_+(1.f-currentRatio)*pB*grain_;
+        const float delayA=2.f*grain_+arrival+(1.f-effectiveRatio)*p*grain_;
+        const float delayB=2.f*grain_+arrival+(1.f-effectiveRatio)*pB*grain_;
         // Cubic smoothstep over the complementary two-grain windows.
         // Unlike the triangular seam, both endpoints have zero slope:
         // reduced grain-edge modulation without sin/cos in audio callback.
         const float w=smoothGrainBlend(p);
         float y=w*tap(mono_,delayA)+(1.f-w)*tap(mono_,delayB);
-        const float coef=0.07f+color*0.77f;
-        float& f=filtered_[static_cast<std::size_t>(voice)];
-        f+=coef*(y-f);y=f;
-        phase_[static_cast<std::size_t>(voice)]+=1.f/static_cast<float>(grain_);
-        if(phase_[static_cast<std::size_t>(voice)]>=1.f)
-            phase_[static_cast<std::size_t>(voice)]-=1.f;
+        const auto ix=static_cast<std::size_t>(voice);
+        float& f=filtered_[ix];
+        f+=filterCoef*(y-f);
+        // Voiced, periodic sources can use causal pitch-synchronous
+        // overlap-add. The exact source period is measured, not inferred
+        // from the harmony target. Uncertain/nonperiodic sounds retain the
+        // previous validated granular shifter with a bounded 12ms crossfade.
+        const bool confident=pitchSyncReferenceEnabled_&&voiced_&&sourceConfidence_>.82f&&
+                             sourcePeriodSamples_>=8.f;
+        PitchSynchronousVoice<capacity,maxVoices+1>::Output sync{};
+        if(confident)
+            sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
+                sourcePeriodSamples_,effectiveRatio,
+                static_cast<float>(latency_)+arrival);
+        float& colorState=pitchSyncFiltered_[ix];
+        colorState+=filterCoef*(sync.sample-colorState);
+        float& blend=pitchSyncBlend_[ix];
+        blend+=pitchSyncAlpha_*((confident&&sync.ready?1.f:0.f)-blend);
+        y=f*(1.f-blend)+colorState*blend;
+        phase_[ix]+=1.f/static_cast<float>(grain_);
+        if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
     }
-    void detectPitch() noexcept {
+    // Prepare one immutable, bounded pitch-analysis window every analysis hop.
+    // The subsequent 8-lag correlation slices cannot race PCM history writes:
+    // they only read the frozen fixed-size pitchWindow_.
+    void beginPitchAnalysis() noexcept {
+        if(pitchActive_)++abandonedPitchAnalyses_;
+        pitchActive_=false;
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
-        // Gather a contiguous fixed-size pitch window ONCE per analysis hop.
-        // Previously every candidate/lag re-indexed circular history in the
-        // inner O(lags * span) loop: unpredictable CPU peaks on tiny ASIO buffers.
-        std::array<float,span+231> samples{};
         auto ix=(downWrite_+decimated_.size()-1)%decimated_.size();
         for(int j=0;j<span+highLag_;++j){
-            samples[static_cast<std::size_t>(j)]=decimated_[ix];
+            pitchWindow_[static_cast<std::size_t>(j)]=decimated_[ix];
             ix=ix==0?decimated_.size()-1:ix-1;
         }
-        double energy=0.;
+        pitchEnergy_=0.;
         for(int j=0;j<span;++j){
-            const double x=samples[static_cast<std::size_t>(j)];
-            energy+=x*x;
+            const double x=pitchWindow_[static_cast<std::size_t>(j)];
+            pitchEnergy_+=x*x;
         }
-        if(energy/static_cast<double>(span)<1.e-6){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+        if(pitchEnergy_/static_cast<double>(span)<1.e-6){
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;
+            return;
         }
-        float best=-1.f;int bestLag=0;
-        std::array<float,231> correlations{};
-        for(int lag=lowLag_;lag<=highLag_;++lag){
-            double xy=0.,yy=0.;
-            for(int j=0;j<span;++j){
-                const double x=samples[static_cast<std::size_t>(j)];
-                const double y=samples[static_cast<std::size_t>(j+lag)];
-                xy+=x*y;yy+=y*y;
+        pitchCorrelations_.fill(0.f);
+        pitchLagEnergy_=0.;
+        for(int j=0;j<span;++j){
+            const double y=pitchWindow_[static_cast<std::size_t>(j+lowLag_)];
+            pitchLagEnergy_+=y*y;
+        }
+        pitchBest_=-1.f;pitchBestLag_=0;pitchNextLag_=lowLag_;
+        pitchSliceCounter_=0;
+        pitchActive_=true;
+    }
+    void continuePitchAnalysis() noexcept {
+        if(!pitchActive_)return;
+        constexpr int span=160;
+        const int endLag=std::min(highLag_,pitchNextLag_+maxPitchLagsPerSlice-1);
+        const int work=endLag-pitchNextLag_+1;
+        peakPitchLagWork_=std::max(peakPitchLagWork_,work);
+        for(int lag=pitchNextLag_;lag<=endLag;++lag){
+            if(lag>lowLag_){
+                const double leaving=pitchWindow_[static_cast<std::size_t>(lag-1)];
+                const double entering=pitchWindow_[static_cast<std::size_t>(span+lag-1)];
+                pitchLagEnergy_+=entering*entering-leaving*leaving;
             }
-            const float correlation=static_cast<float>(xy/std::sqrt(energy*yy+1.e-14));
-            correlations[static_cast<std::size_t>(lag)]=correlation;
-            if(correlation>best){best=correlation;bestLag=lag;}
+            double xy=0.;
+            for(int j=0;j<span;++j){
+                const double x=pitchWindow_[static_cast<std::size_t>(j)];
+                const double y=pitchWindow_[static_cast<std::size_t>(j+lag)];
+                xy+=x*y;
+            }
+            const float correlation=static_cast<float>(
+                xy/std::sqrt(pitchEnergy_*std::max(0.,pitchLagEnergy_)+1.e-14));
+            pitchCorrelations_[static_cast<std::size_t>(lag)]=correlation;
+            if(correlation>pitchBest_){pitchBest_=correlation;pitchBestLag_=lag;}
         }
+        pitchNextLag_=endLag+1;
+        if(pitchNextLag_>highLag_){
+            pitchActive_=false;
+            ++completedPitchAnalyses_;
+            finishPitchAnalysis();
+        }
+    }
+    void finishPitchAnalysis() noexcept {
+        const auto& correlations=pitchCorrelations_;
+        float best=pitchBest_;
+        int bestLag=pitchBestLag_;
         // Prefer shortest strong period rather than an octave-multiple peak.
         if(best>0.77f){
             for(int lag=lowLag_;lag<=highLag_;++lag){
@@ -290,7 +483,7 @@ private:
             }
         }
         if(bestLag==0||best<=0.77f){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
         // Three-point peak interpolation reduces integer-lag tuning steps,
         // especially at the high end of the supported singing range.
@@ -306,7 +499,7 @@ private:
         const float hz=static_cast<float>(rate_)/(decimation_*lag);
         const float midi=69.f+12.f*std::log2(hz/440.f);
         if(!std::isfinite(midi)||midi<31.f||midi>96.f){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
         const int activeKey=effectiveKey(),activeScale=effectiveScale();
         int degree=nearestDegree(midi,activeKey,activeScale);
@@ -323,29 +516,65 @@ private:
         // do not generate provisional harmony on a single noisy transient.
         if(noteHold_<2)return;
         currentNote_=note;voiced_=true;
+        const float newPeriod=static_cast<float>(rate_/hz);
+        if(sourcePeriodSamples_>0.f&&
+           std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
+            pitchSync_.reset();pitchSyncBlend_.fill(0.f);
+            pitchSyncFiltered_.fill(0.f);
+        }
+        sourcePeriodSamples_=newPeriod;
+        sourceConfidence_=std::clamp(best,0.f,1.f);
         // Fifth harmony voice is a lower sixth in key; keep each voice
         // independent and normalize its level against the total count.
+        // One fractional-pitch exponent per analysis hop; each harmony
+        // interval is an integer number of semitones in the chosen scale.
+        // Five previous pow() calls move to the CONTROL prepared LUT.
+        const float baseRatio=std::pow(2.f,(note-midi)/12.f);
         constexpr std::array<int,maxVoices> intervals{{2,4,-2,6,-4}};
         for(int v=0;v<maxVoices;++v){
             const int target=noteAt(degree+intervals[static_cast<std::size_t>(v)],
                                     activeKey,activeScale);
             targetRatio_[static_cast<std::size_t>(v)]=std::clamp(
-                std::pow(2.f,(target-midi)/12.f),0.50f,2.0f);
+                baseRatio*pitchIntervals_.ratio(target-note),0.50f,2.0f);
         }
-        targetRatio_[maxVoices]=std::clamp(std::pow(2.f,(note-midi)/12.f),0.75f,1.34f);
+        targetRatio_[maxVoices]=std::clamp(baseRatio,0.75f,1.34f);
     }
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
     int downCounter_=0,detectCounter_=0;
+    int pitchSliceEvery_=1,pitchSliceCounter_=0,pitchNextLag_=0;
+    int pitchBestLag_=0,peakPitchLagWork_=0;
+    int completedPitchAnalyses_=0,abandonedPitchAnalyses_=0;
+    bool pitchActive_=false;
+    float pitchBest_=-1.f;
+    double pitchEnergy_=0.,pitchLagEnergy_=0.;
+    // Fixed PCM snapshots; no allocation or variable work on the callback.
+    std::array<float,160+231> pitchWindow_{};
+    std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;
     bool voiced_=false;float voicedGain_=0.f;
     bool processed_=false;
-    float smoothingAlpha_=1.f;
+    float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
+    float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
+    std::uint64_t sampleClock_=0;
+    bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
+    bool roomFocusReferenceEnabled_=true;
+    bool presenceReferenceEnabled_=true;
+    std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
+    float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
+    StereoPhaseSafeFold vocalFold_{};
+    RateStableColor toneColor_{};
+    PreparedPitchIntervals pitchIntervals_{};
+    EnsembleSpace ensemble_{};
+    BackingDepthRoom depthRoom_{};
+    BackingStageSpatial stage_{};
+    BackingRoomFocus roomFocus_{};
+    PitchSynchronousVoice<capacity,maxVoices+1> pitchSync_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};

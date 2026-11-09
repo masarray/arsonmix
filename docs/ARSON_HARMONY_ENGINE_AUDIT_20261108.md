@@ -49,3 +49,67 @@ A 1536-sample lookback at 48 kHz is **32 ms DSP delay**, before device input + o
 - Rubber Band v4 technical docs expose formant options and exact latency API, but licensing, ASIO callback suitability and measured overhead must be independently assessed; do not add by assumption.
 
 **Status:** engineering candidate only; PR stays Draft pending exact-HEAD qualification and physical vocal FAT.
+
+## 2026-11-09 follow-up — pitch CPU and measurable callback budget (post-merge)
+
+- Roll the shifted window's energy from one candidate lag to the next. Keep the existing dot-product, confidence threshold, quantizer and FX/PDC/GUI contracts. Each adjacent lag changes by one outgoing + one incoming squared sample instead of recomputing 160 squares. Only floating-point rounding may differ.
+- Extend deterministic C++ PCM regressions to a multi-harmonic A2 sample with 64/128/257-frame chunks. Existing E2/C6, dry-latency alignment, automation and music-guide tests remain in force.
+- Add `NativeHarmonySyntheticCallbackCpuProfile` to CTest. Synthetic engine-only p50/p95/p99/max data covers 48 kHz (64/128/256 samples), 96 kHz (128 samples), with 2/5 voices. Timing is recorded only outside engine->process(), but Windows runner contention makes absolute timing unsuitable for a CI hard gate.
+- No quantitative speedup claim without controlled before/after on one machine. No ASIO driver, JUCE graph, real-world multichannel CPU, formant quality or ear monitoring is measured by this synthetic profile. Physical singer FAT remains release blocking.
+
+## 2026-11-09 P0 bounded realtime engine milestone
+
+**Release scope**: Stable 48-kHz 1536-sample (32ms) DSP lookback and exact native PDC remain unchanged until recorded singing/listening establishes a safe lower-latency algorithm. No experimental formant shifter or hidden direct monitor path is enabled merely to advertise latency gains.
+
+- Move pitch autocorrelation off one large sample spike: snapshot a fixed decimated window every ~6.7ms, process at most 32 candidate lags per sample-scheduled slice, finish before the next analysis window. All snapshots and per-instance state are fixed-size, and graph/audio ownership is unchanged. This reduces the worst-case single-sample analysis work even at ASIO 64.
+- Keep the sliding lagged energy improvement from previous #485, preserving confidence thresholds, song key readback, five-voice controls and existing tests.
+- Recompute voiced gate and ratio smoothing coefficients on `prepare(rate)` only so physical time constants remain the same across 32–192kHz device reopen; 48kHz response stays calibrated to the earlier engine.
+- Enforce deterministic output for identical stereo singing PCM across 64/127/256 sample callback partitioning and instrument the maximum completed pitch-lag work per sample. Retain all prior E2–C6, cross-channel Music Key and dry 192k latency tests.
+- The synthetic engine-only CPU profile is diagnostic, not a hardware underrun oracle. Next **non-automatable** P0 gate: independent actual Windows ASIO interface, human singing + recorded dry/wet FFT/formant comparison, 48/96k with 64/128/256 periods and 2–5 voices for 30 minutes; callback p95/p99/max, driver XRUNs and measured loopback round trip must be documented.
+- Formant-preserving pitch synchronous synthesis (TD-PSOLA / equivalent) remains a separate replaceable shifter milestone: it must be verified against consonants, onset/off pitch, male/female vowels and CPU/latency tradeoffs before becoming audible default. Never claim today's granular shifter preserves formants.
+
+Project status: P0 **realtime boundedness implementation** awaiting exact-HEAD Windows CTest and singer FAT; not a final professional-quality or latency qualification.
+
+## 2026-11-09 P1 — stereo phase-resilient Harmony analysis
+
+Both `HarmonyDsp` vocal analysis/grain source and the cross-ChannelId `MusicKeyDetector` used `0.5*(L+R)`. Valid `L=-R` PCM from an extreme stereo widener or polarity-inverting source disappeared completely from both. The read-only music source remained audible elsewhere but Harmony incorrectly fell back to Manual.
+
+`StereoPhaseSafeFold.h` now provides a **per-instance, callback-owned, constant-work** fold with precomputed 20ms polarity evidence and 15ms smoothed recovery, strict -0.78 engage / -0.55 release hysteresis, silence release, and stereo analysis-only polarity repair. Ordinary coherent stereo keeps the existing sum. Neither dry stereo, audio routing, FX rack, SPSC schema, 2–5 voices, output device, declared latency nor GUI changes. No heap, locks, timers or per-sample trigonometry.
+
+PCM regressions: anti-phase singer A3 and nonzero five-voice harmony at 48/96k; anti-phase music C major at 48/96k, silence/Manual fallback; real native other-ChannelId antiphase A-minor guide with read-only source samples, plus preexisting in-phase, rekey, block parity, PDC and state migration. This only prevents destructive analysis cancellation, it is *not* formant preservation or ASIO/ear latency certification. Physical singer FAT remains open.
+
+## 2026-11-09 P0/P1/P2 tone and CPU milestone — exact speaker-independent tests
+
+**P0 boundedness**: Preserve exactly the native two-grain shifter's 1536 samples of 48k lookback and its 32-lag-per-slice pitch work. Do not promise latency reduction, physical ASIO stability or true formant preservation without human singing and measured loopback; this commit instead ensures that deterministic pitch ratios and timbral control stay safe across devices.
+
+**P1 tone parity**: Extract `RateStableColor` (257 precomputed floats/instance). The original 48k one-pole coefficient `0.07 + color*0.77` is retained within float precision; at 32, 44.1, 96, 192k convert that same attenuation to its equivalent physical time. The smoothing envelope remains separate. Lookup/interpolation occurs only once per active processing sample and is shared across all active harmonies plus lead correction. Control-thread `prepare()` alone uses `std::pow`. Tests compare 10ms decay consistency across all five device rates and seven Color settings.
+
+**P2 realtime hot path**: Five extra `pow(2, semitones/12)` calls per pitch detection hop were replaced with a 49-entry immutable, off-callback prepared interval ratio table and one reference ratio exponent. Precomputed semitone intervals are combined by multiplication, with output clamp retained. Exhaustive deterministic test covers 12 keys, both scales, 71 degrees, five detunes and all five voice intervals (approximately 42,600 ratios). Maximum deviation from the former formula is below `1e-6` absolute in tests. No new state packets, allocations, locks, threads, routed audio, FX slot changes or GUI code.
+
+**Release gate**: This is source-level algorithmic hardening; the CI synthetic CPU profile is diagnostic only. Additional real voice/female/male formant comparisons and 64/128/256 ASIO buffer loopback/driver XRUN evidence remain mandatory.
+
+## 2026-11-09 P0 bounded-pitch work and hostile PCM follow-up
+
+**Actual source-level issue:** 32 candidate lags × 160 dot-product taps were still evaluated in a single callback sample, causing an avoidable periodic CPU spike even when the average synthetic CPU looked acceptable. Reducing the per-sample slice width without shortening cadence would cause silent abandoned pitch windows. This checkpoint changes BOTH: `maxPitchLagsPerSlice=8` and `pitchSliceEvery_=detectEvery_/32`. Total candidate-lag dot products and 48k grain/PCM/PDC are unchanged. Every snapshot finishes with headroom before the next analysis hop on all 32–192k supported sample rates, with separate completed/abandoned window counters for test-only diagnostics.
+
+**P0 hostile PCM fail-closed:** Native input guards now clip finite >4.0f amplitude before the internal dry/grain histories (the engine already clamps all output to +/-4.0f); NaN and infinity still become silence. `StereoPhaseSafeFold` returns the bounded fold it actually uses for correlation, instead of computing an unbounded sum after clipping evidence. This prevents a host supplying finite near-FLT_MAX PCM from poisoning Music Guide or vocal analysis with infinity. Ordinary valid PCM [-4,+4], channel polarity, dry PDC, Music Track read-only routing and GUI are untouched.
+
+**Qualification:** 5 sample rates (32/44.1/48/96/192k), 3 callback partitions (64/127/256 frames), deterministic A3 voiced note, complete correlation windows/no abandoned windows and <=8 candidate lags per slice; real 2/5-voice hostile IEEE PCM and direct near-FLT_MAX stereo guide. The existing 48k blockwise PCM parity, low bass/high soprano, 48/192k stereo dry and 1536-sample PDC regression remain active. Hardware ASIO and spectral/formant gate remain unverified; no claim of a completed P0 low-latency/formant engine.
+
+## 2026-11-09 P0 Harmony native-key and singer telemetry UX
+
+The field failure had two independent operator problems: (1) stale modeless-editor
+control lease on graph/device change was resolved by accepted-graph auto-rebind,
+and (2) native pitch `observedNote` was in the authoritative C++ snapshot but
+never visible to the operator in Manual Key, which only polled Music mode.
+The editor now uses the EXISTING 12Hz console tick for <=2Hz readback in
+both modes, showing `TRACKING A3`/ `WAITING VOICE`/ `DSP SYNCING`
+from the true PCM-owner `observedNote`, never inferred from the UI key.
+Key gestures outline the requested letter immediately but the accepted
+key/LCD still changes ONLY after the native DSP ACK and matching readback.
+The status reports `KEY C#m - AWAITING DSP ACK` while pending. One
+small footer string and a one-pixel indicator; no graph routing, FX
+parameter schema, audio callback work or polling timer added. Real Chromium
+test additionally checks manual-mode liveness, immediate gesture indicator
+and its disappearance after accepted readback. Vocal formant/spatial realism
+remains unproven and separate from this GUI feedback milestone.

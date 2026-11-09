@@ -46,6 +46,30 @@ int main(){
         need(estimate.valid()&&estimate.key==9&&estimate.scale==1,
              "A-minor music track did not identify natural minor");
         am.reset();need(!am.estimate().valid(),"channel retarget retained stale key");
+        // Extreme polarity-inverted stereo music still contains C-major PCM.
+        MusicKeyDetector opposed;
+        need(opposed.prepare(rate),"opposed music prepare failed");
+        const int frames=static_cast<int>(rate*3.5);
+        std::vector<float> invL(static_cast<std::size_t>(frames));
+        std::vector<float> invR(static_cast<std::size_t>(frames));
+        for(int i=0;i<frames;++i){
+            const double t=static_cast<double>(i)/rate;
+            const float v=static_cast<float>(.09*(
+                std::sin(6.283185307179586*261.625565*t)+
+                std::sin(6.283185307179586*329.627557*t)+
+                std::sin(6.283185307179586*391.995436*t)));
+            invL[static_cast<std::size_t>(i)]=v;
+            invR[static_cast<std::size_t>(i)]=-v;
+        }
+        for(int i=0;i<frames;i+=64)
+            opposed.process(invL.data()+i,invR.data()+i,
+                            std::min(64,frames-i));
+        estimate=opposed.estimate();
+        need(estimate.valid()&&estimate.key==0&&estimate.scale==0,
+             "opposed stereo music failed C-major evidence");
+        sendChord(opposed,rate,{0.},1.4);
+        need(!opposed.estimate().valid(),"opposed source retained stale key");
+
     }
     // Manual Key stays unchanged when the music detector has no evidence;
     // selection is an audio-thread-only, valid other-ChannelId control packet.

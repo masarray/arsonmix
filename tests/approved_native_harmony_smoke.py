@@ -25,15 +25,15 @@ def last_action(page,kind):
     return actions[-1]
 
 def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
-             request=None):
+             request=None,instance=INSTANCE,observed=-1):
     action=request or last_action(page,"nativeHarmonySnapshot")
     packet={
         "requestId":action["requestId"],
-        "channelId":SOURCE,"instanceId":INSTANCE,"status":"ACCEPTED",
+        "channelId":SOURCE,"instanceId":instance,"status":"ACCEPTED",
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
         "schemaVersion":2,"sampleRate":48000,"latencySamples":1536,
-        "settings":copy.deepcopy(values),"observedNote":-1,
+        "settings":copy.deepcopy(values),"observedNote":observed,
         "guideDetectedKey":detected[0],"guideDetectedScale":detected[1],
         "guideConfidence":0.75 if detected[0]>=0 else 0.0,
         "effectiveKey":key,"effectiveScale":scale,
@@ -104,7 +104,8 @@ def main():
                 # Native LCD must not fabricate manual/detected effective key
                 # until the exact instance-scoped DSP snapshot arrives.
                 assert page.locator("#mxHKeyReadout").inner_text()=="—"
-                readback(page,state,DEFAULT,0,0)
+                readback(page,state,DEFAULT,0,0,observed=57)
+                assert page.locator("#mxHTracking").inner_text()=="TRACKING A3"
                 assert page.locator("#mxHKeyReadout").inner_text()=="C"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
@@ -158,9 +159,14 @@ def main():
                 assert manual["settings"]["guideMode"]==0
                 assert manual["settings"]["guideChannelId"]=="0"
                 assert page.locator("#mxHKeyReadout").inner_text()=="Am"
+                assert "AWAITING DSP ACK" in page.locator("#mxHStatus").inner_text()
+                assert "queued" in (page.locator(
+                    '.mx-harm-note[data-key="7"]').get_attribute("class") or "")
                 locked={**DEFAULT,"key":7}
                 apply_edit(page,state,locked,7,0)
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                assert "queued" not in (page.locator(
+                    '.mx-harm-note[data-key="7"]').get_attribute("class") or "")
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
                 # G is a literal circle, subtly larger than unselected notes.
@@ -296,7 +302,155 @@ def main():
                 readback(page,state,selected,9,1,detected=(9,1),
                          request=old_poll)
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                # Manual Key also observes audio-owner tracking on existing
+                # console ticks. Never infer singing from a UI button state.
+                # The preceding bypass-readback tests may have left ONE
+                # outstanding (throttled) snapshot request. Complete it as
+                # native JUCE would, rather than asserting a second request
+                # within the in-flight 2500ms readback fence.
+                latest_snap=last_action(page,"nativeHarmonySnapshot")
+                readback(page,state,values,7,0,request=latest_snap)
+                before=len(page.evaluate(
+                    "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
+                # Native host produces ~12 console ticks per second, not one
+                # artificially selected 530ms tick after an arbitrary prior
+                # music readback. Exercise the real tick cadence for 2s.
+                # A single tick may legitimately be coalesced or queued.
+                after=before
+                for _ in range(24):
+                    emit(page,"arMixConsoleSnapshot",state)
+                    after=len(page.evaluate(
+                        "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
+                    if after>before:break
+                    page.wait_for_timeout(85)
+                assert after>before,("no Manual Key native tracking poll",
+                    page.locator("#mxHStatus").inner_text(),
+                    page.locator("#mxHTracking").inner_text())
+                monitor=last_action(page,"nativeHarmonySnapshot")
+                readback(page,state,changed,7,0,request=monitor,observed=60)
+                assert page.locator("#mxHTracking").inner_text()=="TRACKING C4"
+                # Reproduce the field screenshot: singer DSP continues playing
+                # while a native device/graph revision changes under an open
+                # Harmony editor. It MUST auto-rebind; no user reopen/wizard.
+                if width==1366:
+                    accepted={**changed,"voices":5}
+                    def push_graph():
+                        state["mixerSession"]["channels"]=copy.deepcopy(
+                            state["graph"]["channels"])
+                        emit(page,"arMixConsoleSnapshot",state)
+                    def bump():
+                        graph=state["graph"]
+                        graph["revision"]=str(int(graph["revision"])+1)
+                    def await_snap(instance,slot):
+                        page.wait_for_function("""arg=>window.__actions.some(x=>
+                            x.action==='nativeHarmonySnapshot' &&
+                            x.graphRevision===arg.revision &&
+                            x.instanceId===arg.instance && x.slot===arg.slot)""",
+                            arg={"revision":state["graph"]["revision"],
+                                 "instance":instance,"slot":slot})
+                        result=last_action(page,"nativeHarmonySnapshot")
+                        assert result["instanceId"]==instance,result
+                        assert result["slot"]==slot,result
+                    bump();push_graph()
+                    await_snap(INSTANCE,0)
+                    assert "REOPEN" not in page.locator("#mxHStatus").inner_text()
+                    readback(page,state,accepted,7,0)
+                    page.locator('[data-voices="4"]').click()
+                    write=last_action(page,"nativeHarmonySetSettings")
+                    assert write["graphRevision"]==state["graph"]["revision"]
+                    accepted={**accepted,"voices":4}
+                    apply_edit(page,state,accepted,7,0)
+
+                    # Recreated *same-channel* FX instance; stale ACKs cannot
+                    # commit controls or paint a previous DSP identity.
+                    successor="harmony-native-recreated"
+                    bump()
+                    state["graph"]["channels"][0]["inserts"][0]["id"]=successor
+                    push_graph()
+                    await_snap(successor,0)
+                    emit(page,"arMixBuiltinHarmonyAck",
+                         {"requestId":write["requestId"],"status":"APPLIED"})
+                    readback(page,state,DEFAULT,0,0,instance=successor)
+                    assert page.locator("#mxHKeyReadout").inner_text()=="C"
+                    page.locator('[data-key="9"]').click()
+                    new_write=last_action(page,"nativeHarmonySetSettings")
+                    assert new_write["instanceId"]==successor
+                    assert new_write["channelId"]==SOURCE
+                    assert new_write["settings"]["key"]==9
+                    emit(page,"arMixBuiltinHarmonyQueue",
+                         {"requestId":new_write["requestId"],"status":"QUEUED"})
+                    emit(page,"arMixBuiltinHarmonyAck",
+                         {"requestId":new_write["requestId"],"status":"APPLIED"})
+                    accepted={**DEFAULT,"key":9}
+                    readback(page,state,accepted,9,0,
+                             applied=new_write["requestId"],instance=successor)
+                    assert page.locator("#mxHKeyReadout").inner_text()=="A"
+
+                    # Exact same insert identity follows an FX reorder, and
+                    # subsequent edits use NEW accepted slot (not old index).
+                    bump()
+                    other={"id":"eq-accepted-other","catalogId":
+                           "armix.builtin.channel-eq.v1","name":"EQ",
+                           "bypassed":False}
+                    harmony=copy.deepcopy(state["graph"]["channels"][0]["inserts"][0])
+                    state["graph"]["channels"][0]["inserts"]=[other,harmony]
+                    push_graph()
+                    await_snap(successor,1)
+                    readback(page,state,accepted,9,0,instance=successor)
+                    page.locator('[data-voices="5"]').click()
+                    moving=last_action(page,"nativeHarmonySetSettings")
+                    assert moving["slot"]==1 and moving["instanceId"]==successor
+                    emit(page,"arMixBuiltinHarmonyQueue",
+                         {"requestId":moving["requestId"],"status":"QUEUED"})
+                    emit(page,"arMixBuiltinHarmonyAck",
+                         {"requestId":moving["requestId"],"status":"APPLIED"})
+                    accepted={**accepted,"voices":5}
+                    readback(page,state,accepted,9,0,
+                             applied=moving["requestId"],instance=successor)
+
+                    # A temporarily unpublished FX must NOT accept stale
+                    # gestures. Hold the latest edit and apply only after
+                    # a fresh accepted instance-scoped DSP readback.
+                    bump();state["graph"]["channels"][0]["inserts"]=[other]
+                    push_graph()
+                    page.wait_for_function("""()=>document.querySelector(
+                        '#mxHStatus').textContent.includes('RECONNECTING')""")
+                    before=len(page.evaluate("""()=>window.__actions.filter(
+                        x=>x.action==='nativeHarmonySetSettings')"""))
+                    page.locator('[data-voices="3"]').click()
+                    after=len(page.evaluate("""()=>window.__actions.filter(
+                        x=>x.action==='nativeHarmonySetSettings')"""))
+                    assert before==after,"stale FX received an edit"
+                    bump();state["graph"]["channels"][0]["inserts"]=[other,harmony]
+                    push_graph();await_snap(successor,1)
+                    readback(page,state,accepted,9,0,instance=successor)
+                    resumed=last_action(page,"nativeHarmonySetSettings")
+                    assert resumed["slot"]==1 and resumed["instanceId"]==successor
+                    assert resumed["settings"]["voices"]==3,resumed
+                    emit(page,"arMixBuiltinHarmonyQueue",
+                         {"requestId":resumed["requestId"],"status":"QUEUED"})
+                    emit(page,"arMixBuiltinHarmonyAck",
+                         {"requestId":resumed["requestId"],"status":"APPLIED"})
+                    accepted={**accepted,"voices":3}
+                    readback(page,state,accepted,9,0,
+                             applied=resumed["requestId"],instance=successor)
+                    assert page.locator('#mxHStatus').inner_text().startswith("NATIVE")
+                    assert "FX 2" in page.locator("#mxHChannel").inner_text()
                 assert not errors,errors
+                # The knob's lit pseudo-ring extends 11px past its face.
+                # Test real layout, not only CSS text, at every viewport.
+                dial_geometry=page.evaluate("""()=>[...document.querySelectorAll(
+                    '#mxNativeHarmony .mx-harm-slider')].map(s=>{
+                    const f=s.querySelector('.mx-harm-dial-face').getBoundingClientRect();
+                    const c=s.querySelector('.mx-harm-dial-label').getBoundingClientRect();
+                    const o=s.querySelector('output').getBoundingClientRect();
+                    return {gap:c.top-f.bottom,labelBottom:c.bottom,outputTop:o.top};
+                })""")
+                assert len(dial_geometry)==4,dial_geometry
+                for geom in dial_geometry:
+                    assert geom["gap"]>=12.0,("caption overlaps halo",width,geom)
+                    assert geom["outputTop"]>=geom["labelBottom"]-0.5,(
+                        "caption/value collision",width,geom)
                 rect=editor.bounding_box()
                 assert rect and rect["width"]<=width+1,(width,rect)
                 assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect

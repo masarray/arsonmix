@@ -7,6 +7,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <limits>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
 int main(){
@@ -220,5 +221,413 @@ int main(){
          std::abs(wr[i]-(impulse?-.25f:0.f))<1.e-5f,
          "reduced 192 kHz history corrupted a wrapped dry impulse");
   }
+  // Regression for sliding lag-energy normalization: harmonic-rich A2
+  // vocals must remain a stable note at small, irregular ASIO block sizes.
+  for(int block:{64,128,257}){
+    auto pitched=std::make_unique<Engine>();
+    need(pitched->prepare(48000.),"harmonic tracking prepare failed");
+    constexpr int samples=24000;
+    std::vector<float> hl(samples),hr(samples);
+    for(int i=0;i<samples;++i){
+      const double t=static_cast<double>(i)/48000.;
+      hl[i]=hr[i]=static_cast<float>(
+          .17*std::sin(6.283185307179586*110.*t)+
+          .04*std::sin(6.283185307179586*220.*t)+
+          .02*std::sin(6.283185307179586*330.*t));
+    }
+    for(int i=0;i<samples;i+=block)
+      pitched->process(hl.data()+i,hr.data()+i,std::min(block,samples-i));
+    need(pitched->voiced()&&pitched->observedMidiNote()==45,
+         "rolling pitch energy altered singer-like A2 classification");
+  }
+  // P0: alternate ASIO block sizes must produce identical output PCM.
+  // Sliced analysis operates per sample, never depends on callback framing.
+  std::vector<float> referenceL,referenceR;
+  for(int block:{64,127,256}){
+    auto bounded=std::make_unique<Engine>();
+    need(bounded->prepare(48000.),"P0 bounded engine prepare failed");
+    Settings rich;rich.voices=5;rich.wet=.7f;rich.correction=true;
+    need(bounded->setSettings(rich),"P0 quality setup failed");
+    constexpr int frames=48000;
+    std::vector<float> left(frames),right(frames);
+    for(int i=0;i<frames;++i){
+      const double phase=6.283185307179586*220.*i/48000.;
+      left[i]=static_cast<float>(.18*std::sin(phase)+.06*std::sin(2*phase));
+      right[i]=static_cast<float>(.16*std::sin(phase)+.04*std::sin(3*phase));
+    }
+    for(int i=0;i<frames;i+=block)
+      bounded->process(left.data()+i,right.data()+i,std::min(block,frames-i));
+    need(bounded->peakPitchLagWork()>0&&
+         bounded->peakPitchLagWork()<=Engine::maxPitchLagsPerSlice,
+         "P0 pitch analysis overran per-sample lag budget");
+    need(bounded->completedPitchAnalyses()>100&&
+         bounded->abandonedPitchAnalyses()==0,
+         "P0 slices failed to finish before the next analysis hop");
+    need(bounded->voiced()&&bounded->observedMidiNote()==57,
+         "P0 bounded singer tone detection failed");
+    if(referenceL.empty()){
+      referenceL=left;referenceR=right;
+    }else for(int i=0;i<frames;++i)
+      need(std::abs(left[i]-referenceL[i])<1.e-6f&&
+           std::abs(right[i]-referenceR[i])<1.e-6f,
+           "P0 pitch output depends on ASIO callback block size");
+  }
+  // P1: real opposite-phase vocal PCM must not become silent harmony.
+  for(double rate:{48000.,96000.}){
+    auto opposite=std::make_unique<Engine>();
+    need(opposite->prepare(rate),"antiphase singer prepare failed");
+    Settings wet;wet.voices=5;wet.wet=.85f;wet.correction=true;
+    need(opposite->setSettings(wet),"antiphase singer settings failed");
+    const int count=static_cast<int>(rate*.65);
+    std::vector<float> left(static_cast<std::size_t>(count));
+    std::vector<float> right(static_cast<std::size_t>(count));
+    for(int i=0;i<count;++i){
+      const float x=static_cast<float>(
+          .19*std::sin(6.283185307179586*220.*i/rate)+
+          .05*std::sin(6.283185307179586*440.*i/rate));
+      left[static_cast<std::size_t>(i)]=x;
+      right[static_cast<std::size_t>(i)]=-x;
+    }
+    for(int i=0;i<count;i+=257)
+      opposite->process(left.data()+i,right.data()+i,std::min(257,count-i));
+    need(opposite->voiced()&&opposite->observedMidiNote()==57,
+         "phase-opposed singer lost stable A3 pitch");
+    double harmonized=0.;
+    for(int i=count/2;i<count;++i){
+      const float l=left[static_cast<std::size_t>(i)];
+      const float r=right[static_cast<std::size_t>(i)];
+      need(std::isfinite(l)&&std::isfinite(r),"phase-safe PCM not finite");
+      const double recovered=.5*(static_cast<double>(l)+r);
+      harmonized+=recovered*recovered;
+    }
+    need(harmonized>0.005,"opposed stereo produced no harmonized audio");
+  }
+
+  // P1: the approved 48 kHz Color law must be preserved. At every other
+  // supported sample rate, equal physical time must imply equal one-pole
+  // attenuation; no pow/log calls can occur inside the audio callback.
+  for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+    RateStableColor table;
+    need(table.prepare(rate),"color filter prepare rejected supported rate");
+    for(float color:{0.f,.08f,.25f,.5f,.75f,.91f,1.f}){
+      const float actual=table.coefficient(color);
+      const float legacy=.07f+.77f*color;
+      need(std::isfinite(actual)&&actual>0.f&&actual<1.f,
+           "rate-adjusted Color coefficient invalid");
+      if(rate==48000.)
+        need(std::abs(actual-legacy)<1.e-6f,
+             "48 kHz Color legacy response changed");
+      // 125 microseconds is six samples at 48k. A 10ms measurement
+      // would hide every wrong Color coefficient: these filters all
+      // decay to ~zero well before 10ms.
+      const double oldDecay=std::pow(1.-static_cast<double>(legacy),6.);
+      const double newDecay=std::pow(1.-static_cast<double>(actual),
+                                    rate*.000125);
+      need(std::abs(oldDecay-newDecay)<1.e-4,
+           "Color attenuation changes at identical physical time");
+    }
+  }
+  // P2: compare every supported key/scale/degree against the old per-voice
+  // pow(2,(targetMidi-observedMidi)/12) reference before accepting a LUT.
+  PreparedPitchIntervals intervals;
+  intervals.prepare();
+  for(int key=0;key<12;++key)
+    for(int scale=0;scale<2;++scale)
+      for(int degree=-5;degree<=65;++degree){
+        const int note=noteAt(degree,key,scale);
+        constexpr std::array<int,5> offsets{{2,4,-2,6,-4}};
+        for(float detune:{-.45f,-.17f,0.f,.23f,.49f}){
+          const float midi=static_cast<float>(note)+detune;
+          const float base=std::pow(2.f,(note-midi)/12.f);
+          for(const int offset:offsets){
+            const int target=noteAt(degree+offset,key,scale);
+            need(std::abs(target-note)<=PreparedPitchIntervals::maximumSemitones,
+                 "harmonic interval outside precomputed LUT");
+            const float old=std::clamp(std::pow(2.f,(target-midi)/12.f),
+                                       0.5f,2.f);
+            const float next=std::clamp(base*intervals.ratio(target-note),
+                                        0.5f,2.f);
+            need(std::abs(old-next)<1.e-6f,
+                 "precomputed harmony interval changed output pitch ratio");
+          }
+        }
+      }
+  // P0: rescued phase-opposed ANALYSIS must never modify DRY output.
+  // The player, direct hardware monitor and graph still own stereo polarity.
+  for(double rate:{48000.,192000.}){
+    auto dry=std::make_unique<Engine>();
+    need(dry->prepare(rate),"dry antiphase sample-rate prepare failed");
+    Settings silentRack;silentRack.wet=0.f;silentRack.correction=false;
+    need(dry->setSettings(silentRack),"dry antiphase packet failed");
+    const int latency=dry->latencySamples();
+    const int count=latency*3+217;
+    std::vector<float> original(static_cast<std::size_t>(count));
+    std::vector<float> left(static_cast<std::size_t>(count));
+    std::vector<float> right(static_cast<std::size_t>(count));
+    for(int i=0;i<count;++i){
+      const float x=static_cast<float>(
+          .21*std::sin(6.283185307179586*140.*i/rate)+
+          .06*std::sin(6.283185307179586*280.*i/rate));
+      original[static_cast<std::size_t>(i)]=x;
+      left[static_cast<std::size_t>(i)]=x;
+      right[static_cast<std::size_t>(i)]=-x;
+    }
+    for(int i=0;i<count;i+=127)
+      dry->process(left.data()+i,right.data()+i,std::min(127,count-i));
+    for(int i=0;i<count;++i){
+      const float expected=i<latency?0.f:
+         original[static_cast<std::size_t>(i-latency)];
+      need(std::abs(left[static_cast<std::size_t>(i)]-expected)<1.e-6f&&
+           std::abs(right[static_cast<std::size_t>(i)]+expected)<1.e-6f,
+           "P0 polarity rescue corrupted dry stereo or exact PDC");
+    }
+  }
+
+  // P0: all supported device rates and irregular ASIO-shaped periods must
+  // complete the full frozen correlation search WITHOUT dropped windows.
+  // This prevents a naive 32->8-lag reduction from silently truncating E2-C6.
+  for(const double rate:{32000.,44100.,48000.,96000.,192000.}){
+    for(int block:{64,127,256}){
+      auto sliced=std::make_unique<Engine>();
+      need(sliced->prepare(rate),"P0 multirate slice prepare failed");
+      const int samples=static_cast<int>(rate*.30);
+      std::vector<float> l(static_cast<std::size_t>(samples));
+      std::vector<float> r(static_cast<std::size_t>(samples));
+      for(int i=0;i<samples;++i){
+        const float value=static_cast<float>(
+            .16*std::sin(6.283185307179586*220.*i/rate)+
+            .04*std::sin(6.283185307179586*440.*i/rate));
+        l[static_cast<std::size_t>(i)]=value;
+        r[static_cast<std::size_t>(i)]=value;
+      }
+      for(int i=0;i<samples;i+=block)
+        sliced->process(l.data()+i,r.data()+i,std::min(block,samples-i));
+      need(sliced->peakPitchLagWork()<=8&&
+           sliced->peakPitchLagWork()>0,
+           "P0 worst-case lag slice exceeded eight");
+      need(sliced->completedPitchAnalyses()>=20 &&
+           sliced->abandonedPitchAnalyses()==0,
+           "P0 correlation hop overwritten on supported device");
+      need(sliced->voiced() && sliced->observedMidiNote()==57,
+           "P0 sliced note lost in a supported rate/block configuration");
+    }
+  }
+  // P0 defensive PCM: no allocation/crash/NaN from extreme finite,
+  // infinity or NaN, including during the silence->singer transition.
+  for(int voiceCount:{2,5}){
+    auto overflow=std::make_unique<Engine>();
+    need(overflow->prepare(48000.),"P0 extreme PCM prepare failed");
+    Settings full;full.wet=1.f;full.voices=voiceCount;full.correction=true;
+    need(overflow->setSettings(full),"P0 extreme PCM settings rejected");
+    constexpr int frames=8192;
+    std::vector<float> l(frames),r(frames);
+    for(int i=0;i<frames;++i){
+      const auto j=i%8;
+      const float raw=j==0?std::numeric_limits<float>::max():
+                       j==1?-std::numeric_limits<float>::max():
+                       j==2?std::numeric_limits<float>::infinity():
+                       j==3?-std::numeric_limits<float>::infinity():
+                       j==4?std::numeric_limits<float>::quiet_NaN():
+                       j==5?4.5f:j==6?-4.5f:0.f;
+      l[static_cast<std::size_t>(i)]=raw;
+      r[static_cast<std::size_t>(i)]=-raw;
+    }
+    for(int i=0;i<frames;i+=64)
+      overflow->process(l.data()+i,r.data()+i,std::min(64,frames-i));
+    for(int i=0;i<frames;++i)
+      need(std::isfinite(l[static_cast<std::size_t>(i)]) &&
+           std::isfinite(r[static_cast<std::size_t>(i)]) &&
+           std::abs(l[static_cast<std::size_t>(i)])<=4.f &&
+           std::abs(r[static_cast<std::size_t>(i)])<=4.f,
+           "P0 extreme PCM yielded invalid or out-of-bounds output");
+  }
+  // Direct analysis-only stereo fold must never produce NaN/inf even if a
+  // connected host provides a finite float close to FLT_MAX.
+  StereoPhaseSafeFold guard;
+  need(guard.prepare(48000.),"P0 stereo analysis fold prepare failed");
+  for(int i=0;i<4096;++i){
+    const float huge=std::numeric_limits<float>::max();
+    const float y=guard.process(huge,huge);
+    need(std::isfinite(y)&&std::abs(y)<=4.f,
+         "P0 guide PCM overflowed in stereo analysis fold");
+  }
+
+  // P1 natural ensemble: each singer owns a distinct stable arrival time,
+  // vibrato phase/rate and early-reflection history. No heap or random PCM
+  // work is introduced, and reflections must not bleed between singers.
+  for(double rate:{32000.,48000.,96000.,192000.}){
+    auto ensemble=std::make_unique<EnsembleSpace>();
+    need(ensemble->prepare(rate),"ensemble prepare rejected supported rate");
+    need(ensemble->arrivalSamples(0)>0.f&&
+         ensemble->arrivalSamples(2)>ensemble->arrivalSamples(1),
+         "independent singer onset offsets not prepared");
+    need(ensemble->reflectionSamples(4)<static_cast<int>(
+             EnsembleSpace::reflectionCapacity),
+         "highest-rate reflection would read outside fixed history");
+    const int delay=ensemble->reflectionSamples(0);
+    for(int i=0;i<=delay+5;++i){
+      for(int v=0;v<EnsembleSpace::voices;++v){
+        const float input=(i==0&&v==0)?1.f:0.f;
+        const float out=ensemble->exchangeReflection(v,input);
+        const float expected=(i==delay&&v==0)?1.f:0.f;
+        need(std::abs(out-expected)<1.e-6f,
+             "ensemble reflection delay or channel isolation broken");
+      }
+      ensemble->advance(true);
+    }
+    float minRatio=2.f,maxRatio=0.f;
+    const int sustain=static_cast<int>(rate*.60);
+    for(int i=0;i<sustain;++i){
+      const float a=ensemble->pitchRatio(0);
+      const float b=ensemble->pitchRatio(1);
+      need(std::isfinite(a)&&std::isfinite(b)&&a>.996f&&a<1.004f&&
+           b>.996f&&b<1.004f,
+           "ensemble vibrato/detune exceeds transparent musical bounds");
+      minRatio=std::min(minRatio,a);maxRatio=std::max(maxRatio,a);
+      ensemble->advance(true);
+    }
+    need(maxRatio-minRatio>0.0004f,
+         "ensemble vocalist lacks independent sustain modulation");
+    ensemble->advance(false);
+  }
+  // At Space=0 mono input stays mono with no reflected crossfeed. At
+  // Space=1, three distinct backing singers must form true stereo PCM,
+  // while the singer's dry path keeps its declared delay and center.
+  for(double rate:{48000.,96000.}){
+    constexpr int samples=48000;
+    std::vector<float> zeroL(samples),zeroR(samples);
+    std::vector<float> wideL(samples),wideR(samples);
+    auto center=std::make_unique<Engine>();
+    auto wide=std::make_unique<Engine>();
+    need(center->prepare(rate)&&wide->prepare(rate),
+         "ensemble space engine prepare failed");
+    Settings narrow; narrow.voices=3;narrow.wet=.6f;narrow.space=0.f;
+    Settings spread=narrow;spread.space=1.f;
+    need(center->setSettings(narrow)&&wide->setSettings(spread),
+         "ensemble controls not accepted");
+    for(int i=0;i<samples;++i){
+      const float x=static_cast<float>(.16*std::sin(
+          6.283185307179586*220.*i/rate)+.05*std::sin(
+          6.283185307179586*440.*i/rate));
+      zeroL[static_cast<std::size_t>(i)]=zeroR[static_cast<std::size_t>(i)]=x;
+      wideL[static_cast<std::size_t>(i)]=wideR[static_cast<std::size_t>(i)]=x;
+    }
+    for(int i=0;i<samples;i+=64){
+      const auto len=std::min(64,samples-i);
+      center->process(zeroL.data()+i,zeroR.data()+i,len);
+      wide->process(wideL.data()+i,wideR.data()+i,len);
+    }
+    double centerDifference=0.,spreadDifference=0.,wideEnergy=0.,foldEnergy=0.;
+    for(int i=samples/2;i<samples;++i){
+      centerDifference+=std::abs(zeroL[static_cast<std::size_t>(i)]-
+                                 zeroR[static_cast<std::size_t>(i)]);
+      spreadDifference+=std::abs(wideL[static_cast<std::size_t>(i)]-
+                                 wideR[static_cast<std::size_t>(i)]);
+      const double x=.5*(wideL[static_cast<std::size_t>(i)]+
+                           wideR[static_cast<std::size_t>(i)]);
+      wideEnergy+=wideL[static_cast<std::size_t>(i)]*
+                  wideL[static_cast<std::size_t>(i)]+
+                  wideR[static_cast<std::size_t>(i)]*
+                  wideR[static_cast<std::size_t>(i)];
+      foldEnergy+=x*x;
+    }
+    need(centerDifference<.0001,
+         "Space zero leaked phase-widened stereo or unbalanced rooms");
+    need(spreadDifference>0.5&&wideEnergy>1.&&foldEnergy>.1,
+         "ensemble room has no stereo depth or loses mono compatibility");
+  }
+
+  // Field feedback: full Wet, 4 voices, Space 60% still sounded thin.
+  // Presence curve must lift BACKING only, with sqrt voice count normalization
+  // and exact Wet0 silence; all scalar math is prepared on control thread.
+  for(int voices=2;voices<=Engine::maxVoices;++voices){
+    float previous=0.f;
+    for(float wet:{0.f,.15f,.45f,.60f,.85f,1.f}){
+      const float modern=Engine::normalizedBackingWetAmplitude(wet,voices);
+      const float legacy=Engine::normalizedBackingWetAmplitude(wet,voices,false);
+      need(std::isfinite(modern)&&modern>=previous&&
+           modern<=1.151f/std::sqrt(static_cast<float>(voices)),
+           "Harmony wet presence nonmonotone or unbounded");
+      if(wet==0.f)need(modern==0.f&&legacy==0.f,"Wet0 leaked harmony");
+      if(wet==1.f)need(modern>legacy*1.73f&&modern<legacy*1.80f,
+                       "Wet100 failed to raise backing presence");
+      previous=modern;
+    }
+    Settings settings;settings.voices=voices;settings.wet=1.f;settings.space=.6f;
+    Engine::PreparedSettings modern{},legacy{};
+    need(Engine::prepareSettings(settings,modern)&&
+         Engine::prepareSettings(settings,legacy,false),
+         "prepared Harmony wet staging rejected");
+    for(int voice=0;voice<voices;++voice){
+      const float level=std::hypot(modern.mixL[voice],modern.mixR[voice]);
+      const float prior=std::hypot(legacy.mixL[voice],legacy.mixR[voice]);
+      need(std::abs(level-Engine::normalizedBackingWetAmplitude(1.f,voices))<1.e-5f&&
+           level>prior*1.73f,"prepared Harmony pan lost presence or normalization");
+    }
+  }
+  // P0 lead preservation: backing Wet must never change the lead amplitude.
+  // The *only* intentional lead replacement is Pitch Tune's explicit blend.
+  for(float dry:{-.9f,-.3f,0.f,.27f,.9f}){
+    need(Engine::leadPath(dry,.5f,0.f)==dry,
+         "wet-independent original lead unexpectedly ducked");
+    need(std::abs(Engine::leadPath(dry,.5f,.5f)-(.5f*dry+.25f))<1.e-6f,
+         "explicit Pitch Tune blend changed");
+  }
+
+  // P1 diffuse shared BACKING room: no immediate output, fixed delay at
+  // all accepted rates, decaying rather than metallic or unstable feedback.
+  for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+    auto room=std::make_unique<BackingDepthRoom>();
+    need(room->prepare(rate),"backing room rejected supported sample rate");
+    for(std::size_t v=0;v<BackingDepthRoom::branches;++v)
+      need(room->delaySamples(v)>0&&
+           room->delaySamples(v)<BackingDepthRoom::capacity&&
+           room->feedbackGain(v)>0.f&&room->feedbackGain(v)<1.f,
+           "backing FDN missing bounded delays or stable feedback");
+    const int total=static_cast<int>(rate*1.8);
+    double first=0.,late=0.,last=0.,mono=0.;
+    for(int i=0;i<total;++i){
+      const auto o=room->process(i==0?1.f:0.f,i==0?1.f:0.f);
+      need(std::isfinite(o.left)&&std::isfinite(o.right)&&
+           std::abs(o.left)<2.f&&std::abs(o.right)<2.f,
+           "backing room blew up or returned non-finite PCM");
+      const double energy=o.left*o.left+o.right*o.right;
+      if(i<static_cast<int>(rate*.02))
+        need(energy<1.e-18,"diffuse field leaked before its first tap");
+      if(i<static_cast<int>(rate*.11))first+=energy;
+      else if(i<static_cast<int>(rate*.35))late+=energy;
+      if(i>static_cast<int>(rate*1.5))last+=energy;
+      mono+=(.5*(o.left+o.right))*(.5*(o.left+o.right));
+    }
+    need(first>1.e-5&&late>1.e-9&&last<late*.01,
+         "diffuse field lacks early energy or bounded late decay");
+    need(mono>1.e-5,"room anti-phase cancelled in mono");
+    need(room->prepare(rate),"device restart failed to reset room");
+    for(int i=0;i<512;++i){
+      const auto o=room->process(0.f,0.f);
+      need(o.left==0.f&&o.right==0.f,
+           "room restart retained stale output from previous session");
+    }
+  }
+  // P1 stereo depth changes must remain audible in mono, but lead should
+  // stay transparent regardless of Space and Wet when no Pitch Tune.
+  for(float depth:{0.f,.5f,1.f}){
+    EnsembleSpace singer;
+    need(singer.prepare(48000.),"backing HF shader prepare failed");
+    double inputEnergy=0.,outputEnergy=0.;
+    for(int i=0;i<3000;++i){
+      const float pulse=(i%7)<3?1.f:-1.f;
+      const float shaded=singer.shadeBacking(0,pulse,depth);
+      inputEnergy+=pulse*pulse;
+      outputEnergy+=shaded*shaded;
+      singer.advance(true);
+    }
+    need(outputEnergy>0.&&outputEnergy<=inputEnergy*1.01,
+         "backing distance contour amplified or removed singer");
+    if(depth==0.f)need(std::abs(outputEnergy-inputEnergy)<1.e-6,
+                       "Space zero failed to preserve direct backing");
+  }
+  // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
+  need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }
