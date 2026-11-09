@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "HarmonyStereoFold.h"
+#include "HarmonyPreparedTone.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -85,7 +86,8 @@ public:
         // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
-        if(!vocalFold_.prepare(rate))return false;
+        if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate))return false;
+        pitchIntervals_.prepare();
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
@@ -219,9 +221,13 @@ public:
             const float dryL=tap(left_,static_cast<float>(latency_));
             const float dryR=tap(right_,static_cast<float>(latency_));
             voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*voicedGateAlpha_;
+            // Compute the device-rate-correct filter coefficient once per
+            // active sample, not once for each of up to six shifters.
+            const float filterCoef=voicedGain_>0.00001f?
+                toneColor_.coefficient(color_):0.f;
             float lead=0.f;
             if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
-                lead=shifted(maxVoices,color_);
+                lead=shifted(maxVoices,filterCoef);
             const float leadBlend=correctionMix_*voicedGain_;
             float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
             float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
@@ -229,7 +235,7 @@ public:
                 for(int v=0;v<maxVoices;++v){
                     const auto ix=static_cast<std::size_t>(v);
                     if(std::abs(mixL_[ix])+std::abs(mixR_[ix])<1.e-5f)continue;
-                    const float y=shifted(v,color_)*voicedGain_;
+                    const float y=shifted(v,filterCoef)*voicedGain_;
                     outL+=y*mixL_[ix];outR+=y*mixR_[ix];
                 }
             }
@@ -247,7 +253,7 @@ private:
         const auto a1=(a0+capacity-1)%capacity;
         return a[a0]*(1.f-f)+a[a1]*f;
     }
-    float shifted(int voice,float color) noexcept {
+    float shifted(int voice,float filterCoef) noexcept {
         float& currentRatio=ratio_[static_cast<std::size_t>(voice)];
         currentRatio+=(targetRatio_[static_cast<std::size_t>(voice)]-currentRatio)*ratioAlpha_;
         const float p=phase_[static_cast<std::size_t>(voice)];
@@ -259,9 +265,8 @@ private:
         // reduced grain-edge modulation without sin/cos in audio callback.
         const float w=smoothGrainBlend(p);
         float y=w*tap(mono_,delayA)+(1.f-w)*tap(mono_,delayB);
-        const float coef=0.07f+color*0.77f;
         float& f=filtered_[static_cast<std::size_t>(voice)];
-        f+=coef*(y-f);y=f;
+        f+=filterCoef*(y-f);y=f;
         phase_[static_cast<std::size_t>(voice)]+=1.f/static_cast<float>(grain_);
         if(phase_[static_cast<std::size_t>(voice)]>=1.f)
             phase_[static_cast<std::size_t>(voice)]-=1.f;
@@ -375,14 +380,18 @@ private:
         currentNote_=note;voiced_=true;
         // Fifth harmony voice is a lower sixth in key; keep each voice
         // independent and normalize its level against the total count.
+        // One fractional-pitch exponent per analysis hop; each harmony
+        // interval is an integer number of semitones in the chosen scale.
+        // Five previous pow() calls move to the CONTROL prepared LUT.
+        const float baseRatio=std::pow(2.f,(note-midi)/12.f);
         constexpr std::array<int,maxVoices> intervals{{2,4,-2,6,-4}};
         for(int v=0;v<maxVoices;++v){
             const int target=noteAt(degree+intervals[static_cast<std::size_t>(v)],
                                     activeKey,activeScale);
             targetRatio_[static_cast<std::size_t>(v)]=std::clamp(
-                std::pow(2.f,(target-midi)/12.f),0.50f,2.0f);
+                baseRatio*pitchIntervals_.ratio(target-note),0.50f,2.0f);
         }
-        targetRatio_[maxVoices]=std::clamp(std::pow(2.f,(note-midi)/12.f),0.75f,1.34f);
+        targetRatio_[maxVoices]=std::clamp(baseRatio,0.75f,1.34f);
     }
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
@@ -405,6 +414,8 @@ private:
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};
+    RateStableColor toneColor_{};
+    PreparedPitchIntervals pitchIntervals_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};

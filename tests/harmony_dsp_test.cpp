@@ -298,6 +298,53 @@ int main(){
     }
     need(harmonized>0.005,"opposed stereo produced no harmonized audio");
   }
+
+  // P1: the approved 48 kHz Color law must be preserved. At every other
+  // supported sample rate, equal physical time must imply equal one-pole
+  // attenuation; no pow/log calls can occur inside the audio callback.
+  for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+    RateStableColor table;
+    need(table.prepare(rate),"color filter prepare rejected supported rate");
+    for(float color:{0.f,.08f,.25f,.5f,.75f,.91f,1.f}){
+      const float actual=table.coefficient(color);
+      const float legacy=.07f+.77f*color;
+      need(std::isfinite(actual)&&actual>0.f&&actual<1.f,
+           "rate-adjusted Color coefficient invalid");
+      if(rate==48000.)
+        need(std::abs(actual-legacy)<1.e-6f,
+             "48 kHz Color legacy response changed");
+      const double oldDecay=std::pow(1.-static_cast<double>(legacy),480.);
+      const double newDecay=std::pow(1.-static_cast<double>(actual),
+                                    rate*.01);
+      need(std::abs(oldDecay-newDecay)<2.e-4,
+           "Color duration changes with the hardware sample rate");
+    }
+  }
+  // P2: compare every supported key/scale/degree against the old per-voice
+  // pow(2,(targetMidi-observedMidi)/12) reference before accepting a LUT.
+  PreparedPitchIntervals intervals;
+  intervals.prepare();
+  for(int key=0;key<12;++key)
+    for(int scale=0;scale<2;++scale)
+      for(int degree=-5;degree<=65;++degree){
+        const int note=noteAt(degree,key,scale);
+        constexpr std::array<int,5> offsets{{2,4,-2,6,-4}};
+        for(float detune:{-.45f,-.17f,0.f,.23f,.49f}){
+          const float midi=static_cast<float>(note)+detune;
+          const float base=std::pow(2.f,(note-midi)/12.f);
+          for(const int offset:offsets){
+            const int target=noteAt(degree+offset,key,scale);
+            need(std::abs(target-note)<=PreparedPitchIntervals::maximumSemitones,
+                 "harmonic interval outside precomputed LUT");
+            const float old=std::clamp(std::pow(2.f,(target-midi)/12.f),
+                                       0.5f,2.f);
+            const float next=std::clamp(base*intervals.ratio(target-note),
+                                        0.5f,2.f);
+            need(std::abs(old-next)<1.e-6f,
+                 "precomputed harmony interval changed output pitch ratio");
+          }
+        }
+      }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
