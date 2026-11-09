@@ -215,3 +215,10 @@ test('transient Inno failure allows one delayed retry, never a reinstall loop', 
     'ARSONMIX_UPDATER_RETRY_POLICY_PASS']) assert.ok(ps.includes(x), x);
   assert.match(smoke,/ARSONMIX_UPDATER_RETRY_POLICY_PASS/);
 });
+
+test('Windows Inno fixture proves unattended in-place repair after binary corruption', () => {
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  assert.match(smoke,/INNO_AUTO_REPAIR_CORRUPT_EXE_PASS/);
+  assert.match(smoke,/Same-version repair did not restore verified EXE/);
+  assert.match(smoke,/Same-version repair erased Studio or install-local user files/);
+});

@@ -142,6 +142,17 @@ try {
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto-install erased user data"
     Write-Host "INNO_AUTO_UPDATE_AFTER_NORMAL_EXIT_PASS: silent setup, correct EXE, user data intact"
 
+    # Test-only synthetic corruption: byte-level repair of vendor-owned EXE.
+    # Never run this on a user installation or private Studio content.
+    [IO.File]::WriteAllBytes($installedExe,(New-Object byte[] 4096))
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ne $fixtureHash) "Corrupt fixture unexpectedly matched original binary"
+    $repair=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($repair.ExitCode -eq 0) "Automatic same-version repair installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Same-version repair did not restore verified EXE"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Same-version repair erased Studio or install-local user files"
+    Write-Host "INNO_AUTO_REPAIR_CORRUPT_EXE_PASS: exact verified EXE restored, private Studio and user files retained"
+
+
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
     # Upgrade must fail before [Files], leave old EXE and Studio untouched.
     Remove-Item -LiteralPath $ready,$closed -Force -ErrorAction SilentlyContinue

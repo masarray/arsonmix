@@ -44,3 +44,6 @@ No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, W
 ## Bounded automatic error recovery
 - A completed Inno installer that exits nonzero but leaves the old source intact gets one more attempt on the next normal app exit, after a 30-minute cooldown. The counter persists in updater metadata; two failures block that candidate. An installer timeout, partial version replacement, failed GUI health, or revoked release does not qualify for this retry.
 - Only the old installed app can be relaunched after a non-destructive installer rejection. The updater never uninstalls or resets Studio/.smix to work around device, driver or VST issues.
+
+## Same-version Inno repair FAT
+- The Windows Inno fixture creates an isolated artificial installation, intentionally truncates only its synthetic ArSonMix.exe, reruns Inno in unattended auto-update mode, and requires the original SHA-256 executable hash and private Studio sentinel to survive. This proves vendor-program-file repair mechanics; a real JUCE/WebView + ASIO failure scenario still needs a two-version desktop test.
