@@ -6,7 +6,7 @@
 const ID="armix.builtin.arson-harmony.v1";
 const root=document.createElement("section");
 root.className="mx-harm";root.id="mxNativeHarmony";root.hidden=true;
-root.setAttribute("role","dialog");root.setAttribute("aria-label","ArSon Harmony");
+root.setAttribute("role","dialog");root.setAttribute("aria-label","Harmony Effect");
 root.setAttribute("aria-modal","false");
 // Simplified singer/microphone silhouette derived from the supplied SVG concept.
 // Reused as one tiny original inline vector: no image request or heavyweight
@@ -15,7 +15,7 @@ const voiceGlyph='<svg class="mx-harm-voice-glyph" viewBox="0 0 24 24" aria-hidd
 root.innerHTML=`
   <header class="mx-harm-head">
    <span class="mx-harm-logo" aria-hidden="true">◈</span>
-   <span class="mx-harm-brand">ArSon <em>Harmony</em></span>
+   <span class="mx-harm-brand">Harmony <em>Effect</em></span>
    <span class="mx-harm-channel" id="mxHChannel"></span>
    <select id="mxHPreset" aria-label="Harmony preset" title="Preset">
     <option value="custom">Custom</option>
@@ -78,9 +78,9 @@ const keys=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 for(let i=0;i<12;++i){
  const b=document.createElement("button");
  b.className="mx-harm-note";b.textContent=keys[i];b.dataset.key=String(i);
- // Compact note rail with a safe 12-14 px outer rim even in narrow WebView.
-// 33.5% centers the letter-buttons between LCD and wheel edge.
- const a=(i/12*2*Math.PI-Math.PI/2),x=50+33.5*Math.cos(a),y=50+33.5*Math.sin(a);
+ // Center key labels in the BLUE annulus: 36.5% balances the LCD rim
+// and outside border, while retaining >= 10px at the compact viewport.
+ const a=(i/12*2*Math.PI-Math.PI/2),x=50+36.5*Math.cos(a),y=50+36.5*Math.sin(a);
  b.style.left=x+"%";b.style.top=y+"%";
  el("mxHWheel").append(b);
 }
