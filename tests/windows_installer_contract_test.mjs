@@ -112,3 +112,29 @@ test('installer packaging is gated by the exact SHA FAT verifier', () => {
   assert.match(ci, /ArSonMix-Windows-Installer-Preview/);
   assert.match(ci, /tests\/windows_installer_contract_test\.mjs/);
 });
+
+
+test('Smart Auto Updater uses an independent process and strict release gates', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  const native = read('src/Main.cpp');
+  assert.match(iss, /^Source: "ArSonMixAutoUpdate\.ps1"; DestDir: "\{app\}"; Flags: ignoreversion$/m);
+  assert.match(native, /getChildFile \("ArSonMixAutoUpdate\.ps1"\)/);
+  assert.match(native, /juce::ChildProcess supervisor/);
+  assert.match(native, /ARSONMIX_UPDATE_PROBE/);
+  assert.match(native, /GUI_READY/);
+  assert.match(updater, /api\.github\.com\/repos\/masarray\/arsonmix\/releases\?per_page=100/);
+  assert.match(updater, /Download-Release-Verified/);
+  assert.match(updater, /INSTALLER_PROVENANCE\.json/);
+  assert.match(updater, /SHA256SUMS\.txt/);
+  assert.match(updater, /Get-FileHash -LiteralPath \$part -Algorithm SHA256/);
+  assert.match(updater, /WaitForExit\(43200000\)/);
+  assert.match(updater, /DEFER_NEW_SESSION/);
+  assert.match(updater, /Local\\ArSonMix\.AutoUpdater\.v1/);
+  assert.match(updater, /PREVIOUS_FAILURE_BLOCKED/);
+  assert.match(updater, /ROLLED_BACK/);
+  assert.match(updater, /Never terminate a hung GUI/);
+  assert.match(updater, /ARSONMIX_UPDATER_POLICY_PASS/);
+  assert.match(isolatedSmoke, /ARSONMIX_UPDATER_POLICY_PASS/);
+  assert.doesNotMatch(updater, /\b(?:taskkill|Stop-Process|TerminateProcess)\b/);
+  assert.doesNotMatch(updater, /ArSonMix\.InstallShutdown\.v1|SetEvent\(/);
+});
