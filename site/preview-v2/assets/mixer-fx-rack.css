@@ -518,7 +518,7 @@
 .mx-harm-sliders{
  display:grid;grid-template-columns:repeat(2,minmax(105px,1fr));
  width:min(100%,390px);align-items:center;justify-items:center;
- gap:5px 17px;padding:8px 12px
+ gap:14px 17px;padding:3px 12px
 }
 .mx-harm-slider{
  --dial-turn:0deg;display:flex;flex-direction:column;align-items:center;
@@ -721,7 +721,7 @@
  .mx-harm-body{grid-template-columns:126px minmax(0,1fr) 206px;min-height:224px}
  .mx-harm-left{padding:14px 9px 10px}
  .mx-harm-signature strong{font-size:15px}
- .mx-harm-sliders{grid-template-columns:repeat(2,minmax(78px,1fr));gap:4px;padding:5px}
+ .mx-harm-sliders{grid-template-columns:repeat(2,minmax(78px,1fr));gap:10px 4px;padding:2px 5px}
  .mx-harm-dial-face{width:59px;height:59px}
  .mx-harm-dial-pointer{height:19px;transform-origin:50% 23px}
  .mx-harm-slider{height:101px}
