@@ -59,6 +59,7 @@ assert.equal(wireCount,1,'two resize events need just one geometry pass');
 assert.equal(renderCount,0,'no full mixer rebuild within a bank');
 required=8;events.get('resize')();frame();
 assert.equal(renderCount,1,'bank boundary requires structural render');
+drawn=8; // simulate the structural render committing its new bank geometry
 hidden=true;events.get('resize')();
 assert.equal(raf.length,0,'hidden window must not repaint');
 hidden=false;docEvents.get('visibilitychange')();frame();
