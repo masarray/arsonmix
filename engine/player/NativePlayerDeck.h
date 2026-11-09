@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PreparedStereoPcmRing.h"
+#include "PlayerPitchTempoProcessor.h"
 #include "../core/RealtimeSlew64.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <atomic>
@@ -28,6 +29,9 @@ public:
         bool outputReady=false;
         juce::String title,error;
         double deviceRate=0;
+        int keySemitones=0,tempoPercent=100;
+        int requestedKey=0,requestedTempo=100;
+        bool processingChangePending=false;
     };
     NativePlayerDeck() {
         // 2.7 seconds at 48k, bounded independent of song length.
@@ -60,6 +64,12 @@ public:
                          selected?State::loading:State::empty,
                      std::memory_order_release);
         wake_.notify_one();
+    }
+    bool setPitchTempo(int keySemitones,int tempoPercent) noexcept {
+        const PlayerPitchTempoProcessor::Controls c{keySemitones,tempoPercent};
+        if(!PlayerPitchTempoProcessor::valid(c))return false;
+        requestedControls_.store(packControls(c),std::memory_order_release);
+        return true; // accepted intent; actual DSP readback in snapshot()
     }
     void load(const juce::File& file,bool autoPlay=true) {
         ready_.store(false,std::memory_order_release);
@@ -110,10 +120,21 @@ public:
         s.generation=generation_.load(std::memory_order_acquire);
         s.deviceRate=rate_.load(std::memory_order_acquire);
         s.outputReady=ready_.load(std::memory_order_acquire);
+        const auto applied=unpackControls(
+            appliedControls_.load(std::memory_order_acquire));
+        const auto requested=unpackControls(
+            requestedControls_.load(std::memory_order_acquire));
+        s.keySemitones=applied.keySemitones;
+        s.tempoPercent=applied.tempoPercent;
+        s.requestedKey=requested.keySemitones;
+        s.requestedTempo=requested.tempoPercent;
+        s.processingChangePending=(s.keySemitones!=s.requestedKey ||
+                                   s.tempoPercent!=s.requestedTempo);
         switch(error_.load(std::memory_order_relaxed)) {
             case 1:s.error="File missing or unreadable";break;
             case 2:s.error="Unsupported or corrupt music format";break;
             case 3:s.error="Audio output not configured";break;
+            case 4:s.error="Music pitch/tempo processing failed";break;
             default:break;
         }
         {std::lock_guard<std::mutex> lock(commandMutex_);
@@ -170,6 +191,15 @@ public:
     }
 
 private:
+    using Controls=PlayerPitchTempoProcessor::Controls;
+    static constexpr std::uint32_t packControls(Controls c) noexcept {
+        return (static_cast<std::uint32_t>(c.tempoPercent)<<8) |
+               static_cast<std::uint32_t>(c.keySemitones+6);
+    }
+    static constexpr Controls unpackControls(std::uint32_t bits) noexcept {
+        return {static_cast<int>(bits&255u)-6,
+                static_cast<int>((bits>>8)&255u)};
+    }
     void restart() noexcept {
         ready_.store(false,std::memory_order_release);
         played_.store(0,std::memory_order_relaxed);
@@ -232,44 +262,131 @@ private:
             }
             const bool mono=reader->numChannels==1;
             const double ratio=reader->sampleRate/static_cast<double>(deviceHz);
-            const auto total=static_cast<std::uint64_t>(std::ceil(
+            const auto sourceTotal=static_cast<std::uint64_t>(std::ceil(
                 static_cast<double>(reader->lengthInSamples)/ratio));
-            if(!total) {
+            if(!sourceTotal) {
                 state_.store(State::error,std::memory_order_release);
                 continue;
             }
+            using Controls=PlayerPitchTempoProcessor::Controls;
+            Controls controls=unpackControls(
+                requestedControls_.load(std::memory_order_acquire));
+            PlayerPitchTempoProcessor pitch;
+            if(!pitch.prepare(deviceHz,controls)) {
+                error_.store(4,std::memory_order_release);
+                state_.store(State::error,std::memory_order_release);
+                continue;
+            }
+            appliedControls_.store(packControls(controls),
+                                   std::memory_order_release);
             juce::AudioFormatReaderSource source(reader.release(),true);
             juce::ResamplingAudioSource resampled(&source,false,2);
             resampled.setResamplingRatio(ratio);
-            resampled.prepareToPlay(1024,static_cast<double>(deviceHz));
-            juce::AudioBuffer<float> staging(2,1024);
-            length_.store(total,std::memory_order_release);
-            std::uint64_t written=0;
-            while(!obsolete(version) && written<total) {
-                if(ring_.bufferedFrames()>ring_.capacityFrames()-2048) {
+            resampled.prepareToPlay(1536,static_cast<double>(deviceHz));
+            // Source is device-rate stereo, but independent KEY/TEMPO DSP is
+            // computed ONLY here on the decoder worker; not in JUCE/ASIO RT.
+            juce::AudioBuffer<float> input(2,1536),output(2,1024);
+            std::uint64_t consumed=0,written=0;
+            const auto estimateTotal=[&]() -> std::uint64_t {
+                return written+static_cast<std::uint64_t>(std::ceil(
+                    (sourceTotal-consumed)*100.0/controls.tempoPercent))
+                    +static_cast<std::uint64_t>(pitch.outputLatency());
+            };
+            length_.store(estimateTotal(),std::memory_order_release);
+            bool failed=false;
+            // 0.75 s of decoded music gives disk/decode headroom without
+            // waiting multiple seconds before a KEY/TEMPO control is heard.
+            const auto highWater=std::min<std::size_t>(
+                ring_.capacityFrames()-2048,
+                std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz*3/4)));
+            while(!obsolete(version) && consumed<sourceTotal) {
+                if(ring_.bufferedFrames()>highWater) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(3));
                     continue;
                 }
-                const int n=static_cast<int>(std::min<std::uint64_t>(1024,total-written));
-                staging.clear();
-                resampled.getNextAudioBlock({&staging,0,n});
-                if(mono)staging.copyFrom(1,0,staging,0,0,n);
+                Controls requested=unpackControls(
+                    requestedControls_.load(std::memory_order_acquire));
+                if(requested!=controls && PlayerPitchTempoProcessor::valid(requested)) {
+                    pitch.setControls(requested); // DSP worker, no callback code
+                    controls=requested;
+                    appliedControls_.store(packControls(controls),
+                                           std::memory_order_release);
+                }
+                int nOutput=1024;
+                int nInput=pitch.nextInputFrames(nOutput);
+                const auto remaining=sourceTotal-consumed;
+                if(remaining<static_cast<std::uint64_t>(nInput)) {
+                    nOutput=std::max(1,static_cast<int>(std::ceil(
+                        remaining*100.0/controls.tempoPercent)));
+                    nOutput=std::min(1024,nOutput);
+                    nInput=static_cast<int>(remaining);
+                }
+                if(nInput<=0 || nInput>1536 || nOutput<=0) {
+                    failed=true;break;
+                }
+                input.clear();output.clear();
+                resampled.getNextAudioBlock({&input,0,nInput});
+                if(mono)input.copyFrom(1,0,input,0,0,nInput);
                 if(obsolete(version))break;
-                const auto transferred=ring_.write(
-                    staging.getReadPointer(0),staging.getReadPointer(1),
-                    static_cast<std::size_t>(n));
+                const float* const sourcePcm[]={input.getReadPointer(0),
+                                                input.getReadPointer(1)};
+                float* const outputPcm[]={output.getWritePointer(0),
+                                          output.getWritePointer(1)};
+                if(!pitch.process(sourcePcm,nInput,outputPcm,nOutput)) {
+                    failed=true;break;
+                }
+                const auto transferred=ring_.write(outputPcm[0],outputPcm[1],
+                                                    static_cast<std::size_t>(nOutput));
+                if(transferred!=static_cast<std::size_t>(nOutput)) {
+                    failed=true;break;
+                }
+                consumed+=static_cast<std::uint64_t>(nInput);
                 written+=transferred;
+                length_.store(estimateTotal(),std::memory_order_release);
                 if(!ready_.load(std::memory_order_relaxed) &&
-                   (ring_.bufferedFrames()>=4096 || written==total)) {
+                   (ring_.bufferedFrames()>=4096 || consumed==sourceTotal)) {
                     ready_.store(true,std::memory_order_release);
                     if(!wantedPlay_.load(std::memory_order_acquire) &&
                        state_.load(std::memory_order_relaxed)!=State::stopped)
                         state_.store(State::ready,std::memory_order_release);
                 }
             }
-            if(!obsolete(version) && written==total) {
-                eof_.store(true,std::memory_order_release);
-                ready_.store(true,std::memory_order_release);
+            // Drain the final spectral overlap OFF realtime. Without this,
+            // transposed music loses its last FFT window at EOF.
+            if(!failed && !obsolete(version) && consumed==sourceTotal &&
+               pitch.active()) {
+                const int tail=pitch.outputLatency();
+                if(tail>0 && tail<deviceHz*2) {
+                    juce::AudioBuffer<float> ending(2,tail);
+                    float* const ends[]={ending.getWritePointer(0),
+                                         ending.getWritePointer(1)};
+                    pitch.flush(ends,tail);
+                    for(int offset=0;offset<tail && !obsolete(version);) {
+                        if(ring_.bufferedFrames()>highWater) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                            continue;
+                        }
+                        const int n=std::min(1024,tail-offset);
+                        const auto copied=ring_.write(ends[0]+offset,ends[1]+offset,
+                                                      static_cast<std::size_t>(n));
+                        if(copied!=static_cast<std::size_t>(n)) {
+                            failed=true;break;
+                        }
+                        written+=copied;offset+=n;
+                    }
+                }
+            }
+            if(!obsolete(version)) {
+                if(failed) {
+                    ready_.store(false,std::memory_order_release);
+                    wantedPlay_.store(false,std::memory_order_release);
+                    error_.store(4,std::memory_order_release);
+                    state_.store(State::error,std::memory_order_release);
+                } else if(consumed==sourceTotal) {
+                    length_.store(written,std::memory_order_release);
+                    eof_.store(true,std::memory_order_release);
+                    ready_.store(true,std::memory_order_release);
+                }
             }
             resampled.releaseResources();
         }
@@ -282,6 +399,10 @@ private:
     std::atomic<std::uint64_t> generation_{0},played_{0},length_{0};
     std::atomic<std::uint32_t> readers_{0};
     std::atomic<int> rate_{0},error_{0};
+    // Packed atomic makes KEY+TEMPO a single coherent command, avoiding
+    // a half-new pitch with half-old speed on concurrent UI/worker threads.
+    std::atomic<std::uint32_t> requestedControls_{(100u<<8)|6u};
+    std::atomic<std::uint32_t> appliedControls_{(100u<<8)|6u};
     std::atomic<State> state_{State::empty};
     armix::dsp::RealtimeSlew64 gain_; // AUDIO only
     std::uint64_t audioGeneration_=0; // AUDIO only, no race with file thread

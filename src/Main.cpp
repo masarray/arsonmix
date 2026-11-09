@@ -377,6 +377,8 @@ private:
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
     std::vector<juce::File> playerLibrary_; // one compact default setlist
+    struct PlayerTrackSettings {int key=0,tempo=100;};
+    std::vector<PlayerTrackSettings> playerTrackSettings_; // parallel stable entry IDs
     int playerSelected_=-1,playerCurrent_=-1;
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
@@ -2382,17 +2384,19 @@ private:
         const auto file=settingsDirectory().getChildFile("player-library.json");
         if(!file.existsAsFile())return;
         auto json=juce::JSON::parse(file.loadFileAsString());
-        if(!json.isObject() ||
-           static_cast<int>(json.getProperty("version",0))!=1) {
+        const int version=static_cast<int>(json.getProperty("version",0));
+        if(!json.isObject() || (version!=1 && version!=2)) {
             playerError_="Saved setlist could not be read; music files were not changed";
             return;
         }
         const auto tracks=json.getProperty("files",{});
         if(const auto* list=tracks.getArray()) {
-            for(const auto& path:*list) {
+            for(const auto& item:*list) {
                 if(playerLibrary_.size()>=2000)break;
-                if(!path.isString())continue;
-                const auto text=path.toString();
+                if((version==1 && !item.isString()) ||
+                   (version==2 && !item.isObject()))continue;
+                const auto text=version==1?item.toString():
+                    item.getProperty("path","").toString();
                 if(text.isEmpty() || text.length()>4096)continue;
                 const juce::File entry(text);
                 if(!juce::File::isAbsolutePath(text) ||
@@ -2400,7 +2404,16 @@ private:
                    std::find(playerLibrary_.begin(),playerLibrary_.end(),entry)
                        !=playerLibrary_.end())
                     continue;
+                PlayerTrackSettings controls;
+                if(version==2) {
+                    controls.key=static_cast<int>(item.getProperty("key",0));
+                    controls.tempo=static_cast<int>(item.getProperty("tempo",100));
+                    if(controls.key< -6 || controls.key>6 ||
+                       controls.tempo<80 || controls.tempo>120)
+                        controls={}; // corrupt automation cannot alter audio
+                }
                 playerLibrary_.push_back(entry);
+                playerTrackSettings_.push_back(controls);
             }
         }
         playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
@@ -2409,11 +2422,16 @@ private:
     }
     void persistPlayerLibrary() {
         auto document=std::make_unique<juce::DynamicObject>();
-        document->setProperty("version",1);
+        document->setProperty("version",2);
         document->setProperty("autoNext",playerAutoNext_);
         juce::Array<juce::var> files;
-        for(const auto& f:playerLibrary_)
-            files.add(f.getFullPathName());
+        for(std::size_t i=0;i<playerLibrary_.size();++i) {
+            auto entry=std::make_unique<juce::DynamicObject>();
+            entry->setProperty("path",playerLibrary_[i].getFullPathName());
+            entry->setProperty("key",playerTrackSettings_[i].key);
+            entry->setProperty("tempo",playerTrackSettings_[i].tempo);
+            files.add(juce::var(entry.release()));
+        }
         document->setProperty("files",juce::var(files));
         const auto target=settingsDirectory().getChildFile("player-library.json");
         juce::TemporaryFile staging(target);
@@ -2442,6 +2460,8 @@ private:
                 song->setProperty("title",
                     playerLibrary_[i].getFileNameWithoutExtension());
                 song->setProperty("missing",!playerLibrary_[i].existsAsFile());
+                song->setProperty("keySemitones",playerTrackSettings_[i].key);
+                song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
                 rows.add(juce::var(song.release()));
             }
             obj->setProperty("tracks",juce::var(rows));
@@ -2480,6 +2500,7 @@ private:
                     if(first==static_cast<std::size_t>(-1))
                         first=safe->playerLibrary_.size();
                     safe->playerLibrary_.push_back(file);
+                    safe->playerTrackSettings_.push_back({});
                 }
                 if(safe->playerSelected_<0 && first!=static_cast<std::size_t>(-1))
                     safe->playerSelected_=static_cast<int>(first);
@@ -2517,6 +2538,14 @@ private:
            phase!="EMPTY") {
             playerError_=engine_.playerPlay();
         } else {
+            // Song-level KEY/TEMPO is installed before decoder generation
+            // starts. Never transpose microphone input or alter ASIO clock.
+            const auto controls=playerTrackSettings_[
+                static_cast<std::size_t>(playerSelected_)];
+            if(!engine_.setPlayerPitchTempo(controls.key,controls.tempo)) {
+                playerError_="Invalid KEY or TEMPO settings";
+                emitPlayerState();return;
+            }
             const auto error=engine_.loadPlayerMusic(
                 playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
             playerError_=error;
@@ -2559,6 +2588,30 @@ private:
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerAdd")return choosePlayerFiles();
+        if(action=="playerKeyStep" || action=="playerTempoStep" ||
+           action=="playerPitchTempoReset") {
+            const int i=playerCurrent_>=0?playerCurrent_:playerSelected_;
+            if(i<0 || i>=static_cast<int>(playerTrackSettings_.size())) {
+                playerError_="Add Music to set a song's KEY or TEMPO";
+                emitPlayerState();return;
+            }
+            const int direction=static_cast<int>(value);
+            auto next=playerTrackSettings_[static_cast<std::size_t>(i)];
+            if(action=="playerPitchTempoReset")next={};
+            else if((direction==1 || direction==-1) &&
+                    action=="playerKeyStep")
+                next.key=std::clamp(next.key+direction,-6,6);
+            else if(direction==1 || direction==-1)
+                next.tempo=std::clamp(next.tempo+direction*5,80,120);
+            else return; // invalid native control intent cannot mutate DSP
+            if(engine_.setPlayerPitchTempo(next.key,next.tempo)) {
+                playerTrackSettings_[static_cast<std::size_t>(i)]=next;
+                playerError_.clear();
+                persistPlayerLibrary();
+                emitPlayerState(true);
+            }
+            return;
+        }
         if(action=="playerPlay")return playTransportMusic();
         if(action=="playerPause") {
             engine_.playerPause();emitPlayerState();return;

@@ -106,5 +106,57 @@ int main() {
         deck.pull(left.data(),right.data(),256);
         assert(left[0]==0.f && right[0]==0.f);
     }
+    // M2 real JUCE media → sample-rate converter → independent stereo DSP
+    // → prepared FIFO; this runs without a physical audio device.
+    {
+        armix::player::NativePlayerDeck player;
+        player.deviceRate(48000.0);
+        assert(player.setPitchTempo(3,80));
+        assert(!player.setPitchTempo(7,80)); // invalid cannot mutate DSP
+        assert(!player.setPitchTempo(3,121));
+        player.load(file,true);
+        bool prepared=false;
+        for(int i=0;i<700;++i) {
+            if(player.isPlayingRequested() &&
+               !player.snapshot().processingChangePending) {
+                prepared=true;break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(prepared);
+        const auto preparedStatus=player.snapshot();
+        assert(preparedStatus.keySemitones==3);
+        assert(preparedStatus.tempoPercent==80);
+        assert(preparedStatus.duration>18000); // slower: more output frames
+        std::array<float,256> l{},r{};
+        double energy=0,stereo=0;
+        for(int i=0;i<48;++i) {
+            player.pull(l.data(),r.data(),256);
+            for(int n=0;n<256;++n) {
+                assert(std::isfinite(l[n]) && std::isfinite(r[n]));
+                energy+=static_cast<double>(l[n])*l[n];
+                stereo+=static_cast<double>(l[n])*r[n];
+            }
+        }
+        assert(energy>0.1 && stereo<0);
+        // Independent KEY and TEMPO changes are accepted by the decoder
+        // worker without resetting or manipulating the ASIO device clock.
+        assert(player.setPitchTempo(-2,120));
+        const auto request=player.snapshot();
+        assert(request.requestedKey==-2 && request.requestedTempo==120);
+        assert(request.deviceRate==48000.0);
+        player.stop();
+        player.play();
+        bool newSettings=false;
+        for(int i=0;i<700;++i) {
+            const auto st=player.snapshot();
+            if(st.keySemitones==-2 && st.tempoPercent==120 &&
+               player.isPlayingRequested()) {
+                newSettings=true;break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(newSettings);
+    }
     assert(file.deleteFile());
 }
