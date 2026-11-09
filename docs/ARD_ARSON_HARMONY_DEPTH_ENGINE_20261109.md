@@ -107,3 +107,27 @@ clearing. Offline A/B adds `10_room_focus_off_space_060.wav` and
 `11_room_focus_off_backing_only.wav` with the SAME stage and pitch
 to isolate the room change. Synthetic tests are not a real singer or
 physical ASIO qualification.
+
+
+## 2026-11-09 D4 field fix — harmony wet presence and knob optical spacing
+
+A recorded owner listening session found pitch quality noticeably human,
+but backing was too thin even with 4 voices, 100% Wet and Space 60%.
+`HarmonyDsp` previously applied `0.65*Wet/sqrt(voices)`, followed by
+the existing Space direct attenuation. The new **control-thread** voice
+law `Wet*(0.77+0.38*Wet)/sqrt(voices)` raises wet backing roughly
++3.2 dB at Wet45% and +4.95 dB at Wet100%, without ducking the original
+dry lead or moving spatial placements. Wet0 is exactly zero; 2–5 voices
+retain sqrt-count normalization. This is not a master limiter, and no
+physical hardware headroom or singing quality is implied by the formula.
+An offline-only before-process() switch produces the prior presence law
+for matched-A/B WAV `12_presence_old_space_060.wav` and
+`13_presence_old_backing_only.wav`. Synthetic self-test asserts backing
+stem RMS increases in the expected bounded range and dry lead parity.
+
+The screenshot showed COLOR/SPACE/WET/GAIN overlapping the glowing ring:
+the pseudo ring extends 11px below the 68/59px knob but the old label
+was separated by only a 1px gap. Add a compact 12px top margin and 11px
+line height to the caption; preserve all editor dimensions, dial size,
+pointer and parameter meanings. Chromium geometry checks real caption
+clearance and value noncollision across existing test viewports.

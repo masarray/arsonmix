@@ -537,6 +537,34 @@ int main(){
          "ensemble room has no stereo depth or loses mono compatibility");
   }
 
+  // Field feedback: full Wet, 4 voices, Space 60% still sounded thin.
+  // Presence curve must lift BACKING only, with sqrt voice count normalization
+  // and exact Wet0 silence; all scalar math is prepared on control thread.
+  for(int voices=2;voices<=Engine::maxVoices;++voices){
+    float previous=0.f;
+    for(float wet:{0.f,.15f,.45f,.60f,.85f,1.f}){
+      const float modern=Engine::normalizedBackingWetAmplitude(wet,voices);
+      const float legacy=Engine::normalizedBackingWetAmplitude(wet,voices,false);
+      need(std::isfinite(modern)&&modern>=previous&&
+           modern<=1.151f/std::sqrt(static_cast<float>(voices)),
+           "Harmony wet presence nonmonotone or unbounded");
+      if(wet==0.f)need(modern==0.f&&legacy==0.f,"Wet0 leaked harmony");
+      if(wet==1.f)need(modern>legacy*1.73f&&modern<legacy*1.80f,
+                       "Wet100 failed to raise backing presence");
+      previous=modern;
+    }
+    Settings settings;settings.voices=voices;settings.wet=1.f;settings.space=.6f;
+    Engine::PreparedSettings modern{},legacy{};
+    need(Engine::prepareSettings(settings,modern)&&
+         Engine::prepareSettings(settings,legacy,false),
+         "prepared Harmony wet staging rejected");
+    for(int voice=0;voice<voices;++voice){
+      const float level=std::hypot(modern.mixL[voice],modern.mixR[voice]);
+      const float prior=std::hypot(legacy.mixL[voice],legacy.mixR[voice]);
+      need(std::abs(level-Engine::normalizedBackingWetAmplitude(1.f,voices))<1.e-5f&&
+           level>prior*1.73f,"prepared Harmony pan lost presence or normalization");
+    }
+  }
   // P0 lead preservation: backing Wet must never change the lead amplitude.
   // The *only* intentional lead replacement is Pitch Tune's explicit blend.
   for(float dry:{-.9f,-.3f,0.f,.27f,.9f}){

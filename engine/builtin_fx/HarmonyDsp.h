@@ -108,6 +108,7 @@ public:
         pitchSyncReferenceEnabled_=true;
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
+        presenceReferenceEnabled_=true;
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -133,13 +134,24 @@ public:
         float gain=1.f;
         float mixL[maxVoices]{},mixR[maxVoices]{};
     };
-    static bool prepareSettings(const Settings& next,PreparedSettings& out) noexcept {
+    // Wet-only musical presence, prepared OFF the audio callback.
+    // 4-voice full Wet rises ~5 dB while dry lead and stage remain unchanged.
+    static float normalizedBackingWetAmplitude(float wet,int voices,
+                                               bool enhanced=true) noexcept {
+        if(!std::isfinite(wet)||wet<=0.f||voices<2||voices>maxVoices)return 0.f;
+        const float w=std::clamp(wet,0.f,1.f);
+        const float presence=enhanced?(.77f+.38f*w):.65f;
+        return w*presence/std::sqrt(static_cast<float>(voices));
+    }
+    static bool prepareSettings(const Settings& next,PreparedSettings& out,
+                                bool enhancedPresence=true) noexcept {
         if(!valid(next))return false;
         PreparedSettings prepared;
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
         constexpr float pi=3.14159265358979323846f;
-        const float amplitude=next.wet*0.65f/std::sqrt(static_cast<float>(next.voices));
+        const float amplitude=normalizedBackingWetAmplitude(
+            next.wet,next.voices,enhancedPresence);
         for(int v=0;v<next.voices;++v){
             // Width is moderate even at the center-friendly default Space.
             const float pan=.72f*next.space*
@@ -184,7 +196,8 @@ public:
     // FX mailbox invokes applyPreparedSettings(), never this trig/pow path.
     bool setSettings(const Settings& next) noexcept {
         PreparedSettings prepared;
-        return prepareSettings(next,prepared)&&applyPreparedSettings(prepared);
+        return prepareSettings(next,prepared,presenceReferenceEnabled_)&&
+               applyPreparedSettings(prepared);
     }
     // Called only on the existing audio callback from a separately selected
     // source channel. Invalid/ambiguous music always restores Manual Key.
@@ -218,6 +231,13 @@ public:
     }
     void setRoomFocusForOfflineReference(bool enabled) noexcept {
         roomFocusReferenceEnabled_=enabled;
+    }
+    // Offline-only before process(): same native pitch, stage, room and wet,
+    // but old vs new normalized voice gain, for controlled vocal A/B.
+    bool setBackingPresenceForOfflineReference(bool enabled) noexcept {
+        if(processed_)return false;
+        presenceReferenceEnabled_=enabled;
+        return setSettings(settings_);
     }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
@@ -541,6 +561,7 @@ private:
     std::uint64_t sampleClock_=0;
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
+    bool presenceReferenceEnabled_=true;
     std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;

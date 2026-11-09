@@ -437,6 +437,20 @@ def main():
                     assert page.locator('#mxHStatus').inner_text().startswith("NATIVE")
                     assert "FX 2" in page.locator("#mxHChannel").inner_text()
                 assert not errors,errors
+                # The knob's lit pseudo-ring extends 11px past its face.
+                # Test real layout, not only CSS text, at every viewport.
+                dial_geometry=page.evaluate("""()=>[...document.querySelectorAll(
+                    '#mxNativeHarmony .mx-harm-slider')].map(s=>{
+                    const f=s.querySelector('.mx-harm-dial-face').getBoundingClientRect();
+                    const c=s.querySelector('.mx-harm-dial-label').getBoundingClientRect();
+                    const o=s.querySelector('output').getBoundingClientRect();
+                    return {gap:c.top-f.bottom,labelBottom:c.bottom,outputTop:o.top};
+                })""")
+                assert len(dial_geometry)==4,dial_geometry
+                for geom in dial_geometry:
+                    assert geom["gap"]>=12.0,("caption overlaps halo",width,geom)
+                    assert geom["outputTop"]>=geom["labelBottom"]-0.5,(
+                        "caption/value collision",width,geom)
                 rect=editor.bounding_box()
                 assert rect and rect["width"]<=width+1,(width,rect)
                 assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect

@@ -87,13 +87,15 @@ static void writeWave(const fs::path& path,const Wave& wave){
     if(!out)throw std::runtime_error("WAV output write failed");
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
-                    bool enhancedDepth=true,bool focus=true){
+                    bool enhancedDepth=true,bool focus=true,bool presence=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
     e->setRoomFocusForOfflineReference(focus);
+    if(!e->setBackingPresenceForOfflineReference(presence))
+        throw std::runtime_error("Harmony presence offline reference rejected");
     Wave out=input;
     for(std::size_t pos=0;pos<out.left.size();pos+=static_cast<std::size_t>(block))
         e->process(out.left.data()+pos,out.right.data()+pos,
@@ -127,13 +129,15 @@ static Wave fold(const Wave& in){
 }
 static void generateReport(const fs::path& folder,const Wave& input,
              const Wave& dry,const Wave& legacy,const Wave& modern,
-             const Wave& backing,const Wave& previousStage){
+             const Wave& backing,const Wave& previousStage,
+             const Wave& previousPresence){
     std::ofstream out(folder/"metrics.json");
     out<<"{\n  \"sampleRate\": "<<input.rate<<",\n  \"frames\": "<<input.left.size()
        <<",\n  \"dryRms\": "<<rms(dry)<<",\n  \"legacyRms\": "<<rms(legacy)
        <<",\n  \"synchronousRms\": "<<rms(modern)
        <<",\n  \"backingDifferenceRms\": "<<rms(backing)
        <<",\n  \"previousDepthRms\": "<<rms(previousStage)
+       <<",\n  \"previousPresenceRms\": "<<rms(previousPresence)
        <<",\n  \"sourceFormantsMeasured\": false,\n  \"realSingerQualified\": false,\n"
        <<"  \"method\": \"same native input, independently reset engines; backing = wet mix - Wet0 lead, correction OFF, gain 0dB\"\n}\n";
 }
@@ -156,6 +160,7 @@ static void renderAb(const Wave& input,const fs::path& folder){
     const Wave backing=subtract(modern,dry);
     const Wave previousDepth=process(input,settings,true,127,false);
     const Wave previousRoomFocus=process(input,settings,true,127,true,false);
+    const Wave previousPresence=process(input,settings,true,127,true,true,false);
     writeWave(folder/"01_lead_reference.wav",dry);
     writeWave(folder/"02_legacy_grain_mix.wav",old);
     writeWave(folder/"03_new_space_060.wav",modern);
@@ -165,9 +170,11 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"09_previous_backing_only.wav",subtract(previousDepth,dry));
     writeWave(folder/"10_room_focus_off_space_060.wav",previousRoomFocus);
     writeWave(folder/"11_room_focus_off_backing_only.wav",subtract(previousRoomFocus,dry));
+    writeWave(folder/"12_presence_old_space_060.wav",previousPresence);
+    writeWave(folder/"13_presence_old_backing_only.wav",subtract(previousPresence,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
-    generateReport(folder,input,dry,old,modern,backing,previousDepth);
+    generateReport(folder,input,dry,old,modern,backing,previousDepth,previousPresence);
 }
 int main(int argc,char** argv){
     try{
@@ -182,8 +189,19 @@ int main(int argc,char** argv){
             auto before=process(v,s,false);
             auto after=process(v,s,true);
             if(!(rms(before)>0.01&&rms(after)>0.01))return 2;
+            s.wet=1.f;s.space=.6f;s.voices=4;
+            const auto baseline=process(v,s,true,127,true,true,false);
+            const auto boosted=process(v,s,true,127,true,true,true);
+            auto drySettings=s;drySettings.wet=0.f;
+            const auto dry=process(v,drySettings,true);
+            const double beforeRms=rms(subtract(baseline,dry));
+            const double afterRms=rms(subtract(boosted,dry));
+            if(!(beforeRms>.0001&&afterRms>beforeRms*1.50&&
+                 afterRms<beforeRms*1.90))return 5;
             s.wet=0.f;
-            if(!same(process(v,s,false),process(v,s,true)))return 3;
+            if(!same(process(v,s,false),process(v,s,true))||
+               !same(process(v,s,true,127,true,true,false),
+                     process(v,s,true,127,true,true,true)))return 3;
             if(!same(process(v,s,true,127,false),
                      process(v,s,true,127,true)))return 4;
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
