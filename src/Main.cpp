@@ -1359,9 +1359,9 @@ private:
         const auto typeName=config.getProperty("backend",{}).toString();
         const auto capture=config.getProperty("captureDevice",{}).toString();
         const auto playback=config.getProperty("playbackDevice",{}).toString();
-        if(typeName.isEmpty()||capture.isEmpty()||playback.isEmpty()||
+        if(typeName.isEmpty()||playback.isEmpty()||
            typeName.length()>160||capture.length()>250||playback.length()>250)
-            return send(false,"REJECTED","Choose actual capture and playback devices");
+            return send(false,"REJECTED","Choose an actual playback device");
         auto& manager=engine_.devices();
         juce::AudioIODeviceType* selectedType=nullptr;
         for(auto* type:manager.getAvailableDeviceTypes())
@@ -1370,8 +1370,15 @@ private:
         // Do not let JS submit arbitrary names or combine unmatched ASIO devices.
         const auto namesIn=selectedType->getDeviceNames(true);
         const auto namesOut=selectedType->getDeviceNames(false);
-        if(!namesIn.contains(capture)||!namesOut.contains(playback)||
-            (!selectedType->hasSeparateInputsAndOutputs()&&capture!=playback))
+        // A separate-input/output backend can legitimately open a render
+        // endpoint WITHOUT capture hardware. Empty capture is a deliberate
+        // operator choice, never an inferred name or a fake input port.
+        // ASIO/non-separate drivers retain exact duplex device identity;
+        // they may still expose zero enabled capture *pins*.
+        const bool separate=selectedType->hasSeparateInputsAndOutputs();
+        const bool outputOnly=separate&&capture.isEmpty();
+        if((!outputOnly&&!namesIn.contains(capture))||!namesOut.contains(playback)||
+            (!separate&&capture!=playback))
             return send(false,"REJECTED","Device names or duplex pairing are not reported by JUCE");
         auto sample=config.getProperty("sampleRate",{}), period=config.getProperty("bufferSize",{});
         if(!(sample.isInt()||sample.isDouble()||sample.isInt64())||
@@ -1449,14 +1456,18 @@ private:
             };
             juce::BigInteger inMask,outMask;
             if(!parsePins(pinInput,inCount,inMask)||!parsePins(pinOutput,outCount,outMask)||
-               inMask.countNumberOfSetBits()<1||outMask.countNumberOfSetBits()<2)
-                return send(false,"REJECTED","Choose >=1 verified capture and >=2 playback pins");
+               (outputOnly&&!inMask.isZero())||outMask.countNumberOfSetBits()<2)
+                return send(false,"REJECTED","Select real input pins (or none) and >=2 verified playback pins");
             candidate.useDefaultInputChannels=false;
             candidate.useDefaultOutputChannels=false;
             candidate.inputChannels=inMask;
             candidate.outputChannels=outMask;
         }else {
-            candidate.useDefaultInputChannels=true;
+            // The requested 0-IN option must not reopen a microphone merely
+            // because JUCE defaults to enabling available capture channels.
+            // Output pin selection still requires actual driver readback.
+            candidate.useDefaultInputChannels=!outputOnly;
+            if(outputOnly)candidate.inputChannels.clear();
             candidate.useDefaultOutputChannels=true;
         }
         auto* active=manager.getCurrentAudioDevice();
@@ -1511,7 +1522,6 @@ private:
               (!candidate.useDefaultOutputChannels&&actual.outputChannels!=candidate.outputChannels)||
               opened->getActiveInputChannels()!=actual.inputChannels||
               opened->getActiveOutputChannels()!=actual.outputChannels||
-              opened->getActiveInputChannels().countNumberOfSetBits()<1||
               opened->getActiveOutputChannels().countNumberOfSetBits()<2||
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))

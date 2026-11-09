@@ -1675,7 +1675,8 @@
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
         if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
         const draft=deviceChoice,active=deviceInventory.active;
-        if(!draft.backend||!draft.capture||!draft.playback)return;
+        const separate=deviceInventory.types?.find(x=>x.name===draft.backend)?.separate===true;
+        if(!draft.backend||!draft.playback||(!separate&&!draft.capture))return;
         sendDeviceApply();
       };
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
@@ -1696,7 +1697,10 @@
     if(!el)return;
     el.replaceChildren(...values.map(value=>{
       const option=document.createElement("option");
-      option.value=value;option.textContent=value;return option;
+      option.value=value;
+      option.textContent=name==="capture"&&value===""
+        ?"No hardware input (Player / FX)":value;
+      return option;
     }));
     if(values.includes(current))el.value=current;
     el.disabled=deviceBusy;
@@ -1707,7 +1711,9 @@
     if(!deviceChoice){
       const backendName=active.backend||types[0]?.name||"";
       const selected=types.find(x=>x.name===backendName);
-      const capture=active.captureDevice||selected?.inputs?.[0]||"";
+      // Preserve an already-open output-only endpoint on repeated dialog opens.
+      const capture=active.open?String(active.captureDevice||""):
+        active.captureDevice||selected?.inputs?.[0]||"";
       deviceChoice={backend:backendName,capture,
         playback:active.playbackDevice||
           (selected?.separate?selected?.outputs?.[0]:capture)||"",
@@ -1720,7 +1726,8 @@
     if(asio4allHint)asio4allHint.hidden=!(
       deviceChoice.backend==="ASIO"&&/asio4all/i.test(deviceChoice.capture));
     fillAudioSelect("backend",types.map(x=>x.name),deviceChoice.backend);
-    fillAudioSelect("capture",t?.inputs||[],deviceChoice.capture);
+    fillAudioSelect("capture",
+      t?.separate?["",...(t.inputs||[])]:t?.inputs||[],deviceChoice.capture);
     fillAudioSelect("playback",t?.outputs||[],deviceChoice.playback);
     const same=active.open&&active.backend===deviceChoice.backend&&
       active.captureDevice===deviceChoice.capture&&
@@ -1766,7 +1773,7 @@
       "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples":
       "No verified audio device. Select a supported input and output.");
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
-      !deviceChoice.backend||!deviceChoice.capture||
+      !deviceChoice.backend||(!t?.separate&&!deviceChoice.capture)||
       !deviceChoice.playback;
     const remap=devicePanel.querySelector("[data-audio-remap]");
     remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
@@ -1812,13 +1819,12 @@
       const accepted=ack.ok===true&&["ACCEPTED_LIVE","ACCEPTED_MUTED"].includes(ack.state) &&
         ack.active?.open===true && ack.active?.authorized===true &&
         Array.isArray(ack.active.enabledInputs) &&
-        ack.active.enabledInputs.length>0 &&
         Array.isArray(ack.active.enabledOutputs) &&
         ack.active.enabledOutputs.length>=2;
       const outputReady=ack.outputMuted===false;
       deviceResult=accepted?
         (outputReady?"Mixer ready · Output live":
-          ack.mixerBound?"Mixer ready · Verify channel IN and output":"Audio device ready · choose a channel IN"):
+          ack.mixerBound?"Mixer ready · FX/WIRE available":"Audio device ready · no hardware input required"):
         ack.state==="NEEDS_REMAP"?
           "NEEDS REMAP · "+ack.error:
           "Device rejected · "+(ack.error||"native hardware readback failed");

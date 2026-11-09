@@ -1248,6 +1248,18 @@ test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);
  assert.match(bridge,/const deviceReady=\(\)=>/);
 });
+test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
+ const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
+ assert.match(cpp,/candidate\.useDefaultInputChannels=!outputOnly/);
+ assert.match(cpp,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
+ assert.match(cpp,/\(outputOnly&&!inMask\.isZero\(\)\)/);
+ assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
+ assert.match(bridge,/No hardware input \(Player \/ FX\)/);
+ assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
+ assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
+ assert.match(bridge,/FX\/WIRE available/);
+});
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
  let win;
