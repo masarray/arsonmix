@@ -13,6 +13,15 @@
 
 int main() {
     using Policy=armix::player::SetlistPolicy;
+    // PREPARE NEXT must not retune the CURRENT backing track, even while
+    // the performer presses +/- repeatedly on the queued song's controls.
+    assert(Policy::pitchTempoTarget(0,1,3).index==1);
+    assert(!Policy::pitchTempoTarget(0,1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(0,0,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(2,-1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(-1,1,3).index==1);
+    assert(!Policy::pitchTempoTarget(-1,1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(-1,99,3).index==-1);
     // Live stage semantics: queued NEXT must not hijack pause/resume.
     assert(Policy::resumeCurrentOnPlay("PAUSED",3));
     assert(Policy::resumeCurrentOnPlay("PREPARING",3));
@@ -105,6 +114,127 @@ int main() {
         left.fill(9.f);right.fill(9.f);
         deck.pull(left.data(),right.data(),256);
         assert(left[0]==0.f && right[0]==0.f);
+    }
+    // M2 real JUCE media → sample-rate converter → independent stereo DSP
+    // → prepared FIFO; this runs without a physical audio device.
+    {
+        armix::player::NativePlayerDeck player;
+        player.deviceRate(48000.0);
+        assert(player.setPitchTempo(3,80));
+        assert(!player.setPitchTempo(7,80)); // invalid cannot mutate DSP
+        assert(!player.setPitchTempo(3,121));
+        player.load(file,true);
+        bool prepared=false;
+        for(int i=0;i<700;++i) {
+            if(player.isPlayingRequested() &&
+               !player.snapshot().processingChangePending) {
+                prepared=true;break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(prepared);
+        const auto preparedStatus=player.snapshot();
+        assert(preparedStatus.keySemitones==3);
+        assert(preparedStatus.tempoPercent==80);
+        assert(preparedStatus.duration>18000); // slower: more output frames
+        std::array<float,256> l{},r{};
+        double energy=0,stereo=0;
+        for(int i=0;i<48;++i) {
+            player.pull(l.data(),r.data(),256);
+            for(int n=0;n<256;++n) {
+                assert(std::isfinite(l[n]) && std::isfinite(r[n]));
+                energy+=static_cast<double>(l[n])*l[n];
+                stereo+=static_cast<double>(l[n])*r[n];
+            }
+        }
+        assert(energy>0.1 && stereo<0);
+        // Independent KEY and TEMPO changes are accepted by the decoder
+        // worker without resetting or manipulating the ASIO device clock.
+        assert(player.setPitchTempo(-2,120));
+        const auto request=player.snapshot();
+        assert(request.requestedKey==-2 && request.requestedTempo==120);
+        assert(request.deviceRate==48000.0);
+        player.stop();
+        player.play();
+        bool newSettings=false;
+        for(int i=0;i<700;++i) {
+            const auto st=player.snapshot();
+            if(st.keySemitones==-2 && st.tempoPercent==120 &&
+               player.isPlayingRequested()) {
+                newSettings=true;break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(newSettings);
+    }
+    // M2 LIVE edits must be accepted and processed WHILE the same song
+    // is still playing. A previous test only checked Stop→Play, which
+    // could conceal stalled edits after the decoder had read to EOF.
+    {
+        const auto longFile=juce::File::getSpecialLocation(
+            juce::File::tempDirectory).getNonexistentChildFile(
+                "arson-player-live-tempo-test",".wav",false);
+        {
+            std::unique_ptr<juce::AudioFormatWriter> w(
+                wave.createWriterFor(longFile.createOutputStream().release(),
+                                     44100.0,2,16,{},0));
+            assert(w!=nullptr);
+            juce::AudioBuffer<float> music(2,44100*8);
+            for(int n=0;n<music.getNumSamples();++n) {
+                const auto v=static_cast<float>(.3*std::sin(
+                    2.0*3.14159265358979323846*330.0*n/44100.0));
+                music.setSample(0,n,v);
+                music.setSample(1,n,-v);
+            }
+            assert(w->writeFromAudioSampleBuffer(music,0,
+                                                 music.getNumSamples()));
+        }
+        {
+        armix::player::NativePlayerDeck player;
+        player.deviceRate(48000.0);
+        player.load(longFile,true);
+        bool started=false;
+        for(int i=0;i<600;++i) {
+            if(player.isPlayingRequested()) {started=true;break;}
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(started);
+        std::array<float,256> left{},right{};
+        for(int i=0;i<24;++i) {
+            player.pull(left.data(),right.data(),256);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto original=player.snapshot();
+        assert(original.played>0 && original.deviceRate==48000);
+        const auto originalGeneration=original.generation;
+        const auto changeDuringPlayback=[&](int key,int tempo) {
+            assert(player.setPitchTempo(key,tempo));
+            bool applied=false;
+            for(int i=0;i<750;++i) {
+                player.pull(left.data(),right.data(),256);
+                const auto current=player.snapshot();
+                for(int n=0;n<256;++n) {
+                    assert(std::isfinite(left[n]));
+                    assert(std::isfinite(right[n]));
+                }
+                if(current.keySemitones==key &&
+                   current.tempoPercent==tempo &&
+                   !current.processingChangePending) {
+                    assert(current.generation==originalGeneration);
+                    assert(current.deviceRate==48000);
+                    applied=true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            assert(applied); // no Stop, Play or hardware rebind required
+        };
+        changeDuringPlayback(3,80);
+        changeDuringPlayback(-2,120);
+        changeDuringPlayback(0,100); // normal 0/100 passthrough restored
+        assert(player.snapshot().played>original.played);
+        } // ensure native decoder closes the file before Windows deletion
+        assert(longFile.deleteFile());
     }
     assert(file.deleteFile());
 }

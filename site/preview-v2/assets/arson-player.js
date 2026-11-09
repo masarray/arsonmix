@@ -36,6 +36,11 @@
    send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay");
  });
  $("playerStop").addEventListener("click",()=>send("playerStop"));
+ $("playerKeyMinus").addEventListener("click",()=>send("playerKeyStep",-1));
+ $("playerKeyPlus").addEventListener("click",()=>send("playerKeyStep",1));
+ $("playerTempoMinus").addEventListener("click",()=>send("playerTempoStep",-1));
+ $("playerTempoPlus").addEventListener("click",()=>send("playerTempoStep",1));
+ $("playerPitchReset").addEventListener("click",()=>send("playerPitchTempoReset"));
  $("playerChooseOutput").addEventListener("click",()=>send("playerChooseOutput"));
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
@@ -106,6 +111,25 @@
    $("playerProgress").value=+t.durationSeconds>0?
      Math.min(1,Math.max(0,+t.currentSeconds/(+t.durationSeconds))):0;
    $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
+   const editingIndex=model.selected>=0?model.selected:model.current;
+   const chosen=model.tracks[editingIndex];
+   // These controls are song presets: NEXT can be prepared during a live
+   // CURRENT performance. The JUCE engine only applies when appropriate.
+   const editingNext=editingIndex>=0 && editingIndex!==model.current;
+   const targetDescription=editingNext?"queued next song":"current song";
+   const pitchRow=root.querySelector(".ap-pitchtempo");
+   if(pitchRow)pitchRow.setAttribute("aria-label",
+      "Music pitch and playback speed for "+targetDescription);
+   $("playerKeyValue").title="Key for "+targetDescription;
+   $("playerTempoValue").title="Tempo for "+targetDescription;
+   const key=Number(chosen?.keySemitones??t.requestedKey??0);
+   const tempo=Number(chosen?.tempoPercent??t.requestedTempo??100);
+   $("playerKeyValue").textContent=(key>0?"+":"")+key+" st";
+   $("playerTempoValue").textContent=tempo+"%";
+   $("playerKeyMinus").disabled=key<=-6;
+   $("playerKeyPlus").disabled=key>=6;
+   $("playerTempoMinus").disabled=tempo<=80;
+   $("playerTempoPlus").disabled=tempo>=120;
    $("playerAutoNext").textContent=model.autoNext?"Auto Next · On":"Auto Next · Off";
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
    const detail=model.error||t.error||({
@@ -120,7 +144,10 @@
         "Music playing · output muted",
       ERROR:"Unable to decode this file"
    }[state]||"");
-   showFeedback(detail,Boolean(model.error||t.error));
+   const indicator=(t.processingChangePending && !model.error && !t.error &&
+       state!=="EMPTY" && state!=="ERROR")
+     ?"Preparing music KEY/TEMPO in decoder…":detail;
+   showFeedback(indicator,Boolean(model.error||t.error));
    $("playerChooseOutput").hidden=!native || !Boolean(model.chooseOutput);
    $("playerCount").textContent=model.tracks.length+" songs";
    renderTracks();

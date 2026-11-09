@@ -177,6 +177,15 @@ if(BUILD_TESTING)
   target_compile_features(ARMixPlayerDecodeTests PRIVATE cxx_std_20)
   add_test(NAME ArSonPlayerRealWavDecodeResampleAndTransport COMMAND ARMixPlayerDecodeTests)
   add_dependencies(ARMixMixerRoutingTests ARMixPlayerDecodeTests)
+  # M2: independent stereo key/tempo, documented MIT-vendored Signalsmith.
+  # Build under the existing Windows mixer test target; no new CI lane.
+  add_executable(ARMixPlayerPitchTempoTests tests/player_pitch_tempo_test.cpp)
+  target_include_directories(ARMixPlayerPitchTempoTests PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith")
+  target_compile_features(ARMixPlayerPitchTempoTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM2IndependentKeyTempoStereoPCM
+      COMMAND ARMixPlayerPitchTempoTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerPitchTempoTests)
   # Windows release workflow builds ARMixMixerRoutingTests explicitly, then runs
   # all CTests. Make its native session regression a build dependency so the
   # new executable is actually present (without editing the CI target list).
