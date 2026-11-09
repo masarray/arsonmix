@@ -5,6 +5,7 @@
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/core/NativeMusicTempoMonitor.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
@@ -1388,6 +1389,32 @@ public:
             const juce::String& token,bool bypass) noexcept {
         return nativeAccepted_.setFxBypass(nativePublisher_,epochAtEdit,
             pcmRevision,target,slot,token,bypass);
+    }
+    // Native music onset analysis has no secondary audio callback. A source
+    // selector is admitted only against the ACTIVE epoch/revision graph.
+    bool selectMusicTempoSource(std::uint64_t ep,std::uint64_t rev,
+             armix::mixer::ChannelId source,double sampleRate) noexcept {
+        if(!channelIdPhysicalPcmActive()||ep!=epoch()||
+           rev!=nativeAccepted_.pcmRevision)return false;
+        return nativePublisher_.setMusicTempoSource(ep,rev,source,sampleRate);
+    }
+    armix::mixer::NativeMusicTempoMonitor::State pollMusicTempo() noexcept {
+        const auto ep=channelIdPhysicalPcmActive()?epoch():0;
+        return nativePublisher_.pollMusicTempo(ep,nativeAccepted_.pcmRevision);
+    }
+    // CONTROL traversal of the *published* insert owners. No audio-thread
+    // graph search or raw unmanaged pointers survive this synchronous call.
+    template<class Callback>
+    void forEachNativeProcessor(Callback&& visit) const {
+        if(!channelIdPhysicalPcmActive()||!nativeAccepted_.fxOwners)return;
+        for(const auto& ch:nativeAccepted_.graph.roster.channels()) {
+            const auto count=nativeAccepted_.fxOwners->insertCount(ch.id);
+            for(std::size_t slot=0;slot<count;++slot) {
+                const auto* owner=nativeAccepted_.fxOwners->ownerForControl(ch.id,slot);
+                if(owner && *owner && (*owner)->processor)
+                    visit(ch.id,(*owner)->processor.get());
+            }
+        }
     }
     bool nativeChannelIsOriginalCh1(armix::mixer::ChannelId target) const noexcept {
         return nativeAccepted_.fxOwners &&

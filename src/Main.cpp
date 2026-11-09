@@ -399,6 +399,14 @@ private:
     } pendingNativeHarmony_;
     juce::String lastNativeHarmonyRequest_,lastNativeHarmonyInstance_;
     juce::String lastNativeHarmonyEpoch_,lastNativeHarmonyRevision_;
+    struct PendingNativeThrow {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeThrow_;
+    juce::String lastNativeThrowRequest_,lastNativeThrowInstance_;
+    juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
+    armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
     juce::String startupError_, lastAudioXml_;
@@ -1082,9 +1090,12 @@ private:
                     armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity;
                 const bool builtInHarmony=catalogId==
                     armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
-                const auto* plugin=(builtInEq||builtInComp||builtInHarmony)?nullptr:catalog_.find(catalogId);
+                const bool builtInThrow=catalogId==
+                    armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
+                const auto* plugin=(builtInEq||builtInComp||builtInHarmony||builtInThrow)?
+                    nullptr:catalog_.find(catalogId);
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if((!builtInEq&&!builtInComp&&!builtInHarmony&&!plugin)||catalog_.busy()||nativeShowBusy_||
+                if((!builtInEq&&!builtInComp&&!builtInHarmony&&!builtInThrow&&!plugin)||catalog_.busy()||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(
@@ -1105,6 +1116,9 @@ private:
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         builtInHarmony?
                         engine_.installNativeBuiltInHarmony(
+                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                        builtInThrow?
+                        engine_.installNativeBuiltInVocalThrow(
                             ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
@@ -1881,6 +1895,24 @@ private:
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            // Accepted native source and analyzer readback; never invent an
+            // AUTO lock from the manual BPM text field.
+            reply->setProperty("musicSourceChannelId",
+                juce::String(std::to_string(lastMusicTempo_.source.value)));
+            reply->setProperty("musicSourceActive",lastMusicTempo_.active);
+            reply->setProperty("musicLocked",lastMusicTempo_.active&&
+                lastMusicTempo_.tempo.locked);
+            reply->setProperty("musicBpm",lastMusicTempo_.tempo.bpm);
+            reply->setProperty("musicConfidence",lastMusicTempo_.tempo.confidence);
+            reply->setProperty("musicGridAvailable",lastMusicTempo_.active&&
+                lastMusicTempo_.tempo.locked&&
+                lastMusicTempo_.tempo.phaseLocked);
+            reply->setProperty("musicPhaseConfidence",
+                lastMusicTempo_.tempo.phaseConfidence);
+            reply->setProperty("musicBeatAnchorFrame",juce::String(
+                std::to_string(lastMusicTempo_.tempo.beatAnchorFrame)));
+            reply->setProperty("musicDroppedFrames",
+                static_cast<int>(lastMusicTempo_.dropped));
             juce::Array<juce::var> bands;
             for(const auto& band:processor->acceptedBands()){
                 auto item=std::make_unique<juce::DynamicObject>();
@@ -2110,6 +2142,113 @@ private:
             "arMixBuiltinHarmonyAck",juce::var(ack.release()));
     }
 
+    // CONTROL ONLY: drain at most 512 ten-ms music summary frames per 12Hz
+    // host tick. The actual music audio was tapped inside the existing PCM
+    // graph; BPM/onset analysis never touches the ASIO callback. All live
+    // vocal inserts consume a precomputed atomic interval, not a WebView BPM.
+    void serviceNativeMusicTempo() {
+        lastMusicTempo_=engine_.pollNativeMusicTempo();
+        const bool bpmLocked=lastMusicTempo_.active&&
+            lastMusicTempo_.tempo.locked;
+        const bool phaseLocked=bpmLocked&&
+            lastMusicTempo_.tempo.phaseLocked&&
+            lastMusicTempo_.tempo.beatAnchorFrame>0;
+        const float bpm=bpmLocked?lastMusicTempo_.tempo.bpm:0.f;
+        const std::uint64_t anchor=phaseLocked?
+            lastMusicTempo_.tempo.beatAnchorFrame:0;
+        const auto epoch=lastMusicTempo_.epoch;
+        const auto revision=lastMusicTempo_.revision;
+        engine_.forEachNativeProcessor([bpm,anchor,epoch,revision](
+            armix::mixer::ChannelId,juce::AudioProcessor* p) {
+            if(auto* vocal=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(p))
+                vocal->publishMusicGrid(bpm,anchor,epoch,revision);
+        });
+    }
+
+    // Native Vocal Throw settings, manual cue and auto-trigger readback.
+    // Settings and triggers are not accepted until the AUDIO-owned SPSC
+    // completion is drained on JUCE's message thread.
+    void emitNativeThrowSnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::VocalThrowProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",1);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            auto settings=std::make_unique<juce::DynamicObject>();
+            const auto s=processor->acceptedSettings();
+            settings->setProperty("mode",s.mode);
+            settings->setProperty("bpm",s.bpm);
+            settings->setProperty("division",s.division);
+            settings->setProperty("repeats",s.repeats);
+            settings->setProperty("captureMs",s.captureMs);
+            settings->setProperty("silenceMs",s.silenceMs);
+            settings->setProperty("thresholdDb",s.thresholdDb);
+            settings->setProperty("wet",s.wet);
+            settings->setProperty("decay",s.decay);
+            settings->setProperty("ducking",s.ducking);
+            reply->setProperty("settings",juce::var(settings.release()));
+            reply->setProperty("sampleRate",processor->acceptedSampleRate());
+            reply->setProperty("throwCount",static_cast<int>(processor->observedThrowCount()));
+            reply->setProperty("tailActive",processor->observedTailActive());
+            reply->setProperty("addedLatencySamples",processor->getLatencySamples());
+            if(instanceId==lastNativeThrowInstance_&&
+               epoch==lastNativeThrowEpoch_&&revision==lastNativeThrowRevision_)
+                reply->setProperty("appliedRequestId",lastNativeThrowRequest_);
+        } else reply->setProperty("error","NATIVE_THROW_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinThrowSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeThrow() {
+        if(!pendingNativeThrow_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(
+            pendingNativeThrow_.owner->processor.get());
+        if(!processor){pendingNativeThrow_={};return;}
+        armix::builtin_fx::VocalThrowProcessor::Completion completion{};
+        if(!processor->pollCompletion(completion)&&
+           juce::Time::getMillisecondCounter()-pendingNativeThrow_.started<3000u)
+            return;
+        const auto request=pendingNativeThrow_.request;
+        bool applied=completion.applied&&completion.requestId!=0&&
+            request=="throw-"+juce::String(std::to_string(completion.requestId));
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied&&pendingNativeThrow_.deviceEpoch==
+                    device.getProperty("epoch","").toString()&&
+                    pendingNativeThrow_.revision==
+                    graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeThrowRequest_=request;
+            lastNativeThrowInstance_=pendingNativeThrow_.instanceId;
+            lastNativeThrowEpoch_=pendingNativeThrow_.deviceEpoch;
+            lastNativeThrowRevision_=pendingNativeThrow_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeThrow_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeThrow_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeThrow_.revision);
+        ack->setProperty("instanceId",pendingNativeThrow_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("command",completion.kind==
+            armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+            "TRIGGER":"SETTINGS");
+        ack->setProperty("errorCode",applied?"NONE":
+            completion.kind==armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+            "NO_CAPTURE_OR_STALE_GRAPH":"DSP_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeThrow_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinThrowAck",juce::var(ack.release()));
+    }
+
     // Never confuse durable logical ChannelId state with a physical device
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
@@ -2130,7 +2269,8 @@ private:
         for(auto& insert:doc.inserts) {
             if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
                insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
-               insert.catalogId==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
+               insert.catalogId==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
+               insert.catalogId==armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
                 if(insert.path.isNotEmpty() || insert.uid!=0)
                     return "Saved built-in FX identity was modified";
                 continue;
@@ -2372,7 +2512,9 @@ private:
             action == "routingNativeFxRackBypass" ||
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
-            action == "nativeEqSetBand" || action == "nativeCompSet"))
+            action == "nativeEqSetBand" || action == "nativeCompSet" ||
+            action == "nativeThrowSet" || action == "nativeThrowTrigger" ||
+            action == "nativeThrowTempoSource"))
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
@@ -2706,6 +2848,115 @@ private:
                 pendingNativeComp_.owner?"COMP_CONTROL_BUSY":"INVALID_OR_STALE_COMP");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixBuiltinCompQueue",juce::var(ack.release()));
+            return;
+        }
+
+        // ArSon Vocal Throw: all UI commands reference one exact installed
+        // ChannelId + device epoch + graph revision + insert instance.
+        if(action=="nativeThrowSnapshot"||action=="nativeThrowSet"||
+           action=="nativeThrowTrigger"||action=="nativeThrowTempoSource") {
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            const int throwSlot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t ch=0,ep=0,rev=0;
+            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
+                armix::console::approvedNativeId(rawEpoch,ep)&&
+                armix::console::approvedNativeId(rawRevision,rev)&&
+                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
+                throwSlot>=0&&throwSlot<LiveDryRoutingLab::maxFxPerLane&&
+                request.isNotEmpty()&&request.length()<=72;
+            auto owner=valid?engine_.leaseNativeVst3Editor(ep,rev,
+                armix::mixer::ChannelId{ch},static_cast<std::size_t>(throwSlot),
+                rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=owner?dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(
+                owner->processor.get()):nullptr;
+            if(action=="nativeThrowSnapshot") {
+                emitNativeThrowSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),
+                    rawInstance.toString(),processor);
+                return;
+            }
+            if(action=="nativeThrowTempoSource") {
+                // A single shared song clock is selected by stable ChannelId;
+                // the source cannot be this vocal channel, MAIN or MONITOR.
+                const auto rawSource=args.getProperty("sourceChannelId",{});
+                const auto sourceText=rawSource.toString();
+                std::uint64_t source=0;
+                const bool parsed=sourceText=="0" ||
+                    armix::console::approvedNativeId(rawSource,source);
+                const bool chosen=processor && parsed && (!source||source!=ch) &&
+                    !nativeShowBusy_&&!studioBackupBusy_ &&
+                    engine_.selectNativeMusicTempoSource(
+                        ep,rev,armix::mixer::ChannelId{source});
+                if(chosen)serviceNativeMusicTempo();
+                auto reply=std::make_unique<juce::DynamicObject>();
+                reply->setProperty("requestId",request);
+                reply->setProperty("status",chosen?"APPLIED":"REJECTED");
+                reply->setProperty("sourceChannelId",sourceText);
+                reply->setProperty("errorCode",chosen?"NONE":
+                    "INVALID_OR_STALE_MUSIC_CHANNEL");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                    "arMixBuiltinThrowTempoAck",juce::var(reply.release()));
+                return;
+            }
+            const auto wire=request.startsWith("throw-")?
+                request.substring(6).toStdString():std::string();
+            std::uint64_t numeric=0;
+            if(!wire.empty()&&wire.size()<=19&&
+               wire.find_first_not_of("0123456789")==std::string::npos) {
+                try{numeric=std::stoull(wire);}catch(...){numeric=0;}
+            }
+            const bool isSettings=action=="nativeThrowSet";
+            const auto values=args.getProperty("settings",{});
+            armix::builtin_fx::VocalThrowSettings settings{};
+            auto read=[&values](const char* key,float& out) {
+                const auto value=values.getProperty(key,{});
+                if(!value.isInt()&&!value.isDouble())return false;
+                const auto v=static_cast<double>(value);
+                if(!std::isfinite(v))return false;
+                out=static_cast<float>(v);
+                return std::isfinite(out);
+            };
+            auto integer=[&read](const char* key,int& out) {
+                float candidate=0.f;
+                if(!read(key,candidate)||candidate!=std::floor(candidate)||
+                   candidate<0.f||candidate>1000.f)return false;
+                out=static_cast<int>(candidate);return true;
+            };
+            const bool settingsValid=!isSettings || (values.isObject()&&
+                integer("mode",settings.mode)&&read("bpm",settings.bpm)&&
+                integer("division",settings.division)&&integer("repeats",settings.repeats)&&
+                read("captureMs",settings.captureMs)&&read("silenceMs",settings.silenceMs)&&
+                read("thresholdDb",settings.thresholdDb)&&read("wet",settings.wet)&&
+                read("decay",settings.decay)&&read("ducking",settings.ducking)&&
+                armix::builtin_fx::VocalThrow::validSettings(settings));
+            bool queued=false;
+            if(processor&&numeric>0&&settingsValid&&!pendingNativeThrow_.owner&&
+               !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()) {
+                queued=isSettings?processor->queueSettings(settings,numeric):
+                                  processor->queueTrigger(numeric);
+                if(queued) {
+                    pendingNativeThrow_.owner=owner;
+                    pendingNativeThrow_.request=request;
+                    pendingNativeThrow_.channelId=rawChannel.toString();
+                    pendingNativeThrow_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeThrow_.revision=rawRevision.toString();
+                    pendingNativeThrow_.instanceId=rawInstance.toString();
+                    pendingNativeThrow_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeThrow_.owner?"THROW_CONTROL_BUSY":
+                "INVALID_OR_STALE_NATIVE_THROW");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinThrowQueue",juce::var(ack.release()));
             return;
         }
 
@@ -4602,9 +4853,11 @@ private:
             guiPerf_.prevTickMs = tickStart;
         }
         ++timerTicks_;
+        serviceNativeMusicTempo();
         servicePendingNativeEq();
         servicePendingNativeComp();
         servicePendingNativeHarmony();
+        servicePendingNativeThrow();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
         // compositor behind the opaque startup splash after the first tick;
         // the user sees the completed mixer only after the ready handshake.
