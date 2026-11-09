@@ -5,7 +5,8 @@
 # the EXACT ArSonMix.exe path being replaced. Other ArSonMix copies are safe.
 param(
     [Parameter(Mandatory=$true)][string]$TargetPath,
-    [ValidateRange(1,90)][int]$WaitSeconds=25
+    [ValidateRange(1,90)][int]$WaitSeconds=25,
+    [switch]$ProbeOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -15,6 +16,7 @@ try {
     if($name -ne 'ArSonMix'){exit 30}
     # Start with the native .NET process list, no taskkill, broad WM_CLOSE
     # broadcasts, WMI process termination, or process-name-only shutdown.
+    $script:unknownIdentity=$false
     function Get-TargetProcesses {
         $found=@()
         foreach($process in [System.Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
@@ -32,12 +34,20 @@ try {
             } catch {
                 # Windows may restrict MainModule even for a readable name.
                 # Do not guess identity and NEVER close by process name only.
+                if($ProbeOnly){$script:unknownIdentity=$true}
                 $process.Dispose()
             }
         }
         return @($found)
     }
     $matches=@(Get-TargetProcesses)
+    if($ProbeOnly) {
+        $count=$matches.Count
+        foreach($process in $matches){$process.Dispose()}
+        if($script:unknownIdentity){exit 22}
+        if($count -ne 0){exit 21}
+        exit 0
+    }
     if($matches.Count -eq 0){exit 0}
     # Some JUCE versions have an ownerless top-level HWND; CloseMainWindow
     # alone reports false. Match HWND -> PID before posting WM_CLOSE.

@@ -5577,9 +5577,33 @@ public:
             if (stage >= 2)
             {
                 splash_.reset(); // no overlay over live mixer after engine init
+#if defined(_WIN32)
+                // A real JUCE/WebView ready acknowledgement, not simply
+                // "EXE launched". The outside supervisor uses it to decide
+                // whether an update may be retained or requires rollback.
+                const auto probe = juce::SystemStats::getEnvironmentVariable
+                    ("ARSONMIX_UPDATE_PROBE", {});
+                const auto localAppData = juce::SystemStats::getEnvironmentVariable
+                    ("LOCALAPPDATA", {});
+                if (probe.length() == 36 && juce::Uuid (probe).toDashedString() == probe
+                    && localAppData.isNotEmpty())
+                {
+                    const auto healthDir = juce::File (localAppData)
+                        .getChildFile ("ArSonMix").getChildFile ("Updates")
+                        .getChildFile ("health");
+                    if (healthDir.createDirectory().wasOk())
+                        healthDir.getChildFile (probe + ".ready")
+                            .replaceWithText ("GUI_READY");
+                }
+#endif
+
+
                 if (window_) window_->toFront (true);
             }
         });
+#if defined(_WIN32)
+        launchSmartUpdater (false);
+#endif
         // Opaque cover exactly matches the large HWND, not a small 740×420
         // card leaving white WebView2 edges exposed during first paint.
         if (splash_ && window_)
@@ -5594,6 +5618,16 @@ public:
         window_.reset();
         splash_.reset();
 #if defined(_WIN32)
+        // All session persistence has completed. Only a normal user exit can
+        // apply an already downloaded update. Inno-initiated shutdown must
+        // not launch a competing installer.
+        const bool innoIsClosing = installerShutdownEvent_ != nullptr
+            && ::WaitForSingleObject (installerShutdownEvent_, 0) == WAIT_OBJECT_0;
+        // Avoid starting setup while Windows is signing out/shutting down:
+        // Windows may terminate installer midway through file replacement.
+        // A staged transaction remains available on the next normal exit.
+        if (!innoIsClosing && ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
+            launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
         {
             ::CloseHandle (installerShutdownEvent_);
@@ -5607,6 +5641,40 @@ public:
 #endif
     }
 private:
+#if defined(_WIN32)
+    void launchSmartUpdater (bool applyStaged)
+    {
+        // Windows per-user installation only: independent updater process.
+        // On normal exit, apply only a previously prepared transaction.
+        // No audio callback, router or plugin operation.
+        const auto installedExe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+        const auto installDir = installedExe.getParentDirectory();
+        const auto updaterScript = installDir.getChildFile ("ArSonMixAutoUpdate.ps1");
+        const auto provenance = installDir.getChildFile ("BUILD_PROVENANCE.json");
+        const auto systemFolder = juce::File::getSpecialLocation (juce::File::windowsSystemDirectory);
+        const auto powerShell = systemFolder.getChildFile ("WindowsPowerShell")
+                                           .getChildFile ("v1.0")
+                                           .getChildFile ("powershell.exe");
+        if (installedExe.getFileName().equalsIgnoreCase ("ArSonMix.exe")
+            && updaterScript.existsAsFile() && provenance.existsAsFile()
+            && powerShell.existsAsFile()
+            && !installDir.getChildFile ("portable_mode.txt").exists())
+        {
+            juce::StringArray command { powerShell.getFullPathName(),
+                "-NoLogo", "-NoProfile", "-NonInteractive",
+                "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+                "-File", updaterScript.getFullPathName(),
+                "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
+            if (applyStaged)
+                command.add ("-ApplyStaged");
+            juce::ChildProcess supervisor;
+            // The supervisor is detached from the mixing lifecycle. If it
+            // cannot start, the GUI still operates normally; updates are
+            // optional and never a reason to lose the live session.
+            supervisor.start (command, 0);
+        }
+    }
+#endif
     bool startupAttempted_ = false;
 #if defined(_WIN32)
     HANDLE updateRunningMutex_ = nullptr;
