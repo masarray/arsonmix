@@ -109,6 +109,13 @@ static void harmonicAndPhaseAmbiguity() {
     // The music clears; the true quarter-note lattice should recover.
     for(int i=2450;i<3650;++i)groove(i,.035f);
     auto recovered=tap.poll(7,13);
+    if(!recovered.tempo.locked || std::abs(recovered.tempo.bpm-120.f)>3.f)
+        std::fprintf(stderr,
+            "MUSIC_OFFBEAT_RECOVERY tick=3650 locked=%d bpm=%.3f confidence=%.3f phase=%d phaseConfidence=%.3f comparisons=%u dropped=%u\n",
+            static_cast<int>(recovered.tempo.locked),recovered.tempo.bpm,
+            recovered.tempo.confidence,static_cast<int>(recovered.tempo.phaseLocked),
+            recovered.tempo.phaseConfidence,recovered.tempo.scoringComparisons,
+            recovered.dropped);
     check(recovered.tempo.locked);
     check(recovered.tempo.scoringComparisons>0);
     check(recovered.tempo.scoringComparisons<120000);
