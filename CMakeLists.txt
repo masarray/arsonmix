@@ -78,13 +78,22 @@ target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/bu
 if(MSVC)
   target_compile_options(ARMixConsole PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 endif()
+# Stamp the build source in Copy Audio Report, including Windows field trials.
+execute_process(COMMAND git rev-parse --verify HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE ARMIX_BUILD_SOURCE_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE ARMIX_BUILD_SOURCE_STATUS ERROR_QUIET)
+if(NOT ARMIX_BUILD_SOURCE_STATUS EQUAL 0 OR NOT ARMIX_BUILD_SOURCE_SHA MATCHES "^[0-9a-f]+$")
+  set(ARMIX_BUILD_SOURCE_SHA "unavailable")
+endif()
 # One JUCE mixer/PCM host on all three desktops. Device backends are OS owned.
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
-    JUCE_APPLICATION_VERSION_STRING="0.5.0-p2")
+    JUCE_APPLICATION_VERSION_STRING="0.5.0-p2"
+    ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}")
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.

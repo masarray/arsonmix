@@ -71,7 +71,7 @@ inline bool publishVerifiedFirstSoundState(juce::var& snapshot,
         static_cast<juce::int64>(routeEpoch)>0 &&
         static_cast<juce::int64>(revision)>0 &&
         juce::String(static_cast<juce::int64>(routeEpoch))==epoch.toString() &&
-        inputs.isArray() && !inputs.getArray()->isEmpty() &&
+        inputs.isArray() &&
         outputs.isArray() && outputs.getArray()->size()>=2 &&
         nativeV8Number(device.getProperty("sampleRate",{}),rate) &&
         nativeV8Number(device.getProperty("bufferFrames",{}),frames) &&
@@ -267,7 +267,7 @@ inline bool projectInstalledNativeChannelIdGraph(
     const auto frames=device.getProperty("bufferFrames",{});
     double actualRate=0.,actualFrames=0.;
     if (!outputMask.isArray() || !inputMask.isArray() ||
-        outputMask.getArray()->size()<2 || inputMask.getArray()->isEmpty() ||
+        outputMask.getArray()->size()<2 ||
         !nativeV8Number(rate,actualRate) ||
         !nativeV8Number(frames,actualFrames) ||
         actualRate<8000. || actualRate>384000. ||

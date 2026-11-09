@@ -58,6 +58,13 @@ def accepted_pages_html() -> str:
 # HTML at native build time. Every anchor must occur exactly once: no silent
 # breakage if Pages GUI source evolves. No extra layout or simulated PCM.
 NATIVE_EVENT_HOOKS = (
+    # Do not expose the reference mixer while the native host is still starting.
+    ("</head>", "<style id=\"native-mixer-startup\">"
+     "html:not([data-armix-native-roster]) :is(.console-pane,#trackCount){visibility:hidden}"
+     "</style>\n</head>"),
+    ("Mixer · Reference Session", "Mixer · Native Session"),
+    ("Interactive visual reference. Changes are local to this mockup.", "Preparing native mixer…"),
+    ("SIMULATED METERS · NO REAL AUDIO", "NATIVE AUDIO"),
     # The published /preview/ HTML and its V28 checkpoint are immutable.
     # Change ONLY the compiled native WebView's operator fader travel law.
     # The DSP gain remains exact dB -> 10^(dB/20), and the mapping is

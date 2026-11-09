@@ -580,9 +580,35 @@ public:
     // user setup is restored on exit; temporary routes must not be persisted.
     juce::String setDiagnosticRoute (armix::diagnostics::Route wanted)
     {
-        if (dryRoutingLab_.hasAuthoredMixerContent())
-            return "An authored mixer cannot enter endpoint isolation until a safe session rebind is available";
         using Route = armix::diagnostics::Route;
+        const auto currentRoute=diagnosticRoute_.load(std::memory_order_acquire);
+        if(wanted==Route::mainOutputTone) {
+            if(currentRoute==wanted)return {};
+            if(currentRoute!=Route::normal || independent_.active())
+                return "Return to NORMAL on the DIRECT device before testing MAIN.";
+            if(const auto error=liveOutputArmFault(false);error.isNotEmpty())return error;
+            if(secondaryOutput_.armed())
+                return "Stop STREAM before testing the physical MAIN output.";
+            const auto pair=dryRoutingLab_.acceptedMainCallbackPair();
+            if(pair[0]<0 || pair[1]<0 || pair[0]==pair[1])
+                return "No verified MAIN output pair.";
+            mainTestEpoch_.store(dryRoutingLab_.epoch(),std::memory_order_relaxed);
+            mainTestPair_.store(static_cast<unsigned>(pair[0]) |
+                (static_cast<unsigned>(pair[1])<<16),std::memory_order_relaxed);
+            mainTestWasArmed_=isMonitorEnabled();
+            mainTestPeak_.store(0.f,std::memory_order_relaxed);
+            diagnosticRoute_.store(wanted,std::memory_order_release);
+            setMonitorEnabled(true); // the operator explicitly requested this isolated tone
+            return {};
+        }
+        if(currentRoute==Route::mainOutputTone) {
+            // A diagnostic ARM does not authorize microphone audio on exit.
+            if(!mainTestWasArmed_)setOutputMuted(true);
+            diagnosticRoute_.store(Route::normal,std::memory_order_release);
+            if(wanted==Route::normal)return {};
+        }
+        if (dryRoutingLab_.hasAuthoredMixerContent())
+            return "Use MAIN OUTPUT TONE to test the output without reopening the authored mixer.";
         if (handoff_.busy()) return "Finish the pending FX graph transition first";
         if (independent_.active()) return "Disable independent clock mode before endpoint isolation tests";
         if (wanted == diagnosticRoute_.load (std::memory_order_acquire) &&
@@ -2246,6 +2272,10 @@ public:
         o->setProperty ("peak", outputPeak_.load());
         o->setProperty ("peakLeft", outputPeakL_.load());
         o->setProperty ("peakRight", outputPeakR_.load());
+        o->setProperty ("driverBufferPeakLeft",driverBufferPeakL_.load(std::memory_order_relaxed));
+        o->setProperty ("driverBufferPeakRight",driverBufferPeakR_.load(std::memory_order_relaxed));
+        o->setProperty ("driverBufferProvenance","JUCE_CALLBACK_OUTPUT_POST_GATE");
+        o->setProperty ("mainTestLastPeak",mainTestPeak_.load(std::memory_order_relaxed));
         const auto loudness = masterLoudness_.read();
         const bool measuredDirect = !dual && loudness.supported;
         o->setProperty ("masterAnalysisProvenance",
@@ -2496,6 +2526,9 @@ private:
     LiveDryRoutingLab dryRoutingLab_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
     std::atomic<bool> routeReconfiguring_ {false};
+    std::atomic<std::uint64_t> mainTestEpoch_{0};
+    std::atomic<unsigned> mainTestPair_{0};
+    bool mainTestWasArmed_=false; // control thread only
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedLiveSetup_;
     // Indexed atomic bypass flags: instant RT-safe toggles, no graph detachment.
     // Temporary publication silence never changes operator MONITOR or MAIN MUTE.
@@ -2508,6 +2541,7 @@ private:
     std::atomic<std::uint64_t> captureObservationBlocks_ {0}; // per native device epoch, even UNPATCHED
     armix::rt::CaptureBoundaryEvidence captureBoundary_; // callback-only PCM continuity
     std::atomic<float> outputPeakL_ { 0.f }, outputPeakR_ { 0.f };
+    std::atomic<float> driverBufferPeakL_{0.f},driverBufferPeakR_{0.f},mainTestPeak_{0.f};
     std::atomic<int> callbackInputs_ { 0 }, callbackOutputs_ { 0 };
     std::atomic<unsigned long long> callbackCount_ { 0 };
     // Audio-thread-only timestamp and cheap atomically published counters.
@@ -2634,6 +2668,7 @@ private:
         inputPeak_.store (0.f);
         postFxPeak_.store (0.f);
         outputPeak_.store (0.f);
+        publishDriverBufferPeaks(0.f,0.f);
     }
 
     void audioDeviceStopped() override
@@ -2650,6 +2685,7 @@ private:
         captureBoundary_.reset(); // no stale pin peaks after disconnect
         inputPeak_.store (0.f);
         outputPeak_.store (0.f);
+        publishDriverBufferPeaks(0.f,0.f);
     }
 
     // ONE original CH1 rack processor for M4 compatibility and the native
@@ -2740,6 +2776,11 @@ private:
         return fx;
     }
 
+    void publishDriverBufferPeaks(float left,float right) noexcept {
+        driverBufferPeakL_.store(left,std::memory_order_relaxed);
+        driverBufferPeakR_.store(right,std::memory_order_relaxed);
+    }
+
     void audioDeviceIOCallbackWithContext (
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
@@ -2749,7 +2790,7 @@ private:
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.
         // An independent WASAPI bridge has its own verified endpoint guard.
-        const auto activeDiagnosticRoute = diagnosticRoute_.load (std::memory_order_relaxed);
+        const auto activeDiagnosticRoute = diagnosticRoute_.load (std::memory_order_acquire);
         // DRY_THROUGH still routes a live microphone to the hardware output:
         // it MUST use the same DIRECT authorization fence as NORMAL. Only
         // genuinely isolated OUTPUT_ONLY_TONE / CAPTURE_ONLY tests may bypass
@@ -2761,6 +2802,7 @@ private:
         {
             for (int c=0; c<outputChannels; ++c)
                 if (outputs[c]) juce::FloatVectorOperations::clear (outputs[c], samples);
+            publishDriverBufferPeaks(0.f,0.f);
             directSuppressedFrames_.fetch_add (static_cast<std::uint64_t> (samples),
                                                std::memory_order_relaxed);
             return;
@@ -2805,6 +2847,7 @@ private:
             outputPeak_.store(0.f, std::memory_order_relaxed);
             outputPeakL_.store(0.f, std::memory_order_relaxed);
             outputPeakR_.store(0.f, std::memory_order_relaxed);
+            publishDriverBufferPeaks(0.f,0.f);
             handoff_.endCycle(cycle); // ACK prepared FX graph even in silence
             return;
         }
@@ -2915,7 +2958,7 @@ private:
                         peak=juce::jmax(peak,std::abs(out[i]));
                     }
                     if(c==0)movedPeakL=peak;
-                    else movedPeakR=peak;
+                    else if(c==1)movedPeakR=peak;
                 }
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
@@ -2962,6 +3005,9 @@ private:
                 for(int channel=0;channel<outputChannels;++channel)
                     if(outputs && outputs[channel])
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
+            // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
+            const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
+            publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
             return;
         }
         // The only remaining stereo renderer is DIAGNOSTIC. It may emit
@@ -2972,10 +3018,20 @@ private:
         const bool enabled = monitor_.load (std::memory_order_relaxed)
                           && !topologyPublicationMute_.load (std::memory_order_acquire)
                           && !routeReconfiguring_.load (std::memory_order_acquire);
-        const auto route = diagnosticRoute_.load (std::memory_order_relaxed);
-        const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone;
+        const auto route = activeDiagnosticRoute;
+        const bool toneTest = route == armix::diagnostics::Route::outputOnlyTone ||
+                              route == armix::diagnostics::Route::mainOutputTone;
+        std::array<int,2> outputPair{{0,1}};
+        if(route==armix::diagnostics::Route::mainOutputTone) {
+            const auto packed=mainTestPair_.load(std::memory_order_relaxed);
+            outputPair={{static_cast<int>(packed&0xffffu),static_cast<int>(packed>>16)}};
+            if(!dryRoutingLab_.ready() ||
+               mainTestEpoch_.load(std::memory_order_relaxed)!=dryRoutingLab_.epoch())
+                outputPair={{-1,-1}};
+        }
+        const auto testPair=armix::mixer::NativeOutputPairTap::select(outputs,outputChannels,outputPair);
         const bool captureTest = route == armix::diagnostics::Route::captureOnly;
-        if (toneTest && outputChannels > 0)
+        if (toneTest && testPair[0])
             testOutputFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
         if (captureTest && inputChannels > 0)
             testCaptureFrames_.fetch_add (static_cast<std::uint64_t> (samples), std::memory_order_relaxed);
@@ -3010,7 +3066,7 @@ private:
             {
                 auto* left = scratch_.getWritePointer (0);
                 auto* right = scratch_.getWritePointer (1);
-                const bool audible = enabled && !masterMute_.load (std::memory_order_relaxed);
+                const bool audible = testPair[0] && enabled && !masterMute_.load (std::memory_order_relaxed);
                 for (int i = 0; i < frames; ++i)
                     left[i] = right[i] = diagnosticTone_.next (audible);
             }
@@ -3044,6 +3100,10 @@ private:
                 const float* left = scratch_.getReadPointer (0);
                 const float* right = scratch_.getReadPointer (1);
                 float* dst = outputs[c] + offset;
+                if(toneTest && (!testPair[0] || (c!=outputPair[0] && c!=outputPair[1]))) {
+                    juce::FloatVectorOperations::clear(dst,frames);
+                    continue;
+                }
                 const float fromL = mono ? monoL : (c == 0 ? matrix.ll : matrix.rl);
                 const float fromR = mono ? monoR : (c == 0 ? matrix.lr : matrix.rr);
                 float channelPeak = 0.f;
@@ -3063,8 +3123,8 @@ private:
                     channelPeak = juce::jmax (channelPeak, std::abs (value));
                 }
                 outPeak = juce::jmax (outPeak, channelPeak);
-                if (c == 0) outPeakL = juce::jmax (outPeakL, channelPeak);
-                if (c == 1) outPeakR = juce::jmax (outPeakR, channelPeak);
+                if (c == outputPair[0]) outPeakL = juce::jmax (outPeakL, channelPeak);
+                if (c == outputPair[1]) outPeakR = juce::jmax (outPeakR, channelPeak);
             }
         }
         if (!independent_.active())
@@ -3077,6 +3137,10 @@ private:
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
+        publishDriverBufferPeaks(outPeakL,outPeakR);
+        if(route==armix::diagnostics::Route::mainOutputTone)
+            mainTestPeak_.store(juce::jmax(mainTestPeak_.load(std::memory_order_relaxed),outPeak),
+                                std::memory_order_relaxed);
         outputPeak_.store (juce::jmin (1.f, outPeak), std::memory_order_relaxed);
         outputPeakL_.store (juce::jmin (1.f, outPeakL), std::memory_order_relaxed);
         outputPeakR_.store (juce::jmin (1.f, outPeakR), std::memory_order_relaxed);

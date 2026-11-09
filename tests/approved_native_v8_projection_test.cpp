@@ -637,6 +637,11 @@ static void installedCallbackAdmissionRegression(const juce::var& rawBus) {
            =="9007199254740993");
     assert(std::abs(static_cast<double>(session.getProperty("main",{})
         .getProperty("db",0.))-(-13.5))<0.00001);
+    // The installed graph remains editable with playback and no capture pins.
+    dev.getDynamicObject()->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
+    assert(projectInstalledNativeChannelIdGraph(snap,live));
+    publishAuthoritativeMixerSession(snap);
+    assert(snap.getProperty("mixerSession",{}).getProperty("authority","").toString()=="CHANNEL_ID");
     // Real restart: lab routing epoch counts STOP+START, unlike M2
     // deviceStartCount. This G0-to-native authority switch must advance.
     auto disconnected=canonicalSnapshot();
@@ -826,7 +831,18 @@ static void firstSoundRouteAdmissionRegression() {
     auto withoutInput=juce::JSON::parse(juce::JSON::toString(snapshot,false));
     withoutInput.getProperty("device",{}).getDynamicObject()
         ->setProperty("enabledInputs",juce::var(juce::Array<juce::var>{}));
-    assert(!publishVerifiedFirstSoundState(withoutInput,live));
+    assert(publishVerifiedFirstSoundState(withoutInput,live));
+    assert(withoutInput.getProperty("legacyM4",{})
+        .getProperty("channels",{}).getArray()->isEmpty()); // stale MONO mapping rejected
+    auto noCaptureRoute=juce::JSON::parse(juce::JSON::toString(live,false));
+    auto noCaptureRows=noCaptureRoute.getProperty("dryRoutingLab",{})
+        .getProperty("acceptedRoute",{}).getProperty("channels",{});
+    auto* unpatched=noCaptureRows[4].getDynamicObject();
+    unpatched->setProperty("mode","NONE");
+    unpatched->setProperty("left",-1);
+    assert(publishVerifiedFirstSoundState(withoutInput,noCaptureRoute));
+    assert(withoutInput.getProperty("legacyM4",{})
+        .getProperty("channels",{}).getArray()->size()==10);
 }
 
 // Control-only fixture: validates exclusive M4 session normalization,

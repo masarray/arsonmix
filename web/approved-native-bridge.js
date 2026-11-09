@@ -1924,6 +1924,11 @@
     // Windows RAM/process paging context from the existing 1 Hz control
     // timer. No sampling or file I/O happens in the ASIO callback.
     const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
+    const tone=item("button","tool","Test MAIN output");
+    tone.title="Start or stop a quiet tone on the verified MAIN pair without reopening the driver";
+    tone.addEventListener("click",()=>{
+      backend.emitEvent("arMixAction",{action:"diagnosticRoute",value:"TOGGLE_MAIN_OUTPUT_TONE"});
+    });
     const mark=item("button","tool","Mark Crackle");
     mark.title="Capture 5s before an audible crackle, including Windows memory";
     mark.addEventListener("click",()=>{
@@ -2080,7 +2085,7 @@
       if(!save)controller?.subscribe();
     });
     menu.append(caption,setup,muteBtn,hardwareNote,
-      healthTitle,mark,report,advanced,
+      healthTitle,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
@@ -2167,7 +2172,10 @@
     const session=next?.raw?.mixerSession;
     if(!session || session.deviceEpoch!==next.device.epoch) {
       flags.acceptedGraphConnected=false;
-      status("NATIVE SESSION UNAVAILABLE · controls unchanged");
+      flags.productionCallbackLive=false;
+      lastPaintedSignature="";
+      delete document.documentElement.dataset.armixNativeRoster;
+      status("NATIVE SESSION UNAVAILABLE · verify Audio I/O");
       return;
     }
     // Never paint unacknowledged controls; pending slider caps are kept
@@ -2178,7 +2186,8 @@
     reconcileM4RackReadback(next);
     if(session.authority==="M4" && m4Verified()) {
       paintM4Fallback(next);
-      scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds);
+      if(scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds))
+        document.documentElement.dataset.armixNativeRoster="accepted";
     }
     // A second channel's IN can be selected while the first transaction is
     // in flight. Always dispatch its latest choice with a FRESH native route
@@ -2213,8 +2222,10 @@
       pendingFxInsert=null;pendingTrackDelete=null;startupWire=null;activeWireAttempt=null;
       pendingWireGains.clear();pendingNativeControl.clear();liveFaderVisualTargets.clear();
       const signature="retained|"+next.identity+"|"+appearanceRevision;
-      if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next))
+      if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
+        document.documentElement.dataset.armixNativeRoster="accepted";
+      }
       stopDemo();
       paintNativeMeters(next);
       status("NEEDS REMAP · mixer retained · output muted");
@@ -2223,13 +2234,14 @@
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
+      if(!m4Verified())delete document.documentElement.dataset.armixNativeRoster;
       stopDemo();
       status(m4Verified()?
         "NATIVE M4 · real PCM faders and meters · ChannelId buses not yet admitted":
         deviceReady()?
         "NATIVE G0 · verified physical IN ready · select a channel input":
         hardware?.device?.enabledInputs?.length===0?
-        "NO HARDWARE IN · FX/BUS/WIRE REMAIN AVAILABLE":
+        "NATIVE MIXER UNAVAILABLE · verify playback in Audio I/O":
         "NATIVE G0 NOT READY · open Audio I/O and verify device / native route");
       return;
     }
@@ -2249,6 +2261,7 @@
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
+    document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);

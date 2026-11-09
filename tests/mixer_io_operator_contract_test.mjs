@@ -202,7 +202,14 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  for(const flag of ['JUCE_ASIO=1','JUCE_WASAPI=1','JUCE_DIRECTSOUND=1'])assert.ok(cm.includes(flag));
  assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/); // hidden fallback only
  assert.match(native,/action == "audioDeviceApply"/);
- assert.match(native,/setAudioDeviceSetup\(candidate,true\)/);
+ const open=native.slice(native.indexOf('juce::String openSelectedAudioDevice('),
+   native.indexOf('void applyCustomAudioDevice('));
+ assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
+ assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
+ assert.match(open,/setAudioDeviceSetup\(setup,true\)/);
+ assert.match(open,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+ assert.match(open,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
+ assert.doesNotMatch(open,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
  assert.match(native,/finishManualAudioSetup\(\)/);
  assert.match(native,/RESTORED_MUTED/);

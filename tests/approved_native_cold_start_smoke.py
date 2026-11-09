@@ -1,4 +1,4 @@
-"""Real compiled DOM from G0: first drag without OUT priming, first native
+"""Real compiled DOM: hide reference G0, first drag without OUT priming, first native
 FX picker insert on original CH with structural=false, then vendor editor.
 Backend isolation is emulated; actual latency/sample evidence is CTest.
 """
@@ -41,6 +41,7 @@ def main():
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+            assert page.locator('.console-pane').is_hidden()
             # Built-in JUCE DSP must be discoverable before ANY third-party
             # VST3 catalog response. The native host never inserts demo FX.
             for native_id in ('armix.builtin.channel-eq.v1',
@@ -135,6 +136,9 @@ def main():
             emit(page,"arMixNativeSessionAck",{"operation":"OPEN","ok":False,"error":"Invalid mixer JSON"})
             assert page.get_by_text("Invalid mixer JSON",exact=True).count()>=1
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            show_click("Test MAIN output")
+            assert page.evaluate("()=>window.__events.at(-1).payload")=={
+                "action":"diagnosticRoute","value":"TOGGLE_MAIN_OUTPUT_TONE"}
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
@@ -169,12 +173,10 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
-                page.locator('.section-rail [data-section="send"]').click()
-            # Release before bootstrap SOURCE's later native readback arrives.
-            drag(page,1,2)
+            assert page.locator('.console-pane').is_hidden()
             assert not page.evaluate('()=>window.__nativeIntents.length')
             state=snapshot()
+            state['device'].update(enabledInputs=[],inputEndpoints=[])
             state['graph']['edges'].pop(1)  # genuinely no existing channel send
             state['graph']['capabilities']['supportedOps'] += ['LOAD_INSERT']
             for ident, role, name in [('101','GROUP','Vocal Group'),
@@ -187,6 +189,10 @@ def main():
             state['legacyM4']={'active':True,'routeAccepted':True,'routingRevision':'77',
                 'nativeBusStructural':False,'fxInstances':[[] for _ in range(14)]}
             emit(page,'arMixConsoleSnapshot',state)
+            page.locator('.console-pane').wait_for(state='visible')
+            if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
+                page.locator('.section-rail [data-section="send"]').click()
+            drag(page,1,2)
             page.wait_for_function('()=>window.__nativeIntents.length===1')
             route=page.evaluate('()=>window.__nativeIntents[0]')
             assert route['operation']=='APPLY_WIRE_TRANSACTION'
@@ -294,7 +300,8 @@ def main():
                 'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
             assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
-            rebound['device'].update(epoch='93',outputArmed=True)
+            rebound['device'].update(epoch='93',outputArmed=True,
+                enabledInputs=g0['device']['enabledInputs'],inputEndpoints=g0['device']['inputEndpoints'])
             rebound['graph']['revision']='6'
             rebound['graph']['capabilities']['supportedOps'].append('CREATE_CHANNEL')
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')

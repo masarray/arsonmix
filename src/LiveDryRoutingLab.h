@@ -2590,6 +2590,17 @@ public:
     }
     std::uint64_t revision() const noexcept {return publisher_.lastRevision();} // control only
 
+    // Control thread only. The test uses the exact pair the current mixer
+    // owns, including non-contiguous physical pins mapped to compact indices.
+    std::array<int,2> acceptedMainCallbackPair() const noexcept {
+        if(!ready())return {{-1,-1}};
+        if(channelIdPhysicalPcmActive())
+            return {{nativeAccepted_.hardware.mainL,nativeAccepted_.hardware.mainR}};
+        if(const auto* graph=publisher_.controlPrepared(epoch(),revision()))
+            return {{graph->mainOutputLeft(),graph->mainOutputRight()}};
+        return {{-1,-1}};
+    }
+
     // JUCE render callback, with a verified single-clock device. Routing
     // publishes at the BLOCK boundary. Missing/stale ports output SILENCE.
     // A failed run never falls through to an unrelated microphone/plugin path.

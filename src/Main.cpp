@@ -1050,6 +1050,14 @@ private:
     // ENGINE callback. This code executes on the JUCE message thread, not RT.
     void handleApprovedNativeControl(const juce::var& request)
     {
+        if(audioDeviceApplyActive_) {
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request.getProperty("requestId",{}));
+            ack->setProperty("status","REJECTED");
+            ack->setProperty("errorCode","AUDIO_DEVICE_APPLY_IN_PROGRESS");
+            browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",juce::var(ack.release()));
+            return;
+        }
         const auto beforeLive=engine_.status();
         const auto before=approvedNativeSnapshot(beforeLive);
         const auto route=beforeLive.getProperty("dryRoutingLab",{});
@@ -1324,11 +1332,55 @@ private:
         serviceAutomaticMain();
     }
 
+    bool audioDeviceApplyActive_=false; // JUCE message thread, including nested driver dispatch
+
+    juce::String openSelectedAudioDevice(const juce::String& backend,
+        const juce::AudioDeviceManager::AudioDeviceSetup& setup) {
+        auto& manager=engine_.devices();
+        if(manager.getCurrentAudioDeviceType()==backend) {
+            if(auto* device=manager.getCurrentAudioDevice();device && !device->isOpen())
+                manager.closeAudioDevice();
+            return manager.setAudioDeviceSetup(setup,true);
+        }
+
+        // JUCE's setCurrentAudioDeviceType opens its remembered/default
+        // device first and sleeps on the message thread. Initialise the
+        // exact named backend and requested masks in one open instead.
+        auto xml=manager.createStateXml();
+        if(!xml)xml=std::make_unique<juce::XmlElement>("DEVICESETUP");
+        xml->setAttribute("deviceType",backend);
+        xml->removeAttribute("audioDeviceName");
+        xml->setAttribute("audioInputDeviceName",setup.inputDeviceName);
+        xml->setAttribute("audioOutputDeviceName",setup.outputDeviceName);
+        xml->setAttribute("audioDeviceRate",setup.sampleRate);
+        xml->setAttribute("audioDeviceBufferSize",setup.bufferSize);
+        const auto setMask=[&](const char* key,bool useDefault,const juce::BigInteger& mask) {
+            if(useDefault)xml->removeAttribute(key);
+            else xml->setAttribute(key,mask.toString(2));
+        };
+        setMask("audioDeviceInChans",setup.useDefaultInputChannels,setup.inputChannels);
+        setMask("audioDeviceOutChans",setup.useDefaultOutputChannels,setup.outputChannels);
+        diagnostics_.record("CUSTOM_AUDIO_PHASE","CLOSE_PREVIOUS | "+manager.getCurrentAudioDeviceType());
+        manager.closeAudioDevice();
+        diagnostics_.record("CUSTOM_AUDIO_PHASE","OPEN_SELECTED | "+backend);
+        return manager.initialise(2,2,xml.get(),false);
+    }
+
     void applyCustomAudioDevice(const juce::var& args)
     {
-        // Synchronous manager operations stay on JUCE's established message
-        // thread. A vendor driver may block; never pretend JS async fixes it.
+        // JUCE device lifecycle runs on the message thread, including ASIO's
+        // modal callbacks. Serialize transactions across nested dispatch.
         const auto id=args.getProperty("requestId",{}).toString().substring(0,64);
+        if(audioDeviceApplyActive_) {
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",id);
+            ack->setProperty("ok",false);
+            ack->setProperty("state","BUSY");
+            ack->setProperty("error","Audio I/O is already applying a device change.");
+            browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceApplyAck",juce::var(ack.release()));
+            return;
+        }
+        const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
         const auto oldGeneration=engine_.status().getProperty("deviceGeneration",0);
         auto send=[&](bool ok,const juce::String& state,const juce::String& error,
                       bool canReusePins=false)
@@ -1355,7 +1407,8 @@ private:
         if(nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
            engine_.isGraphSwitchPending()||
             static_cast<bool>(nativeRoute.getProperty("pending",false))||
-            engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
+            engine_.independentClockActive()||
+            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal||
             engine_.secondaryArmed())
             return send(false,"REJECTED",
                 "Stop STREAM and finish Show/FX/diagnostic/clock transition first");
@@ -1494,7 +1547,6 @@ private:
         const auto start=monotonicMilliseconds();
         autoMainEpoch_=0;
         engine_.beginManualAudioSetup();
-        if(!unchangedDevice)manager.setCurrentAudioDeviceType(typeName,false);
         // JUCE setAudioDeviceSetup() can return success without reopening when
         // setup == currentSetup and currentAudioDevice != nullptr, even when
         // that driver object has stopped. closeAudioDevice() deletes it but
@@ -1506,9 +1558,9 @@ private:
                 typeName+" | "+(previousWasOpen?"REFRESH_ASIO_PINS":"CLOSED_DEVICE_RECOVERY"));
             manager.closeAudioDevice();
         }
-        auto error=manager.getCurrentAudioDeviceType()==typeName
-            ?manager.setAudioDeviceSetup(candidate,true)
-            :juce::String("Selected audio backend could not be opened");
+        diagnostics_.record("CUSTOM_AUDIO_PHASE","APPLY | "+typeName);
+        auto error=openSelectedAudioDevice(typeName,candidate);
+        diagnostics_.record("CUSTOM_AUDIO_PHASE","VERIFY_READBACK | "+typeName);
         juce::AudioDeviceManager::AudioDeviceSetup actual;
         manager.getAudioDeviceSetup(actual);
         auto* opened=manager.getCurrentAudioDevice();
@@ -1531,6 +1583,7 @@ private:
               std::abs(opened->getCurrentSampleRate()-actual.sampleRate)>1.0||
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
+        if(error.isEmpty())diagnostics_.record("CUSTOM_AUDIO_PHASE","BIND_MIXER | "+typeName);
         if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(true)) {
             if(!previousMixerBound && engine_.directRouteAuthorized() &&
                (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
@@ -1564,11 +1617,10 @@ private:
         // One rollback, never blind default endpoint fallback, no auto-unmute.
         // A previously CLOSED device was never a verified rollback target.
         engine_.beginManualAudioSetup();
-        if(recovery.priorKnownOpen&&manager.getCurrentAudioDeviceType()!=previousType&&previousType.isNotEmpty())
-            manager.setCurrentAudioDeviceType(previousType,false);
+        diagnostics_.record("CUSTOM_AUDIO_PHASE","ROLLBACK | "+previousType);
         const auto restored=recovery.priorKnownOpen&&previousType.isNotEmpty()&&
-            manager.getCurrentAudioDeviceType()==previousType&&
-            manager.setAudioDeviceSetup(before,true).isEmpty();
+            openSelectedAudioDevice(previousType,before).isEmpty()&&
+            manager.getCurrentAudioDeviceType()==previousType;
         juce::AudioDeviceManager::AudioDeviceSetup checked;
         manager.getAudioDeviceSetup(checked);
         const bool verified=restored&&
@@ -1774,7 +1826,8 @@ private:
         result.preallocateBytes (64 * 1024);
         result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
         result << "Timestamp: " << juce::Time::getCurrentTime().toISO8601 (true) << "\n";
-        result << "Build: experimental-P0 clock-instrumentation / native JUCE 8.0.15\n";
+        result << "Build: " << juce::JUCEApplication::getInstance()->getApplicationVersion()
+               << " | Source HEAD: " << ARMIX_BUILD_SOURCE_SHA << "\n";
         result << "Platform: " << juce::SystemStats::getOperatingSystemName() << "\n";
         result << "CPU: " << juce::SystemStats::getCpuModel() << "\n";
         result << "Logical cores: " << juce::SystemStats::getNumCpus()
@@ -2388,6 +2441,7 @@ private:
     void onAction (const juce::var& args)
     {
         const auto action = args.getProperty ("action", {}).toString();
+        if(audioDeviceApplyActive_ && action!="audioDeviceApply")return;
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         // User may adjust live levels, but cannot alter the persisted VST
@@ -4160,7 +4214,8 @@ private:
             lastDirectRestoreError_.clear();
             // One-sided device routes are temporary and must never leak into
             // normal user configuration or the persisted audio-devices.xml.
-            if (engine_.hasTemporaryDiagnosticDevice())
+            if (engine_.hasTemporaryDiagnosticDevice() ||
+                engine_.diagnosticRoute()==armix::diagnostics::Route::mainOutputTone)
             {
                 const auto error = engine_.setDiagnosticRoute (armix::diagnostics::Route::normal);
                 if (error.isNotEmpty()) return emitNotice (error, true);
@@ -4179,9 +4234,12 @@ private:
                 deviceSettingsDirty_ = true;
             }
             using Route = armix::diagnostics::Route;
-            const auto selected = value.toString();
+            auto selected = value.toString();
+            if(selected=="TOGGLE_MAIN_OUTPUT_TONE")
+                selected=engine_.diagnosticRoute()==Route::mainOutputTone?"NORMAL":"MAIN_OUTPUT_TONE";
             auto route = Route::normal;
             if (selected == "OUTPUT_ONLY_TONE") route = Route::outputOnlyTone;
+            else if (selected == "MAIN_OUTPUT_TONE") route = Route::mainOutputTone;
             else if (selected == "CAPTURE_ONLY") route = Route::captureOnly;
             else if (selected == "DRY_THROUGH") route = Route::dryThrough;
             else if (selected != "NORMAL") return emitNotice ("Unsupported diagnostic mode", true);
@@ -4196,8 +4254,11 @@ private:
             if (route == Route::normal) deviceSettingsDirty_ = true;
             diagnostics_.record ("AUDIO_TEST_MODE", selected + " | " +
                 juce::JSON::toString (engine_.status(), false));
-            emitNotice ("Audio diagnostic: " + selected +
-                ". Use low headphone volume and MARK CRACKLE on audible faults.");
+            if(route==Route::mainOutputTone)
+                emitNotice("MAIN test tone active. Use low speaker volume. Press Test MAIN output again to stop.");
+            else
+                emitNotice ("Audio diagnostic: " + selected +
+                    ". Use low headphone volume and MARK CRACKLE on audible faults.");
         }
         else if (action == "diagnosticMark")
         {
@@ -4604,6 +4665,7 @@ private:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
+        if(audioDeviceApplyActive_)return; // synchronous transaction owns recovery
         // Save device state only after a real change, not on every 3-second tick.
         deviceSettingsDirty_ = true;
         // The retention gate closes only on an actual epoch/owner change.
@@ -4619,6 +4681,7 @@ private:
 
     void timerCallback() override
     {
+        if(audioDeviceApplyActive_)return; // a vendor modal loop may re-enter JUCE
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;
         const double tickStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
