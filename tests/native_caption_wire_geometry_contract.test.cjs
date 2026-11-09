@@ -26,7 +26,11 @@ assert.match(page, /let wireFragmentGeometryDirty=false/);
 assert.match(page, /wireMotion\.token;wireMotion\.key=null/);
 assert.match(page, /if\(layer\?\.dataset\.edgeId===String\(edge\.id\)&&!wireFragmentGeometryDirty\)return/);
 assert.match(page, /new ResizeObserver\(scheduleWireGeometryReflow\)/);
-assert.match(page, /if\(drawn&&required!==drawn\)render\(\)/);
+assert.match(page, /if\(drawn&&required!==drawn\)\{/);
+assert.match(page, /if\(wireGesture\)\{/);
+assert.match(page, /wireGesture=null;wireSuppressClick=true/);
+assert.match(page, /if\(faderGesture\)\{/);
+assert.match(page, /render\(\); \/\/ structural bank change only/);
 assert.match(page, /renderWireRouting\(\); \/\/ geometry-only/);
 assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
@@ -49,9 +53,12 @@ const dom={
 };
 const browser={addEventListener:(name,handler)=>events.set(name,handler)};
 const motion={token:7,key:'stale-edge',offset:3};
+const changed={graph:0,cancelled:0,captureReleased:0};
 class FakeResizeObserver{constructor(handler){this.handler=handler}observe(){}}
 const sandbox={
  document:dom,window:browser,ResizeObserver:FakeResizeObserver,
+ wireGesture:null,faderGesture:null,wireSuppressClick:false,
+ setWireSnapTarget:()=>changed.cancelled++,
  wireMotion:motion,wireFragmentGeometryDirty:false,
  requestAnimationFrame:fn=>{raf.push(fn);return raf.length;},
  bankCapacity:()=>required,render:()=>{renderCount++},
@@ -67,7 +74,25 @@ assert.equal(motion.key,null,'stale wire coordinates are retired');
 assert.equal(renderCount,0,'no full mixer rebuild within a bank');
 required=8;events.get('resize')();frame();
 assert.equal(renderCount,1,'bank boundary requires structural render');
-drawn=8; // simulate the structural render committing its new bank geometry
+assert.equal(motion.token,9,'structural resize must also cancel old WIRE motion');
+assert.equal(changed.graph,0,'resize must never commit graph operations');
+// A captured WIRE drag must be retired before a bank's DOM is replaced.
+const oldRoot=dom.querySelector;
+dom.querySelector=()=>({
+ style:{getPropertyValue:()=>String(drawn)},
+ classList:{remove:()=>{}},
+ querySelectorAll:()=>[{classList:{remove:()=>{}}}],
+ querySelector:()=>({hasPointerCapture:()=>true,releasePointerCapture:()=>changed.captureReleased++})
+});
+sandbox.wireGesture={pointerId:88,sourceId:5,originDestId:null,active:true};
+required=7;events.get('resize')();frame();
+assert.equal(renderCount,2,'second bank change must still redraw');
+assert.equal(sandbox.wireGesture,null,'detached WIRE drag must be cancelled');
+assert.equal(sandbox.wireSuppressClick,true,'late click must not create a route');
+assert.equal(changed.cancelled,1,'snap outline must be cleared once');
+assert.equal(changed.captureReleased,1,'native pointer capture must be released');
+dom.querySelector=oldRoot;
+drawn=7; // simulate the structural render committing its new bank geometry
 hidden=true;events.get('resize')();
 assert.equal(raf.length,0,'hidden window must not repaint');
 hidden=false;docEvents.get('visibilitychange')();frame();
