@@ -41,6 +41,13 @@ def main():
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+            # Built-in JUCE DSP must be discoverable before ANY third-party
+            # VST3 catalog response. The native host never inserts demo FX.
+            for native_id in ('armix.builtin.channel-eq.v1',
+                              'armix.builtin.channel-compressor.v1',
+                              'armix.builtin.arson-harmony.v1'):
+                assert page.locator('#fastResults [data-fast-id="'+native_id+'"]').count()==1, (
+                    'Compiled native FX missing from cold-start picker: '+native_id)
             # Output-only playback is a REAL Audio I/O choice, not a hidden
             # capture prerequisite. Verify native intent/ACK on the approved
             # assembled Windows GUI at every supported viewport.
