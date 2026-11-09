@@ -159,3 +159,13 @@ test('automatic Inno update never closes a newly active mixer', () => {
   assert.match(read('installer/ArSonMixAutoUpdate.ps1'), /\/ARSONMIXAUTOUPDATE/);
   assert.match(isolatedSmoke, /INNO_AUTO_UPDATE_LIVE_SESSION_PRESERVED_PASS/);
 });
+
+
+test('auto updater cannot race a still-running installer or Windows shutdown', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  const native = read('src/Main.cpp');
+  assert.match(updater, /PriorityClass\s*=\s*\n\s*\[Diagnostics\.ProcessPriorityClass\]::BelowNormal/);
+  assert.match(updater, /Installer is still running after timeout; no relaunch or rollback/);
+  assert.match(updater, /UPDATED_EXE_FAILED_TO_START/);
+  assert.match(native, /GetSystemMetrics \(SM_SHUTTINGDOWN\) == 0/);
+});
