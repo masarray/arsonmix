@@ -42,7 +42,7 @@ def main():
             incl=tmp/name
             incl.mkdir()
             (incl/"ChannelCompressor.h").write_text(content,encoding="utf-8")
-            exe=tmp/(name+(".exe" if os.name=="nt" else ""))
+            exe=tmp/(name+"-run"+(".exe" if os.name=="nt" else ""))
             command=[compiler,"-std=c++20","-O3","-DNDEBUG","-fno-fast-math",
                      "-I",str(incl),str(DRIVER),"-o",str(exe)]
             subprocess.check_call(command,cwd=ROOT)
