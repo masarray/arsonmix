@@ -413,6 +413,7 @@ private:
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
         juce::uint32 started=0;
+        bool trigger=false;
     } pendingNativeThrow_;
     juce::String lastNativeThrowRequest_,lastNativeThrowInstance_;
     juce::String lastNativeThrowEpoch_,lastNativeThrowRevision_;
@@ -2241,13 +2242,28 @@ private:
         auto* processor=dynamic_cast<armix::builtin_fx::VocalThrowProcessor*>(
             pendingNativeThrow_.owner->processor.get());
         if(!processor){pendingNativeThrow_={};return;}
-        armix::builtin_fx::VocalThrowProcessor::Completion completion{};
-        if(!processor->pollCompletion(completion)&&
+        const auto request=pendingNativeThrow_.request;
+        const auto wire=request.startsWith("throw-")?
+            request.substring(6).toStdString():std::string();
+        std::uint64_t requestId=0;
+        if(!wire.empty()&&wire.size()<=19&&
+           wire.find_first_not_of("0123456789")==std::string::npos) {
+            try{requestId=std::stoull(wire);}catch(...){requestId=0;}
+        }
+        // Old completions can arrive after a rejected timeout. Drain at
+        // most the bounded SPSC depth and ONLY ACK our exact request.
+        armix::builtin_fx::VocalThrowProcessor::Completion completion{},item{};
+        bool matched=false;
+        for(int i=0;i<32 && processor->pollCompletion(item);++i) {
+            if(requestId && item.requestId==requestId) {
+                completion=item;matched=true;break;
+            }
+        }
+        if(!matched &&
            juce::Time::getMillisecondCounter()-pendingNativeThrow_.started<3000u)
             return;
-        const auto request=pendingNativeThrow_.request;
-        bool applied=completion.applied&&completion.requestId!=0&&
-            request=="throw-"+juce::String(std::to_string(completion.requestId));
+        if(!matched)processor->cancelQueuedRequest(requestId);
+        bool applied=matched&&completion.applied&&requestId!=0;
         const auto snap=approvedNativeSnapshot();
         const auto device=snap.getProperty("device",{});
         const auto graph=snap.getProperty("graph",{});
@@ -2268,11 +2284,11 @@ private:
         ack->setProperty("graphRevision",pendingNativeThrow_.revision);
         ack->setProperty("instanceId",pendingNativeThrow_.instanceId);
         ack->setProperty("status",applied?"APPLIED":"REJECTED");
-        ack->setProperty("command",completion.kind==
-            armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+        ack->setProperty("command",pendingNativeThrow_.trigger?
             "TRIGGER":"SETTINGS");
-        ack->setProperty("errorCode",applied?"NONE":
-            completion.kind==armix::builtin_fx::VocalThrowProcessor::CommandKind::trigger?
+        ack->setProperty("errorCode",applied?"NONE":!matched?
+            "DSP_ACK_TIMEOUT_CANCELLED":
+            pendingNativeThrow_.trigger?
             "NO_CAPTURE_OR_STALE_GRAPH":"DSP_EDIT_NOT_APPLIED_OR_STALE");
         pendingNativeThrow_={};
         if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
@@ -3178,6 +3194,7 @@ private:
                     pendingNativeThrow_.revision=rawRevision.toString();
                     pendingNativeThrow_.instanceId=rawInstance.toString();
                     pendingNativeThrow_.started=juce::Time::getMillisecondCounter();
+                    pendingNativeThrow_.trigger=!isSettings;
                 }
             }
             auto ack=std::make_unique<juce::DynamicObject>();

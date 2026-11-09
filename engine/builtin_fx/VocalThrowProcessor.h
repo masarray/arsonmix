@@ -97,8 +97,13 @@ public:
             core_.setMusicIntervalSamples(valid?interval:0);
         Edit e{};
         if(!done_.canPush()||!commands_.pop(e))return;
-        const bool applied=e.kind==CommandKind::settings?
-            core_.applyPrepared(e.prepared):core_.throwNow();
+        // CONTROL can reject an expired UI request while ASIO is stopped.
+        // A delayed callback must NEVER play its old vocal cue on resume.
+        // One acquire load and one fixed-size completion; no RT clock/heap.
+        const bool expired=e.id==cancelledRequestId_.load(
+            std::memory_order_acquire);
+        const bool applied=!expired && (e.kind==CommandKind::settings?
+            core_.applyPrepared(e.prepared):core_.throwNow());
         (void)done_.push({e.id,e.prepared.settings,e.kind,applied});
     }
     // CONTROL-thread song/auto BPM, deliberately independent of accepted
@@ -148,6 +153,9 @@ public:
         if(!ready_||id==0)return false;
         Edit e{};e.id=id;e.kind=CommandKind::trigger;
         return commands_.push(e);
+    }
+    void cancelQueuedRequest(std::uint64_t id) noexcept {
+        if(id)cancelledRequestId_.store(id,std::memory_order_release);
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!done_.pop(out))return false;
@@ -219,6 +227,7 @@ private:
     std::atomic<std::uint32_t> musicInterval_{0};
     std::atomic<std::uint64_t> gridVersion_{0},gridAnchor_{0};
     std::atomic<std::uint64_t> gridEpoch_{0},gridRevision_{0};
+    std::atomic<std::uint64_t> cancelledRequestId_{0};
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
     float lastTempoBpm_=0.f; // CONTROL only
