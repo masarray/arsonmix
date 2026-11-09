@@ -161,7 +161,7 @@ test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()
   assert.match(engine,/directSuppressedFrames_\.fetch_add/);
   assert.match(engine,/directRouteProtection/);
   assert.match(host,/engine_\.beginManualAudioSetup\(\)/);
-  assert.match(host,/engine_\.finishManualAudioSetup\(\)/);
+  assert.match(host,/engine_\.finishManualAudioSetup\(bindingMode!=MixerBindingMode::verifiedMainPinApply\)/);
   assert.match(host,/engine_\.directRouteAuthorized\(\)/);
 });
 
