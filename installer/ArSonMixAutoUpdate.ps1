@@ -2,9 +2,10 @@
 # ArSonMix automatic update supervisor. Installed next to ArSonMix.exe by Inno.
 # Independent of JUCE/audio callback; starts from an installed GUI only.
 # Downloads while the host is active; applies ONLY after normal host exit.
-param([Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$OwnerProcessId,
+param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$PolicySelfTest,
-      [switch]$ApplyStaged)
+      [switch]$ApplyStaged,
+      [switch]$RecoveryMode)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -169,6 +170,64 @@ function Test-StagedAsset([string]$path,[object]$asset) {
             ([string]$asset.digest).Substring(7)
     } catch {return $false}
 }
+
+function Should-RetryInstaller([int]$attempts,[bool]$success,[bool]$oldRemains) {
+    # Only a completed, nonzero-exit installer is eligible. A timeout
+    # throws and must not spawn a second installer while the first runs.
+    return (-not $success -and $oldRemains -and $attempts -ge 1 -and $attempts -lt 2)
+}
+function Get-InstalledImageStatus([object]$build) {
+    try {
+        $hash=[string]$build.exeSha256
+        $bytes=[int64]$build.guiExeBytes
+        if($hash -cnotmatch '^[a-f0-9]{64}$' -or $bytes -lt 1048576 -or $bytes -gt 209715200){return 'unknown'}
+        if((Get-Item -LiteralPath $exe -ErrorAction Stop).Length -ne $bytes){return 'damaged'}
+        if((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash){return 'damaged'}
+        return 'healthy'
+    } catch {return 'unknown'}
+}
+function Test-InstalledRelease([string]$expectedSha) {
+    try {
+        if($expectedSha -cnotmatch '^[a-f0-9]{40}$'){return $false}
+        $manifest=Read-Json $provenance
+        return ([string]$manifest.sourceCommit -ceq $expectedSha -and
+                (Get-InstalledImageStatus $manifest) -ceq 'healthy')
+    } catch {return $false}
+}
+function Classify-InterruptedTransaction([string]$phase,[string]$actual,[string]$previous,[string]$candidate) {
+    if(@('installing','installer-failed','health-failed') -cnotcontains $phase){return ''}
+    if($previous -cmatch '^[a-f0-9]{40}$' -and $actual -ceq $previous){return 'previous-retained'}
+    if($candidate -cmatch '^[a-f0-9]{40}$' -and $actual -ceq $candidate){return 'candidate-unverified'}
+    return 'unknown-installation'
+}
+
+function Test-CompleteStagedTransaction([object]$transaction) {
+    try {
+        if($transaction.phase -cne 'staged' -or
+           $null -eq (Version-Key ([string]$transaction.candidateTag)) -or
+           $null -eq (Version-Key ([string]$transaction.previousTag))){return $false}
+        $newName="ArSonMix-$($transaction.candidateTag)-Windows-x64-Setup.exe"
+        $oldName="ArSonMix-$($transaction.previousTag)-Windows-x64-Setup.exe"
+        if($transaction.newAsset.name -cne $newName -or
+           $transaction.previousAsset.name -cne $oldName){return $false}
+        $folder=Join-Path $root 'stage'
+        return ((Test-StagedAsset (Join-Path $folder $newName) $transaction.newAsset) -and
+                (Test-StagedAsset (Join-Path $folder $oldName) $transaction.previousAsset))
+    } catch {return $false}
+}
+
+function Clear-StagedVendorFiles([object]$transaction) {
+    # Never recursively delete a directory or touch private Studio/.smix.
+    $folder=Join-Path $root 'stage'
+    foreach($tag in @([string]$transaction.previousTag,[string]$transaction.candidateTag)) {
+        if($null -eq (Version-Key $tag)){continue}
+        foreach($name in @("ArSonMix-$tag-Windows-x64-Setup.exe","SHA256SUMS-$tag.txt",
+                           "INSTALLER_PROVENANCE-$tag.json")) {
+            Remove-Item -LiteralPath (Join-Path $folder $name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Owns-Exe([int]$processId) {
     try {
         $process=[Diagnostics.Process]::GetProcessById($processId)
@@ -178,13 +237,83 @@ function Owns-Exe([int]$processId) {
         } finally {$process.Dispose()}
     } catch {return $false}
 }
-function Run-Installer([string]$file) {
+
+function Test-NoActiveMixer {
+    foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
+        try {
+            if([string]::Equals([IO.Path]::GetFullPath($process.MainModule.FileName),
+                $exe,[StringComparison]::OrdinalIgnoreCase)){return $false}
+        } catch {return $false} # Unreadable image identity cannot authorize file replacement.
+        finally {$process.Dispose()}
+    }
+    return $true
+}
+function Show-RecoveryFailure([string]$reason) {
+    Log-Result ('RECOVERY_FAILED '+$reason)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $nl=[Environment]::NewLine
+        [Windows.Forms.MessageBox]::Show(
+            "ArSonMix could not repair itself safely."+$nl+$nl+
+            "Your Studio sessions and plugins were not deleted."+$nl+$nl+
+            "Use the official ArSonMix installer if this continues."+$nl+$nl+
+            "Reason: "+$reason,
+            'ArSonMix - Safe Recovery',
+            [Windows.Forms.MessageBoxButtons]::OK,
+            [Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    } catch { }
+}
+function Restore-InstalledRelease([string]$sourceSha) {
+    if(-not (Test-NoActiveMixer)){throw 'Another ArSonMix session is still active'}
+    # A separately invoked recovery shortcut works when EXE is missing.
+    # Match current SHA against GitHub's actual published release rather
+    # than trusting local update state as installation authority.
+    $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
+               'X-GitHub-Api-Version'='2022-11-28'}
+    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $sourceRelease=$null
+    foreach($release in $releases) {
+        if([string]$release.target_commitish -ceq $sourceSha -and
+           $null -ne (Approved-Installer $release)) {
+            if($null -eq $sourceRelease) {
+                $sourceRelease=$release
+            } else {
+                $candidateVersion=Version-Key ([string]$release.tag_name)
+                $chosenVersion=Version-Key ([string]$sourceRelease.tag_name)
+                if((Compare-Version $candidateVersion $chosenVersion) -gt 0) {
+                    $sourceRelease=$release
+                }
+            }
+        }
+    }
+    if($null -eq $sourceRelease){throw 'No published, verified release matches this installation'}
+    $asset=Approved-Installer $sourceRelease
+    $destination=Join-Path (Join-Path $root 'stage') ([string]$asset.name)
+    Download-Release-Verified $sourceRelease $asset $destination
+    if(-not (Test-StagedAsset $destination $asset)){throw 'Recovery installer SHA check failed'}
+    if(-not (Test-NoActiveMixer)){throw 'An active mixer appeared during repair'}
+    # Missing-EXE mode is NOT normal auto-update and never closes a mixer.
+    if(-not (Run-Installer $destination -AllowMissingExeRecovery)){
+        throw 'Verified recovery installer was not accepted by Windows'
+    }
+    if(-not (Test-InstalledRelease $sourceSha)){
+        throw 'Repair did not restore exact authenticated EXE and source manifest'
+    }
+    if(-not (Launch-WithHealth $sourceSha)){
+        throw 'Repaired application did not pass the GUI startup check'
+    }
+    Log-Result ('RECOVERY_HEALTHY '+$sourceRelease.tag_name)
+    # Keep verified installer cached for next recovery; no Studio cleanup.
+}
+
+function Run-Installer([string]$file,[switch]$AllowMissingExeRecovery) {
     # Inno performs exact-path process shutdown and EXE replacement preflight.
     # Its silent [Run] is disabled: only this supervisor relaunches once.
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){return $false}
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=$file
     $info.Arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOCLOSEAPPLICATIONS /ARSONMIXAUTOUPDATE /DIR="'+$PSScriptRoot+'"'
+    if($AllowMissingExeRecovery){$info.Arguments+=' /ARSONMIXRECOVERY'}
     $info.UseShellExecute=$false
     $info.CreateNoWindow=$true
     $process=[Diagnostics.Process]::Start($info)
@@ -217,7 +346,7 @@ function Launch-WithHealth([string]$expectedSha) {
             if($process.HasExited){return $false}
             if(Test-Path -LiteralPath $marker -PathType Leaf) {
                 if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY' -and
-                   (Read-Json $provenance).sourceCommit -ceq $expectedSha) {
+                   (Test-InstalledRelease $expectedSha)) {
                     Start-Sleep -Seconds 2
                     $process.Refresh()
                     return (-not $process.HasExited)
@@ -281,52 +410,175 @@ if($PolicySelfTest) {
         $fixtureAsset.size=2097153
         if(Test-StagedAsset $fixturePath $fixtureAsset){throw 'Short staged EXE accepted'}
         $fixtureAsset.size=2097152
+        $priorExe=$exe
+        try {
+            $exe=$fixturePath
+            $validBuild=[pscustomobject]@{exeSha256=$goodHash;guiExeBytes=2097152}
+            if((Get-InstalledImageStatus $validBuild) -cne 'healthy'){throw 'Healthy image rejected'}
+            $savedProvenance=$provenance
+            try {
+                $provenance=Join-Path $tmp 'BUILD_PROVENANCE.json'
+                $sampleSha='1'*40
+                [IO.File]::WriteAllText($provenance,(
+                    @{sourceCommit=$sampleSha;exeSha256=$goodHash;guiExeBytes=2097152} |
+                    ConvertTo-Json -Compress),[Text.Encoding]::UTF8)
+                if(-not (Test-InstalledRelease $sampleSha)){throw 'Authentic installed image rejected'}
+                if(Test-InstalledRelease ('2'*40)){throw 'Incorrect source accepted'}
+                [IO.File]::WriteAllText($provenance,(
+                    @{sourceCommit=$sampleSha;exeSha256=('0'*64);guiExeBytes=2097152} |
+                    ConvertTo-Json -Compress),[Text.Encoding]::UTF8)
+                if(Test-InstalledRelease $sampleSha){throw 'Same source with changed EXE accepted'}
+            } finally {$provenance=$savedProvenance}
+
+            $validBuild.exeSha256='0'*64
+            if((Get-InstalledImageStatus $validBuild) -cne 'damaged'){throw 'Tampered image not detected'}
+            $validBuild.exeSha256=$goodHash
+            $validBuild.guiExeBytes=2097153
+            if((Get-InstalledImageStatus $validBuild) -cne 'damaged'){throw 'Truncated image not detected'}
+            $validBuild.guiExeBytes=0
+            if((Get-InstalledImageStatus $validBuild) -cne 'unknown'){throw 'Unknown manifest not fenced'}
+            if((Classify-InterruptedTransaction 'installing' ('1'*40) ('1'*40) ('2'*40)) -cne 'previous-retained'){
+                throw 'Old EXE recovery not classified'
+            }
+            if((Classify-InterruptedTransaction 'installing' ('2'*40) ('1'*40) ('2'*40)) -cne 'candidate-unverified'){
+                throw 'Candidate recovery not classified'
+            }
+        } finally {$exe=$priorExe}
         [IO.File]::Delete($fixturePath)
         if(Test-StagedAsset $fixturePath $fixtureAsset){throw 'Missing staged EXE accepted'}
     } finally {
         if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Recurse -Force}
     }
+    # Offline stage reuse must require BOTH full-size byte-verified EXEs.
+    $previousRoot=$root
+    try {
+        $root=$tmp
+        $stageDir=Join-Path $root 'stage'
+        [IO.Directory]::CreateDirectory($stageDir) | Out-Null
+        $tag='v0.5.0-alpha.6'
+        $stageFile=Join-Path $stageDir "ArSonMix-$tag-Windows-x64-Setup.exe"
+        [IO.File]::WriteAllBytes($stageFile,(New-Object byte[] 2097152))
+        $hash=(Get-FileHash -LiteralPath $stageFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        $stored=[pscustomobject]@{name="ArSonMix-$tag-Windows-x64-Setup.exe";size=2097152;digest="sha256:$hash"}
+        $transaction=[pscustomobject]@{phase='staged';candidateTag=$tag;previousTag=$tag;
+            newAsset=$stored;previousAsset=$stored}
+        if(-not (Test-CompleteStagedTransaction $transaction)){throw 'Verified stage not reused'}
+        $stored.digest='sha256:'+('0'*64)
+        if(Test-CompleteStagedTransaction $transaction){throw 'Corrupted staged transaction reused'}
+    } finally {$root=$previousRoot}
+    if(-not (Should-RetryInstaller 1 $false $true)){throw 'First transient retry rejected'}
+    if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
+    if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
+    if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    Write-Output 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS'
+    Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
+    Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
+
+    Write-Output 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'
     Write-Output 'ARSONMIX_UPDATER_POLICY_PASS'
     exit 0
 }
 
 try {
-    if(-not (Test-Path -LiteralPath $exe -PathType Leaf) -or
-       -not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
-       (-not $ApplyStaged -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
+    if($RecoveryMode -and -not (Test-Path -LiteralPath $provenance -PathType Leaf)) {
+        Show-RecoveryFailure 'Installation version metadata is missing'
+        exit 0
+    }
+    if(-not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
+       (-not $RecoveryMode -and -not (Test-Path -LiteralPath $exe -PathType Leaf)) -or
+       (-not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
     # No update worker from portable builds, different installation roots,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
     if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'portable_mode.txt')){exit 0}
     $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
-    $locked=$mutex.WaitOne($(if($ApplyStaged){60000}else{0}))
+    try {
+        $locked=$mutex.WaitOne($(if($ApplyStaged -or $RecoveryMode){60000}else{0}))
+    } catch [Threading.AbandonedMutexException] {
+        # Previous worker was killed. WaitOne owns the mutex despite throwing.
+        $locked=$true
+        Log-Result 'ABANDONED_MUTEX_RECLAIMED'
+    }
     if(-not $locked){exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance
     $installedSha=[string]$file.sourceCommit
-    if($installedSha -cnotmatch '^[a-f0-9]{40}$'){exit 0}
-    $state=[pscustomobject]@{lastCheckUtc='';blockedTag='';lastInstalledTag='';phase='idle';
+    if($installedSha -cnotmatch '^[a-f0-9]{40}$'){
+        if($RecoveryMode){Show-RecoveryFailure 'Installed source identity is invalid'}
+        exit 0
+    }
+    $state=[pscustomobject]@{lastCheckUtc='';lastAttemptUtc='';blockedTag='';lastInstalledTag='';phase='idle';operation='upgrade';installAttempts=0;retryAfterUtc='';
        candidateTag='';candidateSha='';previousSha='';previousTag='';
        newAsset=$null;previousAsset=$null}
     if(Test-Path -LiteralPath $statePath -PathType Leaf) {
-        $read=Read-Json $statePath
-        foreach($key in @('lastCheckUtc','blockedTag','lastInstalledTag','phase','candidateTag','candidateSha','previousSha','previousTag','newAsset','previousAsset')) {
-            if($read.PSObject.Properties.Name -contains $key){$state.$key=$read.$key}
+        try {
+            $read=Read-Json $statePath
+            if($null -eq $read -or $null -eq $read.PSObject.Properties['phase']){throw 'Invalid updater state'}
+        } catch {
+            # Quarantine only the updater's own metadata, never user files.
+            $quarantine=$statePath+'.invalid.'+[guid]::NewGuid().ToString('N')
+            [IO.File]::Move($statePath,$quarantine)
+            Log-Result 'INVALID_UPDATER_STATE_QUARANTINED'
+            $read=$null
+        }
+        foreach($key in @('lastCheckUtc','lastAttemptUtc','blockedTag','lastInstalledTag','phase','operation','installAttempts','retryAfterUtc','candidateTag','candidateSha','previousSha','previousTag','newAsset','previousAsset')) {
+            if($null -ne $read -and $read.PSObject.Properties.Name -contains $key){$state.$key=$read.$key}
         }
     }
-    if(-not $ApplyStaged) {
-    if($state.lastCheckUtc) {
-        $checked=[DateTime]::MinValue
-        if([DateTime]::TryParse([string]$state.lastCheckUtc,[ref]$checked) -and
-            [DateTime]::UtcNow.Subtract($checked.ToUniversalTime()).TotalHours -lt 6 -and
-            [DateTime]::UtcNow -ge $checked.ToUniversalTime() -and
-            $state.phase -cne 'staged') {exit 0}
+    if($RecoveryMode) {
+        # Explicit Repair always verifies and reapplies the published
+        # application files. EXE may be intact while FactoryFX or packaged
+        # WebView resources are missing. No uninstall or user-data deletion.
+        try {Restore-InstalledRelease $installedSha}
+        catch {Show-RecoveryFailure $_.Exception.Message}
+        exit 0
     }
-    $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
+    $recovery=Classify-InterruptedTransaction ([string]$state.phase) $installedSha ([string]$state.previousSha) ([string]$state.candidateSha)
+    if($recovery) {
+        if($state.candidateTag){$state.blockedTag=$state.candidateTag}
+        $state.phase=$recovery
+        Write-State $state
+        Log-Result ('RECOVERED_TRANSACTION_STATUS '+$recovery)
+        if($recovery -ceq 'unknown-installation'){exit 0}
+    }
+    if(-not $ApplyStaged) {
+    # A staged transaction stays staged across app opens. Installation
+    # always rechecks publication/revocation before touching any files.
+    if($state.phase -ceq 'staged' -and $state.previousSha -ceq $installedSha){
+        if(Test-CompleteStagedTransaction $state){
+            Log-Result 'STAGED_READY_FOR_NORMAL_EXIT'
+            exit 0
+        }
+        # Incomplete/altered cached installers must be downloaded afresh.
+        # Never attempt an installer solely because metadata says "staged".
+        $state.phase='staging-retry'
+        $state.lastCheckUtc=''
+        $state.lastAttemptUtc=''
+        Write-State $state
+        Log-Result 'STAGED_CACHE_INVALID_REDOWNLOAD'
+    }
+    if($state.phase -ceq 'idle' -and $state.candidateTag -and
+       $state.lastInstalledTag -ceq $state.candidateTag) {
+        Clear-StagedVendorFiles $state
+    }
+    $imageStatus=Get-InstalledImageStatus $file
+    $now=[DateTime]::UtcNow
+    $attempt=[DateTime]::MinValue
+    if($state.lastAttemptUtc -and [DateTime]::TryParse([string]$state.lastAttemptUtc,[ref]$attempt) -and
+       $now -ge $attempt.ToUniversalTime() -and
+       $now.Subtract($attempt.ToUniversalTime()).TotalMinutes -lt 20){exit 0}
+    $checked=[DateTime]::MinValue
+    if($imageStatus -cne 'damaged' -and $state.lastCheckUtc -and
+       [DateTime]::TryParse([string]$state.lastCheckUtc,[ref]$checked) -and
+       $now -ge $checked.ToUniversalTime() -and
+       $now.Subtract($checked.ToUniversalTime()).TotalHours -lt 6){exit 0}
+    $state.lastAttemptUtc=$now.ToString('o')
     Write-State $state
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
     $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
+    Write-State $state
     $current=$null
     foreach($release in $releases) {
         if([string]$release.target_commitish -ceq $installedSha -and
@@ -346,7 +598,15 @@ try {
             $new=$release
         }
     }
-    if($null -eq $new){Log-Result 'UP_TO_DATE';exit 0}
+    $operation='upgrade'
+    if($null -eq $new) {
+        if($imageStatus -cne 'damaged'){Log-Result 'UP_TO_DATE';exit 0}
+        # Repair only a cryptographically proven EXE mismatch. Use the
+        # same verified Inno release in place; never uninstall user data.
+        $new=$current
+        $operation='repair'
+        Log-Result 'STAGING_VERIFIED_SAME_VERSION_REPAIR'
+    }
     if($state.blockedTag -ceq $new.tag_name){Log-Result 'PREVIOUS_FAILURE_BLOCKED';exit 0}
     $oldAsset=Approved-Installer $current
     $newAsset=Approved-Installer $new
@@ -358,6 +618,9 @@ try {
     # byte-verified previous installer.
     Download-Release-Verified $current $oldAsset $oldPath
     $state.phase='staged'
+    $state.operation=$operation
+    $state.installAttempts=0
+    $state.retryAfterUtc=''
     $state.candidateTag=[string]$new.tag_name
     $state.candidateSha=[string]$new.target_commitish
     $state.previousTag=[string]$current.tag_name
@@ -370,6 +633,17 @@ try {
     }
     # Post-close supervisor: no resident updater during live audio.
     if($state.phase -cne 'staged' -or $state.previousSha -cne $installedSha){exit 0}
+    if($state.operation -cnotin @('upgrade','repair')){Fail 'Unknown update operation'}
+    if($state.operation -ceq 'repair' -and $state.candidateSha -cne $installedSha){
+        Fail 'Repair must use the installed release'
+    }
+    $retryAt=[DateTime]::MinValue
+    if($state.retryAfterUtc -and
+       [DateTime]::TryParse([string]$state.retryAfterUtc,[ref]$retryAt) -and
+       [DateTime]::UtcNow -lt $retryAt.ToUniversalTime()){
+        Log-Result 'INSTALLER_RETRY_DEFERRED_COOLDOWN'
+        exit 0
+    }
     if($state.candidateSha -cnotmatch '^[a-f0-9]{40}$' -or
        $null -eq (Version-Key ([string]$state.candidateTag)) -or
        $null -eq (Version-Key ([string]$state.previousTag)) -or
@@ -403,7 +677,15 @@ try {
     }
     if($null -eq $approved -or $approved.digest -cne $state.newAsset.digest -or
        [long]$approved.size -ne [long]$state.newAsset.size){
-        Fail 'Published update revoked or changed'
+        # A withdrawn release must not be retried on every shutdown.
+        # Permit another newly published, attested release on next startup.
+        $state.blockedTag=$state.candidateTag
+        $state.phase='revoked'
+        $state.lastCheckUtc=''
+        $state.lastAttemptUtc=''
+        Write-State $state
+        Log-Result 'RELEASE_REVOKED_UPDATE_DEFERRED'
+        exit 0
     }
     $new=[pscustomobject]@{tag_name=$state.candidateTag;target_commitish=$state.candidateSha}
     $oldAsset=$state.previousAsset
@@ -427,18 +709,34 @@ try {
     }
     if((Read-Json $provenance).sourceCommit -cne $installedSha) {Log-Result 'DEFER_VERSION_CHANGED';exit 0}
     $state.phase='installing'
+    $state.installAttempts=[int]$state.installAttempts+1
     Write-State $state
     $upgradeOK=Run-Installer $newPath
     $actualSha=''
     try {$actualSha=[string](Read-Json $provenance).sourceCommit} catch {}
-    if($upgradeOK -and $actualSha -ceq $new.target_commitish -and
+    if($upgradeOK -and (Test-InstalledRelease ([string]$new.target_commitish)) -and
        (Launch-WithHealth ([string]$new.target_commitish))) {
         $state.lastInstalledTag=$new.tag_name
         $state.phase='idle'
+        $state.retryAfterUtc=''
+        $state.installAttempts=0
         $state.blockedTag=''
         Write-State $state
-        Log-Result ('HEALTHY '+$new.tag_name)
-        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
+        Clear-StagedVendorFiles $state
+        exit 0
+    }
+    # A transient, completed Inno rejection can retry ONCE on a later
+    # normal exit. Timeout/exception never qualifies for a second installer.
+    $oldRemains=($actualSha -ceq $installedSha) -and (Test-Path -LiteralPath $exe -PathType Leaf)
+    if(Should-RetryInstaller ([int]$state.installAttempts) ([bool]$upgradeOK) ([bool]$oldRemains)) {
+        $state.phase='staged'
+        $state.retryAfterUtc=[DateTime]::UtcNow.AddMinutes(30).ToString('o')
+        Write-State $state
+        Log-Result ('INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT '+$new.tag_name)
+        try {[Diagnostics.Process]::Start($exe) | Out-Null} catch {
+            Log-Result 'PREVIOUS_EXE_RELAUNCH_FAILED'
+        }
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.
@@ -461,10 +759,15 @@ try {
         } catch {Log-Result 'HEALTH_FAILED_PROCESS_UNKNOWN';exit 0}
         finally {$process.Dispose()}
     }
+    if($state.operation -ceq 'repair') {
+        # Another copy of the same installer cannot act as rollback.
+        Log-Result ('REPAIR_HEALTH_FAILED_BLOCKED '+$new.tag_name)
+        exit 0
+    }
     # Roll back by running the previously authenticated Inno installer,
     # not by copying arbitrary stale binaries over an installed application.
     if(Run-Installer $oldPath) {
-        if((Read-Json $provenance).sourceCommit -ceq $installedSha) {
+        if(Test-InstalledRelease $installedSha) {
             $state.phase='rolled-back'
             Write-State $state
             Log-Result ('ROLLED_BACK '+$new.tag_name)

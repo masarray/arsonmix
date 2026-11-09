@@ -7,6 +7,10 @@ Set-StrictMode -Version Latest
 $updaterPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixAutoUpdate.ps1"
 $policyOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $updaterPolicy -OwnerProcessId 1 -PolicySelfTest
 if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'){
     throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
 }
@@ -138,6 +142,31 @@ try {
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto-install changed expected product bytes"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto-install erased user data"
     Write-Host "INNO_AUTO_UPDATE_AFTER_NORMAL_EXIT_PASS: silent setup, correct EXE, user data intact"
+
+    # Test-only synthetic corruption: byte-level repair of vendor-owned EXE.
+    # Never run this on a user installation or private Studio content.
+    [IO.File]::WriteAllBytes($installedExe,(New-Object byte[] 4096))
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ne $fixtureHash) "Corrupt fixture unexpectedly matched original binary"
+    $repair=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($repair.ExitCode -eq 0) "Automatic same-version repair installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Same-version repair did not restore verified EXE"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Same-version repair erased Studio or install-local user files"
+    Write-Host "INNO_AUTO_REPAIR_CORRUPT_EXE_PASS: exact verified EXE restored, private Studio and user files retained"
+
+    # Recovery when app EXE cannot start. This is a test-only isolated
+    # installation. User program files must never be deliberately deleted.
+    Remove-Item -LiteralPath $installedExe -Force
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Could not remove synthetic EXE"
+    $ordinary=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    Assert-Condition ($ordinary.ExitCode -ne 0) "Ordinary auto-update accepted a missing program EXE"
+    Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) "Normal auto-update restored EXE without explicit recovery"
+    $repaired=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE','/ARSONMIXRECOVERY')) -Wait -PassThru
+    Assert-Condition ($repaired.ExitCode -eq 0) "Missing EXE recovery installer failed"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Missing EXE recovery did not restore exact SHA"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Missing EXE recovery erased user data"
+    Write-Host "INNO_MISSING_EXE_RECOVERY_PASS: exact EXE recovered, app and Studio retained"
+
+
 
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
     # Upgrade must fail before [Files], leave old EXE and Studio untouched.

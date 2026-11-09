@@ -181,3 +181,107 @@ test('Windows updater executes byte-level offline stage integrity fixtures', () 
   assert.match(updater, /ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS/);
   assert.match(smoke, /ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS/);
 });
+
+test('updater recovers after crash and offers only verified same-version repair', () => {
+  const s = read('installer/ArSonMixAutoUpdate.ps1');
+  for (const rule of [
+    'Get-InstalledImageStatus', 'exeSha256', 'guiExeBytes',
+    'Classify-InterruptedTransaction', 'previous-retained',
+    'candidate-unverified', 'INVALID_UPDATER_STATE_QUARANTINED',
+    "operation='repair'", 'STAGING_VERIFIED_SAME_VERSION_REPAIR',
+    'Clear-StagedVendorFiles', 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS',
+    'TotalMinutes -lt 20', 'TotalHours -lt 6'
+  ]) assert.ok(s.includes(rule), rule);
+  assert.doesNotMatch(s, /Remove-Item -LiteralPath \$stage -Recurse/);
+  assert.doesNotMatch(s, /\bunins000\.exe\b/);
+});
+
+test('cached installers are byte-verified and revoked releases cannot loop indefinitely', () => {
+  const ps = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  for (const marker of [
+    'Test-CompleteStagedTransaction', 'STAGED_CACHE_INVALID_REDOWNLOAD',
+    'STAGED_READY_FOR_NORMAL_EXIT', 'RELEASE_REVOKED_UPDATE_DEFERRED',
+    'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
+  ]) assert.ok(ps.includes(marker), marker);
+  assert.match(smoke, /ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS/);
+});
+
+test('transient Inno failure allows one delayed retry, never a reinstall loop', () => {
+  const ps = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  for (const x of ['Should-RetryInstaller','installAttempts','retryAfterUtc','AddMinutes(30)',
+    'INSTALLER_RETRY_DEFERRED_COOLDOWN','INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT',
+    'ARSONMIX_UPDATER_RETRY_POLICY_PASS']) assert.ok(ps.includes(x), x);
+  assert.match(smoke,/ARSONMIX_UPDATER_RETRY_POLICY_PASS/);
+});
+
+test('Windows Inno fixture proves unattended in-place repair after binary corruption', () => {
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  assert.match(smoke,/INNO_AUTO_REPAIR_CORRUPT_EXE_PASS/);
+  assert.match(smoke,/Same-version repair did not restore verified EXE/);
+  assert.match(smoke,/Same-version repair erased Studio or install-local user files/);
+});
+
+test('one-click recovery can restore main EXE without a live app', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(iss, /Name: "\{autoprograms\}\\Repair ArSonMix"/);
+  assert.match(iss, /-RecoveryMode/);
+  assert.match(iss, /function IsArSonMixRecovery: Boolean;/);
+  assert.match(iss, /if not FileExists\(Target\) and not IsArSonMixRecovery then/);
+  assert.match(updater, /\[switch\]\$RecoveryMode/);
+  assert.match(updater, /Restore-InstalledRelease/);
+  assert.match(updater, /-AllowMissingExeRecovery/);
+  assert.match(updater, /\/ARSONMIXRECOVERY/);
+  assert.match(updater, /ABANDONED_MUTEX_RECLAIMED/);
+  assert.match(updater, /Test-NoActiveMixer/);
+  assert.match(isolatedSmoke, /INNO_MISSING_EXE_RECOVERY_PASS/);
+  assert.doesNotMatch(updater, /\bStop-Process\b|\btaskkill\b/);
+});
+
+test('updater script has one coherent main try/finally and no duplicated tail', () => {
+  const script = read('installer/ArSonMixAutoUpdate.ps1').replace(/\r\n/g, '\n');
+  const tail = [
+    '} finally {',
+    '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
+    '    if($null -ne $mutex){$mutex.Dispose()}',
+    '}',
+  ].join('\n');
+  assert.equal(script.split(tail).length - 1, 1, 'duplicate main-script terminator');
+  assert.ok(script.trimEnd().endsWith(tail), 'script has garbage after terminator');
+  assert.equal(script.split('function Restore-InstalledRelease').length - 1, 1);
+  assert.equal(script.split('if($PolicySelfTest)').length - 1, 1);
+});
+
+test('healthy install, repair and rollback require real EXE SHA, not provenance commit alone', () => {
+  const script = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  assert.match(script, /function Test-InstalledRelease\(/);
+  assert.match(script, /Get-InstalledImageStatus \$manifest/);
+  assert.match(script, /Repair did not restore exact authenticated EXE and source manifest/);
+  assert.match(script, /if\(\$upgradeOK -and \(Test-InstalledRelease/);
+  assert.match(script, /if\(Test-InstalledRelease \$installedSha\)/);
+  assert.match(script, /GUI_READY' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
+  assert.match(script, /Same source with changed EXE accepted/);
+  assert.match(smoke, /ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS/);
+});
+
+test('two genuine release installers upgrade and roll back only in disposable Windows FAT', () => {
+  const real = read('scripts/test_two_genuine_inno_releases_windows.ps1');
+  const ci = read('.github/workflows/p1-windows.yml');
+  assert.match(real, /REAL_RELEASE_FAT_REQUIRES_DISPOSABLE_GITHUB_WINDOWS_RUNNER/);
+  assert.match(real, /v0\.5\.0-alpha\.4/);
+  assert.match(real, /v0\.5\.0-alpha\.5/);
+  assert.match(real, /GENUINE_RELEASE_BASELINE_PASS/);
+  assert.match(real, /GENUINE_RELEASE_UPGRADE_PASS/);
+  assert.match(real, /GENUINE_RELEASE_ROLLBACK_PASS/);
+  assert.match(real, /INSTALLER_PROVENANCE\.json/);
+  assert.match(real, /SHA256SUMS\.txt/);
+  assert.match(real, /sourceCommit/);
+  assert.match(real, /exeSha256/);
+  assert.match(real, /guiExeBytes/);
+  assert.match(real, /proof-user-session\.smix/);
+  assert.match(ci, /Prove two authentic historical Inno releases upgrade and roll back/);
+  assert.match(ci, /scripts\/test_two_genuine_inno_releases_windows\.ps1/);
+  assert.doesNotMatch(real, /(?:Stop-Process|taskkill|Remove-Item\s+-LiteralPath\s+\$install\s+-Recurse)/);
+});

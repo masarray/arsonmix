@@ -33,13 +33,20 @@ public:
         // maximise/restore, and intentionally red close.
         if (over || down)
         {
-            const auto colour = close
-                ? (down ? juce::Colour (0xffe14d59) : juce::Colour (0xffb73948))
-                : kind_ == juce::DocumentWindow::minimiseButton
-                ? (down ? juce::Colour (0xff218f9f) : juce::Colour (0xff225e72))
-                : (down ? juce::Colour (0xff348cc0) : juce::Colour (0xff285b83));
-            g.setColour (colour);
-            g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2.0f, 3.0f), 3.0f);
+            // Clear chromatic outline on hover; solid pressed state.
+            // The native JUCE Button repaints only on its mouse-state change.
+            const bool minimise = kind_ == juce::DocumentWindow::minimiseButton;
+            const auto accent = close ? juce::Colour (0xffff6874)
+                              : minimise ? juce::Colour (0xff50d4e7)
+                                         : juce::Colour (0xff67b9ff);
+            const auto pressed = close ? juce::Colour (0xffdc3549)
+                               : minimise ? juce::Colour (0xff168fa7)
+                                          : juce::Colour (0xff287abd);
+            const auto face = getLocalBounds().toFloat().reduced (2.0f, 3.0f);
+            g.setColour (down ? pressed : accent.withAlpha ((juce::uint8) 27));
+            g.fillRoundedRectangle (face, 3.0f);
+            g.setColour (accent);
+            g.drawRoundedRectangle (face.reduced (0.5f), 3.0f, 1.0f);
         }
         if (hasKeyboardFocus (true))
         {
@@ -111,25 +118,31 @@ public:
                                juce::RectanglePlacement::centred, false);
             x += 23;
         }
-        g.setFont (juce::Font (juce::FontOptions { 13.0f }));
+        const auto brandFont = juce::Font (juce::FontOptions { 13.0f });
+        g.setFont (brandFont);
         const auto alpha = window.isActiveWindow() ? 1.0f : 0.72f;
-        auto paintPart = [&] (const char* word, int width, juce::Colour colour)
+        auto paintPart = [&] (const juce::String& word, juce::Colour colour)
         {
+            // Real glyph advances: "ArSonMiX" is one continuous wordmark.
+            const auto advance = juce::GlyphArrangement::getStringWidthInt (brandFont, word);
             g.setColour (colour.withMultipliedAlpha (alpha));
-            g.drawText (word, x, 0, width, h, juce::Justification::centredLeft, false);
-            x += width;
+            g.drawText (word, x, 0, advance + 2, h, juce::Justification::centredLeft, false);
+            x += advance;
         };
-        paintPart ("Ar", 16, juce::Colour (0xff48d5f3));
-        paintPart ("Son", 27, juce::Colour (0xffeff8fa));
-        paintPart ("MiX", 27, juce::Colour (0xffffad59));
-        const auto remaining = titleX + titleW - x;
-        if (remaining > 185)
+        paintPart ("Ar", juce::Colour (0xff48d5f3));
+        paintPart ("Son", juce::Colour (0xffeff8fa));
+        paintPart ("MiX", juce::Colour (0xffffad59));
+        x += 15;
+        const auto remaining = juce::jmax (0, titleX + titleW - x - 9);
+        if (remaining > 80)
         {
-            g.setColour (juce::Colour (0xff799dac));
+            // Explicit Unicode code point prevents mojibake in MSVC builds.
+            const auto subtitle = juce::String ("Open Source Premium Digital Mixer  |  Version 01.00  |  ")
+                + juce::String::charToString ((juce::juce_wchar) 0x00a9) + " 2026 SonKuPik";
+            g.setColour (juce::Colour (0xff96b3bf).withMultipliedAlpha (alpha));
             g.setFont (juce::Font (juce::FontOptions { 10.5f }));
-            g.drawText ("MIXER  ·  NATIVE SESSION", x + 13, 0,
-                        juce::jmin (230, remaining - 16), h,
-                        juce::Justification::centredLeft, false);
+            g.drawText (subtitle, x, 0, remaining, h,
+                        juce::Justification::centredLeft, true);
         }
     }
 };

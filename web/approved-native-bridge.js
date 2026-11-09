@@ -247,11 +247,67 @@
   let nativeFxPowerSerial=0,pendingNativeFxPower=null;
   const pendingM4RackPowers=new Map();
   let controller = null;
-  const status = message => {
-    lastNativeError = message;
-    const info = document.getElementById("info");
-    if (info && info.textContent !== message) info.textContent = message;
+  // Human-facing presentation is isolated from native diagnostic state.
+  // Internal identifiers remain in engine logs, never footer, dialog or toast.
+  const operatorMessage = message => {
+    const raw=String(message??"").trim();
+    if(!raw)return "";
+    const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
+    if(internalCode ||
+       /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
+      if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
+         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
+        return "Audio device unavailable · Open Audio I/O";
+      if(/\b(WIRE|route|routing)\b/i.test(raw)){
+        if(/\b(reject|fail|error|timed out|not applied|unavailable)\b/i.test(raw))
+          return "Routing not changed · Check the connection and try again";
+        if(/\b(pending|await|verif|applying|completing)\w*/i.test(raw))
+          return "Updating channel routing…";
+        return "Channel routing updated";
+      }
+      if(/\b(VST3|plugin|effect|FX)\b/i.test(raw)){
+        if(/\b(reject|fail|error|timed out)\b/i.test(raw))
+          return "Effect change failed · Previous settings kept";
+        if(/\b(pending|await|verif|loading|applying)\w*/i.test(raw))
+          return "Applying effect…";
+        return "Effect settings updated";
+      }
+      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|_(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING)(?:\b|_)/i.test(raw))
+        return "Change not applied · Previous mixer settings kept";
+      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
+        return "Applying mixer changes…";
+      return "Mixer settings updated";
+    }
+    return raw;
   };
+  const status = message => {
+    lastNativeError = message; // raw engine state remains inspectable internally
+    const text = operatorMessage(message);
+    const info = document.getElementById("info");
+    if (info && info.textContent !== text) info.textContent = text;
+  };
+  // The original preview's say() may still populate this footer.
+  // Observe two text nodes only, no polling, audio callback or DOM-wide scans.
+  if(connected){
+    const info=document.getElementById?.("info");
+    const warning=document.querySelector?.(".status-bar .warning");
+    if(info)info.textContent="Opening mixer…";
+    if(warning)warning.textContent="CONNECTING AUDIO…";
+    if(typeof MutationObserver==="function"){
+      const nodes=[info,warning].filter(Boolean);
+      const sanitize=()=>{
+        for(const node of nodes){
+          const clean=operatorMessage(node.textContent);
+          if(node.textContent!==clean)node.textContent=clean;
+        }
+      };
+      const observer=new MutationObserver(sanitize);
+      for(const node of nodes)
+        observer.observe(node,{childList:true,characterData:true,subtree:true});
+    }
+    const demoFoot=document.querySelector?.(".route-choice-foot");
+    if(demoFoot)demoFoot.textContent="Your routing changes take effect after you confirm.";
+  }
   const stopDemo = () => {
     // The public Pages demo remains unchanged. In native, DEMO meters and
     // reference-only physical operations are never passed off as live audio.
@@ -601,7 +657,7 @@
       Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
   // BUS is verified engine state, not an available hardware input choice.
   const INTERNAL_BUS="Internal BUS (read-only)";
-  const NEEDS_REMAP="Waiting for device";
+  const NEEDS_REMAP="Audio connection lost";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   const inputChoicesFor=()=>{
@@ -1527,10 +1583,10 @@
     const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
-      d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
-        "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
-      !d.enabledInputs?.length?(next.admitted?"NO HARDWARE IN · MIXER/FX READY":
-        "MIXER SESSION UNAVAILABLE · CHECK AUDIO I/O"):
+      d.outputArmed?(next.admitted?"OUTPUT ENABLED":
+        "CHECK AUDIO CONNECTION"):
+      !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
+        "CHECK AUDIO I/O SETTINGS"):
       legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -1592,7 +1648,7 @@
         "font:12px system-ui,sans-serif;box-shadow:0 9px 28px #0008";
       document.body.appendChild(element);
     }
-    element.textContent=message;element.hidden=false;
+    element.textContent=operatorMessage(message);element.hidden=false;
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
@@ -2207,7 +2263,7 @@
       flags.productionCallbackLive=false;
       lastPaintedSignature="";
       delete document.documentElement.dataset.armixNativeRoster;
-      status("NATIVE SESSION UNAVAILABLE · verify Audio I/O");
+      status("AUDIO CONNECTION CHANGED · OPEN AUDIO I/O");
       return;
     }
     // Never paint unacknowledged controls; pending slider caps are kept
@@ -2319,9 +2375,7 @@
       if(actual===p.bypassed)pendingNativeFxPower=null;
     }
     if(startupWire)window.queueMicrotask(flushStartupWire);
-    status((next.productLive?"NATIVE PRODUCT LIVE":"NATIVE PCM GRAPH ACCEPTED · FAT PENDING")+
-      " · device "+next.device.epoch+
-      " · graph "+next.graph.revision+" · roster "+next.graph.rosterRevision);
+    status("Mixer settings updated");
   }
   if (connected) {
     controller = protocol.createController({

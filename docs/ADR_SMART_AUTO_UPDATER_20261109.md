@@ -33,3 +33,29 @@ The update trusts HTTPS to the official GitHub API, immutable release source ide
 
 ## Non-goals
 No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, Windows service, forced termination, system-wide install, scheduled task, repeated background CI or cross-platform pretend-updater.
+
+## M2 self-repair and interrupted update recovery
+- A published Windows installation with verifiable exeSha256 and guiExeBytes is repaired only when its executable mismatches those expected bytes. The independently hashed current-release installer is staged and reapplied after normal exit. This is a non-destructive repair of packaged program files, not a broad uninstall or deletion of private Studio/.smix, custom VST3 or unknown directories.
+- An interrupted install on next startup is reconciled to previous-retained, candidate-unverified or unknown-installation using installed source SHA. The failed release is blocked from endless retries; unknown source fails closed. These states do not certify audio or WebView health.
+- Corrupt updater-owned state is quarantined without touching user data. Network failure retries no more than every 20 minutes; successfully fetched release lists are cached six hours. Complete staged transactions are retained across app reopens until the normal-exit update process.
+- Cleanup removes only named vendor installer/checksum/provenance files. No recursive stage deletion. Failure of a same-version repair blocks repeated attempts; it does not uninstall or erase a session.
+- A mixer executable that cannot start cannot repair itself: independent, publisher-signed bootstrap/recovery remains a required future release gate.
+
+## Bounded automatic error recovery
+- A completed Inno installer that exits nonzero but leaves the old source intact gets one more attempt on the next normal app exit, after a 30-minute cooldown. The counter persists in updater metadata; two failures block that candidate. An installer timeout, partial version replacement, failed GUI health, or revoked release does not qualify for this retry.
+- Only the old installed app can be relaunched after a non-destructive installer rejection. The updater never uninstalls or resets Studio/.smix to work around device, driver or VST issues.
+
+## Same-version Inno repair FAT
+- The Windows Inno fixture creates an isolated artificial installation, intentionally truncates only its synthetic ArSonMix.exe, reruns Inno in unattended auto-update mode, and requires the original SHA-256 executable hash and private Studio sentinel to survive. This proves vendor-program-file repair mechanics; a real JUCE/WebView + ASIO failure scenario still needs a two-version desktop test.
+
+## M3 standalone recovery when the main application cannot launch
+- The installed Start Menu includes Repair ArSonMix. This independent action validates the source commit against a published official GitHub Release, verifies the installer source/digest/checksums and installs vendor program files in place, without deleting any private .smix, Studio or user VST. The repaired app then launches and acknowledges GUI readiness.
+- Automatic updates still reject an absent EXE. Only an explicitly invoked recovery uses the two no-close flags ARSONMIXAUTOUPDATE and ARSONMIXRECOVERY. An exact-image process probe and file lock checks refuse interruption of a running mixer.
+- An abandoned worker mutex may be reclaimed when the prior process crashes. Unknown installed source or absent provenance must fail closed and direct the user to the official installer. No audio callback work, OS service or scheduled task.
+- Windows Inno FAT creates a synthetic missing EXE, verifies ordinary auto-update refuses it, then tests explicit recovery restoring identical SHA while retaining private session sentinels. Code-signing and actual JUCE/ASIO end-to-end recovery remain separate release requirements.
+
+## Exact-image install, repair and rollback health
+After install/repair/rollback, success requires the installed sourceCommit, exeSha256 and guiExeBytes to agree with on-disk ArSonMix.exe bytes. GUI_READY without matching image identity is insufficient. Deterministic Windows fixture tests reject unchanged source metadata with a tampered binary. Two real published releases exist, but interactive WebView and physical ASIO audio remain separate gates.
+
+## Genuine two-release installer qualification
+- Opt-in Windows FAT now downloads two **already-published authentic** installer assets (v0.5.0-alpha.4 / v0.5.0-alpha.5), confirms official GitHub digest, source-commit provenance and SHA256SUMS, installs alpha.4 into a disposable runner directory, upgrades to alpha.5 and rolls back to alpha.4, validating installed PE SHA and private .smix plus install-local user sentinel after every step. It is gated to explicit package_fat dispatch on temporary GitHub Windows runners; ordinary PR/branch work never downloads historical packages. This verifies historical Inno compatibility, not live WebView2-ready startup or physical ASIO sound, which remain separately qualified.

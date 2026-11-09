@@ -18,14 +18,28 @@ assert.match(chrome, /M6,21V19H18v2H6Z/);
 assert.match(chrome, /M3,21V3H21V21H3Z/);
 assert.match(chrome, /constexpr int buttonWidth = 34/);
 assert.match(chrome, /12\.0f, 12\.0f/);
-assert.match(chrome, /0xffe14d59/);
-assert.match(chrome, /0xff218f9f/);
-assert.match(chrome, /0xff348cc0/);
-assert.match(chrome, /fillRoundedRectangle/);
-assert.match(chrome, /paintPart \("Ar", 16/);
-assert.match(chrome, /paintPart \("Son", 27/);
-assert.match(chrome, /paintPart \("MiX", 27/);
+assert.match(chrome, /0xffdc3549/);
+assert.match(chrome, /0xff168fa7/);
+assert.match(chrome, /0xff287abd/);
+assert.match(chrome, /drawRoundedRectangle/);
+assert.match(chrome, /GlyphArrangement::getStringWidthInt \(brandFont, word\)/);
+assert.match(chrome, /paintPart \("Ar", juce::Colour/);
+assert.match(chrome, /paintPart \("Son", juce::Colour/);
+assert.match(chrome, /paintPart \("MiX", juce::Colour/);
+assert.match(chrome, /Open Source Premium Digital Mixer/);
+assert.match(chrome, /Version 01\.00/);
+assert.match(chrome, /charToString \(\(juce::juce_wchar\) 0x00a9\)/);
+assert.match(chrome, /2026 SonKuPik/);
+assert.doesNotMatch(chrome, /NATIVE SESSION/);
 assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
+assert.match(bridge, /const operatorMessage = message =>/);
+assert.match(bridge, /const NEEDS_REMAP="Audio connection lost"/);
+assert.match(bridge, /MutationObserver\(sanitize\)/);
+assert.doesNotMatch(bridge, /FAT PENDING/);
+assert.doesNotMatch(bridge, /HARDWARE FAT PENDING/);
+assert.match(bridge, /"OUTPUT ENABLED"/);
+assert.match(bridge, /status\("Mixer settings updated"\)/);
+assert.match(bridge, /element\.textContent=operatorMessage\(message\)/);
 assert.match(bridge, /nativeToolbarGroup=name/);
 assert.match(bridge, /toolbar\.insertBefore\(divider,element\)/);
 assert.match(css, /html\.armix-native-desktop \.app \.command-bar\{\s*height:43px!important/);
@@ -44,10 +58,43 @@ assert.match(page, /render\(\); \/\/ structural bank change only/);
 assert.match(page, /renderWireRouting\(\); \/\/ geometry-only/);
 assert.match(page, /document\.addEventListener\('visibilitychange'/);
 assert.doesNotMatch(page, /resizeQueued=false;render\(\)/);
+// Reconciled main Player M3 controls must survive the native caption branch.
+const playerHtml = read('site/preview-v2/assets/mixer-contextual-buttons.js');
+assert.match(main, /struct PlayerTrackSettings/);
+assert.match(main, /action=="playerKeyStep" \|\| action=="playerTempoStep"/);
+assert.match(main, /setPlayerPitchTempo\(next\.key,next\.tempo\)/);
+assert.match(playerHtml, /id="playerKeyMinus"/);
+assert.match(playerHtml, /id="playerTempoPlus"/);
+assert.match(playerHtml, /armix-brand-mix/);
 console.log('Native titlebar + supplied SVG + WIRE geometry contract PASS');
 
 // Runtime scheduler test with fake DOM; no WebView2, no sound engine and no timer.
 const vm = require('node:vm');
+// User-visible status copy must never expose internal admission/QA or revision
+// codes even if the preview or native error path emits one later.
+const messageStart=bridge.indexOf('const operatorMessage = message => {');
+const messageEnd=bridge.indexOf('\n  const status = message => {',messageStart);
+assert.ok(messageStart>0&&messageEnd>messageStart,'operator copy adapter missing');
+const operatorCopy=vm.runInNewContext(
+  bridge.slice(messageStart,messageEnd).replace('const operatorMessage','var operatorMessage')+
+  '\noperatorMessage;',{}, {filename:'native-operator-copy.js'});
+for(const raw of [
+  'NATIVE PCM · HARDWARE FAT PENDING',
+  'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 3 · graph 3 · roster 94',
+  'NATIVE PENDING_ACCEPTED_SNAPSHOT · awaiting authoritative readback',
+  'WIRE not applied · native admission timed out; previous audio preserved',
+  'NATIVE: STALE_NATIVE_WIRE_GRAPH · previous controls unchanged',
+  'SIMULATED METERS · NO REAL AUDIO',
+  'DEVICE_INIT_FAILED',
+  'STALE_NATIVE_GRAPH_REVISION',
+  'JUCE_CALLBACK_DIAGNOSTIC_FAT_PENDING'
+]){
+  const shown=operatorCopy(raw);
+  assert.ok(shown.length>0);
+  assert.doesNotMatch(shown,/\b(FAT|PCM|ACK|readback|graph|roster|epoch|revision|native|simulated|demo|admission)\b|NATIVE_/i);
+}
+assert.equal(operatorCopy('Mixer saved as .smix'),'Mixer saved as .smix');
+console.log('Operator-facing footer and toast copy isolation PASS');
 const begin=page.indexOf('// Desktop maximise, restore, DPI changes');
 const end=page.indexOf('restorePluginPreferences();init();',begin);
 assert.ok(begin>=0&&end>begin,'geometry scheduler source must exist');
