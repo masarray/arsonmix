@@ -444,13 +444,19 @@ def main():
                     const f=s.querySelector('.mx-harm-dial-face').getBoundingClientRect();
                     const c=s.querySelector('.mx-harm-dial-label').getBoundingClientRect();
                     const o=s.querySelector('output').getBoundingClientRect();
-                    return {gap:c.top-f.bottom,labelBottom:c.bottom,outputTop:o.top};
+                    return {gap:c.top-f.bottom,labelBottom:c.bottom,outputTop:o.top,
+                            faceTop:f.top,outputBottom:o.bottom};
                 })""")
                 assert len(dial_geometry)==4,dial_geometry
                 for geom in dial_geometry:
                     assert geom["gap"]>=12.0,("caption overlaps halo",width,geom)
                     assert geom["outputTop"]>=geom["labelBottom"]-0.5,(
                         "caption/value collision",width,geom)
+                # Check spacing between rows as well as each knob.
+                # The next luminous ring reaches 11px above its face.
+                for upper,lower in zip(dial_geometry[:2],dial_geometry[2:]):
+                    assert upper["outputBottom"]+2<=lower["faceTop"]-11,(
+                        "next-row halo collides with upper value",width,upper,lower)
                 rect=editor.bounding_box()
                 assert rect and rect["width"]<=width+1,(width,rect)
                 assert rect["x"]>=0 and rect["x"]+rect["width"]<=width+1,rect
