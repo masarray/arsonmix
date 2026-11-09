@@ -238,3 +238,17 @@ test('one-click recovery can restore main EXE without a live app', () => {
   assert.match(isolatedSmoke, /INNO_MISSING_EXE_RECOVERY_PASS/);
   assert.doesNotMatch(updater, /\bStop-Process\b|\btaskkill\b/);
 });
+
+test('updater script has one coherent main try/finally and no duplicated tail', () => {
+  const script = read('installer/ArSonMixAutoUpdate.ps1');
+  const tail = [
+    '} finally {',
+    '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
+    '    if($null -ne $mutex){$mutex.Dispose()}',
+    '}',
+  ].join('\n');
+  assert.equal(script.split(tail).length - 1, 1, 'duplicate main-script terminator');
+  assert.ok(script.trimEnd().endsWith(tail), 'script has garbage after terminator');
+  assert.equal(script.split('function Restore-InstalledRelease').length - 1, 1);
+  assert.equal(script.split('if($PolicySelfTest)').length - 1, 1);
+});
