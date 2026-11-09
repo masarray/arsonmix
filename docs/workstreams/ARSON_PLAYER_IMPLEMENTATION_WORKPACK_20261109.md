@@ -1,5 +1,5 @@
 # Agent Workpack — ArSon Player Native Music / Setlist
-**Date:** 2026-11-09 · **Scope:** executable vertical implementation plan from [PRD](../PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md) and [ARD](../ARD_ARSON_PLAYER_NATIVE_AUDIO_ARCHITECTURE_20261109.md) · **Status:** PLANNED, NOT IMPLEMENTED.
+**Date:** 2026-11-09 · **Scope:** executable vertical implementation plan from [PRD](../PRD_ARSON_PLAYER_LIVE_SETLIST_UX_20261109.md) and [ARD](../ARD_ARSON_PLAYER_NATIVE_AUDIO_ARCHITECTURE_20261109.md) · **Status:** PLANNED, NOT IMPLEMENTED. **Delivery policy:** [Autonomous Fast Delivery Contract](../AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md) is binding; no standalone M0 PR or approval. **M0 and M1 form one continuous native + GUI integration effort with an early testable Windows FAT artifact.**
 
 > **Read [AGENTS.md](../../AGENTS.md), [Smart CI](../SMART_CI_RUNNER_WORKFLOW.md), and newer [Zero-Friction Smart Workflow ADR](../ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md).** Binding owner requirement: import → Play → MUSIC PCM to verified MAIN automatically, no Lab, ARM, MONITOR, Apply, checkbox, routing approval or second Start. Preserve user-custom SOURCE ONLY/BUS and unknown physical-output safety. Design only; re-fetch current main/active PRs.
 
@@ -17,7 +17,7 @@
 
 ## 2. Milestone / independently testable vertical slices
 
-### M0 — Architecture spike and exact baseline (no UI feature promise)
+### M0 — Embedded engineering groundwork for M1 (same product PR, no intermediate approval)
 **Goal:** capture actual current render path and make player integration design non-speculative.
 
 Tasks:
@@ -28,7 +28,7 @@ Tasks:
 
 **Exit gate:** legacy input PCM unaffected, native virtual source works, planner auto-provisions exactly one MUSIC→verified MAIN route; user custom routes remain; unknown device cannot be chosen silently. No extra callback or Lab, ARM, MONITOR, approval checkbox in intended operator journey.
 
-### M1 — One truthful player, library & setlist (meaningful first product milestone)
+### M1 — First playable deliverable in the SAME product integration PR as M0
 **Goal:** usable integrated player with WAV/MP3/FLAC verified formats and manual track transition, **no pitch GUI promise before DSP**.
 
 Native:
@@ -42,7 +42,7 @@ UI:
 6. Extend the **approved Pages source and assembler** with toolbar `Player`, mini transport + compact non-modal left drawer, tabs SETLIST/LIBRARY/QUEUE, dense rows & +Music; simple transport current/next/ACK and intuitive error labels. Keep MAIN visible and one renderer.
 7. Keep approved premium CSS: one Add Music/drop empty state, auto-generated setlist and Play controls; Library/Queue contextual, no huge cards, Lab mode, native context menu regression or checkbox wizard.
 
-**Exit gate:** novice B01–B13: drop one song → one Play → native PCM via MUSIC→verified MAIN without PATCH, ARM, MONITOR, confirmation or second Start. 20-file auto-setlist; repeated Play/Stop x100 no duplicate route, SOURCE ONLY and BUS preserved, missing output one contextual selection; 44.1/48/96k, mic ASIO/decoder starvation tested. Omit pitch controls until DSP actually works.
+**Exit gate:** novice B01–B13: drop one song → one Play → native PCM via MUSIC→verified MAIN without PATCH, ARM, MONITOR, confirmation or second Start. 20-file auto-setlist; repeated Play/Stop x100 no duplicate route, SOURCE ONLY and BUS preserved, missing output one contextual selection; 44.1/48/96k, mic ASIO/decoder starvation tested. **At the first working M1 vertical milestone**, run fast UI/native then exact-SHA **ui + fat** once to produce a verified UNQUALIFIED user-test Windows ZIP/installer; **never** add duplicate `native` to FAT. Physical listening remains PENDING until witnessed. Omit pitch controls until DSP actually works.
 
 ### M2 — Pitch + speed with quality evidence
 **Goal:** native continuous -6…+6 semitone and 80…120% speed, independent of mic sample clock and with click-free change.
@@ -130,7 +130,7 @@ Measure: click samples (>chosen test threshold, disclose), pitch ratio in cents 
 
 ## 6. Workflow/CI cost policy
 
-M0 design/tests: add unit fixture, fast test only. M1/M2 C++ and JS: fast native+UI first, one `ui` visual run and one `native` lane (or `fat` in place of native if user needs installer) after exact-sha quick gates and duplicate check. Never launch 3 similar Windows packages just for progress. The repo's approved CI dispatcher uses one-line owner PR Conversation commands and exact SHA; inspect existing run before sending. Docs-only revisions require source/diff inspection only. Real ASIO sound, routing and crackle require operator FAT and should be **PENDING** until actually witnessed.
+M0 in SAME M1 PR: add native source fixture and first-sound planner with fast checks; continue independent M1 engine/bridge/GUI development while fast CI runs, **no M0-only review, merge, or waiting for manual approval**. At first real M1 playback milestone choose fast UI/native, then exact-SHA `ui + fat` for a user-test artifact (FAT includes native MSVC/CTest); no duplicate `native`. Never launch 3 similar Windows packages just for progress. The repo's approved CI dispatcher uses one-line owner PR Conversation commands and exact SHA; inspect existing run before sending. Docs-only revisions require source/diff inspection only. Real ASIO sound, routing and crackle require operator FAT and should be **PENDING** until actually witnessed.
 
 ## 7. Mandatory handoff template per agent
 
@@ -152,3 +152,7 @@ Do not merge docs or implementation PR into alpha.6 release branch. If reviewer/
 ## 8. Binding beginner-first release gate (owner correction 2026-11-09)
 
 Read [Zero-Friction Smart Workflow ADR](../ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md) and execute B01–B13 before any product completion claim. M0 must test `ensurePlayerFirstSound` decision/planner and idempotency. M1 must prove actual drop single file → one Play → native PCM to owned MUSIC channel → trusted MAIN, without any manual PATCH/ARM/MONITOR/confirmation/second Start or Lab. Hardware identity remains fail-closed when new/unverified, and intentional SOURCE ONLY/BUS/MAIN MUTE remains sovereign. One actual /preview/ GUI and one ASIO callback only. Browser demo screenshots alone do not certify first sound.
+
+## 9. Fast-delivery override (2026-11-09)
+
+[Autonomous Fast Delivery Contract](../AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md) overrides any historical suggestion to split M0 and M1 into separate PRs or await a review before source coding. M0 is an internal engineering fixture/first-sound planner inside the **same implementation PR** as a real M1 user-audible player; continue independent coding while quick CI runs. At a working M1 source→ChannelId→trusted MAIN native PCM + approved GUI, request one exact-SHA UI test and one Windows FAT package (not native plus FAT). Provide the owner a genuinely installable *unqualified* artifact promptly; only real ASIO equipment can complete physical FAT. No manual owner Actions/CI triggers, synthetic progress, Lab UI or permission checkbox.
