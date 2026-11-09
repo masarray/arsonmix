@@ -22,16 +22,18 @@ static float singer(int n) noexcept {
     return static_cast<float>(.16*std::sin(6.283185307179586*220.*t)+
                               .045*std::sin(6.283185307179586*440.*t));
 }
-static LiveChannelFxGraph::InstanceLease makeHarmony() {
+static LiveChannelFxGraph::InstanceLease makeHarmony(
+        double rate=48000.,int quantum=64,float wet=1.f,float space=1.f) {
     auto p=std::make_unique<ChannelHarmonyProcessor>();
-    p->prepareToPlay(48000.,64);
-    assert(p->isReady() && p->getLatencySamples()==1536);
+    p->prepareToPlay(rate,quantum);
+    const int declaredLatency=2*static_cast<int>(std::round(rate*.016));
+    assert(p->isReady() && p->getLatencySamples()==declaredLatency);
     armix::harmony::Settings rich;
-    rich.voices=5;rich.wet=1.f;rich.space=1.f;
+    rich.voices=5;rich.wet=wet;rich.space=space;
     assert(p->queueAccepted(rich,9001));
     return std::make_shared<LiveChannelFxGraph::FxInstance>(
         std::move(p),ChannelHarmonyProcessor::catalogIdentity,
-        "ArSon Harmony",64);
+        "ArSon Harmony",quantum);
 }
 int main() {
     constexpr ChannelId vocal{7301};
@@ -145,6 +147,116 @@ int main() {
     assert(samplesCheckedWet>10000&&samplesCheckedDry>10000);
     assert(maxOldBypassDifference>.003f); // old skipped DSP history visibly diverges
     assert(!switched.rackBypassed(vocal));
+
+    // Cross-product regression across WET 0/50/100 and Space 0/60/100.
+    // Native FxInstance::render() is used at 48/96k and three ASIO periods.
+    // Includes a singing section, a silence/room-tail section, rack OFF/ON,
+    // slot OFF/ON, reentry after the singer returns, and exact dry PDC.
+    // Keep the original always-on/old-behavior A/B probe above, too.
+    struct Scenario { double rate;int quantum;float wet,space; };
+    constexpr std::array<Scenario,9> cases{{
+        {48000.,64,0.f,0.f},{48000.,128,0.f,.6f},
+        {48000.,256,0.f,1.f},{48000.,64,.5f,0.f},
+        {96000.,128,.5f,.6f},{96000.,256,.5f,1.f},
+        {96000.,64,1.f,0.f},{96000.,128,1.f,.6f},
+        {96000.,256,1.f,1.f}
+    }};
+    double worstExcess=0.;
+    int verifiedWet=0,verifiedDry=0;
+    for(const auto cfg:cases) {
+        auto a=makeHarmony(cfg.rate,cfg.quantum,cfg.wet,cfg.space);
+        auto b=makeHarmony(cfg.rate,cfg.quantum,cfg.wet,cfg.space);
+        assert(a->latencySamples==b->latencySamples);
+        DynamicChannelFxLeaseBank::Assignment ref,probe;
+        ref.id=vocal;ref.format=ProcessingFormat::stereo;
+        ref.inserts.push_back(a);
+        probe.id=vocal;probe.format=ProcessingFormat::stereo;
+        probe.inserts.push_back(b);
+        DynamicChannelFxLeaseBank on,cycle;
+        const std::array<DynamicChannelFxLeaseBank::Assignment,1> ar{ref},br{probe};
+        assert(DynamicChannelFxLeaseBank::prepare(3,1,ar,on)==
+               DynamicChannelFxLeaseBank::Fault::none);
+        assert(DynamicChannelFxLeaseBank::prepare(3,1,br,cycle)==
+               DynamicChannelFxLeaseBank::Fault::none);
+        const int total=static_cast<int>(cfg.rate*.85);
+        const int latency=b->latencySamples;
+        const auto input=[&](int n) noexcept -> float {
+            if(n<0)return 0.f;
+            const double time=static_cast<double>(n)/cfg.rate;
+            double amplitude=1.;
+            if(time>=.5&&time<.505)amplitude=1.-(time-.5)/.005;
+            else if(time>=.505&&time<.73)amplitude=0.;
+            else if(time>=.73&&time<.735)amplitude=(time-.73)/.005;
+            const double phase=6.283185307179586*220.*time;
+            return static_cast<float>(amplitude*(.16*std::sin(phase)+
+                                                   .045*std::sin(phase*2.)));
+        };
+        bool wasSlotOff=false,wasRackOff=false;
+        float lastWetL=0.f,lastWetR=0.f,lastOutL=0.f,lastOutR=0.f,lastDry=0.f;
+        int wetCount=0,dryCount=0;
+        for(int offset=0;offset<total;offset+=cfg.quantum) {
+            const int count=std::min(cfg.quantum,total-offset);
+            const double at=static_cast<double>(offset)/cfg.rate;
+            const bool slotOff=at>=.20&&at<.36;
+            const bool rackOff=at>=.61&&at<.73;
+            if(slotOff!=wasSlotOff){
+                assert(cycle.setInsertBypass(3,1,vocal,0,b->instanceId,slotOff));
+                wasSlotOff=slotOff;
+            }
+            if(rackOff!=wasRackOff){
+                assert(cycle.setRackBypass(3,1,vocal,rackOff));
+                wasRackOff=rackOff;
+            }
+            std::array<float,256> rl{},rr{},pl{},pr{};
+            for(int i=0;i<count;++i)
+                rl[i]=rr[i]=pl[i]=pr[i]=input(offset+i);
+            on(vocal,rl.data(),rr.data(),count);
+            cycle(vocal,pl.data(),pr.data(),count);
+            for(int i=0;i<count;++i) {
+                const int n=offset+i;
+                const float delayed=input(n-latency);
+                const double time=static_cast<double>(n)/cfg.rate;
+                const bool stableDry=(time>=.212&&time<.36)||
+                                      (time>=.622&&time<.73);
+                const bool stableWet=(time>=.38&&time<.61)||
+                                      (time>=.75);
+                const float wetSlope=std::max(std::abs(rl[i]-lastWetL),
+                                               std::abs(rr[i]-lastWetR));
+                const float drySlope=std::abs(delayed-lastDry);
+                const float actualSlope=std::max(std::abs(pl[i]-lastOutL),
+                                                  std::abs(pr[i]-lastOutR));
+                if(n>latency){
+                    worstExcess=std::max(worstExcess,static_cast<double>(
+                        actualSlope-std::max(wetSlope,drySlope)));
+                    assert(actualSlope-std::max(wetSlope,drySlope)<.045f);
+                }
+                lastWetL=rl[i];lastWetR=rr[i];
+                lastOutL=pl[i];lastOutR=pr[i];lastDry=delayed;
+                assert(std::isfinite(pl[i])&&std::isfinite(pr[i]));
+                assert(std::abs(pl[i])<=4.f&&std::abs(pr[i])<=4.f);
+                if(stableDry){
+                    assert(std::abs(pl[i]-delayed)<.00003f&&
+                           std::abs(pr[i]-delayed)<.00003f);
+                    ++dryCount;
+                }
+                if(stableWet){
+                    // The exact live DSP state must match a never-bypassed
+                    // lease, not merely have a visually smooth envelope.
+                    assert(std::abs(pl[i]-rl[i])<.00003f&&
+                           std::abs(pr[i]-rr[i])<.00003f);
+                    ++wetCount;
+                }
+            }
+        }
+        assert(wetCount>0&&dryCount>0);
+        verifiedWet+=wetCount;verifiedDry+=dryCount;
+        assert(!cycle.rackBypassed(vocal));
+        assert(!cycle.insertBypassed(vocal,0));
+    }
+    std::cout<<"Harmony multi-rate wet/space bypass matrix PASS; "
+             <<"scenarios="<<cases.size()
+             <<" wet_pcm="<<verifiedWet<<" dry_pcm="<<verifiedDry
+             <<" worst_slope_excess="<<worstExcess<<"\\n";
     std::cout<<"Harmony native ChannelId warm bypass, dry PDC and state parity PASS; "
              <<"wet_samples="<<samplesCheckedWet<<" dry_samples="<<samplesCheckedDry
              <<" max_wet_difference="<<maxWetDifference
