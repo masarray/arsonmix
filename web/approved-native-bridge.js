@@ -983,6 +983,18 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  // Native JUCE processors: these are real compiled DSP, not demo effects,
+  // scanned VST binaries, a JS renderer or placeholder library entries.
+  const nativeBuiltins=Object.freeze([
+    Object.freeze({id:"armix.builtin.channel-eq.v1",name:"Parametric EQ",
+      vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
+      vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"ArSon Harmony",
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"})
+  ]);
+  const presentFxCatalog=()=>scope?.setNativeCatalog?.(
+    [...nativeBuiltins,...nativeCatalog.values()]);
   let nativeFxDiscoveryRequested=false,nativeFxCatalogScanning=false;
   // Lazy USER-triggered discovery: the first Add FX opens immediately and
   // starts real JUCE VST3 scanning on its dedicated non-audio worker. Never
@@ -2503,7 +2515,7 @@
          typeof actual?.instanceId==="string"&&actual.instanceId.length){
         status("CH "+(p.channel+1)+" FX loaded · verified native VST3");
         scope?.closeNativePicker?.();
-        scope?.setNativeCatalog?.([...nativeCatalog.values()]);
+        presentFxCatalog();
         controller.subscribe();
       }else {
         const reason=ack?.error||"native FX instance missing from accepted PCM";
@@ -2518,12 +2530,12 @@
       nativeCatalog=new Map(catalog.items.filter(p=>
         p&&typeof p.id==="string"&&p.id.length>0&&
         typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
-      scope?.setNativeCatalog?.([...nativeCatalog.values()]);
+      presentFxCatalog();
       if(nativeFxDiscoveryRequested&&!nativeFxCatalogScanning&&nativeCatalog.size===0)
-        status("No installed VST3 discovered · use Import VST3 in Plugin Manager");
+        status("Built-in FX ready · import VST3 to add more effects");
       if(hardware?.raw?.legacyM4)paintM4FxInstances(hardware.raw.legacyM4);
       const count=document.getElementById("pluginCount");
-      if(count)count.title="Verified JUCE native VST3 catalog";
+      if(count)count.title="Native built-in DSP + verified VST3 catalog";
     });
     backend.addEventListener("arMixScanProgress",progress=>{
       const statusEl=document.getElementById("pluginScanStatus");
@@ -3154,7 +3166,7 @@
   const ready=()=>{
     presentNativeOnlyTools();
     installFirstSoundMenu();
-    scope?.setNativeCatalog?.([]); // no synthetic/demo VST3 in Windows host
+    presentFxCatalog(); // compiled native FX, never demo or vendor placeholders
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
