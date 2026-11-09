@@ -110,12 +110,35 @@ Object.entries(defs).forEach(([key,r])=>{
  const output=dom("output","mx-comp-value");
  const dial=dom("span","mx-comp-dial");
  dial.setAttribute("aria-hidden","true");
+ // Owner SVG split into static bevel and exact independent mint pointer.
+ // The body never transforms: only the pointer and outer arc follow DSP values.
+ const body=dom("span","mx-comp-knob-body");
+ const pointer=dom("span","mx-comp-knob-pointer");
+ dial.append(body,pointer);
+ // Outer 270deg arc sits outside the physical knob, with rounded endpoints.
+ const arcSvg=document.createElementNS(NS,"svg");
+ arcSvg.setAttribute("viewBox","0 0 100 100");
+ arcSvg.setAttribute("class","mx-comp-arc");
+ arcSvg.setAttribute("aria-hidden","true");
+ arcSvg.setAttribute("focusable","false");
+ const arcGeometry="M 17.473 82.527 A 46 46 0 1 1 82.527 82.527";
+ const arcTrack=document.createElementNS(NS,"path");
+ arcTrack.setAttribute("class","mx-comp-arc-track");
+ arcTrack.setAttribute("d",arcGeometry);
+ const arcProgress=document.createElementNS(NS,"path");
+ arcProgress.setAttribute("class","mx-comp-arc-progress");
+ arcProgress.setAttribute("d",arcGeometry);
+ arcProgress.setAttribute("pathLength","1000");
+ arcProgress.setAttribute("stroke-dasharray","0 1000");
+ arcProgress.style.opacity="0";
+ arcSvg.append(arcTrack,arcProgress);
+ dial.append(arcSvg);
  const input=dom("input","mx-comp-slider");
  input.type="range";input.min=String(r.min);input.max=String(r.max);
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
  input.title="Drag vertically; Shift for fine; arrows for steps; double-click to reset";
  item.append(name,dial,output,input);
- inputs[key]={item,input,output,dial};
+ inputs[key]={item,input,output,dial,body,pointer,arcProgress};
  const changeValue=value=>{
   if(!Number.isFinite(value)||draft[key]===value)return;
   draft={...draft,[key]:value};paint();
@@ -220,9 +243,16 @@ function paint(){
   c.input.value=String(value);
   c.output.textContent=format(key,value);
   c.input.setAttribute("aria-valuetext",format(key,value));
-  const fraction=(value-r.min)/(r.max-r.min);
-  c.dial.style.setProperty("--dial-sweep",(fraction*270).toFixed(2)+"deg");
-  c.dial.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
+  const fraction=clamp((value-r.min)/(r.max-r.min),0,1);
+  // Actual continuous stroke, not 59 separately activated ticks.
+  // Avoid redundant SVG attribute mutations during the native meter polls.
+  const dash=(fraction*1000).toFixed(2)+" 1000";
+  if(c.arcProgress.getAttribute("stroke-dasharray")!==dash)
+   c.arcProgress.setAttribute("stroke-dasharray",dash);
+  const visible=fraction>0?"1":"0";
+  if(c.arcProgress.style.opacity!==visible)c.arcProgress.style.opacity=visible;
+  // CSS marker only: the owner-provided knob body remains transform:none.
+  c.pointer.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
  }
  // Reference-style LCD transfer curve in a larger, dedicated graph region.
  // The meter bank sits on the right INSIDE the same black display.

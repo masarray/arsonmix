@@ -343,18 +343,25 @@
 .mx-comp-label{grid-column:1/-1;grid-row:1;color:#283c47;
  font-size:10px;font-weight:630;letter-spacing:.035em;text-align:center;
  white-space:nowrap}
+/* The owner's knob-plastic.svg: its 63-layer bevel stays physically
+   stationary; only its exact mint pointer rotates. Shared static vector
+   assets preserve original shading while the separate outer 270° SVG arc
+   communicates live parameter level. No rotation on knob body. */
 .mx-comp-dial{position:relative;grid-row:2;grid-column:1;
- width:47px;height:47px;display:block;border:1px solid #354f5d;border-radius:50%;
- background:conic-gradient(from 225deg,#64d9e7 0deg,#64d9e7 var(--dial-sweep,0deg),
- #435e69 var(--dial-sweep,0deg),#435e69 270deg,#607787 270deg);
- box-shadow:0 1px 3px #183340a8,inset 0 1px 1px #fff8;pointer-events:none}
-.mx-comp-dial::before{content:"";position:absolute;inset:5px;border-radius:50%;
- background:radial-gradient(circle at 30% 22%,#d2dde2,#8d9eaa 55%,#4c6472);
- box-shadow:inset 0 1px 3px #e3f2f8bc,0 0 0 1px #2f4b5a}
-.mx-comp-dial::after{content:"";position:absolute;left:50%;top:6px;width:2px;height:17px;
- border-radius:2px;background:#143947;transform-origin:1px 17px;
- transform:translateX(-50%) rotate(var(--dial-angle,-135deg));
- box-shadow:1px 0 #e2f8fb}
+ width:47px;height:47px;display:block;border:0;border-radius:50%;
+ background:none;pointer-events:none}
+.mx-comp-knob-body,.mx-comp-knob-pointer{position:absolute;inset:11%;
+ display:block;pointer-events:none;border-radius:50%;
+ background-position:center;background-size:100% 100%;background-repeat:no-repeat}
+.mx-comp-knob-body{background-image:url("./compressor-knob-plastic-body.svg")}
+.mx-comp-knob-pointer{background-image:url("./compressor-knob-plastic-pointer.svg");
+ transform:rotate(var(--dial-angle,-135deg));transform-origin:50% 50%}
+.mx-comp-arc{position:absolute;inset:0;display:block;width:100%;height:100%;
+ overflow:visible;pointer-events:none}
+.mx-comp-arc-track,.mx-comp-arc-progress{fill:none;stroke-linecap:round;
+ stroke-linejoin:round}
+.mx-comp-arc-track{stroke:#35575b;stroke-opacity:.65;stroke-width:4.4}
+.mx-comp-arc-progress{stroke:#00ffcb;stroke-width:4.6}
 .mx-comp-value{grid-row:2;grid-column:2;min-width:0;display:flex;align-items:center;
  justify-content:center;height:29px;padding:0 2px;overflow:hidden;white-space:nowrap;
  border:1px solid #788f9c;border-radius:3px;background:#627985;color:#eff8fa;
@@ -377,7 +384,6 @@
  .mx-comp-right{padding-left:9px}
  .mx-comp-control{grid-template-columns:41px minmax(0,1fr);column-gap:3px}
  .mx-comp-dial{width:40px;height:40px}
- .mx-comp-dial::after{height:14px;transform-origin:1px 14px}
  .mx-comp-slider{width:41px;height:42px}
  .mx-comp-right-controls{gap:12px 4px}
 }
@@ -399,7 +405,6 @@
  .mx-comp-control{grid-template-rows:16px 42px;grid-template-columns:38px minmax(0,1fr)}
  .mx-comp-left .mx-comp-control{min-height:58px}
  .mx-comp-dial{width:37px;height:37px}
- .mx-comp-dial::after{height:12px;transform-origin:1px 12px}
  .mx-comp-slider{top:16px;width:38px;height:40px}
  .mx-comp-label{font-size:9px}
  .mx-comp-value{font-size:9px;height:23px}

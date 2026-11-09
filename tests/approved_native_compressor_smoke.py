@@ -152,6 +152,78 @@ def main():
                 return svg.x<meters.x&&meters.right<=frame.right+1;
             }"""),"meters must be inside black LCD to the RIGHT of graph"
             assert page.locator(".mx-comp-control[data-key]").count()==7
+            # The owner's actual knob-plastic.svg geometry is now split:
+            # the 63 grayscale gradient layers never rotate, but its exact
+            # mint marker does. The outer 270-degree rounded arc must follow
+            # the marker without any active tick segmentation.
+            from xml.etree import ElementTree as ET
+            owner_body=out/"assets"/"compressor-knob-plastic-body.svg"
+            owner_pointer=out/"assets"/"compressor-knob-plastic-pointer.svg"
+            assert owner_body.is_file() and owner_pointer.is_file()
+            for asset in (owner_body,owner_pointer):
+                svg_text=asset.read_text(encoding="utf-8")
+                assert "<image" not in svg_text and "data:image/" not in svg_text
+            ns="{http://www.w3.org/2000/svg}"
+            owner_face=ET.fromstring(owner_body.read_text(encoding="utf-8"))
+            assert len(owner_face.findall(f".//{ns}linearGradient"))==63
+            assert len(owner_face.findall(f".//{ns}circle"))==64
+            pointer_svg=ET.fromstring(owner_pointer.read_text(encoding="utf-8"))
+            assert len(pointer_svg.findall(f".//{ns}path"))==1
+            assert "0,255,203" in owner_pointer.read_text(encoding="utf-8")
+            assert not (out/"assets"/"compressor-knob-reference.svg").exists(),\
+                "obsolete silver knob should not be packaged"
+            dials=page.locator(".mx-comp-dial")
+            assert dials.count()==7
+            assert page.locator(".mx-comp-knob-body").count()==7
+            assert page.locator(".mx-comp-knob-pointer").count()==7
+            assert page.locator(".mx-comp-arc").count()==7
+            appearance=dials.evaluate_all("""nodes=>nodes.map(el=>{
+                const dial=getComputedStyle(el);
+                const body=el.querySelector('.mx-comp-knob-body');
+                const b=getComputedStyle(body);
+                const pointer=el.querySelector('.mx-comp-knob-pointer');
+                const p=getComputedStyle(pointer);
+                const arc=el.querySelector('.mx-comp-arc-progress');
+                const track=el.querySelector('.mx-comp-arc-track');
+                const progress=getComputedStyle(arc);
+                const svg=arc.ownerSVGElement;
+                return {width:el.getBoundingClientRect().width,
+                    body:b.backgroundImage,bodyTransform:b.transform,
+                    pointer:p.backgroundImage,pointerTransform:p.transform,
+                    pointerAngle:pointer.style.getPropertyValue('--dial-angle'),
+                    svgWidth:svg.getBoundingClientRect().width,
+                    trackStroke:getComputedStyle(track).stroke,
+                    cap:progress.strokeLinecap,stroke:progress.stroke,
+                    dash:arc.getAttribute('stroke-dasharray'),
+                    arcPath:arc.getAttribute('d'),trackPath:track.getAttribute('d'),
+                    pathLength:arc.getAttribute('pathLength'),
+                    filter:dial.filter,animation:dial.animationName};
+            })""")
+            assert all("compressor-knob-plastic-body.svg" in a["body"] for a in appearance),appearance
+            assert all("compressor-knob-plastic-pointer.svg" in a["pointer"] for a in appearance),appearance
+            assert all(a["bodyTransform"]=="none" and a["pointerTransform"]!="none"
+                for a in appearance),appearance
+            assert all(a["pointerAngle"].endswith("deg") for a in appearance),appearance
+            assert all(a["cap"]=="round" and a["stroke"]=="rgb(0, 255, 203)"
+                for a in appearance),appearance
+            assert all(a["arcPath"]==a["trackPath"] and
+                a["pathLength"]=="1000" for a in appearance),appearance
+            assert all(a["width"]>=30 and
+                abs(a["width"]-a["svgWidth"])<=1.5 and
+                a["filter"]=="none" and a["animation"]=="none"
+                for a in appearance),appearance
+            def expected_dash(key):
+                ranges={"thresholdDb":(-60,0),"ratio":(1,20),
+                        "attackMs":(.1,100),"releaseMs":(10,2000),
+                        "kneeDb":(0,24),"makeupDb":(-12,24),"mix":(0,1)}
+                minimum,maximum=ranges[key]
+                return (DEFAULTS[key]-minimum)/(maximum-minimum)*1000
+            for key in DEFAULTS:
+                arc=page.locator(f'.mx-comp-control[data-key="{key}"] .mx-comp-arc-progress')
+                measured=float(arc.get_attribute("stroke-dasharray").split()[0])
+                assert abs(measured-expected_dash(key))<.02,(key,measured,expected_dash(key))
+            assert page.locator('.mx-comp-control[data-key="mix"] .mx-comp-arc-progress')\
+                .get_attribute("stroke-dasharray")=="1000.00 1000"
             assert page.locator(".mx-comp-control").count()==7
             assert page.locator(".mx-comp-right .mx-comp-control").count()==4
             assert page.locator(".mx-comp-left .mx-comp-control").count()==3
@@ -294,7 +366,21 @@ def main():
                 # CONTROL request is not a DSP ACK: no accepted status until
                 # audio completion + matching revision-bound follow-up readback.
                 ratio=page.locator('.mx-comp-control[data-key="ratio"] input')
+                ratio_dial=page.locator('.mx-comp-control[data-key="ratio"] .mx-comp-dial')
+                ratio_body=ratio_dial.locator(".mx-comp-knob-body")
+                ratio_pointer=ratio_dial.locator(".mx-comp-knob-pointer")
+                old_body=ratio_body.evaluate("el=>getComputedStyle(el).transform")
+                old_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
+                ratio_arc=ratio_dial.locator(".mx-comp-arc-progress")
+                old_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 ratio.press("ArrowRight")
+                new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
+                new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
+                assert ratio_body.evaluate("el=>getComputedStyle(el).transform")==old_body=="none",\
+                    "plastic knob BODY must stay motionless on value changes"
+                assert new_pointer!=old_pointer,"only owner mint pointer must rotate"
+                assert new_dash>old_dash and abs(new_dash-old_dash-100/19)<.03,\
+                    "outer rounded mint arc must follow pointer exactly"
                 edit=last_action(page,"nativeCompSet")
                 assert abs(edit["settings"]["ratio"]-3.1)<.0001
                 assert edit["instanceId"]==INSTANCE and edit["channelId"]==SOURCE
