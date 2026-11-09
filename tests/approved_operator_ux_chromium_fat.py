@@ -77,6 +77,23 @@ def wait_balanced(page):
 
 def inspect_page(page, width, height, scale, label):
     page.goto((Path(label)).as_uri())
+    # Preserve the existing visible-channel gate; make hidden ancestor
+    # geometry inspectable if a cross-feature CSS/layout integration fails.
+    if not page.locator('#tracks .strip[data-id="1"]').is_visible():
+        info=page.evaluate("""() => {
+          const target=document.querySelector('#tracks .strip[data-id="1"]');
+          const ancestors=[];
+          for(let n=target;n&&ancestors.length<13;n=n.parentElement){
+            const s=getComputedStyle(n),r=n.getBoundingClientRect();
+            ancestors.push({tag:n.tagName,id:n.id,classes:String(n.className),
+              hidden:n.hidden,display:s.display,visibility:s.visibility,
+              contentVisibility:s.contentVisibility,width:r.width,height:r.height,
+              minHeight:s.minHeight,position:s.position,overflow:s.overflow});
+          }
+          return {readyState:document.readyState,viewport:[innerWidth,innerHeight],
+            ancestors,stylesheets:document.styleSheets.length};
+        }""")
+        print("UX_INVISIBLE_ANCESTRY",width,height,json.dumps(info),flush=True)
     page.wait_for_selector('#tracks .strip[data-id="1"]')
     page.evaluate("document.fonts.ready")
     assert page.locator('.mixer-title').count()==0,"redundant LIVE MIXER bar"
