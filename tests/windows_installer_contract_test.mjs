@@ -252,3 +252,16 @@ test('updater script has one coherent main try/finally and no duplicated tail', 
   assert.equal(script.split('function Restore-InstalledRelease').length - 1, 1);
   assert.equal(script.split('if($PolicySelfTest)').length - 1, 1);
 });
+
+test('healthy install, repair and rollback require real EXE SHA, not provenance commit alone', () => {
+  const script = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  assert.match(script, /function Test-InstalledRelease\(/);
+  assert.match(script, /Get-InstalledImageStatus \$manifest/);
+  assert.match(script, /Repair did not restore exact authenticated EXE and source manifest/);
+  assert.match(script, /if\(\$upgradeOK -and \(Test-InstalledRelease/);
+  assert.match(script, /if\(Test-InstalledRelease \$installedSha\)/);
+  assert.match(script, /GUI_READY' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
+  assert.match(script, /Same source with changed EXE accepted/);
+  assert.match(smoke, /ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS/);
+});
