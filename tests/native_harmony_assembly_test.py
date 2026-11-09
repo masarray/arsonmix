@@ -154,7 +154,12 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
     def test_no_fabricated_native_pcm(self):
         self.assertIn("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO",self.ui)
         self.assertIn("if(!native())",self.ui)
-        self.assertIn("if(native()&&n?.admitted",self.ui)
+        # Accepted ChannelId/instance binding is re-established on the
+        # current graph, not permanently pinned to the editor's open tick.
+        self.assertIn("if(!current||!native()||!n?.admitted)return null;",self.ui)
+        self.assertIn("if(n?.admitted&&insert?.catalogId===ID&&insert.id)",self.ui)
+        self.assertIn("function reconcileBinding(){",self.ui)
+        self.assertNotIn("REOPEN ACCEPTED FX",self.ui)
         self.assertIn("Native Harmony host not ready · audio unchanged",self.html)
         with self.assertRaises(ValueError):
             apply_native_peq(self.html)
