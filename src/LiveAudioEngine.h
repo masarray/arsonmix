@@ -190,6 +190,20 @@ public:
         // Prefer both input pins on a verified stereo endpoint; saved explicit
         // channel masks still take precedence. Outputs remain DISARMED.
         auto error = deviceManager_.initialise (2, 2, savedSettings, !savedRoute);
+        if(savedAsioPreflight && (error.isNotEmpty() || !deviceManager_.getCurrentAudioDevice() ||
+           deviceManager_.getCurrentAudioDevice()->getActiveOutputChannels().countNumberOfSetBits()<2)) {
+            auto fallback=*savedSettings;
+            auto name=fallback.getStringAttribute("audioDeviceName");
+            if(name.isEmpty())name=fallback.getStringAttribute("audioOutputDeviceName");
+            if(name.startsWithIgnoreCase("ASIO4ALL")) {
+                const bool captureDisabled=fallback.getStringAttribute("audioDeviceInChans")=="0";
+                if(!captureDisabled)fallback.removeAttribute("audioDeviceInChans");
+                fallback.removeAttribute("audioDeviceOutChans");
+                deviceManager_.closeAudioDevice();
+                error=deviceManager_.initialise(2,2,&fallback,false);
+            }
+        }
+
 #if defined(_WIN32)
         if (error.isNotEmpty() && !savedRoute && deviceManager_.singleAsioPreferred())
         {
@@ -394,9 +408,10 @@ public:
     // Native AUDIO SETUP is the explicit user authorization boundary.
     // Suppress any live output while selecting/changing a device, even if JUCE
     // starts its new callback before the selector window is closed.
-    void beginManualAudioSetup() noexcept {
+    void beginManualAudioSetup(bool preserveMonitorIntent=false) noexcept {
         offeredWasapiBinding_.reset();
-        resumeMainAfterAsioReset_.store(false,std::memory_order_release);
+        if(!preserveMonitorIntent)resumeMainAfterAsioReset_.store(false,std::memory_order_release);
+        else if(isMonitorEnabled())resumeMainAfterAsioReset_.store(true,std::memory_order_release);
         setOutputMuted(true);
         secondaryOutput_.disarm();
         directFence_.suspend();
@@ -447,6 +462,15 @@ public:
     }
     // The JUCE ASIO device may restart itself after a control panel change.
     // Reauthorize only the previously approved driver class and session.
+    bool sameRetainedAsioDriver() {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !acceptedMixerBinding_ || !asioPinnedRegistration_.valid() ||
+           device->getTypeName()!="ASIO" || device->getName()!=acceptedMixerBinding_->playback)return false;
+        const auto registered=armix::device::AsioRegistryIdentityProbe::resolve(
+            std::wstring(device->getName().toWideCharPointer()));
+        return registered.registration.ok() &&
+            asioPinnedRegistration_.sameDriverClass(registered.registration.identity);
+    }
     bool authorizeRetainedAsioRestart() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
         if(!hasRetainedNativeSession() || !acceptedMixerBinding_ ||
@@ -484,9 +508,11 @@ public:
         };
         const bool input=correct(previous.inputMask,previous.inputNames,live.inputNames,
                                  setup.inputChannels,setup.useDefaultInputChannels);
+        const bool returning=Policy::addReturningCapturePins(
+            dryRoutingLab_.waitingAsioInputs(),live.inputNames,setup.inputChannels);
         const bool output=correct(previous.outputMask,previous.outputNames,live.outputNames,
                                   setup.outputChannels,setup.useDefaultOutputChannels);
-        if(!input && !output)return {};
+        if(!input && !output && !returning)return {};
         setup.useDefaultInputChannels=false;
         setup.useDefaultOutputChannels=false;
         return setup;
@@ -496,20 +522,17 @@ public:
         if(!acceptedMixerBinding_ || !Policy::isAsio4All(*acceptedMixerBinding_) ||
            !hasRetainedNativeSession() || !allOutputsDisarmed() ||
            !directFence_.permitted() || handoff_.busy())return false;
-        const auto* previous=&*acceptedMixerBinding_;
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device || !device->isOpen())return false;
-        const auto epoch=dryRoutingLab_.epoch();
-        const auto live=readMixerBinding(*device);
-        armix::device::JuceActivePortSnapshot pins;
-        armix::device::JuceActivePortSnapshot::Fault fault{};
-        if(!Policy::sameBinding(*previous,live) || previous->inputNames!=live.inputNames ||
-           previous->outputNames.isEmpty() || previous->outputNames!=live.outputNames ||
-           !armix::device::JuceActivePortSnapshot::capture(device,epoch,pins,fault) ||
-           !dryRoutingLab_.matchesSessionDevice(pins) ||
-           !dryRoutingLab_.rebindVerifiedDevice(dryRoutingLab_.retainedNativeEpoch(),
-                                                epoch,live.frames,false))return false;
-        acceptedMixerBinding_=live;
+        armix::session::MixerSessionDocument document;
+        if(!dryRoutingLab_.describeRetainedAsioSession(document))return false;
+        document.binding=*acceptedMixerBinding_;
+        MixerBindingInspection inspected;
+        constexpr auto mode=Policy::Mode::verifiedAsioRestart;
+        if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
+           inspected.live.rate!=document.binding.rate ||
+           Policy::apply(document,inspected.live,inspected.outputs,inspected.callbackInputs,mode).isNotEmpty() ||
+           !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),inspected.pins,
+                                                    inspected.live.frames))return false;
+        acceptedMixerBinding_=std::move(inspected.live);
         return true;
     }
     bool takeAsioResetMonitorIntent() noexcept {
@@ -2175,6 +2198,7 @@ public:
                        : deviceManager_.getCurrentAudioDevice();
         auto* capture = dual ? independent_.captureDevice() : d;
         o->setProperty ("dryRoutingLab",dryRoutingLab_.status(capture));
+        o->setProperty("waitingAsioInputs",dryRoutingLab_.waitingAsioInputCount());
         // NORMAL mode is never silently served by the legacy CH1 fallback.
         // This state is for operator feedback; it does not authorize output.
         o->setProperty ("productionRoutingState",

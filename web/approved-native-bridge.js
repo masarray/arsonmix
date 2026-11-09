@@ -598,7 +598,7 @@
       Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
   // BUS is verified engine state, not an available hardware input choice.
   const INTERNAL_BUS="Internal BUS (read-only)";
-  const NEEDS_REMAP="NEEDS REMAP";
+  const NEEDS_REMAP="Waiting for device";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   const inputChoicesFor=()=>{
@@ -1510,7 +1510,7 @@
       scope.master.output=mainOutput;
       if(!next?.admitted && !next?.retained)scope.render?.();
     }
-    const transport=next?.retained?"MONITOR OFF · OUT NEEDS REMAP":
+    const transport=next?.retained?"OUTPUT WAITING FOR DEVICE":
       !deviceOpen?"Audio device not ready":
       (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
       (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
@@ -1521,8 +1521,9 @@
     // initiates native source publication; only its correlated ACK may
     // request a safe first MONITOR. If the driver exposes no physical IN,
     // guide the operator to the existing Audio I/O panel instead.
-    const warningText=next?.retained?"NEEDS REMAP · MIXER RETAINED · OUTPUT MUTED":
+    const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
+      next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
       !d.enabledInputs?.length?(next.admitted?"NO HARDWARE IN · MIXER/FX READY":
@@ -1851,7 +1852,7 @@
         (outputReady?"Mixer ready · Output live":
           ack.mixerBound?"Mixer ready · FX/WIRE available":"Audio device ready · no hardware input required"):
         ack.state==="NEEDS_REMAP"?
-          "NEEDS REMAP · "+ack.error:
+          String(ack.error||"Playback unavailable").replace(/^NEEDS_REMAP:\s*/,""):
           "Device rejected · "+(ack.error||"native hardware readback failed");
       deviceChoice=null;
       if(accepted){
@@ -2241,7 +2242,7 @@
       }
       stopDemo();
       paintNativeMeters(next);
-      status("NEEDS REMAP · mixer retained · output muted");
+      status("Playback unavailable · waiting for the audio device");
       return;
     }
     if (!nativeAdmitted) {

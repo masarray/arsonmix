@@ -280,16 +280,16 @@ def main():
                 channels=copy.deepcopy(retained['graph']['channels']))
             emit(page,'arMixConsoleSnapshot',retained)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
-            assert page.locator('.status-bar .warning').inner_text().startswith('NEEDS REMAP')
+            assert page.locator('.status-bar .warning').inner_text().startswith('PLAYBACK UNAVAILABLE')
             assert page.locator('[data-native-monitor]').is_disabled()
             assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
-            assert 'OUT NEEDS REMAP' in page.locator('#transport').inner_text()
+            assert 'OUTPUT WAITING FOR DEVICE' in page.locator('#transport').inner_text()
             page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
             emit(page,'arMixConsoleSnapshot',retained)
             assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()
             strip=page.locator('#tracks .strip[data-id="1"]')
-            assert strip.locator('select[data-field="input"]').input_value()=='NEEDS REMAP'
+            assert strip.locator('select[data-field="input"]').input_value()=='Waiting for device'
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             before=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')
             strip.locator('.fx-section [data-action="openPlugin"]').first.click()

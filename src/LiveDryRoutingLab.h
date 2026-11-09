@@ -1759,6 +1759,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            std::erase_if(waitingAsioInputs_,[id](const auto& pin){return pin.id==id;});
             nativeStructureLive_=true;
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -1845,6 +1846,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            std::erase_if(waitingAsioInputs_,[channel](const auto& pin){return pin.id==channel;});
             nativeStructureLive_=true; // M4 source roster no longer authoritative
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -2143,6 +2145,7 @@ public:
             draft.legacyIds=nativeAccepted_.graph.ids;
             draft.outputs=nativeAccepted_.hardware;
             draft.request=nativeAccepted_.graph.request;
+            draft.waitingAsioInputs=waitingAsioInputs_;
             std::vector<armix::shows::BinaryState> staged;
             std::set<juce::String> hashes;
             juce::int64 total=0;
@@ -2181,6 +2184,34 @@ public:
             blobs=std::move(staged);
             return {};
         } catch(...) {return "Native graph/VST3 state capture failed";}
+    }
+
+    bool describeRetainedAsioSession(armix::session::MixerSessionDocument& document) const {
+        if(!hasRetainedNativeSession() ||
+           !nativeAccepted_.matches(nativePublisher_,nativeAccepted_.deviceEpoch,
+                                    nativeAccepted_.pcmRevision))return false;
+        document.roster=nativeAccepted_.graph.roster;
+        document.request=nativeAccepted_.graph.request;
+        document.legacyIds=nativeAccepted_.graph.ids;
+        document.outputs=nativeAccepted_.hardware;
+        document.waitingAsioInputs=waitingAsioInputs_;
+        return true;
+    }
+
+    bool rebindRetainedAsioSession(armix::session::MixerSessionDocument document,
+            const armix::device::JuceActivePortSnapshot& pins,int deviceFrames) {
+        const auto next=nativeGraphRevisionForRestore();
+        const auto previous=document.request.maxFrames;
+        // Existing processors can still use their prepared quantum. Larger
+        // device blocks are split by the same render path used before reset.
+        document.request.maxFrames=armix::device::retainedMixerQuantum(previous,
+            deviceFrames,Block::hardFrameLimit,false,true);
+        if(!next || !document.request.maxFrames || !hasRetainedNativeSession())return false;
+        auto bank=std::make_shared<armix::mixer::DynamicChannelFxLeaseBank>();
+        if(armix::mixer::DynamicChannelFxLeaseBank::rebindSameFormat(
+               pins.epoch,next,*nativeAccepted_.fxOwners,*bank)!=
+           armix::mixer::DynamicChannelFxLeaseBank::Fault::none)return false;
+        return restoreNativeMixerSession(std::move(document),std::move(bank),pins,true).isEmpty();
     }
 
     // Match CONTROL's live device readback to the masks registered for the
@@ -2241,6 +2272,7 @@ public:
             nativeAccepted_.graph.roster=std::move(document.roster);
             nativeAccepted_.graph.request=std::move(document.request);
             nativeAccepted_.graph.ids=document.legacyIds;
+            waitingAsioInputs_=std::move(document.waitingAsioInputs);
             nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
             nativeAccepted_.hardware=document.outputs;
             nativeAccepted_.fxOwners=std::move(bank);
@@ -2450,6 +2482,8 @@ public:
                nativeAccepted_.graph.request.sources.empty() &&
                !hasAuthoredMixerContent();
     }
+    std::span<const armix::session::WaitingAsioInput> waitingAsioInputs() const noexcept {return waitingAsioInputs_;}
+    int waitingAsioInputCount() const noexcept {return static_cast<int>(waitingAsioInputs_.size());}
     bool hasVerifiedNativeSources() const noexcept {
         return channelIdPhysicalPcmActive() && !nativeAccepted_.graph.request.sources.empty();
     }
@@ -2466,6 +2500,7 @@ public:
         nativeControlDirty_=false;
         nativePublisher_.unpublish(); // CONTROL-only; audio lease retires safely
         nativeAccepted_=armix::mixer::UnifiedLegacyAccepted{};
+        waitingAsioInputs_.clear();
         userPatched_.store(false,std::memory_order_release);
         enabled_.store(false,std::memory_order_release);
         publishedEpoch_.store(0,std::memory_order_release);
@@ -3021,6 +3056,7 @@ public:
         return juce::var(out.release());
     }
 private:
+    std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     // Four 9-bit callback indices (0 means absent) and the prepared quantum.
     // One atomic read gives AUDIO a coherent destination/quantum contract.
     std::atomic<std::uint64_t> nativeHardware_{0};

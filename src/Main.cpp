@@ -1000,8 +1000,10 @@ private:
             (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         // Sole control-thread SessionSnapshot from the installed PCM publisher.
         armix::console::publishAuthoritativeMixerSession(accepted);
-        if(auto* obj=accepted.getDynamicObject())
+        if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
+            obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
+        }
         return accepted;
     }
 
@@ -1308,6 +1310,7 @@ private:
     // One-shot on a verified setup or startup, including the first input
     // patch. A later device epoch or a user MUTE cancels the pending arm.
     std::uint64_t autoMainEpoch_=0;
+    bool autoMainRequiresInput_=true;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
@@ -1322,13 +1325,14 @@ private:
         if(autoMainCheckedRevision_==revision)return;
         if(engine_.isGraphSwitchPending()||!engine_.hasBoundMixerRoute())return;
         autoMainCheckedRevision_=revision;
-        if(engine_.liveOutputArmFault().isNotEmpty())return;
+        if(engine_.liveOutputArmFault(autoMainRequiresInput_).isNotEmpty())return;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
         diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
     }
 
-    void requestAutomaticMain() {
+    void requestAutomaticMain(bool requireInput=true) {
+        autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
         autoMainCheckedRevision_.reset();
         serviceAutomaticMain();
@@ -1694,7 +1698,7 @@ private:
         // Suspend physical output but retain ALL authored mixer state while
         // the real JUCE device selector is visible (including no-change close).
         autoMainEpoch_=0;
-        engine_.beginManualAudioSetup();
+        engine_.beginManualAudioSetup(true);
 
         // The native JUCE device list is cached after first construction:
         // reopening the settings window avoids repeating full widget setup.
@@ -1717,7 +1721,7 @@ private:
                         if (safe == nullptr) return;
                         if (safe->finishAudioSetupAndRecoverMixer())
                         {
-                            safe->requestAutomaticMain();
+                            safe->requestAutomaticMain(!safe->engine_.takeAsioResetMonitorIntent());
                             safe->deviceSettingsDirty_ = true;
                             safe->startupError_.clear();
                             safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
@@ -1732,7 +1736,7 @@ private:
                                 "No verified stereo playback device; audio remains gated");
                             safe->emitNotice (
                                 safe->engine_.hasRetainedUnboundMixer()
-                                    ? "Mixer and plugin state retained. Device binding changed; output stays muted until a verified full-session rebind."
+                                    ? "Playback unavailable. Mixer and plugin settings are saved."
                                     : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
                         }
@@ -2307,8 +2311,11 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_VST3_REMAP_REQUIRED",error);
             return error;
         }
+        if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
+           armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
+            bindingMode=MixerBindingMode::verifiedAsioRestart;
         const bool resume=startupOnSavedDevice &&
-            bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
+            (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
             !usedPrevious && !retained &&
             doc.resumeMain.value_or(true);
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
@@ -2339,7 +2346,7 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        if(resume)requestAutomaticMain();
+        if(resume)requestAutomaticMain(bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
@@ -4697,10 +4704,12 @@ private:
         if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) &&
            !recoverPristine)return true;
         if(engine_.hasRetainedNativeSession() || hasCheckpoint) {
+            if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
+                bindingMode=MixerBindingMode::verifiedAsioRestart;
             const auto error=restoreSavedMixerSession(false,bindingMode);
             if(error.isNotEmpty()) {
                 mixerSessionError_=error;
-                emitNotice("Mixer retained; "+error,true);
+                emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
                 return false;
             }
             return true;
@@ -4713,13 +4722,28 @@ private:
         const auto epoch=engine_.dryRoutingLabEpoch();
         if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
-           engine_.isGraphSwitchPending() ||
-           (audioSetupWindow_ && audioSetupWindow_->isVisible()))return;
+           engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
         auto* device=engine_.devices().getCurrentAudioDevice();
-        if(!device || !device->isOpen() || device->getTypeName()!="ASIO" ||
+        if(!device || device->getTypeName()!="ASIO" ||
            !device->getName().startsWithIgnoreCase("ASIO4ALL"))return;
         asioRecoveryEpoch_=epoch; // at most one automatic bind per negotiated epoch
         const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
+        if(!engine_.sameRetainedAsioDriver())return;
+        if(!device->isOpen() || device->getActiveOutputChannels().countNumberOfSetBits()<2) {
+            juce::AudioDeviceManager::AudioDeviceSetup setup;
+            engine_.devices().getAudioDeviceSetup(setup);
+            setup.useDefaultInputChannels=true;
+            setup.useDefaultOutputChannels=true;
+            const auto error=openSelectedAudioDevice("ASIO",setup,true);
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            device=engine_.devices().getCurrentAudioDevice();
+            if(error.isNotEmpty() || !device || !device->isOpen()) {
+                diagnostics_.record("ASIO4ALL_REOPEN_FAILED",error);
+                emitApprovedNativeSnapshot();
+                return;
+            }
+        }
         if(!engine_.authorizeRetainedAsioRestart())return;
         if(const auto corrected=engine_.asioRestartPinCorrection()) {
             // One bounded correction for JUCE's restart with the old mask.
@@ -4750,9 +4774,9 @@ private:
         }
         mixerSessionStatus_="RESTORED_MUTED";
         mixerSessionError_.clear();
-        if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain();
+        if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);
         if(engine_.isMonitorEnabled())mixerSessionStatus_="RESTORED_MONITORING";
-        diagnostics_.record("ASIO4ALL_REATTACHED","Verified driver and original MAIN pair");
+        diagnostics_.record("ASIO4ALL_REATTACHED","Verified driver and current MAIN pair");
         emitApprovedNativeSnapshot();
     }
 
@@ -4837,11 +4861,12 @@ private:
                 mixerSessionRecoveryPending_=true;
                 const auto error=restoreSavedMixerSession(startupError_.isEmpty());
                 if(error.isNotEmpty())
-                    emitNotice("Saved mixer retained; "+error,true);
+                    emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
                 else
                     deviceSettingsDirty_=true;
             }else if(startupError_.isEmpty())requestAutomaticMain();
         }
+        serviceAsioMixerRestart();
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
         // WebView notifications belong only on this JUCE control timer.
@@ -4855,13 +4880,13 @@ private:
             unexpectedRouteNoticeSent_ = true;
             diagnostics_.record ("DIRECT_ROUTE_BLOCKED",
                 "A device or backend changed unexpectedly; host output held at zero");
-            emitNotice ("Audio device changed unexpectedly. Live output muted; confirm your ASIO/WASAPI device in AUDIO SETUP.", true);
+            if(!engine_.sameRetainedAsioDriver())
+                emitNotice ("Audio device changed unexpectedly. Live output muted; confirm your ASIO/WASAPI device in AUDIO SETUP.", true);
         }
         if (!blocked) unexpectedRouteNoticeSent_ = false;
         // Audio thread publishes only fault flags. A bounded message-thread
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
-        serviceAsioMixerRestart();
         serviceAutomaticMain();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.

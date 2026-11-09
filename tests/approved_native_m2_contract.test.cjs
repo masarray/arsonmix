@@ -707,7 +707,7 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
  assert.match(bridge,/const virtualCableFeedbackPair=/);
  const native=read("src/Main.cpp");
- assert.match(native,/if\(engine_\.liveOutputArmFault\(\)\.isNotEmpty\(\)\)return;/);
+ assert.match(native,/if\(engine_\.liveOutputArmFault\(autoMainRequiresInput_\)\.isNotEmpty\(\)\)return;/);
  assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
