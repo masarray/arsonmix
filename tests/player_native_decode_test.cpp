@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/player/NativePlayerDeck.h"
 #include "../engine/player/PlayerSetlistPolicy.h"
+#include "../engine/player/PlayerLibraryPolicy.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -34,6 +35,36 @@ int main() {
     assert(Policy::nextTrack(9,9,10)==-1); // STOP after last
     assert(Policy::nextTrack(-1,2,10)==2); // first song
     assert(Policy::nextTrack(3,99,10)==4); // invalid queue ignored
+    // A singer can select a folder containing nested backing tracks.
+    // Import order is natural, bounded and excludes unrelated files.
+    const auto folder=juce::File::getSpecialLocation(
+        juce::File::tempDirectory).getNonexistentChildFile(
+            "arson-player-library-policy","",false);
+    assert(folder.createDirectory().wasOk());
+    const auto nested=folder.getChildFile("subfolder");
+    assert(nested.createDirectory().wasOk());
+    assert(folder.getChildFile("10-outro.FLAC").create().wasOk());
+    assert(folder.getChildFile("02-verse.mp3").create().wasOk());
+    assert(folder.getChildFile("01-intro.wav").create().wasOk());
+    assert(folder.getChildFile("garbage.txt").create().wasOk());
+    assert(nested.getChildFile("03-chorus.aiff").create().wasOk());
+    const auto scanned=armix::player::PlayerLibraryPolicy::scanFolder(folder);
+    assert(!scanned.truncated && scanned.files.size()==4);
+    assert(scanned.files[0].getFileName()=="01-intro.wav");
+    assert(scanned.files[1].getFileName()=="02-verse.mp3");
+    assert(scanned.files[2].getFileName()=="03-chorus.aiff");
+    assert(scanned.files[3].getFileName()=="10-outro.FLAC");
+    assert(!armix::player::PlayerLibraryPolicy::supported(
+        folder.getChildFile("garbage.txt")));
+    // Missing track relink requires explicit matching filename; never
+    // silently substitute a different backing song or change its preset.
+    const auto missing=folder.getChildFile("old").getChildFile("02-verse.mp3");
+    assert(!missing.existsAsFile());
+    assert(armix::player::PlayerLibraryPolicy::sameSongName(
+        missing,folder.getChildFile("02-verse.mp3")));
+    assert(!armix::player::PlayerLibraryPolicy::sameSongName(
+        missing,folder.getChildFile("01-intro.wav")));
+    assert(folder.deleteRecursively());
     const auto file=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("arson-player-decoder-test",".wav",false);
     juce::WavAudioFormat wave;

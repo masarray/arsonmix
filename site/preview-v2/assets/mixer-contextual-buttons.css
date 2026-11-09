@@ -322,3 +322,19 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power):focus-visible{outline:2px
  #arsonPlayer #playerTempoValue{width:36px}
  #arsonPlayer .ap-reset{padding:5px}
 }
+
+/* M3 smart library controls: lightweight, keyboard-accessible icon and
+   one contextual Locate file action. No additional cards or UI modes. */
+#arsonPlayer #playerAddFolder{margin-left:auto;display:inline-flex;
+ align-items:center;justify-content:center;width:29px;height:29px;
+ flex:0 0 29px;border:1px solid #45616a;border-radius:6px;
+ background:#223941;color:#a7d4d2}
+#arsonPlayer #playerAddFolder:hover{background:#2c5058}
+#arsonPlayer #playerAdd{margin-left:0;white-space:nowrap}
+#arsonPlayer #playerRelink{border:1px solid #41616a;
+ border-radius:6px;padding:5px 8px;background:#223f47;
+ color:#bfe9e6;white-space:nowrap;font-size:11px}
+#arsonPlayer #playerRelink:hover{background:#2b5761}
+#arsonPlayer #playerRelink[hidden]{display:none!important}
+#arsonPlayer #playerAdd:disabled,
+#arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}

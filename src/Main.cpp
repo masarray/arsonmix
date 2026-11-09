@@ -44,7 +44,9 @@
 #include <functional>
 #include <vector>
 #include "../engine/player/PlayerSetlistPolicy.h"
+#include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
+#include <thread>
 
 namespace
 {
@@ -382,6 +384,7 @@ private:
     int playerSelected_=-1,playerCurrent_=-1;
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
+    bool playerFolderBusy_=false; // GUI only; background scanner never touches this
     std::uint64_t lastAutoAdvanceGeneration_=0;
     juce::String playerError_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
@@ -2448,6 +2451,7 @@ private:
         obj->setProperty("selected",playerSelected_);
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
+        obj->setProperty("libraryBusy",playerFolderBusy_);
         obj->setProperty("error",playerError_);
         obj->setProperty("chooseOutput",
             playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
@@ -2513,6 +2517,115 @@ private:
                 });
             });
     }
+    void choosePlayerFolder() {
+        if(playerFileChooser_ || playerFolderBusy_)return;
+        playerFileChooser_=std::make_unique<juce::FileChooser>(
+            "Add Music Folder",
+            juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+            "*",true);
+        playerFileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode |
+            juce::FileBrowserComponent::canSelectDirectories,
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this)]
+            (const juce::FileChooser& picker) {
+                if(!safe)return;
+                const auto folder=picker.getResult();
+                // FileChooser must not be destroyed inside its callback.
+                juce::MessageManager::callAsync([safe] {
+                    if(safe)safe->playerFileChooser_.reset();
+                });
+                if(!folder.isDirectory())return;
+                safe->playerFolderBusy_=true;
+                safe->playerError_.clear();
+                safe->emitPlayerState();
+                // Only filesystem enumeration, bounded in scope and output,
+                // is performed on the worker. Never block the JUCE message
+                // loop or ASIO callback while importing a large USB folder.
+                std::thread([safe,folder] {
+                    auto scan=armix::player::PlayerLibraryPolicy::scanFolder(folder);
+                    juce::MessageManager::callAsync(
+                        [safe,scan=std::move(scan)]() mutable {
+                            if(!safe)return;
+                            safe->playerFolderBusy_=false;
+                            int added=0;
+                            int first=-1;
+                            for(const auto& file:scan.files) {
+                                const auto found=std::find(
+                                    safe->playerLibrary_.begin(),
+                                    safe->playerLibrary_.end(),file);
+                                if(found!=safe->playerLibrary_.end())continue;
+                                if(safe->playerLibrary_.size()>=
+                                   armix::player::PlayerLibraryPolicy::maxSongs)break;
+                                if(first<0)
+                                    first=static_cast<int>(safe->playerLibrary_.size());
+                                safe->playerLibrary_.push_back(file);
+                                safe->playerTrackSettings_.push_back({});
+                                ++added;
+                            }
+                            if(safe->playerSelected_<0 && first>=0)
+                                safe->playerSelected_=first;
+                            safe->playerError_=scan.truncated?
+                                "Folder scan reached its safe size limit; only some songs were added":
+                                added==0?
+                                    "No new supported songs found in this folder":
+                                    juce::String{};
+                            safe->persistPlayerLibrary();
+                            safe->emitPlayerState(true);
+                        });
+                }).detach();
+            });
+    }
+
+    void choosePlayerRelink() {
+        if(playerFileChooser_ || playerFolderBusy_)return;
+        const int index=playerSelected_;
+        if(index<0 || index>=static_cast<int>(playerLibrary_.size()))return;
+        const auto old=playerLibrary_[static_cast<std::size_t>(index)];
+        if(old.existsAsFile())return; // only resolve genuinely missing music
+        playerFileChooser_=std::make_unique<juce::FileChooser>(
+            "Locate Missing Music — "+old.getFileName(),
+            old.getParentDirectory().isDirectory()?
+                old.getParentDirectory():
+                juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+            "*.wav;*.mp3;*.flac;*.aif;*.aiff;*.ogg",true);
+        playerFileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode |
+            juce::FileBrowserComponent::canSelectFiles,
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),index,old]
+            (const juce::FileChooser& picker) {
+                if(!safe)return;
+                const auto chosen=picker.getResult();
+                juce::MessageManager::callAsync([safe] {
+                    if(safe)safe->playerFileChooser_.reset();
+                });
+                if(chosen==juce::File{})return;
+                if(index>=static_cast<int>(safe->playerLibrary_.size()) ||
+                   safe->playerLibrary_[static_cast<std::size_t>(index)]!=old) {
+                    safe->playerError_="Setlist changed; locate the song again";
+                } else if(!armix::player::PlayerLibraryPolicy::sameSongName(
+                              old,chosen)) {
+                    safe->playerError_="Choose the same song filename to avoid relinking the wrong music";
+                } else if(std::find(safe->playerLibrary_.begin(),
+                                   safe->playerLibrary_.end(),chosen)!=
+                          safe->playerLibrary_.end()) {
+                    safe->playerError_="This music file is already in your setlist";
+                } else {
+                    // Preserve same logical song ID, order and per-song
+                    // KEY/TEMPO. Never start a song or switch the output
+                    // as a side effect of locating a file.
+                    if(safe->playerCurrent_==index) {
+                        safe->engine_.playerStop();
+                        safe->playerCurrent_=-1;
+                    }
+                    safe->playerLibrary_[static_cast<std::size_t>(index)]=chosen;
+                    safe->playerOutputPendingIndex_=-1;
+                    safe->playerError_.clear();
+                    safe->persistPlayerLibrary();
+                }
+                safe->emitPlayerState(true);
+            });
+    }
+
     void playTransportMusic() {
         const auto phase=engine_.playerStatus().getProperty(
             "state","EMPTY").toString().toStdString();
@@ -2588,6 +2701,8 @@ private:
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerAdd")return choosePlayerFiles();
+        if(action=="playerAddFolder")return choosePlayerFolder();
+        if(action=="playerRelink")return choosePlayerRelink();
         if(action=="playerKeyStep" || action=="playerTempoStep" ||
            action=="playerPitchTempoReset") {
             const auto target=armix::player::SetlistPolicy::pitchTempoTarget(

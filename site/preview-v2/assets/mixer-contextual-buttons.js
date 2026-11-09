@@ -58,8 +58,8 @@
       <div class="ap-pitchctrl"><span>TEMPO</span><button id="playerTempoMinus" type="button" aria-label="Slow music by five percent">−</button><output id="playerTempoValue" aria-live="polite">100%</output><button id="playerTempoPlus" type="button" aria-label="Speed music by five percent">+</button></div>
       <button class="ap-reset" id="playerPitchReset" type="button" title="Reset key and tempo for current song">Reset</button>
     </div>
-    <div class="ap-statusbar"><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerChooseOutput" type="button" hidden>Choose output</button></div>
-    <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAdd" type="button">+ Add Music</button></div>
+    <div class="ap-statusbar"><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerChooseOutput" type="button" hidden>Choose output</button><button id="playerRelink" type="button" hidden>Locate file</button></div>
+    <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAddFolder" class="ap-folder" type="button" aria-label="Add all music from a folder" title="Add music folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></button><button id="playerAdd" type="button">+ Add Music</button></div>
     <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
     <div id="playerList" role="listbox" aria-label="Setlist songs"></div>
     <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>`;
