@@ -11,6 +11,15 @@
 // Conservative confidence/hold; uncertain music falls back to Manual Key.
 // No FFT allocation, locks, async worker, trig or heap in process().
 namespace armix::harmony {
+// Do not indefinitely pin an obsolete key when a new candidate is stable but
+// moderately confident. Strong evidence can retarget after 0.8s; weaker yet
+// valid evidence needs 2.0s of consecutive agreement. A candidate that
+// oscillates resets its hold in evaluate(), so this never forces ambiguity.
+constexpr bool acceptMusicKeyCandidate(bool currentValid,bool sameKey,
+                                       float confidence,int stableWindows) noexcept {
+    if(stableWindows<8)return false;
+    return !currentValid||sameKey||confidence>0.10f||stableWindows>=20;
+}
 struct MusicKeyEstimate final {
     int key=-1,scale=-1; // -1 means no reliable tonal evidence
     float confidence=0.f;
@@ -145,9 +154,10 @@ private:
         uncertainFrames_=0;
         if(bestRoot!=candidate_||bestScale!=candidateScale_){
             candidate_=bestRoot;candidateScale_=bestScale;candidateHold_=1;
-        }else if(candidateHold_<12)++candidateHold_;
-        if(candidateHold_>=8 && (!current_.valid() ||
-           (current_.key==bestRoot&&current_.scale==bestScale) || confidence>0.10f))
+        }else if(candidateHold_<20)++candidateHold_;
+        if(acceptMusicKeyCandidate(current_.valid(),
+            current_.key==bestRoot&&current_.scale==bestScale,
+            confidence,candidateHold_))
             current_={bestRoot,bestScale,confidence};
     }
     int decimation_=0,downCount_=0,period_=0,periodCount_=0,normalizeCount_=0;
