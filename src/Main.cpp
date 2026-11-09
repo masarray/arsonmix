@@ -5879,7 +5879,8 @@ public:
                     ("ARSONMIX_UPDATE_PROBE", {});
                 const auto localAppData = juce::SystemStats::getEnvironmentVariable
                     ("LOCALAPPDATA", {});
-                if (probe.length() == 36 && juce::Uuid (probe).toDashedString() == probe
+                if (stage == 2 && probe.length() == 36
+                    && juce::Uuid (probe).toDashedString() == probe
                     && localAppData.isNotEmpty())
                 {
                     const auto healthDir = juce::File (localAppData)

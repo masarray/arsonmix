@@ -59,3 +59,11 @@ After install/repair/rollback, success requires the installed sourceCommit, exeS
 
 ## Genuine two-release installer qualification
 - Opt-in Windows FAT now downloads two **already-published authentic** installer assets (v0.5.0-alpha.4 / v0.5.0-alpha.5), confirms official GitHub digest, source-commit provenance and SHA256SUMS, installs alpha.4 into a disposable runner directory, upgrades to alpha.5 and rolls back to alpha.4, validating installed PE SHA and private .smix plus install-local user sentinel after every step. It is gated to explicit package_fat dispatch on temporary GitHub Windows runners; ordinary PR/branch work never downloads historical packages. This verifies historical Inno compatibility, not live WebView2-ready startup or physical ASIO sound, which remain separately qualified.
+
+## Rollback asset identity safety
+The post-close supervisor rechecks the **previous** published release as well as the **candidate** via GitHub. The staged rollback filename, SHA256, size, tag and original source commit must all agree with current published release metadata before any installer starts. If the published rollback artifact is missing, altered or withdrawn, the update is deferred with the current mixer intact.
+
+## Codex review P1 fixes — release parsing and startup health
+- Windows PowerShell 5.1 `Invoke-RestMethod` returns JSON arrays as an array-valued pipeline object; wrapping its result in `@(...)` nests the releases. All three REST fetch sites now assign directly so stable/pre-release discovery, standalone recovery and revocation checks iterate individual releases.
+- WebView2 timeout triggers stage 3 only to dismiss the splash and show an error. The GUID-scoped GUI_READY marker now requires **stage == 2**, not the stage>=2 dismissal branch, eliminating success claims for a failed browser.
+- An incomplete installer/checksum/provenance download sets `staging-retry` with empty lastCheckUtc before network transfer, preserving the 20-minute retry rather than applying the six-hour successful-check throttle.

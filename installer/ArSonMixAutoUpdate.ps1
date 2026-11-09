@@ -270,7 +270,7 @@ function Restore-InstalledRelease([string]$sourceSha) {
     # than trusting local update state as installation authority.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $sourceRelease=$null
     foreach($release in $releases) {
         if([string]$release.target_commitish -ceq $sourceSha -and
@@ -576,7 +576,7 @@ try {
     Write-State $state
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     Write-State $state
     $current=$null
@@ -613,11 +613,19 @@ try {
     $stage=Join-Path $root 'stage'
     $oldPath=Join-Path $stage ([string]$oldAsset.name)
     $newPath=Join-Path $stage ([string]$newAsset.name)
+    # Release-list retrieval succeeded, but the transaction is NOT checked
+    # until both release packages/checksums have passed verification.
+    # On network/metadata failure here, retry after lastAttemptUtc's
+    # 20-minute backoff, not the six-hour successful-check cooldown.
+    $state.phase='staging-retry'
+    $state.lastCheckUtc=''
+    Write-State $state
     Download-Release-Verified $new $newAsset $newPath
     # Rollback must be possible offline. Do not begin update without a
     # byte-verified previous installer.
     Download-Release-Verified $current $oldAsset $oldPath
     $state.phase='staged'
+    $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     $state.operation=$operation
     $state.installAttempts=0
     $state.retryAfterUtc=''
@@ -655,25 +663,38 @@ try {
     $stage=Join-Path $root 'stage'
     $newPath=Join-Path $stage $newName
     $oldPath=Join-Path $stage $oldName
-    foreach($pair in @(@($newPath,$state.newAsset),@($oldPath,$state.previousAsset))) {
-        $path=[string]$pair[0]
-        $asset=$pair[1]
-        if(-not (Test-StagedAsset $path $asset)) {
-            Fail 'Offline staged install/rollback bytes not verified'
-        }
+    # Validate both independently. Do not build nested arrays here:
+    # PowerShell 5.1 pipeline unrolling can flatten the pair boundaries.
+    if(-not (Test-StagedAsset $newPath $state.newAsset) -or
+       -not (Test-StagedAsset $oldPath $state.previousAsset)) {
+        Fail 'Offline staged install/rollback bytes not verified'
     }
     # Re-query public release to reject a revoked or replaced candidate.
     # No network is needed *during* live audio; if offline on close, defer.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $liveReleases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $liveReleases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $approved=$null
+    $approvedOld=$null
     foreach($release in $liveReleases) {
         if($release.tag_name -ceq $state.candidateTag -and
            $release.target_commitish -ceq $state.candidateSha) {
             $approved=Approved-Installer $release
-            break
         }
+        if($release.tag_name -ceq $state.previousTag -and
+           $release.target_commitish -ceq $state.previousSha) {
+            $approvedOld=Approved-Installer $release
+        }
+    }
+    if($null -eq $approvedOld -or
+       $approvedOld.name -cne $state.previousAsset.name -or
+       $approvedOld.digest -cne $state.previousAsset.digest -or
+       [long]$approvedOld.size -ne [long]$state.previousAsset.size) {
+        # The rollback package is mandatory. Fail closed if its published
+        # source/asset identity was withdrawn or the local cache was altered.
+        # Do not install a newer version without an authentic way back.
+        Log-Result 'ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED'
+        exit 0
     }
     if($null -eq $approved -or $approved.digest -cne $state.newAsset.digest -or
        [long]$approved.size -ne [long]$state.newAsset.size){

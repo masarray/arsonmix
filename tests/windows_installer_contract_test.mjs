@@ -174,7 +174,9 @@ test('Windows updater executes byte-level offline stage integrity fixtures', () 
   const updater = read('installer/ArSonMixAutoUpdate.ps1');
   const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
   assert.match(updater, /function Test-StagedAsset\(/);
-  assert.match(updater, /if\(-not \(Test-StagedAsset \$path \$asset\)\)/);
+  assert.match(updater, /Test-StagedAsset \$newPath \$state\.newAsset/);
+  assert.match(updater, /Test-StagedAsset \$oldPath \$state\.previousAsset/);
+  assert.doesNotMatch(updater, /foreach\(\$pair in @\(@\(/);
   assert.match(updater, /Tampered staged EXE accepted/);
   assert.match(updater, /Short staged EXE accepted/);
   assert.match(updater, /Missing staged EXE accepted/);
@@ -284,4 +286,36 @@ test('two genuine release installers upgrade and roll back only in disposable Wi
   assert.match(ci, /Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(ci, /scripts\/test_two_genuine_inno_releases_windows\.ps1/);
   assert.doesNotMatch(real, /(?:Stop-Process|taskkill|Remove-Item\s+-LiteralPath\s+\$install\s+-Recurse)/);
+});
+
+test('auto apply authenticates the published rollback asset as well as the new release', () => {
+  const source = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(source, /\$approvedOld=Approved-Installer \$release/);
+  assert.match(source, /\$release\.tag_name -ceq \$state\.previousTag/);
+  assert.match(source, /\$release\.target_commitish -ceq \$state\.previousSha/);
+  assert.match(source, /\$approvedOld\.name -cne \$state\.previousAsset\.name/);
+  assert.match(source, /\$approvedOld\.digest -cne \$state\.previousAsset\.digest/);
+  assert.match(source, /ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED/);
+  assert.ok(source.indexOf('ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED') <
+            source.indexOf("$state.phase='installing'"));
+});
+
+test('updater enumerates GitHub JSON release arrays correctly in Windows PowerShell 5.1', () => {
+  const script=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.doesNotMatch(script, /@\(\s*Invoke-RestMethod -Uri \$api/);
+  for (const name of ['releases','liveReleases']) {
+    assert.match(script, new RegExp('\\$'+name+'=Invoke-RestMethod -Uri \\$api'));
+  }
+  assert.match(script, /foreach\(\$release in \$releases\)/);
+  assert.match(script, /foreach\(\$release in \$liveReleases\)/);
+});
+test('WebView2 error screen cannot acknowledge healthy GUI; staging retries after 20m', () => {
+  const script=read('installer/ArSonMixAutoUpdate.ps1');
+  const native=read('src/Main.cpp');
+  assert.match(native,/if \(stage == 2 && probe\.length\(\) == 36/);
+  assert.match(native,/if \(stage >= 2\)/); // still dismiss error splash
+  assert.match(native,/onStartupStage_ \(3\)/); // error stage must not set marker
+  assert.match(script, /\$state\.phase='staging-retry'\s*\n\s*\$state\.lastCheckUtc=''/);
+  assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
+  assert.match(script, /TotalMinutes -lt 20/);
 });
