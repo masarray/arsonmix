@@ -49,7 +49,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="armix-throw-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
-        for width,height in [(1366,768),(390,844)]:
+        # Desktop, constrained desktop and portrait operator control panel.
+        for width,height in [(1366,768),(650,720),(390,844)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda e:errors.append(str(e)))
@@ -199,9 +200,53 @@ def main():
             assert lcd["x"]+lcd["width"]<=tap["x"] and \
                 tap["x"]-(lcd["x"]+lcd["width"])<=17, \
                 ("LCD must sit beside TAP",lcd,tap)
-            assert abs((lcd["y"]+lcd["height"]/2)-(tap["y"]+tap["height"]/2))<=24, \
-                ("LCD/TAP vertical misalignment",lcd,tap)
+            assert abs((lcd["y"]+lcd["height"]/2)-(tap["y"]+tap["height"]/2))<=3, \
+                ("LCD/TAP must share a physical control centerline",lcd,tap)
             assert lcd["width"]>=145 and lcd["height"]>=70
+            # Text must have a real cell, not be squeezed against a knob.
+            # Three columns in each bank share exact name/rotary/value
+            # baselines; this caught the original tiny asymmetric 8px text.
+            for bank in ("#vtEncodersLeft","#vtEncodersRight"):
+                names=editor.locator(bank+" .vt-encoder-name")
+                dials=editor.locator(bank+" .vt-encoder-face")
+                values=editor.locator(bank+" .vt-encoder-value")
+                assert names.count()==dials.count()==values.count()==3
+                labels=[el.bounding_box() for el in names.all()]
+                knobs=[el.bounding_box() for el in dials.all()]
+                nums=[el.bounding_box() for el in values.all()]
+                assert max(x["y"] for x in labels)-min(x["y"] for x in labels)<1
+                assert max(x["y"] for x in knobs)-min(x["y"] for x in knobs)<1
+                assert max(x["y"] for x in nums)-min(x["y"] for x in nums)<1
+                for n,k,v in zip(labels,knobs,nums):
+                    center=lambda b:b["x"]+b["width"]/2
+                    assert abs(center(n)-center(k))<1.5 and \
+                           abs(center(v)-center(k))<1.5, \
+                           ("rotary name/value not centered",width,n,k,v)
+                    assert n["y"]+n["height"]<=k["y"]+1 and \
+                           k["y"]+k["height"]<=v["y"]+1, \
+                           ("control text collides with rotary",width,n,k,v)
+                for name in names.all():
+                    assert name.evaluate("""el=>
+                        parseFloat(getComputedStyle(el).fontSize)>=9 &&
+                        el.scrollWidth<=el.clientWidth+1"""), \
+                        ("encoder caption is too small or clipped",width,
+                         name.inner_text())
+            wet=editor.locator("#vtWetDial").bounding_box()
+            mode=editor.locator(".vt-mode-buttons").bounding_box()
+            assert wet and mode
+            assert abs((wet["y"]+wet["height"]/2)-
+                       (mode["y"]+mode["height"]/2))<11, \
+                       ("MIX and trigger controls are vertically off-axis",width,wet,mode)
+            # Every song-source selector has a deliberate text space.
+            song=editor.locator("#vtMusicSource").bounding_box()
+            assert song and song["width"]>=180,("MUSIC selector too narrow",width,song)
+            assert editor.locator("#vtMusicSource").evaluate("""el=>
+                el.scrollWidth<=el.clientWidth+1""")
+            if width>600:
+                rhythm=editor.locator(".vt-pulse .vt-small-label").bounding_box()
+                music=editor.locator(".vt-music-source .vt-small-label").bounding_box()
+                assert rhythm and music and abs(rhythm["y"]-music["y"])<1, \
+                    ("RHYTHM and MUSIC section labels not aligned",width,rhythm,music)
             rail=editor.locator(".vt-status-rail").bounding_box()
             assert rail and rail["y"]+rail["height"]<=box["y"]+box["height"]+2, \
                 ("footer clipped beneath mobile controls",width,rail,box)
