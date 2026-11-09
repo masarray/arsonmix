@@ -55,6 +55,11 @@ static void lockTempo(int bpm,bool hats=false) {
     check(state.tempo.locked);
     check(std::abs(state.tempo.bpm-bpm)<=3.1f);
     check(state.tempo.confidence>=.28f);
+    // Sparse pair scoring uses only qualifying BPM neighborhoods instead
+    // of 121 complete rescans. This is a deterministic, hardware-neutral
+    // CONTROL timer budget, NOT a wall-clock benchmark.
+    check(state.tempo.scoringComparisons>0);
+    check(state.tempo.scoringComparisons<120000);
     check(state.tempo.phaseLocked && state.tempo.phaseConfidence>=.50f);
     check(state.tempo.beatAnchorTick>0);
     check(state.tempo.beatAnchorFrame>0);
@@ -96,12 +101,16 @@ static void harmonicAndPhaseAmbiguity() {
     for(int i=1150;i<2450;++i)groove(i,.78f);
     auto ambiguous=tap.poll(7,13);
     check(ambiguous.tempo.locked);
+    check(ambiguous.tempo.scoringComparisons>0);
+    check(ambiguous.tempo.scoringComparisons<120000);
     check(std::abs(ambiguous.tempo.bpm-120.f)<=3.f);
     check(!ambiguous.tempo.phaseLocked);
     // The music clears; the true quarter-note lattice should recover.
     for(int i=2450;i<3650;++i)groove(i,.035f);
     auto recovered=tap.poll(7,13);
     check(recovered.tempo.locked);
+    check(recovered.tempo.scoringComparisons>0);
+    check(recovered.tempo.scoringComparisons<120000);
     check(std::abs(recovered.tempo.bpm-120.f)<=3.f);
     check(recovered.tempo.phaseLocked);
     check(recovered.dropped==0);
@@ -119,6 +128,9 @@ static void steadyPadIsNotAClock() {
     }
     const auto state=tap.poll(7,13);
     check(!state.tempo.locked);
+    // A sustained pad is not evidence of rhythm. It cannot trigger a
+    // high-cost candidate scan simply because PCM keeps arriving.
+    check(state.tempo.scoringComparisons==0);
 }
 static void failClosed() {
     NativeMusicTempoMonitor tap;
