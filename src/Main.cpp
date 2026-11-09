@@ -1082,9 +1082,14 @@ private:
                     armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity;
                 const bool builtInHarmony=catalogId==
                     armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
-                const auto* plugin=(builtInEq||builtInComp||builtInHarmony)?nullptr:catalog_.find(catalogId);
+                // Built-in DSP is compiled into the native host. Its admit
+                // path must remain usable even while third-party VST3 metadata
+                // discovery blocks or scans in the background. External
+                // plugins still require a fully verified, idle catalog.
+                const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony;
+                const auto* plugin=externalCatalog?catalog_.find(catalogId):nullptr;
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
-                if((!builtInEq&&!builtInComp&&!builtInHarmony&&!plugin)||catalog_.busy()||nativeShowBusy_||
+                if((externalCatalog&&(!plugin||catalog_.busy()))||nativeShowBusy_||
                    studioBackupBusy_||engine_.isGraphSwitchPending()) {
                     nativeError="NATIVE_VST3_CATALOG_OR_HOST_BUSY";
                 } else if(!armix::console::approvedNativeId(

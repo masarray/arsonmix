@@ -1248,6 +1248,17 @@ test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);
  assert.match(bridge,/const deviceReady=\(\)=>/);
 });
+test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 catalog scan",()=>{
+ const cpp=read("src/Main.cpp");
+ const gate=cpp.slice(cpp.indexOf('const bool builtInEq=catalogId=='),
+   cpp.indexOf('const auto result=builtInEq?',cpp.indexOf('const bool builtInEq=catalogId==')));
+ assert.ok(gate.includes('const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony'));
+ assert.ok(gate.includes('externalCatalog&&(!plugin||catalog_.busy())'));
+ assert.ok(!gate.includes('||catalog_.busy()||nativeShowBusy_'),
+  'third-party metadata discovery must not disable compiled-in FX');
+ assert.ok(gate.includes('nativeShowBusy_')&&gate.includes('studioBackupBusy_'),
+  'native structural session/backup safety interlocks remain active');
+});
 test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
  const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
  assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
