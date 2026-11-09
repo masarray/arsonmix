@@ -145,3 +145,17 @@ test('Smart Auto Updater uses an independent process and strict release gates', 
   assert.doesNotMatch(updater, /\b(?:taskkill|Stop-Process|TerminateProcess)\b/);
   assert.doesNotMatch(updater, /ArSonMix\.InstallShutdown\.v1|SetEvent\(/);
 });
+
+
+test('automatic Inno update never closes a newly active mixer', () => {
+  assert.match(iss, /function IsArSonMixAutoUpdate: Boolean;/);
+  assert.match(iss, /CompareText\(ParamStr\(I\), '\/ARSONMIXAUTOUPDATE'\)/);
+  assert.match(iss, /if IsArSonMixAutoUpdate then/);
+  assert.match(iss, /-ProbeOnly/);
+  assert.match(iss, /automatic update deferred/i);
+  assert.match(legacyShutdown, /\[switch\]\$ProbeOnly/);
+  assert.match(legacyShutdown, /if\(\$ProbeOnly\) \{/);
+  assert.match(legacyShutdown, /if\(\$count -ne 0\)\{exit 21\}/);
+  assert.match(read('installer/ArSonMixAutoUpdate.ps1'), /\/ARSONMIXAUTOUPDATE/);
+  assert.match(isolatedSmoke, /INNO_AUTO_UPDATE_LIVE_SESSION_PRESERVED_PASS/);
+});
