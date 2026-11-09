@@ -381,7 +381,10 @@ test("P0 first Add FX discovers real local VST3 lazily without an audio-thread s
  assert.match(bridge,/discoverFxOnFirstPickerOpen\(\);[\s\S]*?scope\?\.openFastPicker/);
  assert.match(native,/action == "scanVst3"[\s\S]*?catalog_\.scanDefaults\(\)/);
  assert.match(catalog,/struct Scanner final : juce::Thread/);
- assert.match(bridge,/scope\?\.setNativeCatalog\?\.\(\[\.\.\.nativeCatalog\.values\(\)\]\)/);
+ // The approved picker publishes real compiled-in FX independently of
+ // external scanner state; the verified VST3 library follows those entries.
+ assert.match(bridge,/const presentFxCatalog=\(\)=>scope\?\.setNativeCatalog\?\.\(/);
+ assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
  // Neither startup nor audio callback can trigger a surprise system scan.
  assert.doesNotMatch(bridge.slice(0,bridge.indexOf("function discoverFxOnFirstPickerOpen")),
    /action:"scanVst3"/);
@@ -563,7 +566,8 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
  assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
  assert.match(builder,/closeNativePicker\(\)\{setFastPicker\(false\);\}/);
- assert.match(builder,/NATIVE JUCE VST3/);
+ assert.match(builder,/Native EQ\/Compressor\/Harmony ready/);
+ assert.match(builder,/external VST3 require verified scan/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
 test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics",()=>{
