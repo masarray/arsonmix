@@ -106,8 +106,9 @@ struct MixerDeviceBindingPolicy final {
             const HardwareBinding& live,
             const VerifiedNativeOutputs& outputs,
             int callbackInputs,Mode mode) {
-        if(!outputs.valid() || callbackInputs<1 || callbackInputs>256 ||
-           live.backend.isEmpty() || live.capture.isEmpty() ||
+        if(!outputs.valid() || callbackInputs<0 || callbackInputs>256 ||
+           live.backend.isEmpty() ||
+           (callbackInputs>0 && live.capture.isEmpty()) ||
            live.playback.isEmpty() || live.inputMask.isEmpty() ||
            live.outputMask.isEmpty() || !std::isfinite(live.rate) ||
            live.rate<8000. || live.rate>384000. ||

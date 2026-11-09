@@ -94,7 +94,7 @@ public:
                device,generation,snapshot,reason))return;
         const int inputs=snapshot.inputs.enabledCount;
         const int outputs=snapshot.outputCount;
-        if(inputs<=0 || outputs<2) return; // stereo monitoring LAB only
+        if(inputs<0 || outputs<2) return; // output-only is a real SILENT native session
         for(int i=0;i<inputs;++i)
             enabledPorts_[i].store(snapshot.inputs.physicalIndex(i),
                                   std::memory_order_relaxed);
@@ -174,11 +174,12 @@ public:
         }
         request->setProperty("channels",juce::var(channels));
         const FxSelections none{};
-        // Same publisher/graph as a real user APPLY, but no authorization.
-        // Never briefly advertise a synthetic route as LIVE.
+        // Genuine accepted SOURCE NONE topology: editing does not require
+        // microphone capture. Sound remains zero and unarmed until a verified
+        // source and independently authorized physical output exist.
         return apply(juce::var(request.release()),directPermitted,
                      independentClock,loadedFx,none,formats,
-                     sampleRate,deviceFrames,false);
+                     sampleRate,deviceFrames,true);
     }
 
     juce::String apply (const juce::var& command, bool directPermitted,
@@ -220,7 +221,7 @@ public:
         if(topologyFault_.load(std::memory_order_acquire))
             return "Device callback channel layout changed; reopen AUDIO SETUP before applying";
         const int countNow=portCount_.load(std::memory_order_acquire);
-        if(countNow<=0 || countNow>armix::device::LiveInputPortRegistry::limit)
+        if(countNow<0 || countNow>armix::device::LiveInputPortRegistry::limit)
             return "Invalid active device input channel mask";
         std::array<int,armix::device::LiveInputPortRegistry::limit> physicalPorts{};
         for(int i=0;i<countNow;++i)
@@ -1179,7 +1180,7 @@ public:
         // A native IN is a callback ordinal, not the numerical physical
         // port label. Preserve original order including sparse ASIO pins.
         const int inputs=portCount_.load(std::memory_order_acquire);
-        if(inputs<=0||inputs>armix::device::LiveInputPortRegistry::limit)
+        if(inputs<0||inputs>armix::device::LiveInputPortRegistry::limit)
             return false;
         std::array<int,armix::device::LiveInputPortRegistry::limit> ports{};
         for(int i=0;i<inputs;++i)

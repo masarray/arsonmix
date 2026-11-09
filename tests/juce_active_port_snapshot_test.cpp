@@ -40,9 +40,14 @@ int main(){
     out.clear();
     assert(!JuceActivePortSnapshot::fromMasks(12,in,out,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::emptyOutput);
-    in.clear();
-    assert(!JuceActivePortSnapshot::fromMasks(12,in,out,snap,fault));
-    assert(fault==JuceActivePortSnapshot::Fault::emptyInput);
+    in.clear();out.setBit(1);out.setBit(7);
+    assert(JuceActivePortSnapshot::fromMasks(12,in,out,snap,fault));
+    assert(snap.inputs.enabledCount==0);
+    assert(snap.matchesCallback(12,0,2));
+    assert(!snap.matchesCallback(12,1,2));
+    out.clear();
+    assert(!JuceActivePortSnapshot::fromMasks(13,in,out,snap,fault));
+    assert(fault==JuceActivePortSnapshot::Fault::emptyOutput);
     assert(snap.inputs.callbackIndex(9)==previous.inputs.callbackIndex(9));
     assert(!JuceActivePortSnapshot::capture(nullptr,12,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::nullDevice);

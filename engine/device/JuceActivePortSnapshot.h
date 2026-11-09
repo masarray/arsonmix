@@ -26,8 +26,8 @@ struct JuceActivePortSnapshot final {
     std::uint64_t epoch=0;
     juce::String deviceName, typeName;
 
-    // Accept a frozen copy of masks so unit tests can exercise sparse
-    // numbering without requiring an ASIO device. This executes off RT.
+    // Accept a frozen copy of masks to exercise sparse numbering and real
+    // output-only devices with zero capture pins. No fake input is created.
     static bool fromMasks(std::uint64_t epoch,
                           const juce::BigInteger& inputMask,
                           const juce::BigInteger& outputMask,
@@ -46,7 +46,6 @@ struct JuceActivePortSnapshot final {
             if(p>=limit || out>=limit){error=Fault::tooManyOutputs;return false;}
             outputIndices[out++]=p;
         }
-        if(in==0){error=Fault::emptyInput;return false;}
         if(out==0){error=Fault::emptyOutput;return false;}
         JuceActivePortSnapshot candidate;
         LiveInputPortRegistry::Fault inputFault{};

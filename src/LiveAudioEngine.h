@@ -210,6 +210,19 @@ public:
                        + " | Windows Audio fallback unavailable";
         }
 #endif
+        // On first installation only, an output-only endpoint is a valid
+        // playback/Player host. Never replace a saved explicit ASIO route.
+        // Physical output is still muted and DIRECT-fenced until verified.
+        if(error.isNotEmpty() && !savedRoute) {
+            const auto outputError=deviceManager_.initialise(0,2,nullptr,true);
+            const auto* candidate=deviceManager_.getCurrentAudioDevice();
+            if(outputError.isEmpty() && candidate &&
+               candidate->getActiveOutputChannels().countNumberOfSetBits()>=2) {
+                startupFallbackReason_="AUTO_OUTPUT_ONLY_NO_CAPTURE";
+                error.clear();
+            } else if(outputError.isNotEmpty())
+                error+=" | Output-only startup: "+outputError;
+        }
         if (error.isNotEmpty()) return error;
         const auto* active = deviceManager_.getCurrentAudioDevice();
         if (active == nullptr)
@@ -1131,6 +1144,13 @@ public:
             formats_,device->getCurrentSampleRate(),
             juce::jmax(32,device->getCurrentBufferSizeSamples()));
         if(error.isEmpty() && dryRoutingLab_.epoch()==epoch) {
+            // The real SOURCE NONE graph is editable before any hardware IN
+            // patch; one ChannelId publisher remains the PCM authority.
+            if(!dryRoutingLab_.admitChannelIdFromAcceptedM4(
+                   graphOwned_->count,
+                   juce::jmax(32,device->getCurrentBufferSizeSamples()),
+                   allOutputsDisarmed(),currentOriginalCh1Lease()))
+                return "Prepared silent mixer could not admit native ChannelId graph";
             acceptedMixerBinding_=readMixerBinding(*device);
             acceptedWasapiBinding_=std::move(profile);
         }
@@ -2321,7 +2341,7 @@ private:
         const auto rate=device->getCurrentSampleRate();
         const auto frames=device->getCurrentBufferSizeSamples();
         if(inputs!=setup.inputChannels || outputs!=setup.outputChannels ||
-           inputs.isZero() || outputs.countNumberOfSetBits()<2 ||
+           outputs.countNumberOfSetBits()<2 ||
            !std::isfinite(rate) || rate<8000.0 || rate!=setup.sampleRate ||
            frames<16 || frames>LiveDryRoutingLab::Block::hardFrameLimit ||
            frames!=setup.bufferSize)return {};
@@ -2377,8 +2397,7 @@ private:
         const armix::device::AsioRegistrationPolicy::Identity* expectedAsio = nullptr)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
-        if (device == nullptr || device->getActiveInputChannels().isZero()
-            || device->getActiveOutputChannels().isZero())
+        if (device == nullptr || device->getActiveOutputChannels().isZero())
             return false;
         // JUCE BigInteger has no fixed 64-bit channel limit: preserve all
         // channel bits when locking an explicitly approved ASIO/WASAPI route.
@@ -2420,8 +2439,7 @@ private:
     bool resumeVerifiedDirectRoute()
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
-        if (device == nullptr || device->getActiveInputChannels().isZero()
-            || device->getActiveOutputChannels().isZero())
+        if (device == nullptr || device->getActiveOutputChannels().isZero())
             return false;
         const auto backend=device->getTypeName();
         const auto name=device->getName();

@@ -1462,7 +1462,7 @@
     hardware.device.epoch!=="0" &&
     hardware.device.sampleRate>0 && hardware.device.bufferFrames>0 &&
     Array.isArray(hardware.device.enabledInputs) &&
-    hardware.device.enabledInputs.length>0 &&
+    // Physical IN is optional; SOURCE NONE and FX/WIRE are native edits.
     Array.isArray(hardware.device.enabledOutputs) &&
     hardware.device.enabledOutputs.length>=2 &&
     (mixerSession()?.authority==="CHANNEL_ID"
@@ -1513,7 +1513,7 @@
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
-      !d.enabledInputs?.length?"NO CAPTURE INPUT · OPEN AUDIO I/O":
+      !d.enabledInputs?.length?"NO HARDWARE IN · MIXER/FX READY · USE PLAYER OR AUDIO I/O":
       legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -2211,7 +2211,7 @@
         deviceReady()?
         "NATIVE G0 · verified physical IN ready · select a channel input":
         hardware?.device?.enabledInputs?.length===0?
-        "NO CAPTURE PINS · Audio I/O: enable an actual hardware input":
+        "NO HARDWARE IN · FX/BUS/WIRE REMAIN AVAILABLE":
         "NATIVE G0 NOT READY · open Audio I/O and verify device / native route");
       return;
     }
