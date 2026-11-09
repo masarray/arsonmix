@@ -158,6 +158,17 @@ function Download-Release-Verified([object]$release,[object]$installer,[string]$
     if($matches.Count -ne 1){Fail 'SHA256SUMS does not attest exactly one chosen installer'}
     Download-Verified $installer $destination
 }
+function Test-StagedAsset([string]$path,[object]$asset) {
+    try {
+        if($null -eq $asset -or $asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$' -or
+           [long]$asset.size -lt 2097152 -or [long]$asset.size -gt 209715200 -or
+           -not (Test-Path -LiteralPath $path -PathType Leaf)) {return $false}
+        $file=Get-Item -LiteralPath $path
+        if($file.Length -ne [long]$asset.size){return $false}
+        return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ceq
+            ([string]$asset.digest).Substring(7)
+    } catch {return $false}
+}
 function Owns-Exe([int]$processId) {
     try {
         $process=[Diagnostics.Process]::GetProcessById($processId)
@@ -254,6 +265,28 @@ if($PolicySelfTest) {
     $asset.browser_download_url="https://github.com/$repo/releases/download/$tag/$($asset.name)"
     $release.assets=@($asset,$asset,$sum,$proof)
     if($null -ne (Approved-Installer $release)){throw 'Duplicate installer accepted'}
+    # Positive and negative staged binary integrity tests. These execute
+    # under synthetic TEMP; never use or modify the installed program.
+    $tmp=Join-Path ([IO.Path]::GetTempPath()) ('ArSonMix-Updater-Policy-'+[guid]::NewGuid().ToString('N'))
+    try {
+        [IO.Directory]::CreateDirectory($tmp) | Out-Null
+        $fixturePath=Join-Path $tmp 'test-installer.exe'
+        [IO.File]::WriteAllBytes($fixturePath,(New-Object byte[] 2097152))
+        $goodHash=(Get-FileHash -LiteralPath $fixturePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $fixtureAsset=[pscustomobject]@{digest=('sha256:'+$goodHash);size=2097152}
+        if(-not (Test-StagedAsset $fixturePath $fixtureAsset)) {throw 'Valid staged EXE rejected'}
+        $fixtureAsset.digest='sha256:'+('0'*64)
+        if(Test-StagedAsset $fixturePath $fixtureAsset){throw 'Tampered staged EXE accepted'}
+        $fixtureAsset.digest='sha256:'+$goodHash
+        $fixtureAsset.size=2097153
+        if(Test-StagedAsset $fixturePath $fixtureAsset){throw 'Short staged EXE accepted'}
+        $fixtureAsset.size=2097152
+        [IO.File]::Delete($fixturePath)
+        if(Test-StagedAsset $fixturePath $fixtureAsset){throw 'Missing staged EXE accepted'}
+    } finally {
+        if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Recurse -Force}
+    }
+    Write-Output 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'
     Write-Output 'ARSONMIX_UPDATER_POLICY_PASS'
     exit 0
 }
@@ -351,12 +384,7 @@ try {
     foreach($pair in @(@($newPath,$state.newAsset),@($oldPath,$state.previousAsset))) {
         $path=[string]$pair[0]
         $asset=$pair[1]
-        if($asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$' -or
-           [long]$asset.size -lt 2097152 -or [long]$asset.size -gt 209715200 -or
-           -not (Test-Path -LiteralPath $path -PathType Leaf) -or
-           (Get-Item -LiteralPath $path).Length -ne [long]$asset.size -or
-           (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne
-               ([string]$asset.digest).Substring(7)) {
+        if(-not (Test-StagedAsset $path $asset)) {
             Fail 'Offline staged install/rollback bytes not verified'
         }
     }
