@@ -1,0 +1,23 @@
+name: Harmony room-depth exact SHA release qualification
+on:
+  push:
+    branches: [ci/harmony-room-fat-d9e7b79-20261109]
+    paths: ['.github/workflows/harmony-room-fat-once.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  pinned-windows-fat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify immutable source then dispatch canonical Windows pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: d9e7b79e223962d15905def469247aa42ef26593
+        run: |
+          set -euo pipefail
+          head="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$head" = "$EXPECTED_SHA" || { echo "branch moved; skip stale release"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$EXPECTED_SHA"
+          echo "ONE exact-source Windows FAT run dispatched"
