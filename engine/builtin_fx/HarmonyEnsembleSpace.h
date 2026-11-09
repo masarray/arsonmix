@@ -12,13 +12,14 @@ namespace armix::harmony {
 class EnsembleSpace final {
 public:
     static constexpr int voices=5;
-    static constexpr std::size_t reflectionCapacity=4096;
+    static constexpr std::size_t reflectionCapacity=8192;
     static constexpr std::size_t sineCount=1024;
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         constexpr float tau=6.2831853071795864769f;
         constexpr std::array<float,voices> arrivalMs{{5.f,9.f,12.f,15.f,17.f}};
         constexpr std::array<float,voices> reflectionMs{{12.f,15.f,17.f,19.f,20.f}};
+        constexpr std::array<float,voices> secondMs{{27.f,31.f,34.f,36.f,38.f}};
         constexpr std::array<float,voices> cents{{-2.8f,1.4f,3.2f,-1.7f,2.3f}};
         constexpr std::array<float,voices> vibratoHz{{4.7f,5.2f,4.9f,5.35f,4.55f}};
         constexpr std::array<float,voices> vibratoCents{{2.4f,3.0f,2.8f,2.6f,3.3f}};
@@ -29,8 +30,11 @@ public:
             const auto ix=static_cast<std::size_t>(v);
             offset_[ix]=static_cast<float>(rate*arrivalMs[ix]*.001);
             reflectionDelay_[ix]=static_cast<int>(std::lround(rate*reflectionMs[ix]*.001));
+            secondDelay_[ix]=static_cast<int>(std::lround(rate*secondMs[ix]*.001));
             if(reflectionDelay_[ix]<2||
-               reflectionDelay_[ix]>=static_cast<int>(reflectionCapacity))return false;
+               reflectionDelay_[ix]>=static_cast<int>(reflectionCapacity)||
+               secondDelay_[ix]<=reflectionDelay_[ix]||
+               secondDelay_[ix]>=static_cast<int>(reflectionCapacity))return false;
             ratio_[ix]=std::pow(2.f,cents[ix]/1200.f);
             vibratoRatio_[ix]=vibratoCents[ix]*(.69314718056f/1200.f);
             increment_[ix]=vibratoHz[ix]/static_cast<float>(rate);
@@ -87,6 +91,17 @@ public:
             static_cast<std::size_t>(reflectionDelay_[i]))&(reflectionCapacity-1);
         return reflections_[i][delayed];
     }
+    // A distinct later early-reflection arrival from the very same bounded
+    // singer ring. Call after exchangeReflection() writes the current sample.
+    float secondReflection(int singer) const noexcept {
+        const auto i=static_cast<std::size_t>(singer);
+        const auto at=(cursor_+reflectionCapacity-
+            static_cast<std::size_t>(secondDelay_[i]))&(reflectionCapacity-1);
+        return reflections_[i][at];
+    }
+    int secondReflectionSamples(int singer) const noexcept {
+        return secondDelay_[static_cast<std::size_t>(singer)];
+    }
     void advance(bool voiced) noexcept {
         cursor_=(cursor_+1)&(reflectionCapacity-1);
         if(!voiced)age_=0;
@@ -98,7 +113,7 @@ private:
     std::array<float,voices> offset_{},ratio_{},vibratoRatio_{};
     std::array<float,voices> increment_{},phase_{},tone_{},distanceLowpass_{};
     float shadingAlpha_=0.f;
-    std::array<int,voices> reflectionDelay_{};
+    std::array<int,voices> reflectionDelay_{},secondDelay_{};
     std::size_t cursor_=0;
     int age_=0,ageStart_=0;
     float ageRamp_=0.f;

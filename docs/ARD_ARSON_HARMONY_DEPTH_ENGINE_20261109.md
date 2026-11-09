@@ -70,3 +70,11 @@ Do not equate "FDN compiled" with “feels like three people metres away.” Fir
 D0 implemented: `HarmonyDsp::leadPath` no longer references Wet; Pitch Tune still explicitly blends corrected lead. Direct backing attenuation is separate from dry lead. D1 implemented: `EnsembleSpace::shadeBacking` adds a rate-correct gentle LP shading to **backing only**; `BackingDepthRoom` adds a 4-branch fixed-delay, precomputed 0.55 s nominal FDN with frequency damping and non-anti-phase stereo outputs. Space smooths original pan, backing attenuation, early-field gain, late send and return. No new controls/schema or device calls; no extra plugin PDC.
 
 Added CTest gates for 32/44.1/48/96/192 kHz impulse/tail feedback stability, reset/silence/mono compatibility, backing HF-shading boundedness and explicit pitch-tune lead preservation. This is an acoustically *unqualified* room candidate until real listening A/B and physical ASIO load.
+
+## 2026-11-09 D2 — backing-stage acoustic depth candidate
+
+Field feedback: the pitch-synchronous singer is now acceptably natural but backing appears too close to the original singer. Keep original lead and pitch resynthesis unchanged. New `HarmonyStageSpatial.h` introduces a fixed 0.22ms far-ear precedence cue, a **second per-voice early reflection** at 27–38ms (first remains 12–20ms), and stronger direct/reverberant separation. Existing ONE shared backing-only 4x4 FDN remains unchanged.
+
+With Space `s` in [0,1], direct gain is `1-0.62s`, early send `0.49s`, late return `1.08s`. Positive-polarity stereo image; no exact HRTF or claimed physical metres, no extra audio latency or device, no delay-time modulation, no lead processing changes. An offline-only switch retains old spatial routing to compare against the current pitch engine. The one-knob GUI remains unchanged.
+
+Test `NativeHarmonyBackingStageSpatialDepthAndMonoPDC` validates 32–192k, monotonic early/direct energy, three/five singer first-arrival and mono energy, 64/257 callback parity, declared 1536-sample PDC and Wet0 lead invariance. Aural user validation and physical ASIO xrun still required.

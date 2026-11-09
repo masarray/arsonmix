@@ -9,6 +9,7 @@
 #include "HarmonyPreparedTone.h"
 #include "HarmonyEnsembleSpace.h"
 #include "HarmonyDepthRoom.h"
+#include "HarmonyStageSpatial.h"
 #include "HarmonyPitchSynchronous.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
@@ -97,12 +98,14 @@ public:
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
         if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
-           !ensemble_.prepare(rate)||!depthRoom_.prepare(rate))return false;
+           !ensemble_.prepare(rate)||!depthRoom_.prepare(rate)||
+            !stage_.prepare(rate))return false;
         pitchIntervals_.prepare();
         pitchSync_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         pitchSyncReferenceEnabled_=true;
+        stageDepthReferenceEnabled_=true;
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -206,6 +209,11 @@ public:
     void setPitchSynchronousCandidateForOfflineReference(bool enabled) noexcept {
         pitchSyncReferenceEnabled_=enabled;
     }
+    // Offline A/B only. Default live audio always uses the new stage; no
+    // ordinary GUI control, device transaction or saved setting is added.
+    void setStageDepthForOfflineReference(bool enabled) noexcept {
+        stageDepthReferenceEnabled_=enabled;
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -270,11 +278,13 @@ public:
             const float leadBlend=correctionMix_*voicedGain_;
             float outL=leadPath(dryL,lead,leadBlend);
             float outR=leadPath(dryR,lead,leadBlend);
-            // The lead is never sent into the backing room. At larger Space,
-            // attenuate direct backing while raising its reflected proportion.
-            // This reduces backing DRR without attenuating the original lead.
-            const float backingDirect=1.f-.38f*space_;
-            const float earlyReturn=.28f*space_;
+            // Direct sound and reflections from backing singers only.
+            // Preserve the exact previous spatial gains in offline reference.
+            const auto stageGain=BackingStageSpatial::gains(space_);
+            const float backingDirect=stageDepthReferenceEnabled_?
+                stageGain.direct:1.f-.38f*space_;
+            const float earlyReturn=stageDepthReferenceEnabled_?
+                stageGain.early:.28f*space_;
             float roomSendL=0.f,roomSendR=0.f;
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
@@ -288,12 +298,21 @@ public:
                 }
                 voice=ensemble_.shadeBacking(v,voice,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
+                const float second=ensemble_.secondReflection(v);
                 const float directL=voice*mixL_[ix],directR=voice*mixR_[ix];
-                outL+=directL*backingDirect+
-                      reflection*mixR_[ix]*earlyReturn;
-                outR+=directR*backingDirect+
-                      reflection*mixL_[ix]*earlyReturn;
-                roomSendL+=directL;roomSendR+=directR;
+                const auto placed=stage_.place(v,voice,reflection,second,
+                                               mixL_[ix],mixR_[ix],space_);
+                if(stageDepthReferenceEnabled_){
+                    outL+=placed.directL*backingDirect+placed.earlyL*earlyReturn;
+                    outR+=placed.directR*backingDirect+placed.earlyR*earlyReturn;
+                    roomSendL+=placed.roomL;roomSendR+=placed.roomR;
+                }else{
+                    outL+=directL*backingDirect+
+                          reflection*mixR_[ix]*earlyReturn;
+                    outR+=directR*backingDirect+
+                          reflection*mixL_[ix]*earlyReturn;
+                    roomSendL+=directL;roomSendR+=directR;
+                }
             }
             // One shared backing-only diffuse field. Both its input and
             // audible return ramp with Space. Wet=0 gates its old tail on
@@ -301,11 +320,13 @@ public:
             const auto room=depthRoom_.process(roomSendL*space_,
                                                roomSendR*space_);
             const float roomGate=std::min(1.f,wet_*4.f);
-            const float lateReturn=.85f*space_*roomGate;
+            const float lateReturn=(stageDepthReferenceEnabled_?
+                stageGain.late:.85f*space_)*roomGate;
             outL+=room.left*lateReturn;outR+=room.right*lateReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
             ensemble_.advance(voiced_);
+            stage_.advance();
             write_=(write_+1)%capacity;
             ++sampleClock_;
         }
@@ -507,7 +528,7 @@ private:
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
     std::uint64_t sampleClock_=0;
-    bool pitchSyncReferenceEnabled_=true;
+    bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
@@ -518,6 +539,7 @@ private:
     PreparedPitchIntervals pitchIntervals_{};
     EnsembleSpace ensemble_{};
     BackingDepthRoom depthRoom_{};
+    BackingStageSpatial stage_{};
     PitchSynchronousVoice<capacity,maxVoices+1> pitchSync_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
