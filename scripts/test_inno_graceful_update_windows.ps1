@@ -123,8 +123,12 @@ try {
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto updater modified a locked executable"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto updater damaged user data"
     Write-Host "INNO_AUTO_UPDATE_LIVE_SESSION_PRESERVED_PASS: no WM_CLOSE, EXE untouched, Studio retained"
-    $fixtureProcess.CloseMainWindow() | Out-Null
-    Assert-Condition ($fixtureProcess.WaitForExit(10000)) "Auto-update test fixture did not close normally"
+    # Close ONLY this test fixture through the pre-existing exact-path
+    # graceful GUI helper. This is test teardown after proving that the
+    # automatic mode itself NEVER requested WM_CLOSE.
+    $helper=Join-Path $root "installer/ArSonMixUpdateShutdown.ps1"
+    & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -File $helper -TargetPath $installedExe -WaitSeconds 10
+    Assert-Condition ($LASTEXITCODE -eq 0 -and $fixtureProcess.WaitForExit(10000)) "Auto-update test fixture did not close normally"
     $fixtureProcess.Dispose();$fixtureProcess=$null
     # A stopped ArSonMix should be eligible for auto update without a
     # manual dialog, WM_CLOSE, replacement errors or stale-process bias.
