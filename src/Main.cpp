@@ -2223,8 +2223,10 @@ private:
         // Show is inspected. Only THAT unmodified bootstrap may be replaced,
         // and only by this automatic cold-start restore. User-authored FX,
         // WIRE, BUS and fader edits must never be overwritten by late scan.
+        // A verified PREVIOUS checkpoint is also eligible: the separate
+        // resume policy keeps MAIN muted after recovery from corrupt HEAD.
         const bool replacePristineStartup=nativeAlreadyActive &&
-            startupOnSavedDevice && !retained && !usedPrevious &&
+            startupOnSavedDevice && !retained &&
             bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
             engine_.hasPristineStartupMixer();
         if(nativeAlreadyActive && !replacePristineStartup) {
