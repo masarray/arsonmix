@@ -306,10 +306,20 @@ def main():
                 # console ticks. Never infer singing from a UI button state.
                 before=len(page.evaluate(
                     "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
-                page.wait_for_timeout(530)
-                emit(page,"arMixConsoleSnapshot",state)
-                page.wait_for_function("""count=>window.__actions.filter(
-                    x=>x.action==='nativeHarmonySnapshot').length>count""",arg=before)
+                # Native host produces ~12 console ticks per second, not one
+                # artificially selected 530ms tick after an arbitrary prior
+                # music readback. Exercise the real tick cadence for 2s.
+                # A single tick may legitimately be coalesced or queued.
+                after=before
+                for _ in range(24):
+                    emit(page,"arMixConsoleSnapshot",state)
+                    after=len(page.evaluate(
+                        "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
+                    if after>before:break
+                    page.wait_for_timeout(85)
+                assert after>before,("no Manual Key native tracking poll",
+                    page.locator("#mxHStatus").inner_text(),
+                    page.locator("#mxHTracking").inner_text())
                 monitor=last_action(page,"nativeHarmonySnapshot")
                 readback(page,state,changed,7,0,request=monitor,observed=60)
                 assert page.locator("#mxHTracking").inner_text()=="TRACKING C4"
