@@ -14,6 +14,11 @@ struct RealtimeNativeFxControl {
     // continue processing the actual PCM while its output is bypassed.
     // Ordinary EQ/compressor/vendor FX retain the CPU-saving bypass fast path.
     virtual bool requiresContinuousBypassProcessing() const noexcept {return false;}
+    // AUDIO callback only. A native performer cue can be dangerous when
+    // the rack is OFF: while fully bypassed its capture clock stops.
+    // Default no-op preserves Compressor/EQ/Harmony and vendor FX behavior.
+    virtual void onRealtimeBypass(bool /*requested*/,bool /*fully*/) noexcept {}
+
     // CONTROL-only lifecycle: after FxInstance accepts this processor, a
     // vendor-state restore must not mutate published audio-owned filters.
     virtual void sealForRealtime() noexcept {}

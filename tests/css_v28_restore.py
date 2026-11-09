@@ -44,7 +44,50 @@ def reconstruct():
     for link in brand_head_links:
         assert html.count(link)<=1, "Duplicate approved favicon metadata"
         html=html.replace(link,"",1)
+    # V28 is a HISTORICAL CSS-transfer proof. Reconstruct that unchanged
+    # checkpoint from today's later, explicitly bounded desktop enhancement.
+    # Do not rewrite V28's immutable fixture or pretend subsequent features
+    # were part of its original no-visual-change CSS relocation.
+    desktop_resize="// Desktop maximise, restore, DPI changes and normal resizing are layout events,"
+    assert html.count(desktop_resize)==1,"Desktop WIRE geometry hook missing or duplicated"
+    end_marker="restorePluginPreferences();init();"
+    start=html.index(desktop_resize)
+    end=html.index(end_marker,start)
+    legacy_resize=("let resizeQueued=false;\n"
+                   "window.addEventListener('resize',()=>{\n"
+                   " if(resizeQueued)return;resizeQueued=true;\n"
+                   " requestAnimationFrame(()=>{resizeQueued=false;render();});\n"
+                   "});\n")
+    html=html[:start]+legacy_resize+html[end:]
+    # MAIN pin-fragment caching and stale-RAF cancellation were introduced
+    # after V28; invert only those explicit, uniquely anchored edits here.
+    # The historical fixture itself must remain immutable.
+    for changed, prior in (
+        ("// MAIN mini cables use a separate one-shot dirty flag; ordinary pointer moves\n// must not force layout reads on a stable native viewport.\nlet wireFragmentGeometryDirty=false;\n",
+         ""),
+        (" // A stable edgeId can still move when the host window is resized.\n // Refresh the physical anchor only on a geometry event (or edge edit).\n if(layer?.dataset.edgeId===String(edge.id)&&!wireFragmentGeometryDirty)return;",
+         " // Structural render, bank, density and resize remount the section; a\n // changed accepted edgeId invalidates this tiny projection automatically.\n if(layer?.dataset.edgeId===String(edge.id))return;"),
+        ("function renderWireRouting(){\n syncMainWireFragments();\n wireFragmentGeometryDirty=false;",
+         "function renderWireRouting(){\n syncMainWireFragments();")
+    ):
+        assert html.count(changed)==1,"Desktop WIRE checkpoint fragment drift"
+        html=html.replace(changed,prior,1)
     chrome=OWNER.read_text(encoding="utf-8")
+    # Owner V2 adds a native-ONLY toolbar after the original desktop caption.
+    # Strip that uniquely anchored addition first, preserving the strict V28
+    # byte-for-byte historical CSS migration and the old 1600-byte caption gate.
+    desktop_toolbar_css="\n/* Native desktop toolbar V2 — functional hardware keys stay 29px high."
+    assert chrome.count(desktop_toolbar_css)==1,"Native toolbar CSS owner missing or duplicated"
+    toolbar_tail=chrome[chrome.index(desktop_toolbar_css):]
+    assert 1200<len(toolbar_tail)<3000,"Unexpected native toolbar CSS boundary"
+    assert "html.armix-native-desktop .app .command-bar" in toolbar_tail
+    chrome=chrome[:chrome.index(desktop_toolbar_css)]
+    desktop_css="\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
+    assert chrome.count(desktop_css)==1,"Desktop caption CSS marker missing or duplicated"
+    extra_css=chrome[chrome.index(desktop_css):]
+    assert "html.armix-native-desktop .app > .window-title" in extra_css
+    assert len(extra_css)<1600,"Desktop caption CSS unexpectedly includes unrelated rules"
+    chrome=chrome[:chrome.index(desktop_css)]
     assert meta(html)==d["current"]["html"],"V28 HTML changed after checkpoint"
     assert meta(chrome)==d["current"]["chrome"],"V28 Chrome CSS changed after checkpoint"
     moved=d["movedCss"]
