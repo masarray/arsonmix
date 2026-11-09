@@ -112,7 +112,10 @@ test("native signal evidence is produced from measured engine fields, never JS s
   assert.match(header,/directRouteAuthorized/);
   assert.match(transport,/projectFirstSoundSignalEvidence/);
   assert.doesNotMatch(transport,/setProperty \("rawCapturePeak", 0\.0\)/);
-  assert.match(bridge,/protocol\.diagnoseFirstSound/);
+  // Evidence still belongs to the native producer and protocol, not its footer.
+  const protocolSrc=read("web/approved-native-contract.js");
+  assert.match(protocolSrc,/diagnoseFirstSound/);
+  assert.doesNotMatch(bridge,/evidence\.readout\+" · "\+evidence\.nextAction/);
 });
 test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports, never Pages demo",()=>{
   const bridge=read("web/approved-native-bridge.js");
@@ -718,7 +721,7 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(bridge,/ack\?\.requestId!==devicePanel.dataset.pendingRequest/);
  assert.match(native,/requestAutomaticMain\(\);\s*send\(true,engine_\.isMonitorEnabled\(\)\?"ACCEPTED_LIVE":"ACCEPTED_MUTED"/);
- assert.match(bridge,/VIRTUAL \/ NO SPEAKERS/);
+  assert.match(bridge,/Virtual output/);
  assert.match(bridge,/Advanced driver recovery/);
  assert.match(native,/ack->setProperty\("requestId",[\s\S]*?args\.getProperty\("requestId",juce::var\(\)\)/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
@@ -1240,9 +1243,10 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
 
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
- assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/NO CAPTURE INPUT · OPEN AUDIO I\/O/);
- assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
+  assert.match(bridge,/SELECT A CHANNEL INPUT/);
+  assert.match(bridge,/CHOOSE AN INPUT/);
+  assert.match(bridge,/OPEN AUDIO I\/O TO CONNECT/);
+  assert.doesNotMatch(bridge,/FAT PENDING/);
  assert.doesNotMatch(bridge,/NO AUDIBLE OUTPUT · PATCH INPUT \+ ARM/);
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);
  assert.match(bridge,/const deviceReady=\(\)=>/);
@@ -1439,9 +1443,10 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/arMixAudioArmAck/);
  assert.match(js,/if\(ack\.ok===true\)/);
  assert.match(js,/NATIVE PATCH REJECTED:/);
- assert.match(js,/NO VERIFIED AUDIO DEVICE/);
- assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
- assert.match(js,/MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED/);
+  assert.match(js,/OPEN AUDIO I\/O TO CONNECT/);
+  assert.match(js,/OUTPUT ENABLED/);
+  assert.match(js,/CHECK CHANNEL ROUTING/);
+  assert.doesNotMatch(js,/FAT PENDING/);
  assert.match(main,/action=="routingSourceSwitch"/);
  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
  assert.match(main,/safe->emitApprovedNativeSnapshot\(\)/);
