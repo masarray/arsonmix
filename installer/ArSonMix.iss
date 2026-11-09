@@ -53,6 +53,9 @@ Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\FactoryFX\*"; DestDir: "{app}\FactoryFX"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 [Icons]
 Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"
+; User-facing fallback when the main EXE cannot even open. The helper
+; authenticates the published current release and repairs in place.
+Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
@@ -111,6 +114,19 @@ begin
     end;
 end;
 
+function IsArSonMixRecovery: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/ARSONMIXRECOVERY') = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Target, HelperPath, PowerShellExe, Params: string;
@@ -123,11 +139,14 @@ begin
   begin
     { Never send InstallShutdown, CloseMainWindow or WM_CLOSE in auto mode.
       Exact-path ProbeOnly + locked-PE preflight is strictly fail-closed. }
-    if not FileExists(Target) then
+    if not FileExists(Target) and not IsArSonMixRecovery then
     begin
       Result := 'Automatic update requires an existing ArSonMix installation.';
       Exit;
     end;
+    { The recovery flag is allowed only with automatic (no-close) mode.
+      An absent EXE is permitted, but the same exact-image running-process
+      probe and exclusive-image checks are still mandatory. }
     if CheckForMutexes('Local\ArSonMix.MixerRunning.v1') then
     begin
       Result := 'ArSonMix is running; automatic update deferred to a later normal exit.';
