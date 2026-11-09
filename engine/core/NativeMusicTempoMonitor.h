@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 
 // ArSon M2: source-specific music tempo observation inside the ONE installed
 // ChannelId renderer. AUDIO only summarizes its explicitly selected music
@@ -336,15 +337,37 @@ public:
         }
     }
     // CONTROL: limited work per timer tick, never called from ASIO callback.
-    State poll(std::uint64_t liveEpoch,std::uint64_t liveRevision) noexcept {
+    State poll(std::uint64_t liveEpoch,std::uint64_t liveRevision,
+               std::uint64_t nowMs=0) noexcept {
+        // CONTROL only. The former tick-only timeout could hold the last
+        // beat/grid indefinitely when an ASIO callback stopped completely:
+        // no new 10ms frames meant the estimator clock could not expire.
+        // Monotonic wall time is never read from the realtime callback.
+        if(nowMs==0)
+            nowMs=static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
         const auto generation=config_.load(std::memory_order_acquire);
         if(controlGeneration_!=generation) {
             controlGeneration_=generation;estimator_.reset();
+            lastReceivedControlMs_=0;
         }
         Frame f{};
+        bool sawCurrentFrame=false;
         for(int i=0;i<512 && frames_.pop(f);++i)
-            if(f.generation==generation)
+            if(f.generation==generation) {
                 estimator_.ingest(f.energy,f.tick,f.frameEnd);
+                sawCurrentFrame=true;
+            }
+        if(sawCurrentFrame)lastReceivedControlMs_=nowMs;
+        else if(lastReceivedControlMs_ && nowMs>=lastReceivedControlMs_ &&
+                nowMs-lastReceivedControlMs_>3500) {
+            // Keep the selected ChannelId, but never publish an obsolete
+            // BPM/phase lock after the audio stream freezes or is suspended.
+            // On resumed PCM the same source reacquires from fresh onsets.
+            estimator_.reset();
+            lastReceivedControlMs_=0;
+        }
         State out{};
         out.source.value=source_.load(std::memory_order_relaxed);
         out.epoch=epoch_.load(std::memory_order_relaxed);
@@ -372,5 +395,6 @@ private:
     std::uint64_t audioTick_=0;
     std::uint64_t audioEpoch_=0,audioFrameClock_=0,blockStartFrame_=0;
     std::uint32_t controlGeneration_=0; // CONTROL only
+    std::uint64_t lastReceivedControlMs_=0; // CONTROL-only callback stall watchdog
 };
 } // namespace armix::mixer

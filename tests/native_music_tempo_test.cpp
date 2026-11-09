@@ -28,7 +28,8 @@ using armix::mixer::ChannelId;
 using armix::mixer::NativeMusicTempoMonitor;
 static void renderWindow(NativeMusicTempoMonitor& tap,int index,int period,
                          float beat=.7f,bool weakOffbeats=false,
-                         std::uint64_t epoch=7,std::uint64_t revision=13) {
+                         std::uint64_t epoch=7,std::uint64_t revision=13,
+                         std::uint64_t controlNowMs=0) {
     std::array<float,128> l{},r{};
     const int pos=index%period;
     const float level=pos==0?beat:
@@ -41,7 +42,7 @@ static void renderWindow(NativeMusicTempoMonitor& tap,int index,int period,
     (void)tap.beginAudioBlock(epoch,36);
     tap.capture(ChannelId{301},l.data()+64,r.data()+64,36,epoch,revision);
     noHeap.store(false,std::memory_order_release);
-    if(index%8==0)(void)tap.poll(epoch,revision); // host timer, not RT
+    if(index%8==0)(void)tap.poll(epoch,revision,controlNowMs); // host timer, not RT
 }
 static void lockTempo(int bpm,bool hats=false) {
     NativeMusicTempoMonitor tap;
@@ -136,6 +137,31 @@ static void weakBusyGrooveMustReleaseBeatGrid() {
     check(recovered.tempo.locked &&
           std::abs(recovered.tempo.bpm-120.f)<=3.f);
     check(recovered.tempo.phaseLocked);
+}
+// If the audio callback stops entirely (ASIO suspension/reconfiguration),
+ // tick-based expiry alone cannot advance: fail closed on CONTROL time.
+static void stoppedAudioCallbackMustRevokeOldBeat() {
+    NativeMusicTempoMonitor tap;
+    check(tap.select(ChannelId{301},7,13,10000));
+    for(int n=0;n<1100;++n)
+        renderWindow(tap,n,50,.75f,false,7,13,1000+static_cast<std::uint64_t>(n)*10);
+    auto locked=tap.poll(7,13,12000);
+    check(locked.active && locked.tempo.locked && locked.tempo.phaseLocked);
+    // A short interruption must not cause a needless BPM reset.
+    const auto hold=tap.poll(7,13,14450);
+    check(hold.active && hold.tempo.locked);
+    // No render/capture calls at all for >3.5s: stale beat cannot survive.
+    const auto stale=tap.poll(7,13,15501);
+    check(stale.active && stale.source.value==301);
+    check(!stale.tempo.locked && !stale.tempo.phaseLocked);
+    check(stale.tempo.beatAnchorFrame==0 && stale.tempo.bpm==0.f);
+    // Resume the very same source; require fresh musical evidence.
+    for(int n=1100;n<2300;++n)
+        renderWindow(tap,n,50,.75f,false,7,13,
+            15510+static_cast<std::uint64_t>(n-1100)*10);
+    const auto recovered=tap.poll(7,13,27600);
+    check(recovered.active && recovered.tempo.locked);
+    check(recovered.tempo.phaseLocked && std::abs(recovered.tempo.bpm-120.f)<=3.f);
 }
 static void steadyPadIsNotAClock() {
     NativeMusicTempoMonitor tap;
@@ -283,6 +309,7 @@ int main() {
     lockTempo(120,true);
     harmonicAndPhaseAmbiguity();
     weakBusyGrooveMustReleaseBeatGrid();
+    stoppedAudioCallbackMustRevokeOldBeat();
     steadyPadIsNotAClock();
     failClosed();
     callbackClockEpochAndNestedScope();
