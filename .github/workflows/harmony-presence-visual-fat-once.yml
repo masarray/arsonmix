@@ -1,0 +1,47 @@
+name: Harmony presence D4 exact-source visual and Windows FAT
+on:
+  push:
+    branches: [ci/harmony-presence-fat-afa6f2f-20261109]
+    paths: ['.github/workflows/harmony-presence-visual-fat-once.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  native-harmony-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: afa6f2f432ebadb15335db99a0f590b9662df99b
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install one Chromium for actual Harmony editor geometry
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Validate native ACK, effective key, power, and four knob caption clearances
+        run: python tests/approved_native_harmony_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ArSonMix-Harmony-D4-Editor-Captions-3-Viewports
+          path: arsonmix-native-harmony-editor-*.png
+          if-no-files-found: ignore
+          retention-days: 14
+  pinned-fat-windows:
+    needs: native-harmony-chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact PR head then dispatch canonical Windows FAT once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_SHA: afa6f2f432ebadb15335db99a0f590b9662df99b
+        run: |
+          set -euo pipefail
+          current="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$current" = "$REQUIRED_SHA" || { echo "Harmony branch moved; avoid obsolete installer"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$REQUIRED_SHA"
+          echo "One exact-source Windows FAT requested after Chrome geometry passed"
