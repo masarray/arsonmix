@@ -132,7 +132,7 @@ jobs:
   vocal-throw-preview:
     name: Vocal Throw native editor desktop/mobile Chromium FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/arson-vocal-throw-') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
