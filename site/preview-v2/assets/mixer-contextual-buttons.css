@@ -286,3 +286,13 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power):focus-visible{outline:2px
  border-top:1px solid #293c45}
 @media(max-width:640px){#arsonPlayer{right:6px;left:6px;top:56px;
  bottom:12px;width:auto}}
+
+/* Contextual one-tap resolution, no modal consent card or extra visual mode. */
+#arsonPlayer .ap-statusbar{display:flex;align-items:center;gap:6px;
+ padding-right:10px;min-height:32px}
+#arsonPlayer .ap-statusbar .ap-feedback{flex:1;min-width:0}
+#arsonPlayer #playerChooseOutput{border:1px solid #3b8e84;
+ border-radius:6px;padding:5px 8px;background:#21473f;
+ color:#baf2e4;white-space:nowrap;font-size:11px}
+#arsonPlayer #playerChooseOutput:hover{background:#286355}
+#arsonPlayer #playerChooseOutput[hidden]{display:none!important}

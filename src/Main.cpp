@@ -378,6 +378,7 @@ private:
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
     std::vector<juce::File> playerLibrary_; // one compact default setlist
     int playerSelected_=-1,playerCurrent_=-1;
+    int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
     std::uint64_t lastAutoAdvanceGeneration_=0;
     juce::String playerError_;
@@ -1625,9 +1626,18 @@ private:
                             // Refresh native physical port inventory after the user
                             // finishes device selection; never require a restart.
                             safe->emitApprovedNativeSnapshot();
+                            // The operator already pressed Play AND chose a
+                            // physical output. Finish that exact pending Play
+                            // once; never autoplay on ordinary device setup.
+                            const int pending=safe->playerOutputPendingIndex_;
+                            safe->playerOutputPendingIndex_=-1;
+                            if(pending>=0 && pending==safe->playerSelected_ &&
+                               pending<static_cast<int>(safe->playerLibrary_.size()))
+                                safe->playSelectedMusic();
                         }
                         else
                         {
+                            safe->playerOutputPendingIndex_=-1;
                             safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
                                 "No valid full-duplex device; audio remains gated");
                             safe->emitNotice (
@@ -2372,15 +2382,29 @@ private:
         const auto file=settingsDirectory().getChildFile("player-library.json");
         if(!file.existsAsFile())return;
         auto json=juce::JSON::parse(file.loadFileAsString());
+        if(!json.isObject() ||
+           static_cast<int>(json.getProperty("version",0))!=1) {
+            playerError_="Saved setlist could not be read; music files were not changed";
+            return;
+        }
         const auto tracks=json.getProperty("files",{});
         if(const auto* list=tracks.getArray()) {
             for(const auto& path:*list) {
+                if(playerLibrary_.size()>=2000)break;
+                if(!path.isString())continue;
                 const auto text=path.toString();
-                if(text.isNotEmpty() && playerLibrary_.size()<2000)
-                    playerLibrary_.emplace_back(text);
+                if(text.isEmpty() || text.length()>4096)continue;
+                const juce::File entry(text);
+                if(!juce::File::isAbsolutePath(text) ||
+                   !entry.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+                   std::find(playerLibrary_.begin(),playerLibrary_.end(),entry)
+                       !=playerLibrary_.end())
+                    continue;
+                playerLibrary_.push_back(entry);
             }
         }
-        playerAutoNext_=static_cast<bool>(json.getProperty("autoNext",false));
+        playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
+            static_cast<bool>(json.getProperty("autoNext",false));
         if(!playerLibrary_.empty())playerSelected_=0;
     }
     void persistPlayerLibrary() {
@@ -2391,8 +2415,12 @@ private:
         for(const auto& f:playerLibrary_)
             files.add(f.getFullPathName());
         document->setProperty("files",juce::var(files));
-        settingsDirectory().getChildFile("player-library.json").replaceWithText(
-            juce::JSON::toString(juce::var(document.release()),false));
+        const auto target=settingsDirectory().getChildFile("player-library.json");
+        juce::TemporaryFile staging(target);
+        if(!staging.getFile().replaceWithText(
+                juce::JSON::toString(juce::var(document.release()),false)) ||
+           !staging.overwriteTargetFileWithTemporary())
+            playerError_="Unable to save setlist; check folder permissions";
     }
     void emitPlayerState(bool includeLibrary=false) {
         if(!browser_.loaded)return;
@@ -2403,6 +2431,9 @@ private:
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
         obj->setProperty("error",playerError_);
+        obj->setProperty("chooseOutput",
+            playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
+            playerError_.containsIgnoreCase("native mixer is preparing"));
         if(includeLibrary) {
             juce::Array<juce::var> rows;
             for(std::size_t i=0;i<playerLibrary_.size();++i) {
@@ -2511,9 +2542,21 @@ private:
 
     void onAction (const juce::var& args)
     {
-        const auto action = args.getProperty ("action", {}).toString();
+        auto action = args.getProperty ("action", {}).toString();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
+        if(action=="playerChooseOutput") {
+            if(playerSelected_<0 ||
+               playerSelected_>=static_cast<int>(playerLibrary_.size()) ||
+               !(playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
+                 playerError_.containsIgnoreCase("native mixer is preparing")))
+                return emitPlayerState();
+            // Reuse EXACTLY the existing native AUDIO SETUP dispatcher, with
+            // all of its independent-stream/restore/feedback protections.
+            // This is an explicit user-selected endpoint, never a fallback.
+            playerOutputPendingIndex_=playerSelected_;
+            action="audioSetup";
+        }
         if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerPlay")return playTransportMusic();
@@ -2521,6 +2564,7 @@ private:
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
+            playerOutputPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
         if(action=="playerNext")return playNextMusic();
@@ -2531,6 +2575,7 @@ private:
         if(action=="playerSelect" || action=="playerPlayNow") {
             const int i=static_cast<int>(value);
             if(i>=0 && i<static_cast<int>(playerLibrary_.size())) {
+                if(i!=playerSelected_)playerOutputPendingIndex_=-1;
                 playerSelected_=i;
                 if(action=="playerPlayNow")playSelectedMusic();
                 else emitPlayerState(true);

@@ -36,6 +36,7 @@
    send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay");
  });
  $("playerStop").addEventListener("click",()=>send("playerStop"));
+ $("playerChooseOutput").addEventListener("click",()=>send("playerChooseOutput"));
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
@@ -120,6 +121,7 @@
       ERROR:"Unable to decode this file"
    }[state]||"");
    showFeedback(detail,Boolean(model.error||t.error));
+   $("playerChooseOutput").hidden=!native || !Boolean(model.chooseOutput);
    $("playerCount").textContent=model.tracks.length+" songs";
    renderTracks();
  }

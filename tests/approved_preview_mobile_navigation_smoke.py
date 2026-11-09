@@ -122,6 +122,10 @@ async def verify_phone(browser, width: int, height: int):
         assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width + 2
         assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= height + 2
         assert await page.locator('link[rel="stylesheet"]').count() == 1
+        # Without JUCE the public preview is a non-audio demo; the
+        # contextual output chooser MUST NOT impersonate a device selector.
+        assert await page.locator("#playerChooseOutput").is_hidden()
+        assert await page.locator("#playerChooseOutput").count() == 1
         await page.locator("#playerAdd").click()
         feedback = await page.locator("#playerFeedback").inner_text()
         assert "desktop app" in feedback, ("public preview must not fake playback", feedback)
