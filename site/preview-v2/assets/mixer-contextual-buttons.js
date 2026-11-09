@@ -60,10 +60,8 @@
     <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>`;
   toolbar.insertAdjacentElement('afterend',panel);
   const base=document.currentScript?.src||document.baseURI;
-  const stylesheet=document.createElement('link');
-  stylesheet.rel='stylesheet';
-  stylesheet.href=new URL('arson-player.css',base).href;
-  document.head.appendChild(stylesheet);
+  // Player CSS is folded into the EXISTING approved runtime stylesheet.
+  // No second CSS layer or mobile toolbar/viewport side effects.
   const script=document.createElement('script');
   script.src=new URL('arson-player.js',base).href;
   document.body.appendChild(script);

@@ -248,7 +248,6 @@ private:
         }
     }
     PreparedStereoPcmRing ring_;
-    std::thread worker_;
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
@@ -257,5 +256,8 @@ private:
     std::atomic<int> rate_{0},error_{0};
     std::atomic<State> state_{State::empty};
     armix::dsp::RealtimeSlew64 gain_; // AUDIO only
+    // Construct LAST: workerLoop must never observe unconstructed atomics/
+    // mutex/File, even if the OS schedules the thread immediately.
+    std::thread worker_;
 };
 } // namespace armix::player

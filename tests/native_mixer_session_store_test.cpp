@@ -350,7 +350,56 @@ static void warmVst3Discovery() {
     assert(root.deleteRecursively());
 }
 
+// A music deck is an owned virtual source, not a physical ASIO pin. Its
+// mixer/FX/WIRE topology survives Show save and a changed capture device.
+static void verifyVirtualPlayerSessionSerialization() {
+    auto document=makeSession();
+    auto rows=document.roster.channels();
+    ChannelStripDefinition player;
+    player.id={17};player.role=ChannelRole::input;
+    player.format=ProcessingFormat::stereo;
+    player.name="MUSIC";
+    player.sends.push_back({{15},1.f,false,0.f,true,106});
+    rows.push_back(player);
+    assert(document.roster.restoreExact(document.acceptedRevision,rows));
+    document.request.sources.push_back(
+        {{17},-1,-1,true,DynamicSourceKind::playerDeck,1});
+    MixerSessionDocument decoded;
+    const auto json=Codec::encode(document);
+    assert(Codec::decode(json,decoded));
+    assert(decoded.request.sources.size()==2);
+    const auto& music=decoded.request.sources.back();
+    assert(music.id.value==17 &&
+           music.kind==DynamicSourceKind::playerDeck &&
+           music.deckId==1 && music.inputL==-1 && music.inputR==-1 &&
+           music.stereo);
+    assert(Codec::encode(decoded)==json); // exact deterministic round trip
+
+    auto damaged=juce::JSON::parse(json);
+    auto values=damaged.getProperty("request",{})
+        .getProperty("sources",{});
+    values.getArray()->getReference(1).getDynamicObject()
+        ->setProperty("deckId","0");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(json);
+    values=damaged.getProperty("request",{}).getProperty("sources",{});
+    values.getArray()->getReference(1).getDynamicObject()
+        ->setProperty("left",0); // never spoof pin 0 on a virtual source
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+
+    auto changed=document.binding;
+    changed.capture="Different capture interface";
+    assert(MixerDeviceBindingPolicy::apply(document,changed,document.outputs,
+        2,BindingMode::verifiedDeviceApply).isEmpty());
+    assert(document.request.sources.size()==1);
+    assert(document.request.sources.front().kind==
+           DynamicSourceKind::playerDeck);
+    assert(document.request.sources.front().deckId==1);
+    assert(document.roster.find({17})->sends.front().destination.value==15);
+}
+
 int main(){
+    verifyVirtualPlayerSessionSerialization();
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
