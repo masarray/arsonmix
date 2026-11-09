@@ -86,11 +86,13 @@ static void writeWave(const fs::path& path,const Wave& wave){
     }
     if(!out)throw std::runtime_error("WAV output write failed");
 }
-static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127){
+static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
+                    bool enhancedDepth=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
+    e->setStageDepthForOfflineReference(enhancedDepth);
     Wave out=input;
     for(std::size_t pos=0;pos<out.left.size();pos+=static_cast<std::size_t>(block))
         e->process(out.left.data()+pos,out.right.data()+pos,
@@ -124,12 +126,13 @@ static Wave fold(const Wave& in){
 }
 static void generateReport(const fs::path& folder,const Wave& input,
              const Wave& dry,const Wave& legacy,const Wave& modern,
-             const Wave& backing){
+             const Wave& backing,const Wave& previousStage){
     std::ofstream out(folder/"metrics.json");
     out<<"{\n  \"sampleRate\": "<<input.rate<<",\n  \"frames\": "<<input.left.size()
        <<",\n  \"dryRms\": "<<rms(dry)<<",\n  \"legacyRms\": "<<rms(legacy)
        <<",\n  \"synchronousRms\": "<<rms(modern)
        <<",\n  \"backingDifferenceRms\": "<<rms(backing)
+       <<",\n  \"previousDepthRms\": "<<rms(previousStage)
        <<",\n  \"sourceFormantsMeasured\": false,\n  \"realSingerQualified\": false,\n"
        <<"  \"method\": \"same native input, independently reset engines; backing = wet mix - Wet0 lead, correction OFF, gain 0dB\"\n}\n";
 }
@@ -148,14 +151,17 @@ static void renderAb(const Wave& input,const fs::path& folder){
         if(std::abs(modern.left[i])>=3.999f||std::abs(modern.right[i])>=3.999f)
             throw std::runtime_error("mixed output clipped: lower recording level for valid stem subtraction");
     const Wave backing=subtract(modern,dry);
+    const Wave previousDepth=process(input,settings,true,127,false);
     writeWave(folder/"01_lead_reference.wav",dry);
     writeWave(folder/"02_legacy_grain_mix.wav",old);
     writeWave(folder/"03_new_space_060.wav",modern);
     writeWave(folder/"04_new_backing_only.wav",backing);
     writeWave(folder/"05_new_mono_fold.wav",fold(modern));
+    writeWave(folder/"08_previous_depth_space_060.wav",previousDepth);
+    writeWave(folder/"09_previous_backing_only.wav",subtract(previousDepth,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
-    generateReport(folder,input,dry,old,modern,backing);
+    generateReport(folder,input,dry,old,modern,backing,previousDepth);
 }
 int main(int argc,char** argv){
     try{
@@ -172,6 +178,8 @@ int main(int argc,char** argv){
             if(!(rms(before)>0.01&&rms(after)>0.01))return 2;
             s.wet=0.f;
             if(!same(process(v,s,false),process(v,s,true)))return 3;
+            if(!same(process(v,s,true,127,false),
+                     process(v,s,true,127,true)))return 4;
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
