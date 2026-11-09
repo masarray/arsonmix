@@ -109,9 +109,13 @@ def main():
             editor=page.locator("#mxNativeVocalThrow")
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
-            assert editor.locator("#vtClose.mx-comp-close.armix-floating-close").count()==1
-            assert editor.locator("#vtPower.mx-comp-power.armix-builtin-fx-power").count()==1
+            assert editor.locator("#vtClose.vt-close.armix-floating-close").count()==1
+            assert editor.locator("#vtPower.vt-power.armix-builtin-fx-power").count()==1
             assert editor.locator("#vtClose.armix-builtin-fx-close").count()==1
+            # The shared chrome class is safe, a Compressor-specific
+            # selector is not: it must match exactly the Compressor editor.
+            assert page.locator(".mx-comp-close").count()==1
+            assert page.locator(".mx-comp-power").count()==1
             assert page.locator("#mxNativePeq .armix-builtin-fx-power").count()==1
             assert page.locator("#mxNativePeq .armix-builtin-fx-close").count()==1
             assert page.locator("#mxNativeComp .armix-builtin-fx-power").count()==1
