@@ -140,11 +140,11 @@ def apply_native_peq(html: str)->str:
              (PICKER_ENTER,PICKER_ENTER_NEW),
              (OPEN,OPEN_NEW))
     if html.count('</head>')!=1 or html.count('</body>')!=1 or \
-       SCRIPT in html or COMP_SCRIPT in html or THROW_SCRIPT in html or 'insertChosenNativeEq' in html:
+       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or 'insertChosenNativeEq' in html:
         raise ValueError("Parametric EQ requires one pristine approved compiled GUI")
     for before,after in anchors:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</body>',SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n</body>',1)
+    html=html.replace('</body>',SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n</body>',1)
     return html
