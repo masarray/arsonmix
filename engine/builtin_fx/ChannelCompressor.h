@@ -89,6 +89,15 @@ public:
         ready_=true;
         return true;
     }
+    // CONTROL-only Show restore, including the cold (unprepared) case.
+    // The authoritative DSP target is always the source of the next prepare;
+    // never seed audio from the UI's potentially unpolled ACK shadow.
+    bool stageUnpublished(const CompressorSettings& settings) noexcept {
+        if(!validSettings(settings))return false;
+        if(ready_)return resetUnpublished(settings);
+        target_.settings=settings; // coefficients are prepared for the actual rate later
+        return true;
+    }
     bool resetUnpublished(const CompressorSettings& settings) noexcept {
         PreparedEdit edit{};
         if(!ready_||!prepareEdit(settings,sampleRate_,edit))return false;

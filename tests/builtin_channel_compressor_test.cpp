@@ -357,7 +357,37 @@ static void testAutomationMatchesSingleSampleSchedule() {
         }
     }
 }
+
+static void testColdShowSeedAndRealtimeRestart() {
+    ChannelCompressor core;
+    auto s=CompressorSettings{};
+    s.thresholdDb=-42.f;s.ratio=9.f;s.kneeDb=15.f;s.mix=.65f;
+    check(core.stageUnpublished(s));
+    check(core.prepare(44100.));
+    check(core.settingsForOfflineTests().thresholdDb==s.thresholdDb);
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    s.thresholdDb=-25.f;s.ratio=3.5f;
+    ChannelCompressor::PreparedEdit packet{};
+    check(ChannelCompressor::prepareEdit(s,44100.,packet));
+    check(core.applyPrepared(packet));
+    std::array<float,128> l{},r{};l.fill(.5f);r.fill(-.3f);
+    core.processStereo(l.data(),r.data(),l.size());
+    // A sample-rate change must not revert DSP to the old *acknowledged*
+    // value: target_ already represents the latest physically applied edit.
+    check(core.prepare(96000.));
+    check(core.settingsForOfflineTests().thresholdDb==s.thresholdDb);
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    auto invalid=s;invalid.ratio=std::numeric_limits<float>::infinity();
+    check(!core.stageUnpublished(invalid));
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    // Pre-publication state can also be reseeded on an already prepared core.
+    s.mix=0.f;check(core.stageUnpublished(s));
+    check(core.settingsForOfflineTests().mix==0.f);
+    check(core.prepare(48000.));
+    check(core.settingsForOfflineTests().mix==0.f);
+}
 int main(){
+    testColdShowSeedAndRealtimeRestart();
     testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();
     testValidationAndLatency();testTransferAndStereo();
