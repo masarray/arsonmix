@@ -9,6 +9,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The logical session and its hardware binding are deliberately separate.
@@ -133,8 +134,14 @@ struct MixerDeviceBindingPolicy final {
         // The same approved ASIO4ALL driver can expose a different speaker
         // after a WDM selection. Adopt the sole verified physical pair.
         if(!outputs.valid() && (mode==Mode::verifiedDeviceApply || mode==Mode::verifiedAsioRestart) &&
-           isAsio4All(live) && count==2 && isNamedSpeakerPair(newPins,live.outputNames))
-            return {count,0,1,-1,-1,false};
+           isAsio4All(live) && count>=2) {
+            // ASIO4ALL can expose virtual and physical WDM outputs together.
+            // A unique, enabled physical stereo pair is safe to recover even
+            // when its callback ordinals are 3/4 or arrive in reverse order.
+            // Ambiguous speakers and virtual-only inventories remain muted.
+            if(const auto pair=uniqueNamedSpeakerPair(newPins,live.outputNames))
+                return {count,pair->first,pair->second,-1,-1,false};
+        }
         return outputs;
     }
     static juce::String apply(MixerSessionDocument& document,
@@ -229,17 +236,34 @@ private:
         bits.parseString(text,16);
         return bits;
     }
-    static bool isNamedSpeakerPair(const juce::BigInteger& pins,const juce::StringArray& names) {
-        const auto left=names[pins.findNextSetBit(0)].trim().toLowerCase();
-        const auto right=names[pins.getHighestBit()].trim().toLowerCase();
-        const auto leftPin=pins.findNextSetBit(0),rightPin=pins.getHighestBit();
-        return uniquePin(names,names[leftPin])==leftPin &&
-            uniquePin(names,names[rightPin])==rightPin &&
-            left.endsWith(" 1") && right.endsWith(" 2") &&
-            left.dropLastCharacters(2)==right.dropLastCharacters(2) &&
-            !left.contains("vb-audio") && !left.contains("cable") &&
-            !left.contains("virtual") && !left.contains("loopback") &&
-            (left.contains("realtek") || left.contains("speaker") || left.contains("output with sst"));
+    static std::optional<std::pair<int,int>> uniqueNamedSpeakerPair(
+            const juce::BigInteger& pins,const juce::StringArray& names) {
+        std::optional<std::pair<int,int>> chosen;
+        for(int leftPin=pins.findNextSetBit(0);leftPin>=0;
+            leftPin=pins.findNextSetBit(leftPin+1)) {
+            if(leftPin>=names.size() || uniquePin(names,names[leftPin])!=leftPin)continue;
+            const auto label=names[leftPin].trim().toLowerCase();
+            if(!label.endsWith(" 1"))continue;
+            const auto stem=label.dropLastCharacters(2);
+            if(stem.isEmpty() || stem.contains("vb-audio") || stem.contains("cable") ||
+               stem.contains("virtual") || stem.contains("loopback") ||
+               stem.contains("monitor") ||
+               !(stem.contains("realtek") || stem.contains("speaker") ||
+                 stem.contains("output with sst")))continue;
+            int rightPin=-1;
+            for(int pin=pins.findNextSetBit(0);pin>=0;pin=pins.findNextSetBit(pin+1)) {
+                if(pin<names.size() &&
+                   names[pin].trim().toLowerCase()==stem+" 2") {
+                    if(rightPin>=0)return {}; // duplicate right endpoint
+                    rightPin=pin;
+                }
+            }
+            if(rightPin<0 || uniquePin(names,names[rightPin])!=rightPin)continue;
+            const int left=callbackAt(pins,leftPin),right=callbackAt(pins,rightPin);
+            if(left<0 || right<0 || left==right || chosen)return {};
+            chosen=std::make_pair(left,right);
+        }
+        return chosen;
     }
     static int uniquePin(const juce::StringArray& names,const juce::String& name) {
         if(name.isEmpty())return -1;

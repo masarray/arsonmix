@@ -652,6 +652,29 @@ int main(){
     assert(reopenedWhileDisconnected.waitingAsioInputs.empty());
     assert(reopenedWhileDisconnected.request.sources.front().inputL==0);
     assert(reopenedWhileDisconnected.request.sources.front().inputR==1);
+    // ASIO4ALL often exposes VB-Cable and Realtek together: the physical
+    // MAIN pair must be recovered at callback ordinals 2/3, not rejected
+    // simply because four output pins are active.
+    auto simultaneous=shifted;
+    simultaneous.outputMask="f";
+    simultaneous.outputNames={"VB-Audio Point 1","VB-Audio Point 2",
+        "Realtek HD Audio output with SST 1","Realtek HD Audio output with SST 2"};
+    const auto recoveredRealtek=MixerDeviceBindingPolicy::proposedOutputs(
+        asio,simultaneous,4,BindingMode::verifiedAsioRestart);
+    assert(recoveredRealtek.valid() && recoveredRealtek.activeOutputChannels==4 &&
+           recoveredRealtek.mainL==2 && recoveredRealtek.mainR==3);
+    auto multiOutputSession=asio;
+    assert(MixerDeviceBindingPolicy::apply(multiOutputSession,simultaneous,
+        recoveredRealtek,2,BindingMode::verifiedAsioRestart).isEmpty());
+    assert(multiOutputSession.request.sources.size()==1 &&
+           multiOutputSession.request.sources[0].inputL==0);
+    // Multiple physical speaker pairs are ambiguous and must never
+    // automatically redirect a live singer to the wrong output.
+    auto ambiguous=simultaneous;
+    ambiguous.outputNames={"Realtek Speakers A 1","Realtek Speakers A 2",
+                           "Realtek Speakers B 1","Realtek Speakers B 2"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        asio,ambiguous,4,BindingMode::verifiedAsioRestart).valid());
     auto virtualCable=nextSpeaker;
     virtualCable.outputNames={"VB-Audio Point 1","VB-Audio Point 2"};
     assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,virtualCable,2,

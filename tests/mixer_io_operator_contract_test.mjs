@@ -597,3 +597,18 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
  assert.match(css,/\.arChannelQuickInput\{/);
  assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
 });
+
+// Recovery regression: a transient ASIO4ALL reopen must not consume the
+// only opportunity to bind the retained ChannelId PCM graph.
+test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verified readback',()=>{
+  const src=read('src/Main.cpp');
+  const service=src.slice(src.indexOf('void serviceAsioMixerRestart()'),src.indexOf('void changeListenerCallback ('));
+  assert.match(service,/asioRecoveryAttempts_>=3/);
+  assert.match(service,/now<asioRecoveryRetryAfterMs_/);
+  assert.match(service,/asioRecoveryPendingEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
+  assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
+  assert.match(service,/!setup\.inputChannels\.isZero\(\)/);
+  const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
+  assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
+});

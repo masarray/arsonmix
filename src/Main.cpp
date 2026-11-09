@@ -1609,7 +1609,8 @@ private:
                 ((capturePins && opened->getInputChannelNames()!=freshInputNames) ||
                  (playbackPins && opened->getOutputChannelNames()!=freshOutputNames));
         }
-        asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+        // Never consume the automatic recovery epoch before a mixer bind.
+        // A transient ASIO4ALL pin inventory can settle on the next tick.
         if(changedAsioPinLayout)
             error="ASIO pin layout changed. Output remains muted; review the new playback pins.";
         if(error.isEmpty()&&(opened==nullptr||!opened->isOpen()||
@@ -1645,6 +1646,7 @@ private:
             startupError_.clear();
             deviceSettingsDirty_=true;
             directRestore_.cancel();
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             requestAutomaticMain();
@@ -1681,7 +1683,7 @@ private:
              (manager.getCurrentAudioDevice()->getInputChannelNames()==originalInputNames&&
               manager.getCurrentAudioDevice()->getOutputChannelNames()==originalOutputNames))&&
             finishAudioSetupAndRecoverMixer();
-        asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+        if(verified)asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
         diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",error+" | rollback="+
             (verified?"RESTORED":"RECOVERY_REQUIRED")+" | "+
             juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
@@ -4717,7 +4719,11 @@ private:
         return bound;
     }
 
-    std::uint64_t asioRecoveryEpoch_=0;
+    std::uint64_t asioRecoveryEpoch_=0; // last successfully bound generation
+    std::uint64_t asioRecoveryPendingEpoch_=0;
+    unsigned asioRecoveryAttempts_=0;
+    std::uint64_t asioRecoveryRetryAfterMs_=0;
+
     void serviceAsioMixerRestart() {
         const auto epoch=engine_.dryRoutingLabEpoch();
         if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
@@ -4727,16 +4733,31 @@ private:
         auto* device=engine_.devices().getCurrentAudioDevice();
         if(!device || device->getTypeName()!="ASIO" ||
            !device->getName().startsWithIgnoreCase("ASIO4ALL"))return;
-        asioRecoveryEpoch_=epoch; // at most one automatic bind per negotiated epoch
+        if(!engine_.sameRetainedAsioDriver())return; // never change driver class
+        if(asioRecoveryPendingEpoch_!=epoch) {
+            // A real external driver restart starts a fresh bounded recovery.
+            // Internal reopen/correction updates this epoch separately below.
+            asioRecoveryPendingEpoch_=epoch;
+            asioRecoveryAttempts_=0;
+            asioRecoveryRetryAfterMs_=0;
+        }
+        const auto now=monotonicMilliseconds();
+        if(asioRecoveryAttempts_>=3 || now<asioRecoveryRetryAfterMs_)return;
+        ++asioRecoveryAttempts_;
+        asioRecoveryRetryAfterMs_=now+
+            (asioRecoveryAttempts_==1?300u:asioRecoveryAttempts_==2?1200u:4000u);
+        // Never spin-reopen ASIO on a timer. Three bounded attempts per
+        // external epoch, with no driver work from the PCM callback.
         const juce::ScopedValueSetter<bool> applying(audioDeviceApplyActive_,true);
-        if(!engine_.sameRetainedAsioDriver())return;
         if(!device->isOpen() || device->getActiveOutputChannels().countNumberOfSetBits()<2) {
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             engine_.devices().getAudioDeviceSetup(setup);
-            setup.useDefaultInputChannels=true;
+            // Explicitly disabled capture is NOT permission to enable a mic.
+            if(!setup.inputChannels.isZero())setup.useDefaultInputChannels=true;
+            else setup.useDefaultInputChannels=false;
             setup.useDefaultOutputChannels=true;
             const auto error=openSelectedAudioDevice("ASIO",setup,true);
-            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryPendingEpoch_=engine_.dryRoutingLabEpoch();
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
                 diagnostics_.record("ASIO4ALL_REOPEN_FAILED",error);
@@ -4744,14 +4765,15 @@ private:
                 return;
             }
         }
-        if(!engine_.authorizeRetainedAsioRestart())return;
+        if(!engine_.authorizeRetainedAsioRestart()) {
+            diagnostics_.record("ASIO4ALL_BIND_NOT_READY","Waiting for verified callback/readback");
+            return;
+        }
         if(const auto corrected=engine_.asioRestartPinCorrection()) {
-            // One bounded correction for JUCE's restart with the old mask.
-            // Keep the approved driver and preserve named physical endpoints.
             const auto inputNames=device->getInputChannelNames();
             const auto outputNames=device->getOutputChannelNames();
             const auto error=openSelectedAudioDevice("ASIO",*corrected);
-            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryPendingEpoch_=engine_.dryRoutingLabEpoch();
             auto* reopened=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !reopened || !reopened->isOpen() ||
                reopened->getInputChannelNames()!=inputNames ||
@@ -4770,8 +4792,12 @@ private:
         if(error.isNotEmpty()) {
             diagnostics_.record("ASIO4ALL_REATTACH_FAILED",error);
             emitApprovedNativeSnapshot();
-            return;
+            return; // keep mixer document, retry only within the bounded budget
         }
+        asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+        asioRecoveryPendingEpoch_=asioRecoveryEpoch_;
+        asioRecoveryAttempts_=0;
+        asioRecoveryRetryAfterMs_=0;
         mixerSessionStatus_="RESTORED_MUTED";
         mixerSessionError_.clear();
         if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);
