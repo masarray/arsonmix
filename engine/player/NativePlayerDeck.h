@@ -294,11 +294,15 @@ private:
             };
             length_.store(estimateTotal(),std::memory_order_release);
             bool failed=false;
-            // 0.75 s of decoded music gives disk/decode headroom without
-            // waiting multiple seconds before a KEY/TEMPO control is heard.
+            // Keep only ~250ms of queued music. A 750ms prebuffer made
+            // live KEY/TEMPO gestures audibly late, and could decode short
+            // songs to EOF before an edit was seen. The ring's 2.7s storage
+            // still provides a bounded fault barrier; only its fill target
+            // changes, leaving the vocal ASIO callback entirely untouched.
+            // Scale with native rate so 44.1/48/96k behave consistently.
             const auto highWater=std::min<std::size_t>(
                 ring_.capacityFrames()-2048,
-                std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz*3/4)));
+                std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz/4)));
             while(!obsolete(version) && consumed<sourceTotal) {
                 if(ring_.bufferedFrames()>highWater) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(3));

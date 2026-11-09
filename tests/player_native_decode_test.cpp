@@ -158,5 +158,74 @@ int main() {
         }
         assert(newSettings);
     }
+    // M2 LIVE edits must be accepted and processed WHILE the same song
+    // is still playing. A previous test only checked Stop→Play, which
+    // could conceal stalled edits after the decoder had read to EOF.
+    {
+        const auto longFile=juce::File::getSpecialLocation(
+            juce::File::tempDirectory).getNonexistentChildFile(
+                "arson-player-live-tempo-test",".wav",false);
+        {
+            std::unique_ptr<juce::AudioFormatWriter> w(
+                wave.createWriterFor(longFile.createOutputStream().release(),
+                                     44100.0,2,16,{},0));
+            assert(w!=nullptr);
+            juce::AudioBuffer<float> music(2,44100*8);
+            for(int n=0;n<music.getNumSamples();++n) {
+                const auto v=static_cast<float>(.3*std::sin(
+                    2.0*3.14159265358979323846*330.0*n/44100.0));
+                music.setSample(0,n,v);
+                music.setSample(1,n,-v);
+            }
+            assert(w->writeFromAudioSampleBuffer(music,0,
+                                                 music.getNumSamples()));
+        }
+        {
+        armix::player::NativePlayerDeck player;
+        player.deviceRate(48000.0);
+        player.load(longFile,true);
+        bool started=false;
+        for(int i=0;i<600;++i) {
+            if(player.isPlayingRequested()) {started=true;break;}
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        assert(started);
+        std::array<float,256> left{},right{};
+        for(int i=0;i<24;++i) {
+            player.pull(left.data(),right.data(),256);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const auto original=player.snapshot();
+        assert(original.played>0 && original.deviceRate==48000);
+        const auto originalGeneration=original.generation;
+        const auto changeDuringPlayback=[&](int key,int tempo) {
+            assert(player.setPitchTempo(key,tempo));
+            bool applied=false;
+            for(int i=0;i<750;++i) {
+                player.pull(left.data(),right.data(),256);
+                const auto current=player.snapshot();
+                for(int n=0;n<256;++n) {
+                    assert(std::isfinite(left[n]));
+                    assert(std::isfinite(right[n]));
+                }
+                if(current.keySemitones==key &&
+                   current.tempoPercent==tempo &&
+                   !current.processingChangePending) {
+                    assert(current.generation==originalGeneration);
+                    assert(current.deviceRate==48000);
+                    applied=true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            assert(applied); // no Stop, Play or hardware rebind required
+        };
+        changeDuringPlayback(3,80);
+        changeDuringPlayback(-2,120);
+        changeDuringPlayback(0,100); // normal 0/100 passthrough restored
+        assert(player.snapshot().played>original.played);
+        } // ensure native decoder closes the file before Windows deletion
+        assert(longFile.deleteFile());
+    }
     assert(file.deleteFile());
 }
