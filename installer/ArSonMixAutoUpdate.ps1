@@ -100,8 +100,8 @@ function Download-Verified([object]$asset,[string]$destination) {
     $request.AllowAutoRedirect=$true
     $request.MaximumAutomaticRedirections=5
     $response=$null
-    $input=$null
-    $output=$null
+    $streamIn=$null
+    $streamOut=$null
     try {
         $response=$request.GetResponse()
         $uri=$response.ResponseUri
@@ -110,24 +110,24 @@ function Download-Verified([object]$asset,[string]$destination) {
             Fail 'Unexpected download redirect destination'
         }
         if($response.ContentLength -gt $expectedBytes){Fail 'Oversize release response'}
-        $input=$response.GetResponseStream()
-        $output=[IO.File]::Open($part,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $streamIn=$response.GetResponseStream()
+        $streamOut=[IO.File]::Open($part,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
         $buffer=New-Object byte[] 65536
         [int64]$total=0
-        while(($read=$input.Read($buffer,0,$buffer.Length)) -gt 0) {
+        while(($read=$streamIn.Read($buffer,0,$buffer.Length)) -gt 0) {
             $total+=$read
             if($total -gt $expectedBytes){Fail 'Response larger than release metadata'}
-            $output.Write($buffer,0,$read)
+            $streamOut.Write($buffer,0,$read)
         }
-        $output.Flush($true)
-        $output.Dispose();$output=$null
+        $streamOut.Flush($true)
+        $streamOut.Dispose();$streamOut=$null
         if($total -ne $expectedBytes){Fail 'Incomplete release download'}
         $hash=(Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant()
         if($hash -cne $expectedHash){Fail 'Release SHA256 mismatch'}
         [IO.File]::Move($part,$destination)
     } finally {
-        if($null -ne $output){$output.Dispose()}
-        if($null -ne $input){$input.Dispose()}
+        if($null -ne $streamOut){$streamOut.Dispose()}
+        if($null -ne $streamIn){$streamIn.Dispose()}
         if($null -ne $response){$response.Dispose()}
         if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
     }
@@ -345,7 +345,7 @@ try {
         $state.blockedTag=''
         Write-State $state
         Log-Result ('HEALTHY '+$new.tag_name)
-        Remove-Item -LiteralPath $oldPath,$newPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.
@@ -380,7 +380,19 @@ try {
         }
     }
     Fail 'Health failed and verified rollback installer did not restore old source'
-} catch {
+ } catch {
+    # An interrupted/crashed updater must never repeatedly apply the same
+    # candidate. Inno itself is fail-closed; a later normal app launch remains
+    # usable even if the updater encountered an unexpected exception.
+    try {
+        if((Get-Variable -Name state -ErrorAction SilentlyContinue) -and
+           (Get-Variable -Name new -ErrorAction SilentlyContinue) -and
+           $null -ne $new -and $state.phase -ceq 'installing') {
+            $state.blockedTag=$new.tag_name
+            $state.phase='installer-failed'
+            Write-State $state
+        }
+    } catch { }
     Log-Result ('FAIL_CLOSED '+$_.Exception.Message)
 } finally {
     if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}
