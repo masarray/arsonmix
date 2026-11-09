@@ -2,7 +2,8 @@
 # ArSonMix automatic update supervisor. Installed next to ArSonMix.exe by Inno.
 # Independent of JUCE/audio callback; starts from an installed GUI only.
 # Downloads while the host is active; applies ONLY after normal host exit.
-param([Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$OwnerProcessId)
+param([Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$OwnerProcessId,
+      [switch]$PolicySelfTest)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -131,6 +132,28 @@ function Download-Verified([object]$asset,[string]$destination) {
         if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
     }
 }
+function Download-Release-Verified([object]$release,[object]$installer,[string]$destination) {
+    $tag=[string]$release.tag_name
+    $prefix=[IO.Path]::GetDirectoryName($destination)
+    $sum=Find-Asset $release 'SHA256SUMS.txt' 1
+    $provenanceAsset=Find-Asset $release 'INSTALLER_PROVENANCE.json' 1
+    if($null -eq $sum -or $null -eq $provenanceAsset){Fail 'Missing attested release metadata'}
+    # Use per-tag metadata paths; never allow the second release to reuse
+    # the first release's hashes, even if tags share the same base version.
+    $sumPath=Join-Path $prefix ('SHA256SUMS-'+$tag+'.txt')
+    $proofPath=Join-Path $prefix ('INSTALLER_PROVENANCE-'+$tag+'.json')
+    Download-Verified $sum $sumPath
+    Download-Verified $provenanceAsset $proofPath
+    $proof=Read-Json $proofPath
+    $hash=([string]$installer.digest).Substring(7)
+    if($proof.sourceCommit -cne $release.target_commitish -or
+       $proof.installerSha256 -cne $hash) {Fail 'Installer provenance does not match published source/digest'}
+    $line=$hash+'  '+[string]$installer.name
+    $matches=@(Get-Content -LiteralPath $sumPath -Encoding ASCII |
+        Where-Object {$_ -ceq $line})
+    if($matches.Count -ne 1){Fail 'SHA256SUMS does not attest exactly one chosen installer'}
+    Download-Verified $installer $destination
+}
 function Owns-Exe([int]$processId) {
     try {
         $process=[Diagnostics.Process]::GetProcessById($processId)
@@ -190,6 +213,42 @@ function Launch-WithHealth([string]$expectedSha) {
         Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
     }
 }
+
+if($PolicySelfTest) {
+    # Deterministic offline policy fixtures; no host process, network,
+    # installer, audio device or file mutation is permitted by this mode.
+    $alpha=Version-Key 'v0.5.0-alpha.5'
+    $next=Version-Key 'v0.5.0-alpha.6'
+    $stable=Version-Key 'v0.5.0'
+    if($null -eq $alpha -or $null -ne (Version-Key 'v0.5.0-alpha.5/evil') -or
+       (Compare-Version $next $alpha) -le 0 -or
+       (Compare-Version $stable $next) -le 0 -or
+       (Compare-Version (Version-Key 'v1.0.0') $stable) -le 0) {
+        throw 'Updater SemVer policy failed'
+    }
+    $tag='v0.5.0-alpha.6'
+    $sha='a'*64
+    $asset=[pscustomobject]@{name="ArSonMix-$tag-Windows-x64-Setup.exe";
+        size=3000000;state='uploaded';digest="sha256:$sha";
+        browser_download_url="https://github.com/$repo/releases/download/$tag/ArSonMix-$tag-Windows-x64-Setup.exe"}
+    $sum=[pscustomobject]@{name='SHA256SUMS.txt';size=250;state='uploaded';
+        digest="sha256:$sha";browser_download_url="https://github.com/$repo/releases/download/$tag/SHA256SUMS.txt"}
+    $proof=[pscustomobject]@{name='INSTALLER_PROVENANCE.json';size=500;
+        state='uploaded';digest="sha256:$sha";
+        browser_download_url="https://github.com/$repo/releases/download/$tag/INSTALLER_PROVENANCE.json"}
+    $release=[pscustomobject]@{tag_name=$tag;draft=$false;
+        published_at='2026-11-09T00:00:00Z';target_commitish=('f'*40);
+        assets=@($asset,$sum,$proof)}
+    if($null -eq (Approved-Installer $release)){throw 'Valid release rejected'}
+    $asset.browser_download_url='https://attacker.example/update.exe'
+    if($null -ne (Approved-Installer $release)){throw 'Untrusted asset origin accepted'}
+    $asset.browser_download_url="https://github.com/$repo/releases/download/$tag/$($asset.name)"
+    $release.assets=@($asset,$asset,$sum,$proof)
+    if($null -ne (Approved-Installer $release)){throw 'Duplicate installer accepted'}
+    Write-Output 'ARSONMIX_UPDATER_POLICY_PASS'
+    exit 0
+}
+
 try {
     if(-not (Test-Path -LiteralPath $exe -PathType Leaf) -or
        -not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
@@ -197,7 +256,7 @@ try {
     # No update worker from portable builds, different installation roots,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
     if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'portable_mode.txt')){exit 0}
-    $mutex=New-Object Threading.Mutex($false,'Local\ArSonMix.AutoUpdater.v1')
+    $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
     $locked=$mutex.WaitOne(0)
     if(-not $locked){exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
@@ -215,7 +274,8 @@ try {
         $checked=[DateTime]::MinValue
         if([DateTime]::TryParse([string]$state.lastCheckUtc,[ref]$checked) -and
             [DateTime]::UtcNow.Subtract($checked.ToUniversalTime()).TotalHours -lt 6 -and
-            [DateTime]::UtcNow -ge $checked.ToUniversalTime()) {exit 0}
+            [DateTime]::UtcNow -ge $checked.ToUniversalTime() -and
+            $state.phase -cne 'staged') {exit 0}
     }
     $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     Write-State $state
@@ -248,10 +308,10 @@ try {
     $stage=Join-Path $root 'stage'
     $oldPath=Join-Path $stage ([string]$oldAsset.name)
     $newPath=Join-Path $stage ([string]$newAsset.name)
-    Download-Verified $newAsset $newPath
+    Download-Release-Verified $new $newAsset $newPath
     # Rollback must be possible offline. Do not begin update without a
     # byte-verified previous installer.
-    Download-Verified $oldAsset $oldPath
+    Download-Release-Verified $current $oldAsset $oldPath
     $state.phase='staged'
     Write-State $state
     Log-Result ('STAGED '+$new.tag_name+' WAITING_FOR_NORMAL_EXIT')
@@ -275,9 +335,11 @@ try {
     if((Read-Json $provenance).sourceCommit -cne $installedSha) {Log-Result 'DEFER_VERSION_CHANGED';exit 0}
     $state.phase='installing'
     Write-State $state
-    if(-not (Run-Installer $newPath)) {Fail 'Silent Inno upgrade failed or timed out'}
-    if((Read-Json $provenance).sourceCommit -cne $new.target_commitish) {Fail 'Installed provenance differs from selected release'}
-    if(Launch-WithHealth ([string]$new.target_commitish)) {
+    $upgradeOK=Run-Installer $newPath
+    $actualSha=''
+    try {$actualSha=[string](Read-Json $provenance).sourceCommit} catch {}
+    if($upgradeOK -and $actualSha -ceq $new.target_commitish -and
+       (Launch-WithHealth ([string]$new.target_commitish))) {
         $state.lastInstalledTag=$new.tag_name
         $state.phase='idle'
         $state.blockedTag=''
@@ -286,11 +348,19 @@ try {
         Remove-Item -LiteralPath $oldPath,$newPath -Force -ErrorAction SilentlyContinue
         exit 0
     }
+    # An installer failure leaves the previous app intact or may be partial.
+    # If the known-good source is still installed, relaunch it once.
+    # Never silently retry the failing release on every startup.
     # If the new GUI still runs but did not acknowledge readiness, NEVER
     # kill it or overwrite its image. Block this release pending inspection.
     $state.blockedTag=$new.tag_name
-    $state.phase='health-failed'
+    $state.phase=if($upgradeOK){'health-failed'}else{'installer-failed'}
     Write-State $state
+    if($actualSha -ceq $installedSha) {
+        Log-Result ('INSTALLER_FAILED_PREVIOUS_VERSION_RETAINED '+$new.tag_name)
+        [Diagnostics.Process]::Start($exe) | Out-Null
+        exit 0
+    }
     foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
         try {
             if([string]::Equals([IO.Path]::GetFullPath($process.MainModule.FileName),$exe,
