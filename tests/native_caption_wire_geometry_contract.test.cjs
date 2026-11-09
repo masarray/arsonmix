@@ -19,7 +19,7 @@ assert.match(chrome, /M3,21V3H21V21H3Z/);
 assert.match(chrome, /paintPart \("Ar", 16/);
 assert.match(chrome, /paintPart \("Son", 27/);
 assert.match(chrome, /paintPart \("MiX", 27/);
-assert.match(bridge, /classList\.add\("armix-native-desktop"\)/);
+assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
 assert.match(css, /html\.armix-native-desktop \.app > \.window-title\{display:none!important\}/);
 assert.match(page, /function scheduleWireGeometryReflow\(\)/);
 assert.match(page, /new ResizeObserver\(scheduleWireGeometryReflow\)/);

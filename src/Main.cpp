@@ -218,7 +218,7 @@ class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, pr
 {
 public:
     explicit ConsoleWindow (std::function<void(int)> onStartupStage)
-        : DocumentWindow ("AR MIX Studio — Native VST3 FX Host",
+        : DocumentWindow ("ArSonMiX — Native Mixer",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
