@@ -45,6 +45,7 @@ def main():
     source_svg=(ROOT/"site/preview-v2/assets/arson-vocal-throw-performance.svg").read_text()
     assert "data:image/webp;base64," in source_svg, "original user Illustrator icon must be embedded"
     assert 'clip-path="url(#aiLens)"' in source_svg
+    assert 'M128 29 L120 43' not in source_svg, "no 4-way navigation markers on THROW"
     with tempfile.TemporaryDirectory(prefix="armix-throw-") as directory,sync_playwright() as pw:
         out=Path(directory);bundle.stage(out)
         browser=pw.chromium.launch(headless=True)
@@ -146,15 +147,51 @@ def main():
             # hardware rotary controls are displayed at desktop AND mobile.
             assert editor.locator("#vtWetDial").is_visible()
             assert editor.locator('.vt-encoder[data-key="captureMs"] button').is_visible()
-            # Inspect the rendered CSS backgrounds: the real WebView and
-            # local file:// Chromium source cannot use fetch() for SVG URLs.
-            for selector,name in [("#vtWetDial","rotor"),
+            # Every control, including MIX, has the exact SAME stationary
+            # knob body, pointer and rounded level arc geometry.
+            assert editor.locator(".vt-encoder-face").count()==7
+            assert editor.locator(".vt-meter-fill").count()==7
+            assert editor.locator(".vt-knob-meter").count()==7
+            for dial in editor.locator(".vt-encoder-face").all():
+                bg=dial.evaluate("(el)=>getComputedStyle(el).backgroundImage")
+                assert "arson-vocal-hardware-encoder.svg" in bg,bg
+                assert dial.locator(".vt-meter-fill").get_attribute("pathLength")=="100"
+            # Inspect the actual rendered SVG control backgrounds. WebView
+            # file:// disables fetch() for SVG files, not CSS backgrounds.
+            for selector,name in [("#vtWetDial","encoder"),
                                   ('.vt-encoder-face',"encoder"),
                                   ("#vtThrow","performance")]:
                 bg=editor.locator(selector).first.evaluate(
                     "(el)=>getComputedStyle(el).backgroundImage")
                 assert ("arson-vocal-throw-performance.svg" if name=="performance"
                         else "arson-vocal-hardware-"+name+".svg") in bg,(selector,bg)
+            # Bounded physical layout QA, not just a screenshot. The large
+            # singer switch must be centered, the two encoder banks in
+            # alignment, and tempo LCD and TAP must be physically adjacent.
+            throw=editor.locator("#vtThrow").bounding_box()
+            left=editor.locator("#vtEncodersLeft").bounding_box()
+            right=editor.locator("#vtEncodersRight").bounding_box()
+            lcd=editor.locator(".vt-clock-screen").bounding_box()
+            tap=editor.locator("#vtTap").bounding_box()
+            assert all([throw,left,right,lcd,tap])
+            assert abs((throw["x"]+throw["width"]/2)-(box["x"]+box["width"]/2))<4, \
+                ("THROW is off center",width,throw,box)
+            assert abs(left["y"]-right["y"])<3, ("uneven encoder rows",left,right)
+            assert left["x"]+left["width"]<=throw["x"]+1 and \
+                throw["x"]+throw["width"]<=right["x"]+1, \
+                ("encoders invade singer button",left,throw,right)
+            assert lcd["x"]+lcd["width"]<=tap["x"] and \
+                tap["x"]-(lcd["x"]+lcd["width"])<=17, \
+                ("LCD must sit beside TAP",lcd,tap)
+            assert abs((lcd["y"]+lcd["height"]/2)-(tap["y"]+tap["height"]/2))<=24, \
+                ("LCD/TAP vertical misalignment",lcd,tap)
+            assert lcd["width"]>=145 and lcd["height"]>=70
+            # No control may draw past the horizontal plugin bounds.
+            for control in ["#vtThrow","#vtTap","#vtWetDial",
+                            "#vtClockLabel","#vtDisplayBpm"]:
+                rect=editor.locator(control).bounding_box()
+                assert rect and rect["x"]>=box["x"]-1 and \
+                    rect["x"]+rect["width"]<=box["x"]+box["width"]+1,(control,rect,box)
             page.screenshot(path="arsonmix-vocal-throw-"+str(width)+".png")
             editor.screenshot(path="arsonmix-vocal-throw-editor-"+str(width)+".png")
             if width==1366:
@@ -170,8 +207,21 @@ def main():
                 # Rotary wheel edits actually send settings through the native
                 # request/ACK/readback contract, not a CSS-only animation.
                 dial=editor.locator("#vtWetDial")
+                before=dial.evaluate("""el=>({
+                   offset:getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset,
+                   transform:getComputedStyle(el.querySelector('.vt-encoder-needle')).transform,
+                   bg:getComputedStyle(el).backgroundImage
+                })""")
                 dial.hover()
                 page.mouse.wheel(0,-120)
+                after=dial.evaluate("""el=>({
+                   offset:getComputedStyle(el.querySelector('.vt-meter-fill')).strokeDashoffset,
+                   transform:getComputedStyle(el.querySelector('.vt-encoder-needle')).transform,
+                   bg:getComputedStyle(el).backgroundImage
+                })""")
+                assert float(after["offset"])<float(before["offset"]),(before,after)
+                assert after["transform"]!=before["transform"]
+                assert after["bg"]==before["bg"],"knob chassis must not rotate"
                 rotary=last(page,"nativeThrowSet")
                 assert rotary["settings"]["wet"]>.42 and rotary["settings"]["wet"]<=.44
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":rotary["requestId"],"status":"QUEUED"})
