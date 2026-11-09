@@ -77,7 +77,7 @@ const context=()=>{
  return {channelId:id,slot:current.slot,instanceId:fx.id,
   deviceEpoch:state.device.epoch,graphRevision:state.graph.revision};
 };
-const hint=text=>{const el=$("vtHint");el.textContent=text;el.title=text;};
+const hint=text=>{$("vtHint").textContent=text;};
 function refreshMusicChannels(){
  const state=snapshot(),ctx=context(),selector=$("vtMusicSource");
  const selected=tempoPending?.source||musicSource;
@@ -329,10 +329,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   }else if(!native()){draft=defaults();accepted=defaults();
    hint("Browser preview only · no PCM");}
   else hint("Native FX instance unavailable");
-  const channelName=track.name||"CH";
-  $("vtChannel").textContent=channelName;
-  $("vtChannel").title=channelName;
-  $("vtChannel").setAttribute("aria-label",channelName);
+  $("vtChannel").textContent=track.name||"CH";
   panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
  close(){panel.hidden=true;}
