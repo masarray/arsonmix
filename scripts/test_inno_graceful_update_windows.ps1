@@ -103,6 +103,28 @@ try {
     Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Legacy upgrade changed verified EXE hash"
     Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Legacy upgrade damaged Studio/user files"
     Write-Host "INNO_LEGACY_NO_HANDSHAKE_UPGRADE_PASS: exact exe process requested WM_CLOSE before replacement"
+
+    # Automatic update MUST NOT close even a healthy existing mixer.
+    # Legacy and native-style active processes both fail before [Files].
+    Remove-Item -LiteralPath $ready,$closed -Force -ErrorAction SilentlyContinue
+    $fixtureProcess=Start-Process -FilePath $installedExe -ArgumentList @(
+        ('"' + $ready + '"'),('"' + $closed + '"'),"legacy") -PassThru
+    for($i=0;$i -lt 75 -and -not (Test-Path -LiteralPath $ready);$i++){
+        $fixtureProcess.Refresh()
+        if($fixtureProcess.HasExited){break}
+        Start-Sleep -Milliseconds 200
+    }
+    Assert-Condition (Test-Path -LiteralPath $ready) "Auto-update active-session fixture not ready"
+    $autoAttempt=Start-Process -FilePath $setup -ArgumentList ($setupArgs + @('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+    $fixtureProcess.Refresh()
+    Assert-Condition ($autoAttempt.ExitCode -ne 0 -and -not $fixtureProcess.HasExited) "Auto updater closed/overwrote an active mixer"
+    Assert-Condition (-not (Test-Path -LiteralPath $closed)) "Auto updater unexpectedly sent WM_CLOSE"
+    Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -eq $fixtureHash) "Auto updater modified a locked executable"
+    Assert-Condition ((Test-Path -LiteralPath $userFile) -and (Test-Path -LiteralPath $privateSentinel)) "Auto updater damaged user data"
+    Write-Host "INNO_AUTO_UPDATE_LIVE_SESSION_PRESERVED_PASS: no WM_CLOSE, EXE untouched, Studio retained"
+    $fixtureProcess.CloseMainWindow() | Out-Null
+    Assert-Condition ($fixtureProcess.WaitForExit(10000)) "Auto-update test fixture did not close normally"
+    $fixtureProcess.Dispose();$fixtureProcess=$null
     $fixtureProcess.Dispose();$fixtureProcess=$null
 
     # Busy/hung GUI: it REFUSES WM_CLOSE and has no newer handshake.
