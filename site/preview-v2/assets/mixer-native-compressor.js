@@ -110,15 +110,18 @@ Object.entries(defs).forEach(([key,r])=>{
  const output=dom("output","mx-comp-value");
  const dial=dom("span","mx-comp-dial");
  dial.setAttribute("aria-hidden","true");
- // Draw only two small stroked SVG paths over the original silver knob face.
- // pathLength=1000 keeps the native value mapping independent of viewport size.
- // Clockwise 270deg from lower-left via top to lower-right, rounded endpoints.
+ // Owner SVG split into static bevel and exact independent mint pointer.
+ // The body never transforms: only the pointer and outer arc follow DSP values.
+ const body=dom("span","mx-comp-knob-body");
+ const pointer=dom("span","mx-comp-knob-pointer");
+ dial.append(body,pointer);
+ // Outer 270deg arc sits outside the physical knob, with rounded endpoints.
  const arcSvg=document.createElementNS(NS,"svg");
  arcSvg.setAttribute("viewBox","0 0 100 100");
  arcSvg.setAttribute("class","mx-comp-arc");
  arcSvg.setAttribute("aria-hidden","true");
  arcSvg.setAttribute("focusable","false");
- const arcGeometry="M 19.735 80.265 A 42.8 42.8 0 1 1 80.265 80.265";
+ const arcGeometry="M 17.473 82.527 A 46 46 0 1 1 82.527 82.527";
  const arcTrack=document.createElementNS(NS,"path");
  arcTrack.setAttribute("class","mx-comp-arc-track");
  arcTrack.setAttribute("d",arcGeometry);
@@ -135,7 +138,7 @@ Object.entries(defs).forEach(([key,r])=>{
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
  input.title="Drag vertically; Shift for fine; arrows for steps; double-click to reset";
  item.append(name,dial,output,input);
- inputs[key]={item,input,output,dial,arcProgress};
+ inputs[key]={item,input,output,dial,body,pointer,arcProgress};
  const changeValue=value=>{
   if(!Number.isFinite(value)||draft[key]===value)return;
   draft={...draft,[key]:value};paint();
@@ -248,7 +251,7 @@ function paint(){
    c.arcProgress.setAttribute("stroke-dasharray",dash);
   const visible=fraction>0?"1":"0";
   if(c.arcProgress.style.opacity!==visible)c.arcProgress.style.opacity=visible;
-  c.dial.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
+  // CSS marker only: the owner-provided knob body remains transform:none.\n  c.pointer.style.setProperty("--dial-angle",(-135+fraction*270).toFixed(2)+"deg");
  }
  // Reference-style LCD transfer curve in a larger, dedicated graph region.
  // The meter bank sits on the right INSIDE the same black display.
