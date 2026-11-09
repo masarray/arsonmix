@@ -59,6 +59,19 @@ def reconstruct():
                    " requestAnimationFrame(()=>{resizeQueued=false;render();});\n"
                    "});\n")
     html=html[:start]+legacy_resize+html[end:]
+    # MAIN pin-fragment caching and stale-RAF cancellation were introduced
+    # after V28; invert only those explicit, uniquely anchored edits here.
+    # The historical fixture itself must remain immutable.
+    for changed, prior in (
+        ("// MAIN mini cables use a separate one-shot dirty flag; ordinary pointer moves\n// must not force layout reads on a stable native viewport.\nlet wireFragmentGeometryDirty=false;\n",
+         ""),
+        (" // A stable edgeId can still move when the host window is resized.\n // Refresh the physical anchor only on a geometry event (or edge edit).\n if(layer?.dataset.edgeId===String(edge.id)&&!wireFragmentGeometryDirty)return;",
+         " // Structural render, bank, density and resize remount the section; a\n // changed accepted edgeId invalidates this tiny projection automatically.\n if(layer?.dataset.edgeId===String(edge.id))return;"),
+        ("function renderWireRouting(){\n syncMainWireFragments();\n wireFragmentGeometryDirty=false;",
+         "function renderWireRouting(){\n syncMainWireFragments();")
+    ):
+        assert html.count(changed)==1,"Desktop WIRE checkpoint fragment drift"
+        html=html.replace(changed,prior,1)
     chrome=OWNER.read_text(encoding="utf-8")
     desktop_css="\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
     assert chrome.count(desktop_css)==1,"Desktop caption CSS marker missing or duplicated"
