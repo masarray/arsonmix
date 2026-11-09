@@ -113,19 +113,30 @@ def main():
             assert last(page,"nativeThrowSnapshot")["requestId"]==initial["requestId"],\
                 "snapshot polling overwrote outstanding request too early"
             reply_snapshot(page,state,DEFAULTS)
-            assert editor.locator("#vtStatus").inner_text()=="NATIVE DSP"
-            assert editor.locator("#vtCount").inner_text()=="0 throws"
+            assert editor.locator("#vtStatus").inner_text()=="LIVE"
+            assert editor.locator("#vtCount").inner_text()=="0"
             box=editor.bounding_box()
             assert box and box["width"]<=778 and box["width"]<=width and \
                 box["x"]>=0 and box["x"]+box["width"]<=width+1,(width,box)
             assert editor.evaluate("(el)=>el.scrollWidth<=el.clientWidth+1"),\
                 "premium FX editor overflows horizontal viewport"
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
-            assert editor.locator("#vtClockLabel").inner_text()=="MANUAL CLOCK"
+            assert editor.locator("#vtClockLabel").inner_text()=="MAN"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             assert editor.locator(".vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1
             assert editor.locator(".vt-throw-button").count()==1
+            trigger=editor.locator("#vtThrow")
+            assert trigger.get_attribute("aria-label")=="Throw captured vocal phrase"
+            assert trigger.inner_text().strip()=="","Singer cue has no noisy visible words"
+            tb=trigger.bounding_box()
+            assert tb and tb["width"]>=160 and tb["height"]>=160
+            assert editor.locator(".vt-throw-engraving").inner_text()=="THROW"
+            assert editor.locator("#vtTap").is_visible()
+            assert editor.locator("#vtMusicStatus").inner_text()=="TAP"
+            assert "FIRE PHRASE" not in editor.inner_text()
+            assert "SMART PHRASE / LIVE ENGINE" not in editor.inner_text()
+            assert "ZERO DRY LATENCY" not in editor.inner_text()
             assert editor.locator(".vt-mode-buttons button").count()==3
             assert editor.locator(".vt-division-buttons button").count()==4
             # No browser form hiding of basic parameters: real accessible
@@ -136,10 +147,11 @@ def main():
             # local file:// Chromium source cannot use fetch() for SVG URLs.
             for selector,name in [("#vtWetDial","rotor"),
                                   ('.vt-encoder-face',"encoder"),
-                                  ("#vtThrow","push")]:
+                                  ("#vtThrow","performance")]:
                 bg=editor.locator(selector).first.evaluate(
                     "(el)=>getComputedStyle(el).backgroundImage")
-                assert "arson-vocal-hardware-"+name+".svg" in bg,(selector,bg)
+                assert ("arson-vocal-throw-performance.svg" if name=="performance"
+                        else "arson-vocal-hardware-"+name+".svg") in bg,(selector,bg)
             page.screenshot(path="arsonmix-vocal-throw-"+str(width)+".png")
             editor.screenshot(path="arsonmix-vocal-throw-editor-"+str(width)+".png")
             if width==1366:
@@ -171,15 +183,15 @@ def main():
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":cue["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinThrowAck",{"requestId":cue["requestId"],"status":"APPLIED"})
                 reply_snapshot(page,state,{**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]},count=1,tail=True)
-                assert editor.locator("#vtCount").inner_text()=="1 throws"
-                assert editor.locator("#vtStatus").inner_text()=="ECHO TAIL"
+                assert editor.locator("#vtCount").inner_text()=="1"
+                assert editor.locator("#vtStatus").inner_text()=="TAIL"
             # Real native tempo-source command (not a browser-only BPM guess).
             source_menu=editor.locator("#vtMusicSource")
             assert source_menu.locator('option[value="'+RECEIVER+'"]').count()==1
             source_menu.select_option(RECEIVER)
             request=last(page,"nativeThrowTempoSource")
             assert request["sourceChannelId"]==RECEIVER and request["channelId"]==SOURCE
-            assert editor.locator("#vtMusicStatus").inner_text().startswith("Validating")
+            assert editor.locator("#vtMusicStatus").inner_text()=="CONNECT"
             emit(page,"arMixBuiltinThrowTempoAck",{
                 "requestId":request["requestId"],"status":"APPLIED",
                 "sourceChannelId":RECEIVER})
@@ -187,9 +199,8 @@ def main():
                 {**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]} if width==1366 else DEFAULTS,
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85})
-            assert "AUTO 120 BPM" in editor.locator("#vtMusicStatus").inner_text()
-            assert "BPM only" in editor.locator("#vtMusicStatus").inner_text()
-            assert editor.locator("#vtClockLabel").inner_text()=="AUTO BPM"
+            assert editor.locator("#vtMusicStatus").inner_text()=="120 · BPM"
+            assert editor.locator("#vtClockLabel").inner_text()=="AUTO"
             # Snapshot transport is request/response, not unsolicited push.
             # Wait for a fresh native read request before testing a second
             # DSP status update; a replay of the prior request is ignored.
@@ -203,8 +214,8 @@ def main():
                 {**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]} if width==1366 else DEFAULTS,
                 count=1 if width==1366 else 0,tail=width==1366,
                 music={"source":RECEIVER,"bpm":120,"confidence":.85,"grid":True})
-            assert "BEAT GRID" in editor.locator("#vtMusicStatus").inner_text()
-            assert editor.locator("#vtClockLabel").inner_text()=="GRID LOCK"
+            assert editor.locator("#vtMusicStatus").inner_text()=="120 · GRID"
+            assert editor.locator("#vtClockLabel").inner_text()=="LOCK"
             if width==1366:
                 # The next changed graph invalidates the old editor instance.
                 state["graph"]["channels"][0]["inserts"][0]["id"]="replaced-instance"
