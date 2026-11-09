@@ -400,11 +400,11 @@
 
 /* ArSon Harmony — compact, wide musical effects console.
    Reference-inspired composition: graphite voice module, satin control deck,
-   large key instrument. NO image assets, filters or second renderer. Chrome
+   large key instrument. Compact 800px shell; no image assets or second renderer. Chrome
    buttons use the same mixer-contextual-buttons.css owner as EQ/Compressor. */
 .mx-harm{
  position:fixed;z-index:3102;left:50%;top:clamp(6px,12vh,90px);
- transform:translateX(-50%);width:min(910px,calc(100vw - 14px));
+ transform:translateX(-50%);width:min(800px,calc(100vw - 14px));
  max-height:calc(100dvh - 12px);overflow:auto;box-sizing:border-box;
  border:1px solid #667e87;border-radius:7px;
  background:#c6d1d4;color:#273c46;
