@@ -227,10 +227,12 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
 test('explicit device Apply restores the authored mixer after driver readback and can roll back',()=>{
  const main=read('src/Main.cpp');
  const apply=main.slice(main.indexOf('void applyCustomAudioDevice('),main.indexOf('void showDeviceSetup()'));
- assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(true\)\)/);
+ assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(bindingMode\)\)/);
  assert.match(apply,/if\(!previousMixerBound && engine_\.directRouteAuthorized\(\)/);
  assert.match(apply,/finishAudioSetupAndRecoverMixer\(\);/);
- assert.match(main,/BindingMode::verifiedDeviceApply:BindingMode::exact/);
+ assert.match(apply,/explicitMain\?MixerBindingMode::verifiedMainPinApply/);
+ assert.match(apply,/pinOutput.getArray\(\)->size\(\)!=2/);
+ assert.match(main,/restoreSavedMixerSession\(false,bindingMode\)/);
 });
 
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{

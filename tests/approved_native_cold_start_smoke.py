@@ -76,7 +76,8 @@ def main():
             assert request['config']['enabledInputs']==[]
             assert request['config']['enabledOutputs']==[]
             out_active={**io_inventory['active'],'captureDevice':'',
-                        'inputNames':[],'enabledInputs':[]}
+                        'inputNames':[],'enabledInputs':[],
+                        'outputNames':['WDM L','WDM R','Realtek L','Realtek R']}
             emit(page,'arMixAudioDeviceApplyAck',{
                 'requestId':request['requestId'],'ok':True,
                 'state':'ACCEPTED_MUTED','active':out_active,
@@ -86,7 +87,26 @@ def main():
             io_inventory['active']=out_active
             emit(page,'arMixAudioDeviceInventory',io_inventory)
             assert capture_select.input_value()=='' # reopening does not auto-patch a mic
-            page.locator('.armix-audio-dialog [data-audio-close]').click()
+            page.locator('.armix-audio-dialog details summary').click()
+            assign_main=page.locator('[data-audio-main-pins]')
+            def playback_pin(index):
+                return page.locator(f'[data-audio-pin="output"][data-pin-index="{index}"]')
+            playback_pin(0).uncheck()
+            assert assign_main.is_hidden()
+            playback_pin(1).uncheck()
+            playback_pin(2).check()
+            playback_pin(3).check()
+            assign_main.click()
+            repatch=page.evaluate("""()=>window.__events.filter(e=>
+              e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
+            assert repatch['config']['assignSelectedPlaybackPinsToMain'] is True
+            assert repatch['config']['enabledOutputs']==[2,3]
+            assert repatch['config']['enabledInputs']==[]
+            emit(page,'arMixAudioDeviceApplyAck',{
+                'requestId':repatch['requestId'],'ok':True,
+                'state':'ACCEPTED_MUTED','active':{**out_active,'enabledOutputs':[2,3]},
+                'outputMuted':True,'mixerBound':True})
+            assert page.locator('.armix-audio-shade').is_hidden()
             g0=json.loads((ROOT/'integration/console-v6/fixtures.json').read_text())['g0']
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}

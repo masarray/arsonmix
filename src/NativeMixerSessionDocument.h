@@ -65,12 +65,13 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
-    enum class Mode { exact, verifiedDeviceApply };
+    enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply };
     static VerifiedNativeOutputs proposedOutputs(const MixerSessionDocument& document,
             const HardwareBinding& live,int count,Mode mode=Mode::exact) {
         const auto& saved=document.binding;
-        if(mode==Mode::verifiedDeviceApply &&
-           (saved.backend!=live.backend || saved.playback!=live.playback))
+        if(mode==Mode::verifiedMainPinApply ||
+           (mode==Mode::verifiedDeviceApply &&
+            (saved.backend!=live.backend || saved.playback!=live.playback)))
             return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:
                             VerifiedNativeOutputs{count,-1,-1,-1,-1,false};
         // A matching endpoint name does NOT prove an unchanged physical
@@ -134,9 +135,9 @@ struct MixerDeviceBindingPolicy final {
         // ordinals; it never authorizes quietly switching MAIN to another
         // jack. Compare against the policy-computed remap even when a caller
         // supplies a valid but DIFFERENT output pair.
-        if(saved.backend==live.backend && saved.playback==live.playback) {
-            const auto mapped=proposedOutputs(document,live,
-                outputs.activeOutputChannels,Mode::verifiedDeviceApply);
+        if(mode==Mode::verifiedMainPinApply ||
+           (saved.backend==live.backend && saved.playback==live.playback)) {
+            const auto mapped=proposedOutputs(document,live,outputs.activeOutputChannels,mode);
             if(!mapped.valid() || !sameOutputs(mapped,outputs))
                 return "NEEDS_REMAP: saved MAIN output pins are no longer selected; explicitly choose MAIN outputs";
         }

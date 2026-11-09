@@ -489,6 +489,18 @@ int main(){
     assert(MixerDeviceBindingPolicy::apply(main34,only12,unauthorized12,2,
         BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
     assert(Codec::encode(main34)==main34Before);
+    // Deliberate MAIN assignment through the verified current two-pin mask
+    // is distinct from a normal Apply that must preserve the original pair.
+    auto explicitlyRepatched=main34;
+    const auto explicitPair=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only12,2,BindingMode::verifiedMainPinApply);
+    assert(explicitPair.valid() && explicitPair.mainL==0 && explicitPair.mainR==1);
+    assert(MixerDeviceBindingPolicy::apply(explicitlyRepatched,only12,explicitPair,2,
+        BindingMode::verifiedMainPinApply).isEmpty());
+    assert(explicitlyRepatched.binding.outputMask=="3");
+    assert(explicitlyRepatched.roster.revision()==main34.roster.revision());
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,main34.binding,4,
+        BindingMode::verifiedMainPinApply).valid());
     // If outputs 3/4 remain physically selected, ordinal 2/3 -> 0/1
     // is a legal SAME-PIN remap, not an automatic route to different jacks.
     auto only34=main34.binding;

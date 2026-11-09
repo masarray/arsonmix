@@ -1332,6 +1332,7 @@ private:
         serviceAutomaticMain();
     }
 
+    using MixerBindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
     bool audioDeviceApplyActive_=false; // JUCE message thread, including nested driver dispatch
 
     juce::String openSelectedAudioDevice(const juce::String& backend,
@@ -1458,6 +1459,10 @@ private:
         const bool previousWasOpen=previousDevice!=nullptr&&previousDevice->isOpen();
         const bool previousMixerBound=engine_.hasBoundMixerRoute();
         const bool previousMonitor=engine_.isMonitorEnabled();
+        const auto assignMain=config.getProperty("assignSelectedPlaybackPinsToMain",false);
+        if(!assignMain.isBool())
+            return send(false,"REJECTED","Invalid MAIN playback pin selection");
+        const bool explicitMain=static_cast<bool>(assignMain);
         const auto confirm=config.getProperty("confirmRetainedPinMapping",false);
         if(!confirm.isBool())
             return send(false,"REJECTED","Invalid retained mixer mapping confirmation");
@@ -1465,7 +1470,7 @@ private:
             // The first Apply must open and verify the selected device.
             // Confirmation binds only that exact, still-open generation;
             // draft rate, buffer and pin changes use the normal Apply path.
-            if(!sameEndpoint || !previousWasOpen || rate!=before.sampleRate ||
+            if(explicitMain || !sameEndpoint || !previousWasOpen || rate!=before.sampleRate ||
                block!=before.bufferSize ||
                !engine_.confirmRetainedWasapiPortMapping())
                 return send(false,"NEEDS_REMAP",
@@ -1498,6 +1503,9 @@ private:
         const auto recovery=armix::device::AudioSetupRecoveryPolicy::select(
             sameEndpoint,previousWasOpen,typeName=="ASIO",
             pinInput.isArray()&&pinOutput.isArray());
+        if(explicitMain && (!recovery.reuseActivePins ||
+                           pinOutput.getArray()->size()!=2))
+            return send(false,"REJECTED","Select exactly two inspected playback pins for MAIN.");
         if(recovery.reuseActivePins) {
             const auto inCount=juce::jmin(64,previousDevice->getInputChannelNames().size());
             const auto outCount=juce::jmin(64,previousDevice->getOutputChannelNames().size());
@@ -1584,7 +1592,9 @@ private:
               opened->getCurrentBufferSizeSamples()!=actual.bufferSize))
             error="Driver readback mismatch; device setting was not accepted";
         if(error.isEmpty())diagnostics_.record("CUSTOM_AUDIO_PHASE","BIND_MIXER | "+typeName);
-        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(true)) {
+        const auto bindingMode=explicitMain?MixerBindingMode::verifiedMainPinApply:
+                                            MixerBindingMode::verifiedDeviceApply;
+        if(error.isEmpty()&&!finishAudioSetupAndRecoverMixer(bindingMode)) {
             if(!previousMixerBound && engine_.directRouteAuthorized() &&
                (engine_.hasRetainedUnboundMixer() || mixerSessionRecoveryPending_)) {
                 const juce::String needsRemap="Device opened. Mixer retained and muted; its port mapping or FX processing format needs review";
@@ -2273,14 +2283,15 @@ private:
         const bool nativeAlreadyActive=static_cast<bool>(
             live.getProperty("nativeChannelIdPcmActive",false));
         // A fresh silent ChannelId starter is now admitted before the saved
-        // Show is inspected. Only THAT unmodified bootstrap may be replaced,
-        // and only by this automatic cold-start restore. User-authored FX,
+        // Show is inspected. Only THAT unmodified bootstrap may be replaced
+        // by cold-start restore or by verified Apply after a failed startup. User-authored FX,
         // WIRE, BUS and fader edits must never be overwritten by late scan.
         // A verified PREVIOUS checkpoint is also eligible: the separate
         // resume policy keeps MAIN muted after recovery from corrupt HEAD.
-        const bool replacePristineStartup=nativeAlreadyActive &&
-            startupOnSavedDevice && !retained &&
-            bindingMode==armix::session::MixerDeviceBindingPolicy::Mode::exact &&
+        const bool recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&
+            mixerSessionRecoveryPending_;
+        const bool replacePristineStartup=nativeAlreadyActive && !retained &&
+            (startupOnSavedDevice || recoveringAfterDeviceApply) &&
             engine_.hasPristineStartupMixer();
         if(nativeAlreadyActive && !replacePristineStartup) {
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
@@ -4643,16 +4654,17 @@ private:
         }
     }
 
-    bool finishAudioSetupAndRecoverMixer(bool verifiedDeviceApply=false) {
+    bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
         const bool bound=engine_.finishManualAudioSetup();
         if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)))return true;
-        if(engine_.hasRetainedNativeSession() ||
-           armix::session::NativeMixerSessionStore(settingsDirectory()).exists()) {
-            using BindingMode=armix::session::MixerDeviceBindingPolicy::Mode;
-            const auto error=restoreSavedMixerSession(false,verifiedDeviceApply?
-                BindingMode::verifiedDeviceApply:BindingMode::exact);
+        const bool hasCheckpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
+        const bool recoverPristine=bindingMode!=MixerBindingMode::exact && hasCheckpoint &&
+            mixerSessionRecoveryPending_ && engine_.hasPristineStartupMixer();
+        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) &&
+           !recoverPristine)return true;
+        if(engine_.hasRetainedNativeSession() || hasCheckpoint) {
+            const auto error=restoreSavedMixerSession(false,bindingMode);
             if(error.isNotEmpty()) {
                 mixerSessionError_=error;
                 emitNotice("Mixer retained; "+error,true);

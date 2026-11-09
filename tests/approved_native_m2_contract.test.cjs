@@ -1246,8 +1246,9 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
  const main=read('src/Main.cpp');
  const engine=read('src/LiveAudioEngine.h');
  const route=read('src/LiveDryRoutingLab.h');
- assert.match(main,/startupOnSavedDevice && !retained &&/);
- assert.doesNotMatch(main,/startupOnSavedDevice && !retained && !usedPrevious/);
+ assert.match(main,/nativeAlreadyActive && !retained &&/);
+ assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply\) &&/);
+ assert.match(main,/recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&\s*mixerSessionRecoveryPending_/);
  assert.match(main,/!usedPrevious && !retained/); // only normal auto-resume, not recovery admission
  assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);
  assert.match(main,/restoreNativeMixerSession\(std::move\(doc\),states,\s*replacePristineStartup/);
@@ -1259,7 +1260,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/NO HARDWARE IN · MIXER\/FX READY · USE PLAYER OR AUDIO I\/O/);
+ assert.match(bridge,/next.admitted\?"NO HARDWARE IN · MIXER\/FX READY"/);
  assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
  assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
  assert.doesNotMatch(bridge,/NO AUDIBLE OUTPUT · PATCH INPUT \+ ARM/);

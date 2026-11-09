@@ -1525,7 +1525,8 @@
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
       d.outputArmed?(next.admitted?"NATIVE PCM · HARDWARE FAT PENDING":
         "MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED"):
-      !d.enabledInputs?.length?"NO HARDWARE IN · MIXER/FX READY · USE PLAYER OR AUDIO I/O":
+      !d.enabledInputs?.length?(next.admitted?"NO HARDWARE IN · MIXER/FX READY":
+        "MIXER SESSION UNAVAILABLE · CHECK AUDIO I/O"):
       legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -1638,6 +1639,7 @@
           <label>Sample rate<select data-audio-field="rate"></select></label>
           <label>Buffer<select data-audio-field="buffer"></select></label>
           <div class="armix-device-pins" data-audio-pins></div>
+          <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
         </details>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
@@ -1690,6 +1692,9 @@
         const separate=deviceInventory.types?.find(x=>x.name===draft.backend)?.separate===true;
         if(!draft.backend||!draft.playback||(!separate&&!draft.capture))return;
         sendDeviceApply();
+      };
+      devicePanel.querySelector("[data-audio-main-pins]").onclick=()=>{
+        if(!deviceBusy)sendDeviceApply(false,true);
       };
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
         if(!deviceBusy && offeredPinRemap!==null)
@@ -1787,17 +1792,21 @@
     devicePanel.querySelector("[data-audio-apply]").disabled=deviceBusy||
       !deviceChoice.backend||(!t?.separate&&!deviceChoice.capture)||
       !deviceChoice.playback;
+    const assignMain=devicePanel.querySelector("[data-audio-main-pins]");
+    assignMain.hidden=!same || deviceChoice.outputPins?.length!==2;
+    assignMain.disabled=deviceBusy;
     const remap=devicePanel.querySelector("[data-audio-remap]");
     remap.hidden=!same || offeredPinRemap!==active.deviceGeneration;
     remap.disabled=deviceBusy;
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
-  function sendDeviceApply(confirmRetainedPinMapping=false){
+  function sendDeviceApply(confirmRetainedPinMapping=false,assignMain=false){
     if(!deviceChoice||!deviceInventory?.active)return;
     const c=deviceChoice,a=deviceInventory.active;
     const same=a.open&&a.backend===c.backend&&
       a.captureDevice===c.capture&&a.playbackDevice===c.playback;
     if(confirmRetainedPinMapping && (!same || offeredPinRemap!==a.deviceGeneration))return;
+    if(assignMain && (!same || c.outputPins?.length!==2))return;
     deviceBusy=true;
     const requestId="approved-io-"+(++deviceRequest);
     devicePanel.dataset.pendingRequest=requestId;
@@ -1811,7 +1820,8 @@
         bufferSize:confirmRetainedPinMapping?a.buffer:same?c.buffer:0,
         enabledInputs:same?c.inputPins:[],
         enabledOutputs:same?c.outputPins:[],
-        ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{})}});
+        ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
+        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}});
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
