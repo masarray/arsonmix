@@ -53,3 +53,6 @@ No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, W
 - Automatic updates still reject an absent EXE. Only an explicitly invoked recovery uses the two no-close flags ARSONMIXAUTOUPDATE and ARSONMIXRECOVERY. An exact-image process probe and file lock checks refuse interruption of a running mixer.
 - An abandoned worker mutex may be reclaimed when the prior process crashes. Unknown installed source or absent provenance must fail closed and direct the user to the official installer. No audio callback work, OS service or scheduled task.
 - Windows Inno FAT creates a synthetic missing EXE, verifies ordinary auto-update refuses it, then tests explicit recovery restoring identical SHA while retaining private session sentinels. Code-signing and actual JUCE/ASIO end-to-end recovery remain separate release requirements.
+
+## Exact-image install, repair and rollback health
+After install/repair/rollback, success requires the installed sourceCommit, exeSha256 and guiExeBytes to agree with on-disk ArSonMix.exe bytes. GUI_READY without matching image identity is insufficient. Deterministic Windows fixture tests reject unchanged source metadata with a tampered binary. Two real published releases exist, but interactive WebView and physical ASIO audio remain separate gates.
