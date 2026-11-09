@@ -97,6 +97,10 @@ def main():
                 row.locator('[data-action="openPlugin"]').click()
                 editor=page.locator("#mxNativeHarmony")
                 editor.wait_for(state="visible")
+                assert page.locator(".mx-harm-brand").inner_text()=="Harmony Effect"
+                assert editor.get_attribute("aria-label")=="Harmony Effect"
+                shell=editor.bounding_box()
+                assert shell and abs(shell["width"]-min(800,width-14))<=1,(width,shell)
                 # Native LCD must not fabricate manual/detected effective key
                 # until the exact instance-scoped DSP snapshot arrives.
                 assert page.locator("#mxHKeyReadout").inner_text()=="—"
@@ -176,6 +180,10 @@ def main():
                 from math import hypot
                 wheel_margin=wheel_box["width"]/2-(
                     hypot(wheel_cx-note_cx,wheel_cy-note_cy)+note_box["width"]/2)
+                note_ring_ratio=hypot(wheel_cx-note_cx,wheel_cy-note_cy)/(wheel_box["width"]/2)
+                # Center the letter inside the blue annulus, not too close
+                # to the LCD and not touching the outer silver boundary.
+                assert .65<note_ring_ratio<.77,(width,note_ring_ratio)
                 assert wheel_margin>=10,(width,wheel_margin,wheel_box,note_box)
                 # Font size applies immediately for crisp text; only the
                 # circular material and scale transition over 150ms.
