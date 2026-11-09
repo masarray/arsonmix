@@ -92,27 +92,19 @@ function refreshMusicChannels(){
 }
 function renderMusicStatus(tempo){
  if(tempo)musicReadback=tempo;
- const label=$("vtMusicStatus"),clock=$("vtClockLabel");
- if(tempoPending){label.textContent="Validating music channel…";clock.textContent="SOURCE CHECK";return;}
- if(musicSource==="0"){
-  label.textContent="Manual BPM / TAP";clock.textContent="MANUAL CLOCK";
-  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
- }
- if(!musicReadback?.musicSourceActive){
-  label.textContent="Source stale · manual fallback";clock.textContent="MANUAL CLOCK";
-  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
- }
- if(!musicReadback.musicLocked){
-  label.textContent="Listening for beat · manual fallback";clock.textContent="LISTENING";
-  $("vtDisplayBpm").textContent=String(Math.round(accepted.bpm));return;
- }
+ const label=$("vtMusicStatus"),clock=$("vtClockLabel"),number=$("vtDisplayBpm");
+ const fallback=()=>{number.textContent=String(Math.round(accepted.bpm));clock.textContent="MAN";};
+ if(tempoPending){label.textContent="CONNECT";label.title="Validating music channel";clock.textContent="CHECK";return;}
+ if(musicSource==="0"){label.textContent="TAP";label.title="Manual BPM / TAP";fallback();return;}
+ if(!musicReadback?.musicSourceActive){label.textContent="NO SIGNAL";label.title="Music source unavailable · manual BPM fallback";fallback();return;}
+ if(!musicReadback.musicLocked){label.textContent="LISTEN";label.title="Listening for beat · manual BPM fallback";fallback();return;}
  const confidence=Math.round(Math.max(0,Math.min(1,Number(musicReadback.musicConfidence)||0))*100);
  const beatGrid=musicReadback.musicGridAvailable===true;
- label.textContent="AUTO "+Math.round(Number(musicReadback.musicBpm))+
-  " BPM · "+(beatGrid?"BEAT GRID":"BPM only")+
-  " · "+confidence+"%";
- clock.textContent=beatGrid?"GRID LOCK":"AUTO BPM";
- $("vtDisplayBpm").textContent=String(Math.round(Number(musicReadback.musicBpm)));
+ const bpm=Math.round(Number(musicReadback.musicBpm));
+ label.textContent=beatGrid?bpm+" · GRID":bpm+" · BPM";
+ label.title="Auto tempo "+bpm+" BPM · "+confidence+"% confidence · "+(beatGrid?"beat grid":"BPM only");
+ clock.textContent=beatGrid?"LOCK":"AUTO";
+ number.textContent=String(bpm);
 }
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -302,7 +294,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
   if(native()&&state?.admitted&&insert?.catalogId===ID&&insert.id){
    current.instanceId=insert.id;draft=defaults();accepted=defaults();
-   hint("Reading accepted DSP settings");
+   hint("");
   }else if(!native()){draft=defaults();accepted=defaults();
    hint("Browser preview only · no PCM");}
   else hint("Native FX instance unavailable");
@@ -315,7 +307,7 @@ backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
  if(!tempoPending||reply?.requestId!==tempoPending.requestId)return;
  if(reply.status==="APPLIED"){
   musicSource=tempoPending.source;
-  hint("Music tempo source accepted by native PCM graph");
+  hint("");
  }else hint("Tempo source rejected · "+(reply.errorCode||"STALE"));
  tempoPending=null;refreshMusicChannels();renderMusicStatus();
  requestSnapshot(true);
@@ -329,7 +321,7 @@ backend()?.addEventListener?.("arMixBuiltinThrowAck",reply=>{
  if(!pending||reply?.requestId!==pending.requestId)return;
  if(reply.status!=="APPLIED"){hint("DSP rejected · "+(reply.errorCode||"UNKNOWN"));
   pending=null;requestSnapshot(true);syncPower();return;}
- if(pending.command==="nativeThrowTrigger"){hint("THROW executed by audio callback");
+ if(pending.command==="nativeThrowTrigger"){hint("");
   pending=null;requestSnapshot(true);syncPower();}
  else{pending.ack=true;requestSnapshot(true);}
 });
@@ -345,14 +337,16 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
   musicSource=String(reply.musicSourceChannelId||"0");
   refreshMusicChannels();renderMusicStatus(reply);
  }
- $("vtCount").textContent=String(reply.throwCount||0)+" throws";
+ $("vtCount").textContent=String(reply.throwCount||0);
+ $("vtCount").setAttribute("aria-label",String(reply.throwCount||0)+" completed throws");
  $("vtDot").classList.toggle("active",reply.tailActive===true);
  $("vtBeatRail").dataset.playing=String(reply.tailActive===true);
- $("vtStatus").textContent=reply.tailActive?"ECHO TAIL":"NATIVE DSP";
+ $("vtThrow").dataset.tail=String(reply.tailActive===true);
+ $("vtStatus").textContent=reply.tailActive?"TAIL":"LIVE";
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.requestId)return;
   accepted={...reply.settings};draft={...accepted};pending=null;
-  hint("Native DSP settings accepted");
+  hint("");
  }else{accepted={...reply.settings};draft={...accepted};}
  paint();
 });
