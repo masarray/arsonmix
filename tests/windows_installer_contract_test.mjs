@@ -122,6 +122,9 @@ test('Smart Auto Updater uses an independent process and strict release gates', 
   assert.match(native, /juce::ChildProcess supervisor/);
   assert.match(native, /ARSONMIX_UPDATE_PROBE/);
   assert.match(native, /GUI_READY/);
+  // JUCE 8.0.15 Uuid::toString() is un-dashed; PS .NET Guid.ToString("D") is dashed.
+  assert.match(native, /juce::Uuid \(probe\)\.toDashedString\(\) == probe/);
+  assert.doesNotMatch(native, /juce::Uuid \(probe\)\.toString\(\) == probe/);
   assert.match(updater, /api\.github\.com\/repos\/masarray\/arsonmix\/releases\?per_page=100/);
   assert.match(updater, /Download-Release-Verified/);
   assert.match(updater, /INSTALLER_PROVENANCE\.json/);
