@@ -504,6 +504,57 @@ static void verifyVirtualPlayerSessionSerialization() {
            DynamicSourceKind::playerDeck);
     assert(document.request.sources.front().deckId==1);
     assert(document.roster.find({17})->sends.front().destination.value==15);
+
+    // Reconciled ASIO4ALL + ArSon Player: physically disconnected inputs
+    // must NOT erase the mixer-owned virtual MUSIC source or its MAIN wire.
+    auto virtualOnly=makeSession();
+    auto channels=virtualOnly.roster.channels();
+    channels.push_back(player);
+    assert(virtualOnly.roster.restoreExact(virtualOnly.acceptedRevision,channels));
+    virtualOnly.request.sources.clear();
+    virtualOnly.request.sources.push_back(
+        {{17},-1,-1,true,DynamicSourceKind::playerDeck,1});
+    virtualOnly.request.physicalInputs=0;
+    virtualOnly.binding.backend="ASIO";
+    virtualOnly.binding.capture=virtualOnly.binding.playback="ASIO4ALL v2";
+    virtualOnly.binding.inputMask="0";
+    virtualOnly.binding.inputNames.clear();
+    virtualOnly.binding.outputMask="3";
+    virtualOnly.binding.outputNames={"Realtek Speakers 1","Realtek Speakers 2"};
+    const auto onlyPlayer=Codec::encode(virtualOnly);
+    MixerSessionDocument restoredPlayer;
+    assert(Codec::decode(onlyPlayer,restoredPlayer));
+    assert(restoredPlayer.request.physicalInputs==0 &&
+           restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().kind==
+               DynamicSourceKind::playerDeck);
+    assert(Codec::encode(restoredPlayer)==onlyPlayer);
+    auto returned=virtualOnly.binding;
+    returned.inputMask="3";
+    returned.inputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    const auto pair=MixerDeviceBindingPolicy::proposedOutputs(
+        restoredPlayer,returned,2,BindingMode::verifiedAsioRestart);
+    assert(pair.valid());
+    assert(MixerDeviceBindingPolicy::apply(restoredPlayer,returned,pair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(restoredPlayer.request.physicalInputs==2 &&
+           restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().kind==
+               DynamicSourceKind::playerDeck);
+    assert(restoredPlayer.roster.find({17})->sends.front()
+           .destination.value==15);
+    // The reverse transition 2-IN -> 0-IN must also retain the same deck.
+    const auto absent=virtualOnly.binding;
+    assert(MixerDeviceBindingPolicy::apply(restoredPlayer,absent,pair,0,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().deckId==1);
+    // Never relax zero-input validation for physical mic ordinals.
+    auto bad=juce::JSON::parse(onlyPlayer);
+    auto src=bad.getProperty("request",{}).getProperty("sources",{});
+    src.getArray()->getReference(0).getDynamicObject()
+       ->removeProperty("kind");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),restoredPlayer));
 }
 
 // Actual production callback fixture: a freshly verified mixer needs ZERO

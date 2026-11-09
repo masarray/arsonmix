@@ -604,8 +604,10 @@ public:
             return false;
         const auto sourcesVar=get(req,"sources");
         const auto* sources=sourcesVar.getArray();
-        if(!sources||sources->size()>channels->size()||
-           (doc.request.physicalInputs==0 && !sources->isEmpty()))return false;
+        // An all-virtual MUSIC session is legitimate even with zero
+        // connected capture pins. The per-source decoder below still
+        // rejects EVERY physical ordinal when physicalInputs == 0.
+        if(!sources||sources->size()>channels->size())return false;
         if(doc.binding.capture.isEmpty() &&
            (doc.request.physicalInputs!=0 || doc.binding.inputMask!="0"))
             return false;
