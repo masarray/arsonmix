@@ -124,7 +124,7 @@ public:
         auto paintPart = [&] (const juce::String& word, juce::Colour colour)
         {
             // Real glyph advances: "ArSonMiX" is one continuous wordmark.
-            const auto advance = brandFont.getStringWidth (word);
+            const auto advance = juce::GlyphArrangement::getStringWidthInt (brandFont, word);
             g.setColour (colour.withMultipliedAlpha (alpha));
             g.drawText (word, x, 0, advance + 2, h, juce::Justification::centredLeft, false);
             x += advance;
@@ -138,7 +138,7 @@ public:
         {
             // Explicit Unicode code point prevents mojibake in MSVC builds.
             const auto subtitle = juce::String ("Open Source Premium Digital Mixer  |  Version 01.00  |  ")
-                + juce::String::charToString ((juce_wchar) 0x00a9) + " 2026 SonKuPik";
+                + juce::String::charToString ((juce::juce_wchar) 0x00a9) + " 2026 SonKuPik";
             g.setColour (juce::Colour (0xff96b3bf).withMultipliedAlpha (alpha));
             g.setFont (juce::Font (juce::FontOptions { 10.5f }));
             g.drawText (subtitle, x, 0, remaining, h,
