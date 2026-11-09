@@ -1602,7 +1602,7 @@ public:
         }
         if(!dryRoutingLab_.channelIdPhysicalPcmActive())
             return "The native mixer is preparing; check the verified audio output";
-        const auto* device=deviceManager_.getCurrentAudioDevice();
+        auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device || !device->isOpen() ||
            liveOutputArmFault(false).isNotEmpty())
             return "Choose a verified MAIN output";

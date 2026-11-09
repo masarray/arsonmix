@@ -10,6 +10,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <thread>
 
 // ArSon Player A: JUCE decoder + rate conversion on ONE background worker.
@@ -35,6 +36,7 @@ public:
     }
     ~NativePlayerDeck() {
         exit_.store(true,std::memory_order_release);
+        wake_.notify_one();
         if(worker_.joinable())worker_.join(); // only CONTROL after callback detach
     }
     NativePlayerDeck(const NativePlayerDeck&)=delete;
@@ -50,6 +52,7 @@ public:
         generation_.fetch_add(1,std::memory_order_acq_rel);
         state_.store(rounded>0?State::loading:State::stopped,
                      std::memory_order_release);
+        wake_.notify_one();
     }
     void load(const juce::File& file,bool autoPlay=true) {
         ready_.store(false,std::memory_order_release);
@@ -62,6 +65,7 @@ public:
         error_.store(0,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
+        wake_.notify_one();
     }
     bool isPlayingRequested() const noexcept {
         return ready_.load(std::memory_order_acquire) &&
@@ -87,6 +91,7 @@ public:
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);
+        wake_.notify_one();
     }
     Status snapshot() const {
         Status s;
@@ -127,6 +132,13 @@ public:
             readers_.fetch_sub(1,std::memory_order_release);
             silence();return;
         }
+        // New song/device generation restarts the de-click envelope.
+        // AUDIO owns the gain state; the worker only publishes generation.
+        const auto generation=generation_.load(std::memory_order_acquire);
+        if(generation!=audioGeneration_) {
+            audioGeneration_=generation;
+            gain_.reset(0.f);
+        }
         const auto n=ring_.read(left,right,static_cast<std::size_t>(frames));
         if(n>0) {
             played_.fetch_add(n,std::memory_order_relaxed);
@@ -155,6 +167,7 @@ private:
         played_.store(0,std::memory_order_relaxed);
         state_.store(State::loading,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
+        wake_.notify_one();
     }
     bool obsolete(std::uint64_t generation) const noexcept {
         return exit_.load(std::memory_order_acquire) ||
@@ -167,7 +180,14 @@ private:
         while(!exit_.load(std::memory_order_acquire)) {
             const auto version=generation_.load(std::memory_order_acquire);
             if(version==seen) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                // No 3 ms periodic wakeup while idle: songs only change via
+                // control events. The worker sleeps without spending mixer
+                // CPU; no condition-variable operation touches ASIO callback.
+                std::unique_lock<std::mutex> lock(wakeMutex_);
+                wake_.wait_for(lock,std::chrono::milliseconds(250),[&] {
+                    return exit_.load(std::memory_order_acquire) ||
+                           generation_.load(std::memory_order_acquire)!=seen;
+                });
                 continue;
             }
             seen=version;
@@ -256,6 +276,9 @@ private:
     std::atomic<int> rate_{0},error_{0};
     std::atomic<State> state_{State::empty};
     armix::dsp::RealtimeSlew64 gain_; // AUDIO only
+    std::uint64_t audioGeneration_=0; // AUDIO only, no race with file thread
+    std::mutex wakeMutex_; // only decoding worker
+    std::condition_variable wake_; // never accessed by audio callback
     // Construct LAST: workerLoop must never observe unconstructed atomics/
     // mutex/File, even if the OS schedules the thread immediately.
     std::thread worker_;
