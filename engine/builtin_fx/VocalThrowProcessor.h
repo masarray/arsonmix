@@ -23,6 +23,7 @@ public:
         VocalThrowSettings settings{};
         CommandKind kind=CommandKind::settings;
         bool applied=false;
+        bool bypassed=false;
     };
     VocalThrowProcessor()
         : juce::AudioProcessor(BusesProperties()
@@ -57,6 +58,7 @@ public:
         // Each device epoch gets a new frame clock. A previously accepted
         // auto BPM interval is invalid if the hardware sample rate changed.
         lastTempoBpm_=0.f;lastTempoDivision_=-1;
+        bypassed_=false;captureInvalidated_=false;
         musicInterval_.store(0,std::memory_order_release);
         ready_=core_.prepare(sampleRate)&&core_.resetUnpublished(latest);
         if(ready_)rate_=sampleRate;
@@ -76,6 +78,20 @@ public:
         observedTail_.store(core_.echoActive(),std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override{}
+    void onRealtimeBypass(bool requested,bool fully) noexcept override {
+        // Called by the single native render owner before any FX edits or
+        // PCM in this block. Preserve a playing tail through fade-out; clear
+        // only after full bypass, or on any re-enable (including quick flips).
+        const bool clear=(requested&&fully&&!captureInvalidated_) ||
+                         (!requested&&bypassed_);
+        if(clear&&ready_) {
+            core_.invalidateCaptureHistory();
+            observedTail_.store(false,std::memory_order_relaxed);
+        }
+        if(requested&&fully)captureInvalidated_=true;
+        if(!requested)captureInvalidated_=false;
+        bypassed_=requested;
+    }
     void consumeRealtimeEdits() noexcept override {
         if(!ready_)return;
         // One bounded attempt, never spin in ASIO. The native PCM callback
@@ -116,9 +132,14 @@ public:
         for(const auto& cancelled:cancelledIds_)
             expired=expired ||
                 cancelled.load(std::memory_order_acquire)==e.id;
-        const bool applied=!expired && (e.kind==CommandKind::settings?
-            core_.applyPrepared(e.prepared):core_.throwNow());
-        (void)done_.push({e.id,e.prepared.settings,e.kind,applied});
+        const bool blockedTrigger=e.kind==CommandKind::trigger && bypassed_;
+        // Settings are remembered while OFF; performance cues are not
+        // scheduled into a stopped capture clock or revived on rack ON.
+        const bool applied=!expired&&!blockedTrigger &&
+            (e.kind==CommandKind::settings?
+                core_.applyPrepared(e.prepared):core_.throwNow());
+        (void)done_.push({e.id,e.prepared.settings,e.kind,applied,
+                         blockedTrigger});
     }
     // CONTROL-thread song/auto BPM, deliberately independent of accepted
     // serialized preset BPM. No queue ACK storm or GUI state overwrite.
@@ -244,6 +265,7 @@ private:
     std::atomic<std::uint64_t> gridEpoch_{0},gridRevision_{0};
     std::array<std::atomic<std::uint64_t>,32> cancelledIds_{};
     std::uint32_t cancelWrite_=0; // CONTROL only
+    bool bypassed_=false,captureInvalidated_=false; // AUDIO only
     std::atomic<bool> observedTail_{false};
     double rate_=0.;
     float lastTempoBpm_=0.f; // CONTROL only

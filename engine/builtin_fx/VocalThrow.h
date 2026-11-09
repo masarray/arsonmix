@@ -216,6 +216,22 @@ public:
             if(!mono)right[i]=dryR+echoR*echoGain;
         }
     }
+    // AUDIO only: discard historical vocalist PCM and pending echo tails
+    // when the FX finishes bypassing or is re-enabled. Do not clear vector
+    // storage here: 192kHz history could cost ~480,000 writes in one ASIO
+    // callback. recorded_=0 fences stale samples until truly overwritten.
+    // Retain the accepted settings, sample clock and completed cue counter.
+    void invalidateCaptureHistory() noexcept {
+        recorded_=0;
+        lastSoundEnd_=nextAutoEligible_=autoTriggeredPhraseEnd_=0;
+        voiced_=quiet_=0;
+        armed_=manualInCurrentPhrase_=false;
+        envelope_=0.f;
+        for(auto& voice:voices_) {
+            voice.copying=false;voice.playing=false;
+            voice.freezeCount=0;voice.copyIndex=0;
+        }
+    }
     [[nodiscard]] bool ready() const noexcept{return ready_;}
     [[nodiscard]] VocalThrowSettings settingsForTests() const noexcept{return settings_.settings;}
     [[nodiscard]] bool echoActive() const noexcept{

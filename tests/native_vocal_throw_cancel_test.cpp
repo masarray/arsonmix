@@ -156,7 +156,60 @@ static void testColdShowRestoreAfterStart() {
     compareAudio(cold,reference,50,.65f);
 }
 
+
+static void testBypassNeverReplaysOldVocalCue() {
+    VocalThrowProcessor p;
+    p.prepareToPlay(48000.,128);
+    check(p.isReady());
+    p.sealForRealtime();
+    juce::AudioBuffer<float> b(2,128);
+    juce::MidiBuffer midi;
+    auto settings=p.acceptedSettings();
+    settings.mode=0;settings.wet=.9f;settings.ducking=0.f;
+    check(p.queueSettings(settings,501));
+    render(p,b,midi,0.f);
+    VocalThrowProcessor::Completion done{};
+    check(p.pollCompletion(done)&&done.requestId==501&&done.applied);
+    // Prime real singer history while FX is ON.
+    for(int n=0;n<115;++n)render(p,b,midi,.7f);
+    for(int n=0;n<32;++n)render(p,b,midi,0.f);
+    // A fade-out can still process audio; user cue must be rejected now.
+    p.onRealtimeBypass(true,false);
+    check(p.queueTrigger(502));
+    render(p,b,midi,0.f);
+    check(p.pollCompletion(done)&&done.requestId==502&&!done.applied&&
+          done.bypassed);
+    // After full OFF the old ring is invalid, without a history-vector wipe
+    // in the realtime callback. Settings still ACK while the rack is OFF.
+    p.onRealtimeBypass(true,true);
+    auto next=settings;next.bpm=160.f;
+    check(p.queueSettings(next,503));
+    p.consumeRealtimeEdits(); // native FX host fully-bypassed path
+    check(p.pollCompletion(done)&&done.requestId==503&&done.applied);
+    check(p.acceptedSettings().bpm==160.f);
+    check(p.queueTrigger(504));
+    p.consumeRealtimeEdits();
+    check(p.pollCompletion(done)&&done.requestId==504&&!done.applied&&
+          done.bypassed);
+    // Re-enable must not make the stale pre-bypass capture eligible again.
+    p.onRealtimeBypass(false,false);
+    check(p.queueTrigger(505));
+    render(p,b,midi,0.f);
+    check(p.pollCompletion(done)&&done.requestId==505&&!done.applied&&
+          !done.bypassed);
+    check(p.observedThrowCount()==0);
+    // A FRESH sung phrase has an independent eligible manual cue.
+    for(int n=0;n<120;++n)render(p,b,midi,.7f);
+    for(int n=0;n<32;++n)render(p,b,midi,0.f);
+    check(p.queueTrigger(506));
+    render(p,b,midi,0.f);
+    check(p.pollCompletion(done)&&done.requestId==506&&done.applied);
+    check(p.observedThrowCount()==1);
+    check(p.stateSnapshotQuiescent());
+}
+
 int main(){
+    testBypassNeverReplaysOldVocalCue();
     testAudioAppliedStateSurvivesDeviceRestart();
     testColdShowRestoreAfterStart();
     VocalThrowProcessor p;

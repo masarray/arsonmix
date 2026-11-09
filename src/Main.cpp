@@ -2288,6 +2288,8 @@ private:
             "TRIGGER":"SETTINGS");
         ack->setProperty("errorCode",applied?"NONE":!matched?
             "DSP_ACK_TIMEOUT_CANCELLED":
+            (pendingNativeThrow_.trigger&&completion.bypassed)?
+            "FX_BYPASSED_THROW_DISABLED":
             pendingNativeThrow_.trigger?
             "NO_CAPTURE_OR_STALE_GRAPH":"DSP_EDIT_NOT_APPLIED_OR_STALE");
         pendingNativeThrow_={};
