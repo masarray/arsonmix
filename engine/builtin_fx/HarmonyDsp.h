@@ -9,6 +9,7 @@
 #include "HarmonyPreparedTone.h"
 #include "HarmonyEnsembleSpace.h"
 #include "HarmonyDepthRoom.h"
+#include "HarmonyPitchSynchronous.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -98,6 +99,10 @@ public:
         if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
            !ensemble_.prepare(rate)||!depthRoom_.prepare(rate))return false;
         pitchIntervals_.prepare();
+        pitchSync_.reset();
+        pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
+        sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
+        pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
@@ -295,6 +300,7 @@ public:
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
             ensemble_.advance(voiced_);
             write_=(write_+1)%capacity;
+            ++sampleClock_;
         }
     }
 private:
@@ -320,11 +326,27 @@ private:
         // reduced grain-edge modulation without sin/cos in audio callback.
         const float w=smoothGrainBlend(p);
         float y=w*tap(mono_,delayA)+(1.f-w)*tap(mono_,delayB);
-        float& f=filtered_[static_cast<std::size_t>(voice)];
-        f+=filterCoef*(y-f);y=f;
-        phase_[static_cast<std::size_t>(voice)]+=1.f/static_cast<float>(grain_);
-        if(phase_[static_cast<std::size_t>(voice)]>=1.f)
-            phase_[static_cast<std::size_t>(voice)]-=1.f;
+        const auto ix=static_cast<std::size_t>(voice);
+        float& f=filtered_[ix];
+        f+=filterCoef*(y-f);
+        // Voiced, periodic sources can use causal pitch-synchronous
+        // overlap-add. The exact source period is measured, not inferred
+        // from the harmony target. Uncertain/nonperiodic sounds retain the
+        // previous validated granular shifter with a bounded 12ms crossfade.
+        const bool confident=voiced_&&sourceConfidence_>.82f&&
+                             sourcePeriodSamples_>=8.f;
+        PitchSynchronousVoice<capacity,maxVoices+1>::Output sync{};
+        if(confident)
+            sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
+                sourcePeriodSamples_,effectiveRatio,
+                static_cast<float>(latency_)+arrival);
+        float& colorState=pitchSyncFiltered_[ix];
+        colorState+=filterCoef*(sync.sample-colorState);
+        float& blend=pitchSyncBlend_[ix];
+        blend+=pitchSyncAlpha_*((confident&&sync.ready?1.f:0.f)-blend);
+        y=f*(1.f-blend)+colorState*blend;
+        phase_[ix]+=1.f/static_cast<float>(grain_);
+        if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
     }
     // Prepare one immutable, bounded pitch-analysis window every analysis hop.
@@ -346,7 +368,7 @@ private:
             pitchEnergy_+=x*x;
         }
         if(pitchEnergy_/static_cast<double>(span)<1.e-6){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;
             return;
         }
         pitchCorrelations_.fill(0.f);
@@ -402,7 +424,7 @@ private:
             }
         }
         if(bestLag==0||best<=0.77f){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
         // Three-point peak interpolation reduces integer-lag tuning steps,
         // especially at the high end of the supported singing range.
@@ -418,7 +440,7 @@ private:
         const float hz=static_cast<float>(rate_)/(decimation_*lag);
         const float midi=69.f+12.f*std::log2(hz/440.f);
         if(!std::isfinite(midi)||midi<31.f||midi>96.f){
-            voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
         }
         const int activeKey=effectiveKey(),activeScale=effectiveScale();
         int degree=nearestDegree(midi,activeKey,activeScale);
@@ -435,6 +457,14 @@ private:
         // do not generate provisional harmony on a single noisy transient.
         if(noteHold_<2)return;
         currentNote_=note;voiced_=true;
+        const float newPeriod=static_cast<float>(rate_/hz);
+        if(sourcePeriodSamples_>0.f&&
+           std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
+            pitchSync_.reset();pitchSyncBlend_.fill(0.f);
+            pitchSyncFiltered_.fill(0.f);
+        }
+        sourcePeriodSamples_=newPeriod;
+        sourceConfidence_=std::clamp(best,0.f,1.f);
         // Fifth harmony voice is a lower sixth in key; keep each voice
         // independent and normalize its level against the total count.
         // One fractional-pitch exponent per analysis hop; each harmony
@@ -468,6 +498,9 @@ private:
     bool processed_=false;
     float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
+    float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
+    std::uint64_t sampleClock_=0;
+    std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
@@ -477,6 +510,7 @@ private:
     PreparedPitchIntervals pitchIntervals_{};
     EnsembleSpace ensemble_{};
     BackingDepthRoom depthRoom_{};
+    PitchSynchronousVoice<capacity,maxVoices+1> pitchSync_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};

@@ -73,3 +73,11 @@ ensemble-spatial realism increment, **not a formant-preserving
 resynthesis fix**. The original two-grain pitch shifter can still sound
 robotic on real recorded consonants and wide intervals. It requires a
 separate pitch-synchronous/formant-aware algorithm and A/B acoustic gate.
+
+## 2026-11-09 P0 native pitch-synchronous candidate (requires physical singer qualification)
+
+Audit found the audible 16ms fixed-grain playback still changes vowel phase at unrelated seam boundaries. This commit adds a **causal, bounded pitch-synchronous window candidate** to the same ChannelId `HarmonyDsp`. It uses source-F0 pitch periods and local positive source landmarks to read waveform windows at **unity PCM speed**, while note ratio controls the spacing of synthesis centers; formants are no longer intentionally frequency-scaled by speeding the source playback. The original grain shifter is retained as the fallback for missing landmarks/low correlation/unvoiced phonemes; transitions ramp over 12ms. This is an approximation, not a proven glottal-closure PSOLA or completed formant-safe voice model.
+
+- One 16,384-sample mono history already owned by Harmony; no new audio route, device, host, PDC, user control or UI. Per-voice candidate stores at most 8 active source windows, fixed-size. Peak searches are bounded to <1 source period and never read future input.
+- New original-harmonic source CTest checks up/down ratios, a low male period, high-rate registers and **exact 64/257 callback-partition PCM parity** at 48/96/192k. Existing native lead preservation and phase-safe music tests still apply.
+- **Crucial nonclaim:** harmonic synthetic tests do not establish a singer's natural vowel formants or consonant intelligibility. Positive peaks are not reliable epochs for all breathy, growled or multi-pitch vocals. Do not mark PR production-ready until real recorded-vocal spectral F1/F2/F3, fricative/phrase boundaries, loudness-matched blind A/B and worst-case ASIO xrun/latency testing. If an audible regression occurs, fall back to the previous grain implementation before release.
