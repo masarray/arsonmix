@@ -111,6 +111,22 @@ async def verify_phone(browser, width: int, height: int):
         assert await panel.locator("#addTrack").is_visible()
         await page.screenshot(path=f"pages-mobile-toolbar-more-{width}.png")
         await page.locator("#moreTools summary").click()
+
+        # Player is a contextual module on the ONE approved /preview/.
+        # No second runtime CSS, no second mixer or browser audio.
+        await page.locator("#playerToggle").click()
+        player = page.locator("#arsonPlayer")
+        await player.wait_for(state="visible")
+        bounds = await player.bounding_box()
+        assert bounds is not None
+        assert bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= width + 2
+        assert bounds["y"] >= 0 and bounds["y"] + bounds["height"] <= height + 2
+        assert await page.locator('link[rel="stylesheet"]').count() == 1
+        await page.locator("#playerAdd").click()
+        feedback = await page.locator("#playerFeedback").inner_text()
+        assert "desktop app" in feedback, ("public preview must not fake playback", feedback)
+        await page.locator("#playerClose").click()
+        assert await player.is_hidden()
         assert not errors, errors
         print(f"PASS {width}x{height} mobile: one CSS, no orphan > marker, "
               f"swipe toolbar + real channel banks, fixed More popup, PNG MUTE")

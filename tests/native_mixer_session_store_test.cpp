@@ -398,7 +398,74 @@ static void verifyVirtualPlayerSessionSerialization() {
     assert(document.roster.find({17})->sends.front().destination.value==15);
 }
 
+// Actual production callback fixture: a freshly verified mixer needs ZERO
+// microphone patch, lab toggle, extra device or user routing confirmation.
+// One native PLAY adds MUSIC -> existing MAIN in one published ChannelId pass.
+static void verifyProductionPlayerFirstSoundWithSourceOnly() {
+    FixtureDevice device;
+    LiveDryRoutingLab mixer;
+    juce::AudioPluginFormatManager formats;
+    mixer.prepareDevice(&device);
+    assert(mixer.startUnpatchedSession(true,false,0,formats,
+                                       device.rate,device.frames).isEmpty());
+    const auto ep=mixer.epoch();
+    assert(mixer.repatchPhysicalSource(0,ep,mixer.revision(),
+        "NONE",-1,-1,true,false,0,formats,device.rate,device.frames).isEmpty());
+    assert(mixer.admitChannelIdFromAcceptedM4(0,device.frames,true));
+    assert(!mixer.hasVerifiedNativeSources()); // player needs no microphone
+    const auto before=mixer.controlRevision();
+    const auto added=mixer.ensureNativePlayerA(true,true);
+    assert(added.accepted && added.created.value!=0);
+    assert(mixer.controlRevision()==before+1);
+    assert(mixer.playerDeckHasMainPath());
+    // A second Play owns the exact existing source; no duplicate MAIN edge.
+    const auto again=mixer.ensureNativePlayerA(false,true);
+    assert(again.accepted && again.created==added.created);
+    assert(mixer.controlRevision()==added.pcmRevision);
+    const auto accepted=mixer.nativeBusStatus();
+    const auto* channels=accepted.getProperty("channels",{}).getArray();
+    assert(channels);
+    ChannelId main{};
+    int playerCount=0;
+    for(const auto& row:*channels) {
+        if(row.getProperty("role","").toString()=="MAIN")
+            main.value=static_cast<std::uint64_t>(
+                row.getProperty("id","0").toString().getLargeIntValue());
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(added.created.value))) {
+            ++playerCount;
+            assert(row.getProperty("primaryOutput","0").toString()!="0");
+        }
+    }
+    assert(main.value!=0 && playerCount==1);
+    std::array<float,480> silence{},musicL{},musicR{},outL{},outR{};
+    musicL.fill(.35f);musicR.fill(-.20f);
+    const float* inputs[]={silence.data(),silence.data()};
+    float* outputs[]={outL.data(),outR.data()};
+    const std::array<DynamicPlayerPcmBlock,1> deck{{{1,musicL.data(),musicR.data()}}};
+    auto render=[&] {
+        assert(mixer.process(inputs,2,outputs,2,480,1.f,false,
+                             nullptr,nullptr,false,nullptr,nullptr,true,deck));
+    };
+    render();
+    assert(outL.back()>.10f && outR.back()<-.05f);
+    const auto unplug=mixer.setNativePrimaryOutput(ep,added.pcmRevision,
+        added.rosterRevision,added.created,{},true);
+    assert(unplug.accepted && !mixer.playerDeckHasMainPath());
+    render();
+    assert(std::abs(outL.back())<1.e-6f && std::abs(outR.back())<1.e-6f);
+    const auto repeated=mixer.ensureNativePlayerA(false,true);
+    assert(repeated.accepted && repeated.created==added.created);
+    assert(!mixer.playerDeckHasMainPath()); // NEVER undo SOURCE ONLY
+    const auto reconnect=mixer.setNativePrimaryOutput(ep,unplug.pcmRevision,
+        unplug.rosterRevision,added.created,main,true);
+    assert(reconnect.accepted && mixer.playerDeckHasMainPath());
+    render();
+    assert(outL.back()>.10f && outR.back()<-.05f);
+}
+
 int main(){
+    verifyProductionPlayerFirstSoundWithSourceOnly();
     verifyVirtualPlayerSessionSerialization();
     warmVst3Discovery();
     nativeDeviceRecovery();
