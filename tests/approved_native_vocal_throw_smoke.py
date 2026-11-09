@@ -55,7 +55,7 @@ def main():
               if k.endswith('href') and v.startswith('data:image/png;base64,')]
     assert len(embedded)==1, "user-provided purple ring bitmap must remain embedded"
     png=base64.b64decode(embedded[0].split(',',1)[1],validate=True)
-    assert png.startswith(b'\\x89PNG\\r\\n\\x1a\\n')
+    assert png.startswith(bytes((137,80,78,71,13,10,26,10)))
     assert len(png)>10000, "do not replace premium artwork with a low-detail icon"
     assert not any(v.startswith(('http:', 'https:', 'file:'))
         for el in root.iter() for k,v in el.attrib.items() if k.endswith('href'))
