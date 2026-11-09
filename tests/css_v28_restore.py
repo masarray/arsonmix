@@ -73,6 +73,15 @@ def reconstruct():
         assert html.count(changed)==1,"Desktop WIRE checkpoint fragment drift"
         html=html.replace(changed,prior,1)
     chrome=OWNER.read_text(encoding="utf-8")
+    # Owner V2 adds a native-ONLY toolbar after the original desktop caption.
+    # Strip that uniquely anchored addition first, preserving the strict V28
+    # byte-for-byte historical CSS migration and the old 1600-byte caption gate.
+    desktop_toolbar_css="\n/* Native desktop toolbar V2 — functional hardware keys stay 29px high."
+    assert chrome.count(desktop_toolbar_css)==1,"Native toolbar CSS owner missing or duplicated"
+    toolbar_tail=chrome[chrome.index(desktop_toolbar_css):]
+    assert 1200<len(toolbar_tail)<3000,"Unexpected native toolbar CSS boundary"
+    assert "html.armix-native-desktop .app .command-bar" in toolbar_tail
+    chrome=chrome[:chrome.index(desktop_toolbar_css)]
     desktop_css="\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
     assert chrome.count(desktop_css)==1,"Desktop caption CSS marker missing or duplicated"
     extra_css=chrome[chrome.index(desktop_css):]
