@@ -56,3 +56,6 @@ No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, W
 
 ## Exact-image install, repair and rollback health
 After install/repair/rollback, success requires the installed sourceCommit, exeSha256 and guiExeBytes to agree with on-disk ArSonMix.exe bytes. GUI_READY without matching image identity is insufficient. Deterministic Windows fixture tests reject unchanged source metadata with a tampered binary. Two real published releases exist, but interactive WebView and physical ASIO audio remain separate gates.
+
+## Genuine two-release installer qualification
+- Opt-in Windows FAT now downloads two **already-published authentic** installer assets (v0.5.0-alpha.4 / v0.5.0-alpha.5), confirms official GitHub digest, source-commit provenance and SHA256SUMS, installs alpha.4 into a disposable runner directory, upgrades to alpha.5 and rolls back to alpha.4, validating installed PE SHA and private .smix plus install-local user sentinel after every step. It is gated to explicit package_fat dispatch on temporary GitHub Windows runners; ordinary PR/branch work never downloads historical packages. This verifies historical Inno compatibility, not live WebView2-ready startup or physical ASIO sound, which remain separately qualified.
