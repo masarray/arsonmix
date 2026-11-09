@@ -710,6 +710,8 @@
 .mx-harm-foot>span:first-child{
  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
 }
+.mx-harm-foot #mxHTracking{flex:0 0 auto;white-space:nowrap;color:#80c6c3}
+.mx-harm-note.queued:not(.active){outline:2px solid #69d6b4;outline-offset:1px}
 @media(max-width:740px){
  .mx-harm-body{grid-template-columns:126px minmax(0,1fr) 206px;min-height:224px}
  .mx-harm-left{padding:14px 9px 10px}

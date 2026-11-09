@@ -25,7 +25,7 @@ def last_action(page,kind):
     return actions[-1]
 
 def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
-             request=None,instance=INSTANCE):
+             request=None,instance=INSTANCE,observed=-1):
     action=request or last_action(page,"nativeHarmonySnapshot")
     packet={
         "requestId":action["requestId"],
@@ -33,7 +33,7 @@ def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
         "schemaVersion":2,"sampleRate":48000,"latencySamples":1536,
-        "settings":copy.deepcopy(values),"observedNote":-1,
+        "settings":copy.deepcopy(values),"observedNote":observed,
         "guideDetectedKey":detected[0],"guideDetectedScale":detected[1],
         "guideConfidence":0.75 if detected[0]>=0 else 0.0,
         "effectiveKey":key,"effectiveScale":scale,
@@ -104,7 +104,8 @@ def main():
                 # Native LCD must not fabricate manual/detected effective key
                 # until the exact instance-scoped DSP snapshot arrives.
                 assert page.locator("#mxHKeyReadout").inner_text()=="—"
-                readback(page,state,DEFAULT,0,0)
+                readback(page,state,DEFAULT,0,0,observed=57)
+                assert page.locator("#mxHTracking").inner_text()=="TRACKING A3"
                 assert page.locator("#mxHKeyReadout").inner_text()=="C"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
@@ -158,9 +159,14 @@ def main():
                 assert manual["settings"]["guideMode"]==0
                 assert manual["settings"]["guideChannelId"]=="0"
                 assert page.locator("#mxHKeyReadout").inner_text()=="Am"
+                assert "AWAITING DSP ACK" in page.locator("#mxHStatus").inner_text()
+                assert "queued" in (page.locator(
+                    '.mx-harm-note[data-key="7"]').get_attribute("class") or "")
                 locked={**DEFAULT,"key":7}
                 apply_edit(page,state,locked,7,0)
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                assert "queued" not in (page.locator(
+                    '.mx-harm-note[data-key="7"]').get_attribute("class") or "")
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"
                 assert page.locator("#mxHSourcePicker").is_hidden()
                 # G is a literal circle, subtly larger than unselected notes.
@@ -296,6 +302,17 @@ def main():
                 readback(page,state,selected,9,1,detected=(9,1),
                          request=old_poll)
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
+                # Manual Key also observes audio-owner tracking on existing
+                # console ticks. Never infer singing from a UI button state.
+                before=len(page.evaluate(
+                    "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
+                page.wait_for_timeout(530)
+                emit(page,"arMixConsoleSnapshot",state)
+                page.wait_for_function("""count=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonySnapshot').length>count""",arg=before)
+                monitor=last_action(page,"nativeHarmonySnapshot")
+                readback(page,state,changed,7,0,request=monitor,observed=60)
+                assert page.locator("#mxHTracking").inner_text()=="TRACKING C4"
                 # Reproduce the field screenshot: singer DSP continues playing
                 # while a native device/graph revision changes under an open
                 # Harmony editor. It MUST auto-rebind; no user reopen/wizard.

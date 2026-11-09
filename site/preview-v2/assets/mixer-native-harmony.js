@@ -60,7 +60,7 @@ root.innerHTML=`
     </label>
     <span class="mx-harm-guide-status" id="mxHGuideStatus" role="status" aria-live="polite">MANUAL</span>
    </div>
-  <footer class="mx-harm-foot"><span id="mxHStatus">PREVIEW · NO AUDIO</span><span id="mxHLatency"></span></footer>
+  <footer class="mx-harm-foot"><span id="mxHStatus">PREVIEW · NO AUDIO</span><span id="mxHTracking" aria-live="off">VOICE WAITING</span><span id="mxHLatency"></span></footer>
  `;
 // Cached editor nodes and change-only text: no DOM traversal/paint churn on
 // native readback ticks while the user sings.
@@ -247,6 +247,13 @@ function paint(){
  const reliable=displayKey>=0&&displayKey<12&&displayScale>=0&&displayScale<=1;
  const inGraph=availableSources.some(ch=>ch.id===v.guideChannelId);
  const detected=auto&&detectedKey>=0&&detectedScale>=0;
+ // Gesture feedback is visibly immediate, but the active key still
+ // reflects ONLY the last native PCM ACK + authoritative readback.
+ const draft=latest||pending?.settings||
+   (heldPatch?{...settings,...heldPatch}:null);
+ const queuedKey=nativeView&&draft&&
+   (draft.key!==settings.key||draft.scale!==settings.scale)
+      ?draft.key:-1;
  for(const b of guideButtons){
    const active=Number(b.dataset.guideMode)===v.guideMode;
    b.classList.toggle("active",active);
@@ -256,8 +263,11 @@ function paint(){
  const source=el("mxHGuideSource");
  const chosen=inGraph?v.guideChannelId:"0";
  if(source.value!==chosen)source.value=chosen;
- for(const b of noteButtons)b.classList.toggle("active",
-   reliable&&Number(b.dataset.key)===displayKey);
+ for(const b of noteButtons){
+   b.classList.toggle("active",
+     reliable&&Number(b.dataset.key)===displayKey);
+   b.classList.toggle("queued",Number(b.dataset.key)===queuedKey);
+ }
  for(const b of voiceButtons){
    const active=Number(b.dataset.voices)===v.voices;
    b.classList.toggle("active",active);
@@ -292,6 +302,12 @@ function paint(){
   showText(output,key==="gainDb"?v[key].toFixed(1)+" dB":Math.round(value)+"%");
  }
  syncPower();
+ const detectedNote=observedNote>=0 && observedNote<=127?
+   keys[observedNote%12]+String(Math.floor(observedNote/12)-1):"";
+ const tracking=nativeView?
+   !verified?"DSP SYNCING":detectedNote?"TRACKING "+detectedNote:"WAITING VOICE":
+   "DEMO";
+ showText(el("mxHTracking"),tracking);
  showText(el("mxHLatency"),mode==="NATIVE"?readbackLatency+" samples":"DEMO");
 }
 // One in-flight readback, a bounded retry on the EXISTING 12 Hz console
@@ -313,7 +329,9 @@ function send(next){
  pending={id,settings:next,ack:false,context:c,startedAt:Date.now()};
  backend().emitEvent("arMixAction",{action:"nativeHarmonySetSettings",
     requestId:id,...c,settings:next});
- hint("DSP QUEUED · AWAITING AUDIO ACK");paint();
+ hint(next.key!==settings.key||next.scale!==settings.scale?
+   "KEY "+keys[next.key]+(next.scale?"m":"")+" · AWAITING DSP ACK":
+   "DSP QUEUED · AWAITING AUDIO ACK");paint();
 }
 function edit(patch){
  const next={...(latest||pending?.settings||
@@ -499,7 +517,10 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
      }
      return;
    }
-   if(settings.guideMode===1&&now-lastGuideRead>750){
+   // Manual mode also needs real singer activity. The accepted native
+   // audio-owner observedNote already exists; use this 12Hz console tick
+   // at <=2Hz readback without allocating a new polling timer.
+   if(now-lastGuideRead>500){
      lastGuideRead=now;snapshot();
    }
  });

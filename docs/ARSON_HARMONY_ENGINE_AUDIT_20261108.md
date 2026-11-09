@@ -95,3 +95,21 @@ PCM regressions: anti-phase singer A3 and nonzero five-voice harmony at 48/96k; 
 **P0 hostile PCM fail-closed:** Native input guards now clip finite >4.0f amplitude before the internal dry/grain histories (the engine already clamps all output to +/-4.0f); NaN and infinity still become silence. `StereoPhaseSafeFold` returns the bounded fold it actually uses for correlation, instead of computing an unbounded sum after clipping evidence. This prevents a host supplying finite near-FLT_MAX PCM from poisoning Music Guide or vocal analysis with infinity. Ordinary valid PCM [-4,+4], channel polarity, dry PDC, Music Track read-only routing and GUI are untouched.
 
 **Qualification:** 5 sample rates (32/44.1/48/96/192k), 3 callback partitions (64/127/256 frames), deterministic A3 voiced note, complete correlation windows/no abandoned windows and <=8 candidate lags per slice; real 2/5-voice hostile IEEE PCM and direct near-FLT_MAX stereo guide. The existing 48k blockwise PCM parity, low bass/high soprano, 48/192k stereo dry and 1536-sample PDC regression remain active. Hardware ASIO and spectral/formant gate remain unverified; no claim of a completed P0 low-latency/formant engine.
+
+## 2026-11-09 P0 Harmony native-key and singer telemetry UX
+
+The field failure had two independent operator problems: (1) stale modeless-editor
+control lease on graph/device change was resolved by accepted-graph auto-rebind,
+and (2) native pitch `observedNote` was in the authoritative C++ snapshot but
+never visible to the operator in Manual Key, which only polled Music mode.
+The editor now uses the EXISTING 12Hz console tick for <=2Hz readback in
+both modes, showing `TRACKING A3`/ `WAITING VOICE`/ `DSP SYNCING`
+from the true PCM-owner `observedNote`, never inferred from the UI key.
+Key gestures outline the requested letter immediately but the accepted
+key/LCD still changes ONLY after the native DSP ACK and matching readback.
+The status reports `KEY C#m - AWAITING DSP ACK` while pending. One
+small footer string and a one-pixel indicator; no graph routing, FX
+parameter schema, audio callback work or polling timer added. Real Chromium
+test additionally checks manual-mode liveness, immediate gesture indicator
+and its disappearance after accepted readback. Vocal formant/spatial realism
+remains unproven and separate from this GUI feedback milestone.
