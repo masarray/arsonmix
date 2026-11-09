@@ -66,6 +66,108 @@ public:
     }
 
 
+    // CONTROL ONLY: first-sound product intent. The accepted session, not JS,
+    // creates its own stereo MUSIC channel and default MAIN edge atomically
+    // with the virtual source patch. Caller verifies the SAME physical MAIN
+    // identity before setting trustedMain. Never silently select hardware.
+    // A remembered player-owned ChannelId is reused without touching a
+    // user-authored SOURCE ONLY / BUS / MUTE / FX graph.
+    Result ensurePlayerFirstSound(std::uint64_t expectedRosterRevision,
+                                  std::uint64_t expectedGraphRevision,
+                                  const DynamicGraphRequest& route,
+                                  std::uint64_t requestedEpoch,
+                                  std::uint64_t activeEpoch,
+                                  bool outputsDisarmed,bool trustedMain,
+                                  ChannelId rememberedOwned={},
+                                  std::uint64_t deckId=1,
+                                  DynamicNativeSessionPublisher::FxPlan fx={}) {
+        auto result=preflight(expectedRosterRevision,expectedGraphRevision);
+        if(!result.ok())return result;
+        if(!trustedMain || !deckId || !requestedEpoch ||
+           requestedEpoch!=activeEpoch) {
+            result.fault=Fault::graphRejected;
+            result.native.fault=DynamicNativeSessionPublisher::Fault::invalidCandidate;
+            return result;
+        }
+        const ChannelId owned=rememberedOwned.value?rememberedOwned:playerOwned_;
+        if(owned.value) {
+            const auto* channel=accepted_.find(owned);
+            const auto patch=std::find_if(acceptedRequest_.sources.begin(),
+                acceptedRequest_.sources.end(),[&](const DynamicSourcePatch& s) {
+                    return s.id==owned;
+                });
+            if(!channel || channel->role!=ChannelRole::input ||
+               patch==acceptedRequest_.sources.end() ||
+               patch->kind!=DynamicSourceKind::playerDeck ||
+               patch->deckId!=deckId) {
+                result.fault=Fault::graphRejected;
+                result.native.fault=DynamicNativeSessionPublisher::Fault::invalidCandidate;
+                return result; // never seize an edited or reused channel
+            }
+            playerOwned_=owned;
+            result.edit.revision=expectedRosterRevision;
+            result.native.revision=expectedGraphRevision;
+            return result; // idempotent: never duplicate channel/MAIN edge
+        }
+        // No stale browser physical draft may sneak into an armed player
+        // channel creation. Only one new INTERNAL deck source is admissible.
+        const auto physicalUnchanged=
+            expectedGraphRevision!=0 &&
+            route.physicalInputs==acceptedRequest_.physicalInputs &&
+            route.maxFrames==acceptedRequest_.maxFrames &&
+            route.maxScratchBytes==acceptedRequest_.maxScratchBytes &&
+            route.mainMonoAfterFx==acceptedRequest_.mainMonoAfterFx &&
+            route.sources.size()==acceptedRequest_.sources.size() &&
+            std::equal(route.sources.begin(),route.sources.end(),
+                acceptedRequest_.sources.begin(),
+                [](const DynamicSourcePatch& a,const DynamicSourcePatch& b) {
+                    return a.id==b.id && a.kind==b.kind &&
+                           a.deckId==b.deckId && a.inputL==b.inputL &&
+                           a.inputR==b.inputR && a.stereo==b.stereo;
+                });
+        if(!outputsDisarmed && !physicalUnchanged) {
+            result.fault=Fault::graphRejected;
+            result.native.fault=DynamicNativeSessionPublisher::Fault::outputArmed;
+            return result;
+        }
+        const auto& channels=accepted_.channels();
+        const auto main=std::find_if(channels.begin(),channels.end(),
+            [](const ChannelStripDefinition& row) {
+                return row.role==ChannelRole::main;
+            });
+        if(main==channels.end()) {
+            result.fault=Fault::editRejected;
+            result.edit.fault=ChannelEditFault::invalidAction;
+            return result;
+        }
+        auto candidate=accepted_;
+        ChannelEdit create;
+        create.kind=ChannelEdit::Kind::add;
+        create.position=static_cast<std::size_t>(main-channels.begin());
+        create.role=ChannelRole::input;
+        create.format=ProcessingFormat::stereo;
+        create.text="MUSIC";
+        create.connectMainOnCreate=true;
+        result.edit=candidate.edit(expectedRosterRevision,
+                                    std::span<const ChannelEdit>(&create,1));
+        if(!result.edit.ok() || result.edit.createdIds.size()!=1) {
+            result.fault=Fault::editRejected;return result;
+        }
+        auto effective=route; // CONTROL-owned source array, no callback heap
+        const ChannelId id=result.edit.createdIds.front();
+        effective.sources.push_back({id,-1,-1,true,
+                                      DynamicSourceKind::playerDeck,deckId});
+        // This flag relaxes the general structural-output disarm only after
+        // the caller attests unchanged physical endpoints/pins and MAIN.
+        // It does not alter hardware identity or unmute any physical output.
+        auto committed=publish(std::move(candidate),effective,
+            expectedGraphRevision,requestedEpoch,activeEpoch,
+            outputsDisarmed,std::move(result),std::move(fx),
+            physicalUnchanged);
+        if(committed.ok())playerOwned_=id;
+        return committed; // rollback leaves last accepted PCM intact
+    }
+
     // A single native structural operation over accepted ChannelSendRef.
     // No JS DSP or independent router: same compiled PCM, routing readback,
     // device epoch, revision and FX leases as all other native edit paths.
@@ -106,7 +208,8 @@ public:
                 acceptedRequest_.sources.begin(),
                 [](const DynamicSourcePatch& lhs,const DynamicSourcePatch& rhs) {
                     return lhs.id==rhs.id && lhs.inputL==rhs.inputL &&
-                           lhs.inputR==rhs.inputR && lhs.stereo==rhs.stereo;
+                           lhs.inputR==rhs.inputR && lhs.stereo==rhs.stereo &&
+                           lhs.kind==rhs.kind && lhs.deckId==rhs.deckId;
                 });
         if(!allOutputsDisarmed && !samePhysical) {
             result.fault=Fault::graphRejected;
@@ -212,7 +315,8 @@ public:
         const auto it=std::find_if(acceptedRequest_.sources.begin(),
                                   acceptedRequest_.sources.end(),
             [id](const DynamicSourcePatch& p){return p.id==id;});
-        if(it==acceptedRequest_.sources.end() || it->stereo!=stereo ||
+        if(it==acceptedRequest_.sources.end() ||
+           it->kind!=DynamicSourceKind::physical || it->stereo!=stereo ||
            !publisher_.setPhysicalSource(epoch,graphRevision,id,inputL,inputR,stereo))
             return false;
         it->inputL=inputL;it->inputR=inputR;
@@ -263,10 +367,11 @@ public:
                 float* mainL,float* mainR,int frames,bool muted,Fx&& fx,
                 float* monitorL=nullptr,float* monitorR=nullptr,
                 std::span<float> channelPeaksL={},
-                std::span<float> channelPeaksR={}) noexcept {
+                std::span<float> channelPeaksR={},
+                std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
         return publisher_.render(epoch,inputs,inputCount,mainL,mainR,frames,
                                  muted,std::forward<Fx>(fx),monitorL,monitorR,
-                                 channelPeaksL,channelPeaksR);
+                                 channelPeaksL,channelPeaksR,playerPcm);
     }
     void unpublish() noexcept {publisher_.unpublish();hasHostedFx_=false;}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
@@ -315,14 +420,15 @@ private:
         // restore old pins and claim the requested new route was accepted.
         // Genuine format changes remain structural, with normal graph checks.
         for(const auto& source:route.sources) {
-            const bool valid=DynamicPreparedMixerBlock::validPhysicalPatch(
-                route.physicalInputs,source.inputL,source.inputR,source.stereo);
+            const bool valid=DynamicPreparedMixerBlock::validSourcePatch(
+                route,source);
             const auto prior=std::find_if(acceptedRequest_.sources.begin(),
                 acceptedRequest_.sources.end(),
                 [&](const DynamicSourcePatch& p){return p.id==source.id;});
             const bool conflicting=prior!=acceptedRequest_.sources.end() &&
-                source.stereo==prior->stereo &&
-                (source.inputL!=prior->inputL || source.inputR!=prior->inputR);
+                (source.kind!=prior->kind || source.deckId!=prior->deckId ||
+                 (source.stereo==prior->stereo &&
+                  (source.inputL!=prior->inputL || source.inputR!=prior->inputR)));
             if(!valid || conflicting) {
                 result.fault=Fault::graphRejected;
                 result.native.fault=DynamicNativeSessionPublisher::Fault::invalidGraph;
@@ -354,7 +460,8 @@ private:
     }
 
     DynamicChannelRoster accepted_;
-    DynamicGraphRequest acceptedRequest_{}; // CONTROL-only accepted physical SSOT
+    DynamicGraphRequest acceptedRequest_{}; // CONTROL-only typed source SSOT
+    ChannelId playerOwned_{}; // CONTROL-owned, never a name-based guess
     DynamicNativeSessionPublisher publisher_;
     bool hasHostedFx_=false; // CONTROL only; never an audio callback flag
 };

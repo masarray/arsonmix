@@ -143,12 +143,21 @@ struct MixerDeviceBindingPolicy final {
         auto& sources=document.request.sources;
         if(saved.backend!=live.backend || saved.capture!=live.capture ||
            !samePinNames(saved.inputNames,live.inputNames,live.backend)) {
-            // Matching pin numbers alone cannot identify another capture source.
-            sources.clear();
+            // Different capture hardware invalidates PHYSICAL pins only.
+            // PlayerDeck is a DEVICE-INDEPENDENT source with no ASIO ordinal.
+            // Preserve it (still muted until physical output is verified).
+            sources.erase(std::remove_if(sources.begin(),sources.end(),
+                [](const DynamicSourcePatch& p) {
+                    return p.kind==DynamicSourceKind::physical;
+                }),sources.end());
         } else if(oldPins!=newPins) {
             std::vector<DynamicSourcePatch> mapped;
             mapped.reserve(sources.size());
             for(auto source:sources) {
+                if(source.kind==DynamicSourceKind::playerDeck) {
+                    mapped.push_back(source); // no physical input pin to remap
+                    continue;
+                }
                 source.inputL=remapPin(oldPins,newPins,source.inputL);
                 if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
                 if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
@@ -308,6 +317,12 @@ public:
             set(source,"left",p.inputL);
             set(source,"right",p.inputR);
             set(source,"stereo",p.stereo);
+            // Physical v1 JSON stays byte-identical. Only virtual sources
+            // add an optional extension with strict nonzero deck identity.
+            if(p.kind==DynamicSourceKind::playerDeck) {
+                set(source,"kind","PLAYER_DECK");
+                set(source,"deckId",decimal(p.deckId));
+            }
             sources.add(source);
         }
         set(request,"sources",juce::var(sources));
@@ -439,13 +454,27 @@ public:
             DynamicSourcePatch p;
             if(!parseDecimal(get(src,"id"),p.id.value)||
                !seenSources.insert(p.id.value).second ||
-               !seek(p.id,ChannelRole::input) ||
-               !integral(get(src,"left"),p.inputL,0,doc.request.physicalInputs-1)||
-               !integral(get(src,"right"),p.inputR,-1,doc.request.physicalInputs-1)||
-               !strictBool(get(src,"stereo"),p.stereo)||
-               (p.stereo && (p.inputR<0||p.inputR==p.inputL))||
-               (!p.stereo&&p.inputR>=0))
+               !seek(p.id,ChannelRole::input))
                 return false;
+            const auto sourceKind=get(src,"kind");
+            if(!sourceKind.isVoid() &&
+               sourceKind.toString()!="PLAYER_DECK")return false;
+            if(sourceKind.toString()=="PLAYER_DECK") {
+                p.kind=DynamicSourceKind::playerDeck;
+                if(!parseDecimal(get(src,"deckId"),p.deckId) ||
+                   p.deckId==0 ||
+                   !integral(get(src,"left"),p.inputL,-1,-1)||
+                   !integral(get(src,"right"),p.inputR,-1,-1)||
+                   !strictBool(get(src,"stereo"),p.stereo)||!p.stereo)
+                    return false;
+            } else {
+                if(!integral(get(src,"left"),p.inputL,0,doc.request.physicalInputs-1)||
+                   !integral(get(src,"right"),p.inputR,-1,doc.request.physicalInputs-1)||
+                   !strictBool(get(src,"stereo"),p.stereo)||
+                   (p.stereo && (p.inputR<0||p.inputR==p.inputL))||
+                   (!p.stereo&&p.inputR>=0))
+                    return false;
+            }
             doc.request.sources.push_back(p);
         }
         const auto fxVar=get(root,"inserts"),racksVar=get(root,"rackBypassed");

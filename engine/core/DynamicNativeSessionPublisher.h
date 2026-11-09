@@ -148,7 +148,8 @@ public:
                 bool outputMuted,Fx&& effect,
                 float* monitorL=nullptr,float* monitorR=nullptr,
                 std::span<float> channelPeaksL={},
-                std::span<float> channelPeaksR={}) noexcept {
+                std::span<float> channelPeaksR={},
+                std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -198,7 +199,7 @@ public:
         };
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
-             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR);
+             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm);
         if(!ok)clearOutputs();
         return ok;
     }

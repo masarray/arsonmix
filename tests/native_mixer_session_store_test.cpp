@@ -350,7 +350,137 @@ static void warmVst3Discovery() {
     assert(root.deleteRecursively());
 }
 
+// A music deck is an owned virtual source, not a physical ASIO pin. Its
+// mixer/FX/WIRE topology survives Show save and a changed capture device.
+static void verifyVirtualPlayerSessionSerialization() {
+    auto document=makeSession();
+    auto rows=document.roster.channels();
+    ChannelStripDefinition player;
+    player.id={17};player.role=ChannelRole::input;
+    player.format=ProcessingFormat::stereo;
+    player.name="MUSIC";
+    player.sends.push_back({{15},1.f,false,0.f,true,106});
+    rows.push_back(player);
+    assert(document.roster.restoreExact(document.acceptedRevision,rows));
+    document.request.sources.push_back(
+        {{17},-1,-1,true,DynamicSourceKind::playerDeck,1});
+    MixerSessionDocument decoded;
+    const auto json=Codec::encode(document);
+    assert(Codec::decode(json,decoded));
+    assert(decoded.request.sources.size()==2);
+    const auto& music=decoded.request.sources.back();
+    assert(music.id.value==17 &&
+           music.kind==DynamicSourceKind::playerDeck &&
+           music.deckId==1 && music.inputL==-1 && music.inputR==-1 &&
+           music.stereo);
+    assert(Codec::encode(decoded)==json); // exact deterministic round trip
+
+    auto damaged=juce::JSON::parse(json);
+    auto values=damaged.getProperty("request",{})
+        .getProperty("sources",{});
+    values.getArray()->getReference(1).getDynamicObject()
+        ->setProperty("deckId","0");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(json);
+    values=damaged.getProperty("request",{}).getProperty("sources",{});
+    values.getArray()->getReference(1).getDynamicObject()
+        ->setProperty("left",0); // never spoof pin 0 on a virtual source
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+
+    auto changed=document.binding;
+    changed.capture="Different capture interface";
+    assert(MixerDeviceBindingPolicy::apply(document,changed,document.outputs,
+        2,BindingMode::verifiedDeviceApply).isEmpty());
+    assert(document.request.sources.size()==1);
+    assert(document.request.sources.front().kind==
+           DynamicSourceKind::playerDeck);
+    assert(document.request.sources.front().deckId==1);
+    assert(document.roster.find({17})->sends.front().destination.value==15);
+}
+
+// Actual production callback fixture: a freshly verified mixer needs ZERO
+// microphone patch, lab toggle, extra device or user routing confirmation.
+// One native PLAY adds MUSIC -> existing MAIN in one published ChannelId pass.
+static void verifyProductionPlayerFirstSoundWithSourceOnly() {
+    FixtureDevice device;
+    LiveDryRoutingLab mixer;
+    juce::AudioPluginFormatManager formats;
+    mixer.prepareDevice(&device);
+    assert(mixer.startUnpatchedSession(true,false,0,formats,
+                                       device.rate,device.frames).isEmpty());
+    const auto ep=mixer.epoch();
+    assert(mixer.repatchPhysicalSource(0,ep,mixer.revision(),
+        "NONE",-1,-1,true,false,0,formats,device.rate,device.frames).isEmpty());
+    assert(mixer.admitChannelIdFromAcceptedM4(0,device.frames,true));
+    assert(!mixer.hasVerifiedNativeSources()); // player needs no microphone
+    // Before admission, controlRevision may denote the legacy M4 revision;
+    // once a native MUSIC strip is installed it switches to published PCM.
+    // The invariant is +1 on accepted NATIVE graph and a matching control
+    // revision AFTER publication, not equality to a prior M4 ordinal.
+    const auto beforeGraph=mixer.nativeBusStatus().getProperty(
+        "graphRevision","0").toString().getLargeIntValue();
+    // New virtual MUSIC can publish directly against an ALREADY trusted
+    // MAIN, including while the secondary stream copies MAIN. No physical
+    // source pin, output relink, MONITOR ritual or manual arm.
+    const auto added=mixer.ensureNativePlayerA(false,true);
+    assert(added.accepted && added.created.value!=0);
+    assert(mixer.nativePlayerSource()==added.created);
+    assert(added.pcmRevision==static_cast<std::uint64_t>(beforeGraph)+1);
+    assert(mixer.nativeBusStatus().getProperty("graphRevision","0")
+            .toString()==juce::String(added.pcmRevision));
+    assert(mixer.controlRevision()==added.pcmRevision);
+    assert(mixer.playerDeckHasMainPath());
+    // A second Play owns the exact existing source; no duplicate MAIN edge.
+    const auto again=mixer.ensureNativePlayerA(false,true);
+    assert(again.accepted && again.created==added.created);
+    assert(again.pcmRevision==added.pcmRevision);
+    const auto accepted=mixer.nativeBusStatus();
+    assert(accepted.getProperty("graphRevision","0").toString()
+           ==juce::String(added.pcmRevision));
+    const auto* channels=accepted.getProperty("channels",{}).getArray();
+    assert(channels);
+    ChannelId main{};
+    int playerCount=0;
+    for(const auto& row:*channels) {
+        if(row.getProperty("role","").toString()=="MAIN")
+            main.value=static_cast<std::uint64_t>(
+                row.getProperty("id","0").toString().getLargeIntValue());
+        if(row.getProperty("id","").toString()==
+           juce::String(static_cast<juce::int64>(added.created.value))) {
+            ++playerCount;
+            assert(row.getProperty("primaryOutput","0").toString()!="0");
+        }
+    }
+    assert(main.value!=0 && playerCount==1);
+    std::array<float,480> silence{},musicL{},musicR{},outL{},outR{};
+    musicL.fill(.35f);musicR.fill(-.20f);
+    const float* inputs[]={silence.data(),silence.data()};
+    float* outputs[]={outL.data(),outR.data()};
+    const std::array<DynamicPlayerPcmBlock,1> deck{{{1,musicL.data(),musicR.data()}}};
+    auto render=[&] {
+        assert(mixer.process(inputs,2,outputs,2,480,1.f,false,
+                             nullptr,nullptr,false,nullptr,nullptr,true,deck));
+    };
+    render();
+    assert(outL.back()>.10f && outR.back()<-.05f);
+    const auto unplug=mixer.setNativePrimaryOutput(ep,added.pcmRevision,
+        added.rosterRevision,added.created,{},true);
+    assert(unplug.accepted && !mixer.playerDeckHasMainPath());
+    render();
+    assert(std::abs(outL.back())<1.e-6f && std::abs(outR.back())<1.e-6f);
+    const auto repeated=mixer.ensureNativePlayerA(false,true);
+    assert(repeated.accepted && repeated.created==added.created);
+    assert(!mixer.playerDeckHasMainPath()); // NEVER undo SOURCE ONLY
+    const auto reconnect=mixer.setNativePrimaryOutput(ep,unplug.pcmRevision,
+        unplug.rosterRevision,added.created,main,true);
+    assert(reconnect.accepted && mixer.playerDeckHasMainPath());
+    render();
+    assert(outL.back()>.10f && outR.back()<-.05f);
+}
+
 int main(){
+    verifyProductionPlayerFirstSoundWithSourceOnly();
+    verifyVirtualPlayerSessionSerialization();
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
