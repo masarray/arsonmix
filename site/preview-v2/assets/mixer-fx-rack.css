@@ -825,8 +825,9 @@
 .mx-vthrow .vt-throw-button[data-tail=true]:not(:disabled) .vt-throw-aura{
  box-shadow:0 0 29px #bb29e73f,inset 0 0 0 1px #e7a7f783}
 .mx-vthrow .vt-throw-button:disabled{opacity:.53;filter:grayscale(.72) brightness(.8)}
-.mx-vthrow .vt-throw-engraving{margin-top:-3px;color:#a995b4;
- font-size:9px;letter-spacing:.24em;font-weight:560;user-select:none}
+.mx-vthrow .vt-throw-engraving{margin-top:-3px;color:#bca0cc;
+ font-size:9px;letter-spacing:.24em;font-weight:560;user-select:none;
+ transform:translateY(6px);pointer-events:none}
 .mx-vthrow .vt-performance{display:grid;grid-template-columns:88px minmax(0,1fr) 302px;
  align-items:center;column-gap:15px;margin-top:8px;min-height:110px}
 .mx-vthrow .vt-wet-module{padding:0;justify-self:center;width:88px}
