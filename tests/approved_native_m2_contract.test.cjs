@@ -1241,7 +1241,8 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/NO CAPTURE INPUT · OPEN AUDIO I\/O/);
+ assert.match(bridge,/NO HARDWARE IN · MIXER\/FX READY · USE PLAYER OR AUDIO I\/O/);
+ assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
  assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
  assert.doesNotMatch(bridge,/NO AUDIBLE OUTPUT · PATCH INPUT \+ ARM/);
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);

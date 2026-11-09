@@ -93,6 +93,38 @@ public:
     double rate=48000.;
 };
 
+static void outputOnlyNativeStartup() {
+    // Real output-only callback: never invent a capture pin, but a silent
+    // ChannelId session, its FX/WIRE bus and physical zero output are valid.
+    FixtureDevice playback;
+    playback.inputMask.clear();
+    LiveDryRoutingLab mixer;
+    juce::AudioPluginFormatManager formats;
+    mixer.prepareDevice(&playback);
+    assert(mixer.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
+    assert(mixer.ready() && !mixer.hasExplicitRoute());
+    // Legacy startup is silent before the one deliberate native migration.
+    assert(!mixer.admitChannelIdFromAcceptedM4(0,480,true));
+    assert(mixer.admitChannelIdFromAcceptedM4(0,480,true,{},true));
+    assert(mixer.hasExplicitRoute() && !mixer.hasVerifiedNativeSources());
+    const auto native=mixer.nativeBusStatus();
+    assert(native.isObject());
+    const auto graph=static_cast<std::uint64_t>(
+        native.getProperty("graphRevision",{}).toString().getLargeIntValue());
+    const auto roster=static_cast<std::uint64_t>(
+        native.getProperty("rosterRevision",{}).toString().getLargeIntValue());
+    const auto add=mixer.createNativeInputChannel(mixer.epoch(),graph,roster,
+        "No Microphone Track",ProcessingFormat::stereo,true);
+    assert(add.accepted && !mixer.hasVerifiedNativeSources());
+    std::array<float,480> left{},right{};
+    left.fill(1.f);right.fill(1.f); // must be cleared, not fake audio
+    float* outputs[]={left.data(),right.data()};
+    assert(mixer.process(nullptr,0,outputs,2,480,1.f,true,
+        nullptr,nullptr,false,nullptr,nullptr,true));
+    for(const auto s:left)assert(s==0.f);
+    for(const auto s:right)assert(s==0.f);
+}
+
 static void nativeDeviceRecovery() {
     FixtureDevice device;
     auto saved=makeSession();
@@ -366,6 +398,7 @@ int main(){
         malformed.getProperty("binding",{}).getDynamicObject()->setProperty("inputMask","3");
         assert(!Codec::decode(juce::JSON::toString(malformed,false),decoded));
     }
+    outputOnlyNativeStartup();
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
