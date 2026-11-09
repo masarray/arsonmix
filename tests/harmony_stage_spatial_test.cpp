@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/HarmonyStageSpatial.h"
+#include "../engine/builtin_fx/HarmonyRoomFocus.h"
 #include "../engine/builtin_fx/HarmonyEnsembleSpace.h"
 #include "../engine/builtin_fx/HarmonyDsp.h"
 #include <algorithm>
@@ -85,8 +86,41 @@ static double farNearRatio(double rate,double frequency,float space){
     need(nearEnergy>1.e-5&&farEnergy>0.,"head shadow null output");
     return farEnergy/nearEnergy;
 }
+// Synthetic room clarity and phrase-envelope proof, not real singer listening.
+static double focusEnergy(double rate,double hz){
+    BackingRoomFocus f;need(f.prepare(rate),"room focus rate");
+    const int n=static_cast<int>(rate*.16);double sum=0.;
+    for(int i=0;i<n;++i){
+        const float x=static_cast<float>(.3*std::sin(
+            6.283185307179586*hz*i/rate));
+        const auto s=f.filterSend(x,x);
+        need(std::isfinite(s.left)&&std::isfinite(s.right),"room finite");
+        if(i>n/2)sum+=s.left*s.left;
+    }
+    return sum/(n/2);
+}
+static void focusTest(double rate){
+    BackingRoomFocus f;need(f.prepare(rate),"room init");
+    need(focusEnergy(rate,75.)<focusEnergy(rate,600.)*.5,
+         "backing room subbass not cleaned");
+    float last=1.f;
+    for(int i=0;i<static_cast<int>(rate*.35);++i){
+        const float g=f.returnGain(.40f,.40f,1.f);
+        need(g>.78f&&g<=1.f&&std::abs(g-last)<.003f,
+             "room level jump or overduck");last=g;
+    }
+    need(last<.85f,"room activity follower inactive");
+    need(f.returnGain(.4f,.4f,0.f)==1.f,"Space0 room not neutral");
+    for(int i=0;i<static_cast<int>(rate*1.5);++i)
+        last=f.returnGain(0.f,0.f,1.f);
+    need(last>.995f&&last<=1.f,"room tail did not bloom in gaps");
+    need(f.prepare(rate)&&f.leadEnvelope()==0.f,"room restart stale envelope");
+    need(f.filterSend(0.f,0.f).left==0.f&&
+         f.returnGain(0.f,0.f,1.f)==1.f,"room restart stale sample");
+}
 int main(){
     for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+        focusTest(rate);
         double previous=-1.;
         for(float space:{.25f,.6f,1.f}){
             const auto left=scene(rate,space,0,3);

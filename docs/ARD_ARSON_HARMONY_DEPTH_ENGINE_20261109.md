@@ -88,3 +88,22 @@ At Space 0 the far-ear blend is zero; at higher Space, far ear combines a propor
 ### 2026-11-09 center backing separation
 
 The fixed short far-ear shadow cue now combines with a modest, **center-only backing direct** recess. With three singers the middle backing singer can otherwise overlap the dry center-lead image. At Space 1 its center direct level is 0.83 of its original while its reflected and one-room-send components remain unchanged. The effect tapers with physical stage direction and Space (fully neutral at Space 0), preserves side singer direct energy and never changes dry lead, pitch/formant engine or published PDC. Impulse regressions validate actual center direct/room ratio, no full muting or polarity tricks. Subjective quality is still an ear-test.
+
+
+## 2026-11-09 D3 — conservatively focused musical backing room
+
+`HarmonyRoomFocus.h` is a shared 170Hz high-pass on the BACKING ROOM SEND
+only, and a 12ms attack / 240ms release lead-envelope follower that
+modulates only the late room return (max 22% attenuation at Space=1).
+Its input is the original latency-aligned dry lead, not a second channel.
+During sustained lead, late diffusion is gently eased back; between
+phrases the late field blooms again. Direct singers, all first reflections,
+lead dry PCM and pitch/formant candidate are unaffected. No FFT, lookahead,
+extra delay/PDC, GUI knob, saved schema change or realtime allocation.
+
+Native regression measures the 75/600Hz frequency discrimination at
+32/44.1/48/96/192k, bounded attack/release, Space0 unity and restart
+clearing. Offline A/B adds `10_room_focus_off_space_060.wav` and
+`11_room_focus_off_backing_only.wav` with the SAME stage and pitch
+to isolate the room change. Synthetic tests are not a real singer or
+physical ASIO qualification.

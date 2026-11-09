@@ -9,6 +9,7 @@
 #include "HarmonyPreparedTone.h"
 #include "HarmonyEnsembleSpace.h"
 #include "HarmonyDepthRoom.h"
+#include "HarmonyRoomFocus.h"
 #include "HarmonyStageSpatial.h"
 #include "HarmonyPitchSynchronous.h"
 
@@ -99,13 +100,14 @@ public:
         decimationLowpass_=0.f;
         if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
            !ensemble_.prepare(rate)||!depthRoom_.prepare(rate)||
-            !stage_.prepare(rate))return false;
+            !stage_.prepare(rate)||!roomFocus_.prepare(rate))return false;
         pitchIntervals_.prepare();
         pitchSync_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         pitchSyncReferenceEnabled_=true;
         stageDepthReferenceEnabled_=true;
+        roomFocusReferenceEnabled_=true;
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -214,6 +216,9 @@ public:
     void setStageDepthForOfflineReference(bool enabled) noexcept {
         stageDepthReferenceEnabled_=enabled;
     }
+    void setRoomFocusForOfflineReference(bool enabled) noexcept {
+        roomFocusReferenceEnabled_=enabled;
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -317,12 +322,18 @@ public:
             // One shared backing-only diffuse field. Both its input and
             // audible return ramp with Space. Wet=0 gates its old tail on
             // a smooth <=5 ms envelope while the room ring still decays.
-            const auto room=depthRoom_.process(roomSendL*space_,
-                                               roomSendR*space_);
+            // Room-only low-cut and musical tail bloom; lead remains untouched.
+            const float sendL=roomSendL*space_,sendR=roomSendR*space_;
+            const auto cleaned=roomFocus_.filterSend(sendL,sendR);
+            const auto room=depthRoom_.process(
+                roomFocusReferenceEnabled_?cleaned.left:sendL,
+                roomFocusReferenceEnabled_?cleaned.right:sendR);
             const float roomGate=std::min(1.f,wet_*4.f);
             const float lateReturn=(stageDepthReferenceEnabled_?
                 stageGain.late:.85f*space_)*roomGate;
-            outL+=room.left*lateReturn;outR+=room.right*lateReturn;
+            const float focus=roomFocus_.returnGain(dryL,dryR,space_);
+            const float roomReturn=lateReturn*(roomFocusReferenceEnabled_?focus:1.f);
+            outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
             ensemble_.advance(voiced_);
@@ -529,6 +540,7 @@ private:
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
     std::uint64_t sampleClock_=0;
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
+    bool roomFocusReferenceEnabled_=true;
     std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
@@ -540,6 +552,7 @@ private:
     EnsembleSpace ensemble_{};
     BackingDepthRoom depthRoom_{};
     BackingStageSpatial stage_{};
+    BackingRoomFocus roomFocus_{};
     PitchSynchronousVoice<capacity,maxVoices+1> pitchSync_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};

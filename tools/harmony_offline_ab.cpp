@@ -87,12 +87,13 @@ static void writeWave(const fs::path& path,const Wave& wave){
     if(!out)throw std::runtime_error("WAV output write failed");
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
-                    bool enhancedDepth=true){
+                    bool enhancedDepth=true,bool focus=true){
     auto e=std::make_unique<Engine>();
     if(!e->prepare(input.rate)||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
+    e->setRoomFocusForOfflineReference(focus);
     Wave out=input;
     for(std::size_t pos=0;pos<out.left.size();pos+=static_cast<std::size_t>(block))
         e->process(out.left.data()+pos,out.right.data()+pos,
@@ -143,7 +144,9 @@ static void renderAb(const Wave& input,const fs::path& folder){
     auto drySettings=settings;drySettings.wet=0.f;
     const Wave dry=process(input,drySettings,false);
     const Wave drySync=process(input,drySettings,true);
-    if(!same(dry,drySync))throw std::runtime_error("Lead Wet0 no longer sample-exact");
+    const Wave dryRoomOld=process(input,drySettings,true,127,true,false);
+    if(!same(dry,drySync)||!same(dry,dryRoomOld))
+        throw std::runtime_error("Lead Wet0 no longer sample-exact");
     const Wave old=process(input,settings,false);
     const Wave modern=process(input,settings,true);
     // A subtraction stem is invalid when the host output hard-clipped.
@@ -152,6 +155,7 @@ static void renderAb(const Wave& input,const fs::path& folder){
             throw std::runtime_error("mixed output clipped: lower recording level for valid stem subtraction");
     const Wave backing=subtract(modern,dry);
     const Wave previousDepth=process(input,settings,true,127,false);
+    const Wave previousRoomFocus=process(input,settings,true,127,true,false);
     writeWave(folder/"01_lead_reference.wav",dry);
     writeWave(folder/"02_legacy_grain_mix.wav",old);
     writeWave(folder/"03_new_space_060.wav",modern);
@@ -159,6 +163,8 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"05_new_mono_fold.wav",fold(modern));
     writeWave(folder/"08_previous_depth_space_060.wav",previousDepth);
     writeWave(folder/"09_previous_backing_only.wav",subtract(previousDepth,dry));
+    writeWave(folder/"10_room_focus_off_space_060.wav",previousRoomFocus);
+    writeWave(folder/"11_room_focus_off_backing_only.wav",subtract(previousRoomFocus,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
     generateReport(folder,input,dry,old,modern,backing,previousDepth);
