@@ -81,3 +81,15 @@ Audit found the audible 16ms fixed-grain playback still changes vowel phase at u
 - One 16,384-sample mono history already owned by Harmony; no new audio route, device, host, PDC, user control or UI. Per-voice candidate stores at most 8 active source windows, fixed-size. Peak searches are bounded to <1 source period and never read future input.
 - New original-harmonic source CTest checks up/down ratios, a low male period, high-rate registers and **exact 64/257 callback-partition PCM parity** at 48/96/192k. Existing native lead preservation and phase-safe music tests still apply.
 - **Crucial nonclaim:** harmonic synthetic tests do not establish a singer's natural vowel formants or consonant intelligibility. Positive peaks are not reliable epochs for all breathy, growled or multi-pitch vocals. Do not mark PR production-ready until real recorded-vocal spectral F1/F2/F3, fricative/phrase boundaries, loudness-matched blind A/B and worst-case ASIO xrun/latency testing. If an audible regression occurs, fall back to the previous grain implementation before release.
+
+## 2026-11-09 Native vocal A/B workstation milestone
+
+The same `HarmonyDsp::Engine` now exposes an **offline reference-only** switch to re-render the previous grain synthesis against the pitch-synchronous candidate; normal live devices always default to the candidate and no new GUI mode/schema/control packet is added. The separate `ARMixHarmonyOfflineAb` C++ CLI takes a licensed/consented **adult** voice excerpt in mono/stereo 16/24-bit PCM or 32-bit float RIFF WAV, 32–192 kHz, <=60 seconds:
+
+```sh
+ARMixHarmonyOfflineAb dry-vocal.wav output-directory
+```
+
+Outputs `01_lead_reference.wav`, `02_legacy_grain_mix.wav`, `03_new_space_060.wav`, `04_new_backing_only.wav`, `05_new_mono_fold.wav`, `06_new_space_000.wav`, `07_new_space_100.wav`, and `metrics.json`. All cases are reset from identical input and Manual C major / three voices / Wet 45%, Pitch Tune OFF, Gain 0dB. Wet0 lead is compared sample-exact across candidates; backing stem is mathematical difference from that lead and rejects hard-clipped output. The tool runs offline only; no filesystem IO in the audio callback. Compile/run `--self-test` as a quick synthetic source integrity check.
+
+**Unmet acoustic gates:** actual consented singer recordings and blind A/B, F1/F2/F3/vowel envelope preservation, noisy consonants, source expression, physical Windows ASIO loopback and CPU/xrun timings. Do NOT use the synthetic self-test or unnormalized WAV comparison to claim a professional natural-sounding result.

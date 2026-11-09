@@ -102,6 +102,7 @@ public:
         pitchSync_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
+        pitchSyncReferenceEnabled_=true;
         pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -199,6 +200,12 @@ public:
     }
     const Settings& settings() const noexcept{return settings_;}
     int latencySamples() const noexcept{return latency_;}
+    // Offline A/B harness only: retain the exact legacy granular reference
+    // without introducing a user-facing mode or changing serialized FX state.
+    // Production instances always default to the pitch-synchronous candidate.
+    void setPitchSynchronousCandidateForOfflineReference(bool enabled) noexcept {
+        pitchSyncReferenceEnabled_=enabled;
+    }
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
@@ -333,7 +340,7 @@ private:
         // overlap-add. The exact source period is measured, not inferred
         // from the harmony target. Uncertain/nonperiodic sounds retain the
         // previous validated granular shifter with a bounded 12ms crossfade.
-        const bool confident=voiced_&&sourceConfidence_>.82f&&
+        const bool confident=pitchSyncReferenceEnabled_&&voiced_&&sourceConfidence_>.82f&&
                              sourcePeriodSamples_>=8.f;
         PitchSynchronousVoice<capacity,maxVoices+1>::Output sync{};
         if(confident)
@@ -500,6 +507,7 @@ private:
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
     std::uint64_t sampleClock_=0;
+    bool pitchSyncReferenceEnabled_=true;
     std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
