@@ -195,3 +195,14 @@ test('updater recovers after crash and offers only verified same-version repair'
   assert.doesNotMatch(s, /Remove-Item -LiteralPath \$stage -Recurse/);
   assert.doesNotMatch(s, /\bunins000\.exe\b/);
 });
+
+test('cached installers are byte-verified and revoked releases cannot loop indefinitely', () => {
+  const ps = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  for (const marker of [
+    'Test-CompleteStagedTransaction', 'STAGED_CACHE_INVALID_REDOWNLOAD',
+    'STAGED_READY_FOR_NORMAL_EXIT', 'RELEASE_REVOKED_UPDATE_DEFERRED',
+    'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
+  ]) assert.ok(ps.includes(marker), marker);
+  assert.match(smoke, /ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS/);
+});

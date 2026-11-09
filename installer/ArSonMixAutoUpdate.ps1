@@ -186,6 +186,22 @@ function Classify-InterruptedTransaction([string]$phase,[string]$actual,[string]
     if($candidate -cmatch '^[a-f0-9]{40}$' -and $actual -ceq $candidate){return 'candidate-unverified'}
     return 'unknown-installation'
 }
+
+function Test-CompleteStagedTransaction([object]$transaction) {
+    try {
+        if($transaction.phase -cne 'staged' -or
+           $null -eq (Version-Key ([string]$transaction.candidateTag)) -or
+           $null -eq (Version-Key ([string]$transaction.previousTag))){return $false}
+        $newName="ArSonMix-$($transaction.candidateTag)-Windows-x64-Setup.exe"
+        $oldName="ArSonMix-$($transaction.previousTag)-Windows-x64-Setup.exe"
+        if($transaction.newAsset.name -cne $newName -or
+           $transaction.previousAsset.name -cne $oldName){return $false}
+        $folder=Join-Path $root 'stage'
+        return ((Test-StagedAsset (Join-Path $folder $newName) $transaction.newAsset) -and
+                (Test-StagedAsset (Join-Path $folder $oldName) $transaction.previousAsset))
+    } catch {return $false}
+}
+
 function Clear-StagedVendorFiles([object]$transaction) {
     # Never recursively delete a directory or touch private Studio/.smix.
     $folder=Join-Path $root 'stage'
@@ -334,6 +350,25 @@ if($PolicySelfTest) {
     } finally {
         if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Recurse -Force}
     }
+    # Offline stage reuse must require BOTH full-size byte-verified EXEs.
+    $previousRoot=$root
+    try {
+        $root=$tmp
+        $stageDir=Join-Path $root 'stage'
+        [IO.Directory]::CreateDirectory($stageDir) | Out-Null
+        $tag='v0.5.0-alpha.6'
+        $stageFile=Join-Path $stageDir "ArSonMix-$tag-Windows-x64-Setup.exe"
+        [IO.File]::WriteAllBytes($stageFile,(New-Object byte[] 2097152))
+        $hash=(Get-FileHash -LiteralPath $stageFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        $stored=[pscustomobject]@{name="ArSonMix-$tag-Windows-x64-Setup.exe";size=2097152;digest="sha256:$hash"}
+        $transaction=[pscustomobject]@{phase='staged';candidateTag=$tag;previousTag=$tag;
+            newAsset=$stored;previousAsset=$stored}
+        if(-not (Test-CompleteStagedTransaction $transaction)){throw 'Verified stage not reused'}
+        $stored.digest='sha256:'+('0'*64)
+        if(Test-CompleteStagedTransaction $transaction){throw 'Corrupted staged transaction reused'}
+    } finally {$root=$previousRoot}
+    Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
+
     Write-Output 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'
     Write-Output 'ARSONMIX_UPDATER_POLICY_PASS'
@@ -383,7 +418,23 @@ try {
     if(-not $ApplyStaged) {
     # A staged transaction stays staged across app opens. Installation
     # always rechecks publication/revocation before touching any files.
-    if($state.phase -ceq 'staged' -and $state.previousSha -ceq $installedSha){exit 0}
+    if($state.phase -ceq 'staged' -and $state.previousSha -ceq $installedSha){
+        if(Test-CompleteStagedTransaction $state){
+            Log-Result 'STAGED_READY_FOR_NORMAL_EXIT'
+            exit 0
+        }
+        # Incomplete/altered cached installers must be downloaded afresh.
+        # Never attempt an installer solely because metadata says "staged".
+        $state.phase='staging-retry'
+        $state.lastCheckUtc=''
+        $state.lastAttemptUtc=''
+        Write-State $state
+        Log-Result 'STAGED_CACHE_INVALID_REDOWNLOAD'
+    }
+    if($state.phase -ceq 'idle' -and $state.candidateTag -and
+       $state.lastInstalledTag -ceq $state.candidateTag) {
+        Clear-StagedVendorFiles $state
+    }
     $imageStatus=Get-InstalledImageStatus $file
     $now=[DateTime]::UtcNow
     $attempt=[DateTime]::MinValue
@@ -491,7 +542,15 @@ try {
     }
     if($null -eq $approved -or $approved.digest -cne $state.newAsset.digest -or
        [long]$approved.size -ne [long]$state.newAsset.size){
-        Fail 'Published update revoked or changed'
+        # A withdrawn release must not be retried on every shutdown.
+        # Permit another newly published, attested release on next startup.
+        $state.blockedTag=$state.candidateTag
+        $state.phase='revoked'
+        $state.lastCheckUtc=''
+        $state.lastAttemptUtc=''
+        Write-State $state
+        Log-Result 'RELEASE_REVOKED_UPDATE_DEFERRED'
+        exit 0
     }
     $new=[pscustomobject]@{tag_name=$state.candidateTag;target_commitish=$state.candidateSha}
     $oldAsset=$state.previousAsset
