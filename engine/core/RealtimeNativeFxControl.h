@@ -9,6 +9,11 @@ namespace armix::mixer {
 struct RealtimeNativeFxControl {
     virtual ~RealtimeNativeFxControl() = default;
     virtual void consumeRealtimeEdits() noexcept = 0;
+    // CONTROL-queried once when the native FX lease is prepared. Temporal DSP
+    // that cannot resume from stale input (Harmony pitch/history/room) must
+    // continue processing the actual PCM while its output is bypassed.
+    // Ordinary EQ/compressor/vendor FX retain the CPU-saving bypass fast path.
+    virtual bool requiresContinuousBypassProcessing() const noexcept {return false;}
     // CONTROL-only lifecycle: after FxInstance accepts this processor, a
     // vendor-state restore must not mutate published audio-owned filters.
     virtual void sealForRealtime() noexcept {}
