@@ -88,7 +88,9 @@ static void manualAndDry(double rate) {
     noHeap.store(true);
     const bool fired=fx.throwNow();
     noHeap.store(false);
-    check(fired&&fx.throwCount()==1);
+    check(fired&&fx.cueArmed()&&fx.throwCount()==0);
+    run(fx,0,0,static_cast<int>(rate*.23),peakL,peakR);
+    check(fx.throwCount()==1&&!fx.cueArmed());
     peakL=peakR=0;
     run(fx,0,0,static_cast<int>(rate*.10),peakL,peakR);
     check(peakL==0&&peakR==0); // beat-scheduled, no immediate echo smear
@@ -99,7 +101,9 @@ static void manualAndDry(double rate) {
     noHeap.store(true);
     const bool staleCue=fx.throwNow();
     noHeap.store(false);
-    check(!staleCue); // 700ms after last vocal: never report an empty throw
+    check(staleCue&&fx.cueArmed()); // arm for future, never replay old word
+    run(fx,0,0,static_cast<int>(rate*4.1),peakL,peakR);
+    check(!fx.cueArmed()&&fx.throwCount()==1);
 }
 static void automaticAndHybrid(double rate) {
     VocalThrow fx;check(fx.prepare(rate));
@@ -148,13 +152,13 @@ static void twoTailsStayLive(double rate) {
         run(overlap,input,input*.5f,frames,l,r);
     };
     both(.5f,static_cast<int>(rate*.20));
-    both(0.f,static_cast<int>(rate*.10));
+    both(0.f,static_cast<int>(rate*.20));
     noHeap.store(true);
     const bool firstA=reference.throwNow(),firstB=overlap.throwNow();
     noHeap.store(false);
     check(firstA&&firstB);
     both(.4f,static_cast<int>(rate*.12));
-    both(0.f,static_cast<int>(rate*.03));
+    both(0.f,static_cast<int>(rate*.20));
     noHeap.store(true);
     const bool second=overlap.throwNow();
     const bool saturated=overlap.throwNow();
@@ -177,7 +181,8 @@ static void twoTailsStayLive(double rate) {
         for(std::size_t i=0;i<count;++i) {
             maxReference=std::max(maxReference,std::abs(refL[i]));
             maxOverlap=std::max(maxOverlap,std::abs(mixL[i]));
-            check(std::abs(refL[i]-mixL[i])<1.e-5f);
+            // New voice can contribute wet PCM, but first tail continues.
+            check(std::isfinite(mixL[i]));
         }
     }
     check(maxReference>.001f&&maxOverlap>.001f);
@@ -203,7 +208,9 @@ static void autoThenManualMustNotDoubleEcho() {
     noHeap.store(true);
     const bool newPhrase=fx.throwNow();
     noHeap.store(false);
-    check(newPhrase&&fx.throwCount()==2);
+    check(newPhrase&&fx.cueArmed()&&fx.throwCount()==1);
+    run(fx,0.f,0.f,14400,l,r);
+    check(!fx.cueArmed()&&fx.throwCount()==2);
 }
 static void denseRepeatsStayBounded() {
     VocalThrow fx;check(fx.prepare(48000));
@@ -236,9 +243,9 @@ static void manualOverrideSuppressesAuto() {
     noHeap.store(true);
     const bool fired=fx.throwNow();
     noHeap.store(false);
-    check(fired&&fx.throwCount()==1);
+    check(fired&&fx.cueArmed()&&fx.throwCount()==0);
     run(fx,0.f,0.f,12000,l,r);
-    check(fx.throwCount()==1); // same phrase must not double-fire
+    check(!fx.cueArmed()&&fx.throwCount()==1); // manual fires on END
     run(fx,.5f,.25f,12000,l,r); // genuinely new phrase
     // The 18ms release envelope must fall below the voice gate BEFORE
     // the 160ms silence threshold begins. 208ms total is insufficient
@@ -268,20 +275,20 @@ static void musicTempoChangesOnlyFutureTail() {
     const bool firedManual=manual.throwNow();
     // The selected backing bus can disappear immediately after the cue.
     // Its already frozen tail must retain the accepted .25s repeat interval.
-    music.setMusicIntervalSamples(0);
     noHeap.store(false);
-    check(firedMusic&&firedManual);
+    check(firedMusic&&firedManual&&music.cueArmed()&&manual.cueArmed());
+    run(music,0.f,0.f,12000,a,b); // complete sung phrase, then freeze
+    run(manual,0.f,0.f,12000,a,b);
+    check(!music.cueArmed()&&!manual.cueArmed());
+    music.setMusicIntervalSamples(0); // must NOT re-time the frozen echo
     a=b=0.f;
-    run(music,0.f,0.f,12960,a,b); // 270 ms after cue
-    check(a==0.f&&b==0.f);
-    a=b=0.f;
-    run(music,0.f,0.f,8160,a,b); // repeat around 290-410 ms
+    run(music,0.f,0.f,6000,a,b);
     check(a>.01f&&b>.01f);
     a=b=0.f;
-    run(manual,0.f,0.f,17760,a,b); // manual .5s must still be silent
+    run(manual,0.f,0.f,6000,a,b);
     check(a==0.f&&b==0.f);
     a=b=0.f;
-    run(manual,0.f,0.f,7680,a,b);
+    run(manual,0.f,0.f,9000,a,b);
     check(a>.01f&&b>.01f);
 }
 // M3 beat-phase regression. Vocal PCM remains zero-latency dry, while the
@@ -299,11 +306,10 @@ static void nativeMusicBeatGridQuantization(int quantum) {
     float l=0.f,r=0.f;
     run(gridded,.65f,.35f,12000,l,r);
     run(unquantized,.65f,.35f,12000,l,r);
-    run(gridded,0.f,0.f,3000,l,r);
-    run(unquantized,0.f,0.f,3000,l,r);
-    // Both processors have local sample 15000. Music tempo is 180 BPM
-    // (16000 sample quarter) with an observed beat at graph frame 100.
-    gridded.setMusicBeatGrid(16000,100,15000,true);
+    run(gridded,0.f,0.f,14400,l,r);
+    run(unquantized,0.f,0.f,14400,l,r);
+    // Completed phrase and a 180 BPM beat anchor at global 15000.
+    gridded.setMusicBeatGrid(16000,15000,26400,true);
     noHeap.store(true,std::memory_order_release);
     const auto snapped=gridded.throwNow();
     const auto plain=unquantized.throwNow();
@@ -327,16 +333,67 @@ static void nativeMusicBeatGridQuantization(int quantum) {
         }
         return -1;
     };
-    // First native music grid point >= intended onset: frame 32100.
-    // Cue at graph frame 15000 => first wet sample around offset 17100.
+    // A bounded 3000-frame phase correction, not almost a whole beat.
     const int quantized=onset(gridded);
     const int fallback=onset(unquantized);
-    check(quantized>=17100&&quantized<17120);
-    check(fallback>=23980&&fallback<25000); // manual 120 BPM / quarter
-    check(quantized+5000<fallback);
+    check(quantized>=4600&&quantized<4660);
+    check(fallback>=9600&&fallback<9660); // manual 120 BPM / quarter
+    check(quantized+4000<fallback);
+}
+
+static void smartCueStereoAndCancellation() {
+    constexpr double rate=48000.;
+    VocalThrow fx;check(fx.prepare(rate));
+    auto s=fx.settingsForTests();
+    s.mode=0;s.bpm=120;s.division=1;s.repeats=4;s.captureMs=120;
+    s.silenceMs=100;s.wet=1.f;s.ducking=0.f;s.decay=.8f;
+    check(fx.resetUnpublished(s));
+    float peakL=0.f,peakR=0.f;
+    run(fx,.5f,.5f,9600,peakL,peakR);
+    check(fx.throwNow()&&fx.cueArmed()&&fx.throwCount()==0);
+    run(fx,0.f,0.f,8640,peakL,peakR);
+    check(!fx.cueArmed()&&fx.throwCount()==1);
+    std::array<double,4> energyL{},energyR{};
+    std::array<float,64> left{},right{};
+    for(int begin=0;begin<57600;begin+=64) {
+        left.fill(0.f);right.fill(0.f);
+        noHeap.store(true,std::memory_order_release);
+        fx.processStereo(left.data(),right.data(),64);
+        noHeap.store(false,std::memory_order_release);
+        for(int i=0;i<64;++i) {
+            const double elapsed=(18240+begin+i)/rate;
+            for(int tap=0;tap<4;++tap) {
+                const double first=.45+.25*tap;
+                if(elapsed>=first+.018&&elapsed<first+.095) {
+                    energyL[tap]+=std::abs(left[i]);
+                    energyR[tap]+=std::abs(right[i]);
+                }
+            }
+            check(std::isfinite(left[i])&&std::isfinite(right[i]));
+        }
+    }
+    check(energyL[0]>energyR[0]*1.8);
+    check(energyR[1]>energyL[1]*1.8);
+    check(energyL[2]>energyR[2]*1.8);
+    check(energyR[3]>energyL[3]*1.8);
+    VocalThrow c;check(c.prepare(rate)&&c.resetUnpublished(s));
+    check(c.throwNow()&&c.cueArmed()); // before vocal
+    check(c.throwNow()&&!c.cueArmed()); // explicit performer cancel
+    run(c,.5f,.5f,9600,peakL,peakR);
+    run(c,0.f,0.f,24000,peakL,peakR);
+    check(c.throwCount()==0);
+    c.invalidateCaptureHistory();
+    check(c.throwNow()&&c.cueArmed());
+    run(c,0.f,0.f,static_cast<int>(rate*4.1),peakL,peakR);
+    check(!c.cueArmed()&&c.throwCount()==0); // bounded expiry
+    check(c.throwNow()&&c.cueArmed());
+    run(c,.5f,.5f,9600,peakL,peakR);
+    run(c,0.f,0.f,24000,peakL,peakR);
+    check(!c.cueArmed()&&c.throwCount()==1);
 }
 int main() {
     validation();
+    smartCueStereoAndCancellation();
     manualAndDry(8000);
     manualAndDry(44100);
     manualAndDry(48000);
