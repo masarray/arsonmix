@@ -304,6 +304,12 @@ def main():
                 assert page.locator("#mxHKeyReadout").inner_text()=="G"
                 # Manual Key also observes audio-owner tracking on existing
                 # console ticks. Never infer singing from a UI button state.
+                # The preceding bypass-readback tests may have left ONE
+                # outstanding (throttled) snapshot request. Complete it as
+                # native JUCE would, rather than asserting a second request
+                # within the in-flight 2500ms readback fence.
+                latest_snap=last_action(page,"nativeHarmonySnapshot")
+                readback(page,state,values,7,0,request=latest_snap)
                 before=len(page.evaluate(
                     "()=>window.__actions.filter(x=>x.action==='nativeHarmonySnapshot')"))
                 # Native host produces ~12 console ticks per second, not one
