@@ -148,9 +148,45 @@ private:
             if(octave && previous>=60 && previous<=180 &&
                candidates[static_cast<std::size_t>(previous-60)]>=
                    bestScore*.70f) {
-                // The rhythmic subdivision is ambiguous. Stay on the song
-                // BPM until a genuine, repeatedly stronger tempo emerges.
-                bestBpm=previous;
+                // A wrong half/double-time incumbent can otherwise become
+                // PERMANENT: an exact 120 BPM pulse also supports 60 BPM
+                // through two-beat intervals. Detect strong, consecutive
+                // DIRECT onsets on the proposed new pulse, not just scored
+                // multiples of an older rhythm. Retain the incumbent when
+                // direct cadence is ambiguous (syncopated/off-beat music).
+                float strongest=0.f;
+                for(std::size_t i=0;i<count_;++i) {
+                    const auto& hit=at(i);
+                    if(lastTick_-hit.tick<=600)
+                        strongest=std::max(strongest,hit.strength);
+                }
+                const float minStrong=std::max(.035f,strongest*.55f);
+                const auto directStrongMatches=[&](int candidate) noexcept {
+                    const float period=6000.f/static_cast<float>(candidate);
+                    const float tolerance=std::max(1.5f,period*.045f);
+                    const Hit* lastStrong=nullptr;
+                    int matches=0;
+                    for(std::size_t i=0;i<count_;++i) {
+                        const auto& hit=at(i);
+                        if(lastTick_-hit.tick>600||hit.strength<minStrong)
+                            continue;
+                        if(lastStrong &&
+                           std::abs(static_cast<float>(hit.tick-lastStrong->tick)
+                                    -period)<=tolerance)
+                            ++matches;
+                        lastStrong=&hit;
+                    }
+                    return matches;
+                };
+                const auto incumbentScore=
+                    candidates[static_cast<std::size_t>(previous-60)];
+                const bool clearNewPulse=
+                    bestScore>incumbentScore*1.005f &&
+                    directStrongMatches(bestBpm)>=6 &&
+                    directStrongMatches(bestBpm)>=
+                        directStrongMatches(previous)+4;
+                if(!clearNewPulse)
+                    bestBpm=previous;
             }
         }
         if(std::abs(bestBpm-candidateBpm_)<=2)++stableCount_;
