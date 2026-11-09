@@ -85,30 +85,52 @@ private:
         // Retain the incumbent candidate's score so a transient half/double
         // time accent cannot steal an already convincing song clock.
         std::array<float,121> candidates{};
-        // CONTROL ONLY: bounded 121 candidates x 128 onsets. Emphasize
-        // one-beat matches; harmonics, half- and double-time are penalized.
-        for(int bpm=60;bpm<=180;++bpm) {
-            const float period=6000.f/static_cast<float>(bpm);
-            float score=0.f;
-            for(std::size_t j=1;j<count_;++j) {
-                const auto& later=at(j);
-                if(lastTick_-later.tick>1100)continue;
-                for(std::size_t i=j;i-->0;) {
-                    const auto& earlier=at(i);
-                    const float dt=static_cast<float>(later.tick-earlier.tick);
-                    if(dt>period*3.08f)break;
-                    const int cycles=static_cast<int>(std::lround(dt/period));
-                    if(cycles<1||cycles>3)continue;
-                    const float tolerance=std::max(1.4f,.022f*period*cycles);
-                    const float error=std::abs(dt-period*cycles);
-                    if(error>=tolerance)continue;
-                    const float strength=std::sqrt(earlier.strength*later.strength);
-                    score+=strength*(1.f-error/tolerance)/
-                        (cycles==1?1.f:cycles==2?1.6f:2.25f);
+        // CONTROL ONLY, exact-score-preserving sparse candidate search.
+        // The former 121-BPM outer loop re-traversed the complete onset
+        // history for every candidate, adding unpredictable GUI timer work.
+        // Each onset pair can support only nearby BPM bins (<=3 periods).
+        // Enumerate each pair ONCE, derive the mathematically eligible BPM
+        // neighborhood, then use the original round/error/weight formula.
+        // Memory is the same 121-float fixed stack array; no heap, worker,
+        // allocations, callback scheduling or changed confidence threshold.
+        constexpr int minBpm=60,maxBpm=180;
+        constexpr float maxPairTicks=(6000.f/minBpm)*3.08f;
+        for(std::size_t j=1;j<count_;++j) {
+            const auto& later=at(j);
+            if(lastTick_-later.tick>1100)continue;
+            for(std::size_t i=j;i-->0;) {
+                const auto& earlier=at(i);
+                const float dt=static_cast<float>(later.tick-earlier.tick);
+                if(dt>maxPairTicks)break;
+                const float strength=std::sqrt(earlier.strength*later.strength);
+                for(int cycles=1;cycles<=3;++cycles) {
+                    const float targetBpm=6000.f*cycles/dt;
+                    // The original tolerance is max(1.4 ticks, 2.2% of
+                    // a multi-beat period). Within 60–180 BPM, its largest
+                    // possible candidate separation is <10 BPM. +/-12
+                    // therefore cannot discard an original valid score.
+                    const int near=static_cast<int>(std::lround(targetBpm));
+                    const int lo=std::max(minBpm,near-12);
+                    const int hi=std::min(maxBpm,near+12);
+                    for(int bpm=lo;bpm<=hi;++bpm) {
+                        const float period=6000.f/static_cast<float>(bpm);
+                        if(dt>period*3.08f)continue;
+                        if(static_cast<int>(std::lround(dt/period))!=cycles)continue;
+                        const float tolerance=std::max(1.4f,.022f*period*cycles);
+                        const float error=std::abs(dt-period*cycles);
+                        if(error>=tolerance)continue;
+                        candidates[static_cast<std::size_t>(bpm-minBpm)]+=
+                            strength*(1.f-error/tolerance)/
+                            (cycles==1?1.f:cycles==2?1.6f:2.25f);
+                    }
                 }
             }
-            candidates[static_cast<std::size_t>(bpm-60)]=score;
-            if(score>bestScore) {bestScore=score;bestBpm=bpm;}
+        }
+        // Preserve deterministic ascending-BPM tie-breaking and the old
+        // half/double-time decision semantics exactly.
+        for(int bpm=minBpm;bpm<=maxBpm;++bpm) {
+            const float score=candidates[static_cast<std::size_t>(bpm-minBpm)];
+            if(score>bestScore){bestScore=score;bestBpm=bpm;}
         }
         if(bestBpm==0 || bestScore<2.0f)return;
         if(result_.locked) {
