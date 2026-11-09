@@ -536,6 +536,69 @@ int main(){
     need(spreadDifference>0.5&&wideEnergy>1.&&foldEnergy>.1,
          "ensemble room has no stereo depth or loses mono compatibility");
   }
+
+  // P0 lead preservation: backing Wet must never change the lead amplitude.
+  // The *only* intentional lead replacement is Pitch Tune's explicit blend.
+  for(float dry:{-.9f,-.3f,0.f,.27f,.9f}){
+    need(Engine::leadPath(dry,.5f,0.f)==dry,
+         "wet-independent original lead unexpectedly ducked");
+    need(std::abs(Engine::leadPath(dry,.5f,.5f)-(.5f*dry+.25f))<1.e-6f,
+         "explicit Pitch Tune blend changed");
+  }
+
+  // P1 diffuse shared BACKING room: no immediate output, fixed delay at
+  // all accepted rates, decaying rather than metallic or unstable feedback.
+  for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+    auto room=std::make_unique<BackingDepthRoom>();
+    need(room->prepare(rate),"backing room rejected supported sample rate");
+    for(std::size_t v=0;v<BackingDepthRoom::branches;++v)
+      need(room->delaySamples(v)>0&&
+           room->delaySamples(v)<BackingDepthRoom::capacity&&
+           room->feedbackGain(v)>0.f&&room->feedbackGain(v)<1.f,
+           "backing FDN missing bounded delays or stable feedback");
+    const int total=static_cast<int>(rate*1.8);
+    double first=0.,late=0.,last=0.,mono=0.;
+    for(int i=0;i<total;++i){
+      const auto o=room->process(i==0?1.f:0.f,i==0?1.f:0.f);
+      need(std::isfinite(o.left)&&std::isfinite(o.right)&&
+           std::abs(o.left)<2.f&&std::abs(o.right)<2.f,
+           "backing room blew up or returned non-finite PCM");
+      const double energy=o.left*o.left+o.right*o.right;
+      if(i<static_cast<int>(rate*.02))
+        need(energy<1.e-18,"diffuse field leaked before its first tap");
+      if(i<static_cast<int>(rate*.11))first+=energy;
+      else if(i<static_cast<int>(rate*.35))late+=energy;
+      if(i>static_cast<int>(rate*1.5))last+=energy;
+      mono+=(.5*(o.left+o.right))*(.5*(o.left+o.right));
+    }
+    need(first>1.e-5&&late>1.e-9&&last<late*.01,
+         "diffuse field lacks early energy or bounded late decay");
+    need(mono>1.e-5,"room anti-phase cancelled in mono");
+    need(room->prepare(rate),"device restart failed to reset room");
+    for(int i=0;i<512;++i){
+      const auto o=room->process(0.f,0.f);
+      need(o.left==0.f&&o.right==0.f,
+           "room restart retained stale output from previous session");
+    }
+  }
+  // P1 stereo depth changes must remain audible in mono, but lead should
+  // stay transparent regardless of Space and Wet when no Pitch Tune.
+  for(float depth:{0.f,.5f,1.f}){
+    EnsembleSpace singer;
+    need(singer.prepare(48000.),"backing HF shader prepare failed");
+    double inputEnergy=0.,outputEnergy=0.;
+    for(int i=0;i<3000;++i){
+      const float pulse=(i%7)<3?1.f:-1.f;
+      const float shaded=singer.shadeBacking(0,pulse,depth);
+      inputEnergy+=pulse*pulse;
+      outputEnergy+=shaded*shaded;
+      singer.advance(true);
+    }
+    need(outputEnergy>0.&&outputEnergy<=inputEnergy*1.01,
+         "backing distance contour amplified or removed singer");
+    if(depth==0.f)need(std::abs(outputEnergy-inputEnergy)<1.e-6,
+                       "Space zero failed to preserve direct backing");
+  }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";

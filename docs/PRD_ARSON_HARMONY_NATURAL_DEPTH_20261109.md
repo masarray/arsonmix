@@ -43,3 +43,7 @@ Users currently report a robotic/noise-like stack with little natural back/front
 **D3 (separate P0 quality):** formant-preserving voiced/unvoiced resynthesis and expressive musical voice leading. D1 must not be marketed as completion of D3.
 
 **Release rule:** CI passing proves code correctness; perceived 3-person background distance and human timbre need real recordings/listener evidence. Keep PR Draft until justified.
+
+## 2026-11-09 D0/D1 working candidate (pending CI and ear-test)
+
+Updated `HarmonyDsp.h` removes the silent Wet-controlled lead duck, preserves the already selected Pitch Tune semantics and builds an independent backing-only distance chain. The existing Space control now adjusts direct-versus-reflected ratio, gentle high-frequency contour and one shared late stereo ambience field in addition to moderate pan. This addresses the *architecture* behind depth—not a verified acoustic outcome. D2 listener ranking/DRR level matching and D3 formant-aware synthesis remain open; preserve Draft status.

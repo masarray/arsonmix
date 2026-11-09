@@ -38,10 +38,21 @@ public:
             tone_[ix]=timbre[ix];
             reflections_[ix].fill(0.f);
         }
+        // A sample-rate-stable, shallow air/room HF shading of backing
+        // singers only. Bypassed exactly when Space=0; lead is untouched.
+        shadingAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*4400./rate));
+        distanceLowpass_.fill(0.f);
         ageStart_=static_cast<int>(rate*.065);
         ageRamp_=static_cast<float>(1./(rate*.165));
         age_=0;cursor_=0;
         return true;
+    }
+    float shadeBacking(int v,float sample,float space) noexcept {
+        const auto i=static_cast<std::size_t>(v);
+        distanceLowpass_[i]+=shadingAlpha_*(sample-distanceLowpass_[i]);
+        const float blend=.52f*std::clamp(space,0.f,1.f);
+        return sample*(1.f-blend)+distanceLowpass_[i]*blend;
     }
     float arrivalSamples(int v) const noexcept {
         return offset_[static_cast<std::size_t>(v)];
@@ -85,7 +96,8 @@ private:
     std::array<float,sineCount> sine_{};
     std::array<std::array<float,reflectionCapacity>,voices> reflections_{};
     std::array<float,voices> offset_{},ratio_{},vibratoRatio_{};
-    std::array<float,voices> increment_{},phase_{},tone_{};
+    std::array<float,voices> increment_{},phase_{},tone_{},distanceLowpass_{};
+    float shadingAlpha_=0.f;
     std::array<int,voices> reflectionDelay_{};
     std::size_t cursor_=0;
     int age_=0,ageStart_=0;

@@ -8,6 +8,7 @@
 #include "HarmonyStereoFold.h"
 #include "HarmonyPreparedTone.h"
 #include "HarmonyEnsembleSpace.h"
+#include "HarmonyDepthRoom.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -95,7 +96,7 @@ public:
         // into the periodicity detector and destabilizes the live note readback.
         decimationLowpass_=0.f;
         if(!vocalFold_.prepare(rate)||!toneColor_.prepare(rate)||
-           !ensemble_.prepare(rate))return false;
+           !ensemble_.prepare(rate)||!depthRoom_.prepare(rate))return false;
         pitchIntervals_.prepare();
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
@@ -199,6 +200,11 @@ public:
     // Audio-owner telemetry; standalone CTest reads after process() returns.
     int completedPitchAnalyses() const noexcept{return completedPitchAnalyses_;}
     int abandonedPitchAnalyses() const noexcept{return abandonedPitchAnalyses_;}
+    // Wet changes are NEVER a hidden sidechain duck on the real lead. Only
+    // explicitly enabled Pitch Tune may substitute corrected lead samples.
+    static float leadPath(float original,float corrected,float correctionMix) noexcept {
+        return original*(1.f-correctionMix)+corrected*correctionMix;
+    }
     void process(float* l,float* r,int frames) noexcept {
         if(!l||!r||frames<=0||rate_<=0.)return;
         processed_=true;
@@ -250,12 +256,14 @@ public:
             if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
                 lead=shifted(maxVoices,filterCoef);
             const float leadBlend=correctionMix_*voicedGain_;
-            float outL=(dryL*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
-            float outR=(dryR*(1.f-leadBlend)+lead*leadBlend)*(1.f-wet_*0.65f*voicedGain_);
-            // A small, non-negative opposite-side early reflection makes a
-            // backing voice recede without phase widening or extra reverb FX.
-            // All rings advance even while muted, preventing stale FX tails.
-            const float roomAmount=.13f*space_;
+            float outL=leadPath(dryL,lead,leadBlend);
+            float outR=leadPath(dryR,lead,leadBlend);
+            // The lead is never sent into the backing room. At larger Space,
+            // attenuate direct backing while raising its reflected proportion.
+            // This reduces backing DRR without attenuating the original lead.
+            const float backingDirect=1.f-.38f*space_;
+            const float earlyReturn=.28f*space_;
+            float roomSendL=0.f,roomSendR=0.f;
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
                 const bool audible=voicedGain_>0.00001f&&
@@ -266,10 +274,23 @@ public:
                                   ensemble_.arrivalSamples(v),
                                   ensemble_.pitchRatio(v))*voicedGain_;
                 }
+                voice=ensemble_.shadeBacking(v,voice,space_);
                 const float reflection=ensemble_.exchangeReflection(v,voice);
-                outL+=voice*mixL_[ix]+reflection*mixR_[ix]*roomAmount;
-                outR+=voice*mixR_[ix]+reflection*mixL_[ix]*roomAmount;
+                const float directL=voice*mixL_[ix],directR=voice*mixR_[ix];
+                outL+=directL*backingDirect+
+                      reflection*mixR_[ix]*earlyReturn;
+                outR+=directR*backingDirect+
+                      reflection*mixL_[ix]*earlyReturn;
+                roomSendL+=directL;roomSendR+=directR;
             }
+            // One shared backing-only diffuse field. Both its input and
+            // audible return ramp with Space. Wet=0 gates its old tail on
+            // a smooth <=5 ms envelope while the room ring still decays.
+            const auto room=depthRoom_.process(roomSendL*space_,
+                                               roomSendR*space_);
+            const float roomGate=std::min(1.f,wet_*4.f);
+            const float lateReturn=.85f*space_*roomGate;
+            outL+=room.left*lateReturn;outR+=room.right*lateReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
             ensemble_.advance(voiced_);
@@ -455,6 +476,7 @@ private:
     RateStableColor toneColor_{};
     PreparedPitchIntervals pitchIntervals_{};
     EnsembleSpace ensemble_{};
+    BackingDepthRoom depthRoom_{};
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
