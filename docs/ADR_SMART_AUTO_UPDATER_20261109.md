@@ -33,3 +33,10 @@ The update trusts HTTPS to the official GitHub API, immutable release source ide
 
 ## Non-goals
 No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, Windows service, forced termination, system-wide install, scheduled task, repeated background CI or cross-platform pretend-updater.
+
+## M2 self-repair and interrupted update recovery
+- A published Windows installation with verifiable exeSha256 and guiExeBytes is repaired only when its executable mismatches those expected bytes. The independently hashed current-release installer is staged and reapplied after normal exit. This is a non-destructive repair of packaged program files, not a broad uninstall or deletion of private Studio/.smix, custom VST3 or unknown directories.
+- An interrupted install on next startup is reconciled to previous-retained, candidate-unverified or unknown-installation using installed source SHA. The failed release is blocked from endless retries; unknown source fails closed. These states do not certify audio or WebView health.
+- Corrupt updater-owned state is quarantined without touching user data. Network failure retries no more than every 20 minutes; successfully fetched release lists are cached six hours. Complete staged transactions are retained across app reopens until the normal-exit update process.
+- Cleanup removes only named vendor installer/checksum/provenance files. No recursive stage deletion. Failure of a same-version repair blocks repeated attempts; it does not uninstall or erase a session.
+- A mixer executable that cannot start cannot repair itself: independent, publisher-signed bootstrap/recovery remains a required future release gate.

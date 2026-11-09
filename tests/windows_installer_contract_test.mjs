@@ -181,3 +181,17 @@ test('Windows updater executes byte-level offline stage integrity fixtures', () 
   assert.match(updater, /ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS/);
   assert.match(smoke, /ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS/);
 });
+
+test('updater recovers after crash and offers only verified same-version repair', () => {
+  const s = read('installer/ArSonMixAutoUpdate.ps1');
+  for (const rule of [
+    'Get-InstalledImageStatus', 'exeSha256', 'guiExeBytes',
+    'Classify-InterruptedTransaction', 'previous-retained',
+    'candidate-unverified', 'INVALID_UPDATER_STATE_QUARANTINED',
+    "operation='repair'", 'STAGING_VERIFIED_SAME_VERSION_REPAIR',
+    'Clear-StagedVendorFiles', 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS',
+    'TotalMinutes -lt 20', 'TotalHours -lt 6'
+  ]) assert.ok(s.includes(rule), rule);
+  assert.doesNotMatch(s, /Remove-Item -LiteralPath \$stage -Recurse/);
+  assert.doesNotMatch(s, /\bunins000\.exe\b/);
+});
