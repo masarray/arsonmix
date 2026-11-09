@@ -35,25 +35,36 @@ static LiveChannelFxGraph::InstanceLease makeHarmony() {
 }
 int main() {
     constexpr ChannelId vocal{7301};
-    auto uninterrupted=makeHarmony(), switching=makeHarmony();
+    auto uninterrupted=makeHarmony(), switching=makeHarmony(),legacy=makeHarmony();
     assert(switching->continuousBypassProcessing);
+    // Isolated offline reference of PRE-FIX host behavior; production never
+    // disables the warm-processing contract. This must diverge on reentry.
+    legacy->continuousBypassProcessing=false;
     assert(uninterrupted->latencySamples==1536);
     assert(switching->latencySamples==uninterrupted->latencySamples);
-    DynamicChannelFxLeaseBank::Assignment referenceRow,switchingRow;
+    DynamicChannelFxLeaseBank::Assignment referenceRow,switchingRow,legacyRow;
     referenceRow.id=vocal;referenceRow.format=ProcessingFormat::stereo;
     referenceRow.inserts.push_back(uninterrupted);
     switchingRow.id=vocal;switchingRow.format=ProcessingFormat::stereo;
     switchingRow.inserts.push_back(switching);
-    DynamicChannelFxLeaseBank alwaysOn,switched;
+    legacyRow.id=vocal;legacyRow.format=ProcessingFormat::stereo;
+    legacyRow.inserts.push_back(legacy);
+    DynamicChannelFxLeaseBank alwaysOn,switched,oldBehavior;
     const std::array<DynamicChannelFxLeaseBank::Assignment,1> referenceRows{referenceRow};
     const std::array<DynamicChannelFxLeaseBank::Assignment,1> switchingRows{switchingRow};
+    const std::array<DynamicChannelFxLeaseBank::Assignment,1> legacyRows{legacyRow};
+    assert(DynamicChannelFxLeaseBank::prepare(1,1,legacyRows,oldBehavior)==
+           DynamicChannelFxLeaseBank::Fault::none);
     assert(DynamicChannelFxLeaseBank::prepare(1,1,referenceRows,alwaysOn)==
            DynamicChannelFxLeaseBank::Fault::none);
     assert(DynamicChannelFxLeaseBank::prepare(1,1,switchingRows,switched)==
            DynamicChannelFxLeaseBank::Fault::none);
     bool priorSlot=false,priorRack=false;
     float maxWetDifference=0.f,maxDryDifference=0.f;
+    float maxOldBypassDifference=0.f,maxClickSlopeExcess=0.f;
     int samplesCheckedWet=0,samplesCheckedDry=0;
+    float previousWetL=0.f,previousWetR=0.f;
+    float previousProbeL=0.f,previousProbeR=0.f,previousDry=0.f;
     // Fixed 64-frame hardware-shaped partitions, with slot and rack OFF.
     // The last pair is a quick reverse-toggle (no graph or callback restart).
     for(int block=0;block<1300;++block) {
@@ -64,20 +75,23 @@ int main() {
                            (block==1111||block==1113);
         if(slotOff!=priorSlot) {
             assert(switched.setInsertBypass(1,1,vocal,0,switching->instanceId,slotOff));
+            assert(oldBehavior.setInsertBypass(1,1,vocal,0,legacy->instanceId,slotOff));
             priorSlot=slotOff;
         }
         if(rackOff!=priorRack) {
             assert(switched.setRackBypass(1,1,vocal,rackOff));
+            assert(oldBehavior.setRackBypass(1,1,vocal,rackOff));
             priorRack=rackOff;
         }
-        std::array<float,64> baseL{},baseR{},probeL{},probeR{};
+        std::array<float,64> baseL{},baseR{},probeL{},probeR{},oldL{},oldR{};
         for(int i=0;i<64;++i) {
             const int n=block*64+i;
-            baseL[i]=probeL[i]=singer(n);
-            baseR[i]=probeR[i]=singer(n);
+            baseL[i]=probeL[i]=oldL[i]=singer(n);
+            baseR[i]=probeR[i]=oldR[i]=singer(n);
         }
         alwaysOn(vocal,baseL.data(),baseR.data(),64);
         switched(vocal,probeL.data(),probeR.data(),64);
+        oldBehavior(vocal,oldL.data(),oldR.data(),64);
         const bool quietBypass=slotOff||rackOff;
         const bool steadyWet=!quietBypass &&
             (block>=590&&block<700 || block>=790&&block<850 ||
@@ -86,6 +100,24 @@ int main() {
             (block>=330&&block<580 || block>=710&&block<780 ||
              block>=860&&block<1000);
         for(int i=0;i<64;++i) {
+            const int n=block*64+i;
+            const float delayed=n>=1536?singer(n-1536):0.f;
+            if(n>=1537){
+                // Actual post-bypass sample slope may only exceed either
+                // continuous wet or exact aligned dry slope by the 8ms ramp
+                // contribution. No block-edge impulse is allowed.
+                const float wetSlope=std::max(std::abs(baseL[i]-previousWetL),
+                                               std::abs(baseR[i]-previousWetR));
+                const float drySlope=std::abs(delayed-previousDry);
+                const float actualSlope=std::max(std::abs(probeL[i]-previousProbeL),
+                                                 std::abs(probeR[i]-previousProbeR));
+                const float excess=actualSlope-std::max(wetSlope,drySlope);
+                maxClickSlopeExcess=std::max(maxClickSlopeExcess,excess);
+                assert(excess<.035f);
+            }
+            previousWetL=baseL[i];previousWetR=baseR[i];
+            previousProbeL=probeL[i];previousProbeR=probeR[i];
+            previousDry=delayed;
             assert(std::isfinite(probeL[i])&&std::isfinite(probeR[i]));
             assert(std::abs(probeL[i])<=4.f&&std::abs(probeR[i])<=4.f);
             if(steadyWet) {
@@ -94,6 +126,10 @@ int main() {
                 maxWetDifference=std::max(maxWetDifference,d);
                 assert(d<.00002f); // same exact history as never-bypassed DSP
                 ++samplesCheckedWet;
+                if(block>=590&&block<615 || block>=790&&block<815)
+                    maxOldBypassDifference=std::max(maxOldBypassDifference,
+                      std::max(std::abs(oldL[i]-baseL[i]),
+                               std::abs(oldR[i]-baseR[i])));
             }
             if(steadyDry) {
                 const int n=block*64+i-1536;
@@ -107,9 +143,12 @@ int main() {
         }
     }
     assert(samplesCheckedWet>10000&&samplesCheckedDry>10000);
+    assert(maxOldBypassDifference>.003f); // old skipped DSP history visibly diverges
     assert(!switched.rackBypassed(vocal));
     std::cout<<"Harmony native ChannelId warm bypass, dry PDC and state parity PASS; "
              <<"wet_samples="<<samplesCheckedWet<<" dry_samples="<<samplesCheckedDry
              <<" max_wet_difference="<<maxWetDifference
-             <<" max_dry_difference="<<maxDryDifference<<"\\n";
+             <<" max_dry_difference="<<maxDryDifference
+             <<" max_old_bypass_difference="<<maxOldBypassDifference
+             <<" max_click_slope_excess="<<maxClickSlopeExcess<<"\\n";
 }
