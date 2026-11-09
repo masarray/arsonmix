@@ -285,3 +285,15 @@ test('two genuine release installers upgrade and roll back only in disposable Wi
   assert.match(ci, /scripts\/test_two_genuine_inno_releases_windows\.ps1/);
   assert.doesNotMatch(real, /(?:Stop-Process|taskkill|Remove-Item\s+-LiteralPath\s+\$install\s+-Recurse)/);
 });
+
+test('auto apply authenticates the published rollback asset as well as the new release', () => {
+  const source = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(source, /\$approvedOld=Approved-Installer \$release/);
+  assert.match(source, /\$release\.tag_name -ceq \$state\.previousTag/);
+  assert.match(source, /\$release\.target_commitish -ceq \$state\.previousSha/);
+  assert.match(source, /\$approvedOld\.name -cne \$state\.previousAsset\.name/);
+  assert.match(source, /\$approvedOld\.digest -cne \$state\.previousAsset\.digest/);
+  assert.match(source, /ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED/);
+  assert.ok(source.indexOf('ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED') <
+            source.indexOf("$state.phase='installing'"));
+});
