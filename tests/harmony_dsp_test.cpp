@@ -313,11 +313,14 @@ int main(){
       if(rate==48000.)
         need(std::abs(actual-legacy)<1.e-6f,
              "48 kHz Color legacy response changed");
-      const double oldDecay=std::pow(1.-static_cast<double>(legacy),480.);
+      // 125 microseconds is six samples at 48k. A 10ms measurement
+      // would hide every wrong Color coefficient: these filters all
+      // decay to ~zero well before 10ms.
+      const double oldDecay=std::pow(1.-static_cast<double>(legacy),6.);
       const double newDecay=std::pow(1.-static_cast<double>(actual),
-                                    rate*.01);
-      need(std::abs(oldDecay-newDecay)<2.e-4,
-           "Color duration changes with the hardware sample rate");
+                                    rate*.000125);
+      need(std::abs(oldDecay-newDecay)<1.e-4,
+           "Color attenuation changes at identical physical time");
     }
   }
   // P2: compare every supported key/scale/degree against the old per-voice
@@ -345,6 +348,36 @@ int main(){
           }
         }
       }
+  // P0: rescued phase-opposed ANALYSIS must never modify DRY output.
+  // The player, direct hardware monitor and graph still own stereo polarity.
+  for(double rate:{48000.,192000.}){
+    auto dry=std::make_unique<Engine>();
+    need(dry->prepare(rate),"dry antiphase sample-rate prepare failed");
+    Settings silentRack;silentRack.wet=0.f;silentRack.correction=false;
+    need(dry->setSettings(silentRack),"dry antiphase packet failed");
+    const int latency=dry->latencySamples();
+    const int count=latency*3+217;
+    std::vector<float> original(static_cast<std::size_t>(count));
+    std::vector<float> left(static_cast<std::size_t>(count));
+    std::vector<float> right(static_cast<std::size_t>(count));
+    for(int i=0;i<count;++i){
+      const float x=static_cast<float>(
+          .21*std::sin(6.283185307179586*140.*i/rate)+
+          .06*std::sin(6.283185307179586*280.*i/rate));
+      original[static_cast<std::size_t>(i)]=x;
+      left[static_cast<std::size_t>(i)]=x;
+      right[static_cast<std::size_t>(i)]=-x;
+    }
+    for(int i=0;i<count;i+=127)
+      dry->process(left.data()+i,right.data()+i,std::min(127,count-i));
+    for(int i=0;i<count;++i){
+      const float expected=i<latency?0.f:
+         original[static_cast<std::size_t>(i-latency)];
+      need(std::abs(left[static_cast<std::size_t>(i)]-expected)<1.e-6f&&
+           std::abs(right[static_cast<std::size_t>(i)]+expected)<1.e-6f,
+           "P0 polarity rescue corrupted dry stereo or exact PDC");
+    }
+  }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
