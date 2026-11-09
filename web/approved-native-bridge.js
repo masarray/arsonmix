@@ -252,6 +252,13 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // A product never advertises unfinished internal QA/FAT certification to
+    // operators. This is a display-only adapter, not an audio-state override.
+    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
+      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
+      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
+      return "Mixer ready";
+    }
     const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
     if(internalCode ||
        /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
@@ -289,12 +296,17 @@
   // The original preview's say() may still populate this footer.
   // Observe two text nodes only, no polling, audio callback or DOM-wide scans.
   if(connected){
+    const transport=document.getElementById?.("transport");
     const info=document.getElementById?.("info");
     const warning=document.querySelector?.(".status-bar .warning");
+    if(transport)transport.textContent="Opening mixer…";
     if(info)info.textContent="Opening mixer…";
     if(warning)warning.textContent="CONNECTING AUDIO…";
     if(typeof MutationObserver==="function"){
-      const nodes=[info,warning].filter(Boolean);
+      // The preview, legacy host and new bridge can all write into the
+      // transport/last-action/warning footer. Guard *all three* output nodes.
+      // Native only; public browser preview retains its instructional copy.
+      const nodes=[transport,info,warning].filter(Boolean);
       const sanitize=()=>{
         for(const node of nodes){
           const clean=operatorMessage(node.textContent);
@@ -1561,7 +1573,8 @@
       !deviceOpen?"Audio device unavailable · Open Audio I/O":
       (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
       (virtualOut?" · Virtual output":"");
-    if(label && label.textContent!==transport)label.textContent=transport;
+    const operatorTransport=operatorMessage(transport);
+    if(label && label.textContent!==operatorTransport)label.textContent=operatorTransport;
     const warning=document.querySelector?.(".status-bar .warning");
     // A silent first-sound session is not an operator failure and does
     // not require Patch CH1 / Arm / Start controls. The real IN dropdown
