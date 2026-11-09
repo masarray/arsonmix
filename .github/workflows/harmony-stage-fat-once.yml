@@ -1,0 +1,25 @@
+name: One-shot Harmony Stage exact-SHA Windows installer FAT
+on:
+  push:
+    branches:
+      - ci/harmony-stage-fat-604b822-20261109
+    paths:
+      - '.github/workflows/harmony-stage-fat-once.yml'
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch-native-builder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch exactly one source-pinned Windows build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_SHA: 604b82223db2471ee772e9c5c013720515b9fc71
+        run: |
+          set -euo pipefail
+          current="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$current" = "$REQUIRED_SHA" || { echo "Source moved; no stale installer"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$REQUIRED_SHA"
+          echo "Exact Harmony stage source dispatched: $REQUIRED_SHA"
