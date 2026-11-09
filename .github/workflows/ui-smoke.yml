@@ -268,6 +268,8 @@ jobs:
         run: python tests/approved_native_harmony_smoke.py
       - name: Cold start first WIRE and original-channel VST3 picker editor
         run: python tests/approved_native_cold_start_smoke.py
+      - name: Native desktop titlebar toolbar measured in Chromium at four viewport widths
+        run: python tests/native_header_toolbar_chromium_smoke.py
       - name: Native WIRE gain and OUT share accepted PCM identity (real Chromium)
         run: python tests/approved_native_wire_gain_smoke.py
       - name: Stage D one runtime CSSOM and actual stylesheet network count
@@ -278,6 +280,8 @@ jobs:
         run: python tests/pages_wire_first_canonical_main_smoke.py
       - name: Verify V49 direct WIRE, gain wheel, connected status, replug and scoped undo
         run: python tests/pages_wire_v49_direct_controls_smoke.py
+      - name: Desktop titlebar WIRE geometry across resize and cancelled pointer capture
+        run: python tests/desktop_wire_resize_chromium_smoke.py
       - name: Verify V53 handle-free FX row drag, keyboard and rack reorder
         run: python tests/pages_fx_rail_v53_smoke.py
       - name: Qualify public /preview/ floating Channel Editor with zero mixer reflow (five real Chromium viewports)
@@ -479,7 +483,7 @@ jobs:
           done
           git diff --exit-code -- site/preview-v2/index.html site/preview-v2/assets/mixer-chrome-material.css site/preview-v2/assets/mixer-plugin-browser.css site/preview-v2/assets/mixer-pan-controls.css site/preview-v2/assets/mixer-fader-assembly.css site/preview-v2/assets/mixer-meter-display.css site/preview-v2/assets/mixer-utility-controls.css
       - name: Verify V28 exact approved /preview/ source and interactive browser parity
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'css/v28-') || startsWith(github.head_ref, 'integration/product-'))) }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.historical_css == true) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'css/v28-') || startsWith(github.head_ref, 'integration/product-'))) }}
         run: python tests/pages_css_architecture_v28_smoke.py
       - name: Verify embedded Inter font and contextual V7 micro-controls
         if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/product-')) }}

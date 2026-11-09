@@ -8,6 +8,9 @@
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
+  // Public browser preview keeps its header; the native JUCE caption replaces it.
+  if (backend?.emitEvent && backend?.addEventListener)
+    document.documentElement?.classList?.add?.("armix-native-desktop");
   // The old M1 wording is retained as an explicit boot-time fallback for
   // release-train compatibility, NOT a claim that a demo graph is audio.
   const fallback = "M1_VISUAL_BUNDLE_ONLY__NOT_AUDIO_READY";
@@ -2152,6 +2155,21 @@
         status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
       });
       toolbar.insertBefore(monitor,io);
+      // Fixed groups, not extra controls. Placement is DOM-only at startup;
+      // no resize listeners, repaint loops or menu reparenting.
+      for(const [name,element] of [
+        ["files",document.getElementById("pluginsButton")],
+        ["routing",document.getElementById("wireNavigatorToggle")],
+        ["channels",addTrack],
+        ["monitor",monitor]
+      ]){
+        if(!element || element.parentElement!==toolbar)continue;
+        const divider=document.createElement("span");
+        divider.className="armix-toolbar-divider";
+        divider.dataset.nativeToolbarGroup=name;
+        divider.setAttribute("aria-hidden","true");
+        toolbar.insertBefore(divider,element);
+      }
     }
     updateHardwarePanel(hardware);
   }

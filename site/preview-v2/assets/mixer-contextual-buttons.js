@@ -71,3 +71,18 @@
   script.src=new URL('arson-player.js',base).href;
   document.body.appendChild(script);
 })();
+
+/* ArSonMiX owner wordmark; original source HTML/assembler anchor is immutable. */
+(()=>{
+  'use strict';
+  const logo=document.querySelector('.app > .window-title .logo');
+  if(!logo||logo.textContent!=='ArSonMix'||typeof logo.replaceChildren!=='function')return;
+  logo.replaceChildren(...[
+    ['armix-brand-ar','Ar'],['armix-brand-son','Son'],['armix-brand-mix','MiX']
+  ].map(([cls,value])=>{
+    const span=document.createElement('span');
+    span.className=cls;span.textContent=value;
+    return span;
+  }));
+  logo.setAttribute('aria-label','ArSonMiX');
+})();

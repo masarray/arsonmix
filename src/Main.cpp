@@ -11,6 +11,7 @@
 #include "LiveAudioEngine.h"
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
+#include "ArSonWindowChrome.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
 #include "../engine/core/DearVrPolarPolicy.h"
@@ -220,7 +221,7 @@ class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, pr
 {
 public:
     explicit ConsoleWindow (std::function<void(int)> onStartupStage)
-        : DocumentWindow ("AR MIX Studio — Native VST3 FX Host",
+        : DocumentWindow ("ArSonMiX — Native Mixer",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
@@ -283,9 +284,17 @@ public:
         restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
+#if defined(_WIN32)
+        // JUCE owns the real window commands; unlike WebView2 JS, these are
+        // synchronous native controls with JUCE's existing resize constrainer.
+        setLookAndFeel (&mixerCaption_);
+        setUsingNativeTitleBar (false);
+        setTitleBarHeight (31);
+#else
         setUsingNativeTitleBar (true);
+#endif
         setIcon (approvedAppIcon());
-        setResizable (true, true);
+        setResizable (true, false);
         setResizeLimits (1100, 650, 3840, 2160);
         setContentNonOwned (&browser_, false);
         // A fixed 1650x930 initial HWND exceeds the *logical* Windows work
@@ -346,11 +355,13 @@ public:
         }
         engine_.stop();
         browser_.setVisible (false);
+        setLookAndFeel (nullptr); // before the owned LookAndFeel is destroyed
     }
 
     void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
 
 private:
+    armix::ui::MixerCaptionLookAndFeel mixerCaption_;
     LiveAudioEngine engine_;
     VstOrbitController orbit_;
     // The exact native ChannelId/insert identity retains its VST3 owner

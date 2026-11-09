@@ -1284,6 +1284,9 @@ function wireJackRect(button){
 /* One accepted CH→MAIN edge is represented by two local cable fragments.
    Physical coordinates are measured from actual sockets; never connect strips
    with a long SVG crossing banks or alter the audio graph. */
+// MAIN mini cables use a separate one-shot dirty flag; ordinary pointer moves
+// must not force layout reads on a stable native viewport.
+let wireFragmentGeometryDirty=false;
 function paintMainWireFragment(strip,edge,isMain){
  const section=strip?.querySelector('.send-section.wire-section');
  if(!section)return;
@@ -1292,9 +1295,9 @@ function paintMainWireFragment(strip,edge,isMain){
   layer?.remove();return;
  }
  // Pointer-motion repaint must not synchronously remeasure every channel.
- // Structural render, bank, density and resize remount the section; a
- // changed accepted edgeId invalidates this tiny projection automatically.
- if(layer?.dataset.edgeId===String(edge.id))return;
+ // A stable edgeId can still move when the host window is resized.
+ // Refresh the physical anchor only on a geometry event (or edge edit).
+ if(layer?.dataset.edgeId===String(edge.id)&&!wireFragmentGeometryDirty)return;
  const jack=section.querySelector(isMain?'.wire-node-in .wire-arrow':'.wire-node-out .wire-pin');
  const sectionRect=section.getBoundingClientRect(),pin=jack?.getBoundingClientRect();
  if(!pin||!sectionRect.width||!sectionRect.height)return;
@@ -1355,6 +1358,7 @@ function syncMainWireFragments(){
 }
 function renderWireRouting(){
  syncMainWireFragments();
+ wireFragmentGeometryDirty=false;
  if(wireWsOpen&&!wireGesture?.active)renderWireWorkspace();
  document.querySelector('.console-body')?.classList.toggle('wire-intent',!!wireIntent);
  const svg=document.getElementById('wireLayer'),viewport=document.getElementById('viewport');
@@ -2879,10 +2883,68 @@ window.addEventListener('keydown',e=>{
   document.getElementById(e.key==='ArrowRight'?'bankNext':'bankPrev').click();
  }
 });
-let resizeQueued=false;
-window.addEventListener('resize',()=>{
- if(resizeQueued)return;resizeQueued=true;
- requestAnimationFrame(()=>{resizeQueued=false;render();});
+// Desktop maximise, restore, DPI changes and normal resizing are layout events,
+// not mixer/PCM edits. Read the true socket bounds AFTER layout and coalesce
+// concurrent ResizeObserver + viewport events into one animation frame.
+let wireGeometryFrame=0,wireGeometryDirty=false;
+function scheduleWireGeometryReflow(){
+ wireGeometryDirty=true;
+ if(wireGeometryFrame||document.hidden)return;
+ wireGeometryFrame=requestAnimationFrame(()=>{
+  wireGeometryFrame=0;
+  if(document.hidden)return;
+  const viewport=document.getElementById('viewport');
+  if(!viewport||viewport.clientWidth<=0||viewport.clientHeight<=0)return;
+  wireGeometryDirty=false;
+  const root=document.querySelector('.console-body');
+  const drawn=Number(root?.style.getPropertyValue('--bank-capacity'));
+  const required=bankCapacity();
+  if(drawn&&required!==drawn){
+   // A bank rebuild destroys pointer-capture owners. Retire only in-flight
+   // UI gestures BEFORE the strips are replaced; the committed WIRE graph,
+   // route identities and accepted fader level never change on resize.
+   if(wireGesture){
+    const g=wireGesture;wireGesture=null;wireSuppressClick=true;
+    setWireSnapTarget(null);
+    root?.classList.remove('wire-dragging');
+    root?.querySelectorAll('.is-replug-origin,.is-drag-origin').forEach(el=>
+     el.classList.remove('is-replug-origin','is-drag-origin'));
+    const owner=root?.querySelector('.strip[data-id="'+(g.originDestId??g.sourceId)+'"] '+
+     (g.originDestId!=null?'.wire-node-in':'.wire-node-out'));
+    if(owner?.hasPointerCapture?.(g.pointerId))owner.releasePointerCapture?.(g.pointerId);
+   }
+   if(faderGesture){
+    const g=faderGesture;faderGesture=null;
+    if(g.box?.hasPointerCapture?.(g.pointerId))g.box.releasePointerCapture?.(g.pointerId);
+   }
+   // Kill any RAF that still closes over the pre-resize cable coordinates.
+   ++wireMotion.token;wireMotion.key=null;wireMotion.offset=0;
+   render(); // structural bank change only
+  }else{
+   // Stop a still-running cable spring (its animation closes over old pixels).
+   ++wireMotion.token;wireMotion.key=null;wireMotion.offset=0;
+   wireFragmentGeometryDirty=true;
+   renderWireRouting(); // geometry-only; no native graph/strip edits
+  }
+ });
+}
+// WebView2 can resize its child compositor one event AFTER the parent HWND.
+// Observe stable mixer boxes rather than polling or assuming old viewport width.
+if(typeof ResizeObserver==='function'){
+ const wireGeometryObserver=new ResizeObserver(scheduleWireGeometryReflow);
+ for(const id of ['viewport','tracks','master']){
+  const el=document.getElementById(id);
+  if(el)wireGeometryObserver.observe(el);
+ }
+ wireGeometryObserver.observe(document.querySelector('.console-body'));
+}
+window.addEventListener('resize',scheduleWireGeometryReflow,{passive:true});
+window.visualViewport?.addEventListener?.('resize',scheduleWireGeometryReflow,{passive:true});
+document.getElementById('viewport')?.addEventListener?.('scroll',scheduleWireGeometryReflow,{passive:true});
+window.addEventListener('focus',scheduleWireGeometryReflow,{passive:true});
+window.addEventListener('pageshow',scheduleWireGeometryReflow,{passive:true});
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden)scheduleWireGeometryReflow();
 });
 restorePluginPreferences();init();
 })();
