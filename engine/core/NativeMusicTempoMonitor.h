@@ -25,6 +25,10 @@ public:
         // transient detection or DAW-wide delay compensation.
         std::uint64_t beatAnchorFrame=0,observationFrame=0;
         bool locked=false;
+        // Last CONTROL-only scan's actual tempo-bin comparisons. Enables
+        // deterministic worst-case budget regression without wall-clock
+        // timing or instrumentation on the ASIO callback.
+        std::uint32_t scoringComparisons=0;
     };
     void reset() noexcept {
         previous_=floor_=0.f;count_=write_=0;
@@ -95,6 +99,7 @@ private:
         // allocations, callback scheduling or changed confidence threshold.
         constexpr int minBpm=60,maxBpm=180;
         constexpr float maxPairTicks=(6000.f/minBpm)*3.08f;
+        std::uint32_t compared=0;
         for(std::size_t j=1;j<count_;++j) {
             const auto& later=at(j);
             if(lastTick_-later.tick>1100)continue;
@@ -113,6 +118,7 @@ private:
                     const int lo=std::max(minBpm,near-12);
                     const int hi=std::min(maxBpm,near+12);
                     for(int bpm=lo;bpm<=hi;++bpm) {
+                        ++compared;
                         const float period=6000.f/static_cast<float>(bpm);
                         if(dt>period*3.08f)continue;
                         if(static_cast<int>(std::lround(dt/period))!=cycles)continue;
@@ -126,6 +132,7 @@ private:
                 }
             }
         }
+        result_.scoringComparisons=compared;
         // Preserve deterministic ascending-BPM tie-breaking and the old
         // half/double-time decision semantics exactly.
         for(int bpm=minBpm;bpm<=maxBpm;++bpm) {
