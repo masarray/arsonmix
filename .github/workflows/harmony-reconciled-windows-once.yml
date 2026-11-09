@@ -1,0 +1,24 @@
+name: Harmony reconcile exact SHA Windows CTest once
+on:
+  push:
+    branches: [ci/harmony-reconciled-windows-649409a-20261109]
+    paths:
+      - '.github/workflows/harmony-reconciled-windows-once.yml'
+permissions:
+  contents: read
+  actions: write
+jobs:
+  verify-combined-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch canonical Windows compile and all native CTest once
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXACT_SHA: 649409a0fbbf57fdc67d603b123062263c63c74d
+        run: |
+          set -euo pipefail
+          current="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$current" = "$EXACT_SHA" || { echo "Harmony branch advanced: stale build prohibited"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=false -f expected_sha="$EXACT_SHA"
+          echo "One exact-source Windows CTest build dispatched, without FAT packaging."
