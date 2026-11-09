@@ -1630,11 +1630,11 @@ private:
                         else
                         {
                             safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
-                                "No valid full-duplex device; audio remains gated");
+                                "No verified stereo playback device; audio remains gated");
                             safe->emitNotice (
                                 safe->engine_.hasRetainedUnboundMixer()
                                     ? "Mixer and plugin state retained. Device binding changed; output stays muted until a verified full-session rebind."
-                                    : "Choose a working capture and render device. Audio remains muted.", true);
+                                    : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
                             safe->emitApprovedNativeSnapshot();
                         }
                     });

@@ -35,6 +35,19 @@ test('actual device recoveries occur on message thread, not inside audio callbac
   assert.match(gate,/generation == generation_/);
   assert.match(gate,/State::exhausted/);
 });
+test('output-only SAME-device WASAPI recovery never invents or requires microphone pins',()=>{
+  const begin=engine.indexOf('bool verifyRestoredDirectDevice (');
+  const end=engine.indexOf('void detach()',begin);
+  assert.ok(begin>0&&end>begin);
+  const restore=engine.slice(begin,end);
+  assert.ok(restore.includes('active->getActiveOutputChannels().countNumberOfSetBits()<2'));
+  assert.ok(!restore.includes('active->getActiveInputChannels().isZero()'),
+    'zero actual capture pins must not make a valid output-only mixer unrecoverable');
+  assert.ok(restore.includes('current.inputDeviceName == expected.inputDeviceName'));
+  assert.ok(restore.includes('current.outputDeviceName == expected.outputDeviceName'));
+  assert.match(engine,/resumeVerifiedDirectRoute\(\)/);
+  assert.match(main,/No verified stereo playback device; audio remains gated/);
+});
 test('restore retry is bounded and disabled on success, explicit direct and setup paths',()=>{
   assert.match(main,/directRestore_\.failed \(snapshot\.generation, now\)/);
   assert.match(main,/directRestore_\.recovered \(snapshot\.generation\)/);

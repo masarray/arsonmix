@@ -2545,10 +2545,13 @@ private:
         const juce::AudioDeviceManager::AudioDeviceSetup& expected)
     {
         const auto* active = deviceManager_.getCurrentAudioDevice();
+        // A previously verified OUTPUT-ONLY mixer must be recoverable with
+        // the same zero-capture identity. Only the physical stereo output is
+        // compulsory; resumeVerifiedDirectRoute() separately rechecks exact
+        // backend/device/input/output masks before PCM can be armed.
         if (active == nullptr ||
             deviceManager_.getCurrentAudioDeviceType() != "Windows Audio" ||
-            active->getActiveInputChannels().isZero() ||
-            active->getActiveOutputChannels().isZero()) return false;
+            active->getActiveOutputChannels().countNumberOfSetBits()<2) return false;
         juce::AudioDeviceManager::AudioDeviceSetup current;
         deviceManager_.getAudioDeviceSetup (current);
         return current.inputDeviceName == expected.inputDeviceName
