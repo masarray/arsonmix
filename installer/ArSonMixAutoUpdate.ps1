@@ -270,7 +270,7 @@ function Restore-InstalledRelease([string]$sourceSha) {
     # than trusting local update state as installation authority.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $sourceRelease=$null
     foreach($release in $releases) {
         if([string]$release.target_commitish -ceq $sourceSha -and
@@ -576,7 +576,7 @@ try {
     Write-State $state
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     Write-State $state
     $current=$null
@@ -613,11 +613,19 @@ try {
     $stage=Join-Path $root 'stage'
     $oldPath=Join-Path $stage ([string]$oldAsset.name)
     $newPath=Join-Path $stage ([string]$newAsset.name)
+    # Release-list retrieval succeeded, but the transaction is NOT checked
+    # until both release packages/checksums have passed verification.
+    # On network/metadata failure here, retry after lastAttemptUtc's
+    # 20-minute backoff, not the six-hour successful-check cooldown.
+    $state.phase='staging-retry'
+    $state.lastCheckUtc=''
+    Write-State $state
     Download-Release-Verified $new $newAsset $newPath
     # Rollback must be possible offline. Do not begin update without a
     # byte-verified previous installer.
     Download-Release-Verified $current $oldAsset $oldPath
     $state.phase='staged'
+    $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     $state.operation=$operation
     $state.installAttempts=0
     $state.retryAfterUtc=''
@@ -666,7 +674,7 @@ try {
     # No network is needed *during* live audio; if offline on close, defer.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $liveReleases=@(Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25)
+    $liveReleases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
     $approved=$null
     $approvedOld=$null
     foreach($release in $liveReleases) {
