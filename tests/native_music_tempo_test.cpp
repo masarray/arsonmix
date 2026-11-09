@@ -141,6 +141,13 @@ static void weakBusyGrooveMustReleaseBeatGrid() {
     // Once clear music returns the phase can be acquired again.
     for(int n=2350;n<3550;++n)renderWindow(tap,n,50,.78f);
     const auto recovered=tap.poll(7,13);
+    if(!recovered.tempo.locked || std::abs(recovered.tempo.bpm-120.f)>3.f)
+        std::fprintf(stderr,
+            "MUSIC_WEAK_RECOVERY locked=%d bpm=%.3f confidence=%.3f phase=%d phaseConfidence=%.3f comparisons=%u dropped=%u\n",
+            static_cast<int>(recovered.tempo.locked),recovered.tempo.bpm,
+            recovered.tempo.confidence,static_cast<int>(recovered.tempo.phaseLocked),
+            recovered.tempo.phaseConfidence,recovered.tempo.scoringComparisons,
+            recovered.dropped);
     check(recovered.tempo.locked &&
           std::abs(recovered.tempo.bpm-120.f)<=3.f);
     check(recovered.tempo.phaseLocked);
