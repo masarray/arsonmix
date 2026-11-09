@@ -1,4 +1,6 @@
 # ADR — ArSonMix Device-Independent Mixer Session & Crash-Safe Resume
+
+**Owner correction 2026-11-09 — regular-user / player first sound:** [Smart Zero-Friction Operator Workflow](ADR_ARSON_PLAYER_ZERO_FRICTION_SMART_WORKFLOW_20261109.md) supersedes any sentence below requiring an extra user ARM, MONITOR ON/OFF, Apply Graph, route confirmation checkbox or repeated Start **after a fresh explicit Play on an exactly matching previously verified physical output**. The Play gesture itself is the operator's requested activation; prepare/restore must be an internal transaction with real native readback. Do not autoplay on launch, auto-unmute MAIN, silently swap to new physical output, or override intentional SOURCE ONLY/BUS. A genuinely unknown/different device requires one contextual output selection; all identity and PCM safety protections remain binding. This is a product policy for future implementation, not evidence the engine currently satisfies it.
 **Status: IMPLEMENTATION DESIGN / NOT YET IMPLEMENTED**
 **Date:** 2026-11-07
 **Canonical integration:** PR #418, preserve ONE JUCE audio callback, native ChannelId PCM ownership, and the single assembled `/preview/` GUI.

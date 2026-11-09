@@ -1,5 +1,7 @@
 # Smart CI: fast feedback, deliberate expensive qualification
 
+**Binding fast-delivery update (2026-11-09):** [Autonomous Fast Delivery Contract](AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md) is the operative agent behavior. Develop independently while quick CI runs; do not convert the M0 source audit into a separate PR/reviewer gate; one product PR and meaningful revisions; first working ArSon Player MVP gets one exact-SHA `ui + fat` (fat already includes native) for an early testable installer. No repeated Windows/Chromium on each push. Preserve current secure owner-only dispatcher, exact SHA/required tests, release and physical FAT safety. **No changes to Actions workflow code are necessary unless a measured bottleneck is found.**
+
 ## Mandatory start for a new ChatGPT / Codex thread
 
 1. Open [root AGENTS.md](../AGENTS.md) and this runbook from **current
@@ -11,11 +13,15 @@
    runs and artifacts. Resume the **existing** integration milestone if it
    covers the request; do not fork a second PCM/GUI authority or open a
    redundant PR. A previous chat or a snapshot SHA is not source authority.
-3. Implement one significant, reviewable product increment with the smallest
-   safe diff and deterministic tests. Preserve the approved assembled
-   `/preview/`, native ACK/readback, realtime callback and VST3 state.
-   Frequent small pushes do **not** justify heavyweight runner jobs.
-4. The agent owns the GitHub workflow end to end **in the active chat**:
+3. Implement one significant, reviewable **vertical product increment** in one
+   coherent PR with deterministic tests. An M0 architecture/PCM trace is part
+   of M1 end-to-end implementation, **not a separate signoff PR**. Preserve
+   `/preview/`, native ACK/readback, realtime callback, and VST3 state. Push
+   only useful revisions; small edits do **not** justify heavyweight jobs.
+4. The agent may continue independent coding while fast CI is pending; it does
+   **not** wait for a full Windows/Chromium check to continue other tasks. Fix
+   relevant CI failures before milestone dispatch/merge. The agent owns the
+   GitHub workflow end to end **in the active chat**:
    branch/commit or PR update, fast-failure investigation, selective exact-SHA
    milestone PR comment, downstream job/artifact inspection, and merge when
    evidence is sufficient. Do not ask the user to open GitHub Actions to
@@ -40,6 +46,7 @@ not override this policy.
 | C++, VST3 host, DSP, device, ASIO, IPC/control | One `native` request after quick checks; inspect MSVC + CTest |
 | Physical hardware FAT requires an executable | One `fat` request; MSVC + CTest + verified unqualified ZIP |
 | Mixed GUI and native product milestone | `ui` plus either `native` or `fat`, only if needed and not already qualified |
+| Player MVP requiring a real user-test ZIP | One `ui` plus one `fat` at the accepted exact SHA, after fast UI/native; **never** duplicate with `native` for that SHA |
 | Existing same-SHA success/running request | Reuse its result; do not post another dispatch comment |
 | Any relevant `main` promotion | Normal `main` safety CI / guarded Pages deployment, never skipped to save time |
 
@@ -160,3 +167,7 @@ Unresolved risk and next significant milestone: <specific>
 ## Historical CSS migrations
 
 Full current-product UI qualification keeps archived V8–V27 migration tests disabled unless `historical_css: true` is explicitly requested. Current approved GUI, native interaction, browser and provenance checks remain mandatory.
+
+## Operator-first fast delivery amendment (2026-11-09)
+
+Read [Autonomous Fast Delivery Contract](AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md). Continue code editing while fast CI runs when tasks are independent; finish one real native Player→MUSIC→MAIN workflow before cosmetic or M2 features. No separate M0 plan/review/merge gate, repeated owner approvals, parallel micro PRs or dummy commits to start expensive Actions. Preserve fail-closed hardware identity, Native/Browser quality, exact-SHA jobs, permissions and branch protection. Trigger early unqualified Windows FAT installer **once** when M1 native audio is integrated, so owner can field-test; any later runtime fix requires a new exact-SHA qualification. Do not claim physical FAT on CI success.

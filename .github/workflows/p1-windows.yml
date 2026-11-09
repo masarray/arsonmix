@@ -132,6 +132,19 @@ jobs:
           node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+      - name: Compressor exact-source native CPU A/B (same runner, non-gating timing)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
+        run: python scripts/benchmark_compressor_ab.py --reference 043748a552e66fd72e217cbf66aa35e6cc3e0b21
+      - name: Compressor standalone C++ compile + PCM regression (before MSVC)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
+        run: |
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math tests/builtin_channel_compressor_test.cpp -o "$RUNNER_TEMP/native-compressor-core-test"
+          "$RUNNER_TEMP/native-compressor-core-test"
+      - name: Compressor standalone core lifecycle C++ test (cheap preflight)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/compressor-') }}
+        run: |
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math tests/builtin_channel_compressor_test.cpp -o "$RUNNER_TEMP/native-compressor-core-test"
+          "$RUNNER_TEMP/native-compressor-core-test"
   windows-build:
     name: Windows MSVC / realtime CTest
     needs: quick

@@ -3,6 +3,7 @@
 #include "../engine/builtin_fx/CompressorMeterMath.h"
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -56,6 +57,20 @@ static void testValidationAndLatency() {
     check(!ChannelCompressor::prepareEdit(s,48000,packet));
     s=CompressorSettings{};s.attackMs=0;
     check(!ChannelCompressor::prepareEdit(s,48000,packet));
+    s=CompressorSettings{};
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    // Tiny positive knees are defined as hard-knee in the DSP. Keeping
+    // 0.5/knee at zero here prevents overflow/Inf in prepared edit packets.
+    s.kneeDb=std::numeric_limits<float>::denorm_min();
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(packet.halfInverseKnee==0.f);
+    check(compressor.resetUnpublished(s));
+    s.kneeDb=.00009f;
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(packet.halfInverseKnee==0.f);
+    s.kneeDb=12.f;
+    check(ChannelCompressor::prepareEdit(s,48000,packet));
+    check(std::abs(packet.halfInverseKnee-(.5f/12.f))<1.e-7f);
     s=CompressorSettings{};
     check(ChannelCompressor::prepareEdit(s,48000,packet));
     check(!compressor.applyPrepared(ChannelCompressor::PreparedEdit{}));
@@ -175,11 +190,211 @@ static void testFirstSampleAndNoHeapInCallback() {
         check(std::isfinite(left[frames-1])&&std::isfinite(right[frames-1]));
     }
 }
+
+// Fixed pre-optimization mathematical reference (test-only). Verify the DSP
+// output and three true PCM/GR meters at 44.1/48/96 kHz, including soft knee,
+// hard knee, unity, positive makeup and fully dry compression. This explicitly
+// protects the user's already-accepted Compressor sound from "fast DSP" drift.
+static void testOptimizedMatchesLegacyStablePCM() {
+    const std::array<double,3> rates{44100.,48000.,96000.};
+    const std::array<CompressorSettings,7> scenes{{
+        {-18.f,3.f,10.f,120.f,6.f,0.f,1.f},
+        {-36.f,14.f,.1f,60.f,0.f,0.f,1.f},
+        {-12.f,2.1f,30.f,500.f,18.f,8.f,.72f},
+        {-52.f,20.f,3.f,80.f,24.f,-4.f,1.f},
+        {-50.f,12.f,1.f,180.f,12.f,12.f,0.f},
+        {-18.f,1.f,1.f,40.f,0.f,0.f,1.f},
+        {-21.f,4.5f,9.f,250.f,6.f,0.f,.5f},
+    }};
+    for(double rate:rates)for(const auto& s:scenes) {
+        ChannelCompressor c;
+        check(c.prepare(rate) && c.resetUnpublished(s));
+        const float attack=static_cast<float>(std::exp(-1000.0/(s.attackMs*rate)));
+        const float release=static_cast<float>(std::exp(-1000.0/(s.releaseMs*rate)));
+        const float makeup=static_cast<float>(std::exp(s.makeupDb*0.11512925464970229));
+        const float gate=static_cast<float>(
+            std::exp((s.thresholdDb-s.kneeDb*.5f)*0.11512925464970229));
+        float envelope=0.f;
+        std::array<float,128> left{},right{},expectedLeft{},expectedRight{};
+        std::size_t sampleIndex=0;
+        for(int block=0;block<24;++block) {
+            float maxIn=0.f,maxOut=0.f,maxGR=0.f;
+            for(int i=0;i<128;++i,++sampleIndex) {
+                const float l=static_cast<float>(0.55*std::sin(sampleIndex*.013)+
+                    0.31*std::cos(sampleIndex*.071));
+                const float r=static_cast<float>(0.37*std::sin(sampleIndex*.017+.4)+
+                    0.12*std::cos(sampleIndex*.033));
+                left[i]=l;right[i]=r;
+                const float peak=std::max(std::abs(l),std::abs(r));
+                maxIn=std::max(maxIn,peak);
+                const float coeff=peak>envelope?attack:release;
+                envelope=coeff*envelope+(1.f-coeff)*peak;
+                if(envelope<1.e-25f)envelope=0.f;
+                float reduction=0.f;
+                if(s.ratio>1.f && envelope>gate) {
+                    const float above=20.f*std::log10(envelope)-s.thresholdDb;
+                    const float strength=1.f-1.f/s.ratio;
+                    if(s.kneeDb<.0001f)
+                        reduction=std::max(0.f,above)*strength;
+                    else if(above>=s.kneeDb*.5f)reduction=above*strength;
+                    else if(above>-s.kneeDb*.5f) {
+                        const float bend=above+s.kneeDb*.5f;
+                        reduction=bend*bend*(.5f/s.kneeDb)*strength;
+                    }
+                }
+                const float attenuation=reduction>0.f?
+                    std::exp(reduction*(-0.11512925464970229f)):1.f;
+                const float gain=(1.f-s.mix)+s.mix*(attenuation*makeup);
+                const float expectedL=l*gain,expectedR=r*gain;
+                // Existing float math (incl. soft-knee multiplication order)
+                // must agree within a few ULP; no control-rate approximation.
+                left[i]=l;right[i]=r; // real DSP is called after reference pass
+                // Accumulate output predictions to compare the actual output.
+                maxOut=std::max(maxOut,peak*std::abs(gain));
+                maxGR=std::max(maxGR,reduction);
+                expectedLeft[i]=expectedL;expectedRight[i]=expectedR;
+            }
+            // Keep the two paths independent: replay the same PCM and
+            // compare the reference block meter immediately after processing.
+            c.processStereo(left.data(),right.data(),left.size());
+            for(std::size_t i=0;i<left.size();++i) {
+                check(std::abs(left[i]-expectedLeft[i])<2.e-5f);
+                check(std::abs(right[i]-expectedRight[i])<2.e-5f);
+            }
+            check(std::abs(c.inputPeak()-maxIn)<2.e-6f);
+            check(std::abs(c.outputPeak()-maxOut)<2.e-5f);
+            check(std::abs(c.gainReductionDb()-maxGR)<2.e-4f);
+        }
+    }
+}
+// No wall-clock pass/fail: hosted CI runners vary by orders of magnitude.
+// Reproducible 16-instance, 128-frame steady-load timing is diagnostic only,
+// never run on the callback or used as an ungrounded speedup claim.
+static void testManyInstancesCpuDiagnostic() {
+    constexpr int instances=16,frames=128,blocks=300;
+    std::array<ChannelCompressor,instances> compressors{};
+    for(int i=0;i<instances;++i) {
+        check(compressors[i].prepare(48000.));
+        CompressorSettings s{};
+        s.thresholdDb=-32.f;s.ratio=7.f;s.attackMs=1.f;s.kneeDb=12.f;
+        s.mix=(i%4==0)?0.f:1.f;
+        check(compressors[i].resetUnpublished(s));
+    }
+    std::array<float,frames> left{},right{};
+    double checksum=0.;
+    const auto start=std::chrono::steady_clock::now();
+    for(int b=0;b<blocks;++b)for(auto& c:compressors) {
+        for(int j=0;j<frames;++j){
+            left[j]=.55f+static_cast<float>(j%7)*.019f;
+            right[j]=-.42f-static_cast<float>(j%5)*.012f;
+        }
+        c.processStereo(left.data(),right.data(),frames);
+        checksum+=left[frames-1]+right[0]+c.gainReductionDb();
+    }
+    const auto elapsed=std::chrono::duration<double,std::nano>(
+        std::chrono::steady_clock::now()-start).count();
+    check(std::isfinite(checksum) && checksum>0.);
+    std::printf("Compressor CPU diagnostic: %.1f ns / stereo frame / instance "
+                "(16 instances x %d frames x %d blocks; non-gating)\\n",
+                elapsed/(instances*frames*blocks),frames,blocks);
+}
+
+// Regression for prepared control edits ending inside a callback. Compare the
+// block renderer to one-sample scheduling, regardless of its math kernel.
+// Three rates plus odd callback quanta expose off-by-one fades, stale knees
+// and block-meter drift across parameter changes.
+static void testAutomationMatchesSingleSampleSchedule() {
+    const std::array<int,10> blocks{1,3,17,63,128,257,511,9,128,511};
+    for(double rate:{44100.,48000.,96000.}) {
+        ChannelCompressor batched,scalar;
+        check(batched.prepare(rate)&&scalar.prepare(rate));
+        CompressorSettings initial{};
+        initial.thresholdDb=-12.f;initial.ratio=2.5f;
+        initial.kneeDb=12.f;initial.attackMs=3.f;
+        check(batched.resetUnpublished(initial));
+        check(scalar.resetUnpublished(initial));
+        std::size_t sample=0;
+        for(std::size_t b=0;b<blocks.size();++b) {
+            if(b==0||b==4||b==7) {
+                CompressorSettings next=initial;
+                next.thresholdDb=b==4?-46.f:(b==7?-22.f:-39.f);
+                next.ratio=b==4?12.f:(b==7?1.f:7.f);
+                next.kneeDb=b==7?0.f:18.f;
+                next.mix=b==4?0.f:(b==7?.65f:1.f);
+                next.makeupDb=b==7?9.f:-3.f;
+                ChannelCompressor::PreparedEdit edit{};
+                check(ChannelCompressor::prepareEdit(next,rate,edit));
+                check(batched.applyPrepared(edit));
+                check(scalar.applyPrepared(edit));
+            }
+            const auto n=static_cast<std::size_t>(blocks[b]);
+            std::array<float,511> left{},right{};
+            for(std::size_t i=0;i<n;++i,++sample) {
+                left[i]=static_cast<float>(
+                    .53*std::sin((sample+13)*.031)+.19*std::cos(sample*.11));
+                right[i]=static_cast<float>(
+                    .39*std::sin((sample+3)*.037)-.12*std::cos(sample*.07));
+            }
+            std::array<float,511> expectedL=left,expectedR=right;
+            float in=0.f,out=0.f,gr=0.f;
+            for(std::size_t i=0;i<n;++i) {
+                scalar.processStereo(&expectedL[i],&expectedR[i],1);
+                in=std::max(in,scalar.inputPeak());
+                out=std::max(out,scalar.outputPeak());
+                gr=std::max(gr,scalar.gainReductionDb());
+            }
+            // This callback sometimes straddles the 8-ms slew boundary.
+            prohibitHeap.store(true,std::memory_order_release);
+            batched.processStereo(left.data(),right.data(),n);
+            prohibitHeap.store(false,std::memory_order_release);
+            for(std::size_t i=0;i<n;++i) {
+                check(std::abs(left[i]-expectedL[i])<1.e-6f);
+                check(std::abs(right[i]-expectedR[i])<1.e-6f);
+            }
+            check(std::abs(batched.inputPeak()-in)<1.e-6f);
+            check(std::abs(batched.outputPeak()-out)<1.e-6f);
+            check(std::abs(batched.gainReductionDb()-gr)<1.e-5f);
+        }
+    }
+}
+
+static void testColdShowSeedAndRealtimeRestart() {
+    ChannelCompressor core;
+    auto s=CompressorSettings{};
+    s.thresholdDb=-42.f;s.ratio=9.f;s.kneeDb=15.f;s.mix=.65f;
+    check(core.stageUnpublished(s));
+    check(core.prepare(44100.));
+    check(core.settingsForOfflineTests().thresholdDb==s.thresholdDb);
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    s.thresholdDb=-25.f;s.ratio=3.5f;
+    ChannelCompressor::PreparedEdit packet{};
+    check(ChannelCompressor::prepareEdit(s,44100.,packet));
+    check(core.applyPrepared(packet));
+    std::array<float,128> l{},r{};l.fill(.5f);r.fill(-.3f);
+    core.processStereo(l.data(),r.data(),l.size());
+    // A sample-rate change must not revert DSP to the old *acknowledged*
+    // value: target_ already represents the latest physically applied edit.
+    check(core.prepare(96000.));
+    check(core.settingsForOfflineTests().thresholdDb==s.thresholdDb);
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    auto invalid=s;invalid.ratio=std::numeric_limits<float>::infinity();
+    check(!core.stageUnpublished(invalid));
+    check(core.settingsForOfflineTests().ratio==s.ratio);
+    // Pre-publication state can also be reseeded on an already prepared core.
+    s.mix=0.f;check(core.stageUnpublished(s));
+    check(core.settingsForOfflineTests().mix==0.f);
+    check(core.prepare(48000.));
+    check(core.settingsForOfflineTests().mix==0.f);
+}
 int main(){
+    testColdShowSeedAndRealtimeRestart();
     testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();
     testValidationAndLatency();testTransferAndStereo();
     testDryAndBypass();testSoftKneeAndRuntimeEdits();
     testMultipleRatesAndIndependentChannels();
+    testOptimizedMatchesLegacyStablePCM();
+    testAutomationMatchesSingleSampleSchedule();
+    testManyInstancesCpuDiagnostic();
     std::puts("PASS: native zero-buffer compressor stereo linked / GR / parameter validation");
 }
