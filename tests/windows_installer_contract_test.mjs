@@ -206,3 +206,12 @@ test('cached installers are byte-verified and revoked releases cannot loop indef
   ]) assert.ok(ps.includes(marker), marker);
   assert.match(smoke, /ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS/);
 });
+
+test('transient Inno failure allows one delayed retry, never a reinstall loop', () => {
+  const ps = read('installer/ArSonMixAutoUpdate.ps1');
+  const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
+  for (const x of ['Should-RetryInstaller','installAttempts','retryAfterUtc','AddMinutes(30)',
+    'INSTALLER_RETRY_DEFERRED_COOLDOWN','INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT',
+    'ARSONMIX_UPDATER_RETRY_POLICY_PASS']) assert.ok(ps.includes(x), x);
+  assert.match(smoke,/ARSONMIX_UPDATER_RETRY_POLICY_PASS/);
+});

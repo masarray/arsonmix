@@ -170,6 +170,11 @@ function Test-StagedAsset([string]$path,[object]$asset) {
     } catch {return $false}
 }
 
+function Should-RetryInstaller([int]$attempts,[bool]$success,[bool]$oldRemains) {
+    # Only a completed, nonzero-exit installer is eligible. A timeout
+    # throws and must not spawn a second installer while the first runs.
+    return (-not $success -and $oldRemains -and $attempts -ge 1 -and $attempts -lt 2)
+}
 function Get-InstalledImageStatus([object]$build) {
     try {
         $hash=[string]$build.exeSha256
@@ -367,6 +372,11 @@ if($PolicySelfTest) {
         $stored.digest='sha256:'+('0'*64)
         if(Test-CompleteStagedTransaction $transaction){throw 'Corrupted staged transaction reused'}
     } finally {$root=$previousRoot}
+    if(-not (Should-RetryInstaller 1 $false $true)){throw 'First transient retry rejected'}
+    if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
+    if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
+    if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
 
     Write-Output 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS'
@@ -389,7 +399,7 @@ try {
     $file=Read-Json $provenance
     $installedSha=[string]$file.sourceCommit
     if($installedSha -cnotmatch '^[a-f0-9]{40}$'){exit 0}
-    $state=[pscustomobject]@{lastCheckUtc='';lastAttemptUtc='';blockedTag='';lastInstalledTag='';phase='idle';operation='upgrade';
+    $state=[pscustomobject]@{lastCheckUtc='';lastAttemptUtc='';blockedTag='';lastInstalledTag='';phase='idle';operation='upgrade';installAttempts=0;retryAfterUtc='';
        candidateTag='';candidateSha='';previousSha='';previousTag='';
        newAsset=$null;previousAsset=$null}
     if(Test-Path -LiteralPath $statePath -PathType Leaf) {
@@ -403,7 +413,7 @@ try {
             Log-Result 'INVALID_UPDATER_STATE_QUARANTINED'
             $read=$null
         }
-        foreach($key in @('lastCheckUtc','lastAttemptUtc','blockedTag','lastInstalledTag','phase','operation','candidateTag','candidateSha','previousSha','previousTag','newAsset','previousAsset')) {
+        foreach($key in @('lastCheckUtc','lastAttemptUtc','blockedTag','lastInstalledTag','phase','operation','installAttempts','retryAfterUtc','candidateTag','candidateSha','previousSha','previousTag','newAsset','previousAsset')) {
             if($null -ne $read -and $read.PSObject.Properties.Name -contains $key){$state.$key=$read.$key}
         }
     }
@@ -493,6 +503,8 @@ try {
     Download-Release-Verified $current $oldAsset $oldPath
     $state.phase='staged'
     $state.operation=$operation
+    $state.installAttempts=0
+    $state.retryAfterUtc=''
     $state.candidateTag=[string]$new.tag_name
     $state.candidateSha=[string]$new.target_commitish
     $state.previousTag=[string]$current.tag_name
@@ -508,6 +520,13 @@ try {
     if($state.operation -cnotin @('upgrade','repair')){Fail 'Unknown update operation'}
     if($state.operation -ceq 'repair' -and $state.candidateSha -cne $installedSha){
         Fail 'Repair must use the installed release'
+    }
+    $retryAt=[DateTime]::MinValue
+    if($state.retryAfterUtc -and
+       [DateTime]::TryParse([string]$state.retryAfterUtc,[ref]$retryAt) -and
+       [DateTime]::UtcNow -lt $retryAt.ToUniversalTime()){
+        Log-Result 'INSTALLER_RETRY_DEFERRED_COOLDOWN'
+        exit 0
     }
     if($state.candidateSha -cnotmatch '^[a-f0-9]{40}$' -or
        $null -eq (Version-Key ([string]$state.candidateTag)) -or
@@ -574,6 +593,7 @@ try {
     }
     if((Read-Json $provenance).sourceCommit -cne $installedSha) {Log-Result 'DEFER_VERSION_CHANGED';exit 0}
     $state.phase='installing'
+    $state.installAttempts=[int]$state.installAttempts+1
     Write-State $state
     $upgradeOK=Run-Installer $newPath
     $actualSha=''
@@ -582,10 +602,25 @@ try {
        (Launch-WithHealth ([string]$new.target_commitish))) {
         $state.lastInstalledTag=$new.tag_name
         $state.phase='idle'
+        $state.retryAfterUtc=''
+        $state.installAttempts=0
         $state.blockedTag=''
         Write-State $state
         Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
         Clear-StagedVendorFiles $state
+        exit 0
+    }
+    # A transient, completed Inno rejection can retry ONCE on a later
+    # normal exit. Timeout/exception never qualifies for a second installer.
+    $oldRemains=($actualSha -ceq $installedSha) -and (Test-Path -LiteralPath $exe -PathType Leaf)
+    if(Should-RetryInstaller ([int]$state.installAttempts) ([bool]$upgradeOK) ([bool]$oldRemains)) {
+        $state.phase='staged'
+        $state.retryAfterUtc=[DateTime]::UtcNow.AddMinutes(30).ToString('o')
+        Write-State $state
+        Log-Result ('INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT '+$new.tag_name)
+        try {[Diagnostics.Process]::Start($exe) | Out-Null} catch {
+            Log-Result 'PREVIOUS_EXE_RELAUNCH_FAILED'
+        }
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.

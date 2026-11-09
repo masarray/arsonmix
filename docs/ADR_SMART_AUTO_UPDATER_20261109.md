@@ -40,3 +40,7 @@ No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, W
 - Corrupt updater-owned state is quarantined without touching user data. Network failure retries no more than every 20 minutes; successfully fetched release lists are cached six hours. Complete staged transactions are retained across app reopens until the normal-exit update process.
 - Cleanup removes only named vendor installer/checksum/provenance files. No recursive stage deletion. Failure of a same-version repair blocks repeated attempts; it does not uninstall or erase a session.
 - A mixer executable that cannot start cannot repair itself: independent, publisher-signed bootstrap/recovery remains a required future release gate.
+
+## Bounded automatic error recovery
+- A completed Inno installer that exits nonzero but leaves the old source intact gets one more attempt on the next normal app exit, after a 30-minute cooldown. The counter persists in updater metadata; two failures block that candidate. An installer timeout, partial version replacement, failed GUI health, or revoked release does not qualify for this retry.
+- Only the old installed app can be relaunched after a non-destructive installer rejection. The updater never uninstalls or resets Studio/.smix to work around device, driver or VST issues.
