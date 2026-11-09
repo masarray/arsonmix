@@ -111,6 +111,11 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertNotIn('class="mx-harm-brand">ArSon <em>Harmony</em>',self.ui)
         self.assertIn("grid-template-columns:112px minmax(0,1fr)",self.css)
         self.assertIn(".mx-harm-wheel-core strong",self.css)
+        # Do not restore the decorative inner border: it intersects the
+        # 12 note labels after the blue-annulus radius adjustment.
+        self.assertNotIn(".mx-harm-wheel:before{",self.css)
+        self.assertNotIn("border:1px solid #c0d3d445",self.css)
+        self.assertIn(".mx-harm-wheel-core{",self.css)
         self.assertIn("syncPower();",self.ui)
         self.assertIn('power.dataset.fxState=fxState;',self.ui)
         self.assertIn('fxState==="unknown"||fxState==="rack-off"',self.ui)
