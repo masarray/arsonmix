@@ -25,10 +25,22 @@
 // Migrate the current ten-strip LiveDryRoutingLab to this ONE kernel at DYN1B.
 namespace armix::mixer {
 
+// Legacy physical aggregate initializers stay valid. Virtual music never
+// borrows an unused physical callback ordinal.
+enum class DynamicSourceKind : std::uint8_t { physical, playerDeck };
 struct DynamicSourcePatch final {
     ChannelId id{};
-    int inputL=-1, inputR=-1; // callback pointer ordinals, NOT sparse device labels
+    int inputL=-1, inputR=-1; // physical callback ordinals only
     bool stereo=false;
+    DynamicSourceKind kind=DynamicSourceKind::physical;
+    std::uint64_t deckId=0; // nonzero iff kind == playerDeck
+};
+// A borrowed, callback-lifetime view of device-rate, worker-prepared PCM.
+// The caller advances each deck's FIFO exactly once before graph fan-out.
+struct DynamicPlayerPcmBlock final {
+    std::uint64_t deckId=0;
+    const float* left=nullptr;
+    const float* right=nullptr;
 };
 struct DynamicGraphRequest final {
     std::vector<DynamicSourcePatch> sources;
@@ -59,6 +71,7 @@ class DynamicPreparedMixerBlock final {
         ProcessingFormat format=ProcessingFormat::mono;
         ChannelRole role=ChannelRole::input;
         int inputL=-1,inputR=-1;
+        std::uint64_t playerDeckId=0; // disjoint from physical input
         bool inputStereo=false,enabled=false;
         bool monoPan=false; // mono source/processing, independent of VST rack width
         float gainL=1.f,gainR=1.f;
@@ -152,6 +165,18 @@ public:
                           inputR<0xffff && inputR!=inputL)
                        : inputR==-1);
     }
+    // CONTROL-only validation for source-kind-tagged graph edits.
+    // A deck has two PCM planes even if the mixer channel processing is mono.
+    static bool validSourcePatch(const DynamicGraphRequest& request,
+                                 const DynamicSourcePatch& patch) noexcept {
+        if(patch.kind==DynamicSourceKind::physical)
+            return patch.deckId==0 && validPhysicalPatch(
+                request.physicalInputs,patch.inputL,patch.inputR,patch.stereo);
+        return patch.kind==DynamicSourceKind::playerDeck &&
+               patch.deckId!=0 && patch.stereo &&
+               patch.inputL==-1 && patch.inputR==-1;
+    }
+
     // Same-format live physical INPUT switch. Stable ChannelId and VST
     // instance never change; retain one latest target, no command FIFO.
     // A new source request during the 64-sample crossfade is coalesced and
@@ -165,7 +190,7 @@ public:
         if(it==controlIndex_.end())return false;
         const auto& lane=lanes_[it->second];
         if(lane.role!=ChannelRole::input || lane.inputL<0 ||
-           lane.inputStereo!=stereo)return false; // format requires APPLY
+           lane.playerDeckId!=0 || lane.inputStereo!=stereo)return false; // physical-only
         sourceTargets_[it->second].store(packPhysical(inputL,inputR),
                                           std::memory_order_release);
         return true;
@@ -246,7 +271,8 @@ public:
         for(const auto i:renderOrder_)if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
-            if(lane.inputL>=0&&!allocate(physicalDelays_[i],arrival[i])) {
+            if((lane.inputL>=0 || lane.playerDeckId!=0) &&
+               !allocate(physicalDelays_[i],arrival[i])) {
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
             for(std::size_t e=lane.first;e<lane.last;++e)
@@ -322,11 +348,14 @@ public:
             if(it==byId.end()){error={DynamicGraphFault::missingSource,patch.id};return false;}
             auto& lane=next.lanes_[it->second];
             if(lane.role!=ChannelRole::input || lane.inputL!=-1 ||
-               !validPhysicalPatch(req.physicalInputs,patch.inputL,
-                                   patch.inputR,patch.stereo)) {
+               lane.playerDeckId!=0 || !validSourcePatch(req,patch)) {
                 error={DynamicGraphFault::invalidSource,patch.id};return false;
             }
-            lane.inputL=patch.inputL;lane.inputR=patch.inputR;
+            if(patch.kind==DynamicSourceKind::physical) {
+                lane.inputL=patch.inputL;lane.inputR=patch.inputR;
+            } else {
+                lane.playerDeckId=patch.deckId;
+            }
             lane.inputStereo=patch.stereo;
             // The channel SOURCE and the INSERT PROCESSING FORMAT are
             // independent. Mono mic -> stereo VST still retains mono PAN.
@@ -432,7 +461,9 @@ public:
         std::vector<unsigned char> hasSignal(rows.size(),0);
         for(std::size_t i=0;i<rows.size();++i)
             hasSignal[i]=static_cast<unsigned char>(
-                next.lanes_[i].inputL>=0 || !rows[i].insertCatalogIds.empty());
+                next.lanes_[i].inputL>=0 ||
+                next.lanes_[i].playerDeckId!=0 ||
+                !rows[i].insertCatalogIds.empty());
         for(const auto i:order) {
             if(!next.lanes_[i].enabled || !hasSignal[i])continue;
             for(const auto& edge:outgoing[i])
@@ -506,7 +537,8 @@ public:
                  float* outputL,float* outputR,int frames,Fx&& processFx,
                  float* monitorL=nullptr,float* monitorR=nullptr,
                  std::span<float> channelPeaksL={},
-                 std::span<float> channelPeaksR={}) noexcept {
+                 std::span<float> channelPeaksR={},
+                 std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -614,6 +646,24 @@ public:
                         if(--fade.remaining==0){fade.current=fade.next;oldL=newL;oldR=newR;}
                     }
                     if(!physicalDelays_.empty())physicalDelays_[i].process(vl,vr);
+                    l[f]+=vl;r[f]+=vr;
+                }
+            }
+            // A silent/starved deck never blocks the mixer or microphone.
+            // Resolve the bounded source view once per channel/block, not
+            // once per sample. Shared decks do NOT advance any producer FIFO.
+            if(lane.playerDeckId!=0) {
+                const DynamicPlayerPcmBlock* found=nullptr;
+                for(const auto& deck:playerPcm)
+                    if(deck.deckId==lane.playerDeckId) {found=&deck;break;}
+                // Even when the worker runs dry, advance the prepared PDC
+                // delay with silence: otherwise returning music would release
+                // stale buffered frames at the wrong callback time.
+                for(int f=0;f<frames;++f) {
+                    float vl=(found&&found->left)?found->left[f]:0.f;
+                    float vr=(found&&found->right)?found->right[f]:0.f;
+                    if(!physicalDelays_.empty())
+                        physicalDelays_[i].process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
