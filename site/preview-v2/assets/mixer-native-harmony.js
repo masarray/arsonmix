@@ -106,7 +106,7 @@ const backend=()=>window.__JUCE__?.backend;
 const state=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
-let readbackSentAt=0;
+let readbackSentAt=0,verified=false,heldPatch=null;
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
 let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
@@ -118,15 +118,75 @@ const sliders=sliderDefs.map(([key])=>({
  key,input:root.querySelector('[data-field="'+key+'"]'),
  output:root.querySelector('[data-out="'+key+'"]')
 }));
-const context=()=>{
+// The native accepted graph is the only authority, including after reopen.
+// Track exact insert identity through a slot move; allow a successor at the
+// former slot only on the SAME stable ChannelId. Never retarget another strip.
+const acceptedLocation=()=>{
  const n=state();
  if(!current||!native()||!n?.admitted)return null;
- const channel=n.graph?.channels?.find(ch=>ch.id===current.channelId);
- const insert=channel?.inserts?.[current.slot];
- if(insert?.id!==current.instanceId||insert?.catalogId!==ID)return null;
- return {channelId:current.channelId,deviceEpoch:n.device.epoch,
-         graphRevision:n.graph.revision,slot:current.slot,instanceId:current.instanceId};
+ const id=current.channelId||window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
+ const channel=n.graph?.channels?.find(ch=>ch.id===id),inserts=channel?.inserts;
+ if(!Array.isArray(inserts))return null;
+ let slot=current.instanceId?
+   inserts.findIndex(x=>x?.id===current.instanceId&&x.catalogId===ID):-1;
+ if(slot<0&&inserts[current.slot]?.catalogId===ID&&inserts[current.slot]?.id)
+   slot=current.slot;
+ if(slot<0)return null;
+ const insert=inserts[slot];
+ if(!insert?.id||insert.catalogId!==ID)return null;
+ return {channelId:id,deviceEpoch:n.device.epoch,
+         graphRevision:n.graph.revision,slot,instanceId:insert.id};
 };
+const context=()=>{
+ const c=acceptedLocation();
+ if(!c||!current||c.channelId!==current.channelId||
+    c.instanceId!==current.instanceId||c.slot!==current.slot||
+    c.deviceEpoch!==current.boundEpoch||
+    c.graphRevision!==current.boundRevision)return null;
+ return c;
+};
+// Carry only actually edited fields; never push stale full plugin presets
+// into a freshly created instance after a device/graph transition.
+function holdUnfinishedEdit(){
+ const desired=latest||pending?.settings;
+ if(!desired)return;
+ const diff={};
+ for(const key of Object.keys(settings))
+   if(desired[key]!==settings[key])diff[key]=desired[key];
+ heldPatch={...diff,...(heldPatch||{})};
+}
+function reconcileBinding(){
+ if(!native()||!current)return false;
+ const c=acceptedLocation();
+ if(!c){
+   if(verified||pending||readbackRequest){
+     holdUnfinishedEdit();verified=false;pending=null;latest=null;
+     readbackRequest="";effectiveKey=-1;effectiveScale=-1;
+     hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");paint();
+   }
+   return false;
+ }
+ const changed=current.channelId!==c.channelId||
+   current.instanceId!==c.instanceId||current.slot!==c.slot||
+   current.boundEpoch!==c.deviceEpoch||
+   current.boundRevision!==c.graphRevision;
+ if(changed){
+   holdUnfinishedEdit();
+   current.channelId=c.channelId;current.instanceId=c.instanceId;
+   current.slot=c.slot;current.boundEpoch=c.deviceEpoch;
+   current.boundRevision=c.graphRevision;
+   pending=null;latest=null;verified=false;
+   readbackRequest="";readbackSentAt=0;
+   effectiveKey=-1;effectiveScale=-1;
+   detectedKey=-1;detectedScale=-1;detectedConfidence=0;
+   showText(el("mxHChannel"),current.track.name+" · FX "+(c.slot+1));
+   hint("HARMONY CONNECTED · READING DSP");
+   refreshGuideSources();paint();snapshot(true);
+ }else if(!verified&&(!readbackRequest||Date.now()-readbackSentAt>2500)){
+   snapshot(true);
+ }
+ return true;
+}
 const hint=t=>showText(el("mxHStatus"),t);
 const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
  Number.isInteger(s.scale)&&s.scale>=0&&s.scale<=1&&
@@ -176,7 +236,8 @@ function syncPower(){
  power.setAttribute("aria-label",power.title);
 }
 function paint(){
- const v=latest||pending?.settings||settings;
+ const v=latest||pending?.settings||
+   (heldPatch?{...settings,...heldPatch}:settings);
  const auto=v.guideMode===1;
  // Native LCD never guesses from music confidence or pending UI edits.
  // One atomic native readback is the actual effective DSP key+scale pair.
@@ -246,7 +307,7 @@ function snapshot(force=false){
 }
 function send(next){
  const c=context();
- if(!c){hint("NATIVE INSTANCE CHANGED · REOPEN FX");return;}
+ if(!c||!verified){hint("HARMONY RECONNECTING · EDIT HELD");return;}
  if(pending){latest=next;hint("DSP APPLYING · LATEST EDIT HELD");paint();return;}
  const id="harm-"+String(Date.now()*1000+(seq++%1000));
  pending={id,settings:next,ack:false,context:c,startedAt:Date.now()};
@@ -255,15 +316,20 @@ function send(next){
  hint("DSP QUEUED · AWAITING AUDIO ACK");paint();
 }
 function edit(patch){
- const next={...(latest||pending?.settings||settings),...patch};
+ const next={...(latest||pending?.settings||
+   (heldPatch?{...settings,...heldPatch}:settings)),...patch};
  if(!valid(next))return;
  preset="custom";
  if(!native()){
    settings=next;
    demos.set(current?.track?.id+":"+current?.slot,{...settings});
    hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
- }else if(mode==="NATIVE")send(next);
- else hint("NATIVE HARMONY NOT ACCEPTED");
+ }else if(mode==="NATIVE"){
+   if(!reconcileBinding()||!verified){
+     heldPatch={...(heldPatch||{}),...patch};
+     hint("HARMONY RECONNECTING · EDIT SAVED");
+   }else send(next);
+ }else hint("NATIVE HARMONY NOT ACCEPTED");
  paint();
 }
 noteButtons.forEach(b=>b.addEventListener("click",()=>
@@ -296,7 +362,12 @@ el("mxHPreset").addEventListener("change",e=>{
   const next={...(latest||pending?.settings||settings),...change};
   if(!native()){settings=next;demos.set(current?.track?.id+":"+current?.slot,{...next});
     hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
-  }else if(mode==="NATIVE")send(next);
+  }else if(mode==="NATIVE"){
+    if(!reconcileBinding()||!verified){
+      heldPatch={...(heldPatch||{}),...change};
+      hint("HARMONY RECONNECTING · PRESET SAVED");
+    }else send(next);
+  }
  }paint();
 });
 el("mxHPower").addEventListener("click",()=>{
@@ -331,20 +402,25 @@ window.ArSonMixNativeHarmony=Object.freeze({
  id:ID,
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
-  pending=null;latest=null;seq++;observedNote=-1;readbackLatency=0;
+  pending=null;latest=null;heldPatch=null;verified=false;
+  seq++;observedNote=-1;readbackLatency=0;
   readbackRequest="";readbackSentAt=0;
   detectedKey=-1;detectedScale=-1;detectedConfidence=0;lastGuideRead=0;
   effectiveKey=-1;effectiveScale=-1;sourceSignature="";availableSources=[];
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
-  current={track,slot,channelId:null,instanceId:null};
-  if(native()&&n?.admitted&&insert?.catalogId===ID&&insert.id){
-    current.channelId=id;current.instanceId=insert.id;mode="NATIVE";
-    settings=fresh();hint("NATIVE · READING ACCEPTED DSP");snapshot();
-  }else if(!native()){
+  current={track,slot,channelId:id,instanceId:null,
+    boundEpoch:null,boundRevision:null};
+  if(native()){
+    mode="NATIVE";settings=fresh();
+    hint("HARMONY · LOCATING ACCEPTED DSP");
+    if(n?.admitted&&insert?.catalogId===ID&&insert.id)
+      current.instanceId=insert.id;
+    reconcileBinding();
+  }else{
     mode="DEMO";settings={...(demos.get(track.id+":"+slot)||fresh())};
     hint("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO");
-  }else{mode="UNAVAILABLE";settings=fresh();hint("NATIVE HARMONY SLOT NOT ACCEPTED");}
+  }
   el("mxHChannel").textContent=track.name+" · FX "+(slot+1);
   root.hidden=false;refreshGuideSources();paint();
  },
@@ -380,7 +456,7 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
    if(pending.ack)hint("DSP APPLIED · WAITING READBACK");
    return;
  }
- settings={...snap.settings};
+ settings={...snap.settings};verified=true;
  effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale;
  detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
  detectedScale=Number.isInteger(snap.guideDetectedScale)?snap.guideDetectedScale:-1;
@@ -388,18 +464,28 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  observedNote=Number.isInteger(snap.observedNote)?snap.observedNote:-1;
  readbackLatency=Number.isInteger(snap.latencySamples)?snap.latencySamples:0;
  pending=null;
+ refreshGuideSources();
  if(latest){const next=latest;latest=null;send(next);}
- else hint(settings.guideMode===1?"NATIVE · LIVE MUSIC GUIDE":"NATIVE DSP ACCEPTED · "+c.instanceId);
- refreshGuideSources();paint();
+ else if(heldPatch){
+   const patch=heldPatch;heldPatch=null;
+   const next={...settings,...patch};
+   if(next.guideMode===1&&
+      !availableSources.some(ch=>ch.id===next.guideChannelId)){
+     next.guideMode=0;next.guideChannelId="0";
+   }
+   if(valid(next))send(next);
+   else hint("HARMONY RESTORED · INVALID EDIT DISCARDED");
+ }else hint(settings.guideMode===1?"NATIVE · LIVE MUSIC GUIDE":"NATIVE DSP ACCEPTED · "+c.instanceId);
+ paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
  queueMicrotask(()=>{
-   if(!context()){
-     pending=null;latest=null;effectiveKey=-1;effectiveScale=-1;
-     readbackRequest="";
-     hint("DEVICE / GRAPH CHANGED · REOPEN ACCEPTED FX");paint();return;
+   if(!reconcileBinding()){
+     hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");
+     return;
    }
+   if(!verified)return;
    syncPower();
    const now=Date.now();
    if(pending){
