@@ -27,14 +27,24 @@ public:
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const bool close = kind_ == juce::DocumentWindow::closeButton;
-        g.setColour (down ? (close ? juce::Colour (0xffa63742) : juce::Colour (0xff204457))
-                          : over ? (close ? juce::Colour (0xffd34b54) : juce::Colour (0xff294a5c))
-                                 : juce::Colour (0xff112632));
-        g.fillRect (getLocalBounds());
+        // Compact 34 px hit area; only the 30x25 interior lights on hover.
+        // No timers, interpolated animations, allocation or WebView2 messaging.
+        // A pressed command is immediately visible: teal minimise, blue
+        // maximise/restore, and intentionally red close.
+        if (over || down)
+        {
+            const auto colour = close
+                ? (down ? juce::Colour (0xffe14d59) : juce::Colour (0xffb73948))
+                : kind_ == juce::DocumentWindow::minimiseButton
+                ? (down ? juce::Colour (0xff218f9f) : juce::Colour (0xff225e72))
+                : (down ? juce::Colour (0xff348cc0) : juce::Colour (0xff285b83));
+            g.setColour (colour);
+            g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2.0f, 3.0f), 3.0f);
+        }
         if (hasKeyboardFocus (true))
         {
             g.setColour (juce::Colour (0xff68d9f2));
-            g.drawRect (getLocalBounds().reduced (1), 1);
+            g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f, 2.5f), 3.0f, 1.0f);
         }
         auto* parent = findParentComponentOfClass<juce::DocumentWindow>();
         auto* image = kind_ == juce::DocumentWindow::maximiseButton &&
@@ -43,7 +53,7 @@ public:
         if (image != nullptr)
         {
             const auto b = getLocalBounds().toFloat();
-            image->drawWithin (g, { b.getCentreX() - 7.5f, b.getCentreY() - 7.5f, 15.0f, 15.0f },
+            image->drawWithin (g, { b.getCentreX() - 6.0f, b.getCentreY() - 6.0f, 12.0f, 12.0f },
                                juce::RectanglePlacement::centred, isEnabled() ? 1.0f : 0.45f);
         }
     }
@@ -73,7 +83,7 @@ public:
                                         juce::Button* minimise, juce::Button* maximise,
                                         juce::Button* close, bool onLeft) override
     {
-        constexpr int buttonWidth = 44;
+        constexpr int buttonWidth = 34;
         if (onLeft)
         {
             for (auto* button : { close, minimise, maximise })

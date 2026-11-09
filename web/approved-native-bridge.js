@@ -2118,6 +2118,21 @@
         status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
       });
       toolbar.insertBefore(monitor,io);
+      // Fixed groups, not extra controls. Placement is DOM-only at startup;
+      // no resize listeners, repaint loops or menu reparenting.
+      for(const [name,element] of [
+        ["files",document.getElementById("pluginsButton")],
+        ["routing",document.getElementById("wireNavigatorToggle")],
+        ["channels",addTrack],
+        ["monitor",monitor]
+      ]){
+        if(!element || element.parentElement!==toolbar)continue;
+        const divider=document.createElement("span");
+        divider.className="armix-toolbar-divider";
+        divider.dataset.nativeToolbarGroup=name;
+        divider.setAttribute("aria-hidden","true");
+        toolbar.insertBefore(divider,element);
+      }
     }
     updateHardwarePanel(hardware);
   }
