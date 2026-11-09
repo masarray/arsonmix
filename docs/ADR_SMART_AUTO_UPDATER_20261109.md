@@ -1,0 +1,35 @@
+# ArSonMix Windows Smart Auto Update — M1 design and safety contract (2026-11-09)
+
+## Scope and status
+Implementation branch: `feature/smart-auto-updater-safe-20261109`. Windows x64 **per-user Inno-installed** ArSonMix only. No portable/Windows service, no Linux/macOS auto-install. This is not stable/hardware-qualified until exact-source Windows MSVC/Inno/real desktop tests pass. **Older installations must first receive one installer containing `ArSonMixAutoUpdate.ps1`; no code can remotely update an installed old binary without a bootstrapping updater.**
+
+## User workflow (no new GUI, no interruption to live mixing)
+1. JUCE native launches the installed updater as an independent hidden PowerShell process after constructing the approved mixer GUI. The audio callback never opens a URL, parses JSON, reads files, waits for the network or invokes a child process.
+2. The worker holds one named mutex per user, checks no more than once per six hours, and fetches official `api.github.com/repos/masarray/arsonmix/releases` metadata. The installed `BUILD_PROVENANCE.json.sourceCommit` MUST match a currently published, valid older release. No development/portable/unknown source is upgraded.
+3. Strict SemVer including alpha/beta/rc ordering prevents downgrade. A stable installation does not automatically opt into prereleases. Only unique, published Windows Inno **EXE** assets with a valid immutable tag, 40-hex commit, expected exact GitHub download URL, GitHub asset digest, `INSTALLER_PROVENANCE.json` and `SHA256SUMS.txt` qualify.
+4. Stage both the replacement installer and the currently published rollback installer in per-user LocalAppData; independently verify size, SHA-256, per-release checksums and provenance source commit. Limit download sizes and HTTPS redirect hosts. No network failure may break normal mixer startup or operation.
+5. Wait up to 12 hours for the original mixer process to **exit naturally**. No updater-driven `WM_CLOSE`, `SetEvent`, force kill or automatic device arm. If a new mixer instance is open, defer instead of interrupting a new session. Inno alone handles its normal exact-image shutdown safety checks in case of races.
+6. Run the existing per-user Inno installer silently. Silent Inno does not autostart GUI; the updater itself starts exactly one application. The new JUCE GUI acknowledges rendering readiness with a random GUID-scoped `GUI_READY` marker, and the worker checks installed source SHA plus a still-alive process. On success clean staged binaries and retain only small metadata/status.
+7. A failed version is locally blocked from repeated automatic retries. If startup fails and **no new mixer is running**, recover by running the previously verified original installer; restore the previous source identity and relaunch. If the failed new GUI is still alive/hung, fail closed rather than destroying live edits.
+
+## Why installation on normal exit?
+Automatic shutdown while a singer performs is not an acceptable live mixer contract. Silence on the meter is not proof that performance is finished. Staging while running and applying only on normal exit guarantees the updater never deliberately interrupts the monitoring path. The consequence is that a user who never closes the app does not receive an update; the next launch rechecks and can use staged assets. The update may relaunch the GUI after a user intentionally quits. This is a documented tradeoff, not a promise of zero disruption.
+
+## Integrity and trust boundary
+The update trusts HTTPS to the official GitHub API, immutable release source identity and GitHub-provided asset SHA256 digests, corroborated with the release's checksum/provenance assets. This guards against stale Pages catalogs, corrupted downloads, arbitrary third-party URLs and accidental version reversal. It is **not** a replacement for Authenticode publisher signing or a separately signed update manifest; an attacker controlling the repository's release publisher may control all those metadata values. Before stable/default-on auto-updates for general users, require an approved code-signing identity and an authenticated/pinned signing key, plus credential-rotation and revocation procedures. Do not claim that the alpha preview is signed.
+
+## Update lifecycle, operational safety
+- Mutex `Local\\ArSonMix.AutoUpdater.v1` serializes the worker; existing `SetupMutex` serializes Inno. State is atomically replaced and may record `staged`, `installing`, `health-failed`, `rolled-back` and `idle`. Failure details are in `%LOCALAPPDATA%\\ArSonMix\\Updates\\last-result.txt`.
+- Fail closed on unknown installed source, invalid provenance, untrusted URL, missing/duplicate assets, download overrun/short read/SHA mismatch, ZIP-only release, offline service, current app still active or installer lock. Private `.smix`, Studio data and user VSTs are never deleted by the updater.
+- This worker downloads Inno EXE directly, not a ZIP: ZIP is for the public browser download and is irrelevant to the installer orchestration path.
+- Mark healthy only after a real native GUI-ready event, not merely a successful silent installer return. A device/ASIO acoustic test remains separate from this updater health marker.
+- Rollback remains best effort if Windows/antivirus blocks both old and new installers. A running, non-responsive GUI is left intact instead of force-killed. Never promise mathematically impossible “no crash”.
+- Updater is disabled on portable packages (script absent or `portable_mode.txt`). Unsupported operating systems are never offered Windows installers.
+
+## Acceptance tests / release gates
+- Cheap `tests/windows_installer_contract_test.mjs` ensures packaging, safe process isolation, and no forced termination. Windows `scripts/test_inno_graceful_update_windows.ps1` exercises `-PolicySelfTest` (SemVer, untrusted URL, duplicate release artifact), and Inno's graceful/legacy/hung update fixtures.
+- Exact-head Windows MSVC compile + all relevant CTest, native startup readiness marker, real Inno update/uninstall, source identity and private Studio retention; test intermittent networks, wrong hashes, smaller/larger response, same version, downgrade, repeated launches, hung app and rollback from startup crash on Windows (not all covered by existing fixture).
+- No automatic stable release until code signing/pinned publisher identity and a real end-to-end M2 rollback/health FAT with two **genuine** ArSonMix installers. Existing synthetic WinForms/Inno smoke cannot certify real ASIO audio or startup health under actual WebView2 hardware.
+
+## Non-goals
+No second GUI, updater UI banner/card, silent audio-device remap, DSP changes, Windows service, forced termination, system-wide install, scheduled task, repeated background CI or cross-platform pretend-updater.
