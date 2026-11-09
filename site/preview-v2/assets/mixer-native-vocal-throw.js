@@ -26,6 +26,12 @@ const panel=document.createElement("section");
 panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
 panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");
 panel.setAttribute("aria-label","ArSon Vocal Throw");
+// One universal 260-degree rounded level arc for EVERY hardware encoder.
+// The face itself stays stationary; only the pointer and stroke advance.
+const rotaryArc='<svg class="vt-knob-meter" viewBox="0 0 100 100" aria-hidden="true" focusable="false">'+
+ '<path class="vt-meter-track" d="M16.295 78.284 A44 44 0 1 1 83.705 78.284" pathLength="100"/>'+
+ '<path class="vt-meter-fill" d="M16.295 78.284 A44 44 0 1 1 83.705 78.284" pathLength="100"/>'+
+ '</svg>';
 panel.innerHTML=[
  '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span></div><span class="channel" id="vtChannel"></span>',
  '<label class="vt-preset"><select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
@@ -34,10 +40,10 @@ panel.innerHTML=[
  '<div class="vt-instrument"><div class="vt-encoder-bank" id="vtEncodersLeft"></div>',
  '<div class="vt-center"><button id="vtThrow" class="vt-throw-button" type="button" aria-label="Throw captured vocal phrase" title="THROW — send the captured phrase into the echo"><span class="vt-throw-aura" aria-hidden="true"></span></button><span class="vt-throw-engraving" aria-hidden="true">THROW</span></div>',
  '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
- '<div class="vt-performance"><div class="vt-wet-module"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo wet mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET</small><output id="vtWetValue">42%</output></span></button></div>',
+ '<div class="vt-performance"><div class="vt-wet-module vt-encoder" data-key="wet"><span class="vt-encoder-name">MIX</span><button class="vt-encoder-face" id="vtWetDial" role="slider" type="button" aria-label="Echo wet mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0">'+rotaryArc+'<span class="vt-encoder-needle" aria-hidden="true"></span></button><output class="vt-encoder-value" id="vtWetValue">42%</output></div>',
  '<div class="vt-trigger"><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
- '<button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></section>',
- '<section class="vt-transport" aria-label="Tempo and music clock"><div class="vt-tempo"><span class="vt-small-label">BPM</span><div class="vt-clock-screen"><output id="vtDisplayBpm">120</output><span>BPM</span><span id="vtClockLabel">MAN</span></div><label class="vt-manual-bpm"><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM"></label></div>',
+ '<div class="vt-clock-tap"><div class="vt-tempo"><div class="vt-clock-screen" aria-label="Music tempo display"><div class="vt-lcd-top"><span>TEMPO</span><span id="vtClockLabel">MAN</span></div><div class="vt-lcd-digits"><output id="vtDisplayBpm">120</output><span>BPM</span></div></div><label class="vt-manual-bpm"><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM" title="Manual BPM"></label></div><button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></div></section>',
+ '<section class="vt-transport" aria-label="Tempo and music source">',
  '<div class="vt-pulse"><span class="vt-small-label">RHYTHM</span><div class="vt-division-buttons" role="group" aria-label="Delay division"><button type="button" data-division="0">1/4</button><button type="button" data-division="1">1/8</button><button type="button" data-division="2">1/8 D</button><button type="button" data-division="3">1/2</button></div><select id="vtDivision" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select><input id="vtRepeats" class="vt-virtual-input" type="number" min="1" max="6" step="1" tabindex="-1" aria-hidden="true"><div id="vtBeatRail" class="vt-repeat-leds" aria-label="Echo repeat count"><i></i><i></i><i></i><i></i><i></i><i></i><span id="vtRhythm" class="vt-screen-reader">1/4 · HYBRID</span></div></div>',
  '<div class="vt-music-source"><label for="vtMusicSource" class="vt-small-label">MUSIC</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">TAP</span></div></section>',
  '<footer class="vt-status-rail"><span class="vt-device"><i class="dot" id="vtDot"></i><span id="vtStatus">LIVE</span></span><span class="vt-hint" id="vtHint" role="status"></span><span id="vtCount" title="Completed throw cues">0</span></footer></div>'
@@ -56,7 +62,7 @@ for(const [key,[title,unit,,bank]] of Object.entries(encoderMeta)){
  const node=document.createElement("div");
  node.className="vt-encoder";node.dataset.key=key;
  node.innerHTML='<span class="vt-encoder-name">'+title+'</span>'+
-  '<button class="vt-encoder-face" type="button" role="slider" tabindex="0" aria-label="'+title+'"><span class="vt-encoder-needle" aria-hidden="true"></span></button>'+
+  '<button class="vt-encoder-face" type="button" role="slider" tabindex="0" aria-label="'+title+'">'+rotaryArc+'<span class="vt-encoder-needle" aria-hidden="true"></span></button>'+
   '<output class="vt-encoder-value"></output>';
  node.querySelector("output").dataset.unit=unit;
  $(bank).append(node);
@@ -128,6 +134,9 @@ function paint(){
   const pct=(draft[key]-min)/(max-min);
   const turn=-130+260*pct;
   node.style.setProperty("--turn",turn.toFixed(2)+"deg");
+  // pathLength=100 guarantees a linearly advancing, rounded 260-degree arc.
+  // Never rotate the knob chassis with the pointer.
+  node.style.setProperty("--arc-offset",(100-pct*100).toFixed(3));
   node.querySelector(".vt-encoder-value").textContent=
    (unit==="%"?Math.round(draft[key]*100):Math.round(draft[key]))+unit;
   const dial=node.querySelector(".vt-encoder-face");
@@ -139,6 +148,7 @@ function paint(){
  const wetPct=Math.round(draft.wet*100);
  $("vtWetValue").textContent=wetPct+"%";
  $("vtWetDial").style.setProperty("--turn",(-130+260*draft.wet).toFixed(2)+"deg");
+ $("vtWetDial").style.setProperty("--arc-offset",(100-draft.wet*100).toFixed(3));
  $("vtWetDial").setAttribute("aria-valuenow",String(wetPct));
  $("vtWetDial").setAttribute("aria-valuetext",wetPct+" percent");
  for(const b of panel.querySelectorAll(".vt-mode-buttons button"))
