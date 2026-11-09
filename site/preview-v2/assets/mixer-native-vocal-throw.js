@@ -42,7 +42,7 @@ panel.innerHTML=[
  '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
  '<div class="vt-performance"><div class="vt-wet-module vt-encoder" data-key="wet"><span class="vt-encoder-name">MIX</span><button class="vt-encoder-face" id="vtWetDial" role="slider" type="button" aria-label="Echo wet mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0">'+rotaryArc+'<span class="vt-encoder-needle" aria-hidden="true"></span></button><output class="vt-encoder-value" id="vtWetValue">42%</output></div>',
  '<div class="vt-trigger"><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
- '<div class="vt-clock-tap"><div class="vt-tempo"><div class="vt-clock-screen" aria-label="Music tempo display"><div class="vt-lcd-top"><span>TEMPO</span><span id="vtClockLabel">MAN</span></div><div class="vt-lcd-digits"><output id="vtDisplayBpm">120</output><span>BPM</span></div></div><label class="vt-manual-bpm"><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM" title="Manual BPM"></label></div><button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></div></section>',
+ '<div class="vt-clock-tap"><div class="vt-tempo"><div class="vt-clock-screen" aria-label="Music tempo display"><div class="vt-lcd-top"><span>TEMPO</span><span id="vtClockLabel">MAN</span></div><div class="vt-lcd-digits"><button type="button" id="vtDisplayBpm" title="Click to set manual BPM" aria-label="Edit manual BPM">120</button><span>BPM</span></div><label class="vt-manual-bpm"><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM" title="Manual BPM"></label></div></div><button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></div></section>',
  '<section class="vt-transport" aria-label="Tempo and music source">',
  '<div class="vt-pulse"><span class="vt-small-label">RHYTHM</span><div class="vt-division-buttons" role="group" aria-label="Delay division"><button type="button" data-division="0">1/4</button><button type="button" data-division="1">1/8</button><button type="button" data-division="2">1/8 D</button><button type="button" data-division="3">1/2</button></div><select id="vtDivision" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select><input id="vtRepeats" class="vt-virtual-input" type="number" min="1" max="6" step="1" tabindex="-1" aria-hidden="true"><div id="vtBeatRail" class="vt-repeat-leds" aria-label="Echo repeat count"><i></i><i></i><i></i><i></i><i></i><i></i><span id="vtRhythm" class="vt-screen-reader">1/4 · HYBRID</span></div></div>',
  '<div class="vt-music-source"><label for="vtMusicSource" class="vt-small-label">MUSIC</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">TAP</span></div></section>',
@@ -126,7 +126,9 @@ function syncPower(){
   value==="off"?"BYPASS":value==="rack-off"?"RACK OFF":"OFFLINE";
 }
 function paint(){
- $("vtMode").value=String(draft.mode);$("vtBpm").value=String(draft.bpm);
+ $("vtMode").value=String(draft.mode);
+ if(panel.querySelector(".vt-clock-screen").dataset.editing!=="true")
+  $("vtBpm").value=String(draft.bpm);
  $("vtDivision").value=String(draft.division);$("vtRepeats").value=String(draft.repeats);
  for(const [key,[,unit]] of Object.entries(encoderMeta)){
   const node=panel.querySelector('.vt-encoder[data-key="'+key+'"]');
@@ -183,6 +185,25 @@ function send(command){
  hint(command==="nativeThrowTrigger"?"Waiting for audio callback":"Applying to DSP");
  syncPower();return true;
 }
+// The large LCD numerals double as the manual BPM edit target. Numeric
+// entry is integrated into the screen and never dangles below the chassis.
+const bpmScreen=panel.querySelector(".vt-clock-screen");
+$("vtDisplayBpm").addEventListener("click",()=>{
+ if(!current||pending)return;
+ bpmScreen.dataset.editing="true";
+ $("vtBpm").value=String(draft.bpm);
+ $("vtBpm").focus();$("vtBpm").select();
+});
+$("vtBpm").addEventListener("keydown",e=>{
+ if(e.key==="Escape"){
+  e.preventDefault();e.stopPropagation();
+  $("vtBpm").value=String(accepted.bpm);
+  $("vtBpm").blur();
+ }else if(e.key==="Enter"){
+  e.preventDefault();$("vtBpm").blur();
+ }
+});
+$("vtBpm").addEventListener("blur",()=>{bpmScreen.dataset.editing="false";});
 for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  ["division","vtDivision"],["repeats","vtRepeats"]]){
  $(id).addEventListener("change",()=>{
