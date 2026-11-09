@@ -27,14 +27,12 @@
 <link rel="stylesheet" href="assets/mixer-wire-out-align-v48.css?v=out-center-v48">
 
 <link rel="stylesheet" href="assets/mixer-contextual-buttons.css?v=contextual-micro-handoff-v1">
-<link rel="stylesheet" href="assets/arson-player.css?v=player-m1-20261109">
 </head>
 <body>
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
     <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
-    <button class="tool" id="playerToggle" type="button" aria-expanded="false" aria-controls="arsonPlayer" title="Music player and live setlist">♫ Player</button>
     <button class="tool wire-command" id="wireNavigatorToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating WIRE Routes navigator">Routes</button>
     <button class="tool wire-command" id="wireMatrixToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating routing matrix">Matrix</button>
     <button class="tool wire-command" id="wireConfigToggle" type="button" aria-expanded="false" aria-controls="wireConfigWindow" title="Open WIRE routing and display configuration">Wire Setup</button>
@@ -77,16 +75,6 @@
       </div>
     </details>
   </div>
-  <aside id="arsonPlayer" hidden aria-label="ArSon music player and live setlist">
-    <div class="ap-top"><span class="ap-brand">ArSon Player</span><span class="ap-sub">Music · Setlist</span><button id="playerClose" type="button" class="ap-close" aria-label="Close player">×</button></div>
-    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div><div class="ap-time"><span id="playerElapsed">00:00</span><progress id="playerProgress" max="1" value="0" aria-label="Song progress"></progress><span id="playerDuration">00:00</span></div></div>
-    <div class="ap-transport"><button id="playerPlay" type="button">▶ Play</button><button id="playerStop" type="button">■ Stop</button><button id="playerNext" type="button">Next ›</button><button id="playerAutoNext" type="button" aria-pressed="false">Auto Next · Off</button></div>
-    <div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div>
-    <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAdd" type="button">+ Add Music</button></div>
-    <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
-    <div id="playerList" role="listbox" aria-label="Setlist songs"></div>
-    <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>
-  </aside>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
@@ -2901,6 +2889,5 @@ restorePluginPreferences();init();
 </script>
 <script defer src="assets/mixer-control-keys.js?v=inter-utility-v7"></script>
 <script defer src="assets/mixer-contextual-buttons.js?v=contextual-v6-01"></script>
-<script defer src="assets/arson-player.js?v=player-m1-20261109"></script>
 </body>
 </html>

@@ -2490,6 +2490,7 @@ private:
         const auto action = args.getProperty ("action", {}).toString();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
+        if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerPlay")return playSelectedMusic();
         if(action=="playerPause") {

@@ -121,6 +121,9 @@
      model={...model,...payload,tracks:model.tracks};
      render();
    });
+   // Dynamic loader may join after the initial WebView readiness event.
+   // Request genuine native library/readback, not a browser-local fallback.
+   send("playerSubscribe");
  }
  render();
 })();

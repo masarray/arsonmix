@@ -27,3 +27,44 @@
     event.preventDefault();
   },true);
 })();
+
+
+/* ArSon Player stays an additive module on the SAME approved /preview/.
+   Do not mutate the historically checkpointed console HTML or create a new
+   route authority. This loader inserts a compact drawer and starts the one
+   native-control-only Player script after the existing mixer is initialized. */
+(()=>{
+  'use strict';
+  const toolbar=document.querySelector('.app .command-bar');
+  const plugins=document.getElementById('pluginsButton');
+  if(!toolbar||!plugins||document.getElementById('playerToggle'))return;
+  const playerButton=document.createElement('button');
+  playerButton.type='button';playerButton.className='tool';
+  playerButton.id='playerToggle';
+  playerButton.textContent='♫ Player';
+  playerButton.title='Music player and live setlist';
+  playerButton.setAttribute('aria-expanded','false');
+  playerButton.setAttribute('aria-controls','arsonPlayer');
+  plugins.insertAdjacentElement('afterend',playerButton);
+  const panel=document.createElement('aside');
+  panel.id='arsonPlayer';panel.hidden=true;
+  panel.setAttribute('aria-label','ArSon music player and live setlist');
+  panel.innerHTML=`
+    <div class="ap-top"><span class="ap-brand">ArSon Player</span><span class="ap-sub">Music · Setlist</span><button id="playerClose" type="button" class="ap-close" aria-label="Close player">×</button></div>
+    <div class="ap-current"><div class="ap-overline">PLAYER A · CURRENT</div><div id="playerNow" class="ap-title">No music loaded</div><div class="ap-time"><span id="playerElapsed">00:00</span><progress id="playerProgress" max="1" value="0" aria-label="Song progress"></progress><span id="playerDuration">00:00</span></div></div>
+    <div class="ap-transport"><button id="playerPlay" type="button">▶ Play</button><button id="playerStop" type="button">■ Stop</button><button id="playerNext" type="button">Next ›</button><button id="playerAutoNext" type="button" aria-pressed="false">Auto Next · Off</button></div>
+    <div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div>
+    <div class="ap-listhead"><strong>Setlist</strong><span id="playerCount" class="ap-sub">0 songs</span><button id="playerAdd" type="button">+ Add Music</button></div>
+    <input id="playerSearch" type="search" placeholder="Search songs" aria-label="Search music in setlist" autocomplete="off">
+    <div id="playerList" role="listbox" aria-label="Setlist songs"></div>
+    <div class="ap-foot">Click to prepare · Double-click to play · Native audio through your mixer</div>`;
+  toolbar.insertAdjacentElement('afterend',panel);
+  const base=document.currentScript?.src||document.baseURI;
+  const stylesheet=document.createElement('link');
+  stylesheet.rel='stylesheet';
+  stylesheet.href=new URL('arson-player.css',base).href;
+  document.head.appendChild(stylesheet);
+  const script=document.createElement('script');
+  script.src=new URL('arson-player.js',base).href;
+  document.body.appendChild(script);
+})();
