@@ -53,14 +53,14 @@ def reconstruct():
     end_marker="restorePluginPreferences();init();"
     start=html.index(desktop_resize)
     end=html.index(end_marker,start)
-    legacy_resize=("let resizeQueued=false;\\n"
-                   "window.addEventListener('resize',()=>{\\n"
-                   " if(resizeQueued)return;resizeQueued=true;\\n"
-                   " requestAnimationFrame(()=>{resizeQueued=false;render();});\\n"
-                   "});\\n")
+    legacy_resize=("let resizeQueued=false;\n"
+                   "window.addEventListener('resize',()=>{\n"
+                   " if(resizeQueued)return;resizeQueued=true;\n"
+                   " requestAnimationFrame(()=>{resizeQueued=false;render();});\n"
+                   "});\n")
     html=html[:start]+legacy_resize+html[end:]
     chrome=OWNER.read_text(encoding="utf-8")
-    desktop_css="\\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
+    desktop_css="\n/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header."
     assert chrome.count(desktop_css)==1,"Desktop caption CSS marker missing or duplicated"
     extra_css=chrome[chrome.index(desktop_css):]
     assert "html.armix-native-desktop .app > .window-title" in extra_css
