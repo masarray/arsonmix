@@ -196,13 +196,49 @@ int main(){
   Engine::PreparedSettings keyPacket;
   need(Engine::prepareSettings(keyEdit,keyPacket)&&
        rekey->applyPreparedSettings(keyPacket),"key edit was rejected");
-  need(!rekey->voiced()&&rekey->observedMidiNote()==-1,
-       "key edit reused a stale note from previous scale");
+  need(rekey->voiced()&&rekey->observedMidiNote()==69,
+       "key edit interrupted a sustained voiced singer");
   for(int i=0;i<48000;++i)
     rkL[i]=rkR[i]=.2f*std::sin(6.28318530718*440*i/48000);
   for(int i=0;i<48000;i+=128)rekey->process(rkL.data()+i,rkR.data()+i,128);
   need(rekey->voiced()&&rekey->observedMidiNote()==69,
        "fresh key did not reacquire stable A4");
+
+  // A change of guide key and fallback MUST NOT suppress active vocal
+  // analysis/room/grains. The former setGuideKey() immediately unvoiced a
+  // singer, making Music mode audibly sputter on uncertain key boundaries.
+  auto guided=std::make_unique<Engine>();
+  need(guided->prepare(48000),"guided vocal prepare failed");
+  Settings guideSettings;guideSettings.key=0;guideSettings.scale=0;
+  guideSettings.guideMode=1;guideSettings.guideChannelId=6001;
+  guideSettings.voices=5;guideSettings.wet=1.f;
+  need(guided->setSettings(guideSettings),"guided settings failed");
+  std::vector<float> gL(48000),gR(48000);
+  const auto feedGuided=[&](int count){
+    for(int i=0;i<count;++i)
+      gL[i]=gR[i]=static_cast<float>(.20*std::sin(
+          6.283185307179586*440.*i/48000.));
+    for(int i=0;i<count;i+=64)
+      guided->process(gL.data()+i,gR.data()+i,std::min(64,count-i));
+  };
+  feedGuided(48000);
+  need(guided->voiced()&&guided->observedMidiNote()==69,
+       "guide singer baseline lost stable voice");
+  for(int cycle=0;cycle<8;++cycle){
+    if(cycle%2==0)guided->setGuideKey(0,1); // C minor excludes sung A
+    else guided->setGuideKey(-1,-1);         // explicit Manual fallback
+    need(guided->voiced()&&guided->observedMidiNote()>=0,
+         "guide key event hard-gated sustained vocal");
+    feedGuided(4096);
+    need(guided->voiced()&&guided->observedMidiNote()>=0,
+         "singer failed to continue across guide key transition");
+    if(cycle%2==0)
+      need(guided->observedMidiNote()!=69,
+           "old C-major pitch was stuck after C-minor transition");
+    else
+      need(guided->observedMidiNote()==69,
+           "manual fallback failed to retune singing A");
+  }
   // Fixed-size reduced audio history must survive repeated wraparound at
   // the highest supported device rate without changing declared PDC.
   auto wrap=std::make_unique<Engine>();

@@ -9,6 +9,11 @@ namespace armix::mixer {
 struct RealtimeNativeFxControl {
     virtual ~RealtimeNativeFxControl() = default;
     virtual void consumeRealtimeEdits() noexcept = 0;
+    // CONTROL-queried once when the native FX lease is prepared. Temporal DSP
+    // that cannot resume from stale input (Harmony pitch/history/room) must
+    // continue processing the actual PCM while its output is bypassed.
+    // Ordinary EQ/compressor/vendor FX retain the CPU-saving bypass fast path.
+    virtual bool requiresContinuousBypassProcessing() const noexcept {return false;}
     // AUDIO callback only. A native performer cue can be dangerous when
     // the rack is OFF: while fully bypassed its capture clock stops.
     // Default no-op preserves Compressor/EQ/Harmony and vendor FX behavior.

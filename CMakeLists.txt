@@ -148,10 +148,18 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixHarmonyChannelPcmTests PRIVATE juce::juce_audio_processors juce::juce_recommended_config_flags)
   target_compile_features(ARMixHarmonyChannelPcmTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyMusicFromOtherChannelIdAndStateMigration COMMAND ARMixHarmonyChannelPcmTests)
+  # Explicit FX lease + ChannelId PCM regression: continuous Harmony DSP on
+  # disabled insert/rack, exact dry PDC and state-identical wet reactivation.
+  juce_add_console_app(ARMixHarmonyBypassPcmTests PRODUCT_NAME "ArSonMix Harmony Clickless Bypass PCM")
+  target_sources(ARMixHarmonyBypassPcmTests PRIVATE tests/harmony_bypass_reliability_test.cpp)
+  target_link_libraries(ARMixHarmonyBypassPcmTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixHarmonyBypassPcmTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyWarmBypassRackSlotAndLatencyParity COMMAND ARMixHarmonyBypassPcmTests)
   add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
-  add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests ARMixHarmonyCpuProfileTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests ARMixHarmonyBypassPcmTests ARMixHarmonyCpuProfileTests)
   add_test(NAME TenStripStaticRoutingAndMaster COMMAND ARMixMixerRoutingTests)
   # M3D atomic native Session: the accepted Console roster cannot advance
   # without a successful epoch/revision-gated PCM publication.

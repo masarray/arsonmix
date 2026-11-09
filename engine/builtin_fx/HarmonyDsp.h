@@ -117,7 +117,7 @@ public:
         pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
         peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
         noteHold_=0;currentNote_=-1;candidateNote_=-1;
-        guideKey_=-1;guideScale_=-1;
+        guideKey_=-1;guideScale_=-1;tonalTransitionPending_=false;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
         // Preserve the established 48k envelope while keeping durations
@@ -164,12 +164,14 @@ public:
     }
     bool applyPreparedSettings(const PreparedSettings& next) noexcept {
         // Caller publishes only prepareSettings()-validated packets.
-        // A scale/key change must not inherit the previous tonal quantizer
-        // candidate or remain held on a now-out-of-scale note.
+        // Discard only the TONAL candidate on a key/source edit. The singer's
+        // current voiced envelope, source period and active grains continue.
+        // Next completed pitch windows retune to the new scale, bypassing
+        // old-key note hysteresis exactly until a new note is confirmed.
         if(next.settings.key!=settings_.key||next.settings.scale!=settings_.scale||
            next.settings.guideMode!=settings_.guideMode||
            next.settings.guideChannelId!=settings_.guideChannelId){
-            candidateNote_=-1;currentNote_=-1;noteHold_=0;voiced_=false;
+            candidateNote_=-1;noteHold_=0;tonalTransitionPending_=true;
         }
         if(next.settings.guideMode!=settings_.guideMode||
            next.settings.guideChannelId!=settings_.guideChannelId){
@@ -207,7 +209,9 @@ public:
         const int previousKey=effectiveKey(),previousScale=effectiveScale();
         guideKey_=key;guideScale_=scale;
         if(previousKey!=effectiveKey()||previousScale!=effectiveScale()){
-            currentNote_=-1;candidateNote_=-1;noteHold_=0;voiced_=false;
+            // A guide-key revision is not vocal silence. Preserve the
+            // continuous sound and retune at the next stable pitch evidence.
+            candidateNote_=-1;noteHold_=0;tonalTransitionPending_=true;
         }
     }
     int effectiveKey() const noexcept {
@@ -504,7 +508,8 @@ private:
         const int activeKey=effectiveKey(),activeScale=effectiveScale();
         int degree=nearestDegree(midi,activeKey,activeScale);
         int note=noteAt(degree,activeKey,activeScale);
-        if(!pitchChangeHasMargin(currentNote_,note,midi)){
+        if(!tonalTransitionPending_ &&
+           !pitchChangeHasMargin(currentNote_,note,midi)){
             note=currentNote_;
             degree=nearestDegree(static_cast<float>(note),activeKey,activeScale);
         }
@@ -515,7 +520,7 @@ private:
         // Two consistent windows for both phrase onset and melodic transitions;
         // do not generate provisional harmony on a single noisy transient.
         if(noteHold_<2)return;
-        currentNote_=note;voiced_=true;
+        currentNote_=note;voiced_=true;tonalTransitionPending_=false;
         const float newPeriod=static_cast<float>(rate_/hz);
         if(sourcePeriodSamples_>0.f&&
            std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
@@ -553,6 +558,7 @@ private:
     std::array<float,231> pitchCorrelations_{};
     int currentNote_=-1,candidateNote_=-1,noteHold_=0;
     int guideKey_=-1,guideScale_=-1;
+    bool tonalTransitionPending_=false; // retune note, never mute voiced singer
     bool voiced_=false;float voicedGain_=0.f;
     bool processed_=false;
     float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
