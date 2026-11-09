@@ -41,6 +41,44 @@ def main():
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+            # Output-only playback is a REAL Audio I/O choice, not a hidden
+            # capture prerequisite. Verify native intent/ACK on the approved
+            # assembled Windows GUI at every supported viewport.
+            page.locator('.command-bar [data-native-io]').click()
+            io_inventory={
+                'types':[{'name':'Windows Audio','separate':True,
+                          'inputs':['Studio Mic'],'outputs':['Speakers']}],
+                'active':{'backend':'Windows Audio','captureDevice':'Studio Mic',
+                          'playbackDevice':'Speakers','open':True,
+                          'authorized':True,'deviceGeneration':23,
+                          'inputNames':['Mic 1'],'outputNames':['L','R'],
+                          'enabledInputs':[0],'enabledOutputs':[0,1],
+                          'rate':48000,'buffer':480,
+                          'rates':[48000],'buffers':[480]}}
+            emit(page,'arMixAudioDeviceInventory',io_inventory)
+            capture_select=page.locator('.armix-audio-dialog [data-audio-field="capture"]')
+            capture_select.select_option(value='')
+            assert capture_select.input_value()==''
+            assert page.locator('.armix-audio-dialog [data-audio-apply]').is_enabled()
+            page.locator('.armix-audio-dialog [data-audio-apply]').click()
+            request=page.evaluate("""()=>window.__events.filter(e=>
+              e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
+            assert request and request['config']['captureDevice']==''
+            assert request['config']['playbackDevice']=='Speakers'
+            assert request['config']['enabledInputs']==[]
+            assert request['config']['enabledOutputs']==[]
+            out_active={**io_inventory['active'],'captureDevice':'',
+                        'inputNames':[],'enabledInputs':[]}
+            emit(page,'arMixAudioDeviceApplyAck',{
+                'requestId':request['requestId'],'ok':True,
+                'state':'ACCEPTED_MUTED','active':out_active,
+                'outputMuted':True,'mixerBound':True})
+            assert page.locator('.armix-audio-shade').is_hidden()
+            page.locator('.command-bar [data-native-io]').click()
+            io_inventory['active']=out_active
+            emit(page,'arMixAudioDeviceInventory',io_inventory)
+            assert capture_select.input_value()=='' # reopening does not auto-patch a mic
+            page.locator('.armix-audio-dialog [data-audio-close]').click()
             g0=json.loads((ROOT/'integration/console-v6/fixtures.json').read_text())['g0']
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
