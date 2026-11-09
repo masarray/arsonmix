@@ -41,7 +41,10 @@ def main():
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
-            assert page.locator('.console-pane').is_hidden()
+            # Native Console is ALWAYS visible, even with no callback/device.
+            # Bridge still rejects unadmitted PCM edits until accepted readback.
+            assert page.locator('.console-pane').is_visible()
+            assert not page.evaluate('()=>window.__nativeIntents.length')
             # Built-in JUCE DSP must be discoverable before ANY third-party
             # VST3 catalog response. The native host never inserts demo FX.
             for native_id in ('armix.builtin.channel-eq.v1',
@@ -193,7 +196,9 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            assert page.locator('.console-pane').is_hidden()
+            # Failed preflight and an unbound audio device must not blank the
+            # operator workspace. No unadmitted intent can escape to JUCE.
+            assert page.locator('.console-pane').is_visible()
             assert not page.evaluate('()=>window.__nativeIntents.length')
             state=snapshot()
             state['device'].update(enabledInputs=[],inputEndpoints=[])
