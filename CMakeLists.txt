@@ -459,6 +459,30 @@ if(BUILD_TESTING)
       COMMAND ARMixNativeCompressorLifecycleTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorLifecycleTests)
 
+  add_executable(ARMixNativeVocalThrowTests tests/builtin_vocal_throw_test.cpp
+      engine/builtin_fx/VocalThrow.h)
+  target_compile_features(ARMixNativeVocalThrowTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalThrowPhraseCaptureManualAutoAndNoHeap COMMAND ARMixNativeVocalThrowTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeVocalThrowTests)
+  # A stopped ASIO callback must not execute old, UI-rejected THROW cues
+  # on resume. Exercise the real JUCE processor and its SPSC completion.
+  juce_add_console_app(ARMixVocalThrowCancelTests PRODUCT_NAME
+      "ArSonMix Vocal Throw Expired Cue Safety Tests")
+  target_sources(ARMixVocalThrowCancelTests PRIVATE
+      tests/native_vocal_throw_cancel_test.cpp
+      engine/builtin_fx/VocalThrowProcessor.h)
+  target_link_libraries(ARMixVocalThrowCancelTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixVocalThrowCancelTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalThrowExpiredCueCancellation COMMAND ARMixVocalThrowCancelTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixVocalThrowCancelTests)
+  add_executable(ARMixNativeMusicTempoTests tests/native_music_tempo_test.cpp
+      engine/core/NativeMusicTempoMonitor.h)
+  target_compile_features(ARMixNativeMusicTempoTests PRIVATE cxx_std_20)
+  add_test(NAME NativeMusicTempoSourceOnsetsAndFallback COMMAND ARMixNativeMusicTempoTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeMusicTempoTests)
+
+
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
   add_test(NAME P1KMeasuredNativeBS1770StereoAnd4xTruePeak COMMAND ARMixNativeMasterLoudnessTests)

@@ -24,6 +24,9 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('src="assets/mixer-native-peq.js?v=eq-graph1"'),1)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-compressor.js?v=comp-1"'),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeCompressor(){"),1)
+        self.assertEqual(self.assembled.count("function insertChosenNativeThrow(){"),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-1"'),1)
+        self.assertEqual(self.assembled.count('data-fast-native-throw="1"'),1)
 
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
@@ -35,6 +38,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('data-fast-native-eq="1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-comp="1"'),1)
         self.assertIn("if(t.fx[index]==='Compressor')",self.assembled)
+        self.assertIn("if(t.fx[index]==='ArSon Vocal Throw')",self.assembled)
 
     def test_single_style_owner(self):
         # The approved CSS compiler requires exactly 18 component-owner links.
@@ -54,6 +58,50 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('addedLatencySamples!==0',compressor)
         self.assertNotIn("new AudioContext",compressor)
         self.assertIn(".mx-comp[hidden]{display:none}",css)
+        throw=(ROOT/"site/preview-v2/assets/mixer-native-vocal-throw.js").read_text("utf-8")
+        self.assertIn("arMixBuiltinThrowAck",throw)
+        self.assertIn("arMixBuiltinThrowSnapshot",throw)
+        self.assertIn("nativeThrowTrigger",throw)
+        self.assertIn('id="vtPreset"',throw)
+        self.assertIn("armix-floating-close",throw)
+        self.assertNotIn("new AudioContext",throw)
+
+    def test_native_tempo_readback_belongs_to_vocal_throw_not_eq(self):
+        # The real C++ dispatcher must populate the exact VocalThrow
+        # snapshot, not an unrelated EQ response. Browser-only mocks cannot
+        # catch a payload sent on the wrong native event.
+        main=(ROOT/"src/Main.cpp").read_text("utf-8")
+        def body(start,finish):
+            self.assertEqual(main.count(start),1)
+            return main.split(start,1)[1].split(finish,1)[0]
+        eq=body("void emitNativeEqSnapshot(",
+                "void servicePendingNativeEq()")
+        vocal=body("void emitNativeThrowSnapshot(",
+                   "void servicePendingNativeThrow()")
+        fields=("musicSourceChannelId","musicSourceActive",
+                "musicLocked","musicBpm","musicConfidence",
+                "musicGridAvailable","musicPhaseConfidence",
+                "musicBeatAnchorFrame","musicDroppedFrames")
+        for field in fields:
+            self.assertIn('reply->setProperty("'+field+'"',vocal,
+                          "missing accepted Vocal Throw BPM field: "+field)
+            self.assertNotIn('reply->setProperty("'+field+'"',eq,
+                             "cross-FX snapshot pollution: "+field)
+        # After device restart or graph change the last control snapshot
+        # is stale. No stale source/phase can be advertised as locked.
+        self.assertIn("const bool currentMusicGraph=lastMusicTempo_.active",vocal)
+        self.assertIn("lastMusicTempo_.epoch",vocal)
+        self.assertIn("lastMusicTempo_.revision",vocal)
+        self.assertIn("currentMusicGraph&&",vocal)
+        self.assertIn("musicBpm",vocal)
+        self.assertIn('juce::String("0")',vocal)
+        self.assertIn('"arMixBuiltinThrowSnapshot"',vocal)
+        self.assertNotIn('"arMixBuiltinThrowSnapshot"',eq)
+        throw_js=(ROOT/"site/preview-v2/assets/mixer-native-vocal-throw.js").read_text("utf-8")
+        for field in ("musicLocked","musicBpm","musicGridAvailable",
+                      "musicSourceChannelId"):
+            self.assertIn(field,throw_js)
+        self.assertNotIn("new AudioContext",throw_js)
 
     def test_fail_closed_on_repeat(self):
         with self.assertRaises(ValueError):

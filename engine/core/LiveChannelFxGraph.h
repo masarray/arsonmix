@@ -116,14 +116,19 @@ public:
             }
             // G5C: atomic request from control; fade and scratch RT-owned.
             // Master rack bypass affects the WET/DRY envelope, never the remembered insert preference.
-            bypassFade.request(rackBypassed || bypassRequested.load(std::memory_order_relaxed));
+            const bool requestedBypass=rackBypassed ||
+                bypassRequested.load(std::memory_order_relaxed);
+            bypassFade.request(requestedBypass);
             if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
                 juce::FloatVectorOperations::clear(left,std::max(0,samples));
                 juce::FloatVectorOperations::clear(right,std::max(0,samples));
                 processing.clear(std::memory_order_release);
                 return;
             }
-            // Drain at most one native EQ control edit even while bypassed.
+            if(nativeControl)
+                nativeControl->onRealtimeBypass(requestedBypass,
+                                                bypassFade.fullyBypassed());
+            // Drain at most one native FX control edit even while bypassed.
             // Fully bypassed plugins otherwise never call processBlock, which
             // would strand pending GUI commands until users turned them ON.
             if(nativeControl && bypassFade.fullyBypassed())

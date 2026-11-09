@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 90" width="150" height="90">
+<defs><linearGradient id="bezel" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#44434e"/><stop offset=".45" stop-color="#22262f"/><stop offset="1" stop-color="#10151d"/></linearGradient>
+<linearGradient id="surface" x1=".1" x2=".9" y1="0" y2="1"><stop stop-color="#c47bda"/><stop offset=".22" stop-color="#a04cc3"/><stop offset="1" stop-color="#743c94"/></linearGradient>
+<radialGradient id="glow"><stop stop-color="#ac6dcb" stop-opacity=".35"/><stop offset="1" stop-color="#ac6dcb" stop-opacity="0"/></radialGradient></defs>
+<rect x="0" y="0" width="150" height="90" rx="22" fill="url(#glow)"/>
+<rect x="6" y="4" width="138" height="82" rx="20" fill="#131820" stroke="#50505e" stroke-opacity=".75" stroke-width="2"/>
+<rect x="12" y="10" width="126" height="68" rx="17" fill="url(#bezel)" stroke="#080c13"/>
+<rect x="18" y="15" width="114" height="56" rx="14" fill="url(#surface)" stroke="#ce9cdb" stroke-opacity=".5"/>
+<path d="M26 20 Q75 13 124 20" fill="none" stroke="#f8d8ff" stroke-opacity=".38" stroke-width="1.3"/>
+</svg>

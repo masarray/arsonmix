@@ -9,6 +9,11 @@ namespace armix::mixer {
 struct RealtimeNativeFxControl {
     virtual ~RealtimeNativeFxControl() = default;
     virtual void consumeRealtimeEdits() noexcept = 0;
+    // AUDIO callback only. A native performer cue can be dangerous when
+    // the rack is OFF: while fully bypassed its capture clock stops.
+    // Default no-op preserves Compressor/EQ/Harmony and vendor FX behavior.
+    virtual void onRealtimeBypass(bool /*requested*/,bool /*fully*/) noexcept {}
+
     // CONTROL-only lifecycle: after FxInstance accepts this processor, a
     // vendor-state restore must not mutate published audio-owned filters.
     virtual void sealForRealtime() noexcept {}
