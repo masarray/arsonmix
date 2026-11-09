@@ -28,7 +28,7 @@ def center(locator):
 def path_points(locator):
     d = locator.get_attribute("d") or ""
     numbers = [float(v) for v in NUMBER.findall(d)]
-    assert len(numbers) >= 8 and " C" in d, ("no committed cubic WIRE path", d)
+    assert len(numbers) >= 4 and d.startswith("M") and (" C" in d or " L" in d), ("no committed WIRE path", d)
     return (numbers[0], numbers[1]), (numbers[-2], numbers[-1])
 
 
