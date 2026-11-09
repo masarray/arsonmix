@@ -657,7 +657,7 @@
       Number.isInteger(p.port) && hardware.device.enabledInputs.includes(p.port)):[];
   // BUS is verified engine state, not an available hardware input choice.
   const INTERNAL_BUS="Internal BUS (read-only)";
-  const NEEDS_REMAP="NEEDS REMAP";
+  const NEEDS_REMAP="Audio connection lost";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
   const inputChoicesFor=()=>{

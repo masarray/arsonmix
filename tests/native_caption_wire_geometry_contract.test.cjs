@@ -33,6 +33,7 @@ assert.match(chrome, /2026 SonKuPik/);
 assert.doesNotMatch(chrome, /NATIVE SESSION/);
 assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
 assert.match(bridge, /const operatorMessage = message =>/);
+assert.match(bridge, /const NEEDS_REMAP="Audio connection lost"/);
 assert.match(bridge, /MutationObserver\(sanitize\)/);
 assert.doesNotMatch(bridge, /FAT PENDING/);
 assert.doesNotMatch(bridge, /HARDWARE FAT PENDING/);
