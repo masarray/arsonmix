@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" aria-hidden="true">
+<defs>
+ <radialGradient id="base" cx="35%" cy="27%" r="79%"><stop stop-color="#3c4049"/><stop offset=".47" stop-color="#282d36"/><stop offset=".79" stop-color="#1f242c"/><stop offset="1" stop-color="#0f141a"/></radialGradient>
+ <radialGradient id="inner" cx="40%" cy="32%" r="78%"><stop stop-color="#353a44"/><stop offset=".57" stop-color="#292e37"/><stop offset="1" stop-color="#1a1f26"/></radialGradient>
+ <linearGradient id="rim" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#626a76"/><stop offset=".35" stop-color="#262c35"/><stop offset=".7" stop-color="#101820"/><stop offset="1" stop-color="#555b66"/></linearGradient>
+ <linearGradient id="neon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff9bff"/><stop offset=".45" stop-color="#dc24f1"/><stop offset="1" stop-color="#a60dd4"/></linearGradient>
+ <filter id="glow" x="-85%" y="-85%" width="270%" height="270%"><feGaussianBlur stdDeviation="4"/></filter>
+ <filter id="halo" x="-85%" y="-85%" width="270%" height="270%"><feGaussianBlur stdDeviation="8"/></filter>
+</defs>
+<!-- Faithful silhouette from the supplied Illustrator dark play/trigger control:
+     recessed circular housing, four directional markers, illuminated
+     triangular play sigil. Rebuilt as paths, not a synthetic text button. -->
+<circle cx="128" cy="128" r="124" fill="#13181e" opacity=".82"/>
+<circle cx="128" cy="128" r="121" fill="url(#rim)" stroke="#505866" stroke-width=".9"/>
+<circle cx="128" cy="128" r="116" fill="url(#base)" stroke="#151a22" stroke-width="1.8"/>
+<path d="M128 29 L120 43 L136 43 Z M227 128 L213 120 L213 136 Z M128 227 L120 213 L136 213 Z M29 128 L43 120 L43 136 Z" fill="#0f141b" opacity=".66"/>
+<circle cx="128" cy="128" r="51" fill="#141922" stroke="#505660" stroke-width="1.1" opacity=".68"/>
+<circle cx="128" cy="128" r="47" fill="url(#inner)" stroke="#111820" stroke-width="2.3"/>
+<path d="M115 104 Q113 103 113 112 L113 145 Q114 152 121 148 L149 131 Q154 128 149 124 Z" fill="#ca28ec" opacity=".33" filter="url(#halo)"/>
+<path d="M114 104 L114 152 L157 128 Z" fill="none" stroke="#bc16eb" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" opacity=".9" filter="url(#glow)"/>
+<path d="M115 105 Q115 102 119 104 L153 124 Q158 128 153 131 L119 151 Q115 153 115 148 Z" fill="#e34df2" fill-opacity=".07" stroke="url(#neon)" stroke-width="3.7" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M115 105 Q114 103 118 104 L127 109" fill="none" stroke="#ffcdfc" stroke-width="1.1" opacity=".66" stroke-linecap="round"/>
+</svg>
