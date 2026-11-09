@@ -2590,8 +2590,11 @@ private:
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerKeyStep" || action=="playerTempoStep" ||
            action=="playerPitchTempoReset") {
-            const int i=playerCurrent_>=0?playerCurrent_:playerSelected_;
-            if(i<0 || i>=static_cast<int>(playerTrackSettings_.size())) {
+            const auto target=armix::player::SetlistPolicy::pitchTempoTarget(
+                playerCurrent_,playerSelected_,
+                static_cast<int>(playerTrackSettings_.size()));
+            const int i=target.index;
+            if(i<0) {
                 playerError_="Add Music to set a song's KEY or TEMPO";
                 emitPlayerState();return;
             }
@@ -2604,7 +2607,11 @@ private:
             else if(direction==1 || direction==-1)
                 next.tempo=std::clamp(next.tempo+direction*5,80,120);
             else return; // invalid native control intent cannot mutate DSP
-            if(engine_.setPlayerPitchTempo(next.key,next.tempo)) {
+            // A performer must be able to tune NEXT while CURRENT is
+            // playing without changing CURRENT audio. Only send live DSP
+            // commands for the currently loaded song.
+            if(!target.updateLiveDeck ||
+               engine_.setPlayerPitchTempo(next.key,next.tempo)) {
                 playerTrackSettings_[static_cast<std::size_t>(i)]=next;
                 playerError_.clear();
                 persistPlayerLibrary();

@@ -13,6 +13,15 @@
 
 int main() {
     using Policy=armix::player::SetlistPolicy;
+    // PREPARE NEXT must not retune the CURRENT backing track, even while
+    // the performer presses +/- repeatedly on the queued song's controls.
+    assert(Policy::pitchTempoTarget(0,1,3).index==1);
+    assert(!Policy::pitchTempoTarget(0,1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(0,0,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(2,-1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(-1,1,3).index==1);
+    assert(!Policy::pitchTempoTarget(-1,1,3).updateLiveDeck);
+    assert(Policy::pitchTempoTarget(-1,99,3).index==-1);
     // Live stage semantics: queued NEXT must not hijack pause/resume.
     assert(Policy::resumeCurrentOnPlay("PAUSED",3));
     assert(Policy::resumeCurrentOnPlay("PREPARING",3));

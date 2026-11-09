@@ -111,8 +111,17 @@
    $("playerProgress").value=+t.durationSeconds>0?
      Math.min(1,Math.max(0,+t.currentSeconds/(+t.durationSeconds))):0;
    $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
-   const editingIndex=model.current>=0?model.current:model.selected;
+   const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
+   // These controls are song presets: NEXT can be prepared during a live
+   // CURRENT performance. The JUCE engine only applies when appropriate.
+   const editingNext=editingIndex>=0 && editingIndex!==model.current;
+   const targetDescription=editingNext?"queued next song":"current song";
+   const pitchRow=root.querySelector(".ap-pitchtempo");
+   if(pitchRow)pitchRow.setAttribute("aria-label",
+      "Music pitch and playback speed for "+targetDescription);
+   $("playerKeyValue").title="Key for "+targetDescription;
+   $("playerTempoValue").title="Tempo for "+targetDescription;
    const key=Number(chosen?.keySemitones??t.requestedKey??0);
    const tempo=Number(chosen?.tempoPercent??t.requestedTempo??100);
    $("playerKeyValue").textContent=(key>0?"+":"")+key+" st";
