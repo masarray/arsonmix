@@ -252,9 +252,11 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
-    if(/\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[234]|reference|mockup|simulated|demo|legacy|native|authoritative)\b|\b(?:NATIVE|STALE|PENDING|INVALID)_[A-Z_]+/i.test(raw)){
-      if(/\b(device|driver|audio interface)\b/i.test(raw) &&
-         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b/i.test(raw))
+    const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
+    if(internalCode ||
+       /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
+      if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
+         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
         return "Audio device unavailable · Open Audio I/O";
       if(/\b(WIRE|route|routing)\b/i.test(raw)){
         if(/\b(reject|fail|error|timed out|not applied|unavailable)\b/i.test(raw))
@@ -270,9 +272,9 @@
           return "Applying effect…";
         return "Effect settings updated";
       }
-      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|\b(?:NATIVE|STALE|INVALID)_[A-Z_]+/i.test(raw))
+      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|_(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING)(?:\b|_)/i.test(raw))
         return "Change not applied · Previous mixer settings kept";
-      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|PENDING_/i.test(raw))
+      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
         return "Applying mixer changes…";
       return "Mixer settings updated";
     }
@@ -1966,7 +1968,7 @@
     mark.addEventListener("click",()=>{
       backend.emitEvent("arMixAction",{action:"diagnosticMark"});
       nativeToast("Audio glitch marked · pre-event counters and RAM saved");
-      status("Crackle marker sent to JUCE diagnostics");
+      status("Audio issue recorded");
     });
     const report=item("button","tool","Copy Audio Report");
     report.title="Copy real JUCE timing / driver / memory evidence to clipboard";

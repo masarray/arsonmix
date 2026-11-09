@@ -83,7 +83,10 @@ for(const raw of [
   'NATIVE PENDING_ACCEPTED_SNAPSHOT · awaiting authoritative readback',
   'WIRE not applied · native admission timed out; previous audio preserved',
   'NATIVE: STALE_NATIVE_WIRE_GRAPH · previous controls unchanged',
-  'SIMULATED METERS · NO REAL AUDIO'
+  'SIMULATED METERS · NO REAL AUDIO',
+  'DEVICE_INIT_FAILED',
+  'STALE_NATIVE_GRAPH_REVISION',
+  'JUCE_CALLBACK_DIAGNOSTIC_FAT_PENDING'
 ]){
   const shown=operatorCopy(raw);
   assert.ok(shown.length>0);
