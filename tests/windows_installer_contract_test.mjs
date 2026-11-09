@@ -127,7 +127,11 @@ test('Smart Auto Updater uses an independent process and strict release gates', 
   assert.match(updater, /INSTALLER_PROVENANCE\.json/);
   assert.match(updater, /SHA256SUMS\.txt/);
   assert.match(updater, /Get-FileHash -LiteralPath \$part -Algorithm SHA256/);
-  assert.match(updater, /WaitForExit\(43200000\)/);
+  assert.match(updater, /WaitForExit\(120000\)/);
+  assert.match(native, /launchSmartUpdater \(true\)/);
+  assert.match(native, /launchSmartUpdater \(false\)/);
+  assert.match(updater, /\[switch\]\$ApplyStaged/);
+  assert.match(updater, /exit 0 # Checker ends here/);
   assert.match(updater, /DEFER_NEW_SESSION/);
   assert.match(updater, /Local\\ArSonMix\.AutoUpdater\.v1/);
   assert.match(updater, /PREVIOUS_FAILURE_BLOCKED/);
