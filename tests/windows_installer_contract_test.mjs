@@ -297,3 +297,23 @@ test('auto apply authenticates the published rollback asset as well as the new r
   assert.ok(source.indexOf('ROLLBACK_RELEASE_UNAVAILABLE_UPDATE_DEFERRED') <
             source.indexOf("$state.phase='installing'"));
 });
+
+test('updater enumerates GitHub JSON release arrays correctly in Windows PowerShell 5.1', () => {
+  const script=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.doesNotMatch(script, /@\(\s*Invoke-RestMethod -Uri \$api/);
+  for (const name of ['releases','liveReleases']) {
+    assert.match(script, new RegExp('\\$'+name+'=Invoke-RestMethod -Uri \\$api'));
+  }
+  assert.match(script, /foreach\(\$release in \$releases\)/);
+  assert.match(script, /foreach\(\$release in \$liveReleases\)/);
+});
+test('WebView2 error screen cannot acknowledge healthy GUI; staging retries after 20m', () => {
+  const script=read('installer/ArSonMixAutoUpdate.ps1');
+  const native=read('src/Main.cpp');
+  assert.match(native,/if \(stage == 2 && probe\.length\(\) == 36/);
+  assert.match(native,/if \(stage >= 2\)/); // still dismiss error splash
+  assert.match(native,/onStartupStage_ \(3\)/); // error stage must not set marker
+  assert.match(script, /\$state\.phase='staging-retry'\s*\n\s*\$state\.lastCheckUtc=''/);
+  assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
+  assert.match(script, /TotalMinutes -lt 20/);
+});
