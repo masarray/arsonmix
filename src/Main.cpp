@@ -2541,13 +2541,35 @@ private:
                 // Only filesystem enumeration, bounded in scope and output,
                 // is performed on the worker. Never block the JUCE message
                 // loop or ASIO callback while importing a large USB folder.
-                std::thread([safe,folder] {
+                // Copy immutable IDs/paths on GUI thread; expensive USB
+                // existence checks and relink planning belong on the worker.
+                const auto initialLibrary=safe->playerLibrary_;
+                const int protectedCurrent=safe->playerCurrent_;
+                std::thread([safe,folder,initialLibrary,protectedCurrent] {
                     auto scan=armix::player::PlayerLibraryPolicy::scanFolder(folder);
+                    auto relinks=armix::player::PlayerLibraryPolicy::planMissingRelinks(
+                        initialLibrary,scan.files,protectedCurrent);
                     juce::MessageManager::callAsync(
-                        [safe,scan=std::move(scan)]() mutable {
+                        [safe,scan=std::move(scan),
+                         relinks=std::move(relinks),initialLibrary]() mutable {
                             if(!safe)return;
                             safe->playerFolderBusy_=false;
-                            int added=0;
+                            int added=0,relinked=0;
+                            // Update only the exact rows the worker saw.
+                            // Edits made during the scan must remain intact.
+                            for(const auto& change:relinks) {
+                                if(change.index>=initialLibrary.size() ||
+                                   change.index>=safe->playerLibrary_.size() ||
+                                   static_cast<int>(change.index)==safe->playerCurrent_ ||
+                                   safe->playerLibrary_[change.index]!=
+                                       initialLibrary[change.index] ||
+                                   std::find(safe->playerLibrary_.begin(),
+                                       safe->playerLibrary_.end(),
+                                       change.replacement)!=safe->playerLibrary_.end())
+                                    continue;
+                                safe->playerLibrary_[change.index]=change.replacement;
+                                ++relinked; // keep stable IDs + KEY/TEMPO
+                            }
                             int first=-1;
                             for(const auto& file:scan.files) {
                                 const auto found=std::find(
@@ -2565,9 +2587,9 @@ private:
                             if(safe->playerSelected_<0 && first>=0)
                                 safe->playerSelected_=first;
                             safe->playerError_=scan.truncated?
-                                "Folder scan reached its safe size limit; only some songs were added":
-                                added==0?
-                                    "No new supported songs found in this folder":
+                                "Folder scan reached its safe size limit; only some songs were found":
+                                added==0 && relinked==0?
+                                    "No new supported songs or safe missing-file matches found":
                                     juce::String{};
                             safe->persistPlayerLibrary();
                             safe->emitPlayerState(true);
