@@ -944,20 +944,20 @@
  .mx-vthrow .vt-preset select{width:83px;max-width:83px;font-size:10px}
  .mx-vthrow .vt-console{padding:9px 11px 11px}
  .mx-vthrow .vt-instrument{display:flex;flex-direction:column;gap:0}
- .mx-vthrow .vt-center{order:0;margin-bottom:5px}
+ .mx-vthrow .vt-center{order:0;margin-bottom:2px}
  .mx-vthrow #vtEncodersLeft{order:1}
  .mx-vthrow #vtEncodersRight{order:2}
- .mx-vthrow .vt-throw-button{width:166px;height:166px}
+ .mx-vthrow .vt-throw-button{width:160px;height:160px}
  .mx-vthrow .vt-throw-engraving{font-size:9px;margin-top:-4px}
  .mx-vthrow .vt-encoder-bank{width:100%;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
- .mx-vthrow .vt-encoder{grid-template-rows:14px 61px 18px;row-gap:2px;padding:2px 0}
- .mx-vthrow .vt-encoder-face{width:61px;height:61px}
+ .mx-vthrow .vt-encoder{grid-template-rows:14px 60px 16px;row-gap:2px;padding:1px 0}
+ .mx-vthrow .vt-encoder-face{width:60px;height:60px}
  .mx-vthrow .vt-encoder-name{font-size:9.5px;line-height:14px}
  .mx-vthrow .vt-encoder-value{font-size:11px;line-height:16px}
  .mx-vthrow .vt-performance{grid-template-columns:minmax(78px,1fr) minmax(0,2fr);
-  column-gap:10px;row-gap:6px;min-height:0;margin-top:7px}
- .mx-vthrow .vt-wet-module{width:100%;grid-template-rows:14px 61px 18px;row-gap:2px}
- .mx-vthrow .vt-wet-module .vt-encoder-face{width:61px;height:61px}
+  column-gap:10px;row-gap:4px;min-height:0;margin-top:5px}
+ .mx-vthrow .vt-wet-module{width:100%;grid-template-rows:14px 60px 16px;row-gap:2px}
+ .mx-vthrow .vt-wet-module .vt-encoder-face{width:60px;height:60px}
  .mx-vthrow .vt-clock-tap{grid-column:1/-1;grid-template-columns:minmax(0,1fr) 86px;
   align-items:center;gap:10px;margin-top:2px}
  .mx-vthrow .vt-clock-screen{height:83px}
@@ -965,7 +965,7 @@
  .mx-vthrow .vt-tap-button{height:83px}
  .mx-vthrow .vt-mode-buttons{width:min(212px,100%);max-width:100%}
  .mx-vthrow .vt-mode-buttons button{font-size:10px;min-height:31px;padding:3px 7px}
- .mx-vthrow .vt-transport{grid-template-columns:1fr;gap:9px;padding:10px 11px}
+ .mx-vthrow .vt-transport{grid-template-columns:1fr;gap:8px;padding:9px 11px}
  .mx-vthrow .vt-division-buttons{height:38px}
  .mx-vthrow .vt-division-buttons button{font-size:10px;height:30px}
  .mx-vthrow .vt-music-source select{height:36px}
