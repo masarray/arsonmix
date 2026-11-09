@@ -286,6 +286,15 @@ jobs:
         run: |
           & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # One opt-in exact-SHA FAT: genuine published alpha.4 -> alpha.5 ->
+      # alpha.4 rollback, always on a disposable GitHub Windows runner.
+      # Never executed by ordinary PR/push, never on a user's workstation.
+      - name: Prove two authentic historical Inno releases upgrade and roll back
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        shell: pwsh
+        run: |
+          & ./scripts/test_two_genuine_inno_releases_windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:

@@ -1260,7 +1260,8 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/next.admitted\?"NO HARDWARE IN · MIXER\/FX READY"/);
+ assert.match(bridge,/next.admitted\?"CHOOSE AN INPUT"/);
+ assert.doesNotMatch(bridge,/FAT PENDING/);
  assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
  assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
  assert.doesNotMatch(bridge,/NO AUDIBLE OUTPUT · PATCH INPUT \+ ARM/);
