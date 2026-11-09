@@ -13,9 +13,6 @@ const presets={
 };
 const ranges={bpm:[60,200],repeats:[1,6],captureMs:[80,1500],silenceMs:[80,900],
  thresholdDb:[-65,-15],wet:[0,1],decay:[.15,.9],ducking:[0,1]};
-const fields={captureMs:["Capture","ms",5],silenceMs:["End pause","ms",10],
- thresholdDb:["Voice gate","dB",1],wet:["Echo mix","%",.01],
- decay:["Decay","%",.01],ducking:["Vocal duck","%",.01]};
 const valid=s=>s&&[0,1,2].includes(s.mode)&&[0,1,2,3].includes(s.division)&&
  Object.entries(ranges).every(([k,[min,max]])=>
  Number.isFinite(s[k])&&s[k]>=min&&s[k]<=max);
@@ -118,6 +115,9 @@ function syncPower(){
  btn.setAttribute("aria-pressed",String(value==="on"));
  btn.setAttribute("aria-label",btn.title);
  $("vtThrow").disabled=value!=="on"||!!pending;
+ $("vtStatus").textContent=value==="on"?
+  ($("vtThrow").dataset.tail==="true"?"TAIL":"LIVE"):
+  value==="off"?"BYPASS":value==="rack-off"?"RACK OFF":"OFFLINE";
 }
 function paint(){
  $("vtMode").value=String(draft.mode);$("vtBpm").value=String(draft.bpm);
