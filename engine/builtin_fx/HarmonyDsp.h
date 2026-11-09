@@ -63,7 +63,7 @@ inline float smoothGrainBlend(float phase) noexcept {
 class Engine final {
 public:
     static constexpr int maxVoices=5;
-    static constexpr int maxPitchLagsPerSlice=32; // upper bound for each callback sample
+    static constexpr int maxPitchLagsPerSlice=8; // fewer burst MACs per sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
@@ -75,7 +75,10 @@ public:
         latency_=2*grain_;
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
-        pitchSliceEvery_=std::max(1,detectEvery_/8);
+        // 32 fixed time slices per analysis hop, but only 8 lags/slice.
+        // Even 32k input completes every supported 65-1200 Hz candidate
+        // before the next frozen PCM window. Distributes RT work on ASIO 64.
+        pitchSliceEvery_=std::max(1,detectEvery_/32);
         // Support bass through soprano fundamentals; keep Nyquist/finiteness guards.
         // Earlier 850 Hz cap failed to track high soprano notes (e.g. C6).
         lowLag_=std::max(8,static_cast<int>(rate/(decimation_*1200.)));
@@ -93,7 +96,8 @@ public:
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
         detectCounter_=0;pitchSliceCounter_=0;pitchNextLag_=0;
         pitchActive_=false;pitchBest_=-1.f;pitchBestLag_=0;
-        peakPitchLagWork_=0;noteHold_=0;currentNote_=-1;candidateNote_=-1;
+        peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
+        noteHold_=0;currentNote_=-1;candidateNote_=-1;
         guideKey_=-1;guideScale_=-1;
         voiced_=false;voicedGain_=0.f;settings_=Settings{};
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
@@ -182,6 +186,9 @@ public:
     int observedMidiNote() const noexcept{return currentNote_;}
     bool voiced() const noexcept{return voiced_;}
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
+    // Audio-owner telemetry; standalone CTest reads after process() returns.
+    int completedPitchAnalyses() const noexcept{return completedPitchAnalyses_;}
+    int abandonedPitchAnalyses() const noexcept{return abandonedPitchAnalyses_;}
     void process(float* l,float* r,int frames) noexcept {
         if(!l||!r||frames<=0||rate_<=0.)return;
         processed_=true;
@@ -198,8 +205,11 @@ public:
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
                 mixR_[ix]+=a*(targetMixR_[ix]-mixR_[ix]);
             }
-            const float inputL=std::isfinite(l[i])?l[i]:0.f;
-            const float inputR=std::isfinite(r[i])?r[i]:0.f;
+            // Bound pathological IEEE PCM before adding it to grain/dry
+            // histories; output is already limited to +/-4 in this engine.
+            // Regular [-4,+4] sample parity and stereo polarity are exact.
+            const float inputL=std::clamp(std::isfinite(l[i])?l[i]:0.f,-4.f,4.f);
+            const float inputR=std::clamp(std::isfinite(r[i])?r[i]:0.f,-4.f,4.f);
             const float mono=vocalFold_.process(inputL,inputR);
             left_[write_]=inputL;right_[write_]=inputR;mono_[write_]=mono;
             decimationLowpass_+=decimationAlpha_*(mono-decimationLowpass_);
@@ -273,9 +283,10 @@ private:
         return y;
     }
     // Prepare one immutable, bounded pitch-analysis window every analysis hop.
-    // The subsequent 32-lag correlation slices cannot race PCM history writes:
+    // The subsequent 8-lag correlation slices cannot race PCM history writes:
     // they only read the frozen fixed-size pitchWindow_.
     void beginPitchAnalysis() noexcept {
+        if(pitchActive_)++abandonedPitchAnalyses_;
         pitchActive_=false;
         if(downSeen_<static_cast<std::size_t>(highLag_+170))return;
         constexpr int span=160;
@@ -329,6 +340,7 @@ private:
         pitchNextLag_=endLag+1;
         if(pitchNextLag_>highLag_){
             pitchActive_=false;
+            ++completedPitchAnalyses_;
             finishPitchAnalysis();
         }
     }
@@ -398,6 +410,7 @@ private:
     int downCounter_=0,detectCounter_=0;
     int pitchSliceEvery_=1,pitchSliceCounter_=0,pitchNextLag_=0;
     int pitchBestLag_=0,peakPitchLagWork_=0;
+    int completedPitchAnalyses_=0,abandonedPitchAnalyses_=0;
     bool pitchActive_=false;
     float pitchBest_=-1.f;
     double pitchEnergy_=0.,pitchLagEnergy_=0.;

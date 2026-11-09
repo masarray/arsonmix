@@ -7,6 +7,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <limits>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
 int main(){
@@ -259,6 +260,9 @@ int main(){
     need(bounded->peakPitchLagWork()>0&&
          bounded->peakPitchLagWork()<=Engine::maxPitchLagsPerSlice,
          "P0 pitch analysis overran per-sample lag budget");
+    need(bounded->completedPitchAnalyses()>100&&
+         bounded->abandonedPitchAnalyses()==0,
+         "P0 slices failed to finish before the next analysis hop");
     need(bounded->voiced()&&bounded->observedMidiNote()==57,
          "P0 bounded singer tone detection failed");
     if(referenceL.empty()){
@@ -377,6 +381,75 @@ int main(){
            std::abs(right[static_cast<std::size_t>(i)]+expected)<1.e-6f,
            "P0 polarity rescue corrupted dry stereo or exact PDC");
     }
+  }
+
+  // P0: all supported device rates and irregular ASIO-shaped periods must
+  // complete the full frozen correlation search WITHOUT dropped windows.
+  // This prevents a naive 32->8-lag reduction from silently truncating E2-C6.
+  for(const double rate:{32000.,44100.,48000.,96000.,192000.}){
+    for(int block:{64,127,256}){
+      auto sliced=std::make_unique<Engine>();
+      need(sliced->prepare(rate),"P0 multirate slice prepare failed");
+      const int samples=static_cast<int>(rate*.30);
+      std::vector<float> l(static_cast<std::size_t>(samples));
+      std::vector<float> r(static_cast<std::size_t>(samples));
+      for(int i=0;i<samples;++i){
+        const float value=static_cast<float>(
+            .16*std::sin(6.283185307179586*220.*i/rate)+
+            .04*std::sin(6.283185307179586*440.*i/rate));
+        l[static_cast<std::size_t>(i)]=value;
+        r[static_cast<std::size_t>(i)]=value;
+      }
+      for(int i=0;i<samples;i+=block)
+        sliced->process(l.data()+i,r.data()+i,std::min(block,samples-i));
+      need(sliced->peakPitchLagWork()<=8&&
+           sliced->peakPitchLagWork()>0,
+           "P0 worst-case lag slice exceeded eight");
+      need(sliced->completedPitchAnalyses()>=20 &&
+           sliced->abandonedPitchAnalyses()==0,
+           "P0 correlation hop overwritten on supported device");
+      need(sliced->voiced() && sliced->observedMidiNote()==57,
+           "P0 sliced note lost in a supported rate/block configuration");
+    }
+  }
+  // P0 defensive PCM: no allocation/crash/NaN from extreme finite,
+  // infinity or NaN, including during the silence->singer transition.
+  for(int voiceCount:{2,5}){
+    auto overflow=std::make_unique<Engine>();
+    need(overflow->prepare(48000.),"P0 extreme PCM prepare failed");
+    Settings full;full.wet=1.f;full.voices=voiceCount;full.correction=true;
+    need(overflow->setSettings(full),"P0 extreme PCM settings rejected");
+    constexpr int frames=8192;
+    std::vector<float> l(frames),r(frames);
+    for(int i=0;i<frames;++i){
+      const auto j=i%8;
+      const float raw=j==0?std::numeric_limits<float>::max():
+                       j==1?-std::numeric_limits<float>::max():
+                       j==2?std::numeric_limits<float>::infinity():
+                       j==3?-std::numeric_limits<float>::infinity():
+                       j==4?std::numeric_limits<float>::quiet_NaN():
+                       j==5?4.5f:j==6?-4.5f:0.f;
+      l[static_cast<std::size_t>(i)]=raw;
+      r[static_cast<std::size_t>(i)]=-raw;
+    }
+    for(int i=0;i<frames;i+=64)
+      overflow->process(l.data()+i,r.data()+i,std::min(64,frames-i));
+    for(int i=0;i<frames;++i)
+      need(std::isfinite(l[static_cast<std::size_t>(i)]) &&
+           std::isfinite(r[static_cast<std::size_t>(i)]) &&
+           std::abs(l[static_cast<std::size_t>(i)])<=4.f &&
+           std::abs(r[static_cast<std::size_t>(i)])<=4.f,
+           "P0 extreme PCM yielded invalid or out-of-bounds output");
+  }
+  // Direct analysis-only stereo fold must never produce NaN/inf even if a
+  // connected host provides a finite float close to FLT_MAX.
+  StereoPhaseSafeFold guard;
+  need(guard.prepare(48000.),"P0 stereo analysis fold prepare failed");
+  for(int i=0;i<4096;++i){
+    const float huge=std::numeric_limits<float>::max();
+    const float y=guard.process(huge,huge);
+    need(std::isfinite(y)&&std::abs(y)<=4.f,
+         "P0 guide PCM overflowed in stereo analysis fold");
   }
   // Declared 48k wet/dry sample PDC must remain 2*16ms even after slicing.
   need(e->latencySamples()==1536,"P0 changed live session PDC without proof");

@@ -36,9 +36,12 @@ public:
             if(cross_>-.55f*power)antiCorrelated_=false;
         }else if(cross_<-.78f*power)antiCorrelated_=true;
         amount_+=blendAlpha_*((antiCorrelated_?1.f:0.f)-amount_);
-        // amount=0 -> original 0.5*(L+R);
+        // amount=0 -> original 0.5*(L+R) for ordinary audio.
         // amount=1 -> recovered 0.5*(L-R).
-        return .5f*(left+right)-amount_*right;
+        // Use bounded evidence samples for the return as well: finite
+        // but huge external float PCM would otherwise overflow L+R before
+        // pitch/Music Guide filtering.
+        return .5f*(l+r)-amount_*r;
     }
     float rescueAmount() const noexcept{return amount_;}
 private:
