@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AsioRestartRecoveryGate.h"
+#ifdef NDEBUG
+ #undef NDEBUG
+#endif
 #include <cassert>
 #include <cstdint>
 #include <limits>
