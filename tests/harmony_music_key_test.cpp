@@ -28,6 +28,24 @@ static void sendChord(MusicKeyDetector& detector,double sampleRate,
         detector.process(left.data()+pos,right.data()+pos,std::min(127,size-pos));
 }
 int main(){
+    // Previously candidateHold_ stopped at 12 while a replacement key needed
+    // confidence > 0.10: valid 0.045..0.10 candidates could NEVER take over.
+    // Exercise the exact policy independently of spectral fixture sensitivity.
+    need(!acceptMusicKeyCandidate(true,false,.07f,7),
+         "weak music key changed before required hold");
+    need(!acceptMusicKeyCandidate(true,false,.07f,12),
+         "moderate-confidence music key changed prematurely");
+    need(!acceptMusicKeyCandidate(true,false,.07f,19),
+         "moderate-confidence music key changed before stable hold");
+    need(acceptMusicKeyCandidate(true,false,.07f,20),
+         "stable moderately confident new music key stayed stuck forever");
+    need(acceptMusicKeyCandidate(true,false,.12f,8),
+         "strong new key did not switch after initial stable hold");
+    need(acceptMusicKeyCandidate(false,false,.06f,8),
+         "initial key was not acquired after stable hold");
+    need(acceptMusicKeyCandidate(true,true,.06f,8),
+         "accepted key confidence update incorrectly blocked");
+
     MusicKeyDetector bad;
     need(!bad.prepare(8000.)&&!bad.prepare(384000.),"unsafe sample rate accepted");
     for(const double rate:{48000.,96000.}){
