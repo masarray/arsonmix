@@ -45,6 +45,8 @@ RestartApplications=no
 ; The shutdown helper is EMBEDDED TEMPORARILY in Setup, never installed.
 ; It handles installed legacy builds that do not implement the new event.
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
+; The updater runs outside JUCE, never in the realtime audio callback.
+Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion

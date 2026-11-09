@@ -2,6 +2,15 @@
 # Fast Windows Inno/Restart Manager smoke, independent of JUCE.
 # The staged .exe is a test-only WinForms window, NOT a product release.
 Set-StrictMode -Version Latest
+# Offline functional policy gate for the actual shipped updater script.
+# This mode never reads an install, touches a live process or calls the network.
+$updaterPolicy=Join-Path (Resolve-Path .).Path "installer/ArSonMixAutoUpdate.ps1"
+$policyOutput=& "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File $updaterPolicy -OwnerProcessId 1 -PolicySelfTest
+if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_PASS'){
+    throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
+}
+Write-Host "ARSONMIX_UPDATER_POLICY_PASS"
+
 $ErrorActionPreference="Stop"
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
