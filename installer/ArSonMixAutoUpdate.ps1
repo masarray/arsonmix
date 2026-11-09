@@ -170,7 +170,7 @@ function Run-Installer([string]$file) {
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){return $false}
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=$file
-    $info.Arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOCLOSEAPPLICATIONS /DIR="'+$PSScriptRoot+'"'
+    $info.Arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOCLOSEAPPLICATIONS /ARSONMIXAUTOUPDATE /DIR="'+$PSScriptRoot+'"'
     $info.UseShellExecute=$false
     $info.CreateNoWindow=$true
     $process=[Diagnostics.Process]::Start($info)
