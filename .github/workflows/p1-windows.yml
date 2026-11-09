@@ -135,6 +135,11 @@ jobs:
       - name: Compressor exact-source native CPU A/B (same runner, non-gating timing)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
         run: python scripts/benchmark_compressor_ab.py --reference 043748a552e66fd72e217cbf66aa35e6cc3e0b21
+      - name: Compressor standalone C++ compile + PCM regression (before MSVC)
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
+        run: |
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math tests/builtin_channel_compressor_test.cpp -o "$RUNNER_TEMP/native-compressor-core-test"
+          "$RUNNER_TEMP/native-compressor-core-test"
   windows-build:
     name: Windows MSVC / realtime CTest
     needs: quick
