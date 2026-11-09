@@ -220,5 +220,24 @@ int main(){
          std::abs(wr[i]-(impulse?-.25f:0.f))<1.e-5f,
          "reduced 192 kHz history corrupted a wrapped dry impulse");
   }
+  // Regression for sliding lag-energy normalization: harmonic-rich A2
+  // vocals must remain a stable note at small, irregular ASIO block sizes.
+  for(int block:{64,128,257}){
+    auto pitched=std::make_unique<Engine>();
+    need(pitched->prepare(48000.),"harmonic tracking prepare failed");
+    constexpr int samples=24000;
+    std::vector<float> hl(samples),hr(samples);
+    for(int i=0;i<samples;++i){
+      const double t=static_cast<double>(i)/48000.;
+      hl[i]=hr[i]=static_cast<float>(
+          .17*std::sin(6.283185307179586*110.*t)+
+          .04*std::sin(6.283185307179586*220.*t)+
+          .02*std::sin(6.283185307179586*330.*t));
+    }
+    for(int i=0;i<samples;i+=block)
+      pitched->process(hl.data()+i,hr.data()+i,std::min(block,samples-i));
+    need(pitched->voiced()&&pitched->observedMidiNote()==45,
+         "rolling pitch energy altered singer-like A2 classification");
+  }
   std::cout<<"Native Harmony DSP: deterministic PCM, 2-5 voices, octave/scale, stereo, silence and 32-192k PASS\n";
 }

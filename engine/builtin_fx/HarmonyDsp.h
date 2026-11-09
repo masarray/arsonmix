@@ -270,14 +270,29 @@ private:
         }
         float best=-1.f;int bestLag=0;
         std::array<float,231> correlations{};
+        // Adjacent lagged windows overlap in span-1 samples. Their energy
+        // moves with one departing/one entering squared sample per lag.
+        // Preserve the original dot product and confidence thresholds while
+        // avoiding another span-sized energy sum for each candidate.
+        double lagEnergy=0.;
+        for(int j=0;j<span;++j){
+            const double y=samples[static_cast<std::size_t>(j+lowLag_)];
+            lagEnergy+=y*y;
+        }
         for(int lag=lowLag_;lag<=highLag_;++lag){
-            double xy=0.,yy=0.;
+            if(lag>lowLag_){
+                const double leaving=samples[static_cast<std::size_t>(lag-1)];
+                const double entering=samples[static_cast<std::size_t>(span+lag-1)];
+                lagEnergy+=entering*entering-leaving*leaving;
+            }
+            double xy=0.;
             for(int j=0;j<span;++j){
                 const double x=samples[static_cast<std::size_t>(j)];
                 const double y=samples[static_cast<std::size_t>(j+lag)];
-                xy+=x*y;yy+=y*y;
+                xy+=x*y;
             }
-            const float correlation=static_cast<float>(xy/std::sqrt(energy*yy+1.e-14));
+            const float correlation=static_cast<float>(
+                xy/std::sqrt(energy*std::max(0.,lagEnergy)+1.e-14));
             correlations[static_cast<std::size_t>(lag)]=correlation;
             if(correlation>best){best=correlation;bestLag=lag;}
         }
