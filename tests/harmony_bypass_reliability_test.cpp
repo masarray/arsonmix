@@ -251,7 +251,7 @@ int main() {
         assert(wetCount>0&&dryCount>0);
         verifiedWet+=wetCount;verifiedDry+=dryCount;
         assert(!cycle.rackBypassed(vocal));
-        assert(!cycle.insertBypassed(vocal,0));
+        assert(!b->bypassRequested.load(std::memory_order_acquire));
     }
     std::cout<<"Harmony multi-rate wet/space bypass matrix PASS; "
              <<"scenarios="<<cases.size()
