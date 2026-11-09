@@ -30,30 +30,29 @@ panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
 panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");
 panel.setAttribute("aria-label","ArSon Vocal Throw");
 panel.innerHTML=[
- '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span><span class="brand-type">PHRASE DELAY</span></div><span class="channel" id="vtChannel"></span>',
- '<label class="vt-preset"><span>PRESET</span><select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
+ '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span></div><span class="channel" id="vtChannel"></span>',
+ '<label class="vt-preset"><select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
  '<button class="mx-comp-power armix-builtin-fx-power" id="vtPower" data-fx-state="unknown" aria-pressed="false" aria-label="Vocal Throw state unavailable" type="button" disabled>⏻</button><button class="mx-comp-close armix-floating-close armix-builtin-fx-close" id="vtClose" aria-label="Close Vocal Throw" title="Close Vocal Throw" type="button">×</button></header>',
  '<div class="body vt-hardware"><section class="vt-console" aria-label="Vocal Throw hardware controls">',
- '<div class="vt-console-eyebrow"><span>SMART PHRASE / LIVE ENGINE</span><span class="vt-unit-id">AS·VT 01 <i></i> ZERO DRY LATENCY</span></div>',
  '<div class="vt-instrument"><div class="vt-encoder-bank" id="vtEncodersLeft"></div>',
- '<div class="vt-center"><div class="vt-hero-plate"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET MIX</small><output id="vtWetValue">42%</output></span></button></div></div>',
+ '<div class="vt-center"><button id="vtThrow" class="vt-throw-button" type="button" aria-label="Throw captured vocal phrase" title="THROW — send the captured phrase into the echo"><span class="vt-throw-aura" aria-hidden="true"></span></button><span class="vt-throw-engraving" aria-hidden="true">THROW</span></div>',
  '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
- '<div class="vt-performance"><button id="vtThrow" class="vt-throw-button" type="button"><span class="vt-throw-main">THROW</span><small>FIRE PHRASE</small></button>',
- '<div class="vt-trigger"><span class="vt-small-label">TRIGGER</span><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
+ '<div class="vt-performance"><div class="vt-wet-module"><button class="vt-hero-knob" id="vtWetDial" role="slider" type="button" aria-label="Echo wet mix" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42" tabindex="0"><span class="vt-hero-pointer" aria-hidden="true"></span><span class="vt-hero-readout"><small>WET</small><output id="vtWetValue">42%</output></span></button></div>',
+ '<div class="vt-trigger"><div class="vt-mode-buttons" role="group" aria-label="Vocal trigger mode"><button type="button" data-mode="0">MAN</button><button type="button" data-mode="1">AUTO</button><button type="button" data-mode="2">HYBRID</button></div><select id="vtMode" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">Manual</option><option value="1">Auto</option><option value="2">Hybrid</option></select></div>',
  '<button id="vtTap" class="vt-tap-button" type="button"><span>TAP</span><small>BPM</small></button></div></section>',
- '<section class="vt-transport" aria-label="Tempo and music clock"><div class="vt-tempo"><span class="vt-small-label">TEMPO CLOCK</span><div class="vt-clock-screen"><output id="vtDisplayBpm">120</output><span>BPM</span><span id="vtClockLabel">MANUAL CLOCK</span></div><label class="vt-manual-bpm"><span>MANUAL</span><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM"></label></div>',
- '<div class="vt-pulse"><span class="vt-small-label">DELAY DIVISION</span><div class="vt-division-buttons" role="group" aria-label="Delay division"><button type="button" data-division="0">1/4</button><button type="button" data-division="1">1/8</button><button type="button" data-division="2">1/8 D</button><button type="button" data-division="3">1/2</button></div><select id="vtDivision" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select><input id="vtRepeats" class="vt-virtual-input" type="number" min="1" max="6" step="1" tabindex="-1" aria-hidden="true"><div id="vtBeatRail" class="vt-repeat-leds" aria-label="Echo repeat count"><i></i><i></i><i></i><i></i><i></i><i></i><span id="vtRhythm">1/4 · HYBRID</span></div></div>',
- '<div class="vt-music-source"><label for="vtMusicSource" class="vt-small-label">MUSIC CLOCK SOURCE</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">Manual BPM / TAP</span></div></section>',
- '<footer class="vt-status-rail"><span class="vt-device"><i class="dot" id="vtDot"></i><span id="vtStatus">NATIVE DSP</span></span><span class="vt-hint" id="vtHint" role="status">Native DSP · waiting for accepted channel</span><span id="vtCount">0 throws</span></footer></div>'
+ '<section class="vt-transport" aria-label="Tempo and music clock"><div class="vt-tempo"><span class="vt-small-label">BPM</span><div class="vt-clock-screen"><output id="vtDisplayBpm">120</output><span>BPM</span><span id="vtClockLabel">MAN</span></div><label class="vt-manual-bpm"><input id="vtBpm" type="number" min="60" max="200" step="1" aria-label="Manual BPM"></label></div>',
+ '<div class="vt-pulse"><span class="vt-small-label">RHYTHM</span><div class="vt-division-buttons" role="group" aria-label="Delay division"><button type="button" data-division="0">1/4</button><button type="button" data-division="1">1/8</button><button type="button" data-division="2">1/8 D</button><button type="button" data-division="3">1/2</button></div><select id="vtDivision" class="vt-virtual-input" tabindex="-1" aria-hidden="true"><option value="0">1/4</option><option value="1">1/8</option><option value="2">1/8 D</option><option value="3">1/2</option></select><input id="vtRepeats" class="vt-virtual-input" type="number" min="1" max="6" step="1" tabindex="-1" aria-hidden="true"><div id="vtBeatRail" class="vt-repeat-leds" aria-label="Echo repeat count"><i></i><i></i><i></i><i></i><i></i><i></i><span id="vtRhythm" class="vt-screen-reader">1/4 · HYBRID</span></div></div>',
+ '<div class="vt-music-source"><label for="vtMusicSource" class="vt-small-label">MUSIC</label><select id="vtMusicSource" aria-label="Music tempo source"><option value="0">Manual / TAP</option></select><span id="vtMusicStatus" class="music-status">TAP</span></div></section>',
+ '<footer class="vt-status-rail"><span class="vt-device"><i class="dot" id="vtDot"></i><span id="vtStatus">LIVE</span></span><span class="vt-hint" id="vtHint" role="status"></span><span id="vtCount" title="Completed throw cues">0</span></footer></div>'
 ].join("");
 document.body.append(panel);
 const $=id=>panel.querySelector("#"+id);
 const encoderMeta={
  captureMs:["CAPTURE","ms",5,"vtEncodersLeft"],
- silenceMs:["PHRASE END","ms",10,"vtEncodersLeft"],
- thresholdDb:["VOICE GATE","dB",1,"vtEncodersLeft"],
- decay:["FEEDBACK","%",.01,"vtEncodersRight"],
- ducking:["VOCAL DUCK","%",.01,"vtEncodersRight"],
+ silenceMs:["END","ms",10,"vtEncodersLeft"],
+ thresholdDb:["GATE","dB",1,"vtEncodersLeft"],
+ decay:["DECAY","%",.01,"vtEncodersRight"],
+ ducking:["DUCK","%",.01,"vtEncodersRight"],
  repeats:["REPEATS","x",1,"vtEncodersRight"]
 };
 for(const [key,[title,unit,,bank]] of Object.entries(encoderMeta)){
