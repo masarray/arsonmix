@@ -37,6 +37,12 @@ public:
         return true;
     }
 
+    // WORKER/CONTROL ONLY after the consumer is fully quiescent.
+    // Restart a track without reallocating the bounded PCM storage.
+    void resetQuiescent() noexcept {
+        readFrame_.store(0,std::memory_order_relaxed);
+        writeFrame_.store(0,std::memory_order_relaxed);
+    }
     std::size_t capacityFrames() const noexcept {return capacity_;}
     std::uint64_t underrunFrames() const noexcept {
         return underrunFrames_.load(std::memory_order_relaxed);

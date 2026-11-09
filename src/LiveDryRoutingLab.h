@@ -1601,6 +1601,45 @@ public:
         }
     }
 
+    // CONTROL-only truthful audio-readback. A loaded player can be PLAYING
+    // with source meters active while SOURCE ONLY intentionally cuts MAIN.
+    // Follow BUS/GROUP WIRE graph, never infer output from the source name.
+    bool playerDeckHasMainPath(std::uint64_t deckId=1) const {
+        if(!channelIdPhysicalPcmActive())return false;
+        const auto& roster=nativeAccepted_.graph.roster;
+        const auto& sources=nativeAccepted_.graph.request.sources;
+        const auto patch=std::find_if(sources.begin(),sources.end(),
+            [deckId](const armix::mixer::DynamicSourcePatch& p) {
+                return p.kind==armix::mixer::DynamicSourceKind::playerDeck &&
+                       p.deckId==deckId;
+            });
+        if(patch==sources.end())return false;
+        std::vector<armix::mixer::ChannelId> stack{patch->id},visited;
+        while(!stack.empty()) {
+            const auto id=stack.back();stack.pop_back();
+            if(std::find(visited.begin(),visited.end(),id)!=visited.end())continue;
+            visited.push_back(id);
+            const auto* row=roster.find(id);
+            if(!row || row->mute || row->faderLinear<=0.f)continue;
+            if(row->role==armix::mixer::ChannelRole::main)return true;
+            for(const auto& send:row->sends)
+                if(send.gain>0.f)stack.push_back(send.destination);
+        }
+        return false;
+    }
+
+    // CONTROL only: existing trusted MAIN + one owned PLAYER A channel.
+    // Binds in one already-approved ChannelId graph revision, not a Lab,
+    // additional audio device or external hardware input patch.
+    NativeBusResult ensureNativePlayerA(bool outputsDisarmed,
+            bool trustedExistingMain,
+            const std::function<void()>& beforePublish={}) {
+        return createNativeInputChannel(epoch(),nativeAccepted_.pcmRevision,
+            nativeAccepted_.graph.roster.revision(),"MUSIC",
+            armix::mixer::ProcessingFormat::stereo,
+            outputsDisarmed,beforePublish,1,trustedExistingMain);
+    }
+
     // Product Console: a NEW stable ChannelId input, not a fixed M4 ordinal
     // or an unowned JS strip. Starts unpatched and silent. Structural graph,
     // old vendor FX leases and MAIN routing publish as ONE control transaction.
@@ -1608,12 +1647,18 @@ public:
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             const std::string& name,armix::mixer::ProcessingFormat format,
             bool outputsDisarmed=false,
-            const std::function<void()>& beforePublish={}) {
+            const std::function<void()>& beforePublish={},
+            std::uint64_t playerDeckId=0,bool trustedExistingMain=false) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
         reply.rosterRevision=nativeAccepted_.graph.roster.revision();
-        if(!outputsDisarmed){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
+        // Adding a purely internal music source and its owned MAIN wire
+        // changes no physical device pins. The host MUST attest the same
+        // already-authorized MAIN and matching epoch before taking this path.
+        if(!outputsDisarmed && !(playerDeckId && trustedExistingMain)) {
+            reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
+        }
         if(!channelIdPhysicalPcmActive()||!ready()||
            expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
            !nativeAccepted_.fxOwners||
@@ -1621,8 +1666,24 @@ public:
            expectedRosterRevision!=nativeAccepted_.graph.roster.revision())
             return reply;
         if(name.empty()||name.size()>64 ||
-           (format!=ProcessingFormat::mono&&format!=ProcessingFormat::stereo)){
+           (format!=ProcessingFormat::mono&&format!=ProcessingFormat::stereo)||
+           (playerDeckId && format!=ProcessingFormat::stereo)){
             reply.error="INVALID_NATIVE_CHANNEL";return reply;
+        }
+        // Repeat PLAY never manufactures a second MUSIC channel or send.
+        // An intentionally disconnected SOURCE ONLY remains disconnected.
+        if(playerDeckId) {
+            const auto& patches=nativeAccepted_.graph.request.sources;
+            const auto existing=std::find_if(patches.begin(),patches.end(),
+                [&](const DynamicSourcePatch& p) {
+                    return p.kind==DynamicSourceKind::playerDeck &&
+                           p.deckId==playerDeckId;
+                });
+            if(existing!=patches.end() &&
+               nativeAccepted_.graph.roster.find(existing->id)) {
+                reply.created=existing->id;reply.accepted=true;
+                reply.error="";return reply;
+            }
         }
         try {
             auto roster=nativeAccepted_.graph.roster;
@@ -1644,6 +1705,10 @@ public:
             if(!created.ok()||created.createdIds.size()!=1) {
                 reply.error="CHANNEL_MAIN_ADMISSION_REJECTED";return reply;
             }
+            auto request=nativeAccepted_.graph.request;
+            if(playerDeckId)
+                request.sources.push_back({created.createdIds.front(),
+                    -1,-1,true,DynamicSourceKind::playerDeck,playerDeckId});
             DynamicChannelFxLeaseBank bank;
             if(DynamicChannelFxLeaseBank::reuseRevision(
                     expectedEpoch,expectedPcmRevision+1,
@@ -1665,12 +1730,14 @@ public:
             fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
-                roster,nativeAccepted_.graph.request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                roster,request,expectedPcmRevision,
+                expectedEpoch,epoch(),outputsDisarmed,std::move(fx),
+                playerDeckId!=0 && trustedExistingMain);
             if(!published.ok()) {
                 reply.error="CHANNEL_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
             nativeStructureLive_=true; // M4 can no longer represent CH11+
@@ -2578,7 +2645,8 @@ public:
                  bool masterMono=false,
                  std::array<int,2>* actualOutputPair=nullptr,
                  std::array<int,2>* actualMonitorPair=nullptr,
-                 bool allowMutedMetering=false) noexcept {
+                 bool allowMutedMetering=false,
+                 std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={}) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -2622,8 +2690,9 @@ public:
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
         }
-        if(topologyFault_.load(std::memory_order_acquire)) {
-            silence();return true;
+        if(topologyFault_.load(std::memory_order_acquire) ||
+           playerPcm.size()>2) {
+            silence();return true; // future dual decks are maximum 2
         }
         if(inputCount!=callbackInputCount_.load(std::memory_order_acquire)) {
             topologyFault_.store(true,std::memory_order_release);
@@ -2730,6 +2799,17 @@ public:
                 // Meter sources are the ACTUAL ChannelId PCM POST-fader
                 // lanes, not another mixer pass or reused M4 peak values.
                 std::array<float,nativeMeterCapacity> tapsL{},tapsR{};
+                // One source block is read from each native player FIFO by
+                // the HOST before calling process(). This existing ChannelId
+                // renderer performs all FX/WIRE/MAIN mixing; no second audio
+                // device or per-channel FIFO consumption is permitted.
+                std::array<armix::mixer::DynamicPlayerPcmBlock,2> slice{};
+                for(std::size_t i=0;i<playerPcm.size();++i) {
+                    const auto& source=playerPcm[i];
+                    slice[i]={source.deckId,
+                              source.left?source.left+offset:nullptr,
+                              source.right?source.right+offset:nullptr};
+                }
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
                 processed=nativePublisher_.render(
                     generation,shifted.data(),inputCount,
@@ -2737,7 +2817,9 @@ public:
                     meterOnly?mutedMain_[1].data():mainR+offset,n,false,noExtraFx,
                     monitorL?(meterOnly?mutedMonitor_[0].data():monitorL+offset):nullptr,
                     monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
-                    tapsL,tapsR);
+                    tapsL,tapsR,
+                    std::span<const armix::mixer::DynamicPlayerPcmBlock>(
+                        slice.data(),playerPcm.size()));
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);

@@ -148,6 +148,13 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixPlayerPcmRingTests PRIVATE Threads::Threads)
   add_test(NAME ArSonPlayerWorkerToRealtimeStereoRing COMMAND ARMixPlayerPcmRingTests)
   add_dependencies(ARMixMixerRoutingTests ARMixPlayerPcmRingTests)
+  juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
+  target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
+  target_link_libraries(ARMixPlayerDecodeTests PRIVATE
+      juce::juce_audio_formats juce::juce_recommended_config_flags)
+  target_compile_features(ARMixPlayerDecodeTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerRealWavDecodeResampleAndTransport COMMAND ARMixPlayerDecodeTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPlayerDecodeTests)
   # Windows release workflow builds ARMixMixerRoutingTests explicitly, then runs
   # all CTests. Make its native session regression a build dependency so the
   # new executable is actually present (without editing the CI target list).
