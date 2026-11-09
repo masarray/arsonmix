@@ -1,0 +1,25 @@
+name: One-shot Harmony exact-SHA Windows FAT qualification
+on:
+  push:
+    branches:
+      - ci/harmony-fat-94f768d-20261109
+    paths:
+      - '.github/workflows/harmony-fat-once.yml'
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch-native-builder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify immutable Harmony source and dispatch ONE canonical Windows build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRED_SHA: 94f768d2df9c56431d78d2044d5bc9229e2877ab
+        run: |
+          set -euo pipefail
+          current="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$current" = "$REQUIRED_SHA" || { echo "Harmony source moved: refusing stale build"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$REQUIRED_SHA"
+          echo "Canonical Windows+FAT workflow dispatch accepted for $REQUIRED_SHA"
