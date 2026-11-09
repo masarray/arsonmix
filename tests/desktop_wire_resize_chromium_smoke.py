@@ -118,9 +118,15 @@ def main():
             page.mouse.move(x+35, y+32, steps=5)
             assert "wire-dragging" in (body.get_attribute("class") or ""), (
                 "test never activated a cable drag")
-            page.set_viewport_size({"width": 1100, "height": 760})
-            page.wait_for_function("""()=>Number(document.querySelector('.console-body')
-                ?.style.getPropertyValue('--bank-capacity')) < 6""")
+            prior_capacity = page.evaluate("""()=>Number(document.querySelector('.console-body')
+                ?.style.getPropertyValue('--bank-capacity'))""")
+            assert prior_capacity >= 7, ("test needs an expanded bank", prior_capacity)
+            page.set_viewport_size({"width": 1200, "height": 760})
+            page.wait_for_function("""prior => {
+                const root=document.querySelector('.console-body');
+                const next=Number(root?.style.getPropertyValue('--bank-capacity'));
+                return next>0&&next<prior;
+            }""", arg=prior_capacity)
             page.mouse.up()
             assert "wire-dragging" not in (body.get_attribute("class") or ""), (
                 "orphaned WIRE drag after remount")
