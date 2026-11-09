@@ -1,0 +1,25 @@
+name: One-shot Harmony Stage Windows requalification
+on:
+  push:
+    branches:
+      - ci/harmony-stage-fat-94a4039-20261109
+    paths:
+      - '.github/workflows/harmony-stage-fat-requalify.yml'
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch-exact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch exactly one Windows MSVC CTest and Inno FAT
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: 94a4039fa18c1fecec91efdb8f356cc083b5386b
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(gh api repos/masarray/arsonmix/git/ref/heads/feature/harmony-p0-bounded-realtime-20261109 --jq .object.sha)"
+          test "$HEAD_SHA" = "$SOURCE_SHA" || { echo "Stale Harmony source"; exit 1; }
+          gh workflow run p1-windows.yml --repo masarray/arsonmix --ref feature/harmony-p0-bounded-realtime-20261109 -f package_fat=true -f expected_sha="$SOURCE_SHA"
+          echo "Exact SHA dispatched: $SOURCE_SHA"
