@@ -1111,6 +1111,9 @@ private:
                 safe->logicalWorkspace_=std::move(*candidate);
                 safe->mixerSessionId_=safe->logicalWorkspace_.document().id;
                 safe->lastMixerSessionFingerprint_.clear();
+                // An attached starter cannot autosave over this authored
+                // checkpoint until native restores it on verified hardware.
+                safe->mixerSessionRecoveryPending_=true;
                 safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
                 safe->mixerSessionError_.clear();
             }
@@ -2634,6 +2637,7 @@ private:
             if(logicalWorkspace_.load(doc,states))logicalWorkspaceReadOnly_=false;
         }
         if(doc.logicalOnly) {
+            mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
         }
@@ -2816,7 +2820,7 @@ private:
                         safe->logicalWorkspaceReadOnly_=false;
                         safe->logicalWorkspaceLoaded_=true;
                         safe->mixerSessionId_=id;
-                        safe->mixerSessionRecoveryPending_=false;
+                        safe->mixerSessionRecoveryPending_=true;
                         safe->lastMixerSessionFingerprint_.clear();
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
                         safe->mixerSessionError_.clear();
