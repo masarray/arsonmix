@@ -15,11 +15,13 @@ struct SingerProfile {
     float pan,presence;
 };
 inline constexpr std::array<SingerProfile,5> singers{{
-    {Singer::low,          -5,-3,-4,-.68f,1.16f},
-    {Singer::mid,           3, 5, 4, .00f,1.00f},
-    {Singer::high,          6, 9, 7, .68f,1.12f},
-    {Singer::lowerSupport, -9,-6,-7,-.34f,1.00f},
-    {Singer::upperSupport, 10,12,12, .34f,1.00f}
+    // Harder lateral anchors but still center-safe at Space=0. The HIGH
+    // singer gets more relative presence; normalization remains 1/sqrt(N).
+    {Singer::low,          -5,-3,-4,-.94f,1.20f},
+    {Singer::mid,           3, 5, 4, .00f,.94f},
+    {Singer::high,          6, 9, 7, .95f,1.37f},
+    {Singer::lowerSupport, -9,-6,-7,-.66f,1.03f},
+    {Singer::upperSupport, 10,12,12, .67f,1.18f}
 }};
 inline constexpr bool singerActive(Singer role,int voices) noexcept {
     return role==Singer::low||role==Singer::high||
