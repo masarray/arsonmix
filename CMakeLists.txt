@@ -127,6 +127,21 @@ if(BUILD_TESTING)
   add_executable(ARMixHarmonyOfflineAb tools/harmony_offline_ab.cpp)
   target_compile_features(ARMixHarmonyOfflineAb PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyOfflineDryAndABRenderHarness COMMAND ARMixHarmonyOfflineAb --self-test)
+  add_test(NAME NativeHarmoniceSyntheticWavABAndQualityReport
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/harmonice_quality_report_contract_test.py"
+              "$<TARGET_FILE:ARMixHarmonyOfflineAb>")
+  # P1 experimental grain comparison: no change to the shipping 32 ms DSP.
+  # CTest only proves bounded PCM/PDC/partition parity, not vocal quality.
+  add_executable(ARMixHarmoniceLatencyStudyTests tests/harmony_latency_candidate_test.cpp)
+  target_compile_features(ARMixHarmoniceLatencyStudyTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmoniceOfflineLatencyCandidatePcmSafety
+      COMMAND ARMixHarmoniceLatencyStudyTests)
+  # Explicit causal low-singer bound: 16ms cannot safely promise PSOLA
+  # coverage across the documented 65Hz source range.
+  add_executable(ARMixHarmoniceLowSingerGate tests/harmony_low_register_quality_gate_test.cpp)
+  target_compile_features(ARMixHarmoniceLowSingerGate PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmoniceLowSingerPsolaCausalCoverage
+      COMMAND ARMixHarmoniceLowSingerGate)
   add_executable(ARMixHarmonyPitchSyncTests tests/harmony_pitch_synchronous_test.cpp)
   target_compile_features(ARMixHarmonyPitchSyncTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity COMMAND ARMixHarmonyPitchSyncTests)
