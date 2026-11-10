@@ -2423,6 +2423,7 @@
         identity:"logical:"+offline.revision,logical:true,
         readOnly:offline.readOnly===true,
         admitted:false,retained:false,productLive:false,telemetry:{}};
+      let revealCreatedId=null;
       if(pendingLogical) {
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
@@ -2434,6 +2435,8 @@
           return;
         }
         pendingLogical=null;
+        if((p.operation==="CREATE_CHANNEL"||p.operation==="CREATE_GROUP") &&
+           p.createdId)revealCreatedId=p.createdId;
         if(logicalRenameId===p.channelId&&p.operation==="RENAME_CHANNEL") {
           logicalRenameId=null;
           scope?.closeChannelIdentity?.();
@@ -2452,6 +2455,11 @@
           return;
         }
         lastPaintedSignature=signature;
+      }
+      if(revealCreatedId) {
+        const local=uiByNativeId.get(revealCreatedId);
+        const strip=scope?.tracks?.find(t=>t.id===local);
+        if(strip)scope?.revealTrack?.(strip);
       }
       document.documentElement.dataset.armixNativeRoster="logical";
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
