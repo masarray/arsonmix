@@ -136,6 +136,12 @@ if(BUILD_TESTING)
   add_executable(ARMixHarmonyPitchSyncTests tests/harmony_pitch_synchronous_test.cpp)
   target_compile_features(ARMixHarmonyPitchSyncTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity COMMAND ARMixHarmonyPitchSyncTests)
+  # Non-gating microprofile of exact-output reference versus ring-cursor
+  # epoch scan. Must not be represented as total mixer/ASIO timing.
+  add_executable(ARMixHarmoniceEpochCpuProfile tests/harmonice_epoch_cpu_profile_test.cpp)
+  target_compile_features(ARMixHarmoniceEpochCpuProfile PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmoniceEpochSameRunnerCpuComparison
+      COMMAND ARMixHarmoniceEpochCpuProfile)
   add_executable(ARMixHarmonySpatialTests tests/harmony_stage_spatial_test.cpp)
   target_compile_features(ARMixHarmonySpatialTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyBackingStageSpatialDepthAndMonoPDC COMMAND ARMixHarmonySpatialTests)
