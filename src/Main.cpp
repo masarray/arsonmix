@@ -1070,8 +1070,20 @@ private:
                 acceptedControlRequests_.remove(0);
             const auto original=logicalWorkspace_.document();
             const auto blobs=logicalWorkspace_.states();
-            result=logicalWorkspace_.apply(request);
-            if(!result.accepted)failure=result.error;
+            const auto operation=request.getProperty("operation","").toString();
+            if(operation=="ADD_FX_REFERENCE") {
+                const auto key=request.getProperty("payload",{})
+                    .getProperty("catalogId","").toString();
+                const bool builtIn=key==
+                    armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
+                    key==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
+                    key==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
+                    key==armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
+                if(!builtIn && (!catalog_.find(key) || catalog_.busy()))
+                    failure="UNKNOWN_OR_SCANNING_FX_CATALOG";
+            }
+            if(failure.isEmpty())result=logicalWorkspace_.apply(request);
+            if(failure.isEmpty()&&!result.accepted)failure=result.error;
             else {
                 failure=armix::session::NativeMixerSessionStore(
                     settingsDirectory()).commit(logicalWorkspace_.document(),
