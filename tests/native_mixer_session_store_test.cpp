@@ -1009,10 +1009,17 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     const juce::String session=doc.id;
     armix::hotkey::Mapping first{"native-ch05","SESSION",session,"5","SET_MUTE",0x77,6};
     armix::hotkey::Mapping second{"native-bus","SESSION",session,"16","SET_SOLO",0x78,6};
-    doc.hotkeys={first,second};
+    armix::hotkey::Mapping rack{"fx-rack-05","SESSION",session,"5",
+        "SET_FX_RACK_BYPASS",0x76,6};
+    armix::hotkey::Mapping slot{"fx-slot-05","SESSION",session,"5",
+        "SET_FX_SLOT_BYPASS",0x75,6,1,"plugin-instance-original"};
+    doc.hotkeys={first,second,rack,slot};
     const auto stable=Codec::encode(doc);
     assert(Codec::decode(stable,decoded));
-    assert(decoded.hotkeys.size()==2);
+    assert(decoded.hotkeys.size()==4);
+    assert(decoded.hotkeys[2].operation=="SET_FX_RACK_BYPASS");
+    assert(decoded.hotkeys[3].slot==1 &&
+           decoded.hotkeys[3].insertId=="plugin-instance-original");
     assert(decoded.hotkeys[0].channelId=="5"&&decoded.hotkeys[1].channelId=="16");
     // Rename or visual channel reorder cannot retarget numeric ChannelId.
     auto renamed=decoded.roster.channels();
@@ -1023,7 +1030,7 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     auto damaged=juce::JSON::parse(stable);
     auto hotkeys=damaged.getProperty("hotkeys",{});
     auto* rows=hotkeys.getArray();
-    assert(rows&&rows->size()==2);
+    assert(rows&&rows->size()==4);
     rows->getReference(0).getDynamicObject()->setProperty("channelId","999999");
     // Deleting a track does not make the entire mixer unsaveable. The
     // orphan shortcut remains visible but can never fire for another ID.
@@ -1043,6 +1050,14 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     hotkeys=damaged.getProperty("hotkeys",{});
     rows=hotkeys.getArray();
     rows->getReference(0).getDynamicObject()->setProperty("sessionId","other");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("slot",8);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("insertId","");
     assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
 }
 
