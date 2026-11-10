@@ -33,6 +33,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_latency_candidate_test.cpp -o /tmp/harmonice-latency-study
           /tmp/harmonice-latency-study
+      - name: Measure 32/24/16 ms DSP-only CPU tails on same Linux runner (non-gating)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_cpu_profile_test.cpp -o /tmp/harmonice-cpu-study
+          /tmp/harmonice-cpu-study --latency-quick
       - name: Verify stage separation, mono and exact PCM
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_stage_spatial_test.cpp -o /tmp/arson-harmony-spatial
