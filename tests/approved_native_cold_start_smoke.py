@@ -37,8 +37,12 @@ def main():
             page.on('pageerror', lambda e:errors.append(str(e)))
             page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];window.__nativeIntents=[];
               window.__JUCE__={backend:{emitEvent(name,payload){window.__events.push({name,payload});
+                if(payload?.action==='audioDeviceApply')
+                  window.__applyPainted=getComputedStyle(document.querySelector('[data-audio-progress]')).display!=='none';
                 if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+            if width == 1920:
+                page.emulate_media(reduced_motion='reduce')
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
             # Native Console is ALWAYS visible, even with no callback/device.
@@ -72,6 +76,20 @@ def main():
             assert capture_select.input_value()==''
             assert page.locator('.armix-audio-dialog [data-audio-apply]').is_enabled()
             page.locator('.armix-audio-dialog [data-audio-apply]').click()
+            progress=page.locator('[data-audio-progress]')
+            apply=page.locator('[data-audio-apply]')
+            assert progress.is_visible() and apply.is_disabled() and capture_select.is_disabled()
+            assert apply.get_attribute('aria-busy')=='true'
+            assert progress.locator('svg animate').count()==4
+            assert progress.locator('svg').evaluate('(svg)=>svg.animationsPaused()')==(width==1920)
+            assert page.locator('[data-audio-close]').is_disabled()
+            def wait_apply():
+                pending=page.locator('.armix-audio-shade').get_attribute('data-pending-request')
+                assert pending
+                page.wait_for_function("""id=>window.__events.some(e=>
+                    e.payload?.action==='audioDeviceApply'&&e.payload.requestId===id)""",arg=pending)
+                assert page.evaluate('()=>window.__applyPainted')
+            wait_apply()
             request=page.evaluate("""()=>window.__events.filter(e=>
               e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
             assert request and request['config']['captureDevice']==''
@@ -100,6 +118,7 @@ def main():
             playback_pin(2).check()
             playback_pin(3).check()
             assign_main.click()
+            wait_apply()
             repatch=page.evaluate("""()=>window.__events.filter(e=>
               e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
             assert repatch['config']['assignSelectedPlaybackPinsToMain'] is True
@@ -322,10 +341,12 @@ def main():
             assert remap.is_hidden()
             page.locator('[data-audio-apply]').click()
             read_apply='()=>window.__events.filter(e=>e.payload?.action==="audioDeviceApply").at(-1).payload'
+            wait_apply()
             opened=page.evaluate(read_apply)
             assert 'confirmRetainedPinMapping' not in opened['config']
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':'old','state':'NEEDS_REMAP',
                 'active':active,'canReusePins':True})
+            assert progress.is_visible() and apply.is_disabled()
             assert remap.is_hidden()
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':opened['requestId'],'ok':True,
                 'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
@@ -356,8 +377,16 @@ def main():
             emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
                 {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
             page.locator('[data-audio-apply]').click()
+            wait_apply()
+            rejected=page.evaluate(read_apply)
+            emit(page,'arMixAudioDeviceApplyAck',{'requestId':rejected['requestId'],'ok':False,
+                'state':'REJECTED','active':active,'error':'Test driver rejected'})
+            assert progress.is_hidden() and apply.is_enabled() and capture_select.is_enabled()
+            assert 'Test driver rejected' in page.locator('[data-audio-active]').inner_text()
+            apply.click()
+            wait_apply()
             repeated=page.evaluate(read_apply)
-            assert repeated['requestId']!=opened['requestId']
+            assert repeated['requestId']!=rejected['requestId']
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':repeated['requestId'],'ok':True,
                 'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
             assert page.locator('.armix-audio-shade').is_hidden()

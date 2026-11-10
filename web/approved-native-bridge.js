@@ -1806,6 +1806,13 @@
         .armix-audio-dialog button:disabled{opacity:.45}
         .armix-audio-dialog .armix-device-actions{display:flex;gap:8px;justify-content:flex-end}
         .armix-audio-dialog .armix-device-note{color:#a4c4d0;line-height:1.4}
+        .armix-device-progress{display:flex;align-items:center;gap:12px;min-height:48px;
+          padding:8px 12px;border:1px solid #9b7440;border-radius:6px;
+          background:#30271b;color:#ffd17a}
+        .armix-device-progress[hidden]{display:none}
+        .armix-device-progress svg{width:26px;height:32px;flex:none}
+        .armix-device-progress strong{display:block;font-size:12px;font-weight:600}
+        .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
@@ -1825,6 +1832,27 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
+          <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
+          <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
+            <g transform="matrix(1 0 0 -1 0 80)">
+              <rect width="10" height="20" rx="3">
+                <animate attributeName="height" begin="0s" dur="4.3s" values="20;45;57;80;64;32;66;45;64;23;66;13;64;56;34;34;2;23;76;79;20" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="15" width="10" height="80" rx="3">
+                <animate attributeName="height" begin="0s" dur="2s" values="80;55;33;5;75;23;73;33;12;14;60;80" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="30" width="10" height="50" rx="3">
+                <animate attributeName="height" begin="0s" dur="1.4s" values="50;34;78;23;56;23;34;76;80;54;21;50" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="45" width="10" height="30" rx="3">
+                <animate attributeName="height" begin="0s" dur="2s" values="30;45;13;80;56;72;45;76;34;23;67;30" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+            </g>
+          </svg>
+          <div><strong>Applying audio device…</strong>
+          <span>Waiting for driver and mixer verification.</span></div>
+        </div>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
@@ -1839,10 +1867,10 @@
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=()=>{
-        devicePanel.hidden=true;
+        if(!deviceBusy)devicePanel.hidden=true;
       };
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel)devicePanel.hidden=true;
+        if(e.target===devicePanel&&!deviceBusy)devicePanel.hidden=true;
       });
       devicePanel.addEventListener("change",e=>{
         if(!deviceChoice)return;
@@ -1896,6 +1924,7 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    if(deviceBusy)return;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceResult="";
     offeredPinRemap=null;
@@ -1996,8 +2025,22 @@
     remap.disabled=deviceBusy;
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
+  function showDeviceApplyProgress(pending){
+    const progress=devicePanel.querySelector("[data-audio-progress]");
+    const svg=progress.querySelector("svg");
+    progress.hidden=!pending;
+    devicePanel.querySelector("[data-audio-active]").hidden=pending;
+    devicePanel.querySelector("[data-audio-close]").disabled=pending;
+    const apply=devicePanel.querySelector("[data-audio-apply]");
+    apply.textContent=pending?"Applying…":"Apply device";
+    apply.setAttribute("aria-busy",String(pending));
+    if(pending&&!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches){
+      svg.setCurrentTime?.(0);
+      svg.unpauseAnimations?.();
+    }else svg.pauseAnimations?.();
+  }
   function sendDeviceApply(confirmRetainedPinMapping=false,assignMain=false){
-    if(!deviceChoice||!deviceInventory?.active)return;
+    if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
     const c=deviceChoice,a=deviceInventory.active;
     const same=a.open&&a.backend===c.backend&&
       a.captureDevice===c.capture&&a.playbackDevice===c.playback;
@@ -2006,9 +2049,9 @@
     deviceBusy=true;
     const requestId="approved-io-"+(++deviceRequest);
     devicePanel.dataset.pendingRequest=requestId;
-    devicePanel.querySelector("[data-audio-active]").textContent=
-      "Applying audio device; verifying native readback…";
-    backend.emitEvent("arMixAction",{action:"audioDeviceApply",
+    showDeviceApplyProgress(true);
+    renderDevicePanel();
+    const request={action:"audioDeviceApply",
       requestId,expectedDeviceGeneration:Number(a.deviceGeneration),
       config:{backend:c.backend,captureDevice:c.capture,
         playbackDevice:c.playback,
@@ -2017,7 +2060,18 @@
         enabledInputs:same?c.inputPins:[],
         enabledOutputs:same?c.outputPins:[],
         ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
-        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}});
+        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
+    // Give WebView a paint before the native driver open can block JUCE.
+    // The fallback also submits when animation frames are throttled.
+    let submitted=false;
+    const submit=()=>{
+      if(submitted)return;
+      submitted=true;
+      window.clearTimeout(fallback);
+      backend.emitEvent("arMixAction",request);
+    };
+    const fallback=window.setTimeout(submit,120);
+    window.requestAnimationFrame(()=>window.requestAnimationFrame(submit));
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
@@ -2029,6 +2083,8 @@
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
       if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
+      delete devicePanel.dataset.pendingRequest;
+      showDeviceApplyProgress(false);
       if(ack.active)deviceInventory.active=ack.active;
       offeredPinRemap=ack.state==="NEEDS_REMAP" && ack.canReusePins===true &&
         ack.active?.open===true && ack.active?.authorized===true &&
