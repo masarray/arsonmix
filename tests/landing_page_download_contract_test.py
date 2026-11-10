@@ -34,7 +34,9 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertNotIn("isWindowsVisitor", js)
             self.assertIn("Free to download", html)
             self.assertIn("Earlier Linux/macOS builds", html)
-            self.assertIn("Windows alpha.9", html)
+            self.assertIn("latest verified Windows alpha preview", html)
+            self.assertFalse(bool(re.search(r"Windows alpha\.\d+", html)),
+                             "Marketing copy must not hardcode a current alpha version")
             self.assertIn("Extract ZIP, run Setup", js)
             self.assertNotIn("ZIP does not bypass security warnings", html)
             self.assertIn("isPreferred", js)
