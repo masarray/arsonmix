@@ -1001,7 +1001,45 @@ static void verifyLogicalControlTransactions() {
     assert(folder.deleteRecursively());
 }
 
+static void verifyHotkeyDocumentIdentityAndMigration() {
+    auto doc=makeSession();
+    const auto legacy=Codec::encode(doc);
+    MixerSessionDocument decoded;
+    assert(Codec::decode(legacy,decoded) && decoded.hotkeys.empty());
+    const juce::String session=doc.id;
+    armix::hotkey::Mapping first{"native-ch05","SESSION",session,"5","SET_MUTE",0x77,6};
+    armix::hotkey::Mapping second{"native-bus","SESSION",session,"16","SET_SOLO",0x78,6};
+    doc.hotkeys={first,second};
+    const auto stable=Codec::encode(doc);
+    assert(Codec::decode(stable,decoded));
+    assert(decoded.hotkeys.size()==2);
+    assert(decoded.hotkeys[0].channelId=="5"&&decoded.hotkeys[1].channelId=="16");
+    // Rename or visual channel reorder cannot retarget numeric ChannelId.
+    auto renamed=decoded.roster.channels();
+    for(auto& row:renamed)if(row.id.value==5)row.name="New Singer Name";
+    assert(decoded.roster.restoreExact(decoded.acceptedRevision,renamed));
+    assert(Codec::decode(Codec::encode(decoded),doc));
+    assert(doc.hotkeys[0].channelId=="5");
+    auto damaged=juce::JSON::parse(stable);
+    auto hotkeys=damaged.getProperty("hotkeys",{});
+    auto* rows=hotkeys.getArray();
+    assert(rows&&rows->size()==2);
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","999999");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(1).getDynamicObject()->setProperty("vk",0x77);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("sessionId","other");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+}
+
 int main(){
+    verifyHotkeyDocumentIdentityAndMigration();
     verifyLogicalControlTransactions();
     verifyLegacyHarmoniceSessionName();
     verifyOfflineLogicalSessionAndFile();
