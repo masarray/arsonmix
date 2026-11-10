@@ -138,6 +138,8 @@ jobs:
           node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
+      - name: WaveShell JUCE 8 class-index regression (no paid Windows)
+        run: python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v
       - name: Compressor exact-source native CPU A/B (same runner, non-gating timing)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
         run: python scripts/benchmark_compressor_ab.py --reference 043748a552e66fd72e217cbf66aa35e6cc3e0b21
@@ -277,11 +279,50 @@ jobs:
             'ARMixHarmonyMusicGuideTests'
             'ARMixHarmonyChannelPcmTests'
             'ARMixHarmonyBypassPcmTests'
-            'ARMixProductionRenderAuditTests'
             'ARMixCrackleWindowTests'
             'ARMixNativeMixerSessionTests'
             'ARMixLiveChannelFxTests'
           )
+          # Check exact source first: long-lived Harmonice PRs can have an
+          # older CMakeLists.txt than the trusted CI YAML from main.
+          # Fail before compiling JUCE if the mandatory test registry drifts.
+          $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
+          if ($LASTEXITCODE -ne 0) { throw 'Focused FAT cannot read source CTest registry' }
+          $catalog = ($catalogText | Out-String | ConvertFrom-Json)
+          $available = @($catalog.tests | ForEach-Object { $_.name })
+          $required = @(
+            'NativeHarmonyOfflineDryAndABRenderHarness'
+            'NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity'
+            'NativeHarmonyBackingStageSpatialDepthAndMonoPDC'
+            'NativeHarmonyMultivoicePitchAndRealtimeFinitePCM'
+            'NativeHarmonySyntheticCallbackCpuProfile'
+            'NativeHarmonyCrossChannelMusicKeyAndManualFallback'
+            'NativeHarmonyMusicFromOtherChannelIdAndStateMigration'
+            'NativeHarmonyWarmBypassRackSlotAndLatencyParity'
+            'ApprovedNativeHarmonyEditorAckAndSingleGui'
+            'P0PreMarkerFiveSecondEvidenceWindow'
+            'P1FPhysicalPortToNativeMasterAndEpochGuard'
+            'P1HRealNativePerChannelFxAndSafeRetirement'
+          )
+          $missing = @($required | Where-Object { $_ -notin $available })
+          if ($missing.Count -gt 0) {
+            throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
+          }
+          # The production render audit exists in newer CMake but not in
+          # the older Harmonice candidate. Run it when source declares it.
+          if ('M3ActualProductionRenderPathAndFailSilentCounters' -in $available) {
+            $targets += 'ARMixProductionRenderAuditTests'
+            Write-Host 'FOCUSED_FAT_PRODUCTION_AUDIT=in-source'
+          } else {
+            Write-Host 'FOCUSED_FAT_PRODUCTION_AUDIT=not-in-source'
+          }
+          $cmakeSource = Get-Content -LiteralPath 'CMakeLists.txt' -Raw
+          foreach ($target in $targets) {
+            $escaped = [regex]::Escape($target)
+            if ($cmakeSource -notmatch "(?m)^\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\(\s*$escaped\b") {
+              throw "FOCUSED_FAT_UNDECLARED_CMAKE_TARGET=$target"
+            }
+          }
           & cmake --build build --config Release --parallel 2 --target $targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # github.sha is the trusted workflow ref when dispatched from main,
@@ -310,7 +351,6 @@ jobs:
             'NativeHarmonyMusicFromOtherChannelIdAndStateMigration'
             'NativeHarmonyWarmBypassRackSlotAndLatencyParity'
             'ApprovedNativeHarmonyEditorAckAndSingleGui'
-            'M3ActualProductionRenderPathAndFailSilentCounters'
             'P0PreMarkerFiveSecondEvidenceWindow'
             'P1FPhysicalPortToNativeMasterAndEpochGuard'
             'P1HRealNativePerChannelFxAndSafeRetirement'
@@ -323,6 +363,9 @@ jobs:
           $missing = @($requiredTests | Where-Object { $_ -notin $available })
           if ($missing.Count -ne 0) {
             throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
+          }
+          if ('M3ActualProductionRenderPathAndFailSilentCounters' -in $available) {
+            $requiredTests += 'M3ActualProductionRenderPathAndFailSilentCounters'
           }
           $pattern = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
           Write-Host "FOCUSED_HARMONY_FAT_CTEST_COUNT=$($requiredTests.Count) FULL_SUITE_NOT_CLAIMED"
