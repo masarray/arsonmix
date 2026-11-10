@@ -324,7 +324,9 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
   assert.match(main,/NativeDeviceApplyCoordinator::matchesApplied/);
-  assert.match(main,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
+  assert.match(main,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+  assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
+  assert.match(applyOwner,/live\.deviceName==requested\.playback/);
   assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
   assert.match(applyOwner,/std::abs\(live\.deviceRate-a\.sampleRate\)/);
   assert.match(engine,/return isOutputMuted\(\) && !secondaryOutput_\.armed\(\)/);
@@ -360,9 +362,12 @@ test('DEVICE2 native device list is cached on overlay open; explicit scan is fai
  const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
                           native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
  assert.match(apply,/NativeDeviceApplyCoordinator::matchesApplied/);
- assert.match(apply,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
- assert.match(apply,/observed\.activeOutputs=opened->getActiveOutputChannels\(\)/);
- assert.match(apply,/observed\.deviceBuffer=opened->getCurrentBufferSizeSamples\(\)/);
+ assert.match(apply,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+ assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
+ assert.match(applyOwner,/evidence\.activeOutputs=device->getActiveOutputChannels\(\)/);
+ assert.match(applyOwner,/evidence\.deviceBuffer=device->getCurrentBufferSizeSamples\(\)/);
+ assert.match(apply,/NativeDeviceApplyCoordinator::inspectRollback\(manager\)/);
+ assert.match(applyOwner,/live\.deviceName==before\.outputDeviceName/);
  assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
  assert.match(applyOwner,/live\.activeOutputs==a\.outputChannels/);
  assert.match(applyOwner,/live\.deviceBuffer==a\.bufferSize/);

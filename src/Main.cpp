@@ -1825,16 +1825,7 @@ private:
         if(changedAsioPinLayout)
             error="ASIO pin layout changed. Output remains muted; review the new playback pins.";
         if(error.isEmpty()) {
-            armix::device::NativeDeviceApplyCoordinator::AppliedReadback observed;
-            observed.actual=actual;
-            observed.backend=manager.getCurrentAudioDeviceType();
-            observed.open=opened!=nullptr&&opened->isOpen();
-            if(observed.open) {
-                observed.activeInputs=opened->getActiveInputChannels();
-                observed.activeOutputs=opened->getActiveOutputChannels();
-                observed.deviceRate=opened->getCurrentSampleRate();
-                observed.deviceBuffer=opened->getCurrentBufferSizeSamples();
-            }
+            const auto observed=armix::device::NativeDeviceApplyCoordinator::inspectApplied(manager);
             if(!armix::device::NativeDeviceApplyCoordinator::matchesApplied(
                     requested,candidate,observed))
                 error="Driver readback mismatch; device setting was not accepted";
@@ -1881,17 +1872,7 @@ private:
         const auto restored=recovery.priorKnownOpen&&previousType.isNotEmpty()&&
             openSelectedAudioDevice(previousType,before).isEmpty()&&
             manager.getCurrentAudioDeviceType()==previousType;
-        juce::AudioDeviceManager::AudioDeviceSetup checked;
-        manager.getAudioDeviceSetup(checked);
-        armix::device::NativeDeviceApplyCoordinator::RollbackReadback rollback;
-        rollback.actual=checked;
-        rollback.backend=manager.getCurrentAudioDeviceType();
-        auto* recovered=manager.getCurrentAudioDevice();
-        rollback.open=recovered!=nullptr&&recovered->isOpen();
-        if(rollback.open) {
-            rollback.inputNames=recovered->getInputChannelNames();
-            rollback.outputNames=recovered->getOutputChannelNames();
-        }
+        const auto rollback=armix::device::NativeDeviceApplyCoordinator::inspectRollback(manager);
         const bool verified=restored&&
             armix::device::NativeDeviceApplyCoordinator::matchesRollback(
                 before,previousType,originalInputNames,originalOutputNames,rollback)&&
@@ -5714,24 +5695,29 @@ private:
     bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
         if(logicalVendorEditor_ || mixerSessionWorker_.busy())return false;
         const bool bound=engine_.finishManualAudioSetup(bindingMode!=MixerBindingMode::verifiedMainPinApply);
-        if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        const bool hasCheckpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
-        const bool recoverPristine=hasCheckpoint && mixerSessionRecoveryPending_ && engine_.hasPristineStartupMixer();
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) &&
-           !recoverPristine)return true;
-        if(engine_.hasRetainedNativeSession() || hasCheckpoint) {
-            if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
-                bindingMode=MixerBindingMode::verifiedAsioRestart;
-            const auto error=restoreSavedMixerSession(false,bindingMode);
-            if(error.isNotEmpty()) {
-                mixerSessionError_=error;
-                emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
-                return false;
-            }
-            return true;
+        const bool checkpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
+        using Coordinator=armix::device::NativeDeviceApplyCoordinator;
+        const auto decision=Coordinator::decideMixerRebind({
+            engine_.directRouteAuthorized(),
+            static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)),
+            checkpoint,mixerSessionRecoveryPending_,engine_.hasPristineStartupMixer(),
+            engine_.hasRetainedNativeSession(),bound
+        });
+        if(decision==Coordinator::MixerRebindAction::retainInstalled ||
+           decision==Coordinator::MixerRebindAction::acceptFreshBound)return true;
+        if(decision!=Coordinator::MixerRebindAction::restoreRetained)return false;
+        // Only a verified retained identity may upgrade exact -> ASIO restart.
+        // The .smix document remains authoritative and is never reset here.
+        if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
+            bindingMode=MixerBindingMode::verifiedAsioRestart;
+        const auto error=restoreSavedMixerSession(false,bindingMode);
+        if(error.isNotEmpty()) {
+            mixerSessionError_=error;
+            emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
+            return false;
         }
-        return bound;
+        return true;
     }
 
     std::uint64_t asioRecoveryEpoch_=0; // last successfully bound generation

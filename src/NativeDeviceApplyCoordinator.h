@@ -137,12 +137,30 @@ public:
 
     struct AppliedReadback {
         juce::AudioDeviceManager::AudioDeviceSetup actual;
-        juce::String backend;
+        juce::String backend, deviceName, deviceType;
         bool open=false;
         juce::BigInteger activeInputs,activeOutputs;
         double deviceRate=0.;
         int deviceBuffer=0;
     };
+    // Read *both* manager configuration and the installed JUCE device object.
+    // The latter is the hardware evidence; it cannot be synthesized from the
+    // requested/stored setup. CONTROL thread only, after openSelected returns.
+    static AppliedReadback inspectApplied(juce::AudioDeviceManager& manager) {
+        AppliedReadback evidence;
+        manager.getAudioDeviceSetup(evidence.actual);
+        evidence.backend=manager.getCurrentAudioDeviceType();
+        if(auto* device=manager.getCurrentAudioDevice();device && device->isOpen()) {
+            evidence.open=true;
+            evidence.deviceName=device->getName();
+            evidence.deviceType=device->getTypeName();
+            evidence.activeInputs=device->getActiveInputChannels();
+            evidence.activeOutputs=device->getActiveOutputChannels();
+            evidence.deviceRate=device->getCurrentSampleRate();
+            evidence.deviceBuffer=device->getCurrentBufferSizeSamples();
+        }
+        return evidence;
+    }
     // The acknowledgement is not permission to output sound: it proves only
     // that JUCE accepted the selected backend, names, masks, rate and period.
     static bool matchesApplied(const Request& requested,
@@ -150,6 +168,10 @@ public:
             const AppliedReadback& live) noexcept {
         const auto& a=live.actual;
         return live.open&&live.backend==requested.backend&&
+            // Strict physical instance identity for ASIO: manager setup alone
+            // may name the intended driver while another callback is active.
+            (requested.backend!="ASIO" ||
+             (live.deviceType=="ASIO" && live.deviceName==requested.playback))&&
             a.inputDeviceName==requested.capture&&
             a.outputDeviceName==requested.playback&&
             (requested.rate<=0.||std::abs(a.sampleRate-requested.rate)<=1.)&&
@@ -164,10 +186,30 @@ public:
 
     struct RollbackReadback {
         juce::AudioDeviceManager::AudioDeviceSetup actual;
-        juce::String backend;
+        juce::String backend, deviceName, deviceType;
         bool open=false;
         juce::StringArray inputNames,outputNames;
+        juce::BigInteger activeInputs,activeOutputs;
+        double deviceRate=0.;
+        int deviceBuffer=0;
     };
+    static RollbackReadback inspectRollback(juce::AudioDeviceManager& manager) {
+        RollbackReadback evidence;
+        manager.getAudioDeviceSetup(evidence.actual);
+        evidence.backend=manager.getCurrentAudioDeviceType();
+        if(auto* device=manager.getCurrentAudioDevice();device && device->isOpen()) {
+            evidence.open=true;
+            evidence.deviceName=device->getName();
+            evidence.deviceType=device->getTypeName();
+            evidence.inputNames=device->getInputChannelNames();
+            evidence.outputNames=device->getOutputChannelNames();
+            evidence.activeInputs=device->getActiveInputChannels();
+            evidence.activeOutputs=device->getActiveOutputChannels();
+            evidence.deviceRate=device->getCurrentSampleRate();
+            evidence.deviceBuffer=device->getCurrentBufferSizeSamples();
+        }
+        return evidence;
+    }
     // Previously CLOSED driver is never a valid rollback target. For ASIO,
     // even a numerically equal mask is unsafe after pin names are reordered.
     static bool matchesRollback(
@@ -178,13 +220,50 @@ public:
             const RollbackReadback& live) noexcept {
         const auto& a=live.actual;
         return live.open&&live.backend==previousBackend&&
+            (previousBackend!="ASIO" ||
+              (live.deviceType=="ASIO" && live.deviceName==before.outputDeviceName))&&
             a.inputDeviceName==before.inputDeviceName&&
             a.outputDeviceName==before.outputDeviceName&&
             a.inputChannels==before.inputChannels&&
             a.outputChannels==before.outputChannels&&
             a.sampleRate==before.sampleRate&&a.bufferSize==before.bufferSize&&
+            // A manager can remember an old setup even if an ASIO instance
+            // restarted with fewer ports or a different callback quantum.
+            live.activeInputs==a.inputChannels&&live.activeOutputs==a.outputChannels&&
+            live.activeOutputs.countNumberOfSetBits()>=2&&
+            std::abs(live.deviceRate-a.sampleRate)<=1.&&
+            live.deviceBuffer==a.bufferSize&&
             (previousBackend!="ASIO"||
              (live.inputNames==previousInputs&&live.outputNames==previousOutputs));
+    }
+
+
+    // Device rebind owns the hardware graph, NEVER the accepted logical
+    // ChannelId/.smix document. Pure control-thread verdict: the caller is
+    // responsible for performing the exact existing native restore action.
+    enum class MixerRebindAction : std::uint8_t {
+        reject, retainInstalled, restoreRetained, acceptFreshBound
+    };
+    struct MixerRebindEvidence {
+        bool physicalAuthorized=false;
+        bool installedChannelPcm=false;
+        bool storedCheckpoint=false;
+        bool pendingStartupRestore=false;
+        bool pristineStartupMixer=false;
+        bool retainedNativeSession=false;
+        bool freshBound=false;
+    };
+    [[nodiscard]] static constexpr MixerRebindAction decideMixerRebind(
+            MixerRebindEvidence e) noexcept {
+        if(!e.physicalAuthorized)return MixerRebindAction::reject;
+        const bool mustRestorePristine=e.storedCheckpoint &&
+            e.pendingStartupRestore && e.pristineStartupMixer;
+        if(e.installedChannelPcm && !mustRestorePristine)
+            return MixerRebindAction::retainInstalled;
+        if(e.retainedNativeSession || e.storedCheckpoint)
+            return MixerRebindAction::restoreRetained;
+        return e.freshBound?MixerRebindAction::acceptFreshBound:
+                            MixerRebindAction::reject;
     }
 
     using RecordPhase=std::function<void(const juce::String&)>;
