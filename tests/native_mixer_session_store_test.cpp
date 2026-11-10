@@ -1001,7 +1001,148 @@ static void verifyLogicalControlTransactions() {
     assert(folder.deleteRecursively());
 }
 
+// H1: a saved VST3 Power mapping survives a real .smix Save/Open and the
+// restored native FX lease keeps the EXACT token. A plugin replaced at that
+// slot cannot inherit the shortcut. Legacy files omit instanceId completely.
+static void verifyDurableNativeFxPowerIdentity() {
+    using FxOwner=armix::mixer::LiveChannelFxGraph::FxInstance;
+    auto doc=makeSession();
+    auto rows=doc.roster.channels();
+    for(auto& channel:rows)
+        if(channel.id.value==5)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(doc.roster.restoreExact(doc.acceptedRevision,rows));
+
+    StoredInsert saved;
+    saved.channel={5};saved.slot=0;
+    saved.catalogId="fixture.vst3.power";
+    saved.name="Power Fixture";
+    saved.sha256=juce::String::repeatedString("0123456789abcdef",4);
+    saved.bypass=true;
+    // An ID comes from the native control owner, NOT the .smix file name,
+    // catalog identity, user-facing FX label or slot ordinal.
+    saved.instanceId="g5c-724";
+    doc.inserts.push_back(saved);
+    doc.hotkeys.push_back({"power-hotkey","SESSION",doc.id,"5",
+        "SET_FX_SLOT_BYPASS",0x76,6,0,saved.instanceId});
+
+    const auto durable=Codec::encode(doc);
+    MixerSessionDocument reopened;
+    assert(Codec::decode(durable,reopened));
+    assert(reopened.inserts.size()==1&&reopened.hotkeys.size()==1);
+    assert(reopened.inserts[0].instanceId=="g5c-724");
+    assert(reopened.hotkeys[0].insertId==reopened.inserts[0].instanceId);
+    assert(Codec::encode(reopened)==durable);
+    // No vendor DSP is invoked in this fixture: construction and identity
+    // reservation are CONTROL-thread state only.
+    FxOwner restored(nullptr,"fixture.vst3.power","Power Fixture",64,
+        reopened.inserts[0].instanceId);
+    assert(restored.instanceId==reopened.hotkeys[0].insertId);
+    FxOwner next(nullptr,"fixture.vst3.power","Next Insert",64);
+    assert(next.instanceId.startsWith("g5c-"));
+    assert(next.instanceId.substring(4).getLargeIntValue()>724);
+
+    auto invalid=juce::JSON::parse(durable);
+    auto inserts=invalid.getProperty("inserts",{});
+    assert(inserts.isArray());
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","g5c-0");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","not-native-token");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId",juce::var(24));
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+
+    // A second channel must not claim the same native FX instance identity.
+    auto duplicate=doc;
+    auto second=saved;second.channel={6};
+    duplicate.inserts.push_back(second);
+    auto withSecond=duplicate.roster.channels();
+    for(auto& channel:withSecond)
+        if(channel.id.value==6)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(duplicate.roster.restoreExact(duplicate.acceptedRevision,withSecond));
+    assert(!Codec::decode(Codec::encode(duplicate),reopened));
+
+    // Older .smix files containing vendor blobs but no native FX token decode
+    // normally; adding durable identity does not force a schema bump.
+    auto legacy=doc;
+    legacy.inserts[0].instanceId.clear();
+    legacy.hotkeys.clear();
+    const auto old=Codec::encode(legacy);
+    assert(Codec::decode(old,reopened));
+    assert(reopened.inserts[0].instanceId.isEmpty());
+}
+
+static void verifyHotkeyDocumentIdentityAndMigration() {
+    auto doc=makeSession();
+    const auto legacy=Codec::encode(doc);
+    MixerSessionDocument decoded;
+    assert(Codec::decode(legacy,decoded) && decoded.hotkeys.empty());
+    const juce::String session=doc.id;
+    armix::hotkey::Mapping first{"native-ch05","SESSION",session,"5","SET_MUTE",0x77,6};
+    armix::hotkey::Mapping second{"native-bus","SESSION",session,"16","SET_SOLO",0x78,6};
+    armix::hotkey::Mapping rack{"fx-rack-05","SESSION",session,"5",
+        "SET_FX_RACK_BYPASS",0x76,6};
+    armix::hotkey::Mapping slot{"fx-slot-05","SESSION",session,"5",
+        "SET_FX_SLOT_BYPASS",0x75,6,1,"plugin-instance-original"};
+    doc.hotkeys={first,second,rack,slot};
+    const auto stable=Codec::encode(doc);
+    assert(Codec::decode(stable,decoded));
+    assert(decoded.hotkeys.size()==4);
+    assert(decoded.hotkeys[2].operation=="SET_FX_RACK_BYPASS");
+    assert(decoded.hotkeys[3].slot==1 &&
+           decoded.hotkeys[3].insertId=="plugin-instance-original");
+    assert(decoded.hotkeys[0].channelId=="5"&&decoded.hotkeys[1].channelId=="16");
+    // Rename or visual channel reorder cannot retarget numeric ChannelId.
+    auto renamed=decoded.roster.channels();
+    for(auto& row:renamed)if(row.id.value==5)row.name="New Singer Name";
+    assert(decoded.roster.restoreExact(decoded.acceptedRevision,renamed));
+    assert(Codec::decode(Codec::encode(decoded),doc));
+    assert(doc.hotkeys[0].channelId=="5");
+    auto damaged=juce::JSON::parse(stable);
+    auto hotkeys=damaged.getProperty("hotkeys",{});
+    auto* rows=hotkeys.getArray();
+    assert(rows&&rows->size()==4);
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","999999");
+    // Deleting a track does not make the entire mixer unsaveable. The
+    // orphan shortcut remains visible but can never fire for another ID.
+    assert(Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    assert(decoded.hotkeys[0].channelId=="999999");
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","05");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(1).getDynamicObject()->setProperty("vk",0x77);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("sessionId","other");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("slot",8);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("insertId","");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+}
+
 int main(){
+    verifyDurableNativeFxPowerIdentity();
+    verifyHotkeyDocumentIdentityAndMigration();
     verifyLogicalControlTransactions();
     verifyLegacyHarmoniceSessionName();
     verifyOfflineLogicalSessionAndFile();

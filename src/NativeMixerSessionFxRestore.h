@@ -109,7 +109,8 @@ public:
                             ? processor->getName() : insert.name;
                     auto owner=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
                         std::move(processor),insert.catalogId,displayName,
-                        armix::mixer::PreparedMixerBlock::hardFrameLimit);
+                        armix::mixer::PreparedMixerBlock::hardFrameLimit,
+                        insert.instanceId);
                     owner->bypassRequested.store(insert.bypass,std::memory_order_release);
                     lane.inserts.push_back(std::move(owner));
                 }

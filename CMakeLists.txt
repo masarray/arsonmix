@@ -440,6 +440,19 @@ if(BUILD_TESTING)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
   target_compile_definitions(ARMixDurableMixerSessionTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
+  # H1 OS-global shortcut registration and stable identity are control-only.
+  juce_add_console_app(ARMixNativeHotkeyTests PRODUCT_NAME "ArSonMix Native Hotkey Registry Tests")
+  target_sources(ARMixNativeHotkeyTests PRIVATE tests/native_hotkey_registry_test.cpp
+      src/NativeHotkeyRegistry.h)
+  target_link_libraries(ARMixNativeHotkeyTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  if(WIN32)
+    target_link_libraries(ARMixNativeHotkeyTests PRIVATE user32 comctl32)
+  endif()
+  target_compile_features(ARMixNativeHotkeyTests PRIVATE cxx_std_20)
+  add_test(NAME H1NativeGlobalShortcutRegistrationConflictAndPersistence
+      COMMAND ARMixNativeHotkeyTests)
+
   # Presentation-only native identity; no audio-thread access.
   juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")
   target_sources(ARMixChannelAppearanceTests PRIVATE

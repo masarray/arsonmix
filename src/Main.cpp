@@ -38,6 +38,7 @@
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeLogicalMixerControl.h"
+#include "NativeHotkeyRegistry.h"
 #include "NativeDeviceApplyCoordinator.h"
 #include <algorithm>
 #include <cstring>
@@ -273,6 +274,12 @@ public:
               .withEventListener ("arMixLogicalIntent", [this] (juce::var args) {
                   handleLogicalMixerIntent(args);
               })
+              .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
+                  handleNativeHotkeyIntent(args);
+              })
+              .withEventListener ("arMixHotkeyCapture", [this] (juce::var args) {
+                  hotkeys_.setCaptureMode(args.getProperty("enabled",false)==juce::var(true));
+              })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
                   consoleSubscribed_ = true;
@@ -295,6 +302,9 @@ public:
               .withResourceProvider (assetFor))
     {
         settingsDirectory().createDirectory();
+        hotkeys_.setHandler([this](const armix::hotkey::Mapping& mapping) {
+            fireNativeHotkey(mapping);
+        });
         restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
         catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
@@ -349,6 +359,7 @@ public:
 
     ~ConsoleWindow() override
     {
+        hotkeys_.detach(); // release global keys before the JUCE HWND disappears
         stopTimer();
         orbit_.stop();
         catalog_.onChanged = nullptr;
@@ -397,6 +408,9 @@ private:
     armix::storage::NativePresetArchive presets_;
     std::function<void(int)> onStartupStage_;
     Browser browser_;
+    armix::hotkey::Registry hotkeys_{settingsDirectory()};
+    juce::StringArray consumedHotkeyRequests_;
+    std::uint64_t firedHotkeySerial_=0;
     armix::storage::StudioBackup::Worker studioBackupWorker_;
     armix::shows::NativeShowSaveWorker nativeShowWorker_;
     armix::session::NativeMixerSessionSaveWorker mixerSessionWorker_;
@@ -1076,7 +1090,18 @@ private:
         const auto [found,error]=logicalMixer_.ensureLoaded();
         if(found && !mixerSessionStartupInspected_)
             mixerSessionRecoveryPending_=true;
-        if(error.isEmpty())return;
+        if(error.isEmpty()) {
+            if(found && hotkeys_.activeSession()!=logicalMixer_.workspace().document().id) {
+                const auto& document=logicalMixer_.workspace().document();
+                (void)hotkeys_.activateSession(document.id);
+                // Local shortcut journal is newer than checkpoint on crash.
+                if(hotkeys_.sessionEntries().empty() && !document.hotkeys.empty()) {
+                    const auto issue=hotkeys_.activateSession(document.id,&document.hotkeys);
+                    if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+                }
+            }
+            return;
+        }
         mixerSessionRecoveryPending_=true;
         mixerSessionStatus_="DAMAGED_SESSION";
         mixerSessionError_=error;
@@ -1225,6 +1250,226 @@ private:
         processor->getStateInformation(bytes);
         if(!logicalMixer_.saveFx(std::move(insert),std::move(bytes),reply))
             reply("Offline FX settings could not be saved");
+    }
+
+    // Native hotkeys share the accepted ChannelId mixer control path.
+    // WM_HOTKEY is delivered on the JUCE message thread even while the
+    // WebView is minimized, and never synthesizes a browser mouse click.
+    void sendHotkeyRegistry(const juce::String& requestId={},
+                            const juce::String& error={}) {
+        auto state=hotkeys_.snapshot();
+        const auto accepted=approvedNativeSnapshot();
+        const auto graph=accepted.getProperty("graph",{});
+        const auto caps=graph.getProperty("capabilities",{});
+        const auto channels=graph.getProperty("channels",{});
+        const auto ops=caps.getProperty("supportedOps",{});
+        const auto* permitted=ops.getArray();
+        const bool admitted=static_cast<bool>(
+            caps.getProperty("callbackOwnsChannelIds",false));
+        const auto rows=state.getProperty("entries",{});
+        if(auto* entries=rows.getArray())for(auto& row:*entries) {
+            if(row.getProperty("scope","").toString()!="SESSION")continue;
+            const auto id=row.getProperty("channelId","").toString();
+            const auto op=row.getProperty("operation","").toString();
+            bool found=false,fxAvailable=false;
+            if(channels.isArray())for(const auto& channel:*channels.getArray()) {
+                if(channel.getProperty("id","").toString()!=id ||
+                   (channel.getProperty("role","").toString()!="INPUT" &&
+                    channel.getProperty("role","").toString()!="GROUP" &&
+                    channel.getProperty("role","").toString()!="FX_RETURN"))continue;
+                found=true;
+                if(op=="SET_FX_RACK_BYPASS")
+                    fxAvailable=channel.getProperty("fxRackBypassed",{}).isBool();
+                else if(op=="SET_FX_SLOT_BYPASS") {
+                    const auto inserts=channel.getProperty("inserts",{});
+                    const int slot=static_cast<int>(row.getProperty("slot",-1));
+                    if(auto* all=inserts.getArray())if(slot>=0&&slot<all->size())
+                        fxAvailable=all->getReference(slot).getProperty("id","").toString()==
+                            row.getProperty("insertId","").toString();
+                }
+                break;
+            }
+            const bool fx=op=="SET_FX_RACK_BYPASS"||op=="SET_FX_SLOT_BYPASS";
+            const juce::String status=
+                !admitted?"WAITING_NATIVE_AUDIO":
+                !found?"NEEDS_REMAP":
+                fx&&!fxAvailable?"NEEDS_REMAP":
+                (!fx&&(!permitted||!permitted->contains(juce::var(op))))?
+                    "ACTION_UNAVAILABLE":
+                    row.getProperty("status","").toString();
+            row.getDynamicObject()->setProperty("status",status);
+        }
+        if(requestId.isNotEmpty()) {
+            state.getDynamicObject()->setProperty("requestId",requestId);
+            state.getDynamicObject()->setProperty("status",
+                error.isEmpty()?"ACCEPTED":"REJECTED");
+            state.getDynamicObject()->setProperty("errorCode",
+                error.isEmpty()?"NONE":error);
+        }
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixHotkeyRegistry",state);
+    }
+
+    void handleNativeHotkeyIntent(const juce::var& args) {
+        const auto action=args.getProperty("operation","").toString();
+        const auto requestId=args.getProperty("requestId","").toString();
+        if(action=="LIST")return sendHotkeyRegistry();
+        // Capture releases OS chords; restore registrations before Save.
+        hotkeys_.setCaptureMode(false);
+        juce::String error;
+        if(requestId.isEmpty()||requestId.length()>96 ||
+           consumedHotkeyRequests_.contains(requestId))
+            error="INVALID_OR_DUPLICATE_HOTKEY_REQUEST";
+        else {
+            consumedHotkeyRequests_.add(requestId);
+            if(consumedHotkeyRequests_.size()>128)
+                consumedHotkeyRequests_.remove(0);
+            if(action=="DELETE") {
+                const auto id=args.getProperty("mappingId",{}).toString();
+                error=hotkeys_.remove(id);
+            } else if(action=="REGISTER") {
+                const auto supplied=args.getProperty("mapping",{});
+                const auto scope=supplied.getProperty("scope","").toString();
+                auto cleaned=juce::var(new juce::DynamicObject());
+                for(const char* field:{"id","scope","sessionId","channelId",
+                                       "operation","vk","modifiers","slot","insertId"}) {
+                    const auto value=supplied.getProperty(field,{});
+                    if(!value.isVoid())cleaned.getDynamicObject()->setProperty(field,value);
+                }
+                if(scope=="SESSION") {
+                    const auto accepted=approvedNativeSnapshot();
+                    const auto graph=accepted.getProperty("graph",{});
+                    const auto channels=graph.getProperty("channels",{});
+                    const auto caps=graph.getProperty("capabilities",{});
+                    const auto id=supplied.getProperty("channelId",{}).toString();
+                    const auto op=supplied.getProperty("operation","").toString();
+                    const bool fxRack=op=="SET_FX_RACK_BYPASS";
+                    const bool fxSlot=op=="SET_FX_SLOT_BYPASS";
+                    bool found=false,fxAvailable=false;
+                    if(static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
+                       channels.isArray())for(const auto& c:*channels.getArray()) {
+                        if(c.getProperty("id","").toString()!=id ||
+                           (c.getProperty("role","").toString()!="INPUT" &&
+                            c.getProperty("role","").toString()!="GROUP" &&
+                            c.getProperty("role","").toString()!="FX_RETURN"))continue;
+                        found=true;
+                        if(fxRack)fxAvailable=c.getProperty("fxRackBypassed",{}).isBool();
+                        else if(fxSlot) {
+                            const auto inserts=c.getProperty("inserts",{});
+                            const auto slot=supplied.getProperty("slot",{});
+                            const auto token=supplied.getProperty("insertId",{});
+                            if(slot.isInt()&&token.isString()&&inserts.isArray()) {
+                                const int index=static_cast<int>(slot);
+                                if(index>=0&&index<inserts.getArray()->size())
+                                    fxAvailable=inserts.getArray()->getReference(index)
+                                        .getProperty("id","").toString()==token.toString();
+                            }
+                        }
+                        break;
+                    }
+                    if(!found)error="HOTKEY_CHANNEL_NOT_ADMITTED";
+                    if(error.isEmpty()&&(fxRack||fxSlot)&&!fxAvailable)
+                        error="HOTKEY_FX_INSTANCE_NOT_ADMITTED";
+                    const auto ops=caps.getProperty("supportedOps",{});
+                    const auto* allowed=ops.getArray();
+                    if(error.isEmpty() && !fxRack && !fxSlot &&
+                       op!="SET_MUTE" && op!="SET_SOLO")
+                        error="HOTKEY_ACTION_UNSUPPORTED";
+                    if(error.isEmpty() && !fxRack && !fxSlot &&
+                       (!allowed || !allowed->contains(juce::var(op))))
+                        error="HOTKEY_ACTION_NOT_ADMITTED";
+                    if(error.isEmpty()) {
+                        if(mixerSessionId_.isEmpty())
+                            mixerSessionId_=juce::Uuid().toDashedString().toLowerCase();
+                        if(hotkeys_.activeSession()!=mixerSessionId_)
+                            hotkeys_.activateSession(mixerSessionId_);
+                        cleaned.getDynamicObject()->setProperty("sessionId",mixerSessionId_);
+                    }
+                }
+                armix::hotkey::Mapping mapping;
+                if(error.isEmpty() && !armix::hotkey::Registry::decode(cleaned,mapping))
+                    error="INVALID_HOTKEY_MAPPING";
+                if(error.isEmpty())error=hotkeys_.upsert(std::move(mapping));
+            } else error="UNSUPPORTED_HOTKEY_OPERATION";
+        }
+        sendHotkeyRegistry(requestId,error);
+    }
+
+    void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
+        if(mapping.operation=="PANIC_MUTE") {
+            engine_.setOutputMuted(true);
+            emitApprovedNativeSnapshot();
+            return;
+        }
+        if(mapping.scope!="SESSION" ||
+           mapping.sessionId!=mixerSessionId_ || deviceApply_.busy() ||
+           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
+            return;
+        const auto accepted=approvedNativeSnapshot();
+        const auto graph=accepted.getProperty("graph",{});
+        if(!static_cast<bool>(graph.getProperty("capabilities",{})
+              .getProperty("callbackOwnsChannelIds",false)))return;
+        const auto channels=graph.getProperty("channels",{});
+        if(!channels.isArray())return;
+        const juce::var* match=nullptr;
+        for(const auto& ch:*channels.getArray())
+            if(ch.getProperty("id","").toString()==mapping.channelId &&
+               (ch.getProperty("role","").toString()=="INPUT" ||
+                ch.getProperty("role","").toString()=="GROUP" ||
+                ch.getProperty("role","").toString()=="FX_RETURN")) {
+                match=&ch;break;
+            }
+        if(!match)return;
+        const bool fxRack=mapping.operation=="SET_FX_RACK_BYPASS";
+        const bool fxSlot=mapping.operation=="SET_FX_SLOT_BYPASS";
+        if(fxRack||fxSlot) {
+            juce::var bypass;
+            if(fxRack)bypass=match->getProperty("fxRackBypassed",{});
+            else {
+                const auto inserts=match->getProperty("inserts",{});
+                if(!inserts.isArray()||mapping.slot<0||
+                   mapping.slot>=inserts.getArray()->size())return;
+                const auto insert=inserts.getArray()->getReference(mapping.slot);
+                // Fail closed: if a plugin was replaced or reordered, hotkey
+                // must never touch the different processor at the same slot.
+                if(insert.getProperty("id","").toString()!=mapping.insertId)return;
+                bypass=insert.getProperty("bypassed",{});
+            }
+            if(!bypass.isBool())return;
+            auto native=juce::var(new juce::DynamicObject());
+            auto* n=native.getDynamicObject();
+            n->setProperty("action",fxRack?"routingNativeFxRackBypass":
+                                      "routingNativeFxInsertBypass");
+            n->setProperty("requestId","hotkey-fx-"+juce::String(
+                static_cast<juce::int64>(++firedHotkeySerial_)));
+            n->setProperty("channelId",mapping.channelId);
+            n->setProperty("deviceEpoch",accepted.getProperty("device",{}).getProperty("epoch","0"));
+            n->setProperty("revision",graph.getProperty("revision","0"));
+            n->setProperty("value",!static_cast<bool>(bypass));
+            if(fxSlot) {
+                n->setProperty("slot",mapping.slot);
+                n->setProperty("insertId",mapping.insertId);
+            }
+            // Exact same owner, guardrails and ACK as GUI rack/slot Power.
+            onAction(native);
+            return;
+        }
+        if(mapping.operation!="SET_MUTE"&&mapping.operation!="SET_SOLO")return;
+        const auto control=mapping.operation=="SET_MUTE"?"mute":"solo";
+        const auto existing=match->getProperty("controls",{}).getProperty(control,{});
+        if(!existing.isBool())return;
+        auto payload=juce::var(new juce::DynamicObject());
+        payload.getDynamicObject()->setProperty("value",!static_cast<bool>(existing));
+        auto request=juce::var(new juce::DynamicObject());
+        auto* o=request.getDynamicObject();
+        o->setProperty("requestId","hotkey-"+juce::String(static_cast<juce::int64>(++firedHotkeySerial_)));
+        o->setProperty("operation",mapping.operation);
+        o->setProperty("targetChannelId",mapping.channelId);
+        o->setProperty("deviceEpoch",accepted.getProperty("device",{}).getProperty("epoch","0"));
+        o->setProperty("baseGraphRevision",graph.getProperty("revision","0"));
+        o->setProperty("baseRosterRevision",graph.getProperty("rosterRevision","0"));
+        o->setProperty("payload",payload);
+        handleApprovedNativeControl(request);
     }
 
     void handleLogicalMixerIntent(const juce::var& request) {
@@ -2704,10 +2949,16 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
+        const auto restoredHotkeys=doc.hotkeys;
         if(usedPrevious)
             (void)logicalMixer_.restoreCheckpoint(doc,states);
         const bool firstBinding=doc.logicalOnly;
         if(firstBinding && !engine_.hasPristineStartupMixer()) {
+            (void)hotkeys_.activateSession(mixerSessionId_);
+            if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
+                const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+                if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+            }
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
@@ -2760,6 +3011,11 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
+        (void)hotkeys_.activateSession(mixerSessionId_);
+        if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
+            const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+            if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+        }
         if(resume)requestAutomaticMain(bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
@@ -2810,6 +3066,9 @@ private:
         if(automatic)doc.resumeMain=resumeMain;
         doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
             juce::Uuid().toDashedString().toLowerCase();
+        // Shortcut entries are additive .smix data, never callback state.
+        if(hotkeys_.activeSession()==doc.id)
+            doc.hotkeys=hotkeys_.sessionEntries();
         // Use the verified installed vendor identity; never load using a
         // browser-provided plugin name or relocate an arbitrary VST3 path.
         error=resolveMixerSessionCatalog(doc,true);
@@ -2875,14 +3134,19 @@ private:
                 session.getProperty("authority","").toString()=="M4";
             if(error.isEmpty()&&!physical&&engine.hasRetainedNativeSession())
                 error="Retained native mixer still owns the session";
+            const auto importedHotkeys=doc.hotkeys;
+            const auto importedId=doc.id;
             if(error.isEmpty()&&!physical) {
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
                 if(!safe->logicalMixer_.open(std::move(doc),std::move(states),
-                        [safe,file](juce::String openError){
+                        [safe,file,importedHotkeys,importedId](juce::String openError){
                     if(safe==nullptr)return;
                     if(openError.isEmpty()) {
+                        safe->mixerSessionId_=importedId;
+                        const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
+                        if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
                         safe->lastMixerFile_=file;
                     }
@@ -2905,6 +3169,8 @@ private:
                     safe->closePluginEditor();
                     safe->stopOrbit();
                     safe->mixerSessionId_=id;
+                    const auto keyError=safe->hotkeys_.activateSession(id,&importedHotkeys);
+                    if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
                     safe->mixerSessionRecoveryPending_=false;
                     safe->lastMixerSessionFingerprint_.clear();
                     safe->mixerSessionStatus_=engine.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
@@ -5868,6 +6134,12 @@ private:
 
     void timerCallback() override
     {
+#if defined(_WIN32)
+        // A startup splash can delay HWND creation; attach once the real JUCE
+        // peer exists. Never install a low-level keyboard hook.
+        if(auto* peer=getPeer())
+            hotkeys_.attach(peer->getNativeHandle());
+#endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;

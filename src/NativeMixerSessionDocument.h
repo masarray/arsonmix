@@ -4,6 +4,7 @@
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "NativeShowStore.h"
+#include "NativeHotkeyRegistry.h"
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -39,6 +40,7 @@ struct StoredInsert final {
     juce::String catalogId,path,sha256,name;
     int uid=0;
     bool bypass=false;
+    juce::String instanceId; // durable identity of this specific native FX owner
 };
 struct PlannedSlotBypass final {
     ChannelId channel{};
@@ -58,6 +60,8 @@ struct MixerSessionDocument final {
     // Logical-only per-slot bypass intentions; no fabricated FX processor
     // state or fake vendor SHA. Physical sessions keep existing inserts.
     std::vector<PlannedSlotBypass> plannedSlotBypassed;
+    // Session-specific global shortcuts; app-wide keys live in native settings.
+    std::vector<armix::hotkey::Mapping> hotkeys;
     float masterGain=1.f;
     bool masterMute=false,masterMono=false;
     // Internal checkpoint preference, distinct from the hardware monitor pair.
@@ -417,6 +421,11 @@ public:
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
         if(d.resumeMain.has_value())set(root,"resumeMain",*d.resumeMain);
         set(root,"legacyIds",ids(d.legacyIds));
+        if(!d.hotkeys.empty()) {
+            juce::Array<juce::var> hotkeys;
+            for(const auto& mapping:d.hotkeys)hotkeys.add(armix::hotkey::Registry::encode(mapping));
+            set(root,"hotkeys",juce::var(hotkeys));
+        }
         auto bind=object();
         set(bind,"backend",d.binding.backend);
         set(bind,"capture",d.binding.capture);
@@ -503,6 +512,8 @@ public:
             set(fx,"catalogId",f.catalogId);set(fx,"path",f.path);
             set(fx,"uid",f.uid);set(fx,"name",f.name);
             set(fx,"sha256",f.sha256);set(fx,"bypass",f.bypass);
+            // Optional v1 field; old .smix files remain byte-for-byte valid.
+            if(f.instanceId.isNotEmpty())set(fx,"instanceId",f.instanceId);
             inserts.add(fx);
         }
         for(auto id:d.rackBypassed)racks.add(decimal(id.value));
@@ -633,6 +644,31 @@ public:
             entries.push_back(std::move(row));
         }
         if(!doc.roster.restoreExact(doc.acceptedRevision,entries))return false;
+        // Optional additive H1 field. Old .smix sessions decode unchanged.
+        // Exact ChannelId ownership prevents rename/reorder/strip replacement
+        // from silently retargeting an operator's global shortcut.
+        const auto hotkeys=get(root,"hotkeys");
+        if(!hotkeys.isVoid()) {
+            const auto* mappings=hotkeys.getArray();
+            if(!mappings || mappings->size()>128)return false;
+            std::set<juce::String> ids;
+            std::set<std::pair<int,int>> chords;
+            for(const auto& entry:*mappings) {
+                armix::hotkey::Mapping mapping;
+                if(!armix::hotkey::Registry::decode(entry,mapping) ||
+                   mapping.scope!="SESSION" || mapping.sessionId!=doc.id ||
+                   !ids.insert(mapping.id).second ||
+                   !chords.emplace(mapping.vk,mapping.modifiers).second)return false;
+                std::uint64_t channelId=0;
+                // A removed channel retains an inert stable-id shortcut so
+                // the operator can explicitly remap/delete it. Reject
+                // malformed IDs, never rebind to the same strip ordinal.
+                if(!parseDecimal(juce::var(mapping.channelId),channelId) ||
+                   juce::String(std::to_string(channelId))!=mapping.channelId)
+                    return false;
+                doc.hotkeys.push_back(std::move(mapping));
+            }
+        }
         const auto seek=[&doc](ChannelId id,ChannelRole role){
             const auto* row=doc.roster.find(id);
             return row && row->role==role;
@@ -708,6 +744,7 @@ public:
         const auto* racks=racksVar.getArray();
         if(!fx||!racks||fx->size()>16384||racks->size()>channels->size())return false;
         std::set<std::pair<std::uint64_t,std::size_t>> seenFx;
+        std::set<juce::String> seenInstances;
         for(const auto& item:*fx) {
             StoredInsert p;int slot=0;
             if(!parseDecimal(get(item,"channel"),p.channel.value)||
@@ -724,6 +761,17 @@ public:
                p.sha256.length()!=64 ||
                !p.sha256.containsOnly("0123456789abcdef")||
                !strictBool(get(item,"bypass"),p.bypass))return false;
+            const auto durable=get(item,"instanceId");
+            if(!durable.isVoid()) {
+                if(!durable.isString())return false;
+                const auto token=durable.toString();
+                const auto digits=token.startsWith("g5c-")?
+                    token.substring(4):juce::String{};
+                if(digits.isEmpty()||digits.length()>18||digits[0]=='0'||
+                   !digits.containsOnly("0123456789")||
+                   !seenInstances.insert(token).second)return false;
+                p.instanceId=token;
+            }
             doc.inserts.push_back(std::move(p));
         }
         for(const auto& item:*racks) {
