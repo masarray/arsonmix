@@ -552,16 +552,18 @@ public:
         doc.binding.rate=n;
         if(!integral(get(binding,"frames"),doc.binding.frames,
                      doc.logicalOnly?0:16,doc.logicalOnly?0:8192))return false;
-        if(doc.logicalOnly &&
-           (doc.binding.backend.isNotEmpty() || doc.binding.capture.isNotEmpty() ||
-            doc.binding.playback.isNotEmpty() ||
-            doc.binding.inputMask!="0" || doc.binding.outputMask!="0" ||
-            doc.binding.inputNames.size()!=0 || doc.binding.outputNames.size()!=0))
-            return false;
+        // Decode pin inventories first: logical-only files must not
+        // smuggle a physical endpoint identity through optional fields.
         if((binding.getDynamicObject()->hasProperty("inputNames") &&
             !readPinNames(get(binding,"inputNames"),doc.binding.inputNames)) ||
            (binding.getDynamicObject()->hasProperty("outputNames") &&
             !readPinNames(get(binding,"outputNames"),doc.binding.outputNames)))return false;
+        if(doc.logicalOnly &&
+           (doc.binding.backend.isNotEmpty() || doc.binding.capture.isNotEmpty() ||
+            doc.binding.playback.isNotEmpty() ||
+            doc.binding.inputMask!="0" || doc.binding.outputMask!="0" ||
+            !doc.binding.inputNames.isEmpty() || !doc.binding.outputNames.isEmpty()))
+            return false;
         auto outputs=get(root,"outputs");
         if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,
                      doc.logicalOnly?0:2,doc.logicalOnly?0:256)||
