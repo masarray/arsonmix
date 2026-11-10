@@ -73,10 +73,24 @@ public:
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
     // Halves the three large audio rings per instance without RT allocation.
     static constexpr std::size_t capacity=16384;
-    bool prepare(double rate) noexcept {
+    // Production ALWAYS uses the established 32 ms PDC. This opt-in entry
+    // exists ONLY for offline source-aligned latency/sound studies. Never
+    // select a shorter grain from session state, UI, or the ASIO callback.
+    bool prepare(double rate) noexcept {return prepareWithGrain(rate,0);}
+    bool prepareForOfflineLatencyStudy(double rate,int algorithmicMs) noexcept {
+        if(!std::isfinite(rate)||rate<32000.||rate>192000.||
+           (algorithmicMs!=24&&algorithmicMs!=16))return false;
+        // Device-rate frames, never a fixed-size millisecond approximation.
+        const int candidateGrain=static_cast<int>(std::lround(
+            rate*static_cast<double>(algorithmicMs)/2000.));
+        return prepareWithGrain(rate,candidateGrain);
+    }
+private:
+    bool prepareWithGrain(double rate,int candidateGrain) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         rate_=rate;
-        grain_=std::clamp(static_cast<int>(std::round(rate*0.016)),256,3072);
+        grain_=candidateGrain>0?candidateGrain:
+            std::clamp(static_cast<int>(std::round(rate*0.016)),256,3072);
         latency_=2*grain_;
         decimation_=std::max(1,static_cast<int>(std::round(rate/12000.)));
         detectEvery_=std::max(128,static_cast<int>(rate/150.));
@@ -127,6 +141,7 @@ public:
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
     }
+public:
     // Prepared on the CONTROL thread. Immutable edit data is copied through
     // the existing SPSC; applying it on the callback needs only fixed copies.
     struct PreparedSettings {
