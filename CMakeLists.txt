@@ -127,6 +127,9 @@ if(BUILD_TESTING)
   add_executable(ARMixHarmonyOfflineAb tools/harmony_offline_ab.cpp)
   target_compile_features(ARMixHarmonyOfflineAb PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyOfflineDryAndABRenderHarness COMMAND ARMixHarmonyOfflineAb --self-test)
+  add_test(NAME NativeHarmoniceSyntheticWavABAndQualityReport
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/harmonice_quality_report_contract_test.py"
+              "$<TARGET_FILE:ARMixHarmonyOfflineAb>")
   # P1 experimental grain comparison: no change to the shipping 32 ms DSP.
   # CTest only proves bounded PCM/PDC/partition parity, not vocal quality.
   add_executable(ARMixHarmoniceLatencyStudyTests tests/harmony_latency_candidate_test.cpp)
