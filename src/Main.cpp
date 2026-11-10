@@ -1252,6 +1252,36 @@ private:
     void sendHotkeyRegistry(const juce::String& requestId={},
                             const juce::String& error={}) {
         auto state=hotkeys_.snapshot();
+        const auto accepted=approvedNativeSnapshot();
+        const auto graph=accepted.getProperty("graph",{});
+        const auto caps=graph.getProperty("capabilities",{});
+        const auto channels=graph.getProperty("channels",{});
+        const auto ops=caps.getProperty("supportedOps",{});
+        const auto* permitted=ops.getArray();
+        const bool admitted=static_cast<bool>(
+            caps.getProperty("callbackOwnsChannelIds",false));
+        const auto rows=state.getProperty("entries",{});
+        if(auto* entries=rows.getArray())for(auto& row:*entries) {
+            if(row.getProperty("scope","").toString()!="SESSION")continue;
+            const auto id=row.getProperty("channelId","").toString();
+            const auto op=row.getProperty("operation","").toString();
+            bool found=false;
+            if(channels.isArray())for(const auto& channel:*channels.getArray()) {
+                if(channel.getProperty("id","").toString()==id &&
+                   (channel.getProperty("role","").toString()=="INPUT"||
+                    channel.getProperty("role","").toString()=="GROUP"||
+                    channel.getProperty("role","").toString()=="FX_RETURN")) {
+                    found=true;break;
+                }
+            }
+            const juce::String status=
+                !admitted?"WAITING_NATIVE_AUDIO":
+                !found?"NEEDS_REMAP":
+                !permitted||!permitted->contains(juce::var(op))?
+                    "ACTION_UNAVAILABLE":
+                    row.getProperty("status","").toString();
+            row.getDynamicObject()->setProperty("status",status);
+        }
         if(requestId.isNotEmpty()) {
             state.getDynamicObject()->setProperty("requestId",requestId);
             state.getDynamicObject()->setProperty("status",
