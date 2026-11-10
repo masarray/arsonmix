@@ -294,7 +294,13 @@ def main():
             emit(page,'arMixConsoleSnapshot',retained)
             assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()
             strip=page.locator('#tracks .strip[data-id="1"]')
-            assert strip.locator('select[data-field="input"]').input_value()=='Waiting for device'
+            # The native bridge deliberately uses the current non-technical
+            # loss-state label, not an obsolete "Waiting for device" fixture
+            # or a user-facing NEEDS_REMAP workflow. Hardware pins remain
+            # inaccessible until a new accepted device epoch is published.
+            loss=strip.locator('select[data-field="input"]').input_value()
+            assert loss=='Audio connection lost', f"wrong retained IN state: {loss!r}"
+            assert 'REMAP' not in loss.upper()
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             before=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')
             strip.locator('.fx-section [data-action="openPlugin"]').first.click()
