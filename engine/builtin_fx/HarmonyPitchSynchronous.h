@@ -64,13 +64,14 @@ private:
         if(!state.initialized) {
             state.initialized=true;
             state.nextCenter=static_cast<double>(time)+width;
-            if constexpr(Stereo) {
-                const auto peak=findStableEpoch(epochs,time,writeIndex,
-                    state.nextCenter-fixedDelay,period,state.epochPolarity);
-                if(peak>=0)
-                    state.nextCenter=refineEpoch(epochs,time,writeIndex,peak,
-                        state.epochPolarity)+fixedDelay;
-            }
+            // Align mono backing *and* stereo lead to fractional epochs.
+            // Integer-peak rounding previously induced a 1-sample phase
+            // staircase on high soprano periods, heard as brittle buzz.
+            const auto peak=findStableEpoch(epochs,time,writeIndex,
+                state.nextCenter-fixedDelay,period,state.epochPolarity);
+            if(peak>=0)
+                state.nextCenter=refineEpoch(epochs,time,writeIndex,peak,
+                    state.epochPolarity)+fixedDelay;
         }
         // Advance at most two grains per sample, even on hostile period jumps.
         // Normal supported periods place >=4 samples between target marks.
@@ -81,9 +82,8 @@ private:
                 state.epochPolarity);
             if(peak>=0) {
                 auto& grain=state.grains[state.nextSlot];
-                double epoch=static_cast<double>(peak);
-                if constexpr(Stereo)
-                    epoch=refineEpoch(epochs,time,writeIndex,peak,state.epochPolarity);
+                const double epoch=refineEpoch(
+                    epochs,time,writeIndex,peak,state.epochPolarity);
                 grain={state.nextCenter,epoch,width,true};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
             }
