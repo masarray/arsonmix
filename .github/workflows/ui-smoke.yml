@@ -6,8 +6,6 @@ on:
   push:
     branches: [main]
     paths:
-      # README anchors are part of the smart-audio/GUI release contract.
-      - 'README.md'
       - 'web/**'
       - 'integration/console-v6/**'
       - 'site/preview-v2/**'
@@ -37,7 +35,6 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     paths:
-      - 'README.md'
       - 'web/**'
       - 'integration/console-v6/**'
       - 'site/preview-v2/**'
