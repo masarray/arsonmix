@@ -59,7 +59,10 @@ struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
         setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
-        removeInsertReference, moveInsertReference
+        removeInsertReference, moveInsertReference,
+        // Control-document metadata (rack/slot bypass) changes revision
+        // without changing a fader, audio descriptor or live PCM topology.
+        touchDocumentRevision
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -237,6 +240,11 @@ public:
                     break;
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
+                    break;
+                case ChannelEdit::Kind::touchDocumentRevision:
+                    // Exact stable ChannelId is validated above. Bump the
+                    // document revision without fabricating a DSP parameter
+                    // change to acknowledge a separate FX metadata edit.
                     break;
                 case ChannelEdit::Kind::addInsertReference:
                     if(op.text.empty() || op.text.size()>256 ||

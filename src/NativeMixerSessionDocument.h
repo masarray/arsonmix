@@ -40,6 +40,10 @@ struct StoredInsert final {
     int uid=0;
     bool bypass=false;
 };
+struct PlannedSlotBypass final {
+    ChannelId channel{};
+    std::size_t slot=0;
+};
 struct MixerSessionDocument final {
     juce::String id;
     DynamicChannelRoster roster{ChannelRosterBudget{
@@ -51,12 +55,18 @@ struct MixerSessionDocument final {
     std::vector<WaitingAsioInput> waitingAsioInputs;
     std::vector<StoredInsert> inserts;
     std::vector<ChannelId> rackBypassed;
+    // Logical-only per-slot bypass intentions; no fabricated FX processor
+    // state or fake vendor SHA. Physical sessions keep existing inserts.
+    std::vector<PlannedSlotBypass> plannedSlotBypassed;
     float masterGain=1.f;
     bool masterMute=false,masterMono=false;
     // Internal checkpoint preference, distinct from the hardware monitor pair.
     std::optional<bool> resumeMain;
     std::uint64_t acceptedRevision=0;
     juce::int64 savedMs=0;
+    // True only for a device-independent logical editor document. It carries
+    // NO physical output admission; never treat it as a verified device route.
+    bool logicalOnly=false;
 };
 // Logical topology never authorizes a different physical endpoint. An
 // operator-confirmed rebind changes only verified hardware metadata; it
@@ -110,8 +120,11 @@ struct MixerDeviceBindingPolicy final {
            (mode==Mode::verifiedDeviceApply &&
             (saved.backend!=live.backend || saved.playback!=live.playback)))
             return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:unavailable;
+        // The host checks the pinned registered ASIO driver identity first.
+        // Physical MAIN pin mapping still requires exact verified readback.
         if(mode==Mode::verifiedAsioRestart &&
-           (!isAsio4All(live) || saved.backend!=live.backend || saved.playback!=live.playback))
+           (saved.backend!="ASIO" || live.backend!="ASIO" ||
+            saved.capture!=live.capture || saved.playback!=live.playback))
             return unavailable;
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
@@ -237,6 +250,8 @@ struct MixerDeviceBindingPolicy final {
                         source.inputR=remapPin(oldPins,newPins,saved.inputNames,live.inputNames,source.inputR,false);
                     if(source.inputL>=0 && (!source.stereo || source.inputR>=0))mapped.push_back(source);
                 }
+                if(mode==Mode::verifiedAsioRestart && mapped.size()!=sources.size())
+                    return "NEEDS_REMAP: saved capture pins unavailable on the active ASIO driver";
                 sources=std::move(mapped);
             }
         }
@@ -386,9 +401,9 @@ class Codec final {
         if(!in||!aux||in->size()!=stripCount||aux->size()!=auxBusCount)
             return false;
         for(int i=0;i<stripCount;++i)
-            if(!parseDecimal(in->getReference(i),ids.inputs[i].value))return false;
+            if(!parseDecimal(in->getReference(i),ids.inputs[i].value,true))return false;
         for(int i=0;i<auxBusCount;++i)
-            if(!parseDecimal(aux->getReference(i),ids.aux[i].value))return false;
+            if(!parseDecimal(aux->getReference(i),ids.aux[i].value,true))return false;
         return parseDecimal(get(v,"main"),ids.main.value) &&
                parseDecimal(get(v,"monitor"),ids.monitor.value,true);
     }
@@ -396,6 +411,7 @@ public:
     static juce::String encode(const MixerSessionDocument& d) {
         auto root=object();
         set(root,"schema","arsonmix.mixer-session.v1");
+        if(d.logicalOnly)set(root,"logicalOnly",true);
         set(root,"id",d.id);
         set(root,"acceptedRevision",decimal(d.acceptedRevision));
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
@@ -491,6 +507,16 @@ public:
         }
         for(auto id:d.rackBypassed)racks.add(decimal(id.value));
         set(root,"inserts",juce::var(inserts));set(root,"rackBypassed",juce::var(racks));
+        if(d.logicalOnly) {
+            juce::Array<juce::var> planned;
+            for(const auto& item:d.plannedSlotBypassed) {
+                auto p=object();
+                set(p,"channel",decimal(item.channel.value));
+                set(p,"slot",static_cast<int>(item.slot));
+                planned.add(p);
+            }
+            set(root,"plannedSlotBypassed",juce::var(planned));
+        }
         return juce::JSON::toString(root,false);
     }
     static bool decode(const juce::String& json,MixerSessionDocument& output) {
@@ -499,6 +525,11 @@ public:
         if(!root.isObject()||get(root,"schema").toString()!="arsonmix.mixer-session.v1")
             return false;
         MixerSessionDocument doc;
+        const auto logicalFlag=get(root,"logicalOnly");
+        if(!logicalFlag.isVoid()) {
+            if(!logicalFlag.isBool() || !static_cast<bool>(logicalFlag))return false;
+            doc.logicalOnly=true;
+        }
         if(root.getDynamicObject()->hasProperty("resumeMain")) {
             bool resume=false;
             if(!strictBool(get(root,"resumeMain"),resume))return false;
@@ -514,29 +545,43 @@ public:
             std::numeric_limits<juce::int64>::max()))return false;
         doc.savedMs=static_cast<juce::int64>(ms);
         const auto binding=get(root,"binding");
-        if(!textField(get(binding,"backend"),doc.binding.backend,128)||
+        if(!textField(get(binding,"backend"),doc.binding.backend,128,doc.logicalOnly)||
            !textField(get(binding,"capture"),doc.binding.capture,256,true)||
-           !textField(get(binding,"playback"),doc.binding.playback,256)||
+           !textField(get(binding,"playback"),doc.binding.playback,256,doc.logicalOnly)||
            !textField(get(binding,"inputMask"),doc.binding.inputMask,256)||
            !textField(get(binding,"outputMask"),doc.binding.outputMask,256))
             return false;
         double n=0.;
-        if(!real(get(binding,"rate"),n,8000.,384000.))return false;
+        if(!real(get(binding,"rate"),n,doc.logicalOnly?0.:8000.,
+                 doc.logicalOnly?0.:384000.))return false;
         doc.binding.rate=n;
-        if(!integral(get(binding,"frames"),doc.binding.frames,16,8192))
-            return false;
+        if(!integral(get(binding,"frames"),doc.binding.frames,
+                     doc.logicalOnly?0:16,doc.logicalOnly?0:8192))return false;
+        // Decode pin inventories first: logical-only files must not
+        // smuggle a physical endpoint identity through optional fields.
         if((binding.getDynamicObject()->hasProperty("inputNames") &&
             !readPinNames(get(binding,"inputNames"),doc.binding.inputNames)) ||
            (binding.getDynamicObject()->hasProperty("outputNames") &&
             !readPinNames(get(binding,"outputNames"),doc.binding.outputNames)))return false;
+        if(doc.logicalOnly &&
+           (doc.binding.backend.isNotEmpty() || doc.binding.capture.isNotEmpty() ||
+            doc.binding.playback.isNotEmpty() ||
+            doc.binding.inputMask!="0" || doc.binding.outputMask!="0" ||
+            !doc.binding.inputNames.isEmpty() || !doc.binding.outputNames.isEmpty()))
+            return false;
         auto outputs=get(root,"outputs");
-        if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,2,256)||
-           !integral(get(outputs,"mainL"),doc.outputs.mainL,0,255)||
-           !integral(get(outputs,"mainR"),doc.outputs.mainR,0,255)||
+        if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,
+                     doc.logicalOnly?0:2,doc.logicalOnly?0:256)||
+           !integral(get(outputs,"mainL"),doc.outputs.mainL,doc.logicalOnly?-1:0,
+                     doc.logicalOnly?-1:255)||
+           !integral(get(outputs,"mainR"),doc.outputs.mainR,doc.logicalOnly?-1:0,
+                     doc.logicalOnly?-1:255)||
            !integral(get(outputs,"monitorL"),doc.outputs.monitorL,-1,255)||
            !integral(get(outputs,"monitorR"),doc.outputs.monitorR,-1,255)||
            !strictBool(get(outputs,"monitorEnabled"),doc.outputs.monitorEnabled)||
-           !doc.outputs.valid())return false;
+           (doc.logicalOnly?
+             (doc.outputs.monitorEnabled || doc.outputs.monitorL!=-1 ||
+              doc.outputs.monitorR!=-1):!doc.outputs.valid()))return false;
         auto master=get(root,"master");
         if(!real(get(master,"gain"),n,0.,4.))return false;
         doc.masterGain=static_cast<float>(n);
@@ -544,7 +589,7 @@ public:
            !strictBool(get(master,"mono"),doc.masterMono))return false;
         const auto channelsVar=get(root,"channels");
         const auto* channels=channelsVar.getArray();
-        if(!channels||channels->size()<15||channels->size()>2048)return false;
+        if(!channels||channels->isEmpty()||channels->size()>2048)return false;
         std::vector<ChannelStripDefinition> entries;
         entries.reserve(static_cast<std::size_t>(channels->size()));
         for(const auto& ch:*channels) {
@@ -592,13 +637,16 @@ public:
             const auto* row=doc.roster.find(id);
             return row && row->role==role;
         };
-        for(auto id:doc.legacyIds.inputs)if(!seek(id,ChannelRole::input))return false;
-        for(auto id:doc.legacyIds.aux)if(!seek(id,ChannelRole::fxReturn))return false;
+        if(!doc.logicalOnly) {
+            for(auto id:doc.legacyIds.inputs)if(id.value&&!seek(id,ChannelRole::input))return false;
+            for(auto id:doc.legacyIds.aux)if(id.value&&!seek(id,ChannelRole::fxReturn))return false;
+        }
         if(!seek(doc.legacyIds.main,ChannelRole::main) ||
            (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
             return false;
         auto req=get(root,"request");
-        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,0,256)||
+        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,
+                     0,doc.logicalOnly?0:256)||
            !integral(get(req,"maxFrames"),doc.request.maxFrames,16,8192)||
            !strictBool(get(req,"mainMonoAfterFx"),doc.request.mainMonoAfterFx))
             return false;
@@ -685,6 +733,26 @@ public:
                doc.rackBypassed.end())return false;
             doc.rackBypassed.push_back(id);
         }
+        const auto planned=get(root,"plannedSlotBypassed");
+        if(!planned.isVoid()) {
+            const auto* list=planned.getArray();
+            if(!doc.logicalOnly || !list ||
+               list->size()>channels->size()*8)return false;
+            std::set<std::pair<std::uint64_t,int>> seen;
+            for(const auto& item:*list) {
+                PlannedSlotBypass p;
+                int slot=0;
+                if(!parseDecimal(get(item,"channel"),p.channel.value) ||
+                   !integral(get(item,"slot"),slot,0,7) ||
+                   !doc.roster.find(p.channel) ||
+                   static_cast<std::size_t>(slot)>=
+                     doc.roster.find(p.channel)->insertCatalogIds.size() ||
+                   !seen.emplace(p.channel.value,slot).second)
+                    return false;
+                p.slot=static_cast<std::size_t>(slot);
+                doc.plannedSlotBypassed.push_back(p);
+            }
+        }
         // Encode always emits in ChannelId/slot order. A manually shuffled or
         // duplicated slot manifest is rejected; its vendor states must never
         // attach to a different processor or channel.
@@ -694,7 +762,8 @@ public:
                 ch.insertCatalogIds[0]=="legacy:aux-rack";
             for(const auto& fxRow:doc.inserts)
                 if(fxRow.channel==ch.id) {
-                    if(fxRow.slot!=slot++)return false;
+                    if((!doc.logicalOnly || legacyMarker) && fxRow.slot!=slot)return false;
+                    ++slot;
                     // A malformed, otherwise SHA-correct document can claim
                     // more FX slots than the accepted roster's catalog.
                     // Bound-check BEFORE indexing: never allow UB on restore.
@@ -707,10 +776,40 @@ public:
             // even when no plugin is installed. They are NOT vendor leases.
             // No orphan leases, and no phantom roster FX. In particular an
             // empty catalog cannot authorize an installed vendor processor.
-            if(!legacyMarker&&slot!=ch.insertCatalogIds.size())return false;
+            // Logical-only references are plans, not instantiated vendor
+            // processors. A stored FX state can be saved independently per slot; the
+            // remaining catalog references are deferred until physical bind.
+            if(!legacyMarker && (doc.logicalOnly?
+                slot>ch.insertCatalogIds.size():
+                slot!=ch.insertCatalogIds.size()))return false;
         }
         output=std::move(doc);
         return true;
     }
+
+    // The caller supplies an already verified native callback layout.
+    // Logical sessions never gain physical capture patches from first binding.
+    static bool bindLogicalToVerifiedMain(MixerSessionDocument& document,
+            const HardwareBinding& binding,const VerifiedNativeOutputs& outputs,int captureCount) {
+        if(!document.logicalOnly || !outputs.valid() ||
+           std::any_of(document.request.sources.begin(),document.request.sources.end(),
+               [](const auto& source){return source.kind==DynamicSourceKind::physical;}))
+            return false;
+        auto bound=document;
+        bound.binding=binding;
+        bound.outputs=outputs;
+        bound.request.physicalInputs=captureCount;
+        bound.logicalOnly=false;
+        bound.plannedSlotBypassed.clear(); // already materialized into each insert
+        for(auto& id:bound.legacyIds.inputs)
+            if(!bound.roster.find(id))id={};
+        for(auto& id:bound.legacyIds.aux)
+            if(!bound.roster.find(id))id={};
+        MixerSessionDocument verified;
+        if(!decode(encode(bound),verified))return false;
+        document=std::move(bound);
+        return true;
+    }
+
 };
 } // namespace armix::session

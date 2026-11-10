@@ -612,26 +612,41 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.match(service,/audioSetupWindow_->isVisible\(\)/);
   assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
-  assert.match(service,/setup\.useDefaultInputChannels=!setup\.inputChannels\.isZero\(\)/);
+  assert.match(service,/setup\.useDefaultInputChannels=refreshWdm && !setup\.inputChannels\.isZero\(\)/);
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
   assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
 });
 
-test('ASIO4ALL missing JUCE device can reopen only the pinned user-selected driver',()=>{
+test('Missing ASIO device can reopen only the pinned registered user-selected driver',()=>{
   const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
   const service=main.slice(main.indexOf('void serviceAsioMixerRestart()'),
                            main.indexOf('void changeListenerCallback ('));
   assert.match(service,/else if\(!engine_\.selectedRetainedAsioDriverForReopen\(\)\)/);
   assert.match(service,/if\(!device \|\| !device->isOpen\(\)/);
-  assert.match(service,/ASIO4ALL_DEVICE_MISSING/);
+  assert.match(service,/ASIO_DEVICE_MISSING/);
   const selected=engine.slice(engine.indexOf('bool selectedRetainedAsioDriverForReopen()'),
                               engine.indexOf('bool authorizeRetainedAsioRestart()'));
   assert.match(selected,/deviceManager_\.getCurrentAudioDevice\(\)/);
   assert.match(selected,/deviceManager_\.getCurrentAudioDeviceType\(\)!="ASIO"/);
-  assert.match(selected,/Policy::isAsio4All\(\*acceptedMixerBinding_\)/);
+  assert.match(selected,/acceptedMixerBinding_->backend!="ASIO"/);
   assert.match(selected,/setup\.outputDeviceName!=acceptedMixerBinding_->playback/);
   assert.match(selected,/setup\.inputDeviceName!=acceptedMixerBinding_->capture/);
   assert.match(selected,/asioPinnedRegistration_\.sameDriverClass\(registered\.registration\.identity\)/);
+});
+
+test('ASIO callback restart restores pristine SOURCE NONE without replacing authored mixer',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h'),
+    dry=read('src/LiveDryRoutingLab.h');
+  const service=main.slice(main.indexOf('void serviceAsioMixerRestart()'),
+                           main.indexOf('void changeListenerCallback ('));
+  assert.match(service,/const bool silent=!mixerSessionRecoveryPending_ &&\s*engine_\.hasPristineSilentMixerAwaitingAsio\(\)/);
+  assert.match(service,/if\(silent\)\s*\{/);
+  assert.match(service,/engine_\.rebuildPristineSilentAsioMixer\(\)/);
+  assert.match(engine,/current\.outputMask!=acceptedMixerBinding_->outputMask/);
+  assert.match(engine,/current\.outputNames!=acceptedMixerBinding_->outputNames/);
+  assert.match(engine,/sameRetainedAsioDriver\(\)/);
+  assert.match(dry,/hasPristineSilentMixerAwaitingDevice\(\)/);
+  assert.match(dry,/!hasAuthoredMixerContent\(\)/);
 });
 
 test('ASIO restart cannot strand MAIN off after temporary graph readiness faults',()=>{
@@ -643,4 +658,16 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
   assert.match(begin,/if\(monitor_\.load\(std::memory_order_acquire\)\)/);
   assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
   assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
+});
+
+test('offline checkpoints stay protected until verified native restore',()=>{
+  const edit=main.slice(main.indexOf('bool saveLogicalWorkspace('),
+    main.indexOf('juce::var approvedNativeSnapshot ('));
+  const open=main.slice(main.indexOf('armix::session::NativeLogicalMixerWorkspace opened;'),
+    main.indexOf('if(error.isEmpty())error=safe->materializeLogicalFxForBinding(doc,states);'));
+  const save=main.slice(main.indexOf('juce::String saveMixerSession('),
+    main.indexOf('void openMixerFile('));
+  assert.match(edit,/mixerSessionRecoveryPending_=true;\s*safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND"/);
+  assert.match(open,/mixerSessionRecoveryPending_=true;[\s\S]*?"LOGICAL_SESSION_OPENED_UNBOUND"/);
+  assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
 });

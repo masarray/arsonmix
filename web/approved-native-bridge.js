@@ -143,8 +143,8 @@
   // present in the current acknowledged OR retained graph. No physical
   // audio device, output arm or PCM graph mutation is required.
   const identityChannelFor=t=>{
-    const id=nativeIdFor(t),current=controller?.state()?.current;
-    return id && (current?.admitted||current?.retained) &&
+    const id=nativeIdFor(t),current=activeView();
+    return id && (current?.admitted||current?.retained||current?.logical) &&
       current.graph?.channels?.some(ch=>ch.id===id)?id:null;
   };
   const identityEligible=t=>Boolean(identityChannelFor(t));
@@ -162,9 +162,20 @@
     if(!connected)return false;
     const localId=scope?.identityTrackId,
       track=scope?.tracks?.concat(scope.master||[])?.find(x=>x.id===localId),
-      channelId=nativeIdFor(track),current=controller?.state()?.current;
+      channelId=nativeIdFor(track),current=activeView();
     const rawName=String(document.getElementById("identityName")?.value||"");
     const name=rawName.trim().replace(/\s+/g," ");
+    if(logicalView){
+      const unique=logicalView.graph.channels.every(ch=>ch.id===channelId||
+        ch.name.toLowerCase()!==name.toLowerCase());
+      if(!channelId||!legalName(name)||!unique){
+        status("Enter a unique valid channel name");return false;
+      }
+      const sent=logicalIntent("RENAME_CHANNEL",channelId,{name});
+      if(!sent.ok){status("Channel rename not saved");return false;}
+      logicalRenameId=channelId;
+      return false; // Native ACK + later readback closes the editor
+    }
     if(!channelId||!current||(current?.raw?.mixerSession?.authority!=="CHANNEL_ID")||
        !(current.admitted||current.retained)||!appearanceWritable){
       status("Native channel identity unavailable · verify saved native graph");
@@ -247,11 +258,21 @@
   let nativeFxPowerSerial=0,pendingNativeFxPower=null;
   const pendingM4RackPowers=new Map();
   let controller = null;
+  let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  const logicalClientToken=Date.now().toString(36)+"-"+
+    Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
   // Internal identifiers remain in engine logs, never footer, dialog or toast.
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // A product never advertises unfinished internal QA/FAT certification to
+    // operators. This is a display-only adapter, not an audio-state override.
+    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
+      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
+      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
+      return "Mixer ready";
+    }
     const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
     if(internalCode ||
        /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
@@ -287,14 +308,19 @@
     if (info && info.textContent !== text) info.textContent = text;
   };
   // The original preview's say() may still populate this footer.
-  // Observe two text nodes only, no polling, audio callback or DOM-wide scans.
+  // Observe the three footer nodes, no polling, audio callback or DOM-wide scans.
   if(connected){
+    const transport=document.getElementById?.("transport");
     const info=document.getElementById?.("info");
     const warning=document.querySelector?.(".status-bar .warning");
+    if(transport)transport.textContent="Opening mixer…";
     if(info)info.textContent="Opening mixer…";
     if(warning)warning.textContent="CONNECTING AUDIO…";
     if(typeof MutationObserver==="function"){
-      const nodes=[info,warning].filter(Boolean);
+      // The preview, legacy host and new bridge can all write into the
+      // transport/last-action/warning footer. Guard *all three* output nodes.
+      // Native only; public browser preview retains its instructional copy.
+      const nodes=[transport,info,warning].filter(Boolean);
       const sanitize=()=>{
         for(const node of nodes){
           const clean=operatorMessage(node.textContent);
@@ -319,11 +345,74 @@
     }
     scope?.stopDemo?.();
     const authority = flags.productionCallbackLive ? "product-live" :
-      flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
+      flags.acceptedGraphConnected ? "pcm-accepted" :
+      logicalView ? "logical-editable" : "not-admitted";
     if (document.documentElement.dataset.armixNativeAuthority !== authority)
       document.documentElement.dataset.armixNativeAuthority = authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
+  const activeView=()=>logicalView||controller?.state()?.current;
+  // Dedicated logical transactions never advertise physical PCM admission.
+  // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
+  function logicalIntent(operation,channelId,payload={}) {
+    if(!logicalView || logicalView.readOnly || pendingLogical)
+      return {ok:false,error:logicalView?.readOnly?"SAVED_MIXER_RECOVERY_REQUIRED":
+        pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
+    if(!logicalView.graph.capabilities.supportedOps.includes(operation))
+      return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
+    const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
+    const value=operation==="SET_FADER"?payload.valueDb:
+      operation==="SET_PAN"?payload.value:
+      ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
+        payload.enabled:undefined;
+    pendingLogical={requestId,operation,channelId,payload,
+      workspaceToken:logicalView.workspaceToken,
+      beforeRevision:logicalView.graph.revision,ackRevision:null,createdId:null};
+    backend.emitEvent("arMixLogicalIntent",{
+      requestId,workspaceToken:logicalView.workspaceToken,
+      baseRevision:logicalView.graph.revision,operation,
+      ...(channelId?{channelId}:{}),payload,
+      ...(value===undefined?{}:{value})
+    });
+    window.setTimeout(()=>{
+      if(pendingLogical?.requestId!==requestId)return;
+      pendingLogical=null;
+      status("Mixer edit not confirmed · previous saved settings retained");
+      controller?.subscribe();
+    },8000);
+    return {ok:true,requestId};
+  }
+  function logicalReadbackProves(p,graph) {
+    const row=graph.channels.find(ch=>ch.id===p.channelId),v=p.payload;
+    switch(p.operation) {
+      case "CREATE_CHANNEL":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="INPUT");
+      case "CREATE_GROUP":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="GROUP");
+      case "DELETE_CHANNEL":case "REMOVE_BUS":return !row;
+      case "RENAME_CHANNEL":return row?.name===v.name;
+      case "SET_PROCESSING_FORMAT":return row?.processingFormat===v.format;
+      case "SET_FADER":return !!row&&Math.abs(row.controls.faderDb-v.valueDb)<.11;
+      case "SET_PAN":return !!row&&Math.abs(row.controls.pan-v.value)<.011;
+      case "SET_MUTE":return row?.controls.mute===v.enabled;
+      case "SET_SOLO":return row?.controls.solo===v.enabled;
+      case "SET_FX_RACK_BYPASS":return row?.fxRackBypassed===v.enabled;
+      case "ADD_FX_REFERENCE":return row?.inserts?.some(fx=>fx.catalogId===v.catalogId);
+      case "REMOVE_FX_REFERENCE":return !!row&&
+        row.inserts.length===v.beforeCount-1;
+      case "SET_FX_SLOT_BYPASS":return row?.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "WIRE_TRANSACTION": {
+        const change=v.changes?.[0];
+        if(!change)return false;
+        const edges=graph.edges.filter(e=>e.from===change.from);
+        if(change.op==="REMOVE")return !edges.some(e=>e.edgeId===change.edgeId);
+        if(change.op==="DISCONNECT")return !edges.some(e=>e.primaryOutput);
+        if(change.op==="ROUTE_ONLY")return edges.some(e=>e.to===change.to&&e.primaryOutput);
+        if(change.op==="CONNECT")return edges.some(e=>e.to===change.to&&!e.primaryOutput);
+        if(change.op==="RETARGET")return edges.some(e=>e.edgeId===change.edgeId&&e.to===change.to);
+        return false;
+      }
+      default:return false;
+    }
+  }
   function queueWireGainFlush(){
     if(wireGainFlushQueued)return;
     wireGainFlushQueued=true;
@@ -355,7 +444,7 @@
     pendingWireGains.set(edgeId,{source,gain:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
   }
-  function nativeOutputTargets(t,channels=controller?.state()?.current?.graph?.channels||[]){
+  function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
     const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
     return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
       .map(ch=>{const label=displayNameFor(ch);
@@ -364,6 +453,7 @@
           label+" ["+ch.id+"]":label};});
   }
   const intent = (operation,t,payload) => {
+    if(logicalView)return logicalIntent(operation,nativeIdFor(t),payload).ok;
     if (!flags.acceptedGraphConnected) {
       status("NATIVE: accepted graph not projected; control unchanged");
       return false;
@@ -375,7 +465,8 @@
     return result.ok;
   };
   function projection(native) {
-    if ((!native?.admitted && !native?.retained) || !Array.isArray(native.graph.edges) ||
+    if ((!native?.admitted && !native?.retained && !native?.logical) ||
+        !Array.isArray(native.graph.edges) ||
         !scope?.make || !scope?.render || !scope?.wireGraph ||
         !scope?.installGraph || !scope?.allocateWireId) return false;
     const accepted = native.graph;
@@ -688,6 +779,12 @@
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
   function requestProcessingFormat(t){
+    if(logicalView){
+      const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
+      if(source?.role!=="INPUT")return false;
+      const format=source.processingFormat==="MONO"?"STEREO":"MONO";
+      return logicalIntent("SET_PROCESSING_FORMAT",id,{format}).ok;
+    }
     // Once the native ChannelId callback owns PCM, the old M4 routing
     // revision is no longer authoritative. Send M/ST through the SAME
     // admitted epoch/revision/roster transaction as WIRE and SOURCE.
@@ -765,6 +862,19 @@
   // One request/ACK/readback path for BOTH the ordinary OUT select and the
   // hardware-like OUT→MAIN WIRE jack. No browser graph mutation on click.
   function requestPrimaryOut(t,target){
+    if(logicalView) {
+      const from=nativeIdFor(t);
+      const source=logicalView.graph.channels.find(ch=>ch.id===from);
+      if(!source||!["INPUT","GROUP","FX_RETURN"].includes(source.role))return false;
+      const to=target==="NONE"?null:target==="MAIN"?
+        logicalView.graph.mainChannelId:
+        nativeOutputTargets(t,logicalView.graph.channels).find(x=>x.label===target)?.id;
+      if(target!=="NONE"&&!to)return false;
+      if((source.primaryOutId||null)===to)return true;
+      return logicalIntent("WIRE_TRANSACTION",from,{changes:[to?
+        {op:"ROUTE_ONLY",from,to,gainLinear:1}:
+        {op:"DISCONNECT",from}]}).ok;
+    }
     // Exactly ONE PCM route authority: the admitted ChannelId publisher
     // owns all MAIN/Group WIRE and OUT mutations, including original CH1-10.
     // Calling the old M4 structural patch after native WIRE admission would
@@ -865,6 +975,7 @@
   }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
   function requestNativeTrackDelete(track){
+    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const channel=current?.graph?.channels?.find(ch=>ch.id===id);
     if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
@@ -894,6 +1005,7 @@
   // BUS and FX_RETURN use their actual ChannelId; never remove them from
   // browser state before the native publisher ACK and independent graph readback.
   function requestNativeBusDelete(track){
+    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const channel=current?.graph?.channels?.find(ch=>ch.id===id);
     if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
@@ -928,6 +1040,11 @@
     return false;
   }
   function canDeleteNativeStrip(track){
+    if(logicalView){
+      const row=logicalView.graph.channels.find(ch=>ch.id===nativeIdFor(track));
+      return !logicalView.readOnly&&
+        ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
+    }
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const ch=current?.graph?.channels?.find(row=>row.id===id);
     return Boolean(current?.admitted&&!current.retained&&ch&&
@@ -984,6 +1101,8 @@
     return true;
   }
   function canCreateNativeTrack(next){
+    if(logicalView)return !logicalView.readOnly &&
+      logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
     if(next?.retained)return false;
     if(next?.admitted)
       return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
@@ -993,7 +1112,8 @@
     const button=document.getElementById("addTrack");
     if(!button)return;
     const available=canCreateNativeTrack(next);
-    button.disabled=!available || !!pendingBusCreate || !!pendingTrackDelete;
+    button.disabled=!available || !!pendingBusCreate ||
+      !!pendingTrackDelete || !!pendingLogical;
     button.title=available?"Add a stereo audio track routed to MAIN":
       "Connect a verified audio device in Audio I/O to add tracks";
   }
@@ -1012,6 +1132,8 @@
     nativeToast(strip.name+" added · choose its IN to receive audio");
   }
   function requestNativeBusCreate(track=false){
+    if(logicalView)
+      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
     const accepted=controller?.state()?.current;
     const session=mixerSession();
     const capabilities=accepted?.graph?.capabilities?.supportedOps;
@@ -1193,7 +1315,10 @@
   // scalar and retains its guarded routingM4Control gateway.
   const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":t?.id);
   const channelIdScalarReady=(parameter,t)=>{
-    const current=controller?.state()?.current;
+    const current=activeView();
+    if(logicalView)return !!nativeIdFor(t)&&
+      logicalView.graph.capabilities.supportedOps.includes(
+        parameter==="faderDb"?"SET_FADER":"SET_PAN");
     return t?.kind!=="master" &&
       mixerSession()?.authority==="CHANNEL_ID" &&
       flags.acceptedGraphConnected && current?.admitted===true &&
@@ -1202,15 +1327,15 @@
         parameter==="faderDb"?"SET_FADER":"SET_PAN");
   };
   function liveScalarReady(parameter,t) {
-    if(t?.kind==="master")return parameter==="masterGain" &&
-      (m4Verified()||nativeMasterReady());
+    if(t?.kind==="master")return logicalView?parameter==="masterGain":
+      parameter==="masterGain"&&(m4Verified()||nativeMasterReady());
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
   const nativeEditIdentity=(t)=>({
-    epoch:String(hardware?.device?.epoch),
-    authority:mixerSession()?.authority,
-    channelId:t?.kind==="master"?null:nativeIdFor(t)
+    epoch:logicalView?"LOGICAL":String(hardware?.device?.epoch),
+    authority:logicalView?"LOGICAL":mixerSession()?.authority,
+    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
   });
   function sameNativeEditIdentity(edit) {
     const now=nativeEditIdentity(edit.t);
@@ -1240,11 +1365,12 @@
   function dispatchLiveScalar(edit) {
     if(!sameNativeEditIdentity(edit) ||
        !liveScalarReady(edit.parameter,edit.t))return false;
-    if(edit.t?.kind==="master" || m4ControlIsOwner())
+    if(logicalView&&pendingLogical)return null;
+    if(!logicalView&&(edit.t?.kind==="master" || m4ControlIsOwner()))
       return sendM4Control(edit.parameter,edit.t,edit.value);
-    if(controller?.state()?.pending)return null;
-    return intent(edit.parameter==="faderDb"?"SET_FADER":"SET_PAN",
-      edit.t,edit.parameter==="faderDb"?
+    if(!logicalView&&controller?.state()?.pending)return null;
+    return intent(edit.parameter==="faderDb"||edit.parameter==="masterGain"?"SET_FADER":"SET_PAN",
+      edit.t,edit.parameter==="faderDb"||edit.parameter==="masterGain"?
         {valueDb:edit.value}:{value:edit.value/100});
   }
   function flushLiveScalars() {
@@ -1267,6 +1393,12 @@
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
     if(parameter==="faderDb"||parameter==="masterGain")
       liveFaderVisualTargets.set(key,edit);
+    // Offline document changes are not realtime PCM. Persist only the
+    // released target, not one .smix generation per pointer-move frame.
+    if(logicalView){
+      if(final)flushLiveScalars();
+      return true;
+    }
     const last=lastNativeControlSent.get(key);
     if(final||last===undefined||now-last>=30)
       flushLiveScalars(); // pointermove publishes BEFORE pointerup
@@ -1569,11 +1701,12 @@
       scope.master.output=mainOutput;
       if(!next?.admitted && !next?.retained)scope.render?.();
     }
-    const transport=next?.retained?"OUTPUT WAITING FOR DEVICE":
-      !deviceOpen?"Audio device not ready":
-      (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
-      (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
-    if(label && label.textContent!==transport)label.textContent=transport;
+    const transport=next?.retained?"Output disconnected · Open Audio I/O":
+      !deviceOpen?"Audio device unavailable · Open Audio I/O":
+      (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
+      (virtualOut?" · Virtual output · No speakers":"");
+    const operatorTransport=operatorMessage(transport);
+    if(label && label.textContent!==operatorTransport)label.textContent=operatorTransport;
     const warning=document.querySelector?.(".status-bar .warning");
     // A silent first-sound session is not an operator failure and does
     // not require Patch CH1 / Arm / Start controls. The real IN dropdown
@@ -1673,6 +1806,13 @@
         .armix-audio-dialog button:disabled{opacity:.45}
         .armix-audio-dialog .armix-device-actions{display:flex;gap:8px;justify-content:flex-end}
         .armix-audio-dialog .armix-device-note{color:#a4c4d0;line-height:1.4}
+        .armix-device-progress{display:flex;align-items:center;gap:12px;min-height:48px;
+          padding:8px 12px;border:1px solid #9b7440;border-radius:6px;
+          background:#30271b;color:#ffd17a}
+        .armix-device-progress[hidden]{display:none}
+        .armix-device-progress svg{width:26px;height:32px;flex:none}
+        .armix-device-progress strong{display:block;font-size:12px;font-weight:600}
+        .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
@@ -1692,6 +1832,27 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
+          <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
+          <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
+            <g transform="matrix(1 0 0 -1 0 80)">
+              <rect width="10" height="20" rx="3">
+                <animate attributeName="height" begin="0s" dur="4.3s" values="20;45;57;80;64;32;66;45;64;23;66;13;64;56;34;34;2;23;76;79;20" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="15" width="10" height="80" rx="3">
+                <animate attributeName="height" begin="0s" dur="2s" values="80;55;33;5;75;23;73;33;12;14;60;80" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="30" width="10" height="50" rx="3">
+                <animate attributeName="height" begin="0s" dur="1.4s" values="50;34;78;23;56;23;34;76;80;54;21;50" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+              <rect x="45" width="10" height="30" rx="3">
+                <animate attributeName="height" begin="0s" dur="2s" values="30;45;13;80;56;72;45;76;34;23;67;30" calcMode="linear" repeatCount="indefinite"/>
+              </rect>
+            </g>
+          </svg>
+          <div><strong>Applying audio device…</strong>
+          <span>Waiting for driver and mixer verification.</span></div>
+        </div>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
@@ -1706,10 +1867,10 @@
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=()=>{
-        devicePanel.hidden=true;
+        if(!deviceBusy)devicePanel.hidden=true;
       };
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel)devicePanel.hidden=true;
+        if(e.target===devicePanel&&!deviceBusy)devicePanel.hidden=true;
       });
       devicePanel.addEventListener("change",e=>{
         if(!deviceChoice)return;
@@ -1763,6 +1924,7 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    if(deviceBusy)return;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceResult="";
     offeredPinRemap=null;
@@ -1863,8 +2025,22 @@
     remap.disabled=deviceBusy;
     remap.title="Reuse existing input and output pin numbers on the selected device. MONITOR stays off.";
   }
+  function showDeviceApplyProgress(pending){
+    const progress=devicePanel.querySelector("[data-audio-progress]");
+    const svg=progress.querySelector("svg");
+    progress.hidden=!pending;
+    devicePanel.querySelector("[data-audio-active]").hidden=pending;
+    devicePanel.querySelector("[data-audio-close]").disabled=pending;
+    const apply=devicePanel.querySelector("[data-audio-apply]");
+    apply.textContent=pending?"Applying…":"Apply device";
+    apply.setAttribute("aria-busy",String(pending));
+    if(pending&&!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches){
+      svg.setCurrentTime?.(0);
+      svg.unpauseAnimations?.();
+    }else svg.pauseAnimations?.();
+  }
   function sendDeviceApply(confirmRetainedPinMapping=false,assignMain=false){
-    if(!deviceChoice||!deviceInventory?.active)return;
+    if(deviceBusy||!deviceChoice||!deviceInventory?.active)return;
     const c=deviceChoice,a=deviceInventory.active;
     const same=a.open&&a.backend===c.backend&&
       a.captureDevice===c.capture&&a.playbackDevice===c.playback;
@@ -1873,9 +2049,9 @@
     deviceBusy=true;
     const requestId="approved-io-"+(++deviceRequest);
     devicePanel.dataset.pendingRequest=requestId;
-    devicePanel.querySelector("[data-audio-active]").textContent=
-      "Applying audio device; verifying native readback…";
-    backend.emitEvent("arMixAction",{action:"audioDeviceApply",
+    showDeviceApplyProgress(true);
+    renderDevicePanel();
+    const request={action:"audioDeviceApply",
       requestId,expectedDeviceGeneration:Number(a.deviceGeneration),
       config:{backend:c.backend,captureDevice:c.capture,
         playbackDevice:c.playback,
@@ -1884,7 +2060,18 @@
         enabledInputs:same?c.inputPins:[],
         enabledOutputs:same?c.outputPins:[],
         ...(confirmRetainedPinMapping?{confirmRetainedPinMapping:true}:{}),
-        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}});
+        ...(assignMain?{assignSelectedPlaybackPinsToMain:true}:{})}};
+    // Give WebView a paint before the native driver open can block JUCE.
+    // The fallback also submits when animation frames are throttled.
+    let submitted=false;
+    const submit=()=>{
+      if(submitted)return;
+      submitted=true;
+      window.clearTimeout(fallback);
+      backend.emitEvent("arMixAction",request);
+    };
+    const fallback=window.setTimeout(submit,120);
+    window.requestAnimationFrame(()=>window.requestAnimationFrame(submit));
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
@@ -1894,8 +2081,10 @@
       renderDevicePanel();
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
-      if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
+      if(!devicePanel||!deviceBusy||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
+      delete devicePanel.dataset.pendingRequest;
+      showDeviceApplyProgress(false);
       if(ack.active)deviceInventory.active=ack.active;
       offeredPinRemap=ack.state==="NEEDS_REMAP" && ack.canReusePins===true &&
         ack.active?.open===true && ack.active?.authorized===true &&
@@ -2258,6 +2447,81 @@
     updateHardwarePanel(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
+    const offline=next?.raw?.logicalMixer;
+    // Retained PCM owns vendor state even if the saved descriptors look
+    // identical. Only native can authorize the unbound logical editor.
+    const logicalAvailable=!next.admitted&&!next.retained&&!m4Verified()&&
+      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
+      offline?.schema==="arsonmix.native.logical-mixer.v1" &&
+      offline.authority==="LOGICAL_ONLY"&&
+      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
+      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
+      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
+      protocol.decimal(offline.revision)!==null&&offline.revision!=="0"&&
+      offline.revision===offline.graph?.revision&&
+      offline.revision===offline.graph?.rosterRevision&&
+      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
+    if(logicalAvailable) {
+      const staged={...next,graph:offline.graph,
+        workspaceToken:offline.workspaceToken,
+        identity:"logical:"+offline.workspaceToken+":"+offline.revision,logical:true,
+        readOnly:offline.readOnly===true,
+        admitted:false,retained:false,productLive:false,telemetry:{}};
+      let revealCreatedId=null;
+      if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
+        pendingLogical=null;
+      if(pendingLogical) {
+        const p=pendingLogical;
+        if(!p.ackRevision)return; // no optimistic pre-ACK projection
+        if(BigInt(offline.revision)<BigInt(p.ackRevision))return;
+        if(!logicalReadbackProves(p,offline.graph)){
+          pendingLogical=null;
+          status("Mixer change not verified · refreshing saved session");
+          controller?.subscribe();
+          return;
+        }
+        pendingLogical=null;
+        if((p.operation==="CREATE_CHANNEL"||p.operation==="CREATE_GROUP") &&
+           p.createdId)revealCreatedId=p.createdId;
+        if(logicalRenameId===p.channelId&&p.operation==="RENAME_CHANNEL") {
+          logicalRenameId=null;
+          scope?.closeChannelIdentity?.();
+        }
+        status("Mixer changes saved · audio device not connected");
+        window.queueMicrotask(flushLiveScalars);
+      }
+      logicalView=staged;
+      const signature="logical|"+offline.workspaceToken+"|"+offline.revision+"|"+JSON.stringify(
+        offline.graph.channels.map(ch=>[ch.id,ch.name,ch.controls,ch.inserts,ch.fxRackBypassed]))+
+        "|"+JSON.stringify(offline.graph.edges);
+      if(signature!==lastPaintedSignature) {
+        if(!projectNativeGraphWithoutFocusLoss(staged)){
+          logicalView=null;
+          status("Saved logical mixer readback invalid · controls unchanged");
+          return;
+        }
+        lastPaintedSignature=signature;
+      }
+      if(revealCreatedId) {
+        const local=uiByNativeId.get(revealCreatedId);
+        const strip=scope?.tracks?.find(t=>t.id===local);
+        if(strip)scope?.revealTrack?.(strip);
+      }
+      document.documentElement.dataset.armixNativeRoster="logical";
+      flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      stopDemo();syncAddTrack(staged);
+      const addBus=document.getElementById("addBus");
+      if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
+      status(staged.readOnly?
+        "Saved mixer recovery required · Open a verified .smix file":
+        "Mixer ready to edit · connect Audio I/O to enable sound");
+      return;
+    }
+    logicalView=null;
+    if(pendingLogical) {
+      pendingLogical=null;
+      status("Audio connection changed · refresh mixer before editing");
+    }
     if(!session || session.deviceEpoch!==next.device.epoch) {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
@@ -2440,6 +2704,22 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixLogicalAck",ack=>{
+      const pending=pendingLogical;
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      if(ack.status!=="ACCEPTED"||ack.errorCode!=="NONE"||
+         protocol.decimal(ack.revision)===null ||
+         BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
+        pendingLogical=null;
+        status("Mixer edit rejected · previous saved settings retained");
+        controller?.subscribe();
+        return;
+      }
+      pending.ackRevision=ack.revision;
+      pending.createdId=ack.createdId||null;
+      // An ACK does NOT establish readback, let alone PCM.
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixChannelIdentityAck", ack=>{
       if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
       if(ack.ok!==true){
@@ -2670,7 +2950,7 @@
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
       if(t?.kind!=="audio")return ["None"];
-      if(controller?.state()?.current?.retained)return [t.input||"None"];
+      if(controller?.state()?.current?.retained&&!logicalView)return [t.input||"None"];
       const choices=inputChoicesFor().map(x=>x.label);
       // The native BUS lane is selectable only for display: never invent a
       // hardware pin or promote the internal BUS to a writable physical IN.
@@ -2678,6 +2958,7 @@
       return choices;
     },
     outputChoices(t) {
+      if(logicalView&&t?.kind==="master")return ["Choose audio output"];
       if(t?.kind==="master")
         return [hardware?.retained?NEEDS_REMAP:
           String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
@@ -2686,7 +2967,8 @@
         // never pretend the demo's other destinations have native PCM.
         const options=["Master","SOURCE ONLY (No Main)"];
         const graph=controller?.state()?.current?.graph;
-        if(mixerSession()?.authority==="CHANNEL_ID"&&graph?.channels)
+        if((logicalView||mixerSession()?.authority==="CHANNEL_ID")&&
+           (logicalView?.graph?.channels||graph?.channels))
           for(const target of nativeOutputTargets(t))options.push(target.label);
         if(t.output&&!options.includes(t.output))options.push(t.output);
         return options;
@@ -2699,7 +2981,7 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
-      if(controller?.state()?.current?.retained){
+      if(controller?.state()?.current?.retained&&!logicalView){
         if(field==="output" && t.kind==="master" && event.type==="change")
           openNativeAudioIO();
         if(field==="level" || field==="pan" || field==="input" || field==="output")
@@ -2841,15 +3123,26 @@
       if (["wireExpand","wireSource","wireRoute"].includes(action))
         return false;
       if(action==="removeFx") {
+        if(logicalView){
+          const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
+          const slot=Number(btn?.dataset.slot);
+          if(row&&Number.isInteger(slot)&&slot>=0&&slot<row.inserts.length)
+            logicalIntent("REMOVE_FX_REFERENCE",id,{slot,beforeCount:row.inserts.length});
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
         const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
-        if(mixerSession()?.authority==="CHANNEL_ID") {
-          const current=controller?.state()?.current,id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
+        if(logicalView||mixerSession()?.authority==="CHANNEL_ID") {
+          const current=activeView(),id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
+          if(!Number.isInteger(slot)||slot<0||slot>=8)return true;
           const insert=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot];
-          if(current?.admitted&&insert?.id&&Number.isInteger(slot)&&slot>=0&&slot<8) {
+          if(!insert?.id) {
+            discoverFxOnFirstPickerOpen();
+            scope?.openFastPicker?.(t,slot,btn);
+          } else if(current.admitted||current.logical) {
             if(insert.catalogId==='armix.builtin.channel-eq.v1') {
               window.ArSonMixNativeEq?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.channel-compressor.v1') {
@@ -2858,9 +3151,13 @@
               window.ArSonMixNativeHarmony?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.vocal-throw.v1') {
               window.ArSonMixNativeVocalThrow?.open(t,slot);
+            } else if(current.logical) {
+              backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",channelId:id,
+                slot,instanceId:insert.id,workspaceToken:current.workspaceToken,
+                graphRevision:current.graph.revision,deviceEpoch:"0"});
             } else backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
               instanceId:insert.id,deviceEpoch:current.device.epoch,revision:current.graph.revision});
-          } else {discoverFxOnFirstPickerOpen();scope?.openFastPicker?.(t,slot,btn);}
+          } else nativeToast("This FX is held with the disconnected audio session");
           return true;
         }
         const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
@@ -2879,6 +3176,14 @@
         return true;
       }
       if(action==="slotPower"){
+        if(logicalView){
+          const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
+          const slot=Number(btn?.dataset.slot),insert=row?.inserts?.[slot];
+          if(insert)
+            logicalIntent("SET_FX_SLOT_BYPASS",id,
+                          {slot,enabled:!insert.bypassed});
+          return true;
+        }
         if(mixerSession()?.authority==="CHANNEL_ID"){
           if(!requestAdmittedFxPower(t,action,btn))
             nativeToast("Native FX slot unavailable · accepted insert/epoch required");
@@ -2891,6 +3196,13 @@
         return true;
       }
       if(action==="fxOn"){
+        if(logicalView){
+          const channelId=nativeIdFor(t);
+          const row=logicalView.graph.channels.find(ch=>ch.id===channelId);
+          if(row)logicalIntent("SET_FX_RACK_BYPASS",channelId,
+                               {enabled:!row.fxRackBypassed});
+          return true;
+        }
         const authority=mixerSession()?.authority;
         const ok=authority==="M4"?requestM4RackPower(t):
           authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
@@ -2929,6 +3241,33 @@
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
+      if(logicalView) {
+        if(!Array.isArray(ops)||ops.length!==1){
+          nativeToast("One WIRE edit at a time");return true;
+        }
+        const op=ops[0];
+        if(op.type==="GAIN"){
+          nativeToast("Send gain editing requires the connected mixer");return true;
+        }
+        const from=nativeByUiId.get(op.sourceId);
+        const to=op.destId===undefined?null:nativeByUiId.get(op.destId);
+        const edgeId=wireByUiId.get(op.edgeId);
+        if(!from)return true;
+        const primary=(op.type==="ROUTE_ONLY" ||
+          (op.type==="CONNECT"&&op.destId===scope?.master?.id&&
+           op.mode!=="send"));
+        const kind=primary?"ROUTE_ONLY":op.type;
+        if(["CONNECT","ROUTE_ONLY","RETARGET"].includes(kind)&&!to)return true;
+        if(["REMOVE","RETARGET"].includes(kind)&&!edgeId)return true;
+        const change={op:kind,from,...(to?{to}:{}),
+          ...(edgeId?{edgeId}:{}),
+          ...(kind==="CONNECT"||kind==="ROUTE_ONLY"?
+            {gainLinear:kind==="ROUTE_ONLY"?1:
+              Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb??0)))/20)}:{})};
+        if(!logicalIntent("WIRE_TRANSACTION",from,{changes:[change]}).ok)
+          nativeToast("WIRE not saved · previous routing retained");
+        return true;
+      }
       const state=controller?.state();
       // A first drag may arrive before SOURCE's later accepted snapshot.
       // Preserve that one operator intent; resolve only against fresh native
@@ -3051,6 +3390,20 @@
     },
     nativeIdFor(t){return nativeIdFor(t);},
     insertPlugin(id,target){
+      if(logicalView){
+        const t=scope?.tracks?.find(x=>x.id===target?.channelId)||
+          (scope?.master?.id===target?.channelId?scope.master:null);
+        const channelId=nativeIdFor(t);
+        const channel=logicalView.graph.channels.find(ch=>ch.id===channelId);
+        const slot=Number(target?.slot);
+        if(!channel||!Number.isInteger(slot)||slot!==channel.inserts.length||
+           slot<0||slot>=8){
+          nativeToast("Choose the next empty FX slot");return true;
+        }
+        if(!logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id}).ok)
+          nativeToast("FX selection not saved");
+        return true;
+      }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
       const plugin=nativeCatalog.get(id) ||
         (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:
@@ -3125,6 +3478,7 @@
       return true;
     },
     applyIdentity:acceptIdentityPresentation,
+    fxEditorState:activeView,
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;
@@ -3145,7 +3499,7 @@
   // Disable physical control gestures while G0 has no accepted ChannelId graph.
   // Presentation-only bank/selection remains available.
   document.addEventListener("pointerdown",event=>{
-    if (flags.acceptedGraphConnected) return;
+    if (flags.acceptedGraphConnected || logicalView) return;
     const t=scope?.findTrack?.(event.target);
     if(m4Verified() && (t?.kind==="audio"||t?.kind==="master"))return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
@@ -3272,12 +3626,17 @@
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
-    backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false,
-      viewportWidth:Math.round(window.innerWidth),
-      viewportHeight:Math.round(window.innerHeight),
-      devicePixelRatio:window.devicePixelRatio
-    });
+    // Only the installed native Pages scope can authenticate host GUI readiness.
+    // This handshake says nothing about whether physical PCM is admitted.
+    if(scope?.installGraph && scope?.render){
+      backend.emitEvent("arMixGuiReady",{
+        gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
+        visualReady:true,audioReady:false,
+        viewportWidth:Math.round(window.innerWidth),
+        viewportHeight:Math.round(window.innerHeight),
+        devicePixelRatio:window.devicePixelRatio
+      });
+    } else status("Native mixer renderer unavailable · repair application");
     controller.subscribe();
   };
   if(document.readyState==="loading")

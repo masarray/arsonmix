@@ -24,6 +24,54 @@ struct PlayerLibraryPolicy final {
         std::vector<juce::File> files;
         bool truncated=false;
     };
+    struct SafeRelink {
+        std::size_t index=0;
+        juce::File replacement;
+    };
+    // Run on the folder scan worker. A chosen folder is explicit
+    // permission to search, NOT permission to guess song identity. Relink only
+    // an unambiguous full filename (including extension), never a stem match,
+    // never a path already owned by another track, and never CURRENT live deck.
+    // Preserve the original row, per-song KEY/TEMPO, and selection.
+    static std::vector<SafeRelink> planMissingRelinks(
+        const std::vector<juce::File>& library,
+        const Scan& scan,
+        int protectedCurrent=-1) {
+        // A truncated scan cannot prove that a filename is unique.
+        if(scan.truncated)return {};
+        std::vector<SafeRelink> plan;
+        for(std::size_t i=0;i<library.size();++i) {
+            const auto& old=library[i];
+            if(static_cast<int>(i)==protectedCurrent || old.existsAsFile())
+                continue;
+            const auto filename=old.getFileName();
+            if(filename.isEmpty() || !supported(old))continue;
+            const juce::File* match=nullptr;
+            bool ambiguous=false;
+            for(const auto& candidate:scan.files) {
+                if(!candidate.getFileName().equalsIgnoreCase(filename))
+                    continue;
+                if(!supported(candidate) || !candidate.existsAsFile())
+                    continue;
+                if(match) {ambiguous=true;break;}
+                match=&candidate;
+            }
+            if(!match || ambiguous)continue;
+            // An existing song or second missing row must not be silently
+            // mapped to one physical file. Require one-to-one ownership.
+            const auto alreadyOwned=std::any_of(library.begin(),library.end(),
+                [&](const juce::File& entry) {return entry==*match;});
+            if(alreadyOwned)continue;
+            const auto duplicateMissing=std::count_if(library.begin(),library.end(),
+                [&](const juce::File& entry) {
+                    return entry.getFileName().equalsIgnoreCase(filename) &&
+                           !entry.existsAsFile();
+                });
+            if(duplicateMissing!=1)continue;
+            plan.push_back({i,*match});
+        }
+        return plan;
+    }
     static Scan scanFolder(const juce::File& folder) {
         Scan result;
         if(!folder.isDirectory())return result;

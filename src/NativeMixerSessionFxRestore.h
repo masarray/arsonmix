@@ -22,6 +22,81 @@ class NativeMixerSessionFxRestore final {
 public:
     using Bank=armix::mixer::DynamicChannelFxLeaseBank;
     using Lease=armix::mixer::LiveChannelFxGraph::InstanceLease;
+    // One factory for persisted inserts and hardware-independent editor instances.
+    static juce::String prepareProcessor(const StoredInsert& insert,
+            const armix::shows::BinaryState* state,
+            juce::AudioPluginFormatManager& formats,double sampleRate,int frames,
+            std::unique_ptr<juce::AudioProcessor>& out) {
+        std::unique_ptr<juce::AudioProcessor> processor;
+        auto* format=formats.getFormat(0);
+        if(insert.catalogId==
+           armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
+            auto eq=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
+            eq->prepareToPlay(sampleRate,frames);
+            if(!eq->isReady()||
+               (state && !eq->restoreUnpublishedState(
+                 state->bytes.getData(),
+                 static_cast<int>(state->bytes.getSize()))))
+                return "Saved native EQ state rejected; graph unchanged";
+            processor=std::move(eq);
+        } else if(insert.catalogId==
+           armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
+            auto comp=std::make_unique<armix::builtin_fx::ChannelCompressorProcessor>();
+            comp->prepareToPlay(sampleRate,frames);
+            if(!comp->isReady()||
+               (state && !comp->restoreUnpublishedState(
+                   state->bytes.getData(),
+                   static_cast<int>(state->bytes.getSize()))))
+                return "Saved native Compressor state rejected; graph unchanged";
+            processor=std::move(comp);
+        } else if(insert.catalogId==
+           armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
+            auto harmony=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
+            harmony->prepareToPlay(sampleRate,frames);
+            if(!harmony->isReady()||
+               (state && !harmony->restoreUnpublishedState(
+                 state->bytes.getData(),static_cast<int>(state->bytes.getSize()))))
+                return "Saved native Harmony state rejected; graph unchanged";
+            processor=std::move(harmony);
+        } else if(insert.catalogId==
+           armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
+            auto throwFx=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
+            throwFx->prepareToPlay(sampleRate,frames);
+            if(!throwFx->isReady()||
+               (state && !throwFx->restoreUnpublishedState(
+                   state->bytes.getData(),
+                   static_cast<int>(state->bytes.getSize()))))
+                return "Saved native Vocal Throw state rejected; graph unchanged";
+            processor=std::move(throwFx);
+        } else {
+            if(!format||
+               !format->fileMightContainThisPluginType(insert.path))
+                return "Saved VST3 unavailable: "+insert.catalogId;
+            const auto chosen=armix::vst::DescriptionCache::resolve(
+                *format,insert.path,insert.uid);
+            if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
+            juce::String pluginError;
+            processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);
+            if(!processor)
+                return "VST3 instance unavailable: "+pluginError;
+            const auto layout=armix::vst::prepareStereoEffectLayout(*processor);
+            if(layout.isNotEmpty())
+                return "Saved VST3 stereo layout rejected: "+layout;
+            processor->prepareToPlay(sampleRate,frames);
+        }
+        if(state && insert.catalogId!=
+           armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
+           insert.catalogId!=
+           armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity &&
+           insert.catalogId!=
+           armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity &&
+           insert.catalogId!=
+           armix::builtin_fx::VocalThrowProcessor::catalogIdentity)
+            processor->setStateInformation(state->bytes.getData(),
+                 static_cast<int>(state->bytes.getSize()));
+        out=std::move(processor);
+        return {};
+    }
     static juce::String prepare(const MixerSessionDocument& doc,
              const std::vector<armix::shows::BinaryState>& states,
              juce::AudioPluginFormatManager& formats,double sampleRate,
@@ -31,7 +106,6 @@ public:
            frames>armix::mixer::PreparedMixerBlock::hardFrameLimit||
            epoch==0||pcmRevision==0)
             return "Invalid driver/epoch for VST3 restoration";
-        auto* format=formats.getFormat(0);
         std::vector<Bank::Assignment> assignments;
         assignments.reserve(doc.roster.size());
         // Index ONCE. A large dynamic mixer must not rescan every channel
@@ -67,71 +141,8 @@ public:
                        juce::SHA256(state.bytes).toHexString()!=insert.sha256)
                         return "Missing or corrupt saved VST3 state";
                     std::unique_ptr<juce::AudioProcessor> processor;
-                    if(insert.catalogId==
-                       armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
-                        auto eq=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
-                        eq->prepareToPlay(sampleRate,frames);
-                        if(!eq->isReady()||
-                           !eq->restoreUnpublishedState(
-                             state.bytes.getData(),
-                             static_cast<int>(state.bytes.getSize())))
-                            return "Saved native EQ state rejected; graph unchanged";
-                        processor=std::move(eq);
-                    } else if(insert.catalogId==
-                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
-                        auto comp=std::make_unique<armix::builtin_fx::ChannelCompressorProcessor>();
-                        comp->prepareToPlay(sampleRate,frames);
-                        if(!comp->isReady()||
-                           !comp->restoreUnpublishedState(
-                               state.bytes.getData(),
-                               static_cast<int>(state.bytes.getSize())))
-                            return "Saved native Compressor state rejected; graph unchanged";
-                        processor=std::move(comp);
-                    } else if(insert.catalogId==
-                       armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
-                        auto harmony=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
-                        harmony->prepareToPlay(sampleRate,frames);
-                        if(!harmony->isReady()||
-                           !harmony->restoreUnpublishedState(
-                             state.bytes.getData(),static_cast<int>(state.bytes.getSize())))
-                            return "Saved native Harmony state rejected; graph unchanged";
-                        processor=std::move(harmony);
-                    } else if(insert.catalogId==
-                       armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
-                        auto throwFx=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
-                        throwFx->prepareToPlay(sampleRate,frames);
-                        if(!throwFx->isReady()||
-                           !throwFx->restoreUnpublishedState(
-                               state.bytes.getData(),
-                               static_cast<int>(state.bytes.getSize())))
-                            return "Saved native Vocal Throw state rejected; graph unchanged";
-                        processor=std::move(throwFx);
-                    } else {
-                        if(!format||
-                           !format->fileMightContainThisPluginType(insert.path))
-                            return "Saved VST3 unavailable: "+insert.catalogId;
-                        const auto chosen=armix::vst::DescriptionCache::resolve(
-                            *format,insert.path,insert.uid);
-                        if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
-                        juce::String pluginError;
-                        processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);
-                        if(!processor)
-                            return "VST3 instance unavailable: "+pluginError;
-                        const auto layout=armix::vst::prepareStereoEffectLayout(*processor);
-                        if(layout.isNotEmpty())
-                            return "Saved VST3 stereo layout rejected: "+layout;
-                        processor->prepareToPlay(sampleRate,frames);
-                    }
-                    if(insert.catalogId!=
-                       armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
-                       insert.catalogId!=
-                       armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity &&
-                       insert.catalogId!=
-                       armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity &&
-                       insert.catalogId!=
-                       armix::builtin_fx::VocalThrowProcessor::catalogIdentity)
-                        processor->setStateInformation(state.bytes.getData(),
-                             static_cast<int>(state.bytes.getSize()));
+                    if(const auto error=prepareProcessor(insert,&state,formats,
+                            sampleRate,frames,processor);error.isNotEmpty())return error;
                     const int latency=processor->getLatencySamples();
                     if(latency<0||
                        latency>armix::dsp::StereoLatencyDelay::maximumSamples)

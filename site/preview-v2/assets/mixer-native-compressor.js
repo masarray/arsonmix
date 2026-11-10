@@ -25,7 +25,7 @@ const presets=Object.freeze({
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
-const snapshot=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
+const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const dom=(tag,css,value)=>{const e=document.createElement(tag);if(css)e.className=css;
  if(value!==undefined)e.textContent=value;return e;};
 const valid=v=>v&&Object.entries(defs).every(([key,r])=>
@@ -213,9 +213,10 @@ function context(){
  const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=n?.graph?.channels?.find(c=>c.id===id);
  const insert=lane?.inserts?.[current.slot];
- if(!n?.admitted||!insert||insert.catalogId!==ID||!insert.id||
+ if(!(n?.admitted||n?.logical)||!insert||insert.catalogId!==ID||!insert.id||
     (current.instanceId&&current.instanceId!==insert.id))return null;
- return {channelId:id,deviceEpoch:n.device.epoch,
+ return {channelId:id,deviceEpoch:n.logical?"0":n.device.epoch,
+  ...(n.logical?{workspaceToken:n.workspaceToken}:{}),
   graphRevision:n.graph.revision,instanceId:insert.id,slot:current.slot};
 }
 function format(key,value){
@@ -412,7 +413,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
   inputDbfs=outputDbfs=-72;meterSerial=null;meterUpdatedAt=0;
   const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=n?.graph?.channels?.find(c=>c.id===id)?.inserts?.[slot];
-  if(native()&&n?.admitted&&insert?.catalogId===ID&&insert.id){
+  if(native()&&(n?.admitted||n?.logical)&&insert?.catalogId===ID&&insert.id){
    current.instanceId=insert.id;
    accepted=defaults();draft={...accepted};
    hint("NATIVE · READING DSP STATE");requestSnapshot();
@@ -488,6 +489,6 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 window.setInterval(()=>{
  if(panel.hidden)return;
  paintMeters();
- if(native()&&context())requestSnapshot();
+ if(native()&&context()&&!snapshot()?.logical)requestSnapshot();
 },160);
 })();

@@ -178,8 +178,10 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("if(!native())",self.ui)
         # Accepted ChannelId/instance binding is re-established on the
         # current graph, not permanently pinned to the editor's open tick.
-        self.assertIn("if(!current||!native()||!n?.admitted)return null;",self.ui)
-        self.assertIn("if(n?.admitted&&insert?.catalogId===ID&&insert.id)",self.ui)
+        self.assertIn("if(!current||!native()||!(n?.admitted||n?.logical))return null;",self.ui)
+        self.assertIn("if((n?.admitted||n?.logical)&&insert?.catalogId===ID&&insert.id)",self.ui)
+        self.assertIn('deviceEpoch:n.logical?"0":n.device.epoch',self.ui)
+        self.assertIn('n.logical?{workspaceToken:n.workspaceToken}:{}',self.ui)
         self.assertIn("function reconcileBinding(){",self.ui)
         self.assertNotIn("REOPEN ACCEPTED FX",self.ui)
         self.assertIn("Native Harmony host not ready · audio unchanged",self.html)

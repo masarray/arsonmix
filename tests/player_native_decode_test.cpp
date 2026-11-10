@@ -64,6 +64,47 @@ int main() {
         missing,folder.getChildFile("02-verse.mp3")));
     assert(!armix::player::PlayerLibraryPolicy::sameSongName(
         missing,folder.getChildFile("01-intro.wav")));
+    // An operator selects the NEW USB folder once. Only an unambiguous
+    // exact full filename can repair an old missing file path; a different
+    // extension with the same stem does not silently replace the song.
+    using Library=armix::player::PlayerLibraryPolicy;
+    const auto lost1=folder.getChildFile("old").getChildFile("01-intro.wav");
+    const auto lost2=folder.getChildFile("old").getChildFile("02-verse.mp3");
+    const auto lost3=folder.getChildFile("old").getChildFile("03-chorus.aiff");
+    std::vector<juce::File> saved={lost1,lost2,lost3};
+    auto repaired=Library::planMissingRelinks(saved,scanned);
+    assert(repaired.size()==3);
+    auto truncated=scanned;
+    truncated.truncated=true;
+    assert(Library::planMissingRelinks(saved,truncated).empty());
+    assert(repaired[0].index==0 && repaired[0].replacement==
+           folder.getChildFile("01-intro.wav"));
+    assert(repaired[1].index==1 && repaired[1].replacement==
+           folder.getChildFile("02-verse.mp3"));
+    assert(repaired[2].index==2 && repaired[2].replacement==
+           nested.getChildFile("03-chorus.aiff"));
+    // Preserve CURRENT live source even if its old file was unplugged.
+    repaired=Library::planMissingRelinks(saved,scanned,1);
+    assert(repaired.size()==2 && repaired[0].index==0 &&
+           repaired[1].index==2);
+    // A song already represented elsewhere must not gain a second owner.
+    saved.push_back(folder.getChildFile("01-intro.wav"));
+    repaired=Library::planMissingRelinks(saved,scanned);
+    assert(repaired.size()==2);
+    // Ambiguous same-name alternatives in subfolders are never guessed.
+    const auto duplicate=nested.getChildFile("02-verse.mp3");
+    assert(duplicate.create().wasOk());
+    const auto ambiguous=Library::scanFolder(folder);
+    repaired=Library::planMissingRelinks(saved,ambiguous);
+    assert(repaired.size()==1 && repaired.front().index==2);
+    // Two missing IDs with the same basename must not collapse into one.
+    saved.push_back(folder.getChildFile("another").getChildFile("03-chorus.aiff"));
+    repaired=Library::planMissingRelinks(saved,ambiguous);
+    assert(repaired.empty());
+    // Extension and name must match exactly even when a stem matches.
+    assert(Library::planMissingRelinks(
+        {folder.getChildFile("old").getChildFile("02-verse.wav")},
+        Library::Scan{{folder.getChildFile("02-verse.mp3")},false}).empty());
     assert(folder.deleteRecursively());
     const auto file=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("arson-player-decoder-test",".wav",false);

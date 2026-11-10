@@ -20,7 +20,7 @@ const same=(a,b)=>Object.keys(defaults()).every(k=>a[k]===b[k]);
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const backend=()=>window.__JUCE__?.backend;
 const native=()=>typeof backend()?.emitEvent==="function";
-const snapshot=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
+const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 
 const panel=document.createElement("section");
 panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
@@ -73,9 +73,10 @@ let tempoPending=null,musicSource="0",musicReadback=null;
 const context=()=>{
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const fx=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[current?.slot];
- if(!state?.admitted||!id||fx?.catalogId!==ID||fx?.id!==current?.instanceId)return null;
+ if(!(state?.admitted||state?.logical)||!id||fx?.catalogId!==ID||fx?.id!==current?.instanceId)return null;
  return {channelId:id,slot:current.slot,instanceId:fx.id,
-  deviceEpoch:state.device.epoch,graphRevision:state.graph.revision};
+  deviceEpoch:state.logical?"0":state.device.epoch,
+  ...(state.logical?{workspaceToken:state.workspaceToken}:{}),graphRevision:state.graph.revision};
 };
 const hint=text=>{$("vtHint").textContent=text;};
 function refreshMusicChannels(){
@@ -91,7 +92,7 @@ function refreshMusicChannels(){
  if([...selector.options].some(x=>x.value===String(selected)))
   selector.value=String(selected);
  else selector.value="0";
- selector.disabled=!ctx||!native()||Boolean(tempoPending);
+ selector.disabled=!ctx||!native()||Boolean(ctx.workspaceToken)||Boolean(tempoPending);
 }
 function renderMusicStatus(tempo){
  if(tempo)musicReadback=tempo;
@@ -175,6 +176,7 @@ function requestSnapshot(force=false){
 function send(command){
  const ctx=context();
  if(!native()||!ctx){hint("Native DSP unavailable");return false;}
+ if(command==="nativeThrowTrigger"&&ctx.workspaceToken){hint("Connect audio to trigger the delay");return false;}
  if(pending){hint("Waiting for DSP ACK");return false;}
  if(command==="nativeThrowSet"&&(!valid(draft)||same(draft,accepted)))return false;
  const requestId="throw-"+String(Date.now()*1000+(++seq%1000));
@@ -323,7 +325,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
-  if(native()&&state?.admitted&&insert?.catalogId===ID&&insert.id){
+  if(native()&&(state?.admitted||state?.logical)&&insert?.catalogId===ID&&insert.id){
    current.instanceId=insert.id;draft=defaults();accepted=defaults();
    hint("");
   }else if(!native()){draft=defaults();accepted=defaults();
@@ -395,7 +397,7 @@ window.setInterval(()=>{
  if(tempoPending&&Date.now()-tempoPending.created>3500){
   hint("Tempo source ACK timeout");tempoPending=null;refreshMusicChannels();
  }
- if(native())requestSnapshot();
+ if(native()&&!snapshot()?.logical)requestSnapshot();
  syncPower();
 },250);
 })();

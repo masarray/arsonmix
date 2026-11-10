@@ -722,7 +722,7 @@ test("single /preview/ GUI: channel IN, actual OUT and correlated device safety 
  assert.match(bridge,/nativeUiSourcePending=null;[\s\S]*?INPUT timeout/);
  assert.match(bridge,/ack\?\.requestId!==devicePanel.dataset.pendingRequest/);
  assert.match(native,/requestAutomaticMain\(\);\s*send\(true,engine_\.isMonitorEnabled\(\)\?"ACCEPTED_LIVE":"ACCEPTED_MUTED"/);
- assert.match(bridge,/VIRTUAL \/ NO SPEAKERS/);
+ assert.match(bridge,/Virtual output · No speakers/);
  assert.match(bridge,/Advanced driver recovery/);
  assert.match(native,/ack->setProperty\("requestId",[\s\S]*?args\.getProperty\("requestId",juce::var\(\)\)/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
@@ -1247,7 +1247,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
  const engine=read('src/LiveAudioEngine.h');
  const route=read('src/LiveDryRoutingLab.h');
  assert.match(main,/nativeAlreadyActive && !retained &&/);
- assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply\) &&/);
+ assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply \|\| firstBinding\) &&/);
  assert.match(main,/recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&\s*mixerSessionRecoveryPending_/);
  assert.match(main,/!usedPrevious && !retained/); // only normal auto-resume, not recovery admission
  assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);

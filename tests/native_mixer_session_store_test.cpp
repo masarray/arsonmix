@@ -7,6 +7,7 @@
 #include "../src/NativeMixerSessionStore.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
+#include "../src/NativeLogicalMixerWorkspace.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -637,8 +638,168 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
     assert(outL.back()>.10f && outR.back()<-.05f);
 }
 
-// An existing .smix still identifies the same native Harmony processor by
-// immutable catalog ID, even when the saved human-facing name is pre-rebrand.
+static void verifyOfflineLogicalSessionAndFile() {
+    NativeLogicalMixerWorkspace workspace;
+    assert(workspace.isLogicalOnly() && workspace.revision()==1);
+    const auto initial=workspace.snapshot();
+    assert(initial.getProperty("authority","").toString()=="LOGICAL_ONLY");
+    assert(!static_cast<bool>(initial.getProperty("physicalOutputAdmitted",true)));
+    assert(!static_cast<bool>(initial.getProperty("outputArmed",true)));
+    const auto graph=initial.getProperty("graph",{});
+    const auto caps=graph.getProperty("capabilities",{});
+    assert(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",true)));
+    assert(graph.getProperty("channels",{}).getArray()->size()==15);
+    auto command=[&](const char* operation,const juce::var& payload,
+                     const juce::String& id=juce::String{}) {
+        auto request=juce::var(new juce::DynamicObject());
+        request.getDynamicObject()->setProperty("operation",operation);
+        request.getDynamicObject()->setProperty("workspaceToken",workspace.workspaceToken());
+        request.getDynamicObject()->setProperty("baseRevision",
+            juce::String(std::to_string(workspace.revision())));
+        request.getDynamicObject()->setProperty("channelId",id);
+        request.getDynamicObject()->setProperty("payload",payload);
+        return request;
+    };
+    auto name=juce::var(new juce::DynamicObject());
+    name.getDynamicObject()->setProperty("name","Offline Backing");
+    auto created=workspace.apply(command("CREATE_CHANNEL",name));
+    assert(created.accepted && created.createdId.isNotEmpty());
+    const auto track=created.createdId;
+    assert(workspace.revision()==2);
+    auto fx=juce::var(new juce::DynamicObject());
+    fx.getDynamicObject()->setProperty("catalogId",
+        "armix.builtin.channel-compressor.v1");
+    assert(workspace.apply(command("ADD_FX_REFERENCE",fx,track)).accepted);
+    auto rename=juce::var(new juce::DynamicObject());
+    rename.getDynamicObject()->setProperty("name","Vocal Backing");
+    assert(workspace.apply(command("RENAME_CHANNEL",rename,track)).accepted);
+    // No fake callback/output admission is ever supplied by the GUI status.
+    const auto projected=workspace.snapshot();
+    assert(!static_cast<bool>(projected.getProperty("physicalOutputAdmitted",true)));
+    const auto rows=projected.getProperty("graph",{}).getProperty("channels",{});
+    bool found=false;
+    for(const auto& row:*rows.getArray())
+        if(row.getProperty("id","").toString()==track) {
+            assert(row.getProperty("name","").toString()=="Vocal Backing");
+            assert(row.getProperty("inserts",{}).getArray()->size()==1);
+            found=true;
+        }
+    assert(found);
+    // Replacing the document invalidates pending intents even if its exact
+    // revision (or even the saved document ID) is the same.
+    auto stale=command("CREATE_CHANNEL",name);
+    auto replacement=workspace;
+    assert(replacement.load(workspace.document(),workspace.states()));
+    assert(replacement.revision()==workspace.revision());
+    auto staleAck=replacement.apply(stale);
+    assert(!staleAck.accepted && staleAck.error=="STALE_LOGICAL_REVISION");
+
+    const auto json=Codec::encode(workspace.document());
+    MixerSessionDocument restored;
+    assert(Codec::decode(json,restored));
+    assert(restored.logicalOnly);
+    assert(restored.binding.backend.isEmpty() &&
+           restored.binding.playback.isEmpty() &&
+           restored.binding.outputMask=="0");
+    assert(restored.outputs.activeOutputChannels==0);
+    assert(restored.roster.find({static_cast<std::uint64_t>(track.getLargeIntValue())}));
+    auto forged=juce::JSON::parse(json);
+    forged.getProperty("binding",{}).getDynamicObject()->setProperty(
+        "playback","Unverified Speaker");
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    forged=juce::JSON::parse(json);
+    juce::Array<juce::var> fakePins;
+    fakePins.add("Unverified mic");
+    forged.getProperty("binding",{}).getDynamicObject()->setProperty(
+        "inputNames",juce::var(fakePins));
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    forged=juce::JSON::parse(json);
+    forged.getProperty("outputs",{}).getDynamicObject()->setProperty("active",2);
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    const auto folder=juce::File::getSpecialLocation(
+        juce::File::tempDirectory).getNonexistentChildFile("armix-offline-logical-","",false);
+    assert(folder.createDirectory().wasOk());
+    const auto file=folder.getChildFile("saved.smix");
+    assert(NativeMixerSessionStore::writeFile(file,workspace.document(),{}).isEmpty());
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,restored,states).isEmpty());
+    assert(restored.logicalOnly && states.empty());
+    // The automatic HEAD generation must accept the identical unbound
+    // file; re-open cannot depend on an installed ASIO/WASAPI device.
+    NativeMixerSessionStore liveStore(folder);
+    assert(liveStore.commit(workspace.document(),{}).isEmpty());
+    MixerSessionDocument verifiedHead;
+    std::vector<BinaryState> headStates;
+    assert(liveStore.load(verifiedHead,headStates).isEmpty());
+    assert(verifiedHead.logicalOnly &&
+           verifiedHead.roster.revision()==workspace.revision() &&
+           verifiedHead.binding.playback.isEmpty() && headStates.empty());
+    NativeLogicalMixerWorkspace reopened;
+    assert(reopened.load(restored));
+    assert(reopened.revision()==workspace.revision());
+    assert(reopened.snapshot().getProperty("graph",{}).getProperty(
+        "channels",{}).getArray()->size()==16);
+    // A failed disk transaction must leave both the live snapshot and the
+    // last verified on-disk generation unchanged.
+    auto candidate=workspace;
+    assert(candidate.apply(command("CREATE_CHANNEL",name)).accepted);
+    const auto obstructed=folder.getChildFile("blocked");
+    assert(obstructed.replaceWithText("regular file"));
+    assert(NativeMixerSessionStore(obstructed).commit(candidate.document(),{}).isNotEmpty());
+    assert(workspace.revision()==reopened.revision());
+    assert(liveStore.load(verifiedHead,headStates).isEmpty() &&
+           verifiedHead.acceptedRevision==workspace.revision());
+    // Edit a later slot even when an earlier alpha.9 slot only has a
+    // catalog reference. Persist the actual processor bytes without PCM.
+    fx.getDynamicObject()->setProperty("catalogId",
+        armix::builtin_fx::ChannelEqProcessor::catalogIdentity);
+    assert(workspace.apply(command("ADD_FX_REFERENCE",fx,track)).accepted);
+    const ChannelId trackId{static_cast<std::uint64_t>(track.getLargeIntValue())};
+    armix::builtin_fx::ChannelEqProcessor eq;
+    eq.prepareToPlay(48000.,256);
+    auto band=eq.acceptedBands()[2];
+    band.gainDb=5.f;
+    assert(eq.queueBand(2,band,1));
+    eq.consumeRealtimeEdits();
+    armix::builtin_fx::ChannelEqProcessor::Completion applied{};
+    assert(eq.pollCompletion(applied)&&applied.applied);
+    juce::MemoryBlock bytes;
+    eq.getStateInformation(bytes);
+    StoredInsert insert;
+    insert.channel=trackId;
+    insert.slot=1;
+    insert.catalogId=armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
+    insert.name=eq.getName();
+    assert(workspace.saveFx(insert,std::move(bytes)));
+    assert(liveStore.commit(workspace.document(),workspace.states()).isEmpty());
+    assert(liveStore.load(verifiedHead,headStates).isEmpty()&&headStates.size()==1);
+    assert(verifiedHead.logicalOnly&&verifiedHead.inserts.front().slot==1);
+    armix::builtin_fx::ChannelEqProcessor reopenedEq;
+    reopenedEq.prepareToPlay(48000.,256);
+    assert(reopenedEq.restoreUnpublishedState(headStates.front().bytes.getData(),
+        static_cast<int>(headStates.front().bytes.getSize())));
+    assert(reopenedEq.acceptedBands()[2].gainDb==5.f);
+    auto slot=juce::var(new juce::DynamicObject());
+    slot.getDynamicObject()->setProperty("slot",0);
+    assert(workspace.apply(command("REMOVE_FX_REFERENCE",slot,track)).accepted);
+    assert(workspace.storedFx(trackId,0)&&workspace.states().size()==1);
+    assert(workspace.apply(command("REMOVE_FX_REFERENCE",slot,track)).accepted);
+    assert(!workspace.storedFx(trackId,0)&&workspace.states().empty());
+    // No source comes from the borrowed MAIN pair. A deleted legacy strip
+    // stays deleted, while its compatibility entry is explicitly absent.
+    assert(workspace.apply(command("DELETE_CHANNEL",{},"1")).accepted);
+    auto toBind=workspace.document();
+    const auto binding=makeSession().binding;
+    const VerifiedNativeOutputs outputs{2,0,1,-1,-1,false};
+    assert(!Codec::bindLogicalToVerifiedMain(toBind,binding,{},2));
+    assert(toBind.logicalOnly);
+    assert(Codec::bindLogicalToVerifiedMain(toBind,binding,outputs,2));
+    assert(!toBind.logicalOnly && toBind.request.sources.empty() &&
+           toBind.request.physicalInputs==2 && toBind.legacyIds.inputs[0].value==0);
+    assert(Codec::decode(Codec::encode(toBind),restored) && !restored.roster.find({1}));
+    assert(folder.deleteRecursively());
+}
+
 static void verifyLegacyHarmoniceSessionName(){
     auto saved=makeSession();
     const juce::String id=
@@ -667,6 +828,7 @@ static void verifyLegacyHarmoniceSessionName(){
 }
 int main(){
     verifyLegacyHarmoniceSessionName();
+    verifyOfflineLogicalSessionAndFile();
     verifyProductionPlayerFirstSoundWithSourceOnly();
     verifyVirtualPlayerSessionSerialization();
     // Zero-input is a legitimate saved SOURCE NONE workspace, never a fake mic.
@@ -893,6 +1055,32 @@ int main(){
     duplicatePins.outputNames.add("2nd output with SST 1");
     assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,duplicatePins,2,
         BindingMode::verifiedAsioRestart).valid());
+    // A third-party ASIO driver must rebind only the SAME registered host
+    // and verified physical MAIN, never guess a new output or capture device.
+    auto genericAsio=asio;
+    genericAsio.binding.capture=genericAsio.binding.playback="MAONO PS22 ASIO";
+    auto vendorCurrent=genericAsio.binding;
+    const auto vendorMain=MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart);
+    assert(vendorMain.valid() && vendorMain.mainL==genericAsio.outputs.mainL &&
+           vendorMain.mainR==genericAsio.outputs.mainR);
+    auto vendorRestored=genericAsio;
+    assert(MixerDeviceBindingPolicy::apply(vendorRestored,vendorCurrent,vendorMain,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    vendorCurrent.playback="Different ASIO interface";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
+    vendorCurrent=genericAsio.binding;
+    vendorCurrent.capture="Other capture";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
+    auto lostCapture=genericAsio.binding;
+    lostCapture.inputMask="0";
+    auto unboundCapture=genericAsio;
+    assert(!unboundCapture.request.sources.empty());
+    assert(MixerDeviceBindingPolicy::apply(unboundCapture,lostCapture,vendorMain,0,
+        BindingMode::verifiedAsioRestart).isNotEmpty());
+    assert(Codec::encode(unboundCapture)==Codec::encode(genericAsio));
     auto exact=d;
     assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());

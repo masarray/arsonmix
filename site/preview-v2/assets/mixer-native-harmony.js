@@ -103,7 +103,7 @@ const presets={
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
-const state=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
+const state=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
 let readbackSentAt=0,verified=false,heldPatch=null;
@@ -123,7 +123,7 @@ const sliders=sliderDefs.map(([key])=>({
 // former slot only on the SAME stable ChannelId. Never retarget another strip.
 const acceptedLocation=()=>{
  const n=state();
- if(!current||!native()||!n?.admitted)return null;
+ if(!current||!native()||!(n?.admitted||n?.logical))return null;
  const id=current.channelId||window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const channel=n.graph?.channels?.find(ch=>ch.id===id),inserts=channel?.inserts;
  if(!Array.isArray(inserts))return null;
@@ -134,7 +134,8 @@ const acceptedLocation=()=>{
  if(slot<0)return null;
  const insert=inserts[slot];
  if(!insert?.id||insert.catalogId!==ID)return null;
- return {channelId:id,deviceEpoch:n.device.epoch,
+ return {channelId:id,deviceEpoch:n.logical?"0":n.device.epoch,
+  ...(n.logical?{workspaceToken:n.workspaceToken}:{}),
          graphRevision:n.graph.revision,slot,instanceId:insert.id};
 };
 const context=()=>{
@@ -433,7 +434,7 @@ window.ArSonMixNativeHarmony=Object.freeze({
   if(native()){
     mode="NATIVE";settings=fresh();
     hint("HARMONY · LOCATING ACCEPTED DSP");
-    if(n?.admitted&&insert?.catalogId===ID&&insert.id)
+    if((n?.admitted||n?.logical)&&insert?.catalogId===ID&&insert.id)
       current.instanceId=insert.id;
     reconcileBinding();
   }else{
@@ -493,7 +494,8 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
    }
    if(valid(next))send(next);
    else hint("HARMONY RESTORED · INVALID EDIT DISCARDED");
- }else hint(settings.guideMode===1?"NATIVE · LIVE MUSIC GUIDE":"NATIVE DSP ACCEPTED · "+c.instanceId);
+ }else hint(c.workspaceToken?"FX settings saved · Audio device not connected":
+   settings.guideMode===1?"NATIVE · LIVE MUSIC GUIDE":"NATIVE DSP ACCEPTED · "+c.instanceId);
  paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
@@ -505,6 +507,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
    }
    if(!verified)return;
    syncPower();
+   if(!pending&&context()?.workspaceToken)return;
    const now=Date.now();
    if(pending){
      // A missing ACK must never block the editor forever. Preserve the

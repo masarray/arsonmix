@@ -29,12 +29,17 @@ assert.match(chrome, /paintPart \("MiX", juce::Colour/);
 assert.match(chrome, /Open Source Premium Digital Mixer/);
 assert.match(chrome, /Version 01\.00/);
 assert.match(chrome, /charToString \(\(juce::juce_wchar\) 0x00a9\)/);
+assert.match(chrome, /charToString \(\(juce::juce_wchar\) 0x00b7\)/);
+assert.match(chrome, /const auto advance = juce::GlyphArrangement::getStringWidthInt/);
 assert.match(chrome, /2026 SonKuPik/);
 assert.doesNotMatch(chrome, /NATIVE SESSION/);
 assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
 assert.match(bridge, /const operatorMessage = message =>/);
 assert.match(bridge, /const NEEDS_REMAP="Audio connection lost"/);
 assert.match(bridge, /MutationObserver\(sanitize\)/);
+assert.match(bridge, /const nodes=\[transport,info,warning\]\.filter\(Boolean\)/);
+assert.match(bridge, /const operatorTransport=operatorMessage\(transport\)/);
+assert.match(bridge, /return "Mixer ready"/);
 assert.doesNotMatch(bridge, /FAT PENDING/);
 assert.doesNotMatch(bridge, /HARDWARE FAT PENDING/);
 assert.match(bridge, /"OUTPUT ENABLED"/);
@@ -87,13 +92,19 @@ for(const raw of [
   'SIMULATED METERS · NO REAL AUDIO',
   'DEVICE_INIT_FAILED',
   'STALE_NATIVE_GRAPH_REVISION',
-  'JUCE_CALLBACK_DIAGNOSTIC_FAT_PENDING'
+  'JUCE_CALLBACK_DIAGNOSTIC_FAT_PENDING',
+  'HARDWARE FAT PENDING',
+  'FAT PENDING',
+  'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 1',
+  'MONITOR ON · OUT Headphones · NATIVE PCM · HARDWARE FAT PENDING'
 ]){
   const shown=operatorCopy(raw);
   assert.ok(shown.length>0);
   assert.doesNotMatch(shown,/\b(FAT|PCM|ACK|readback|graph|roster|epoch|revision|native|simulated|demo|admission)\b|NATIVE_/i);
 }
 assert.equal(operatorCopy('Mixer saved as .smix'),'Mixer saved as .smix');
+assert.equal(operatorCopy('HARDWARE FAT PENDING'),'Mixer ready');
+assert.equal(operatorCopy('MONITOR ON · NATIVE PCM · FAT PENDING'),'Output enabled');
 console.log('Operator-facing footer and toast copy isolation PASS');
 const begin=page.indexOf('// Desktop maximise, restore, DPI changes');
 const end=page.indexOf('restorePluginPreferences();init();',begin);

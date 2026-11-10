@@ -52,6 +52,10 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("orbitAction", context_menu)
             self.assertNotIn("approved-native-context-menu.js", approved)
             self.assertIn("arMixGuiReady", (out / "assets/approved-native-bridge.js").read_text("utf-8"))
+            self.assertIn("nativeBridgeAttached:true",
+                (out / "assets/approved-native-bridge.js").read_text("utf-8"))
+            # Do not reintroduce #511's no-device hide/overlay regression.
+            self.assertNotIn('id="armix-native-boot-guard"', native)
             for asset in (source / "assets").iterdir():
                 self.assertEqual((out / "assets" / asset.name).read_bytes(), asset.read_bytes(),
                                  "Native /preview/ asset differs: " + asset.name)

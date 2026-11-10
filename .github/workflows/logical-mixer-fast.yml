@@ -1,0 +1,21 @@
+name: Logical Mixer (fast C++20)
+on:
+  pull_request:
+    paths:
+      - 'engine/core/DeviceIndependentMixerSession.h'
+      - 'engine/core/DynamicChannelRoster.h'
+      - 'tests/device_independent_mixer_session_test.cpp'
+      - '.github/workflows/logical-mixer-fast.yml'
+  workflow_dispatch:
+jobs:
+  logical-roster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile deterministic native logical mixer (no hardware/JUCE)
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -I. \
+            tests/device_independent_mixer_session_test.cpp \
+            -o /tmp/arsonmix-logical-test
+          /tmp/arsonmix-logical-test
