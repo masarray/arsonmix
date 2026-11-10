@@ -1,0 +1,74 @@
+name: Native Built-in FX User Presets (targeted Windows CTest)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'src/BuiltInFxUserPresetStore.h'
+      - 'tests/builtin_fx_user_preset_store_test.cpp'
+      - '.github/workflows/builtin-fx-preset-native.yml'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preset-store-ctest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-preset:
+    name: Windows MSVC single-target actual disk CTest (Release)
+    runs-on: windows-2022
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify exact candidate source
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA) {
+            throw "PRESET_SOURCE_SHA_MISMATCH expected=$env:EXPECTED_SHA actual=$actual"
+          }
+          Write-Host "PRESET_CTEST_SOURCE_SHA=$actual"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+      - name: Install WebView2 SDK needed by common CMake app configure
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure and validate CTest catalog
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE" `
+            -DBUILD_TESTING=ON `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $catalog = ($catalogText | Out-String | ConvertFrom-Json)
+          if ('BuiltInFxUserPresetNativePortableSaveAndRecovery' -notin
+              @($catalog.tests | ForEach-Object { $_.name })) {
+            throw 'PRESET_CTEST_MISSING_EXACT_SOURCE'
+          }
+      - name: Compile only native preset store test (not the whole mixer)
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixBuiltInFxPresetStoreTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run immutable-source Release CTest (assertions always enabled)
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure `
+            -R '^BuiltInFxUserPresetNativePortableSaveAndRecovery$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'PRESET_NATIVE_MSVC_TARGET_AND_DISK_ROUNDTRIP=PASS'
