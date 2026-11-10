@@ -36,7 +36,7 @@ struct Mapping final {
     int slot=-1;
     juce::String insertId;
     // H2: real hosted VST3 identity. Index/slot are discovery hints only.
-    juce::String catalogId,paramId;
+    juce::String catalogId,paramId,paramName;
 };
 class Registry final {
 public:
@@ -65,11 +65,11 @@ public:
         const bool paramTarget=fxParam && hasInsert &&
             m.catalogId.isNotEmpty() && m.catalogId.length()<=512 &&
             m.paramId.isNotEmpty() && m.paramId.length()<=96 &&
-            !m.paramId.containsAnyOf("\r\n\t");
+            m.paramName.length()<=100 && !m.paramId.containsAnyOf("\r\n\t");
         const bool target=fxParam?paramTarget:
-            fxSlot?(hasInsert&&m.catalogId.isEmpty()&&m.paramId.isEmpty()):
+            fxSlot?(hasInsert&&m.catalogId.isEmpty()&&m.paramId.isEmpty()&&m.paramName.isEmpty()):
             (m.slot==-1&&m.insertId.isEmpty()&&
-             m.catalogId.isEmpty()&&m.paramId.isEmpty());
+             m.catalogId.isEmpty()&&m.paramId.isEmpty()&&m.paramName.isEmpty());
         const bool app=m.scope=="APP" && m.operation=="PANIC_MUTE" &&
                        m.channelId.isEmpty() && m.sessionId.isEmpty();
         const bool session=m.scope=="SESSION" && m.operation!="PANIC_MUTE" &&
@@ -94,6 +94,7 @@ public:
             if(m.operation.startsWith("SET_FX_PARAM_")) {
                 o->setProperty("catalogId",m.catalogId);
                 o->setProperty("paramId",m.paramId);
+                if(m.paramName.isNotEmpty())o->setProperty("paramName",m.paramName);
             }
         }
         return out;
@@ -110,7 +111,8 @@ public:
            !field("sessionId",m.sessionId)||!field("channelId",m.channelId)||
            !field("operation",m.operation)||!vk.isInt()||!mods.isInt())return false;
         m.vk=static_cast<int>(vk);m.modifiers=static_cast<int>(mods);
-        m.slot=-1;m.insertId.clear();m.catalogId.clear();m.paramId.clear();
+        m.slot=-1;m.insertId.clear();m.catalogId.clear();
+        m.paramId.clear();m.paramName.clear();
         const bool fxParam=m.operation.startsWith("SET_FX_PARAM_");
         if(m.operation=="SET_FX_SLOT_BYPASS"||fxParam) {
             const auto slot=v.getProperty("slot",{}),token=v.getProperty("insertId",{});
@@ -124,12 +126,19 @@ public:
                    catalog.toString().length()>512||
                    parameter.toString().length()>96)return false;
                 m.catalogId=catalog.toString();m.paramId=parameter.toString();
+                const auto label=v.getProperty("paramName",{});
+                if(!label.isVoid()){
+                    if(!label.isString()||label.toString().length()>100)return false;
+                    m.paramName=label.toString();
+                }
             }else if(!v.getProperty("catalogId",{}).isVoid() ||
-                     !v.getProperty("paramId",{}).isVoid())return false;
+                     !v.getProperty("paramId",{}).isVoid()||
+                     !v.getProperty("paramName",{}).isVoid())return false;
         } else if(!v.getProperty("slot",{}).isVoid() ||
                   !v.getProperty("insertId",{}).isVoid()||
                   !v.getProperty("catalogId",{}).isVoid()||
-                  !v.getProperty("paramId",{}).isVoid())return false;
+                  !v.getProperty("paramId",{}).isVoid()||
+                  !v.getProperty("paramName",{}).isVoid())return false;
         return valid(m);
     }
     void setHandler(std::function<void(const Mapping&)> handler) {
