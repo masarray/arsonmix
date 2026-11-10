@@ -39,6 +39,7 @@
 #include "NativeMixerSessionSaveWorker.h"
 #include "NativeLogicalMixerControl.h"
 #include "NativeHotkeyRegistry.h"
+#include "NativeFxParameterHotkey.h"
 #include "NativeDeviceApplyCoordinator.h"
 #include <algorithm>
 #include <cstring>
@@ -279,6 +280,9 @@ public:
               })
               .withEventListener ("arMixHotkeyCapture", [this] (juce::var args) {
                   hotkeys_.setCaptureMode(args.getProperty("enabled",false)==juce::var(true));
+              })
+              .withEventListener ("arMixFxParameterHotkeyInspect", [this] (juce::var args) {
+                  inspectFxParameterHotkey(args);
               })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
@@ -1252,6 +1256,154 @@ private:
             reply("Offline FX settings could not be saved");
     }
 
+    // H2: verify real live VST3 lease and class identity. The positional slot
+    // is a GUI hint only; moves resolve by the exact FX instance token.
+    struct FxHotkeyLease final {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::AudioPluginInstance* plugin=nullptr;
+        int slot=-1;
+    };
+    FxHotkeyLease resolveFxHotkey(const juce::String& channelId,
+            const juce::String& insertId,const juce::String& catalogId) {
+        FxHotkeyLease target;
+        if(channelId.isEmpty()||insertId.isEmpty()||catalogId.isEmpty()||
+           deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+           engine_.independentClockActive()||engine_.isGraphSwitchPending())
+            return target;
+        const auto snapshot=approvedNativeSnapshot();
+        const auto graph=snapshot.getProperty("graph",{});
+        if(!static_cast<bool>(graph.getProperty("capabilities",{})
+              .getProperty("callbackOwnsChannelIds",false)))return target;
+        std::uint64_t id=0,epoch=0,revision=0;
+        if(!armix::console::approvedNativeId(juce::var(channelId),id)||
+           !armix::console::approvedNativeId(
+                snapshot.getProperty("device",{}).getProperty("epoch",{}),epoch)||
+           !armix::console::approvedNativeId(
+                graph.getProperty("revision",{}),revision))return target;
+        const auto rows=graph.getProperty("channels",{});
+        if(!rows.isArray())return target;
+        for(const auto& row:*rows.getArray()) {
+            if(row.getProperty("id","").toString()!=channelId ||
+               (row.getProperty("role","").toString()!="INPUT" &&
+                row.getProperty("role","").toString()!="GROUP" &&
+                row.getProperty("role","").toString()!="FX_RETURN"))continue;
+            const auto inserts=row.getProperty("inserts",{});
+            if(!inserts.isArray())return target;
+            const auto* all=inserts.getArray();
+            for(int slot=0;slot<all->size();++slot) {
+                const auto entry=all->getReference(slot);
+                if(entry.getProperty("id","").toString()!=insertId ||
+                   entry.getProperty("catalogId","").toString()!=catalogId)
+                    continue;
+                auto owner=engine_.leaseNativeVst3Editor(epoch,revision,
+                    armix::mixer::ChannelId{id},static_cast<std::size_t>(slot),insertId);
+                if(!owner||owner->instanceId!=insertId||
+                   owner->catalogId!=catalogId||!owner->processor)return target;
+                auto* plugin=dynamic_cast<juce::AudioPluginInstance*>(owner->processor.get());
+                if(!plugin)return target;
+                juce::PluginDescription description;
+                plugin->fillInPluginDescription(description);
+                if(!description.pluginFormatName.equalsIgnoreCase("VST3"))return target;
+                target.owner=std::move(owner);
+                target.plugin=plugin;
+                target.slot=slot;
+                return target;
+            }
+            break;
+        }
+        return target;
+    }
+    bool fxParameterHotkeyAdmitted(const armix::hotkey::Mapping& mapping) {
+        auto target=resolveFxHotkey(mapping.channelId,mapping.insertId,mapping.catalogId);
+        if(!target.plugin)return false;
+        auto* parameter=armix::hotkey::FxParameterPolicy::find(
+            target.plugin->getParameters(),mapping.paramId);
+        return parameter&&armix::hotkey::FxParameterPolicy::operationAllowed(
+            *parameter,mapping.operation);
+    }
+    bool applyFxParameterHotkey(const armix::hotkey::Mapping& mapping) {
+        auto target=resolveFxHotkey(mapping.channelId,mapping.insertId,mapping.catalogId);
+        if(!target.plugin)return false;
+        auto* parameter=armix::hotkey::FxParameterPolicy::find(
+            target.plugin->getParameters(),mapping.paramId);
+        float next=0.f;
+        if(!parameter ||
+           !armix::hotkey::FxParameterPolicy::desired(*parameter,mapping.operation,next))
+            return false;
+        // Call JUCE's notifying setter only on CONTROL, never on PCM callback.
+        // Host-written beginChangeGesture is not mistaken for vendor Last Touched.
+        target.owner->hostHotkeyWrite.store(true,std::memory_order_release);
+        bool applied=false;
+        try {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(next);
+            parameter->endChangeGesture();
+            applied=true;
+        } catch(...) {
+            try {parameter->endChangeGesture();}catch(...){}
+        }
+        target.owner->hostHotkeyWrite.store(false,std::memory_order_release);
+        if(applied)
+            diagnostics_.record("NATIVE_FX_PARAM_HOTKEY",
+                mapping.channelId+" / "+mapping.insertId+" / "+mapping.paramId);
+        return applied;
+    }
+    void inspectFxParameterHotkey(const juce::var& request) {
+        const auto requestId=request.getProperty("requestId","").toString();
+        const auto channelId=request.getProperty("channelId","").toString();
+        const auto insertId=request.getProperty("insertId","").toString();
+        const auto catalogId=request.getProperty("catalogId","").toString();
+        const auto observed=approvedNativeSnapshot();
+        const auto graph=observed.getProperty("graph",{});
+        auto response=juce::var(new juce::DynamicObject());
+        auto* result=response.getDynamicObject();
+        result->setProperty("requestId",requestId);
+        result->setProperty("channelId",channelId);
+        result->setProperty("insertId",insertId);
+        result->setProperty("catalogId",catalogId);
+        result->setProperty("ok",false);
+        result->setProperty("error","HOTKEY_FX_STALE_OR_UNAVAILABLE");
+        const bool current=requestId.isNotEmpty()&&requestId.length()<=96 &&
+            request.getProperty("deviceEpoch","").toString()==
+                observed.getProperty("device",{}).getProperty("epoch","").toString() &&
+            request.getProperty("revision","").toString()==
+                graph.getProperty("revision","").toString() &&
+            request.getProperty("rosterRevision","").toString()==
+                graph.getProperty("rosterRevision","").toString();
+        if(current) {
+            auto target=resolveFxHotkey(channelId,insertId,catalogId);
+            if(target.plugin) {
+                const auto info=armix::hotkey::FxParameterPolicy::browse(
+                    target.plugin->getParameters());
+                juce::Array<juce::var> listed;
+                const auto touched=target.owner->lastTouchedParameter.load(
+                    std::memory_order_acquire);
+                juce::String lastTouchedId;
+                for(const auto& p:info) {
+                    auto item=juce::var(new juce::DynamicObject());
+                    auto* o=item.getDynamicObject();
+                    o->setProperty("id",p.id);
+                    o->setProperty("name",p.name);
+                    o->setProperty("index",p.index); // UI hint, never saved
+                    o->setProperty("toggle",p.toggle);
+                    o->setProperty("steps",p.steps);
+                    o->setProperty("value",p.normalized);
+                    listed.add(item);
+                    if(touched==p.index)lastTouchedId=p.id;
+                }
+                result->setProperty("parameters",juce::var(listed));
+                result->setProperty("lastTouchedId",lastTouchedId);
+                result->setProperty("slot",target.slot);
+                result->setProperty("name",target.plugin->getName());
+                result->setProperty("ok",!info.empty());
+                result->setProperty("error",info.empty()?
+                    "VST3_STABLE_PARAMETER_IDS_UNAVAILABLE":"NONE");
+            }
+        }
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixFxParameterHotkeyState",response);
+    }
+
     // Native hotkeys share the accepted ChannelId mixer control path.
     // WM_HOTKEY is delivered on the JUCE message thread even while the
     // WebView is minimized, and never synthesizes a browser mouse click.
@@ -1289,7 +1441,14 @@ private:
                 }
                 break;
             }
-            const bool fx=op=="SET_FX_RACK_BYPASS"||op=="SET_FX_SLOT_BYPASS";
+            const bool fxParam=op.startsWith("SET_FX_PARAM_");
+            if(fxParam) {
+                armix::hotkey::Mapping mapping;
+                if(armix::hotkey::Registry::decode(row,mapping))
+                    fxAvailable=fxParameterHotkeyAdmitted(mapping);
+            }
+            const bool fx=op=="SET_FX_RACK_BYPASS"||
+                          op=="SET_FX_SLOT_BYPASS"||fxParam;
             const juce::String status=
                 !admitted?"WAITING_NATIVE_AUDIO":
                 !found?"NEEDS_REMAP":
@@ -1332,7 +1491,8 @@ private:
                 const auto scope=supplied.getProperty("scope","").toString();
                 auto cleaned=juce::var(new juce::DynamicObject());
                 for(const char* field:{"id","scope","sessionId","channelId",
-                                       "operation","vk","modifiers","slot","insertId"}) {
+                                       "operation","vk","modifiers","slot","insertId",
+                                       "catalogId","paramId"}) {
                     const auto value=supplied.getProperty(field,{});
                     if(!value.isVoid())cleaned.getDynamicObject()->setProperty(field,value);
                 }
@@ -1345,6 +1505,7 @@ private:
                     const auto op=supplied.getProperty("operation","").toString();
                     const bool fxRack=op=="SET_FX_RACK_BYPASS";
                     const bool fxSlot=op=="SET_FX_SLOT_BYPASS";
+                    const bool fxParam=op.startsWith("SET_FX_PARAM_");
                     bool found=false,fxAvailable=false;
                     if(static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
                        channels.isArray())for(const auto& c:*channels.getArray()) {
@@ -1372,10 +1533,10 @@ private:
                         error="HOTKEY_FX_INSTANCE_NOT_ADMITTED";
                     const auto ops=caps.getProperty("supportedOps",{});
                     const auto* allowed=ops.getArray();
-                    if(error.isEmpty() && !fxRack && !fxSlot &&
+                    if(error.isEmpty() && !fxRack && !fxSlot && !fxParam &&
                        op!="SET_MUTE" && op!="SET_SOLO")
                         error="HOTKEY_ACTION_UNSUPPORTED";
-                    if(error.isEmpty() && !fxRack && !fxSlot &&
+                    if(error.isEmpty() && !fxRack && !fxSlot && !fxParam &&
                        (!allowed || !allowed->contains(juce::var(op))))
                         error="HOTKEY_ACTION_NOT_ADMITTED";
                     if(error.isEmpty()) {
@@ -1389,6 +1550,9 @@ private:
                 armix::hotkey::Mapping mapping;
                 if(error.isEmpty() && !armix::hotkey::Registry::decode(cleaned,mapping))
                     error="INVALID_HOTKEY_MAPPING";
+                if(error.isEmpty()&&mapping.operation.startsWith("SET_FX_PARAM_")&&
+                   !fxParameterHotkeyAdmitted(mapping))
+                    error="HOTKEY_PARAMETER_ID_OR_INSTANCE_UNAVAILABLE";
                 if(error.isEmpty())error=hotkeys_.upsert(std::move(mapping));
             } else error="UNSUPPORTED_HOTKEY_OPERATION";
         }
@@ -1420,6 +1584,10 @@ private:
                 match=&ch;break;
             }
         if(!match)return;
+        if(mapping.operation.startsWith("SET_FX_PARAM_")) {
+            (void)applyFxParameterHotkey(mapping);
+            return;
+        }
         const bool fxRack=mapping.operation=="SET_FX_RACK_BYPASS";
         const bool fxSlot=mapping.operation=="SET_FX_SLOT_BYPASS";
         if(fxRack||fxSlot) {
