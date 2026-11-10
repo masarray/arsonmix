@@ -559,6 +559,31 @@ public:
         acceptedMixerBinding_=std::move(inspected.live);
         return true;
     }
+    // A SOURCE NONE starter is not an authored Show: it has no FX/WIRE to
+    // rebind, yet still must survive an ASIO STOP/START as an actual PCM
+    // mixer. Keep the old playback identity and pin names; no auto-redirect.
+    bool hasPristineSilentMixerAwaitingAsio() const noexcept {
+        return dryRoutingLab_.hasPristineSilentMixerAwaitingDevice() &&
+            acceptedMixerBinding_ && acceptedMixerBinding_->backend=="ASIO" &&
+            asioPinnedRegistration_.valid() && attached_ && !independent_.active();
+    }
+    bool rebuildPristineSilentAsioMixer() {
+        if(!hasPristineSilentMixerAwaitingAsio() || !allOutputsDisarmed() ||
+           handoff_.busy() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute()!=armix::diagnostics::Route::normal)return false;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen() || !sameRetainedAsioDriver())return false;
+        const auto current=readMixerBinding(*device);
+        if(current.backend!="ASIO" ||
+           current.playback!=acceptedMixerBinding_->playback ||
+           current.outputMask!=acceptedMixerBinding_->outputMask ||
+           current.outputNames!=acceptedMixerBinding_->outputNames ||
+           current.rate!=acceptedMixerBinding_->rate)return false;
+        if(!approveDirectRoute(&asioPinnedRegistration_))return false;
+        return startUnpatchedProductionSession().isEmpty() &&
+            dryRoutingLab_.channelIdPhysicalPcmActive();
+    }
     bool takeAsioResetMonitorIntent() noexcept {
         return resumeMainAfterAsioReset_.exchange(false,std::memory_order_acq_rel);
     }

@@ -5424,7 +5424,9 @@ private:
 
     void serviceAsioMixerRestart() {
         const auto epoch=engine_.dryRoutingLabEpoch();
-        if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
+        const bool retained=engine_.hasRetainedNativeSession();
+        const bool silent=engine_.hasPristineSilentMixerAwaitingAsio();
+        if(epoch==asioRecoveryEpoch_ || (!retained && !silent) ||
            audioDeviceApplyActive_ || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
@@ -5466,6 +5468,27 @@ private:
                 emitApprovedNativeSnapshot();
                 return;
             }
+        }
+        if(silent) {
+            // Recreate the original unedited SOURCE NONE PCM publisher only
+            // after proving the SAME ASIO driver and playback pin identity.
+            // No saved mixer, FX or WIRE may be replaced by this path.
+            if(!engine_.rebuildPristineSilentAsioMixer()) {
+                asioRecoveryGate_.bindFailed(now);
+                diagnostics_.record("ASIO_SILENT_MIXER_REBUILD_REJECTED",
+                    "Registered ASIO driver/pins or native graph not ready");
+                emitApprovedNativeSnapshot();
+                return;
+            }
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
+            asioRecoveryGate_.recovered();
+            mixerSessionStatus_="PRISTINE_SOURCE_NONE_REATTACHED";
+            mixerSessionError_.clear();
+            diagnostics_.record("ASIO_SILENT_MIXER_REATTACHED",
+                "Same physical ASIO output; no mic source and no auto-arm");
+            emitApprovedNativeSnapshot();
+            return;
         }
         if(!engine_.authorizeRetainedAsioRestart()) {
             // Admission can lag driver restart without any driver call.

@@ -634,6 +634,21 @@ test('Missing ASIO device can reopen only the pinned registered user-selected dr
   assert.match(selected,/asioPinnedRegistration_\.sameDriverClass\(registered\.registration\.identity\)/);
 });
 
+test('ASIO callback restart restores pristine SOURCE NONE without replacing authored mixer',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h'),
+    dry=read('src/LiveDryRoutingLab.h');
+  const service=main.slice(main.indexOf('void serviceAsioMixerRestart()'),
+                           main.indexOf('void changeListenerCallback ('));
+  assert.match(service,/const bool silent=engine_\.hasPristineSilentMixerAwaitingAsio\(\)/);
+  assert.match(service,/if\(silent\)\s*\{/);
+  assert.match(service,/engine_\.rebuildPristineSilentAsioMixer\(\)/);
+  assert.match(engine,/current\.outputMask!=acceptedMixerBinding_->outputMask/);
+  assert.match(engine,/current\.outputNames!=acceptedMixerBinding_->outputNames/);
+  assert.match(engine,/sameRetainedAsioDriver\(\)/);
+  assert.match(dry,/hasPristineSilentMixerAwaitingDevice\(\)/);
+  assert.match(dry,/!hasAuthoredMixerContent\(\)/);
+});
+
 test('ASIO restart cannot strand MAIN off after temporary graph readiness faults',()=>{
   const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
   const arm=main.slice(main.indexOf('void serviceAutomaticMain()'),main.indexOf('void requestAutomaticMain('));
