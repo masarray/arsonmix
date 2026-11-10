@@ -44,6 +44,8 @@ def main():
             # Native Console is ALWAYS visible, even with no callback/device.
             # Bridge still rejects unadmitted PCM edits until accepted readback.
             assert page.locator('.console-pane').is_visible()
+            assert page.locator('html').get_attribute('data-armix-native-boot')=='waiting'
+            assert page.locator('#tracks').evaluate('e=>getComputedStyle(e).visibility')=='hidden'
             assert not page.evaluate('()=>window.__nativeIntents.length')
             # Built-in JUCE DSP must be discoverable before ANY third-party
             # VST3 catalog response. The native host never inserts demo FX.
@@ -214,6 +216,8 @@ def main():
             state['legacyM4']={'active':True,'routeAccepted':True,'routingRevision':'77',
                 'nativeBusStructural':False,'fxInstances':[[] for _ in range(14)]}
             emit(page,'arMixConsoleSnapshot',state)
+            page.wait_for_function('()=>document.documentElement.dataset.armixNativeBoot==="ready"')
+            assert page.locator('#tracks').evaluate('e=>getComputedStyle(e).visibility')=='visible'
             page.locator('.console-pane').wait_for(state='visible')
             if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
                 page.locator('.section-rail [data-section="send"]').click()

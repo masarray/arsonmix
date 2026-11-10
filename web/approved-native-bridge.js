@@ -7,7 +7,8 @@
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
-  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
+  const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
+    protocol?.createController && scope?.installGraph && scope?.render);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -2261,6 +2262,7 @@
     if(!session || session.deviceEpoch!==next.device.epoch) {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
+      document.documentElement.dataset.armixNativeBoot="waiting";
       lastPaintedSignature="";
       delete document.documentElement.dataset.armixNativeRoster;
       status("AUDIO CONNECTION CHANGED · OPEN AUDIO I/O");
@@ -2274,6 +2276,8 @@
     reconcileM4RackReadback(next);
     if(session.authority==="M4" && m4Verified()) {
       paintM4Fallback(next);
+      // M4 is a callback-backed compatibility producer, not Pages demo PCM.
+      document.documentElement.dataset.armixNativeBoot="ready";
       if(scope?.syncVerifiedM4Wires?.(session.channels.map(ch=>ch.source),m4TrackIds))
         document.documentElement.dataset.armixNativeRoster="accepted";
     }
@@ -2313,6 +2317,9 @@
       if(lastPaintedSignature!==signature && projectNativeGraphWithoutFocusLoss(next)){
         lastPaintedSignature=signature;
         document.documentElement.dataset.armixNativeRoster="accepted";
+        document.documentElement.dataset.armixNativeBoot="ready";
+      } else if(lastPaintedSignature!==signature) {
+        document.documentElement.dataset.armixNativeBoot="waiting";
       }
       stopDemo();
       paintNativeMeters(next);
@@ -2322,7 +2329,10 @@
     if (!nativeAdmitted) {
       flags.productionCallbackLive=false;flags.acceptedGraphConnected=false;
       lastPaintedSignature="";lastNativeTopologySignature="";
-      if(!m4Verified())delete document.documentElement.dataset.armixNativeRoster;
+      if(!m4Verified()){
+        delete document.documentElement.dataset.armixNativeRoster;
+        document.documentElement.dataset.armixNativeBoot="waiting";
+      }
       stopDemo();
       status(m4Verified()?
         "NATIVE M4 · real PCM faders and meters · ChannelId buses not yet admitted":
@@ -2338,6 +2348,7 @@
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      document.documentElement.dataset.armixNativeBoot="ready";
       finishNativeTrack(next);finishNativeTrackDelete(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -2346,10 +2357,12 @@
     }
     if (!projectNativeGraphWithoutFocusLoss(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      document.documentElement.dataset.armixNativeBoot="waiting";
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
+    document.documentElement.dataset.armixNativeBoot="ready";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
@@ -3273,7 +3286,8 @@
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
     backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false,
+      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
+      visualReady:true,audioReady:false,
       viewportWidth:Math.round(window.innerWidth),
       viewportHeight:Math.round(window.innerHeight),
       devicePixelRatio:window.devicePixelRatio

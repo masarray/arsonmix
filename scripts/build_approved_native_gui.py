@@ -26,6 +26,23 @@ ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></scri
                   '<script defer src="assets/approved-native-context-menu.js"></script>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
+NATIVE_BOOT_GUARD = (
+    '<style id="armix-native-boot-guard">\n'
+    'html[data-armix-native-boot="waiting"] #tracks,'
+    'html[data-armix-native-boot="waiting"] #master,'
+    'html[data-armix-native-boot="waiting"] #wireLayer'
+    '{visibility:hidden!important;pointer-events:none!important}\n'
+    'html[data-armix-native-boot="waiting"] .console-body{position:relative}\n'
+    'html[data-armix-native-boot="waiting"] .console-body::after{'
+    'content:"Audio connection unavailable · Open Audio I/O to check your driver";'
+    'position:absolute;inset:20% 8%;z-index:30;display:flex;'
+    'align-items:center;justify-content:center;text-align:center;'
+    'padding:20px;color:#b3c5d0;background:rgba(12,22,31,.94);'
+    'border:1px solid #465b69;border-radius:8px;'
+    'font:400 14px/1.6 sans-serif;pointer-events:none}\n'
+    '</style><script>document.documentElement.dataset.armixNativeBoot="waiting";</script>\n'
+)
+
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -263,6 +280,9 @@ def native_html(approved: str | None = None) -> str:
         if html.count(before) != 1 or after in html:
             raise ValueError("Native-only M2 control hook anchor drift: " + before[:55])
         html = html.replace(before, after, 1)
+    if html.count("</head>") != 1:
+        raise ValueError("Approved Pages missing unique native boot guard anchor")
+    html = html.replace("</head>", NATIVE_BOOT_GUARD + "</head>", 1)
     html = html.replace("</body>", ADAPTER_MARKER + "\n</body>")
     return html.replace("\n", newline)
 
@@ -274,6 +294,9 @@ def public_from_native(native: str) -> str:
     if html.count(ADAPTER_MARKER + "\n") != 1:
         raise ValueError("Native adapter marker missing or duplicated")
     html = html.replace(ADAPTER_MARKER + "\n", "", 1)
+    if html.count(NATIVE_BOOT_GUARD) != 1:
+        raise ValueError("Native boot guard missing or duplicated")
+    html = html.replace(NATIVE_BOOT_GUARD, "", 1)
     for before, after in reversed(NATIVE_EVENT_HOOKS):
         if html.count(after) != 1:
             raise ValueError("Native-only M2 control hook missing or duplicated")

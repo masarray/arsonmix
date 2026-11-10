@@ -864,6 +864,25 @@ int main(){
     duplicatePins.outputNames.add("2nd output with SST 1");
     assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,duplicatePins,2,
         BindingMode::verifiedAsioRestart).valid());
+    // A third-party ASIO driver must rebind only the SAME registered host
+    // and verified physical MAIN, never guess a new output or capture device.
+    auto vendor=asio;
+    vendor.binding.capture=vendor.binding.playback="MAONO PS22 ASIO";
+    auto vendorCurrent=vendor.binding;
+    const auto vendorMain=MixerDeviceBindingPolicy::proposedOutputs(
+        vendor,vendorCurrent,2,BindingMode::verifiedAsioRestart);
+    assert(vendorMain.valid() && vendorMain.mainL==vendor.outputs.mainL &&
+           vendorMain.mainR==vendor.outputs.mainR);
+    auto vendorRestored=vendor;
+    assert(MixerDeviceBindingPolicy::apply(vendorRestored,vendorCurrent,vendorMain,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    vendorCurrent.playback="Different ASIO interface";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        vendor,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
+    vendorCurrent=vendor.binding;
+    vendorCurrent.capture="Other capture";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        vendor,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
     auto exact=d;
     assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());

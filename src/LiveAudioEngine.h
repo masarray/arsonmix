@@ -480,7 +480,7 @@ public:
     bool selectedRetainedAsioDriverForReopen() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
         if(deviceManager_.getCurrentAudioDevice() || !acceptedMixerBinding_ ||
-           !Policy::isAsio4All(*acceptedMixerBinding_) ||
+           acceptedMixerBinding_->backend!="ASIO" ||
            !asioPinnedRegistration_.valid() || !attached_ || independent_.active() ||
            deviceManager_.getCurrentAudioDeviceType()!="ASIO")return false;
         juce::AudioDeviceManager::AudioDeviceSetup setup;
@@ -497,7 +497,7 @@ public:
     bool authorizeRetainedAsioRestart() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
         if(!hasRetainedNativeSession() || !acceptedMixerBinding_ ||
-           !Policy::isAsio4All(*acceptedMixerBinding_) || !asioPinnedRegistration_.valid() ||
+           acceptedMixerBinding_->backend!="ASIO" || !asioPinnedRegistration_.valid() ||
            !allOutputsDisarmed() || independent_.active() || !attached_ || handoff_.busy() ||
            fxMovePhase_.load(std::memory_order_acquire)!=0 ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
@@ -542,9 +542,10 @@ public:
     }
     bool reattachRetainedAsioMixer() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
-        if(!acceptedMixerBinding_ || !Policy::isAsio4All(*acceptedMixerBinding_) ||
+        if(!acceptedMixerBinding_ || acceptedMixerBinding_->backend!="ASIO" ||
            !hasRetainedNativeSession() || !allOutputsDisarmed() ||
-           !directFence_.permitted() || handoff_.busy())return false;
+           !directFence_.permitted() || handoff_.busy() ||
+           !sameRetainedAsioDriver())return false;
         armix::session::MixerSessionDocument document;
         if(!dryRoutingLab_.describeRetainedAsioSession(document))return false;
         document.binding=*acceptedMixerBinding_;

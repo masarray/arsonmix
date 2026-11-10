@@ -110,8 +110,11 @@ struct MixerDeviceBindingPolicy final {
            (mode==Mode::verifiedDeviceApply &&
             (saved.backend!=live.backend || saved.playback!=live.playback)))
             return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:unavailable;
+        // The host checks the pinned registered ASIO driver identity first.
+        // Physical MAIN pin mapping still requires exact verified readback.
         if(mode==Mode::verifiedAsioRestart &&
-           (!isAsio4All(live) || saved.backend!=live.backend || saved.playback!=live.playback))
+           (saved.backend!="ASIO" || live.backend!="ASIO" ||
+            saved.capture!=live.capture || saved.playback!=live.playback))
             return unavailable;
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;

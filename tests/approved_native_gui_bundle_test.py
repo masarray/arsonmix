@@ -22,6 +22,10 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             approved = (source / "index.html").read_text("utf-8")
             native = (out / "index.html").read_text("utf-8")
             self.assertEqual(bundle.public_from_native(native), approved)
+            self.assertIn('id="armix-native-boot-guard"', native)
+            self.assertNotIn('id="armix-native-boot-guard"', approved)
+            self.assertIn('data-armix-native-boot="waiting"', native)
+            self.assertIn('nativeBridgeAttached:true', native)
             self.assertNotIn("__ARMIX_NATIVE_M2__", approved)
             self.assertIn("__ARMIX_NATIVE_M2__", native)
             # Never let a missing ASIO driver or delayed native snapshot
