@@ -87,9 +87,12 @@ static void writeWave(const fs::path& path,const Wave& wave){
     if(!out)throw std::runtime_error("WAV output write failed");
 }
 static Wave process(const Wave& input,Settings settings,bool synchronous,int block=127,
-                    bool enhancedDepth=true,bool focus=true,bool presence=true){
+                    bool enhancedDepth=true,bool focus=true,bool presence=true,
+                    int offlineLatencyMs=32){
     auto e=std::make_unique<Engine>();
-    if(!e->prepare(input.rate)||!e->setSettings(settings))
+    const bool prepared=offlineLatencyMs==32?e->prepare(input.rate):
+        e->prepareForOfflineLatencyStudy(input.rate,offlineLatencyMs);
+    if(!prepared||!e->setSettings(settings))
         throw std::runtime_error("native Harmony configuration invalid");
     e->setPitchSynchronousCandidateForOfflineReference(synchronous);
     e->setStageDepthForOfflineReference(enhancedDepth);
@@ -176,6 +179,79 @@ static void renderAb(const Wave& input,const fs::path& folder){
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
     generateReport(folder,input,dry,old,modern,backing,previousDepth,previousPresence);
 }
+// Exploratory, physical source-to-source grain study. Candidate WAVs are
+// delayed to the ORIGINAL 32 ms lead arrival before perceptual A/B. This
+// alignment is offline only and does not hide or change the candidate's
+// declared PDC. RMS deltas cannot prove formant transparency or naturalness.
+static Wave delayedCopy(const Wave& in,int frames){
+    if(frames<0)throw std::runtime_error("negative offline alignment");
+    Wave out=in;
+    for(std::size_t i=in.left.size();i-->0;){
+        out.left[i]=i>=static_cast<std::size_t>(frames)?
+            in.left[i-static_cast<std::size_t>(frames)]:0.f;
+        out.right[i]=i>=static_cast<std::size_t>(frames)?
+            in.right[i-static_cast<std::size_t>(frames)]:0.f;
+    }
+    return out;
+}
+static double alignedDifferenceRms(const Wave& a,const Wave& b,int skip){
+    if(a.left.size()!=b.left.size()||skip<0)
+        throw std::runtime_error("unmatched WAV alignment");
+    double sum=0.;std::size_t used=0;
+    for(std::size_t i=static_cast<std::size_t>(skip);i<a.left.size();++i){
+        const double l=double(a.left[i])-b.left[i];
+        const double r=double(a.right[i])-b.right[i];
+        sum+=l*l+r*r;used+=2;
+    }
+    return used?std::sqrt(sum/static_cast<double>(used)):0.;
+}
+static void renderLatencyStudy(const Wave& input,const fs::path& folder){
+    fs::create_directories(folder);
+    Settings settings;
+    settings.voices=5;settings.wet=.65f;settings.space=.60f;
+    settings.correction=false;settings.gainDb=0.f;
+    auto dry=settings;dry.wet=0.f;
+    const Wave baseline=process(input,settings,true);
+    const Wave baselineDry=process(input,dry,true);
+    writeWave(folder/"harmonice_32ms_reference.wav",baseline);
+    writeWave(folder/"harmonice_32ms_dry.wav",baselineDry);
+    std::ofstream report(folder/"latency-study.json");
+    if(!report)throw std::runtime_error("latency study report open failed");
+    const int baselineDelay=2*static_cast<int>(std::round(input.rate*.016));
+    report<<"{\n  \"sourceRate\": "<<input.rate<<",\n  \"sourceFrames\": "
+          <<input.left.size()<<",\n  \"productionPdcFrames\": "<<baselineDelay
+          <<",\n  \"productionLatencyMs\": "
+          <<1000.*baselineDelay/input.rate<<",\n"
+          <<"  \"physicalAsioMeasured\": false,\n"
+          <<"  \"humanSingerListeningPassed\": false,\n"
+          <<"  \"experimentalCandidates\": [\n";
+    bool first=true;
+    for(int ms:{24,16}){
+        const int frames=2*static_cast<int>(std::round(
+            input.rate*static_cast<double>(ms)/2000.));
+        const Wave candidate=process(input,settings,true,127,true,true,true,ms);
+        const Wave candidateDry=process(input,dry,true,127,true,true,true,ms);
+        const int align=baselineDelay-frames;
+        const auto aligned=delayedCopy(candidate,align);
+        const auto alignedDry=delayedCopy(candidateDry,align);
+        const std::string prefix="harmonice_"+std::to_string(ms)+"ms";
+        writeWave(folder/(prefix+"_aligned.wav"),aligned);
+        writeWave(folder/(prefix+"_dry_aligned.wav"),alignedDry);
+        if(!first)report<<",\n";
+        first=false;
+        report<<"    {\"targetMs\": "<<ms<<", \"reportedPdcFrames\": "<<frames
+              <<", \"actualLatencyMs\": "<<1000.*frames/input.rate
+              <<", \"offlineAlignmentFrames\": "<<align
+              <<", \"alignedMixDifferenceRms\": "
+              <<alignedDifferenceRms(baseline,aligned,baselineDelay+256)
+              <<", \"alignedDryDifferenceRms\": "
+              <<alignedDifferenceRms(baselineDry,alignedDry,baselineDelay+256)
+              <<", \"qualityAccepted\": false}";
+    }
+    report<<"\n  ],\n  \"note\": \"Synthetic metrics are not perceptual quality; "
+             "listen to original adult singer WAVs before selecting a candidate.\"\n}\n";
+    if(!report)throw std::runtime_error("latency study report write failed");
+}
 int main(int argc,char** argv){
     try{
         if(argc==2&&std::string(argv[1])=="--self-test"){
@@ -207,7 +283,13 @@ int main(int argc,char** argv){
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
-        if(argc!=3){std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n";return 1;}
+        if(argc==4&&std::string(argv[1])=="--latency-study"){
+            renderLatencyStudy(readWave(argv[2]),argv[3]);
+            std::cout<<"32/24/16 ms latency A/B WAVs aligned. Human listening NOT verified.\n";
+            return 0;
+        }
+        if(argc!=3){std::cerr<<"usage: harmony_offline_ab input.wav output_directory"
+                                     " | harmony_offline_ab --latency-study input.wav output_directory\n";return 1;}
         renderAb(readWave(argv[1]),argv[2]);
         std::cout<<"WAV A/B written. No human-singing/formant qualification implied.\n";
         return 0;
