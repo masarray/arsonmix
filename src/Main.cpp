@@ -2699,8 +2699,13 @@ private:
         ensureLogicalWorkspace();
         if(logicalWorkspaceReadOnly_)
             return "Saved mixer recovery required before writing a new session";
-        const auto live=engine_.status().getProperty("dryRoutingLab",{});
-        if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
+        const liveState=engine_.status();
+        const auto live=liveState.getProperty("dryRoutingLab",{});
+        const auto session=approvedNativeSnapshot(liveState)
+            .getProperty("mixerSession",{});
+        const bool m4Active=session.getProperty("authority","").toString()=="M4";
+        if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)) &&
+           !m4Active && !engine_.secondaryArmed()) {
             // True no-device save: never synthesize a physical output
             // binding merely to satisfy .smix file serialization.
             const auto& doc=logicalWorkspace_.document();
@@ -2789,9 +2794,13 @@ private:
                 error="Mixer or audio device changed while opening the file";
             if(error.isEmpty()&&engine.secondaryArmed())
                 error="Stop STREAM before opening a mixer";
-            const auto lab=engine.status().getProperty("dryRoutingLab",{});
+            const auto liveState=engine.status();
+            const auto lab=liveState.getProperty("dryRoutingLab",{});
+            const auto session=safe->approvedNativeSnapshot(liveState)
+                .getProperty("mixerSession",{});
             const bool physical=static_cast<bool>(lab.getProperty(
-                "nativeChannelIdPcmActive",false));
+                "nativeChannelIdPcmActive",false)) ||
+                session.getProperty("authority","").toString()=="M4";
             if(error.isEmpty()&&!physical) {
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
