@@ -17,7 +17,20 @@ int main() {
     Mapping mute{"m5","SESSION",session,"5","SET_MUTE",0x77,6}; // Ctrl+Shift+F8
     Mapping solo{"s5","SESSION",session,"5","SET_SOLO",0x78,6}; // Ctrl+Shift+F9
     Mapping panic{"panic","APP","","","PANIC_MUTE",0x79,6};
+    Mapping rack{"fx-rack","SESSION",session,"5","SET_FX_RACK_BYPASS",0x76,6};
+    Mapping slot{"fx-slot","SESSION",session,"5","SET_FX_SLOT_BYPASS",0x75,6,2,"original-instance"};
     assert(Registry::valid(mute)&&Registry::valid(solo)&&Registry::valid(panic));
+    assert(Registry::valid(rack)&&Registry::valid(slot));
+    Mapping restoredSlot;
+    assert(Registry::decode(Registry::encode(slot),restoredSlot));
+    assert(restoredSlot.slot==2&&restoredSlot.insertId=="original-instance");
+    auto invalidSlot=slot;
+    invalidSlot.slot=8;assert(!Registry::valid(invalidSlot));
+    invalidSlot=slot;invalidSlot.insertId.clear();assert(!Registry::valid(invalidSlot));
+    invalidSlot=rack;invalidSlot.slot=1;assert(!Registry::valid(invalidSlot));
+    auto brokenSlot=Registry::encode(slot);
+    brokenSlot.getDynamicObject()->removeProperty("insertId");
+    assert(!Registry::decode(brokenSlot,restoredSlot));
     auto invalid=mute;
     invalid.channelId="";assert(!Registry::valid(invalid));
     invalid=mute;invalid.modifiers=4;assert(!Registry::valid(invalid));
@@ -42,8 +55,10 @@ int main() {
         assert(registry.attached());
         assert(registry.upsert(mute).isEmpty());
         assert(registry.upsert(panic).isEmpty());
+        assert(registry.upsert(rack).isEmpty());
+        assert(registry.upsert(slot).isEmpty());
         const auto rows=registry.snapshot().getProperty("entries",{});
-        assert(rows.isArray()&&rows.getArray()->size()==2);
+        assert(rows.isArray()&&rows.getArray()->size()==4);
         for(const auto& row:*rows.getArray())
             assert(row.getProperty("status","").toString()=="REGISTERED");
         // Duplicate chord remains unmodified. The working mapping wins.
@@ -72,7 +87,7 @@ int main() {
         Registry reloaded(temp);
         reloaded.activateSession(session);
         const auto entries=reloaded.snapshot().getProperty("entries",{});
-        assert(entries.isArray()&&entries.getArray()->size()==2);
+        assert(entries.isArray()&&entries.getArray()->size()==4);
         assert(entries.getArray()->getReference(0).getProperty("id","").toString()!="m5");
         // OS registration is currently unavailable until an HWND attaches.
         for(const auto& item:*entries.getArray())
