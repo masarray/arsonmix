@@ -25,10 +25,22 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_pitch_synchronous_test.cpp -o /tmp/arson-harmony-psola
           /tmp/arson-harmony-psola
+      - name: Prove low-register 65 Hz causal lookback and reject unsafe 16 ms claim
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_low_register_quality_gate_test.cpp -o /tmp/harmonice-low-singer
+          /tmp/harmonice-low-singer
       - name: Compile and run complete engine dry, pitch, stereo and graph-independent PCM fixtures
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_dsp_test.cpp -o /tmp/arson-harmony-engine
           /tmp/arson-harmony-engine
+      - name: Compile offline 32/24/16 ms PDC and partition safety matrix (NOT singer QA)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_latency_candidate_test.cpp -o /tmp/harmonice-latency-study
+          /tmp/harmonice-latency-study
+      - name: Measure 32/24/16 ms DSP-only CPU tails on same Linux runner (non-gating)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_cpu_profile_test.cpp -o /tmp/harmonice-cpu-study
+          /tmp/harmonice-cpu-study --latency-quick
       - name: Verify stage separation, mono and exact PCM
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_stage_spatial_test.cpp -o /tmp/arson-harmony-spatial
@@ -37,3 +49,4 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
           /tmp/arson-harmony-ab --self-test
+          python3 tests/harmonice_quality_report_contract_test.py /tmp/arson-harmony-ab
