@@ -12,6 +12,7 @@
 #include "HarmonyRoomFocus.h"
 #include "HarmonyStageSpatial.h"
 #include "HarmonyPitchSynchronous.h"
+#include "HarmonyPeriodContinuity.h"
 #include "HarmonyLeadTune.h"
 #include "HarmonyVoicePlanner.h"
 
@@ -111,6 +112,7 @@ public:
         leadRendering_=false;voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         pitchSyncValid_.fill(0.f);
+        periodContinuity_.reset();
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
         pitchSyncReferenceEnabled_=true;
@@ -532,7 +534,7 @@ private:
         sourceConfidence_=0.f;voiced_=false;noteHold_=0;
         candidateNote_=-1;currentNote_=-1;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
-        sourcePeriodSamples_=0.f;
+        periodContinuity_.reset();sourcePeriodSamples_=0.f;
         leadTune_.release();voicePlanner_.reset();
     }
     // Keep the last known voiced note through at most five energetic but
@@ -593,13 +595,18 @@ private:
         if(note!=candidateNote_){candidateNote_=note;noteHold_=1;}
         // Saturate the hold counter: a multi-hour sustained note must not
         // overflow a signed int in the realtime thread.
-        else if(noteHold_<3)++noteHold_;
-        // Two consistent windows for both phrase onset and melodic transitions;
+        else if(noteHold_<4)++noteHold_;
+        // Two consistent windows for ordinary transitions; a sudden octave
+        // (or wider interval) needs four independent analysis windows.
+        // This avoids re-planning the entire backing choir for two noisy
+        // high-harmonic windows in an otherwise sustained singer phrase.
         // do not generate provisional harmony on a single noisy transient.
         const float confidence=std::clamp(
             correlations[static_cast<std::size_t>(bestLag)],0.f,1.f);
-        if(noteHold_<2){
-            leadTune_.release();
+        const int requiredNoteHops=currentNote_>=0&&
+            std::abs(note-currentNote_)>=9?4:2;
+        if(noteHold_<requiredNoteHops){
+            if(!voiced_)leadTune_.release();
             return;
         }
         const float newPeriod=static_cast<float>(rate_/hz);
@@ -612,25 +619,10 @@ private:
             ensemble_.beginNote();
         }
         currentNote_=note;voiced_=true;tonalTransitionPending_=false;
-        if(sourcePeriodSamples_>0.f&&
-           std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
-            // A confirmed octave-size transition is a new periodicity.
-            // Re-seed grains but let the 5/30ms fallback crossfades mask
-            // this discontinuity instead of resetting output gains to zero.
-            pitchSync_.reset();
-            pitchSyncStable_=false;weakSyncHops_=0;
-            sourcePeriodSamples_=newPeriod;
-        }else if(sourcePeriodSamples_<=0.f){
-            sourcePeriodSamples_=newPeriod;
-        }else{
-            // Six-millisecond F0 windows fluctuate on long singer vibrato.
-            // Slew the source period at note-rate, not as discrete PSOLA
-            // grain-window jumps. A 5% bounded hop still tracks a real
-            // melodic transition promptly; target intervals remain separate.
-            const float bounded=std::clamp(newPeriod,
-                sourcePeriodSamples_*.95f,sourcePeriodSamples_*1.05f);
-            sourcePeriodSamples_+=.30f*(bounded-sourcePeriodSamples_);
-        }
+        // Retain overlapping grains across even a real musical leap.
+        // A brief octave readout caused by a loud second harmonic cannot
+        // reset all five backing renderers and create a micro-dropout.
+        sourcePeriodSamples_=periodContinuity_.observe(newPeriod);
         sourceConfidence_=confidence;
         // Hysteresis prevents marginal correlation confidence causing
         // rapid PSOLA/granular alternation. Silence disables it immediately.
@@ -687,6 +679,7 @@ private:
     BackingDepthRoom depthRoom_{};
     BackingStageSpatial stage_{};
     BackingRoomFocus roomFocus_{};
+    PeriodContinuity periodContinuity_{};
     PitchSynchronousVoice<capacity,maxVoices> pitchSync_{};
     PitchSynchronousVoice<capacity,1> leadShifter_{};
     LeadTune leadTune_{};
