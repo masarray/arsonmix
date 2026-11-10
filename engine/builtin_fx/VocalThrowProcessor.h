@@ -76,6 +76,7 @@ public:
                             static_cast<std::size_t>(pcm.getNumSamples()));
         observedThrows_.store(core_.throwCount(),std::memory_order_relaxed);
         observedTail_.store(core_.echoActive(),std::memory_order_relaxed);
+        observedCueArmed_.store(core_.cueArmed(),std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override{}
     void onRealtimeBypass(bool requested,bool fully) noexcept override {
@@ -87,6 +88,7 @@ public:
         if(clear&&ready_) {
             core_.invalidateCaptureHistory();
             observedTail_.store(false,std::memory_order_relaxed);
+            observedCueArmed_.store(false,std::memory_order_relaxed);
         }
         if(requested&&fully)captureInvalidated_=true;
         if(!requested)captureInvalidated_=false;
@@ -206,6 +208,9 @@ public:
     bool observedTailActive() const noexcept {
         return observedTail_.load(std::memory_order_relaxed);
     }
+    bool observedCueArmed() const noexcept {
+        return observedCueArmed_.load(std::memory_order_relaxed);
+    }
     bool isReady() const noexcept{return ready_;}
     void sealForRealtime() noexcept override{published_=true;}
     bool stateSnapshotQuiescent() const noexcept override{
@@ -266,7 +271,7 @@ private:
     std::array<std::atomic<std::uint64_t>,32> cancelledIds_{};
     std::uint32_t cancelWrite_=0; // CONTROL only
     bool bypassed_=false,captureInvalidated_=false; // AUDIO only
-    std::atomic<bool> observedTail_{false};
+    std::atomic<bool> observedTail_{false},observedCueArmed_{false};
     double rate_=0.;
     float lastTempoBpm_=0.f; // CONTROL only
     int lastTempoDivision_=-1; // CONTROL only

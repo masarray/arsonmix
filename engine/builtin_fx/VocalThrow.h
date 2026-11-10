@@ -117,20 +117,38 @@ public:
         gridBlockStartFrame_=blockStartFrame;
         gridLocalStartFrame_=clock_;
     }
-    // AUDIO: triggers the most recent word/phrase, preferring the latest
-    // vocal end if the singer stopped within the last 700 ms.
+    // AUDIO ONLY. A click DURING a syllable is a musical intent, not an
+    // immediate splice. The singer finishes naturally; we freeze at the
+    // verified end boundary. A second click cancels the queued intent.
+    // An already completed phrase (last 700ms) is fired immediately.
     bool throwNow() noexcept {
-        if(!ready_||recorded_==0||lastSoundEnd_==0||clock_<lastSoundEnd_)return false;
+        if(!ready_)return false;
+        if(cueArmed_) {
+            cueArmed_=cueSawVoice_=false; // deliberate performer cancellation
+            return true;
+        }
         const auto recent=static_cast<std::uint64_t>(rate_*.7);
-        if(clock_-lastSoundEnd_>recent)return false; // reject stale/silent cues
-        const bool ended=quiet_>0;
-        // Auto already threw this finished phrase. A late manual click must
-        // not produce a second identical echo in Hybrid mode.
-        if(ended && lastSoundEnd_==autoTriggeredPhraseEnd_)return false;
-        const bool accepted=freezeAt(ended?lastSoundEnd_:clock_);
-        if(accepted)manualInCurrentPhrase_=true;
-        return accepted;
+        const auto gap=static_cast<std::uint32_t>(rate_*.06);
+        const bool finished=lastSoundEnd_>0&&quiet_>=gap&&
+            clock_>=lastSoundEnd_&&clock_-lastSoundEnd_<=recent;
+        if(finished) {
+            // AUTO/HYBRID has already consumed this phrase.
+            if(lastSoundEnd_==autoTriggeredPhraseEnd_)return false;
+            const bool fired=freezeAt(lastSoundEnd_);
+            if(fired) {
+                manualInCurrentPhrase_=true;
+                armed_=false;
+            }
+            return fired;
+        }
+        // Even before the first microphone frame, arm ONE future phrase.
+        // Never retain the cue past four seconds or a device/bypass reset.
+        cueArmed_=true;
+        cueSawVoice_=armed_ && lastSoundEnd_>0;
+        cueDeadline_=clock_+static_cast<std::uint64_t>(rate_*4.);
+        return true;
     }
+    [[nodiscard]] bool cueArmed() const noexcept{return cueArmed_;}
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right)return;
         const bool mono=left==right;
@@ -147,21 +165,38 @@ public:
             const float coeff=peak>envelope_?envAttack_:envRelease_;
             envelope_=coeff*envelope_+(1.f-coeff)*peak;
             if(envelope_<1.0e-20f)envelope_=0.f;
-            const bool singing=envelope_>=settings_.gateLinear;
+            // Update ambient floor only when the vocal envelope is quiet.
+            // Gate hysteresis avoids chattering at syllable tails; never
+            // change the lead vocal dry PCM or demand calibration from user.
+            const float gate=std::max(settings_.gateLinear,noiseFloor_*3.0f);
+            const bool singing=envelope_>=gate*(quiet_==0?.75f:1.f);
             if(singing) {
-                if(quiet_>phraseGap) {
-                    voiced_=0;
-                    manualInCurrentPhrase_=false; // genuinely new sung phrase
-                    autoTriggeredPhraseEnd_=0;
+                if(quiet_>phraseGap || lastWordStart_==0) {
+                    lastWordStart_=clock_;
+                    if(quiet_>phraseGap) {
+                        voiced_=0;
+                        manualInCurrentPhrase_=false;
+                        autoTriggeredPhraseEnd_=0;
+                    }
                 }
                 quiet_=0;
                 voiced_=std::min(voiced_+1,maxQuiet);
                 lastSoundEnd_=clock_;
-                if(voiced_>=minVoice)armed_=true;
+                if(voiced_>=minVoice) {
+                    armed_=true;
+                    if(cueArmed_)cueSawVoice_=true;
+                }
             } else {
                 if(quiet_<maxQuiet)++quiet_; // never wrap during multi-hour sessions
+                noiseFloor_=noiseFloor_*.9998f+peak*.0002f;
                 if(armed_ && quiet_>=settings_.silenceSamples) {
-                    if(settings_.settings.mode!=0 && !manualInCurrentPhrase_
+                    // Manual queued cue gets priority over AUTO/HYBRID.
+                    // Freeze the completed phrase, not the middle of a word.
+                    if(cueArmed_ && cueSawVoice_) {
+                        if(freezeAt(lastSoundEnd_))
+                            manualInCurrentPhrase_=true;
+                        cueArmed_=cueSawVoice_=false;
+                    } else if(settings_.settings.mode!=0 && !manualInCurrentPhrase_
                         && clock_>=nextAutoEligible_) {
                         if(freezeAt(lastSoundEnd_)) {
                             autoTriggeredPhraseEnd_=lastSoundEnd_;
@@ -172,6 +207,8 @@ public:
                     armed_=false;
                 }
             }
+            if(cueArmed_ && clock_>=cueDeadline_)
+                cueArmed_=cueSawVoice_=false; // bounded stale-cue expiry
             float echoL=0.f,echoR=0.f,activeTapGain=0.f;
             for(auto& voice:voices_) {
                 if(voice.copying)copyFrozenChunk(voice);
@@ -193,7 +230,31 @@ public:
                     }
                     const auto p=static_cast<std::size_t>(offset);
                     const float gain=voice.repeatGains[slot]*std::max(0.f,ramp);
-                    echoL+=voice.freezeL[p]*gain;echoR+=voice.freezeR[p]*gain;
+                    // Ping-pong is wet-only. A true stereo source is folded
+                    // to a stable wet mid, then positioned alternately L/R;
+                    // the dry original is preserved sample-for-sample.
+                    const float mid=.5f*(voice.freezeL[p]+voice.freezeR[p]);
+                    auto& lowpass=voice.tapTone[slot];
+                    const float alpha=.58f/(1.f+.22f*static_cast<float>(tap));
+                    lowpass+=alpha*(mid-lowpass);
+                    const float tone=(.75f-.07f*static_cast<float>(tap))*mid+
+                        (.25f+.07f*static_cast<float>(tap))*lowpass;
+                    // Tiny asymmetric early reflection = spatial depth;
+                    // bounded reads only from the already frozen phrase,
+                    // never a second realtime delay allocation or HRTF.
+                    const auto reflectionOffset=voice.reflectionSamples;
+                    const float reflection=p>=reflectionOffset?
+                        .5f*(voice.freezeL[p-reflectionOffset]+
+                            voice.freezeR[p-reflectionOffset]):0.f;
+                    const float direct=tone*gain;
+                    const float room=reflection*gain*.115f;
+                    if((tap&1)==0) {
+                        echoL+=direct*.93f;
+                        echoR+=direct*.23f+room;
+                    } else {
+                        echoR+=direct*.93f;
+                        echoL+=direct*.23f+room;
+                    }
                     activeTapGain+=gain;
                 }
                 const auto end=voice.repeatStarts[
@@ -224,9 +285,10 @@ public:
     void invalidateCaptureHistory() noexcept {
         recorded_=0;
         lastSoundEnd_=nextAutoEligible_=autoTriggeredPhraseEnd_=0;
+        lastWordStart_=cueDeadline_=0;
         voiced_=quiet_=0;
-        armed_=manualInCurrentPhrase_=false;
-        envelope_=0.f;
+        armed_=manualInCurrentPhrase_=cueArmed_=cueSawVoice_=false;
+        noiseFloor_=0.f;envelope_=0.f;
         for(auto& voice:voices_) {
             voice.copying=false;voice.playing=false;
             voice.freezeCount=0;voice.copyIndex=0;
@@ -245,10 +307,11 @@ private:
         std::vector<float> freezeL,freezeR;
         std::array<std::uint64_t,maxRepeats> repeatStarts{};
         std::array<float,maxRepeats> repeatGains{};
+        std::array<float,maxRepeats> tapTone{}; // voice-owned HF damping
         PreparedEdit active{};
         std::uint64_t copyEnd=0,freezeCount=0;
         std::size_t copyIndex=0,sourceIndex=0;
-        std::uint32_t edgeSamples=0;
+        std::uint32_t edgeSamples=0,reflectionSamples=0;
         std::uint64_t gridAnchorFrame=0,gridCueFrame=0,gridCueLocal=0;
         bool gridValid=false;
         bool copying=false,playing=false;
@@ -263,13 +326,20 @@ private:
         }
         if(!slot)return false;
         const auto available=std::min<std::uint64_t>(end,recorded_);
-        const auto count=std::min<std::uint64_t>(available,settings_.captureSamples);
+        auto count=std::min<std::uint64_t>(available,settings_.captureSamples);
+        // Prefer the actual last voiced onset (including 28ms consonant
+        // preroll) over an arbitrary fixed-size slice of the previous word.
+        const auto pre=static_cast<std::uint64_t>(rate_*.028);
+        const auto onset=lastWordStart_>pre?lastWordStart_-pre:0;
+        if(onset>0&&onset<end)count=std::min(count,end-onset);
         if(count<static_cast<std::uint64_t>(rate_*.025))return false;
         slot->copyEnd=end;
         slot->freezeCount=count;
         slot->copyIndex=0;
         slot->sourceIndex=static_cast<std::size_t>((end-count)%historyL_.size());
         slot->edgeSamples=static_cast<std::uint32_t>(rate_*.004);
+        slot->reflectionSamples=static_cast<std::uint32_t>(rate_*.011);
+        slot->tapTone.fill(0.f);
         slot->active=settings_;
         if(musicIntervalSamples_)
             slot->active.intervalSamples=musicIntervalSamples_;
@@ -313,7 +383,11 @@ private:
             if(globalFirst>=voice.gridAnchorFrame) {
                 const auto remainder=
                     (globalFirst-voice.gridAnchorFrame)%interval;
-                if(remainder)first+=interval-remainder;
+                // Never wait nearly another beat just to satisfy a stale
+                // onset lattice. Small phase correction is musical; a full
+                // extra delay is not. Upper bound = one quarter subdivision.
+                if(remainder && interval-remainder<=interval/4)
+                    first+=interval-remainder;
             } else if(voice.gridAnchorFrame-globalFirst<=interval) {
                 first+=voice.gridAnchorFrame-globalFirst;
             }
@@ -330,10 +404,11 @@ private:
     }
     void reset() noexcept {
         clock_=lastSoundEnd_=nextAutoEligible_=autoTriggeredPhraseEnd_=0;
+        lastWordStart_=cueDeadline_=0;
         recorded_=writeIndex_=0;
         voiced_=quiet_=0;
-        armed_=manualInCurrentPhrase_=false;
-        envelope_=0.f;duck_=1.f;throwCount_=0;
+        armed_=manualInCurrentPhrase_=cueArmed_=cueSawVoice_=false;
+        noiseFloor_=0.f;envelope_=0.f;duck_=1.f;throwCount_=0;
         wetSmoothed_=settings_.settings.wet;
         if(rate_>0) {
             envAttack_=static_cast<float>(std::exp(-1./(rate_*.004)));
@@ -343,7 +418,8 @@ private:
         for(auto& voice:voices_) {
             voice.copyEnd=voice.freezeCount=0;
             voice.copyIndex=voice.sourceIndex=0;
-            voice.edgeSamples=0;
+            voice.edgeSamples=voice.reflectionSamples=0;
+            voice.tapTone.fill(0.f);
             voice.copying=voice.playing=false;
             voice.gridValid=false;
             voice.gridAnchorFrame=voice.gridCueFrame=voice.gridCueLocal=0;
@@ -356,9 +432,11 @@ private:
     std::vector<float> historyL_,historyR_;
     std::array<TailVoice,2> voices_{};
     std::uint64_t clock_=0,lastSoundEnd_=0,nextAutoEligible_=0,autoTriggeredPhraseEnd_=0;
+    std::uint64_t lastWordStart_=0,cueDeadline_=0;
     std::size_t recorded_=0,writeIndex_=0;
     std::uint32_t voiced_=0,quiet_=0;
     float envelope_=0.f,envAttack_=0.f,envRelease_=0.f,duckCoeff_=0.f;
+    float noiseFloor_=0.f;
     float duck_=1.f,wetSmoothed_=.42f;
     double rate_=0.;
     std::uint32_t musicIntervalSamples_=0;
@@ -366,5 +444,6 @@ private:
     bool gridValid_=false;
     unsigned throwCount_=0;
     bool armed_=false,manualInCurrentPhrase_=false,ready_=false;
+    bool cueArmed_=false,cueSawVoice_=false;
 };
 } // namespace armix::builtin_fx

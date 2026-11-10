@@ -231,6 +231,15 @@ public:
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var ready)
               {
+                  // A Pages-only demo cannot authenticate native session readiness.
+                  if (ready.getProperty ("gui", "").toString() !=
+                          "APPROVED_PAGES_PREVIEW_BUTTONS" ||
+                      !static_cast<bool> (ready.getProperty ("nativeBridgeAttached", false)))
+                  {
+                      diagnostics_.record ("GUI_NATIVE_BRIDGE_MISSING",
+                          "Ignoring Pages-only readiness notification");
+                      return;
+                  }
                   browser_.loaded = true;
                   guiReadyTick_ = juce::Time::getMillisecondCounter();
                   // WebView2 may finish its first navigation while this
@@ -2364,6 +2373,7 @@ private:
 
             reply->setProperty("throwCount",static_cast<int>(processor->observedThrowCount()));
             reply->setProperty("tailActive",processor->observedTailActive());
+            reply->setProperty("cueArmed",processor->observedCueArmed());
             reply->setProperty("addedLatencySamples",processor->getLatencySamples());
             if(instanceId==lastNativeThrowInstance_&&
                epoch==lastNativeThrowEpoch_&&revision==lastNativeThrowRevision_)
@@ -2522,7 +2532,7 @@ private:
             return error;
         }
         if(bindingMode==MixerBindingMode::exact && startupOnSavedDevice &&
-           armix::session::MixerDeviceBindingPolicy::isAsio4All(doc.binding))
+           doc.binding.backend=="ASIO")
             bindingMode=MixerBindingMode::verifiedAsioRestart;
         const bool resume=startupOnSavedDevice &&
             (bindingMode==MixerBindingMode::exact || bindingMode==MixerBindingMode::verifiedAsioRestart) &&
@@ -5415,7 +5425,9 @@ private:
 
     void serviceAsioMixerRestart() {
         const auto epoch=engine_.dryRoutingLabEpoch();
-        if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
+        const bool retained=engine_.hasRetainedNativeSession();
+        const bool silent=engine_.hasPristineSilentMixerAwaitingAsio();
+        if(epoch==asioRecoveryEpoch_ || (!retained && !silent) ||
            audioDeviceApplyActive_ || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
@@ -5423,7 +5435,6 @@ private:
         auto* device=engine_.devices().getCurrentAudioDevice();
         if(device) {
             if(device->getTypeName()!="ASIO" ||
-               !device->getName().startsWithIgnoreCase("ASIO4ALL") ||
                !engine_.sameRetainedAsioDriver())return;
         } else if(!engine_.selectedRetainedAsioDriverForReopen()) {
             // The device pointer disappeared: never open an unapproved or
@@ -5448,28 +5459,49 @@ private:
             setup.useDefaultInputChannels=!setup.inputChannels.isZero();
             setup.useDefaultOutputChannels=true;
             asioRecoveryGate_.driverTransaction(now);
-            if(!device)diagnostics_.record("ASIO4ALL_DEVICE_MISSING",
+            if(!device)diagnostics_.record("ASIO_DEVICE_MISSING",
                 "Reopening previously approved registered ASIO driver; no fallback");
             const auto error=openSelectedAudioDevice("ASIO",setup,true);
             asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
-                diagnostics_.record("ASIO4ALL_REOPEN_FAILED",error);
+                diagnostics_.record("ASIO_REOPEN_FAILED",error);
                 emitApprovedNativeSnapshot();
                 return;
             }
+        }
+        if(silent) {
+            // Recreate the original unedited SOURCE NONE PCM publisher only
+            // after proving the SAME ASIO driver and playback pin identity.
+            // No saved mixer, FX or WIRE may be replaced by this path.
+            if(!engine_.rebuildPristineSilentAsioMixer()) {
+                asioRecoveryGate_.bindFailed(now);
+                diagnostics_.record("ASIO_SILENT_MIXER_REBUILD_REJECTED",
+                    "Registered ASIO driver/pins or native graph not ready");
+                emitApprovedNativeSnapshot();
+                return;
+            }
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
+            asioRecoveryGate_.recovered();
+            mixerSessionStatus_="PRISTINE_SOURCE_NONE_REATTACHED";
+            mixerSessionError_.clear();
+            diagnostics_.record("ASIO_SILENT_MIXER_REATTACHED",
+                "Same physical ASIO output; no mic source and no auto-arm");
+            emitApprovedNativeSnapshot();
+            return;
         }
         if(!engine_.authorizeRetainedAsioRestart()) {
             // Admission can lag driver restart without any driver call.
             // It MUST NOT exhaust the bounded reopen/correction allowance.
             asioRecoveryGate_.waitForReadback(now);
-            diagnostics_.record("ASIO4ALL_BIND_NOT_READY","Waiting for verified callback/readback");
+            diagnostics_.record("ASIO_BIND_NOT_READY","Waiting for verified callback/readback");
             return;
         }
         if(const auto corrected=engine_.asioRestartPinCorrection()) {
             if(!asioRecoveryGate_.mayChangeDriver()) {
                 asioRecoveryGate_.waitForReadback(now);
-                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_DEFERRED",
+                diagnostics_.record("ASIO_PIN_CORRECTION_DEFERRED",
                     "Driver transaction budget exhausted for this physical epoch");
                 return;
             }
@@ -5485,7 +5517,7 @@ private:
                reopened->getActiveInputChannels()!=corrected->inputChannels ||
                reopened->getActiveOutputChannels()!=corrected->outputChannels ||
                !engine_.authorizeRetainedAsioRestart()) {
-                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_FAILED",
+                diagnostics_.record("ASIO_PIN_CORRECTION_FAILED",
                     error.isNotEmpty()?error:juce::String("Readback changed during correction"));
                 emitApprovedNativeSnapshot();
                 return;
@@ -5498,7 +5530,7 @@ private:
             // current epoch; retry without reopening hardware at an
             // exponentially bounded CONTROL cadence.
             asioRecoveryGate_.bindFailed(now);
-            diagnostics_.record("ASIO4ALL_REATTACH_FAILED",error);
+            diagnostics_.record("ASIO_REATTACH_FAILED",error);
             emitApprovedNativeSnapshot();
             return;
         }
@@ -5509,7 +5541,7 @@ private:
         mixerSessionError_.clear();
         if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);
         if(engine_.isMonitorEnabled())mixerSessionStatus_="RESTORED_MONITORING";
-        diagnostics_.record("ASIO4ALL_REATTACHED","Verified driver and current MAIN pair");
+        diagnostics_.record("ASIO_REATTACHED","Verified driver and current MAIN pair");
         emitApprovedNativeSnapshot();
     }
 

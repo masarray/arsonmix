@@ -3272,12 +3272,17 @@
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
-    backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false,
-      viewportWidth:Math.round(window.innerWidth),
-      viewportHeight:Math.round(window.innerHeight),
-      devicePixelRatio:window.devicePixelRatio
-    });
+    // Only the installed native Pages scope can authenticate host GUI readiness.
+    // This handshake says nothing about whether physical PCM is admitted.
+    if(scope?.installGraph && scope?.render){
+      backend.emitEvent("arMixGuiReady",{
+        gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
+        visualReady:true,audioReady:false,
+        viewportWidth:Math.round(window.innerWidth),
+        viewportHeight:Math.round(window.innerHeight),
+        devicePixelRatio:window.devicePixelRatio
+      });
+    } else status("Native mixer renderer unavailable · repair application");
     controller.subscribe();
   };
   if(document.readyState==="loading")

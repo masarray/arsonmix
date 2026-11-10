@@ -195,16 +195,13 @@ static void testBypassNeverReplaysOldVocalCue() {
     p.onRealtimeBypass(false,false);
     check(p.queueTrigger(505));
     render(p,b,midi,0.f);
-    check(p.pollCompletion(done)&&done.requestId==505&&!done.applied&&
+    check(p.pollCompletion(done)&&done.requestId==505&&done.applied&&
           !done.bypassed);
-    check(p.observedThrowCount()==0);
-    // A FRESH sung phrase has an independent eligible manual cue.
+    check(p.observedThrowCount()==0&&p.observedCueArmed());
+    // The old phrase is invalid. This cue is for a NEW sung phrase only.
     for(int n=0;n<120;++n)render(p,b,midi,.7f);
-    for(int n=0;n<32;++n)render(p,b,midi,0.f);
-    check(p.queueTrigger(506));
-    render(p,b,midi,0.f);
-    check(p.pollCompletion(done)&&done.requestId==506&&done.applied);
-    check(p.observedThrowCount()==1);
+    for(int n=0;n<130;++n)render(p,b,midi,0.f);
+    check(p.observedThrowCount()==1&&!p.observedCueArmed());
     check(p.stateSnapshotQuiescent());
 }
 
@@ -249,7 +246,9 @@ int main(){
     check(p.queueTrigger(104));
     render(p,b,m,0.f);
     check(p.pollCompletion(c)&&c.requestId==104&&c.applied);
-    check(p.observedThrowCount()==1);
+    check(p.observedThrowCount()==0&&p.observedCueArmed());
+    for(int n=0;n<140;++n)render(p,b,m,0.f);
+    check(p.observedThrowCount()==1&&!p.observedCueArmed());
     check(p.stateSnapshotQuiescent());
     std::puts("PASS: expired Vocal Throw cue and settings cannot replay on ASIO resume");
 }

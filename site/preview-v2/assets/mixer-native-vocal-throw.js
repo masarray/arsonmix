@@ -70,6 +70,8 @@ for(const [key,[title,unit,,bank]] of Object.entries(encoderMeta)){
 let current=null,accepted=defaults(),draft=defaults(),pending=null,
  readId="",readSent=0,seq=1,taps=[],windowDrag=null;
 let tempoPending=null,musicSource="0",musicReadback=null;
+let snapshotReady=false,queuedSettings=false,activeRotaries=0,lastThrowCount=0;
+const dirtyFields=new Set(); // never discard first-use knob edits on native readback
 const context=()=>{
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const fx=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[current?.slot];
@@ -122,8 +124,9 @@ function syncPower(){
  btn.setAttribute("aria-label",btn.title);
  $("vtThrow").disabled=value!=="on"||!!pending;
  $("vtStatus").textContent=value==="on"?
-  ($("vtThrow").dataset.tail==="true"?"TAIL":"LIVE"):
-  value==="off"?"BYPASS":value==="rack-off"?"RACK OFF":"OFFLINE";
+  ($("vtThrow").dataset.tail==="true"?"TAIL":
+   $("vtThrow").dataset.armed==="true"?"ARMED":"LIVE"):
+   value==="off"?"BYPASS":value==="rack-off"?"RACK OFF":"OFFLINE";
 }
 function paint(){
  $("vtMode").value=String(draft.mode);
@@ -175,14 +178,20 @@ function requestSnapshot(force=false){
 function send(command){
  const ctx=context();
  if(!native()||!ctx){hint("Native DSP unavailable");return false;}
- if(pending){hint("Waiting for DSP ACK");return false;}
- if(command==="nativeThrowSet"&&(!valid(draft)||same(draft,accepted)))return false;
+ if(command==="nativeThrowSet"){
+  // Gesture is always live visually. Do not send guessed defaults before
+  // receiving native settings or while an earlier control edit is pending.
+  if(!snapshotReady||pending||activeRotaries>0){
+   queuedSettings=true;return true;
+  }
+  if(!valid(draft)||same(draft,accepted))return false;
+ } else if(pending){hint("Waiting for DSP ACK");return false;}
  const requestId="throw-"+String(Date.now()*1000+(++seq%1000));
  pending={requestId,command,ack:false,created:Date.now()};
  const payload={action:command,requestId,...ctx};
  if(command==="nativeThrowSet")payload.settings={...draft};
  backend().emitEvent("arMixAction",payload);
- hint(command==="nativeThrowTrigger"?"Waiting for audio callback":"Applying to DSP");
+ hint(command==="nativeThrowTrigger"?"Cue accepted by mixer":"Applying to DSP");
  syncPower();return true;
 }
 // The large LCD numerals double as the manual BPM edit target. Numeric
@@ -207,20 +216,25 @@ $("vtBpm").addEventListener("blur",()=>{bpmScreen.dataset.editing="false";});
 for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  ["division","vtDivision"],["repeats","vtRepeats"]]){
  $(id).addEventListener("change",()=>{
-  draft={...draft,[key]:Number($(id).value)};paint();send("nativeThrowSet");
+  draft={...draft,[key]:Number($(id).value)};
+   dirtyFields.add(key);paint();send("nativeThrowSet");
  });
 }
 // Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
 // Update visual locally during movement; issue exactly ONE accepted native
 // settings intent at drag release. No DOM/audio DSP loops are introduced.
 function bindRotary(face,key,step){
- const [min,max]=ranges[key];
- const quantize=v=>clamp(Math.round(v/step)*step,min,max);
+ const [min,max]=ranges[key],quantize=v=>clamp(Math.round(v/step)*step,min,max);
  let gesture=null;
- const update=v=>{if(pending)return;draft={...draft,[key]:quantize(v)};paint();};
+ const update=v=>{
+  draft={...draft,[key]:quantize(v)};
+  dirtyFields.add(key);paint();
+ };
  face.addEventListener("pointerdown",e=>{
-  if(e.button!==0||pending)return;
+  if(e.button!==0||panel.dataset.fxState!=="on")return;
+  // Don't block the first real pointer gesture behind a settings ACK.
   gesture={id:e.pointerId,y:e.clientY,initial:draft[key],changed:false};
+  activeRotaries++;
   face.setPointerCapture(e.pointerId);e.preventDefault();
  });
  face.addEventListener("pointermove",e=>{
@@ -232,13 +246,19 @@ function bindRotary(face,key,step){
  const finish=e=>{
   if(!gesture||e.pointerId!==gesture.id)return;
   const changed=gesture.changed;gesture=null;
+  activeRotaries=Math.max(0,activeRotaries-1);
   if(face.hasPointerCapture?.(e.pointerId))face.releasePointerCapture(e.pointerId);
-  if(changed)send("nativeThrowSet");
+  if(changed||queuedSettings)send("nativeThrowSet");
  };
  face.addEventListener("pointerup",finish);
- face.addEventListener("pointercancel",()=>{gesture=null;paint();});
+ face.addEventListener("pointercancel",e=>{
+  if(gesture&&e.pointerId===gesture.id){
+   gesture=null;activeRotaries=Math.max(0,activeRotaries-1);
+   if(queuedSettings)send("nativeThrowSet");
+  }
+ });
  face.addEventListener("wheel",e=>{
-  if(pending)return;
+  if(panel.dataset.fxState!=="on")return;
   e.preventDefault();update(draft[key]+(e.deltaY<0?step:-step));
   send("nativeThrowSet");
  },{passive:false});
@@ -250,7 +270,6 @@ function bindRotary(face,key,step){
   send("nativeThrowSet");
  });
  face.addEventListener("dblclick",()=>{
-  if(pending)return;
   update(defaults()[key]);send("nativeThrowSet");
  });
 }
@@ -280,7 +299,8 @@ $("vtMusicSource").addEventListener("change",()=>{
 });
 $("vtPreset").addEventListener("change",()=>{
  const p=presets[$("vtPreset").value];if(!p)return;
- draft={...p};paint();send("nativeThrowSet");
+ draft={...p};Object.keys(draft).forEach(key=>dirtyFields.add(key));
+  paint();send("nativeThrowSet");
 });
 $("vtThrow").addEventListener("click",()=>send("nativeThrowTrigger"));
 $("vtTap").addEventListener("click",()=>{
@@ -321,6 +341,9 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
+   snapshotReady=false;queuedSettings=false;activeRotaries=0;lastThrowCount=0;
+   dirtyFields.clear();
+   $("vtThrow").dataset.armed="false";$("vtThrow").dataset.tail="false";
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
   if(native()&&state?.admitted&&insert?.catalogId===ID&&insert.id){
@@ -368,17 +391,34 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
   musicSource=String(reply.musicSourceChannelId||"0");
   refreshMusicChannels();renderMusicStatus(reply);
  }
- $("vtCount").textContent=String(reply.throwCount||0);
- $("vtCount").setAttribute("aria-label",String(reply.throwCount||0)+" completed throws");
+ const count=Number(reply.throwCount)||0,armed=reply.cueArmed===true;
+ const wasArmed=$("vtThrow").dataset.armed==="true";
+ $("vtCount").textContent=String(count);
+ $("vtCount").setAttribute("aria-label",count+" completed throws");
  $("vtDot").classList.toggle("active",reply.tailActive===true);
  $("vtBeatRail").dataset.playing=String(reply.tailActive===true);
  $("vtThrow").dataset.tail=String(reply.tailActive===true);
- $("vtStatus").textContent=reply.tailActive?"TAIL":"LIVE";
- if(pending){
-  if(!pending.ack||reply.appliedRequestId!==pending.requestId)return;
-  accepted={...reply.settings};draft={...accepted};pending=null;
-  hint("");
- }else{accepted={...reply.settings};draft={...accepted};}
+ $("vtThrow").dataset.armed=String(armed);
+ if(armed)hint("ARMED · waiting for end of vocal phrase");
+ else if(wasArmed)hint(count>lastThrowCount?
+  "THROWN · stereo ping-pong":"READY · cue cleared");
+ lastThrowCount=count;
+ if(pending&&(!pending.ack||reply.appliedRequestId!==pending.requestId)){
+  paint();return;
+ }
+ const local={...draft},wasReady=snapshotReady;
+ snapshotReady=true;accepted={...reply.settings};
+ if(!wasReady||queuedSettings||activeRotaries>0){
+  draft={...accepted};
+  for(const key of dirtyFields)draft[key]=local[key];
+ }else draft={...accepted};
+ pending=null;
+ if(activeRotaries===0) {
+  if(!same(draft,accepted)){
+   queuedSettings=false;
+   send("nativeThrowSet"); // latest coalesced intent: never one per pixel
+  }else{dirtyFields.clear();queuedSettings=false;}
+ }
  paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
@@ -391,7 +431,10 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 });
 window.setInterval(()=>{
  if(panel.hidden)return;
- if(pending&&Date.now()-pending.created>3500){hint("DSP ACK timeout");pending=null;}
+ if(pending&&Date.now()-pending.created>3500){
+  hint("DSP response late · resyncing");
+  pending=null;requestSnapshot(true);
+ }
  if(tempoPending&&Date.now()-tempoPending.created>3500){
   hint("Tempo source ACK timeout");tempoPending=null;refreshMusicChannels();
  }
