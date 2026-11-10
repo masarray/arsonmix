@@ -1252,7 +1252,10 @@
   // scalar and retains its guarded routingM4Control gateway.
   const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":t?.id);
   const channelIdScalarReady=(parameter,t)=>{
-    const current=controller?.state()?.current;
+    const current=activeView();
+    if(logicalView)return !!nativeIdFor(t)&&
+      logicalView.graph.capabilities.supportedOps.includes(
+        parameter==="faderDb"?"SET_FADER":"SET_PAN");
     return t?.kind!=="master" &&
       mixerSession()?.authority==="CHANNEL_ID" &&
       flags.acceptedGraphConnected && current?.admitted===true &&
@@ -1261,15 +1264,15 @@
         parameter==="faderDb"?"SET_FADER":"SET_PAN");
   };
   function liveScalarReady(parameter,t) {
-    if(t?.kind==="master")return parameter==="masterGain" &&
-      (m4Verified()||nativeMasterReady());
+    if(t?.kind==="master")return logicalView?parameter==="masterGain":
+      parameter==="masterGain"&&(m4Verified()||nativeMasterReady());
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
   }
   const nativeEditIdentity=(t)=>({
-    epoch:String(hardware?.device?.epoch),
-    authority:mixerSession()?.authority,
-    channelId:t?.kind==="master"?null:nativeIdFor(t)
+    epoch:logicalView?"LOGICAL":String(hardware?.device?.epoch),
+    authority:logicalView?"LOGICAL":mixerSession()?.authority,
+    channelId:logicalView?nativeIdFor(t):t?.kind==="master"?null:nativeIdFor(t)
   });
   function sameNativeEditIdentity(edit) {
     const now=nativeEditIdentity(edit.t);
@@ -1299,11 +1302,12 @@
   function dispatchLiveScalar(edit) {
     if(!sameNativeEditIdentity(edit) ||
        !liveScalarReady(edit.parameter,edit.t))return false;
-    if(edit.t?.kind==="master" || m4ControlIsOwner())
+    if(logicalView&&pendingLogical)return null;
+    if(!logicalView&&(edit.t?.kind==="master" || m4ControlIsOwner()))
       return sendM4Control(edit.parameter,edit.t,edit.value);
-    if(controller?.state()?.pending)return null;
-    return intent(edit.parameter==="faderDb"?"SET_FADER":"SET_PAN",
-      edit.t,edit.parameter==="faderDb"?
+    if(!logicalView&&controller?.state()?.pending)return null;
+    return intent(edit.parameter==="faderDb"||edit.parameter==="masterGain"?"SET_FADER":"SET_PAN",
+      edit.t,edit.parameter==="faderDb"||edit.parameter==="masterGain"?
         {valueDb:edit.value}:{value:edit.value/100});
   }
   function flushLiveScalars() {
