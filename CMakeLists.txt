@@ -133,6 +133,12 @@ if(BUILD_TESTING)
   target_compile_features(ARMixHarmoniceLatencyStudyTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmoniceOfflineLatencyCandidatePcmSafety
       COMMAND ARMixHarmoniceLatencyStudyTests)
+  # Explicit causal low-singer bound: 16ms cannot safely promise PSOLA
+  # coverage across the documented 65Hz source range.
+  add_executable(ARMixHarmoniceLowSingerGate tests/harmony_low_register_quality_gate_test.cpp)
+  target_compile_features(ARMixHarmoniceLowSingerGate PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmoniceLowSingerPsolaCausalCoverage
+      COMMAND ARMixHarmoniceLowSingerGate)
   add_executable(ARMixHarmonyPitchSyncTests tests/harmony_pitch_synchronous_test.cpp)
   target_compile_features(ARMixHarmonyPitchSyncTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity COMMAND ARMixHarmonyPitchSyncTests)
