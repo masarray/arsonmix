@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 
 // M4: a future native FX must extend the real host registry, not require
@@ -71,7 +72,7 @@ constexpr std::array<Entry,2> duplicate{fixture,fixture};
 static_assert(validNativeBuiltInFxCatalog(injected));
 static_assert(!validNativeBuiltInFxCatalog(duplicate));
 static_assert(validNativeBuiltInFxCatalog(armix::builtin_fx::nativeBuiltInFx));
-static_assert(std::is_same_v<Entry::Prepare,decltype(fixture.prepare)>);
+static_assert(std::is_same_v<Entry::Prepare,std::remove_cv_t<decltype(fixture.prepare)>>);
 
 int main() {
     const auto* found=findNativeBuiltInFxIn(injected,"armix.test.fixture-gain.v1");
