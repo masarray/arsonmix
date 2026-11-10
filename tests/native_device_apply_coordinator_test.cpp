@@ -145,6 +145,12 @@ int main() {
     observed.deviceBuffer=128;
     assert(!Coordinator::matchesApplied(request,candidate,observed));
     observed.deviceBuffer=256;
+    observed.deviceRate=0.;
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceRate=48000.;
+    observed.deviceBuffer=0;
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceBuffer=256;
     observed.backend="Windows Audio";
     assert(!Coordinator::matchesApplied(request,candidate,observed));
     observed.backend="ASIO";
@@ -174,6 +180,14 @@ int main() {
         rollback.inputNames,rollback.outputNames,rollback));
     rollback.activeOutputs=candidate.outputChannels;
     rollback.deviceBuffer=512;
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceBuffer=256;
+    rollback.deviceRate=0.;
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceRate=48000.;
+    rollback.deviceBuffer=0;
     assert(!Coordinator::matchesRollback(candidate,"ASIO",
         rollback.inputNames,rollback.outputNames,rollback));
     rollback.deviceBuffer=256;

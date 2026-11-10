@@ -161,13 +161,20 @@ public:
         }
         return evidence;
     }
+    // A driver may return an OPEN status but no usable clock/buffer evidence.
+    // Unknown/zero/nonfinite live formats cannot establish playable PCM.
+    static bool validLiveFormat(double sampleRate,int frames) noexcept {
+        return std::isfinite(sampleRate) && sampleRate>=8000. &&
+               sampleRate<=384000. && frames>=16 && frames<=8192;
+    }
     // The acknowledgement is not permission to output sound: it proves only
     // that JUCE accepted the selected backend, names, masks, rate and period.
     static bool matchesApplied(const Request& requested,
             const juce::AudioDeviceManager::AudioDeviceSetup& candidate,
             const AppliedReadback& live) noexcept {
         const auto& a=live.actual;
-        return live.open&&live.backend==requested.backend&&
+        return live.open&&validLiveFormat(live.deviceRate,live.deviceBuffer)&&
+            live.backend==requested.backend&&
             // Strict physical instance identity for ASIO: manager setup alone
             // may name the intended driver while another callback is active.
             (requested.backend!="ASIO" ||
@@ -219,7 +226,8 @@ public:
             const juce::StringArray& previousOutputs,
             const RollbackReadback& live) noexcept {
         const auto& a=live.actual;
-        return live.open&&live.backend==previousBackend&&
+        return live.open&&validLiveFormat(live.deviceRate,live.deviceBuffer)&&
+            live.backend==previousBackend&&
             (previousBackend!="ASIO" ||
               (live.deviceType=="ASIO" && live.deviceName==before.outputDeviceName))&&
             a.inputDeviceName==before.inputDeviceName&&
