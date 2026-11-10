@@ -2409,7 +2409,10 @@
     // Physical SessionSnapshot remains unadmitted. Render the separately
     // validated logical C++ document ONLY when hardware is unavailable.
     // This is not a PCM graph, hardware meter or browser draft.
-    const logicalAvailable=!next.admitted&&!m4Verified()&&retainedMatches() &&
+    const logicalAvailable=!next.admitted&&!m4Verified()&&
+      session?.authority!=="M4" &&
+      (session?.authority!=="CHANNEL_ID"||next.retained) &&
+      retainedMatches() &&
       offline?.schema==="arsonmix.native.logical-mixer.v1" &&
       offline.authority==="LOGICAL_ONLY"&&
       offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
