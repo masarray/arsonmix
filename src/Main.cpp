@@ -1082,9 +1082,14 @@ private:
                 if(!builtIn && (!catalog_.find(key) || catalog_.busy()))
                     failure="UNKNOWN_OR_SCANNING_FX_CATALOG";
             }
-            if(failure.isEmpty())result=logicalWorkspace_.apply(request);
-            if(failure.isEmpty()&&!result.accepted)failure=result.error;
-            else {
+            if(failure.isEmpty()) {
+                result=logicalWorkspace_.apply(request);
+                if(!result.accepted)failure=result.error;
+            }
+            // A catalog, schema or transaction rejection must NEVER be
+            // interpreted as a successful persist/ACK. Commit only genuine
+            // accepted changes.
+            if(failure.isEmpty()) {
                 failure=armix::session::NativeMixerSessionStore(
                     settingsDirectory()).commit(logicalWorkspace_.document(),
                                                  logicalWorkspace_.states());
