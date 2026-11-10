@@ -28,6 +28,9 @@ static LiveChannelFxGraph::InstanceLease makeHarmony(
     p->prepareToPlay(rate,quantum);
     const int declaredLatency=2*static_cast<int>(std::round(rate*.016));
     assert(p->isReady() && p->getLatencySamples()==declaredLatency);
+    // Prepared built-in host metadata drives the live FxInstance envelope.
+    // A zero JUCE rate shortened 8 ms to just 64 frames at 48/96 kHz.
+    assert(std::abs(p->getSampleRate()-rate)<1.e-6);
     armix::harmony::Settings rich;
     rich.voices=5;rich.wet=wet;rich.space=space;
     assert(p->queueAccepted(rich,9001));
@@ -252,6 +255,18 @@ int main() {
         verifiedWet+=wetCount;verifiedDry+=dryCount;
         assert(!cycle.rackBypassed(vocal));
         assert(!b->bypassRequested.load(std::memory_order_acquire));
+        // Test the actual FX lease envelope, not an isolated Fade helper.
+        // Every WET/Space and callback-size variant must retain 8 ms at the
+        // device rate rather than falling back to 64 samples.
+        b->bypassFade.request(true);
+        int fadeFrames=0;
+        while(b->bypassFade.transitioning()&&fadeFrames<4096){
+            b->bypassFade.next();
+            ++fadeFrames;
+        }
+        assert(fadeFrames<4096);
+        const int expectedFade=static_cast<int>(std::round(cfg.rate*.008));
+        assert(std::abs(fadeFrames-expectedFade)<=1);
     }
     std::cout<<"Harmony multi-rate wet/space bypass matrix PASS; "
              <<"scenarios="<<cases.size()
