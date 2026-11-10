@@ -259,6 +259,8 @@
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  const logicalClientToken=Date.now().toString(36)+"-"+
+    Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
   // Internal identifiers remain in engine logs, never footer, dialog or toast.
   const operatorMessage = message => {
@@ -345,7 +347,7 @@
       return {ok:false,error:pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
-    const requestId="logical-"+(++logicalSerial);
+    const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
     const value=operation==="SET_FADER"?payload.valueDb:
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
@@ -427,7 +429,7 @@
     pendingWireGains.set(edgeId,{source,gain:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
   }
-  function nativeOutputTargets(t,channels=controller?.state()?.current?.graph?.channels||[]){
+  function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
     const source=nativeIdFor(t),reserved=["Master","SOURCE ONLY (No Main)","MAIN","NONE"];
     return channels.filter(ch=>ch.id!==source&&["INPUT","GROUP","FX_RETURN"].includes(ch.role))
       .map(ch=>{const label=displayNameFor(ch);
@@ -448,7 +450,8 @@
     return result.ok;
   };
   function projection(native) {
-    if ((!native?.admitted && !native?.retained) || !Array.isArray(native.graph.edges) ||
+    if ((!native?.admitted && !native?.retained && !native?.logical) ||
+        !Array.isArray(native.graph.edges) ||
         !scope?.make || !scope?.render || !scope?.wireGraph ||
         !scope?.installGraph || !scope?.allocateWireId) return false;
     const accepted = native.graph;
@@ -2367,7 +2370,7 @@
     // Physical SessionSnapshot remains unadmitted. Render the separately
     // validated logical C++ document ONLY when hardware is unavailable.
     // This is not a PCM graph, hardware meter or browser draft.
-    const logicalAvailable=!next.admitted&&!deviceReady() &&
+    const logicalAvailable=!next.admitted&&!m4Verified() &&
       offline?.schema==="arsonmix.native.logical-mixer.v1" &&
       offline.authority==="LOGICAL_ONLY"&&
       offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
@@ -2379,7 +2382,7 @@
     if(logicalAvailable) {
       const staged={...next,graph:offline.graph,
         identity:"logical:"+offline.revision,logical:true,
-        admitted:false,retained:true,productLive:false,telemetry:{}};
+        admitted:false,retained:false,productLive:false,telemetry:{}};
       if(pendingLogical) {
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
