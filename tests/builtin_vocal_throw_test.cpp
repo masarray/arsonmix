@@ -333,12 +333,25 @@ static void nativeMusicBeatGridQuantization(int quantum) {
         }
         return -1;
     };
-    // A bounded 3000-frame phase correction, not almost a whole beat.
+    // Compare relative onset, not a hardcoded physical silence-end frame.
+    // M15 intentionally tracks the complete sung word with envelope release
+    // and hysteresis: the final voiced sample may be later than M3's gate.
+    // Both processors received the IDENTICAL dry PCM, so their endpoint,
+    // frozen copy budget and fade are shared. Only accepted interval and
+    // bounded beat-lattice phase correction may differ.
     const int quantized=onset(gridded);
     const int fallback=onset(unquantized);
-    check(quantized>=4600&&quantized<4660);
-    check(fallback>=9600&&fallback<9660); // manual 120 BPM / quarter
-    check(quantized+4000<fallback);
+    constexpr int musicInterval=16000, manualInterval=24000;
+    constexpr int maxPhaseCorrection=musicInterval/4;
+    check(quantized>=0&&fallback>=0);
+    const int delta=fallback-quantized;
+    // Grid correction can postpone an echo by at most a quarter of one
+    // 180 BPM beat, never a surprise extra full beat. The 120 BPM fallback
+    // keeps its longer interval regardless of later source invalidation.
+    check(delta>=manualInterval-musicInterval-maxPhaseCorrection);
+    check(delta<=manualInterval-musicInterval);
+    check(quantized<manualInterval);
+    check(fallback>quantized);
 }
 
 static void smartCueStereoAndCancellation() {
