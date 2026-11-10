@@ -2393,9 +2393,30 @@
         if(!own||ch.role!==own.role||
            ch.processingFormat!==own.processingFormat||
            ch.name!==own.name||
-           (ch.primaryOutId||null)!==(own.primaryOutId||null)||
-           (ch.inserts||[]).map(fx=>fx.catalogId).join("|")!==
-             (own.inserts||[]).map(fx=>fx.catalogId).join("|"))return false;
+           (ch.primaryOutId||null)!==(own.primaryOutId||null))return false;
+        // The producer may change scalars without advancing topology.
+        // Never display an editable stale disk mirror over newer live DSP.
+        const c=ch.controls,l=own.controls;
+        if(!c||!l||
+           !Number.isFinite(c.faderDb)||!Number.isFinite(l.faderDb)||
+           !Number.isFinite(c.pan)||!Number.isFinite(l.pan)||
+           Math.abs(c.faderDb-l.faderDb)>.05||
+           Math.abs(c.pan-l.pan)>.01||
+           typeof c.mute!=="boolean"||typeof l.mute!=="boolean"||
+           typeof c.solo!=="boolean"||typeof l.solo!=="boolean"||
+           c.mute!==l.mute||c.solo!==l.solo||
+           typeof ch.fxRackBypassed!=="boolean"||
+           typeof own.fxRackBypassed!=="boolean"||
+           ch.fxRackBypassed!==own.fxRackBypassed)return false;
+        const fx=ch.inserts,planned=own.inserts;
+        if(!Array.isArray(fx)||!Array.isArray(planned)||
+           fx.length!==planned.length)return false;
+        for(let i=0;i<fx.length;i++) {
+          if(fx[i].catalogId!==planned[i].catalogId||
+             typeof fx[i].bypassed!=="boolean"||
+             typeof planned[i].bypassed!=="boolean"||
+             fx[i].bypassed!==planned[i].bypassed)return false;
+        }
       }
       const edges=new Map(logical.edges.map(e=>[e.edgeId,e]));
       for(const e of physical.edges||[]){
