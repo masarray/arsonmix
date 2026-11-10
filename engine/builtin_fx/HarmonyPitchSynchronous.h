@@ -65,10 +65,11 @@ private:
             state.initialized=true;
             state.nextCenter=static_cast<double>(time)+width;
             if constexpr(Stereo) {
-                const auto peak=findPositiveEpoch(epochs,time,writeIndex,
-                    state.nextCenter-fixedDelay,period);
+                const auto peak=findStableEpoch(epochs,time,writeIndex,
+                    state.nextCenter-fixedDelay,period,state.epochPolarity);
                 if(peak>=0)
-                    state.nextCenter=refineEpoch(epochs,time,writeIndex,peak)+fixedDelay;
+                    state.nextCenter=refineEpoch(epochs,time,writeIndex,peak,
+                        state.epochPolarity)+fixedDelay;
             }
         }
         // Advance at most two grains per sample, even on hostile period jumps.
@@ -76,12 +77,13 @@ private:
         for(int scheduled=0;scheduled<2 &&
             static_cast<double>(time)+.0001>=state.nextCenter-width;++scheduled) {
             const double desired=state.nextCenter-static_cast<double>(fixedDelay);
-            const auto peak=findPositiveEpoch(epochs,time,writeIndex,desired,period);
+            const auto peak=findStableEpoch(epochs,time,writeIndex,desired,period,
+                state.epochPolarity);
             if(peak>=0) {
                 auto& grain=state.grains[state.nextSlot];
                 double epoch=static_cast<double>(peak);
                 if constexpr(Stereo)
-                    epoch=refineEpoch(epochs,time,writeIndex,peak);
+                    epoch=refineEpoch(epochs,time,writeIndex,peak,state.epochPolarity);
                 grain={state.nextCenter,epoch,width,true};
                 state.nextSlot=(state.nextSlot+1)%state.grains.size();
             }
@@ -111,13 +113,19 @@ private:
         std::array<Grain,8> grains{};
         double nextCenter=0.;
         std::size_t nextSlot=0;
+        int epochPolarity=0; // stable sign throughout the voiced resynthesis run
         bool initialized=false;
     };
-    // Bound the peak search to <1 source cycle, never scanning beyond the
-    // already received microphone input. Unreliable speech uses fallback.
-    static std::int64_t findPositiveEpoch(const std::array<float,Capacity>& input,
+    // A fixed +3mV positive-peak threshold rejects quiet voiced periods and
+    // asymmetric vowels, leaving holes in the high backing shifter. Select
+    // the strongest signed source landmark once per voice and keep its sign
+    // throughout the phrase, so polarity never flips between adjacent grains.
+    // The caller's independent high-confidence pitch detector remains the
+    // voiced/noise gate; this floor only excludes numerical silence.
+    // The same <1-period scan and history bounds apply at every sample rate.
+    static std::int64_t findStableEpoch(const std::array<float,Capacity>& input,
               std::uint64_t time,std::size_t writeIndex,
-              double desired,double period) noexcept {
+              double desired,double period,int& polarity) noexcept {
         const auto half=static_cast<std::int64_t>(std::ceil(period*.46));
         const auto center=static_cast<std::int64_t>(std::llround(desired));
         const auto oldest=static_cast<std::int64_t>(
@@ -126,23 +134,34 @@ private:
         const auto start=std::max(oldest,center-half);
         const auto end=std::min(newest,center+half);
         if(end<start)return -1;
-        std::int64_t peak=-1;
-        float best=.003f;
+        std::int64_t positive=-1,negative=-1;
+        float maxPositive=0.f,maxNegative=0.f;
         for(auto t=start;t<=end;++t) {
             const auto age=static_cast<std::size_t>(
                 static_cast<std::int64_t>(time)-t);
             const float value=input[(writeIndex+Capacity-age)&(Capacity-1)];
-            if(value>best){best=value;peak=t;}
+            if(value>maxPositive){maxPositive=value;positive=t;}
+            if(-value>maxNegative){maxNegative=-value;negative=t;}
         }
-        return peak;
+        constexpr float silenceFloor=1.e-5f;
+        if(polarity==0) {
+            if(std::max(maxPositive,maxNegative)<silenceFloor)return -1;
+            polarity=maxPositive>=maxNegative?1:-1;
+        }
+        return polarity>0?
+            (maxPositive>=silenceFloor?positive:-1):
+            (maxNegative>=silenceFloor?negative:-1);
     }
     static double refineEpoch(const std::array<float,Capacity>& input,
-          std::uint64_t time,std::size_t writeIndex,std::int64_t peak) noexcept {
+          std::uint64_t time,std::size_t writeIndex,std::int64_t peak,
+          int polarity) noexcept {
         const auto age=time-static_cast<std::uint64_t>(peak);
         if(age<2||age>=Capacity-3||peak==0)return static_cast<double>(peak);
         const auto i=(writeIndex+Capacity-age)&(Capacity-1);
-        const float a=input[(i+Capacity-1)&(Capacity-1)],b=input[i];
-        const float c=input[(i+1)&(Capacity-1)];
+        const float sign=polarity<0?-1.f:1.f;
+        const float a=sign*input[(i+Capacity-1)&(Capacity-1)];
+        const float b=sign*input[i];
+        const float c=sign*input[(i+1)&(Capacity-1)];
         const float curvature=a-2.f*b+c;
         if(b<a||b<c||curvature>=-1.e-6f)return static_cast<double>(peak);
         return static_cast<double>(peak)+

@@ -31,7 +31,7 @@ root.innerHTML=`
      <strong>HARMONICE</strong><small>VOCAL ENGINE</small></div>
     <span class="mx-harm-label">VOICES</span>
     <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmonice voice count">
-     <button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
+     <button type="button" data-voices="2" aria-label="2 harmony voices plus lead — Natural Duo" aria-pressed="false">${voiceGlyph}<span>2</span></button><button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
     </nav>
     <button type="button" id="mxHCorrection" class="mx-harm-correction" role="switch"
       aria-checked="false" aria-busy="true" disabled>

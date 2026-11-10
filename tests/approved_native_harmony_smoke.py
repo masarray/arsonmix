@@ -140,6 +140,14 @@ def main():
                 assert switch.get_attribute("aria-checked")=="true"
                 apply_edit(page,state,{**preset_settings,"correction":False},0,0)
                 assert switch.get_attribute("aria-checked")=="false"
+                # Duo is not only a factory name: it selects the actual
+                # two-voice DSP state, and preserves the owner's Tune OFF.
+                page.locator("#mxHPreset").select_option("duo")
+                duo=last_action(page,"nativeHarmonySetSettings")["settings"]
+                assert duo["voices"]==2 and duo["correction"] is False,duo
+                apply_edit(page,state,duo,0,0)
+                assert page.locator('.mx-harm-voices [data-voices="2"]').get_attribute(
+                    "aria-pressed")=="true"
                 page.locator("#mxHClose").click()
                 row.locator('[data-action="openPlugin"]').click()
                 assert switch.is_disabled()
@@ -307,8 +315,8 @@ def main():
                 apply_edit(page,state,changed,7,0)
                 assert face_metrics(major)==face_metrics(minor)
                 # Singer icons are authored once as a tiny shared vector.
-                # All three UI choices are REAL audible native voice counts.
-                for count in (3,4,5):
+                # All four supported counts publish real native voice edits.
+                for count in (2,3,4,5):
                     button=page.locator(f'.mx-harm-voices [data-voices="{count}"]')
                     assert button.locator('svg.mx-harm-voice-glyph').count()==1
                     button.click()
