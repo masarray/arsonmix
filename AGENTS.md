@@ -5,6 +5,11 @@
 
 **ONLY approved/public/product GUI: https://masarray.github.io/arsonmix/preview/**. There must be ONE public preview, ONE actual rendered GUI, and ONE native Windows GUI. **/preview-v2/ is rejected**: do not display, promote, publish or base native design on it as a separate UI. Do not substitute another console from `web/index.html`, `web/mixer-layout.js`, `web/console-native.html`, PR #278 or old M3/V48 mock. **The JUCE ENGINE must stitch into the EXACT approved /preview/ GUI**, never redesign it.
 
+
+## Long-term maintainability execution — 2026-11-11
+
+For real source ownership and future feature-extension work, read [Current Architecture](docs/architecture/README.md), [Maintainability Execution Blueprint](docs/architecture/MAINTAINABILITY_EXECUTION_V1_20261111.md), and [Fast Feature Playbook](docs/architecture/FEATURE_EXTENSION_PLAYBOOK.md). A [ready-to-copy next-thread implementation prompt](docs/architecture/NEXT_THREAD_EXECUTION_PROMPT.md) begins coding M1 instead of repeating architecture research. [Issue #527](https://github.com/masarray/arsonmix/issues/527) tracks progress. These are implementation aids, NOT an extra coordination gate or an override of the approved /preview/, single native PCM callback, hard RT/audio safety, owner-authorized smart CI, or physical FAT rules. Keep the plan updated after proven source changes; do not create a new high-level plan instead of shipping a testable milestone.
+
 ## New ChatGPT thread / repository-agent entrypoint — MUST READ FIRST (2026-11-06)
 
 This is the **binding workflow for a new ChatGPT thread working through the connected
