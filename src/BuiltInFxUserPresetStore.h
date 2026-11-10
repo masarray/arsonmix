@@ -46,7 +46,9 @@ public:
         for(int i=0;i<36;++i) {
             const auto ch=id[i];
             if(i==8||i==13||i==18||i==23){if(ch!='-')return false;}
-            else if(!juce::CharacterFunctions::isHexDigit(ch))return false;
+            else if(!((ch>='0'&&ch<='9')||
+                       (ch>='a'&&ch<='f')||
+                       (ch>='A'&&ch<='F')))return false;
         }
         return true;
     }
