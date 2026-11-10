@@ -40,6 +40,10 @@ public:
         const juce::String instanceId; // stable through MOVE; never a slot index
         const int latencySamples;
         std::atomic<bool> latencyChanged{false};
+        // Vendor editor beginChangeGesture -> atomic index; never allocate,
+        // call JS or touch the JUCE message loop from a parameter callback.
+        std::atomic<int> lastTouchedParameter{-1};
+        std::atomic<bool> hostHotkeyWrite{false};
         armix::dsp::StereoLatencyDelay dryDelay;
         std::atomic<bool> bypassRequested{false};
         armix::dsp::FxBypassEnvelope bypassFade; // RT exclusive state
@@ -101,6 +105,11 @@ public:
             }
         }
         void audioProcessorParameterChanged(juce::AudioProcessor*,int,float) override {}
+        void audioProcessorParameterChangeGestureBegin(
+                juce::AudioProcessor*,int parameterIndex) override {
+            if(!hostHotkeyWrite.load(std::memory_order_acquire))
+                lastTouchedParameter.store(parameterIndex,std::memory_order_release);
+        }
         void audioProcessorChanged(juce::AudioProcessor* p,
                 const juce::AudioProcessorListener::ChangeDetails& details) override {
             if(details.latencyChanged && p && p->getLatencySamples()!=latencySamples)
