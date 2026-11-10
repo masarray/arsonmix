@@ -778,7 +778,34 @@ static void verifyOfflineLogicalSessionAndFile() {
     assert(folder.deleteRecursively());
 }
 
+static void verifyLegacyHarmoniceSessionName(){
+    auto saved=makeSession();
+    const juce::String id=
+        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
+    auto rows=saved.roster.channels();
+    rows.front().insertCatalogIds.push_back(id.toStdString());
+    assert(saved.roster.restoreExact(saved.acceptedRevision,rows));
+    armix::builtin_fx::ChannelHarmonyProcessor processor;
+    processor.prepareToPlay(48000.,256);
+    assert(processor.isReady());
+    BinaryState state;
+    processor.getStateInformation(state.bytes);
+    state.sha256=juce::SHA256(state.bytes).toHexString();
+    saved.inserts.push_back({{1},0,id,{},state.sha256,
+                             "ArSon Harmony",0,false});
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> restored;
+    const auto error=NativeMixerSessionFxRestore::prepare(
+        saved,std::vector<BinaryState>{state},formats,48000.,256,1,1,restored);
+    assert(error.isEmpty() && restored);
+    const auto* lease=restored->ownerForControl({1},0);
+    assert(lease && *lease && (*lease)->name=="Harmonice");
+    assert((*lease)->catalogId==id);
+    assert(saved.inserts.front().name=="ArSon Harmony");
+    assert((*lease)->processor->getLatencySamples()==1536);
+}
 int main(){
+    verifyLegacyHarmoniceSessionName();
     verifyOfflineLogicalSessionAndFile();
     verifyProductionPlayerFirstSoundWithSourceOnly();
     verifyVirtualPlayerSessionSerialization();

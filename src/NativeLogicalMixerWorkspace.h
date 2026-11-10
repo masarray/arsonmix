@@ -410,7 +410,7 @@ public:
                 set(fx,"id","planned:"+str(row.id.value)+":"+juce::String(static_cast<int>(slot)));
                 set(fx,"catalogId",id);
                 const auto label=id.containsIgnoreCase("compressor")?"Compressor":
-                    id.containsIgnoreCase("harmony")?"ArSon Harmony":
+                    id.containsIgnoreCase("harmony")?"Harmonice":
                     id.containsIgnoreCase("channel-eq")?"Parametric EQ":id;
                 set(fx,"name",label);
                 set(fx,"bypassed",std::any_of(

@@ -136,8 +136,15 @@ public:
                     if(latency<0||
                        latency>armix::dsp::StereoLatencyDelay::maximumSamples)
                         return "Saved FX latency exceeds graph PDC budget";
+                    // The durable .smix catalog ID and plugin state are unchanged.
+                    // Old sessions may still contain the historic visible label;
+                    // show the current built-in product name after each restore.
+                    // Do not canonicalize external VST3 names or other inserts.
+                    const juce::String displayName=insert.catalogId==
+                        armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity
+                            ? processor->getName() : insert.name;
                     auto owner=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
-                        std::move(processor),insert.catalogId,insert.name,
+                        std::move(processor),insert.catalogId,displayName,
                         armix::mixer::PreparedMixerBlock::hardFrameLimit);
                     owner->bypassRequested.store(insert.bypass,std::memory_order_release);
                     lane.inserts.push_back(std::move(owner));

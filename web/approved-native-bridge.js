@@ -1157,7 +1157,7 @@
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
-    Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"ArSon Harmony",
+    Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"})
   ]);
   const presentFxCatalog=()=>scope?.setNativeCatalog?.(
@@ -3378,7 +3378,7 @@
       const plugin=nativeCatalog.get(id) ||
         (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:
          id==='armix.builtin.channel-compressor.v1'?{id,name:'Compressor'}:
-         id==='armix.builtin.arson-harmony.v1'?{id,name:'ArSon Harmony'}:
+         id==='armix.builtin.arson-harmony.v1'?{id,name:'Harmonice'}:
          id==='armix.builtin.vocal-throw.v1'?{id,name:'ArSon Vocal Throw'}:null);
       const track=scope?.tracks?.find(x=>x.id===target?.channelId)||
         (scope?.master?.id===target?.channelId?scope.master:null);

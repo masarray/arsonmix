@@ -17,7 +17,7 @@ public:
     ChannelHarmonyProcessor() : juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {}
-    const juce::String getName() const override {return "ArSon Harmony";}
+    const juce::String getName() const override {return "Harmonice";}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
     bool isMidiEffect() const override {return false;}

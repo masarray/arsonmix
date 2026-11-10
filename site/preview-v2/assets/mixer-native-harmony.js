@@ -6,7 +6,7 @@
 const ID="armix.builtin.arson-harmony.v1";
 const root=document.createElement("section");
 root.className="mx-harm";root.id="mxNativeHarmony";root.hidden=true;
-root.setAttribute("role","dialog");root.setAttribute("aria-label","Harmony Effect");
+root.setAttribute("role","dialog");root.setAttribute("aria-label","Harmonice");
 root.setAttribute("aria-modal","false");
 // Simplified singer/microphone silhouette derived from the supplied SVG concept.
 // Reused as one tiny original inline vector: no image request or heavyweight
@@ -15,22 +15,22 @@ const voiceGlyph='<svg class="mx-harm-voice-glyph" viewBox="0 0 24 24" aria-hidd
 root.innerHTML=`
   <header class="mx-harm-head">
    <span class="mx-harm-logo" aria-hidden="true">◈</span>
-   <span class="mx-harm-brand">Harmony <em>Effect</em></span>
+   <span class="mx-harm-brand">Harmonice</span>
    <span class="mx-harm-channel" id="mxHChannel"></span>
-   <select id="mxHPreset" aria-label="Harmony preset" title="Preset">
+   <select id="mxHPreset" aria-label="Harmonice preset" title="Preset">
     <option value="custom">Custom</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
    </select>
-   <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmony state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
-   <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmony" title="Close Harmony"></button>
+   <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmonice state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
+   <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmonice" title="Close Harmonice"></button>
   </header>
   <main class="mx-harm-body">
-   <aside class="mx-harm-left" aria-label="Harmony voice settings">
-    <div class="mx-harm-signature"><span class="mx-harm-mark">ARSON</span>
-     <strong>HARMONY</strong><small>VOCAL ENGINE</small></div>
+   <aside class="mx-harm-left" aria-label="Harmonice voice settings">
+    <div class="mx-harm-signature"><span class="mx-harm-mark">ARSONMIX</span>
+     <strong>HARMONICE</strong><small>VOCAL ENGINE</small></div>
     <span class="mx-harm-label">VOICES</span>
-    <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmony voice count">
+    <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmonice voice count">
      <button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
     </nav>
     <label class="mx-harm-correction"><input id="mxHCorrection" type="checkbox"> PITCH TUNE</label>
