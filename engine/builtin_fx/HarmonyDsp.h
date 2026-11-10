@@ -353,8 +353,12 @@ public:
                 const auto placed=stage_.place(v,voice,reflection,second,
                                                mixL_[ix],mixR_[ix],space_);
                 if(stageDepthReferenceEnabled_){
-                    outL+=placed.directL*backingDirect+placed.earlyL*earlyReturn;
-                    outR+=placed.directR*backingDirect+placed.earlyR*earlyReturn;
+                    const float directPresence=BackingStageSpatial::
+                        directionalPresence(v,space_);
+                    outL+=placed.directL*backingDirect*directPresence+
+                          placed.earlyL*earlyReturn;
+                    outR+=placed.directR*backingDirect*directPresence+
+                          placed.earlyR*earlyReturn;
                     roomSendL+=placed.roomL;roomSendR+=placed.roomR;
                 }else{
                     outL+=directL*backingDirect+
