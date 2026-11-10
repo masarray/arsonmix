@@ -57,6 +57,9 @@ struct MixerSessionDocument final {
     std::optional<bool> resumeMain;
     std::uint64_t acceptedRevision=0;
     juce::int64 savedMs=0;
+    // True only for a device-independent logical editor document. It carries
+    // NO physical output admission; never treat it as a verified device route.
+    bool logicalOnly=false;
 };
 // Logical topology never authorizes a different physical endpoint. An
 // operator-confirmed rebind changes only verified hardware metadata; it
@@ -396,6 +399,7 @@ public:
     static juce::String encode(const MixerSessionDocument& d) {
         auto root=object();
         set(root,"schema","arsonmix.mixer-session.v1");
+        if(d.logicalOnly)set(root,"logicalOnly",true);
         set(root,"id",d.id);
         set(root,"acceptedRevision",decimal(d.acceptedRevision));
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
@@ -499,6 +503,11 @@ public:
         if(!root.isObject()||get(root,"schema").toString()!="arsonmix.mixer-session.v1")
             return false;
         MixerSessionDocument doc;
+        const auto logicalFlag=get(root,"logicalOnly");
+        if(!logicalFlag.isVoid()) {
+            if(!logicalFlag.isBool() || !static_cast<bool>(logicalFlag))return false;
+            doc.logicalOnly=true;
+        }
         if(root.getDynamicObject()->hasProperty("resumeMain")) {
             bool resume=false;
             if(!strictBool(get(root,"resumeMain"),resume))return false;
@@ -514,29 +523,41 @@ public:
             std::numeric_limits<juce::int64>::max()))return false;
         doc.savedMs=static_cast<juce::int64>(ms);
         const auto binding=get(root,"binding");
-        if(!textField(get(binding,"backend"),doc.binding.backend,128)||
+        if(!textField(get(binding,"backend"),doc.binding.backend,128,doc.logicalOnly)||
            !textField(get(binding,"capture"),doc.binding.capture,256,true)||
-           !textField(get(binding,"playback"),doc.binding.playback,256)||
+           !textField(get(binding,"playback"),doc.binding.playback,256,doc.logicalOnly)||
            !textField(get(binding,"inputMask"),doc.binding.inputMask,256)||
            !textField(get(binding,"outputMask"),doc.binding.outputMask,256))
             return false;
         double n=0.;
-        if(!real(get(binding,"rate"),n,8000.,384000.))return false;
+        if(!real(get(binding,"rate"),n,doc.logicalOnly?0.:8000.,
+                 doc.logicalOnly?0.:384000.))return false;
         doc.binding.rate=n;
-        if(!integral(get(binding,"frames"),doc.binding.frames,16,8192))
+        if(!integral(get(binding,"frames"),doc.binding.frames,
+                     doc.logicalOnly?0:16,doc.logicalOnly?0:8192))return false;
+        if(doc.logicalOnly &&
+           (doc.binding.backend.isNotEmpty() || doc.binding.capture.isNotEmpty() ||
+            doc.binding.playback.isNotEmpty() ||
+            doc.binding.inputMask!="0" || doc.binding.outputMask!="0" ||
+            doc.binding.inputNames.size()!=0 || doc.binding.outputNames.size()!=0))
             return false;
         if((binding.getDynamicObject()->hasProperty("inputNames") &&
             !readPinNames(get(binding,"inputNames"),doc.binding.inputNames)) ||
            (binding.getDynamicObject()->hasProperty("outputNames") &&
             !readPinNames(get(binding,"outputNames"),doc.binding.outputNames)))return false;
         auto outputs=get(root,"outputs");
-        if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,2,256)||
-           !integral(get(outputs,"mainL"),doc.outputs.mainL,0,255)||
-           !integral(get(outputs,"mainR"),doc.outputs.mainR,0,255)||
+        if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,
+                     doc.logicalOnly?0:2,doc.logicalOnly?0:256)||
+           !integral(get(outputs,"mainL"),doc.outputs.mainL,doc.logicalOnly?-1:0,
+                     doc.logicalOnly?-1:255)||
+           !integral(get(outputs,"mainR"),doc.outputs.mainR,doc.logicalOnly?-1:0,
+                     doc.logicalOnly?-1:255)||
            !integral(get(outputs,"monitorL"),doc.outputs.monitorL,-1,255)||
            !integral(get(outputs,"monitorR"),doc.outputs.monitorR,-1,255)||
            !strictBool(get(outputs,"monitorEnabled"),doc.outputs.monitorEnabled)||
-           !doc.outputs.valid())return false;
+           (doc.logicalOnly?
+             (doc.outputs.monitorEnabled || doc.outputs.monitorL!=-1 ||
+              doc.outputs.monitorR!=-1):!doc.outputs.valid()))return false;
         auto master=get(root,"master");
         if(!real(get(master,"gain"),n,0.,4.))return false;
         doc.masterGain=static_cast<float>(n);
@@ -544,7 +565,7 @@ public:
            !strictBool(get(master,"mono"),doc.masterMono))return false;
         const auto channelsVar=get(root,"channels");
         const auto* channels=channelsVar.getArray();
-        if(!channels||channels->size()<15||channels->size()>2048)return false;
+        if(!channels||channels->size()<(doc.logicalOnly?1:15)||channels->size()>2048)return false;
         std::vector<ChannelStripDefinition> entries;
         entries.reserve(static_cast<std::size_t>(channels->size()));
         for(const auto& ch:*channels) {
@@ -592,13 +613,16 @@ public:
             const auto* row=doc.roster.find(id);
             return row && row->role==role;
         };
-        for(auto id:doc.legacyIds.inputs)if(!seek(id,ChannelRole::input))return false;
-        for(auto id:doc.legacyIds.aux)if(!seek(id,ChannelRole::fxReturn))return false;
+        if(!doc.logicalOnly) {
+            for(auto id:doc.legacyIds.inputs)if(!seek(id,ChannelRole::input))return false;
+            for(auto id:doc.legacyIds.aux)if(!seek(id,ChannelRole::fxReturn))return false;
+        }
         if(!seek(doc.legacyIds.main,ChannelRole::main) ||
            (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
             return false;
         auto req=get(root,"request");
-        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,0,256)||
+        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,
+                     0,doc.logicalOnly?0:256)||
            !integral(get(req,"maxFrames"),doc.request.maxFrames,16,8192)||
            !strictBool(get(req,"mainMonoAfterFx"),doc.request.mainMonoAfterFx))
             return false;
@@ -707,7 +731,12 @@ public:
             // even when no plugin is installed. They are NOT vendor leases.
             // No orphan leases, and no phantom roster FX. In particular an
             // empty catalog cannot authorize an installed vendor processor.
-            if(!legacyMarker&&slot!=ch.insertCatalogIds.size())return false;
+            // Logical-only references are plans, not instantiated vendor
+            // processors. A stored FX state may be a verified prefix; the
+            // remaining catalog references are deferred until physical bind.
+            if(!legacyMarker && (doc.logicalOnly?
+                slot>ch.insertCatalogIds.size():
+                slot!=ch.insertCatalogIds.size()))return false;
         }
         output=std::move(doc);
         return true;
