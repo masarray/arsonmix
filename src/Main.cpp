@@ -2712,7 +2712,7 @@ private:
         ensureLogicalWorkspace();
         if(logicalWorkspaceReadOnly_)
             return "Saved mixer recovery required before writing a new session";
-        const liveState=engine_.status();
+        const auto liveState=engine_.status();
         const auto live=liveState.getProperty("dryRoutingLab",{});
         const auto observed=approvedNativeSnapshot(liveState);
         const auto session=observed.getProperty("mixerSession",{});
