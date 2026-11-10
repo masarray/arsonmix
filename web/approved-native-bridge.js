@@ -143,8 +143,8 @@
   // present in the current acknowledged OR retained graph. No physical
   // audio device, output arm or PCM graph mutation is required.
   const identityChannelFor=t=>{
-    const id=nativeIdFor(t),current=controller?.state()?.current;
-    return id && (current?.admitted||current?.retained) &&
+    const id=nativeIdFor(t),current=activeView();
+    return id && (current?.admitted||current?.retained||current?.logical) &&
       current.graph?.channels?.some(ch=>ch.id===id)?id:null;
   };
   const identityEligible=t=>Boolean(identityChannelFor(t));
@@ -162,9 +162,20 @@
     if(!connected)return false;
     const localId=scope?.identityTrackId,
       track=scope?.tracks?.concat(scope.master||[])?.find(x=>x.id===localId),
-      channelId=nativeIdFor(track),current=controller?.state()?.current;
+      channelId=nativeIdFor(track),current=activeView();
     const rawName=String(document.getElementById("identityName")?.value||"");
     const name=rawName.trim().replace(/\s+/g," ");
+    if(logicalView){
+      const unique=logicalView.graph.channels.every(ch=>ch.id===channelId||
+        ch.name.toLowerCase()!==name.toLowerCase());
+      if(!channelId||!legalName(name)||!unique){
+        status("Enter a unique valid channel name");return false;
+      }
+      const sent=logicalIntent("RENAME_CHANNEL",channelId,{name});
+      if(!sent.ok){status("Channel rename not saved");return false;}
+      logicalRenameId=channelId;
+      return false; // Native ACK + later readback closes the editor
+    }
     if(!channelId||!current||(current?.raw?.mixerSession?.authority!=="CHANNEL_ID")||
        !(current.admitted||current.retained)||!appearanceWritable){
       status("Native channel identity unavailable · verify saved native graph");
