@@ -3107,6 +3107,33 @@
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
+      if(logicalView) {
+        if(!Array.isArray(ops)||ops.length!==1){
+          nativeToast("One WIRE edit at a time");return true;
+        }
+        const op=ops[0];
+        if(op.type==="GAIN"){
+          nativeToast("Send gain editing requires the connected mixer");return true;
+        }
+        const from=nativeByUiId.get(op.sourceId);
+        const to=op.destId===undefined?null:nativeByUiId.get(op.destId);
+        const edgeId=wireByUiId.get(op.edgeId);
+        if(!from)return true;
+        const primary=(op.type==="ROUTE_ONLY" ||
+          (op.type==="CONNECT"&&op.destId===scope?.master?.id&&
+           op.mode!=="send"));
+        const kind=primary?"ROUTE_ONLY":op.type;
+        if(["CONNECT","ROUTE_ONLY","RETARGET"].includes(kind)&&!to)return true;
+        if(["REMOVE","RETARGET"].includes(kind)&&!edgeId)return true;
+        const change={op:kind,from,...(to?{to}:{}),
+          ...(edgeId?{edgeId}:{}),
+          ...(kind==="CONNECT"||kind==="ROUTE_ONLY"?
+            {gainLinear:kind==="ROUTE_ONLY"?1:
+              Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb??0)))/20)}:{})};
+        if(!logicalIntent("WIRE_TRANSACTION",from,{changes:[change]}).ok)
+          nativeToast("WIRE not saved · previous routing retained");
+        return true;
+      }
       const state=controller?.state();
       // A first drag may arrive before SOURCE's later accepted snapshot.
       // Preserve that one operator intent; resolve only against fresh native
