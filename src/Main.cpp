@@ -1492,7 +1492,7 @@ private:
                 auto cleaned=juce::var(new juce::DynamicObject());
                 for(const char* field:{"id","scope","sessionId","channelId",
                                        "operation","vk","modifiers","slot","insertId",
-                                       "catalogId","paramId"}) {
+                                       "catalogId","paramId","paramName"}) {
                     const auto value=supplied.getProperty(field,{});
                     if(!value.isVoid())cleaned.getDynamicObject()->setProperty(field,value);
                 }
