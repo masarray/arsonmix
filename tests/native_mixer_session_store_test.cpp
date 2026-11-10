@@ -698,6 +698,12 @@ static void verifyOfflineLogicalSessionAndFile() {
         "playback","Unverified Speaker");
     assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
     forged=juce::JSON::parse(json);
+    juce::Array<juce::var> fakePins;
+    fakePins.add("Unverified mic");
+    forged.getProperty("binding",{}).getDynamicObject()->setProperty(
+        "inputNames",juce::var(fakePins));
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    forged=juce::JSON::parse(json);
     forged.getProperty("outputs",{}).getDynamicObject()->setProperty("active",2);
     assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
     const auto folder=juce::File::getSpecialLocation(
