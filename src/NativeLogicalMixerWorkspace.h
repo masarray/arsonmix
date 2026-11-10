@@ -42,97 +42,9 @@ public:
         // A physically bound historical .smix keeps its exact old binding
         // metadata and verified vendor binary states. Offline UI editing
         // never uses that metadata to route sound or open a device.
+        workspaceToken_=juce::Uuid().toDashedString().toLowerCase();
         document_=std::move(document);
         states_=std::move(states);
-        return true;
-    }
-    // Control-thread comparison for a retained native publisher versus the
-    // durable logical mirror. Native PARAMETER changes do NOT necessarily
-    // advance graph topology revision: compare every observable scalar too.
-    // This proves descriptor equality, NOT opaque VST3 binary-state parity.
-    // Never use it to ARM an output or silently resolve hardware bindings.
-    static bool sameRetainedGraph(const juce::var& physical,
-                                  const juce::var& logical) {
-        if(physical.getProperty("revision","").toString()!=
-                logical.getProperty("revision","").toString() ||
-           physical.getProperty("rosterRevision","").toString()!=
-                logical.getProperty("rosterRevision","").toString())
-            return false;
-        const auto* a=physical.getProperty("channels",{}).getArray();
-        const auto* b=logical.getProperty("channels",{}).getArray();
-        const auto* ae=physical.getProperty("edges",{}).getArray();
-        const auto* be=logical.getProperty("edges",{}).getArray();
-        if(!a||!b||!ae||!be||a->size()!=b->size()||ae->size()!=be->size())
-            return false;
-        for(const auto& channel:*a) {
-            const auto id=channel.getProperty("id","").toString();
-            const auto found=std::find_if(b->begin(),b->end(),[&](const auto& x) {
-                return x.getProperty("id","").toString()==id;
-            });
-            if(found==b->end())return false;
-            const auto& own=*found;
-            for(const char* field:{"role","name","processingFormat","primaryOutId"})
-                if(channel.getProperty(field,"").toString()!=
-                   own.getProperty(field,"").toString())return false;
-            const auto controls=channel.getProperty("controls",{});
-            const auto mirror=own.getProperty("controls",{});
-            if(!controls.isObject()||!mirror.isObject())return false;
-            for(const char* field:{"faderDb","pan"}) {
-                const auto p=controls.getProperty(field,{});
-                const auto l=mirror.getProperty(field,{});
-                if(!(p.isDouble()||p.isInt()) ||
-                   !(l.isDouble()||l.isInt()))return false;
-                const auto a=static_cast<double>(p),b=static_cast<double>(l);
-                if(!std::isfinite(a)||!std::isfinite(b) ||
-                   std::abs(a-b)>(juce::String(field)=="faderDb"?0.05:0.01))
-                    return false;
-            }
-            for(const char* field:{"mute","solo"}) {
-                const auto p=controls.getProperty(field,{});
-                const auto l=mirror.getProperty(field,{});
-                if(!p.isBool()||!l.isBool()||p!=l)return false;
-            }
-            const auto power=channel.getProperty("fxRackBypassed",{});
-            const auto ownPower=own.getProperty("fxRackBypassed",{});
-            if(!power.isBool()||!ownPower.isBool()||power!=ownPower)
-                return false;
-            const auto* fx=channel.getProperty("inserts",{}).getArray();
-            const auto* ownFx=own.getProperty("inserts",{}).getArray();
-            if(!fx||!ownFx||fx->size()!=ownFx->size())return false;
-            for(int i=0;i<fx->size();++i) {
-                const auto& p=fx->getReference(i);
-                const auto& l=ownFx->getReference(i);
-                if(p.getProperty("catalogId","").toString()!=
-                   l.getProperty("catalogId","").toString())
-                    return false;
-                const auto pBypass=p.getProperty("bypassed",{});
-                const auto lBypass=l.getProperty("bypassed",{});
-                if(!pBypass.isBool()||!lBypass.isBool()||pBypass!=lBypass)
-                    return false;
-            }
-        }
-        for(const auto& edge:*ae) {
-            const auto id=edge.getProperty("edgeId","").toString();
-            const auto found=std::find_if(be->begin(),be->end(),[&](const auto& x){
-                return x.getProperty("edgeId","").toString()==id;
-            });
-            if(found==be->end())return false;
-            for(const char* field:{"from","to","tap"})
-                if(edge.getProperty(field,"").toString()!=
-                   found->getProperty(field,"").toString())return false;
-            const auto physicalPrimary=edge.getProperty("primaryOutput",{});
-            const auto logicalPrimary=found->getProperty("primaryOutput",{});
-            if(!physicalPrimary.isBool()||!logicalPrimary.isBool()||
-               physicalPrimary!=logicalPrimary)return false;
-            const auto value=edge.getProperty("gainLinear",{});
-            const auto ownValue=found->getProperty("gainLinear",{});
-            if(!(value.isDouble()||value.isInt())||
-               !(ownValue.isDouble()||ownValue.isInt()))return false;
-            const auto gain=static_cast<double>(value);
-            const auto ownGain=static_cast<double>(ownValue);
-            if(!std::isfinite(gain)||!std::isfinite(ownGain)||
-               std::abs(gain-ownGain)>0.00001)return false;
-        }
         return true;
     }
     bool isLogicalOnly() const noexcept {return document_.logicalOnly;}
@@ -141,6 +53,7 @@ public:
         return states_;
     }
     std::uint64_t revision() const noexcept {return editor_.revision();}
+    const juce::String& workspaceToken() const noexcept {return workspaceToken_;}
 
     struct Ack final {
         bool accepted=false;
@@ -152,7 +65,8 @@ public:
         Ack ack;ack.revision=revision();
         const auto value=request.getProperty("baseRevision",{});
         std::uint64_t expected=0;
-        if(!armix::session::parseDecimal(value,expected) ||
+        if(request.getProperty("workspaceToken","").toString()!=workspaceToken_ ||
+           !armix::session::parseDecimal(value,expected) ||
            expected!=revision()) {
             ack.error="STALE_LOGICAL_REVISION";return ack;
         }
@@ -190,6 +104,10 @@ public:
         } else if(operation=="REMOVE_BUS") {
             result=editor_.removeBus(expected,id);
         } else if(operation=="DELETE_CHANNEL") {
+            if(!document_.logicalOnly &&
+               std::find(document_.legacyIds.inputs.begin(),document_.legacyIds.inputs.end(),id)
+                   !=document_.legacyIds.inputs.end())
+                return bad("LEGACY_INPUT_REQUIRED");
             result=editor_.removeInput(expected,id);
         } else if(operation=="RENAME_CHANNEL") {
             edit.kind=ChannelEdit::Kind::rename;
@@ -232,6 +150,10 @@ public:
             if(!v.isInt() || !row || static_cast<int>(v)<0 ||
                static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
                 return bad("INVALID_LOGICAL_FX_SLOT");
+            if(std::any_of(document_.inserts.begin(),document_.inserts.end(),
+                   [&](const auto& fx){return fx.channel==id &&
+                       fx.slot==static_cast<std::size_t>(static_cast<int>(v));}))
+                return bad("FX_SLOT_OWNS_SAVED_STATE");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
             edit.position=static_cast<std::size_t>(static_cast<int>(v));
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
@@ -249,7 +171,6 @@ public:
                 return bad("INVALID_LOGICAL_RACK");
             // Bypass lives in .smix metadata. Bump the authoritative
             // revision explicitly, never rewrite a live DSP parameter.
-            const auto* row=editor_.roster().find(id);
             edit.kind=ChannelEdit::Kind::touchDocumentRevision;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="ADD_FX_REFERENCE") {
@@ -332,8 +253,11 @@ public:
             planned.erase(std::remove_if(planned.begin(),planned.end(),
                 [&](const auto& p){return p.channel==id && p.slot==slot;}),
                 planned.end());
-            if(static_cast<bool>(payload.getProperty("enabled",false)))
-                planned.push_back({id,slot});
+            const auto enabled=static_cast<bool>(payload.getProperty("enabled",false));
+            auto stored=std::find_if(document_.inserts.begin(),document_.inserts.end(),
+                [&](const auto& fx){return fx.channel==id && fx.slot==slot;});
+            if(stored!=document_.inserts.end())stored->bypass=enabled;
+            else if(enabled)planned.push_back({id,slot});
         }
         if(operation=="SET_FX_RACK_BYPASS") {
             const bool bypass=static_cast<bool>(number);
@@ -344,6 +268,10 @@ public:
         // Delete never keeps a dangling native insert/preset from the removed
         // ChannelId; no vendor destructors or PCM are touched here.
         if(operation=="DELETE_CHANNEL" || operation=="REMOVE_BUS") {
+            std::erase_if(document_.request.sources,
+                [&](const auto& source){return source.id==id;});
+            std::erase_if(document_.waitingAsioInputs,
+                [&](const auto& source){return source.id==id;});
             document_.inserts.erase(std::remove_if(
                 document_.inserts.begin(),document_.inserts.end(),
                 [&](const auto& fx){return !editor_.roster().find(fx.channel);}),
@@ -409,12 +337,17 @@ public:
                 auto fx=object();
                 set(fx,"id","planned:"+str(row.id.value)+":"+juce::String(static_cast<int>(slot)));
                 set(fx,"catalogId",id);
-                const auto label=id.containsIgnoreCase("compressor")?"Compressor":
-                    id.containsIgnoreCase("harmony")?"Harmonice":
-                    id.containsIgnoreCase("channel-eq")?"Parametric EQ":id;
+                const auto stored=std::find_if(document_.inserts.begin(),
+                    document_.inserts.end(),[&](const auto& insert){
+                        return insert.channel==row.id && insert.slot==slot;
+                    });
+                const auto label=id=="armix.builtin.arson-harmony.v1"?"Harmonice":
+                    stored!=document_.inserts.end() && stored->name.isNotEmpty()?stored->name:
+                    id=="armix.builtin.channel-compressor.v1"?"Compressor":
+                    id=="armix.builtin.channel-eq.v1"?"Parametric EQ":id;
                 set(fx,"name",label);
-                set(fx,"bypassed",std::any_of(
-                    document_.plannedSlotBypassed.begin(),
+                set(fx,"bypassed",(stored!=document_.inserts.end() && stored->bypass) ||
+                    std::any_of(document_.plannedSlotBypassed.begin(),
                     document_.plannedSlotBypassed.end(),
                     [&](const auto& p){return p.channel==row.id&&p.slot==slot;}));
                 inserts.add(fx);
@@ -447,6 +380,7 @@ public:
         auto result=object();
         set(result,"schema","arsonmix.native.logical-mixer.v1");
         set(result,"authority","LOGICAL_ONLY");
+        set(result,"workspaceToken",workspaceToken_);
         set(result,"revision",str(revision()));
         set(result,"graph",graph);
         set(result,"physicalOutputAdmitted",false);
@@ -457,6 +391,7 @@ public:
 private:
     armix::mixer::DeviceIndependentMixerSession editor_;
     MixerSessionDocument document_;
+    juce::String workspaceToken_=juce::Uuid().toDashedString().toLowerCase();
     std::vector<armix::shows::BinaryState> states_;
 
     void sync() {

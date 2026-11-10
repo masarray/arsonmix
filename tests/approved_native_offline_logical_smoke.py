@@ -52,7 +52,7 @@ def logical_graph(revision="1", extra=False, source_only=False):
     }
 
 
-def snapshot(revision="1",extra=False,source_only=False):
+def snapshot(revision="1",extra=False,source_only=False,workspace_token="workspace-a"):
     raw=copy.deepcopy(json.loads(
         (ROOT/"integration/console-v6/fixtures.json").read_text())["g0"])
     raw["device"].update(epoch="0",backend="",captureDevice="",playbackDevice="",
@@ -65,7 +65,8 @@ def snapshot(revision="1",extra=False,source_only=False):
     raw["mixerSession"]={"authority":"NONE","deviceEpoch":"0"}
     graph=logical_graph(revision,extra,source_only)
     raw["logicalMixer"]={"schema":"arsonmix.native.logical-mixer.v1",
-        "authority":"LOGICAL_ONLY","revision":revision,"graph":graph,
+        "authority":"LOGICAL_ONLY","workspaceToken":workspace_token,
+        "revision":revision,"graph":graph,
         "physicalOutputAdmitted":False,"outputArmed":False}
     return raw
 
@@ -131,6 +132,7 @@ def main():
             e=>e.name==='arMixLogicalIntent').at(-1).payload""")
         assert event["operation"]=="CREATE_CHANNEL"
         assert event["baseRevision"]=="1"
+        assert event["workspaceToken"]=="workspace-a"
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
@@ -172,6 +174,24 @@ def main():
         assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
             t=>t.name==='Track 16')?.output""")=="SOURCE ONLY (No Main)"
         assert page.locator("#addTrack").is_enabled()
+        # A same-revision Open changes workspace identity. Late ACKs for the
+        # original file must never block or mutate the newly opened mixer.
+        page.locator("#addTrack").click()
+        stale=page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').at(-1).payload""")
+        assert stale["baseRevision"]=="3"
+        emit(page,"arMixConsoleSnapshot",snapshot("3",workspace_token="workspace-b"))
+        page.wait_for_function("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length===14")
+        emit(page,"arMixLogicalAck",{"requestId":stale["requestId"],
+            "status":"ACCEPTED","errorCode":"NONE","revision":"4","createdId":"17"})
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
+        page.locator("#addTrack").click()
+        fresh=page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').at(-1).payload""")
+        assert fresh["workspaceToken"]=="workspace-b"
+        emit(page,"arMixLogicalAck",{"requestId":fresh["requestId"],
+            "status":"REJECTED","errorCode":"TEST_DISK_WRITE_FAILED","revision":"3"})
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         assert not errors,errors
         page.close()
         # Device-loss boundary: the retained PCM graph may still carry a
@@ -187,8 +207,8 @@ def main():
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
         emit(page,"arMixConsoleSnapshot",retained_snapshot())
-        page.wait_for_function("""()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'""")
-        assert page.locator("#addTrack").is_enabled()
+        page.wait_for_function("""()=>document.querySelector('#addTrack').disabled""")
+        assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")!="logical-editable"
         emit(page,"arMixConsoleSnapshot",retained_snapshot(stale_scalar=True))
         page.wait_for_function("""()=>document.querySelector('#addTrack').disabled""")
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")!="logical-editable"
@@ -196,7 +216,7 @@ def main():
             e.name==='arMixLogicalIntent').length""")==0
         assert not errors,errors
         browser.close()
-    print("PASS native compiled GUI: offline ACK, WIRE SOURCE ONLY and retained scalar mismatch fail-closed")
+    print("PASS native compiled GUI: offline ACK, workspace replacement, WIRE SOURCE ONLY and retained PCM isolation")
 
 
 if __name__=="__main__":

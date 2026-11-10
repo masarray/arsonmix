@@ -33,7 +33,7 @@ public:
         return b.getMainInputChannelSet()==juce::AudioChannelSet::stereo() &&
                b.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
-    void prepareToPlay(double rate,int) override {
+    void prepareToPlay(double rate,int maximumExpectedSamplesPerBlock) override {
         ready_=dsp_.prepare(rate)&&guide_.prepare(rate)&&dsp_.setSettings(accepted_);
         guideSource_.store(accepted_.guideMode==1?accepted_.guideChannelId:0,
                            std::memory_order_release);
@@ -41,7 +41,16 @@ public:
         guideObservedScale_.store(-1,std::memory_order_relaxed);
         guideConfidence_.store(0.f,std::memory_order_relaxed);
         publishEffectiveKey();
-        if(ready_) {sampleRate_=rate;setLatencySamples(dsp_.latencySamples());}
+        if(ready_) {
+            // FxInstance samples the AudioProcessor rate once, when its fixed
+            // 8 ms bypass envelope is prepared. Native built-ins are prepared
+            // directly; without JUCE rate metadata it otherwise sees zero
+            // and fades in only 64 samples at real 48/96 kHz device rates.
+            setRateAndBufferSizeDetails(rate,
+                std::max(1,maximumExpectedSamplesPerBlock));
+            sampleRate_=rate;
+            setLatencySamples(dsp_.latencySamples());
+        }
     }
     void releaseResources() override {ready_=false;}
     void processBlock(juce::AudioBuffer<float>& samples,juce::MidiBuffer&) override {
@@ -50,9 +59,16 @@ public:
         consumeRealtimeEdits();
         // Missing/deleted/disconnected source must not leave a stale accepted
         // tonal estimate running indefinitely. Manual Key is the fallback.
+        const int guideTimeout=static_cast<int>(sampleRate_*2.);
+        const bool guideWasFresh=guideAge_<=guideTimeout;
         guideAge_=std::min(guideAge_+samples.getNumSamples(),
                             static_cast<int>(sampleRate_*3.));
-        if(guideAge_>static_cast<int>(sampleRate_*2.)){
+        if(guideWasFresh&&guideAge_>guideTimeout){
+            // The guide source went missing. A detector that still retains
+            // old chroma would publish the old key on the FIRST resumed
+            // source block, before gathering fresh evidence. Invalidate once
+            // at the missing-source boundary, not at every audio callback.
+            guide_.reset();
             dsp_.setGuideKey(-1,-1);
             guideObservedKey_.store(-1,std::memory_order_relaxed);
             guideObservedScale_.store(-1,std::memory_order_relaxed);

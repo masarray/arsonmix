@@ -1054,97 +1054,71 @@ private:
         }
     }
 
-    // Only an EXACT same-generation retained ChannelId graph can switch to
-    // device-independent edit authority. A stale checkpoint is never allowed
-    // to overwrite newer live PCM changes made before device removal.
-    bool retainedGraphMatchesLogical(const juce::var& snapshot) const {
-        return armix::session::NativeLogicalMixerWorkspace::sameRetainedGraph(
-            snapshot.getProperty("graph",{}),
-            logicalWorkspace_.snapshot().getProperty("graph",{}));
-    }
-
-    // Logical intents never pass through PCM admission. A separate ACK
-    // and LATER C++ readback prove edits; disk commit is transactional.
-    void handleLogicalMixerIntent(const juce::var& request) {
-        ensureLogicalWorkspace();
-        const auto id=request.getProperty("requestId","").toString();
-        juce::String failure;
-        armix::session::NativeLogicalMixerWorkspace::Ack result;
-        const bool supportedId=id.startsWith("logical-")&&id.length()<=80;
-        const bool replay=acceptedControlRequests_.contains(id);
-        const auto snapshot=approvedNativeSnapshot(engine_.status());
-        const auto capabilities=snapshot.getProperty("graph",{})
-            .getProperty("capabilities",{});
-        const auto session=snapshot.getProperty("mixerSession",{});
-        const auto sessionAuthority=session.getProperty("authority","").toString();
-        const bool retained=sessionAuthority=="CHANNEL_ID" &&
-            session.getProperty("bindingState","").toString()=="NEEDS_REMAP";
-        const bool physical=static_cast<bool>(
-            capabilities.getProperty("callbackOwnsChannelIds",false)) ||
-            sessionAuthority=="M4" ||
-            (sessionAuthority=="CHANNEL_ID" &&
-             !(retained && retainedGraphMatchesLogical(snapshot)));
-        if(!supportedId || replay || logicalWorkspaceReadOnly_ ||
-           physical || audioDeviceApplyActive_ || nativeShowBusy_ ||
-           studioBackupBusy_ || engine_.isGraphSwitchPending()) {
-            failure=!supportedId?"INVALID_LOGICAL_REQUEST":
-                replay?"DUPLICATE_LOGICAL_REQUEST":
-                logicalWorkspaceReadOnly_?"SAVED_MIXER_RECOVERY_REQUIRED":
-                physical?"PHYSICAL_PCM_AUTHORITY_ACTIVE":"LOGICAL_EDITOR_BUSY";
-        } else {
-            acceptedControlRequests_.add(id);
-            if(acceptedControlRequests_.size()>512)
-                acceptedControlRequests_.remove(0);
-            const auto original=logicalWorkspace_.document();
-            const auto blobs=logicalWorkspace_.states();
-            const auto operation=request.getProperty("operation","").toString();
-            if(operation=="ADD_FX_REFERENCE") {
-                const auto key=request.getProperty("payload",{})
-                    .getProperty("catalogId","").toString();
-                const bool builtIn=key==
-                    armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
-                    key==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
-                    key==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
-                    key==armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
-                if(!builtIn && (!catalog_.find(key) || catalog_.busy()))
-                    failure="UNKNOWN_OR_SCANNING_FX_CATALOG";
-            }
-            if(failure.isEmpty()) {
-                result=logicalWorkspace_.apply(request);
-                if(!result.accepted)failure=result.error;
-            }
-            // A catalog, schema or transaction rejection must NEVER be
-            // interpreted as a successful persist/ACK. Commit only genuine
-            // accepted changes.
-            if(failure.isEmpty()) {
-                failure=armix::session::NativeMixerSessionStore(
-                    settingsDirectory()).commit(logicalWorkspace_.document(),
-                                                 logicalWorkspace_.states());
-                if(failure.isNotEmpty()) {
-                    // Disk failure is NOT an accepted edit. Restore the
-                    // original roster/FX blobs before any later readback.
-                    if(!logicalWorkspace_.load(original,blobs))
-                        diagnostics_.record("LOGICAL_MIXER_ROLLBACK_FAILED",
-                            "Rejected persistence write");
-                } else {
-                    mixerSessionId_=logicalWorkspace_.document().id;
-                    mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
-                    mixerSessionRecoveryPending_=false;
-                }
-            }
-        }
+    void emitLogicalMixerAck(const juce::String& id, const juce::String& error,
+            const juce::String& createdId={}) {
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("requestId",id);
-        ack->setProperty("status",failure.isEmpty()?"ACCEPTED":"REJECTED");
-        ack->setProperty("errorCode",failure.isEmpty()?"NONE":failure);
+        ack->setProperty("status",error.isEmpty()?"ACCEPTED":"REJECTED");
+        ack->setProperty("errorCode",error.isEmpty()?"NONE":error);
         ack->setProperty("revision",
             juce::String(std::to_string(logicalWorkspace_.revision())));
-        ack->setProperty("createdId",result.createdId);
+        if(error.isEmpty())ack->setProperty("createdId",createdId);
         ack->setProperty("physicalOutputAdmitted",false);
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",
                                                  juce::var(ack.release()));
-        // No optimistic same-handler snapshot: browser SUBSCRIBE after ACK.
+    }
+
+    // Retained PCM still owns opaque processor state after unplug. Visible
+    // graph equality cannot transfer that ownership to a disk checkpoint.
+    void handleLogicalMixerIntent(const juce::var& request) {
+        ensureLogicalWorkspace();
+        const auto id=request.getProperty("requestId","").toString();
+        if(!id.startsWith("logical-") || id.length()>80)
+            return emitLogicalMixerAck(id,"INVALID_LOGICAL_REQUEST");
+        if(acceptedControlRequests_.contains(id))
+            return emitLogicalMixerAck(id,"DUPLICATE_LOGICAL_REQUEST");
+        if(logicalWorkspaceReadOnly_)
+            return emitLogicalMixerAck(id,"SAVED_MIXER_RECOVERY_REQUIRED");
+        if(audioDeviceApplyActive_ || mixerSessionWorker_.busy() ||
+           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
+            return emitLogicalMixerAck(id,"LOGICAL_EDITOR_BUSY");
+        const auto snapshot=approvedNativeSnapshot();
+        if(!snapshot.getProperty("logicalMixer",{}).isObject())
+            return emitLogicalMixerAck(id,"PHYSICAL_PCM_AUTHORITY_ACTIVE");
+
+        if(request.getProperty("operation","").toString()=="ADD_FX_REFERENCE") {
+            const auto key=request.getProperty("payload",{})
+                .getProperty("catalogId","").toString();
+            const bool builtIn=key==
+                armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
+                key==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
+                key==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
+                key==armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
+            if(!builtIn && (!catalog_.find(key) || catalog_.busy()))
+                return emitLogicalMixerAck(id,"UNKNOWN_OR_SCANNING_FX_CATALOG");
+        }
+
+        auto candidate=std::make_shared<armix::session::NativeLogicalMixerWorkspace>(
+            logicalWorkspace_);
+        const auto result=candidate->apply(request);
+        if(!result.accepted)return emitLogicalMixerAck(id,result.error);
+        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        if(!mixerSessionWorker_.save(settingsDirectory(),candidate->document(),
+                candidate->states(),[safe,candidate,id,result](juce::String error){
+            if(safe==nullptr)return;
+            if(error.isEmpty()) {
+                safe->logicalWorkspace_=std::move(*candidate);
+                safe->mixerSessionId_=safe->logicalWorkspace_.document().id;
+                safe->lastMixerSessionFingerprint_.clear();
+                safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+                safe->mixerSessionError_.clear();
+            }
+            safe->emitLogicalMixerAck(id,error,result.createdId);
+        }))return emitLogicalMixerAck(id,"LOGICAL_EDITOR_BUSY");
+        acceptedControlRequests_.add(id);
+        if(acceptedControlRequests_.size()>512)
+            acceptedControlRequests_.remove(0);
     }
 
     juce::var approvedNativeSnapshot (const juce::var& live)
@@ -1165,7 +1139,11 @@ private:
         ensureLogicalWorkspace();
         const auto caps=accepted.getProperty("graph",{})
             .getProperty("capabilities",{});
-        if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))) {
+        const auto authority=accepted.getProperty("mixerSession",{})
+            .getProperty("authority","").toString();
+        if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false)) &&
+           authority!="CHANNEL_ID" && authority!="M4" &&
+           !engine_.hasRetainedNativeSession()) {
             // Separate field: physical graph remains truthful/unadmitted.
             // Browsers may render this only as an explicitly unbound editor.
             auto logical=logicalWorkspace_.snapshot();
@@ -2652,6 +2630,13 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
+        if(usedPrevious) {
+            if(logicalWorkspace_.load(doc,states))logicalWorkspaceReadOnly_=false;
+        }
+        if(doc.logicalOnly) {
+            mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+            return "Saved mixer is offline and awaiting verified device binding";
+        }
         // A disk SHA is NOT permission to instantiate executable code.
         // Every external VST3 must still match today's verified catalog
         // identity, exact UID and registered path. A moved or tampered
@@ -2710,6 +2695,9 @@ private:
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={}) {
         const bool automatic=exportFile==juce::File{};
         ensureLogicalWorkspace();
+        if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
+           catalog_.busy()||engine_.isGraphSwitchPending())
+            return "Mixer is busy. Try again after the current operation.";
         if(logicalWorkspaceReadOnly_)
             return "Saved mixer recovery required before writing a new session";
         const auto liveState=engine_.status();
@@ -2719,34 +2707,19 @@ private:
         const bool m4Active=session.getProperty("authority","").toString()=="M4";
         if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)) &&
            !m4Active && !engine_.secondaryArmed()) {
-            // P0 loss-prevention: the retained callback graph may be newer
-            // than the last successful .smix checkpoint. Never persist a
-            // stale logical mirror over that last genuine native graph.
-            // Exact ChannelId/EdgeId/FX readback equivalence is mandatory.
-            if(engine_.hasRetainedNativeSession() &&
-               !retainedGraphMatchesLogical(observed))
-                return "Retained native mixer changed after the last saved "
-                       "checkpoint; reconnect audio before saving to avoid "
-                       "overwriting newer channels, WIRE or FX";
-            // True no-device save: never synthesize a physical output
-            // binding merely to satisfy .smix file serialization.
-            const auto& doc=logicalWorkspace_.document();
-            const auto& states=logicalWorkspace_.states();
-            if(!automatic) {
-                const auto error=armix::session::NativeMixerSessionStore::writeFile(
-                    exportFile,doc,states);
-                // Caller owns failure ACK; never double-report a failed Save.
-                if(error.isEmpty())emitMixerSessionAck("SAVE",{});
-                return error;
-            }
-            return armix::session::NativeMixerSessionStore(
-                settingsDirectory()).commit(doc,states);
+            if(engine_.hasRetainedNativeSession())
+                return "Retained native mixer still owns the session";
+            // Logical edits and Open already commit HEAD before ACK.
+            if(automatic)return {};
+            auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+            if(!mixerSessionWorker_.save(settingsDirectory(),logicalWorkspace_.document(),
+                    logicalWorkspace_.states(),[safe](juce::String error){
+                if(safe!=nullptr)safe->emitMixerSessionAck("SAVE",error);
+            },exportFile))return "Mixer session IO worker unavailable";
+            return {};
         }
         if(automatic&&mixerSessionRecoveryPending_)
             return "The retained mixer checkpoint is awaiting a verified device";
-        if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
-           catalog_.busy()||engine_.isGraphSwitchPending())
-            return "Mixer is busy. Try again after the current operation.";
         const bool monitoring=engine_.isMonitorEnabled();
         if(engine_.secondaryArmed())return "Stop STREAM before saving the mixer";
         const auto epoch=engine_.dryRoutingLabEpoch();
@@ -2824,25 +2797,22 @@ private:
             const bool physical=static_cast<bool>(lab.getProperty(
                 "nativeChannelIdPcmActive",false)) ||
                 session.getProperty("authority","").toString()=="M4";
+            if(error.isEmpty()&&!physical&&engine.hasRetainedNativeSession())
+                error="Retained native mixer still owns the session";
             if(error.isEmpty()&&!physical) {
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
                 safe->ensureLogicalWorkspace();
                 const auto id=doc.id;
-                const auto original=safe->logicalWorkspace_.document();
-                const auto originalStates=safe->logicalWorkspace_.states();
-                if(!safe->logicalWorkspace_.load(doc,states))
+                armix::session::NativeLogicalMixerWorkspace opened;
+                if(!opened.load(std::move(doc),std::move(states)))
                     error="Saved logical routing is invalid or cyclic";
                 else {
                     error=armix::session::NativeMixerSessionStore(
-                        settingsDirectory()).commit(doc,states);
-                    if(error.isNotEmpty()) {
-                        // OPEN is transactional: a failed disk write cannot
-                        // replace the view with a never-saved mixer.
-                        (void)safe->logicalWorkspace_.load(original,originalStates);
-                    }
+                        settingsDirectory()).commit(opened.document(),opened.states());
                     if(error.isEmpty()) {
+                        safe->logicalWorkspace_=std::move(opened);
                         safe->logicalWorkspaceReadOnly_=false;
                         safe->logicalWorkspaceLoaded_=true;
                         safe->mixerSessionId_=id;
@@ -2857,6 +2827,8 @@ private:
                 safe->emitMixerSessionAck("OPEN",error);
                 return;
             }
+            if(error.isEmpty()&&doc.logicalOnly)
+                error="Offline mixer requires verified device binding before live Open";
             if(error.isEmpty())error=safe->resolveMixerSessionCatalog(doc,false);
             if(error.isEmpty()) {
                 const auto id=doc.id;
@@ -5790,7 +5762,7 @@ private:
         // existing timer; never add a worker or poll the audio callback.
         if (!audioEngineStarted_)
         {
-            if (!browser_.loaded ||
+            if (!browser_.loaded || mixerSessionWorker_.busy() ||
                 juce::Time::getMillisecondCounter() - guiReadyTick_ < 150u)
                 return;
             audioEngineStarted_ = true;

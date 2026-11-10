@@ -354,9 +354,11 @@
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
     pendingLogical={requestId,operation,channelId,payload,
+      workspaceToken:logicalView.workspaceToken,
       beforeRevision:logicalView.graph.revision,ackRevision:null,createdId:null};
     backend.emitEvent("arMixLogicalIntent",{
-      requestId,baseRevision:logicalView.graph.revision,operation,
+      requestId,workspaceToken:logicalView.workspaceToken,
+      baseRevision:logicalView.graph.revision,operation,
       ...(channelId?{channelId}:{}),payload,
       ...(value===undefined?{}:{value})
     });
@@ -2377,65 +2379,13 @@
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
-    // On unplug, a newer retained PCM graph wins over an older disk-based
-    // logical mirror. Otherwise a stale offline projection could silently
-    // discard a recently edited channel, WIRE or real vendor insert.
-    const retainedMatches=()=>{
-      if(!next?.retained)return true;
-      const physical=next.graph,logical=offline?.graph;
-      if(!logical || physical.revision!==logical.revision ||
-         physical.rosterRevision!==logical.rosterRevision ||
-         physical.channels.length!==logical.channels.length ||
-         (physical.edges||[]).length!==(logical.edges||[]).length)return false;
-      const rows=new Map(logical.channels.map(ch=>[ch.id,ch]));
-      for(const ch of physical.channels){
-        const own=rows.get(ch.id);
-        if(!own||ch.role!==own.role||
-           ch.processingFormat!==own.processingFormat||
-           ch.name!==own.name||
-           (ch.primaryOutId||null)!==(own.primaryOutId||null))return false;
-        // The producer may change scalars without advancing topology.
-        // Never display an editable stale disk mirror over newer live DSP.
-        const c=ch.controls,l=own.controls;
-        if(!c||!l||
-           !Number.isFinite(c.faderDb)||!Number.isFinite(l.faderDb)||
-           !Number.isFinite(c.pan)||!Number.isFinite(l.pan)||
-           Math.abs(c.faderDb-l.faderDb)>.05||
-           Math.abs(c.pan-l.pan)>.01||
-           typeof c.mute!=="boolean"||typeof l.mute!=="boolean"||
-           typeof c.solo!=="boolean"||typeof l.solo!=="boolean"||
-           c.mute!==l.mute||c.solo!==l.solo||
-           typeof ch.fxRackBypassed!=="boolean"||
-           typeof own.fxRackBypassed!=="boolean"||
-           ch.fxRackBypassed!==own.fxRackBypassed)return false;
-        const fx=ch.inserts,planned=own.inserts;
-        if(!Array.isArray(fx)||!Array.isArray(planned)||
-           fx.length!==planned.length)return false;
-        for(let i=0;i<fx.length;i++) {
-          if(fx[i].catalogId!==planned[i].catalogId||
-             typeof fx[i].bypassed!=="boolean"||
-             typeof planned[i].bypassed!=="boolean"||
-             fx[i].bypassed!==planned[i].bypassed)return false;
-        }
-      }
-      const edges=new Map(logical.edges.map(e=>[e.edgeId,e]));
-      for(const e of physical.edges||[]){
-        const own=edges.get(e.edgeId);
-        if(!own||own.from!==e.from||own.to!==e.to||
-           own.primaryOutput!==e.primaryOutput||
-           own.tap!==e.tap||own.gainLinear!==e.gainLinear)return false;
-      }
-      return true;
-    };
-    // Physical SessionSnapshot remains unadmitted. Render the separately
-    // validated logical C++ document ONLY when hardware is unavailable.
-    // This is not a PCM graph, hardware meter or browser draft.
-    const logicalAvailable=!next.admitted&&!m4Verified()&&
-      session?.authority!=="M4" &&
-      (session?.authority!=="CHANNEL_ID"||next.retained) &&
-      retainedMatches() &&
+    // Retained PCM owns vendor state even if the saved descriptors look
+    // identical. Only native can authorize the unbound logical editor.
+    const logicalAvailable=!next.admitted&&!next.retained&&!m4Verified()&&
+      session?.authority!=="M4"&&session?.authority!=="CHANNEL_ID"&&
       offline?.schema==="arsonmix.native.logical-mixer.v1" &&
       offline.authority==="LOGICAL_ONLY"&&
+      typeof offline.workspaceToken==="string"&&offline.workspaceToken.length>0&&
       offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
       offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
       protocol.decimal(offline.revision)!==null&&offline.revision!=="0"&&
@@ -2444,10 +2394,13 @@
       Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
     if(logicalAvailable) {
       const staged={...next,graph:offline.graph,
-        identity:"logical:"+offline.revision,logical:true,
+        workspaceToken:offline.workspaceToken,
+        identity:"logical:"+offline.workspaceToken+":"+offline.revision,logical:true,
         readOnly:offline.readOnly===true,
         admitted:false,retained:false,productLive:false,telemetry:{}};
       let revealCreatedId=null;
+      if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
+        pendingLogical=null;
       if(pendingLogical) {
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
@@ -2469,7 +2422,7 @@
         window.queueMicrotask(flushLiveScalars);
       }
       logicalView=staged;
-      const signature="logical|"+offline.revision+"|"+JSON.stringify(
+      const signature="logical|"+offline.workspaceToken+"|"+offline.revision+"|"+JSON.stringify(
         offline.graph.channels.map(ch=>[ch.id,ch.name,ch.controls,ch.inserts,ch.fxRackBypassed]))+
         "|"+JSON.stringify(offline.graph.edges);
       if(signature!==lastPaintedSignature) {

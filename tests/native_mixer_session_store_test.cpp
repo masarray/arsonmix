@@ -653,6 +653,7 @@ static void verifyOfflineLogicalSessionAndFile() {
                      const juce::String& id=juce::String{}) {
         auto request=juce::var(new juce::DynamicObject());
         request.getDynamicObject()->setProperty("operation",operation);
+        request.getDynamicObject()->setProperty("workspaceToken",workspace.workspaceToken());
         request.getDynamicObject()->setProperty("baseRevision",
             juce::String(std::to_string(workspace.revision())));
         request.getDynamicObject()->setProperty("channelId",id);
@@ -684,52 +685,15 @@ static void verifyOfflineLogicalSessionAndFile() {
             found=true;
         }
     assert(found);
-    // A retained PCM snapshot is only equal to the on-disk logical
-    // checkpoint when both topology AND all visible scalar controls agree.
-    // Fader/pan/mute/solo edits do not necessarily increment roster revision.
-    const auto logical=projected.getProperty("graph",{});
-    const auto duplicate=[&]() {
-        return juce::JSON::parse(juce::JSON::toString(logical,false));
-    };
-    using Guard=NativeLogicalMixerWorkspace;
-    assert(Guard::sameRetainedGraph(duplicate(),logical));
-    auto stale=duplicate();
-    stale.getProperty("channels",{}).getArray()->getReference(0)
-        .getProperty("controls",{}).getDynamicObject()->setProperty("faderDb",-7.);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getProperty("channels",{}).getArray()->getReference(0)
-        .getProperty("controls",{}).getDynamicObject()->setProperty("pan",.37);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getProperty("channels",{}).getArray()->getReference(0)
-        .getProperty("controls",{}).getDynamicObject()->setProperty("mute",true);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getProperty("channels",{}).getArray()->getReference(0)
-        .getProperty("controls",{}).getDynamicObject()->setProperty("solo",true);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getProperty("channels",{}).getArray()->getReference(0)
-        .getDynamicObject()->setProperty("fxRackBypassed",true);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    auto* staleRows=stale.getProperty("channels",{}).getArray();
-    assert(staleRows!=nullptr);
-    for(auto& row:*staleRows) {
-        if(row.getProperty("id","").toString()!=track)continue;
-        auto* inserts=row.getProperty("inserts",{}).getArray();
-        assert(inserts&&inserts->size()==1);
-        inserts->getReference(0).getDynamicObject()->setProperty("bypassed",true);
-    }
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getProperty("edges",{}).getArray()->getReference(0)
-        .getDynamicObject()->setProperty("gainLinear",.5);
-    assert(!Guard::sameRetainedGraph(stale,logical));
-    stale=duplicate();
-    stale.getDynamicObject()->setProperty("revision","999");
-    assert(!Guard::sameRetainedGraph(stale,logical));
+    // Replacing the document invalidates pending intents even if its exact
+    // revision (or even the saved document ID) is the same.
+    auto stale=command("CREATE_CHANNEL",name);
+    auto replacement=workspace;
+    assert(replacement.load(workspace.document(),workspace.states()));
+    assert(replacement.revision()==workspace.revision());
+    auto staleAck=replacement.apply(stale);
+    assert(!staleAck.accepted && staleAck.error=="STALE_LOGICAL_REVISION");
+
     const auto json=Codec::encode(workspace.document());
     MixerSessionDocument restored;
     assert(Codec::decode(json,restored));
@@ -775,6 +739,16 @@ static void verifyOfflineLogicalSessionAndFile() {
     assert(reopened.revision()==workspace.revision());
     assert(reopened.snapshot().getProperty("graph",{}).getProperty(
         "channels",{}).getArray()->size()==16);
+    // A failed disk transaction must leave both the live snapshot and the
+    // last verified on-disk generation unchanged.
+    auto candidate=workspace;
+    assert(candidate.apply(command("CREATE_CHANNEL",name)).accepted);
+    const auto obstructed=folder.getChildFile("blocked");
+    assert(obstructed.replaceWithText("regular file"));
+    assert(NativeMixerSessionStore(obstructed).commit(candidate.document(),{}).isNotEmpty());
+    assert(workspace.revision()==reopened.revision());
+    assert(liveStore.load(verifiedHead,headStates).isEmpty() &&
+           verifiedHead.acceptedRevision==workspace.revision());
     assert(folder.deleteRecursively());
 }
 
