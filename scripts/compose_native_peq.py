@@ -56,7 +56,7 @@ function insertChosenNativeHarmony(){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
  const slot=Number(activeFxTarget?.slot);
  if(!t||!Number.isInteger(slot)||slot<0||slot>=8){
-   say('ArSon Harmony · choose an empty FX insert');return false;
+   say('Harmonice · choose an empty FX insert');return false;
  }
  if(window.__JUCE__?.backend?.emitEvent){
    if(!window.ArSonMixNativeHarmony?.insert){
@@ -68,10 +68,10 @@ function insertChosenNativeHarmony(){
  if(t.fx[slot]!=='None'){
    say('FX slot already occupied');return false;
  }
- t.fx[slot]='ArSon Harmony';t.slotBypass[slot]=false;
- t.fxInsertIds[slot]={id:'visual-harmony-'+t.id+'-'+slot,name:'ArSon Harmony'};
+ t.fx[slot]='Harmonice';t.slotBypass[slot]=false;
+ t.fxInsertIds[slot]={id:'visual-harmony-'+t.id+'-'+slot,name:'Harmonice'};
  refreshStrip(t);setFastPicker(false);
- say('ArSon Harmony · browser preview ONLY · no DSP');
+ say('Harmonice · browser preview ONLY · no DSP');
  return true;
 }
 function insertChosenNativeThrow(){
@@ -99,8 +99,8 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
  '<button class="fast-effect" type="button" data-fast-native-eq="1"><span class="fast-effect-title">Parametric EQ</span><span class="fast-effect-kind">Native · 8-band · ordered insert</span></button>':'';
  const compBuiltin=!q||['compressor','comp','dynamics','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-comp="1"><span class="fast-effect-title">Compressor</span><span class="fast-effect-kind">Native · 0-sample added latency · dynamics</span></button>':'';
- const harmonyBuiltin=!q||['arson harmony','harmony','vocal harmony','built-in fx'].some(n=>n.includes(q))?
- '<button class="fast-effect" type="button" data-fast-native-harmony="1"><span class="fast-effect-title">ArSon Harmony</span><span class="fast-effect-kind">Native · 2–4 voices · live pitch</span></button>':'';
+ const harmonyBuiltin=!q||['harmonice','arson harmony','harmony','vocal harmony','built-in fx'].some(n=>n.includes(q))?
+ '<button class="fast-effect" type="button" data-fast-native-harmony="1"><span class="fast-effect-title">Harmonice</span><span class="fast-effect-kind">Native · 3–5 voices · live pitch</span></button>':'';
  const throwBuiltin=!q||['vocal throw','throw','delay','echo','phrase','concert','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-throw="1"><span class="fast-effect-title">ArSon Vocal Throw</span><span class="fast-effect-kind">Native · phrase-aware concert echo</span></button>':'';
  const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin?'<div class="fast-fx-category">BUILT-IN FX</div>':'')+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin;
@@ -124,7 +124,7 @@ OPEN_NEW=""" if(a==='openPlugin'){
   if(t.fx[index]==='Compressor'){
    window.ArSonMixNativeCompressor?.open(t,index);return;
   }
-  if(t.fx[index]==='ArSon Harmony'){
+  if(t.fx[index]==='Harmonice'||t.fx[index]==='ArSon Harmony'){
    window.ArSonMixNativeHarmony?.open(t,index);return;
   }
   if(t.fx[index]==='ArSon Vocal Throw'){
