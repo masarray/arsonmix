@@ -111,6 +111,7 @@ public:
         leadRendering_=false;voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
+        uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
         pitchSyncReferenceEnabled_=true;
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
@@ -369,7 +370,9 @@ public:
             outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
-            ensemble_.advance(voiced_&&sourceConfidence_>.87f&&noteHold_>=2);
+            // Expression follows stable notes; confidence hysteresis is
+            // handled by the tracker, not by vibrato resetting on one hop.
+            ensemble_.advance(voiced_&&noteHold_>=2);
             stage_.advance();
             write_=(write_+1)%capacity;
             ++sampleClock_;
@@ -423,7 +426,8 @@ private:
         // overlap-add. The exact source period is measured, not inferred
         // from the harmony target. Uncertain/nonperiodic sounds retain the
         // previous validated granular shifter with a bounded 12ms crossfade.
-        const bool confident=pitchSyncReferenceEnabled_&&voiced_&&sourceConfidence_>.82f&&
+        // Avoid 150Hz switching between two synthesis algorithms.
+        const bool confident=pitchSyncReferenceEnabled_&&voiced_&&pitchSyncStable_&&
                              sourcePeriodSamples_>=8.f;
         PitchSynchronousVoice<capacity,maxVoices>::Output sync{};
         if(confident)
@@ -431,10 +435,13 @@ private:
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival);
         float& colorState=pitchSyncFiltered_[ix];
-        colorState+=filterCoef*(sync.sample-colorState);
+        // Invalid PSOLA epochs must never inject zero into the high-voice
+        // output while a crossfade is still active.
+        if(sync.ready)colorState+=filterCoef*(sync.sample-colorState);
         float& blend=pitchSyncBlend_[ix];
         blend+=pitchSyncAlpha_*((confident&&sync.ready?1.f:0.f)-blend);
-        y=f*(1.f-blend)+colorState*blend;
+        const float validSync=sync.ready?colorState:f;
+        y=f*(1.f-blend)+validSync*blend;
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
@@ -504,7 +511,18 @@ private:
     void releasePitch() noexcept {
         sourceConfidence_=0.f;voiced_=false;noteHold_=0;
         candidateNote_=-1;currentNote_=-1;
+        uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
         leadTune_.release();voicePlanner_.reset();
+    }
+    // Keep the last known voiced note through at most two energetic but
+    // ambiguous analysis windows (~13ms at 48k); actual silence immediately
+    // releases. This prevents periodic gating on high vowels/consonants.
+    void uncertainPitchEvidence() noexcept {
+        if(voiced_&&noteHold_>=2&&uncertainPitchHops_<2){
+            ++uncertainPitchHops_;
+            return;
+        }
+        releasePitch();
     }
     void finishPitchAnalysis() noexcept {
         const auto& correlations=pitchCorrelations_;
@@ -522,9 +540,10 @@ private:
             }
         }
         if(bestLag==0||best<=0.77f){
-            releasePitch();
+            uncertainPitchEvidence();
             return;
         }
+        uncertainPitchHops_=0;
         // Three-point peak interpolation reduces integer-lag tuning steps,
         // especially at the high end of the supported singing range.
         float lag=static_cast<float>(bestLag);
@@ -578,6 +597,13 @@ private:
         }
         sourcePeriodSamples_=newPeriod;
         sourceConfidence_=confidence;
+        // Hysteresis prevents marginal correlation confidence causing
+        // rapid PSOLA/granular alternation. Silence disables it immediately.
+        if(confidence>=.86f){
+            pitchSyncStable_=true;weakSyncHops_=0;
+        }else if(confidence<.79f){
+            if(++weakSyncHops_>=3)pitchSyncStable_=false;
+        }else weakSyncHops_=0;
         // Integer intervals come from the prepared LUT. The single
         // fractional ratio tracks the current microphone pitch.
         const float baseRatio=std::exp2((note-midi)/12.f);
@@ -607,6 +633,8 @@ private:
     float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
+    int uncertainPitchHops_=0,weakSyncHops_=0;
+    bool pitchSyncStable_=false;
     std::uint64_t sampleClock_=0;
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
