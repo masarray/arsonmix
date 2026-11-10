@@ -127,9 +127,21 @@ public:
         if(!safeText(item.name,80)||!safeText(item.category,40)||
            !validateSettings(item.catalogId,item.settings))
             return "Preset name/category/parameters invalid";
-        auto list=enumerate(item.catalogId);
-        if(static_cast<int>(list.size())>=maxFilesPerEffect)
+        // Count physical files, not only valid parsed items. A corrupted
+        // 513-file library must not look empty and silently bypass quota.
+        // Fail closed on corrupt entries before creating a new user file.
+        juce::Array<juce::File> files;
+        folder(item.catalogId).findChildFiles(
+            files,juce::File::findFiles,false,"*.armixfx");
+        if(files.size()>=maxFilesPerEffect)
             return "Per-effect user preset quota reached";
+        for(const auto& file:files) {
+            BuiltInFxUserPreset existing;
+            if(read(item.catalogId,file.getFileNameWithoutExtension(),
+                    existing).isNotEmpty())
+                return "Preset library contains an invalid/corrupt entry";
+        }
+        auto list=enumerate(item.catalogId);
         for(const auto& existing:list)
             if(existing.name.equalsIgnoreCase(item.name)&&
                existing.category.equalsIgnoreCase(item.category))
