@@ -19,6 +19,7 @@ root.innerHTML=`
    <span class="mx-harm-channel" id="mxHChannel"></span>
    <select id="mxHPreset" aria-label="Harmonice preset" title="Preset">
     <option value="custom">Custom</option>
+    <option value="doubleLight">Double Light</option><option value="doubleWide">Double Wide</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
    </select>
@@ -32,6 +33,10 @@ root.innerHTML=`
     <span class="mx-harm-label">VOICES</span>
     <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmonice voice count">
      <button type="button" data-voices="2" aria-label="2 harmony voices plus lead — Natural Duo" aria-pressed="false">${voiceGlyph}<span>2</span></button><button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
+    </nav>
+    <nav class="mx-harm-type" id="mxHType" aria-label="Vocal ensemble type">
+     <button type="button" data-voice-mode="0" aria-label="Pitched harmony voices" aria-pressed="true">HARMONY</button>
+     <button type="button" data-voice-mode="1" aria-label="Unison vocal doubler" aria-pressed="false">DOUBLER</button>
     </nav>
     <button type="button" id="mxHCorrection" class="mx-harm-correction" role="switch"
       aria-checked="false" aria-busy="true" disabled>
@@ -94,15 +99,17 @@ for(const [key,label,min,max,step] of sliderDefs){
  box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag horizontally or use arrow keys">`;
  el("mxHSliders").append(box);
 }
-const fresh=()=>({key:0,scale:0,voices:3,correction:false,
+const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
                    guideMode:0,guideChannelId:"0",
                    color:0.5,space:0.6,wet:0.45,gainDb:0});
 const presets={
- duo:{voices:2,color:.45,space:.35,wet:.31,gainDb:0},
- trio:{voices:3,color:.50,space:.56,wet:.40,gainDb:0},
- quartet:{voices:4,color:.66,space:.95,wet:.52,gainDb:-2},
- quintet:{voices:5,color:.61,space:.88,wet:.45,gainDb:-3},
- choir:{voices:4,color:.24,space:.30,wet:.58,gainDb:-3}
+ doubleLight:{voiceMode:1,space:.35,color:.57,wet:.38,gainDb:0},
+ doubleWide:{voiceMode:1,space:.82,color:.48,wet:.52,gainDb:-1},
+ duo:{voiceMode:0,voices:2,color:.45,space:.35,wet:.31,gainDb:0},
+ trio:{voiceMode:0,voices:3,color:.50,space:.56,wet:.40,gainDb:0},
+ quartet:{voiceMode:0,voices:4,color:.66,space:.95,wet:.52,gainDb:-2},
+ quintet:{voiceMode:0,voices:5,color:.61,space:.88,wet:.45,gainDb:-3},
+ choir:{voiceMode:0,voices:4,color:.24,space:.30,wet:.58,gainDb:-3}
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
@@ -115,6 +122,7 @@ let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
 const noteButtons=[...root.querySelectorAll("[data-key]")];
 const voiceButtons=[...root.querySelectorAll("[data-voices]")];
+const typeButtons=[...root.querySelectorAll("[data-voice-mode]")];
 const scaleButtons=[...root.querySelectorAll("[data-scale]")];
 const guideButtons=[...root.querySelectorAll("[data-guide-mode]")];
 const sliders=sliderDefs.map(([key])=>({
@@ -195,6 +203,7 @@ const hint=t=>showText(el("mxHStatus"),t);
 const valid=s=>s&&Number.isInteger(s.key)&&s.key>=0&&s.key<12&&
  Number.isInteger(s.scale)&&s.scale>=0&&s.scale<=1&&
  Number.isInteger(s.voices)&&s.voices>=2&&s.voices<=5&&
+ Number.isInteger(s.voiceMode)&&[0,1].includes(s.voiceMode)&&
  typeof s.correction==="boolean"&&
  ["wet","space","color"].every(k=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=1)&&
  Number.isFinite(s.gainDb)&&s.gainDb>=-24&&s.gainDb<=12&&
@@ -263,34 +272,49 @@ function paint(){
    b.classList.toggle("active",active);
    b.setAttribute("aria-pressed",String(active));
  }
- el("mxHSourcePicker").hidden=!auto;
+ el("mxHSourcePicker").hidden=!auto||v.voiceMode===1;
  const source=el("mxHGuideSource");
  const chosen=inGraph?v.guideChannelId:"0";
  if(source.value!==chosen)source.value=chosen;
  for(const b of noteButtons){
+   b.disabled=v.voiceMode===1;
    b.classList.toggle("active",
      reliable&&Number(b.dataset.key)===displayKey);
    b.classList.toggle("queued",Number(b.dataset.key)===queuedKey);
  }
  for(const b of voiceButtons){
+   b.disabled=v.voiceMode===1;
    const active=Number(b.dataset.voices)===v.voices;
    b.classList.toggle("active",active);
    b.setAttribute("aria-pressed",String(active));
  }
- for(const b of scaleButtons)b.classList.toggle("active",
-   reliable&&Number(b.dataset.scale)===displayScale);
+ for(const b of typeButtons){
+   const active=Number(b.dataset.voiceMode)===settings.voiceMode;
+   b.classList.toggle("active",active);
+   b.classList.toggle("queued",Number(b.dataset.voiceMode)===v.voiceMode&&!active);
+   b.setAttribute("aria-pressed",String(active));
+ }
+ for(const b of guideButtons)b.disabled=v.voiceMode===1;
+ for(const b of scaleButtons){
+   b.disabled=v.voiceMode===1;
+   b.classList.toggle("active",
+      reliable&&Number(b.dataset.scale)===displayScale);
+ }
  const correction=el("mxHCorrection");
  const syncing=nativeView&&!verified;
  const correctionPending=nativeView&&v.correction!==settings.correction;
  correction.disabled=syncing;
  correction.setAttribute("aria-busy",String(syncing||correctionPending));
  correction.setAttribute("aria-checked",String(!syncing&&settings.correction));
- showText(el("mxHKeyReadout"),reliable?keys[displayKey]+(displayScale?"m":""):"—");
- showText(el("mxHNote"),reliable?(displayScale?"MINOR":"MAJOR"):"KEY");
+ showText(el("mxHKeyReadout"),v.voiceMode===1?"UNI":
+   reliable?keys[displayKey]+(displayScale?"m":""):"—");
+ showText(el("mxHNote"),v.voiceMode===1?"DOUBLE":
+   reliable?(displayScale?"MINOR":"MAJOR"):"KEY");
  el("mxHKeyReadout").setAttribute("aria-label",
    reliable?"Active Harmony key "+keys[displayKey]+(displayScale?" minor":" major"):
    "Harmony key awaiting native readback");
- const status=!auto?"MANUAL":!inGraph?"SAFE":detected?"AUTO":"LISTEN";
+ const status=v.voiceMode===1?"UNISON":
+   !auto?"MANUAL":!inGraph?"SAFE":detected?"AUTO":"LISTEN";
  showText(el("mxHGuideStatus"),status);
  el("mxHGuideStatus").dataset.state=status.toLowerCase();
  if(el("mxHPreset").value!==preset)el("mxHPreset").value=preset;
@@ -362,6 +386,13 @@ function edit(patch){
 noteButtons.forEach(b=>b.addEventListener("click",()=>
  edit({key:Number(b.dataset.key),guideMode:0,guideChannelId:"0"})));
 voiceButtons.forEach(b=>b.addEventListener("click",()=>edit({voices:Number(b.dataset.voices)})));
+typeButtons.forEach(b=>b.addEventListener("click",()=>{
+ const nextMode=Number(b.dataset.voiceMode);
+ // Doubler follows the mic melody and must NEVER depend on a possibly
+ // disconnected Music Track. Retain key/scale but safely select Manual.
+ edit(nextMode===1?{voiceMode:1,guideMode:0,guideChannelId:"0"}:
+                   {voiceMode:0});
+}));
 scaleButtons.forEach(b=>b.addEventListener("click",()=>
  edit({scale:Number(b.dataset.scale),guideMode:0,guideChannelId:"0"})));
 guideButtons.forEach(b=>b.addEventListener("click",()=>{
