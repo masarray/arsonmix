@@ -386,8 +386,13 @@ function edit(patch){
 noteButtons.forEach(b=>b.addEventListener("click",()=>
  edit({key:Number(b.dataset.key),guideMode:0,guideChannelId:"0"})));
 voiceButtons.forEach(b=>b.addEventListener("click",()=>edit({voices:Number(b.dataset.voices)})));
-typeButtons.forEach(b=>b.addEventListener("click",()=>
- edit({voiceMode:Number(b.dataset.voiceMode)})));
+typeButtons.forEach(b=>b.addEventListener("click",()=>{
+ const nextMode=Number(b.dataset.voiceMode);
+ // Doubler follows the mic melody and must NEVER depend on a possibly
+ // disconnected Music Track. Retain key/scale but safely select Manual.
+ edit(nextMode===1?{voiceMode:1,guideMode:0,guideChannelId:"0"}:
+                   {voiceMode:0});
+}));
 scaleButtons.forEach(b=>b.addEventListener("click",()=>
  edit({scale:Number(b.dataset.scale),guideMode:0,guideChannelId:"0"})));
 guideButtons.forEach(b=>b.addEventListener("click",()=>{
