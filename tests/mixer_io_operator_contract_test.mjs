@@ -204,12 +204,14 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  assert.match(native,/action == "audioDeviceApply"/);
  const open=native.slice(native.indexOf('juce::String openSelectedAudioDevice('),
    native.indexOf('void applyCustomAudioDevice('));
+ const coordinator=read('src/NativeDeviceApplyCoordinator.h');
+ assert.match(open,/NativeDeviceApplyCoordinator::openSelected/);
  assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
  assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
- assert.match(open,/setAudioDeviceSetup\(setup,true\)/);
- assert.match(open,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
- assert.match(open,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
- assert.doesNotMatch(open,/manager\.setCurrentAudioDeviceType\(/);
+ assert.match(coordinator,/setAudioDeviceSetup\(setup,true\)/);
+ assert.match(coordinator,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+ assert.match(coordinator,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
+ assert.doesNotMatch(coordinator,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
  assert.match(native,/finishManualAudioSetup\(bindingMode!=MixerBindingMode::verifiedMainPinApply\)/);
  assert.match(native,/RESTORED_MUTED/);
@@ -304,6 +306,7 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
 test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   const js=read('web/mixer-io.js');
   const main=read('src/Main.cpp');
+  const applyOwner=read('src/NativeDeviceApplyCoordinator.h');
   const engine=read('src/LiveAudioEngine.h');
   const start=js.indexOf('const deviceSwitchBlocker=s=>');
   const end=js.indexOf('function deviceApply()',start);
@@ -320,8 +323,10 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/disabled=!!deviceBlocker\|\|deviceBusy\|\|applyMutePending/);
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
-  assert.match(main,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
-  assert.match(main,/opened->getCurrentSampleRate\(\)-actual\.sampleRate/);
+  assert.match(main,/NativeDeviceApplyCoordinator::matchesApplied/);
+  assert.match(main,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
+  assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
+  assert.match(applyOwner,/std::abs\(live\.deviceRate-a\.sampleRate\)/);
   assert.match(engine,/return isOutputMuted\(\) && !secondaryOutput_\.armed\(\)/);
   const standalone=read('AR-MIX-Live-FX-Host-Standalone-v0.3.html');
   const jsTag='<script id="arsonmix-mixer-io-js">';
@@ -337,6 +342,7 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
 
 test('DEVICE2 native device list is cached on overlay open; explicit scan is fail-closed',()=>{
  const native=read('src/Main.cpp'),gui=read('web/mixer-io.js');
+ const applyOwner=read('src/NativeDeviceApplyCoordinator.h');
  const section=native.slice(native.indexOf('else if (action == "audioDeviceInventory")'),
                             native.indexOf('else if (action == "audioDeviceApply")'));
  assert.match(section,/emitDeviceInventory\(false\)/);
@@ -353,9 +359,13 @@ test('DEVICE2 native device list is cached on overlay open; explicit scan is fai
  assert.match(gui,/SCAN_ERROR|BLOCKED_ARMED/);
  const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
                           native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
- assert.match(apply,/opened->getActiveInputChannels\(\)!=actual\.inputChannels/);
- assert.match(apply,/opened->getActiveOutputChannels\(\)!=actual\.outputChannels/);
- assert.match(apply,/opened->getCurrentBufferSizeSamples\(\)!=actual\.bufferSize/);
+ assert.match(apply,/NativeDeviceApplyCoordinator::matchesApplied/);
+ assert.match(apply,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
+ assert.match(apply,/observed\.activeOutputs=opened->getActiveOutputChannels\(\)/);
+ assert.match(apply,/observed\.deviceBuffer=opened->getCurrentBufferSizeSamples\(\)/);
+ assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
+ assert.match(applyOwner,/live\.activeOutputs==a\.outputChannels/);
+ assert.match(applyOwner,/live\.deviceBuffer==a\.bufferSize/);
 });
 
 test('SOURCE2 selected-channel popover selects verified physical ports without a second router',()=>{
