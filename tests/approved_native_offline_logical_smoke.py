@@ -135,8 +135,14 @@ def main():
             e.payload?.action==='logicalVendorFxEditor')?.payload""")
         assert vendor["instanceId"]=="logical-vendor" and vendor["deviceEpoch"]=="0"
         assert not page.locator("#fastPicker").is_visible()
+        emit(page, "arMixCatalog", {"items": [], "builtIns": [
+            {"id": "armix.builtin.fixture.v1", "name": "Fixture processor", "category": "Utility"},
+            {"id": "armix.builtin.hidden.v1", "name": "Hidden processor", "showInPicker": False},
+        ]})
         rack.locator('[data-action="openPlugin"][data-slot="2"]').click()
         assert page.locator("#fastPicker").is_visible()
+        assert page.locator('[data-fast-id="armix.builtin.fixture.v1"]').is_visible()
+        assert page.locator('[data-fast-id="armix.builtin.hidden.v1"]').count() == 0
         page.locator("#fastClose").click()
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.

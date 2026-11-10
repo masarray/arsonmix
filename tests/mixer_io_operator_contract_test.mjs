@@ -661,13 +661,15 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
 });
 
 test('offline checkpoints stay protected until verified native restore',()=>{
-  const edit=main.slice(main.indexOf('bool saveLogicalWorkspace('),
-    main.indexOf('juce::var approvedNativeSnapshot ('));
-  const open=main.slice(main.indexOf('armix::session::NativeLogicalMixerWorkspace opened;'),
+  const edit=main.slice(main.indexOf('NativeLogicalMixerControl logicalMixer_'),
+    main.indexOf('struct LogicalVendorEditor'));
+  const open=main.slice(main.indexOf('logicalMixer_.open(std::move(doc),'),
     main.indexOf('if(error.isEmpty())error=safe->materializeLogicalFxForBinding(doc,states);'));
   const save=main.slice(main.indexOf('juce::String saveMixerSession('),
     main.indexOf('void openMixerFile('));
-  assert.match(edit,/mixerSessionRecoveryPending_=true;\s*safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND"/);
-  assert.match(open,/mixerSessionRecoveryPending_=true;[\s\S]*?"LOGICAL_SESSION_OPENED_UNBOUND"/);
+  assert.match(edit,/mixerSessionRecoveryPending_=true;\s*mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND"/);
+  assert.match(open,/if\(openError.isEmpty\(\)\)[\s\S]*?"LOGICAL_SESSION_OPENED_UNBOUND"/);
+  const control=read('src/NativeLogicalMixerControl.h');
+  assert.match(control,/workspace_=std::move\(\*candidate\);[\s\S]*?checkpointSaved_\(workspace_.document\(\).id\)/);
   assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
 });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // M3-B CONTROL-thread projection regression. No mock PCM is installed.
 #include "../integration/ApprovedNativeV8Projection.h"
+#include "../src/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/FirstSoundSignalEvidence.h"
@@ -89,6 +90,15 @@ static void nativeInsertCatalogInstanceProjectionRegression() {
         ->setProperty("fxRackBypassed",true);
     auto snapshot=canonicalSnapshot();
     assert(projectApprovedNativeV8(snapshot,source,true));
+    auto legacy=canonicalSnapshot();
+    const auto beforeLegacy=juce::JSON::toString(legacy,true);
+    assert(!projectApprovedNativeV8(legacy,source)); // shape alone grants no legacy admission
+    assert(juce::JSON::toString(legacy,true)==beforeLegacy);
+    juce::Array<juce::var> installedOps;
+    installedOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    source.getDynamicObject()->setProperty("supportedOps",juce::var(installedOps));
+    assert(projectApprovedNativeV8(legacy,source));
+    assert(juce::JSON::toString(legacy,true)==juce::JSON::toString(snapshot,true));
     const auto live=snapshot.getProperty("graph",{})
         .getProperty("channels",{})[0].getProperty("inserts",{})[0];
     assert(live.getProperty("id","").toString()=="vst3-instance-unique-7");

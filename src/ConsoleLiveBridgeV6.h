@@ -210,7 +210,7 @@ public:
                                "NATIVE_APPLY_WIRE_TRANSACTION"))) &&
                            decodeDecimal(rev,graphId) && graphId &&
                            decodeDecimal(roster,rosterId) && rosterId)
-                            (void)projectApprovedNativeV8(actual,bus);
+                            (void)projectApprovedNativeV8(actual,bus,native);
                         // Full product-LIVE remains gated on VST3/Show/monitor
                         // parity and measured hardware FAT (#15).
                     }

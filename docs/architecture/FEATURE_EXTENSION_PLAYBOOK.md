@@ -30,7 +30,7 @@ Status: WORKING PLAYBOOK, v1 2026-11-11. Root [AGENTS.md](../../AGENTS.md) and [
 
 ## Recipe A — new built-in FX
 
-Define catalog identity and stable insert/slot semantics once. Implement DSP as its own processor with deterministic prepare, bounded process, state serialization and bypass/latency reporting. Hook into the existing Factory/FX host registration; preserve the same editor/ACK readback and rack bypass mechanics as EQ/Compressor/Harmonice/Vocal Throw. Channel/BUS routing sees only generic FX lease, not the plugin brand. Verify zero/known latency/PDC, offline state, inserted audio, bypass, reorder/move and device restart. Keep plugin-specific UI ONLY in its editor component, not device setup.
+Define catalog identity and stable insert/slot semantics once. Implement DSP as its own processor with deterministic prepare, bounded process, state serialization and bypass/latency reporting. Register compiled processors in `src/NativeBuiltInFx.h` for the generic live insert, offline prepare, restore and native picker. Preserve the same editor/ACK readback and rack bypass mechanics as EQ/Compressor/Harmonice/Vocal Throw. Channel/BUS routing sees only generic FX lease, not the plugin brand. Verify zero/known latency/PDC, offline state, inserted audio, bypass, reorder/move and device restart. Keep plugin-specific UI ONLY in its editor component, not device setup.
 
 **Design signal:** needing to modify a large per-plugin switch in Main, engine callback and browser bridge for every new audio processor indicates incomplete M4 host-seam consolidation. Solve shared host responsibility once and remove old branch at the same time. Do not add a new wrapper if only one plugin needs a unique capability.
 

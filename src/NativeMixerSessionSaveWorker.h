@@ -74,16 +74,28 @@ private:
         }
         auto alive=alive_;
         const auto serial=serial_;
-        juce::MessageManager::callAsync([this,alive,error,serial]() mutable {
-            if(!alive->load(std::memory_order_acquire)||serial!=serial_)return;
-            busy_.store(false,std::memory_order_release);
-            auto callback=std::move(done_);
-            done_={};
-            auto readCallback=std::move(readDone_);
-            readDone_={};
-            if(readCallback)readCallback(std::move(error),std::move(doc_),std::move(states_));
-            else if(callback)callback(std::move(error));
+        juce::MessageManager::callAsync([this,alive,error,serial] {
+            if(alive->load(std::memory_order_acquire))completeOnControl(error,serial);
         });
+    }
+
+    void completeOnControl(juce::String error,unsigned serial) {
+        if(serial!=serial_)return;
+        // Open chains a file read into a durable HEAD commit on this worker.
+        // The message can arrive just before JUCE retires the thread handle.
+        if(isThreadRunning()) {
+            juce::Timer::callAfterDelay(1,[this,alive=alive_,error,serial] {
+                if(alive->load(std::memory_order_acquire))completeOnControl(error,serial);
+            });
+            return;
+        }
+        busy_.store(false,std::memory_order_release);
+        auto callback=std::move(done_);
+        done_={};
+        auto readCallback=std::move(readDone_);
+        readDone_={};
+        if(readCallback)readCallback(std::move(error),std::move(doc_),std::move(states_));
+        else if(callback)callback(std::move(error));
     }
     juce::File studio_,exportFile_;
     MixerSessionDocument doc_;

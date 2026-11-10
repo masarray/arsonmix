@@ -313,8 +313,9 @@
             pending=null;lastError="ACK_READBACK_EFFECT_MISMATCH";
             subscribe();notify();return false;
           }
+          const confirmed=pending;
           pending=null;lastError="ACCEPTED_READBACK";
-          current=next;onAccepted(next);
+          current=next;onAccepted(next,confirmed);
           notify();return true;
         } else if (cmp(next.graph.revision,ack.graphRevision) > 0 ||
                    (cmp(next.graph.revision,ack.graphRevision) === 0 &&

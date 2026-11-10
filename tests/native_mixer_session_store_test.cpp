@@ -7,7 +7,7 @@
 #include "../src/NativeMixerSessionStore.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
-#include "../src/NativeLogicalMixerWorkspace.h"
+#include "../src/NativeLogicalMixerControl.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -826,7 +826,183 @@ static void verifyLegacyHarmoniceSessionName(){
     assert(saved.inserts.front().name=="ArSon Harmony");
     assert((*lease)->processor->getLatencySamples()==1536);
 }
+static void verifyLogicalControlTransactions() {
+    juce::ScopedJuceInitialiser_GUI juce;
+    const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("armix-logical-control-","",false);
+    assert(folder.createDirectory().wasOk());
+    NativeMixerSessionSaveWorker worker;
+    int commits=0;
+    NativeLogicalMixerControl control(folder,worker,[&](const juce::String& id){
+        assert(id.isNotEmpty());
+        ++commits;
+    });
+    assert(control.ensureLoaded().error.isEmpty());
+    auto command=[&](const char* requestId,const char* operation,
+                     const juce::String& id={},juce::var payload={},juce::var value={}) {
+        auto request=std::make_unique<juce::DynamicObject>();
+        const auto before=control.readback();
+        request->setProperty("requestId",requestId);
+        request->setProperty("operation",operation);
+        request->setProperty("channelId",id);
+        request->setProperty("baseRevision",before.getProperty("revision",{}));
+        request->setProperty("workspaceToken",before.getProperty("workspaceToken",{}));
+        request->setProperty("payload",std::move(payload));
+        request->setProperty("value",std::move(value));
+        return juce::var(request.release());
+    };
+    juce::Array<juce::var> acks;
+    const auto submit=[&](const juce::var& request,
+                           NativeLogicalMixerControl::Availability access={false,true,false}) {
+        control.handleIntent(request,access,
+            [](const juce::String& id){return armix::builtin_fx::findNativeBuiltInFx(id)!=nullptr;},
+            [](const auto& workspace,ChannelId channel,std::size_t slot,auto& insert,auto& processor){
+                insert.channel=channel;
+                insert.slot=slot;
+                insert.catalogId=juce::String(workspace.document().roster.find(channel)
+                    ->insertCatalogIds[slot]);
+                juce::AudioPluginFormatManager formats;
+                const auto error=NativeMixerSessionFxRestore::prepareProcessor(
+                    insert,nullptr,formats,48000.,256,processor);
+                if(error.isEmpty())insert.name=processor->getName();
+                return error;
+            },[&](juce::var ack){acks.add(std::move(ack));});
+    };
+    const auto waitForIO=[&]{
+        const auto deadline=juce::Time::getMillisecondCounter()+10000;
+        while(worker.busy() && juce::Time::getMillisecondCounter()<deadline)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        assert(!worker.busy());
+    };
+    const auto reject=[&](const char* reason){
+        const auto ack=acks.getLast();
+        assert(ack.getProperty("status",{}).toString()=="REJECTED");
+        assert(ack.getProperty("errorCode",{}).toString()==reason);
+        assert(ack.getProperty("revision",{})==control.readback().getProperty("revision",{}));
+    };
+    const auto accept=[&](const juce::var& request){
+        const auto before=control.readback().getProperty("revision",{});
+        const int count=acks.size();
+        submit(request);
+        assert(acks.size()==count && worker.busy());
+        assert(control.readback().getProperty("revision",{})==before);
+        waitForIO();
+        assert(acks.size()==count+1);
+        const auto ack=acks.getLast();
+        assert(ack.getProperty("requestId",{})==request.getProperty("requestId",{}));
+        assert(ack.getProperty("status",{}).toString()=="ACCEPTED");
+        const auto after=control.readback();
+        assert(ack.getProperty("revision",{})==after.getProperty("revision",{}));
+        assert(after.getProperty("revision",{})!=before);
+        assert(after.getProperty("authority",{}).toString()=="LOGICAL_ONLY");
+        assert(!static_cast<bool>(ack.getProperty("physicalOutputAdmitted",true)));
+        assert(!static_cast<bool>(after.getProperty("graph",{}).getProperty("capabilities",{})
+            .getProperty("callbackOwnsChannelIds",true)));
+        return ack.getProperty("createdId",{}).toString();
+    };
+    auto create=command("logical-create","CREATE_CHANNEL",{},
+        juce::JSON::parse(R"({"name":"Lead"})"));
+    submit(create,{false,false,false});
+    reject("PHYSICAL_PCM_AUTHORITY_ACTIVE");
+    auto stale=command("logical-stale","CREATE_GROUP");
+    const auto channel=accept(create);
+    submit(create);
+    reject("DUPLICATE_LOGICAL_REQUEST");
+    submit(stale);
+    reject("STALE_LOGICAL_REVISION");
+    const auto bus=accept(command("logical-bus","CREATE_GROUP",{},
+        juce::JSON::parse(R"({"name":"Vocals"})")));
+    auto wire=juce::JSON::parse(R"({"changes":[{"op":"ROUTE_ONLY"}]})");
+    auto* wireChange=wire.getProperty("changes",{})[0].getDynamicObject();
+    wireChange->setProperty("from",channel);
+    wireChange->setProperty("to",bus);
+    accept(command("logical-wire","WIRE_TRANSACTION",channel,wire));
+    accept(command("logical-rename","RENAME_CHANNEL",channel,
+        juce::JSON::parse(R"({"name":"Lead Vox"})")));
+    for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("catalogId",fx.id);
+        accept(command((juce::String("logical-fx-")+fx.id).toRawUTF8(),
+            "ADD_FX_REFERENCE",bus,juce::var(payload.release())));
+    }
+    accept(command("logical-bypass","SET_FX_SLOT_BYPASS",bus,
+        juce::JSON::parse(R"({"slot":1,"enabled":true})")));
+    accept(command("logical-rack","SET_FX_RACK_BYPASS",bus,{},true));
+    const auto file=folder.getChildFile("concert.smix");
+    assert(control.exportTo(file,[](juce::String error){assert(error.isEmpty());}));
+    waitForIO();
+    MixerSessionDocument saved;
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,saved,states).isEmpty());
+    assert(saved.logicalOnly && saved.request.physicalInputs==0);
+    const ChannelId trackId{static_cast<std::uint64_t>(channel.getLargeIntValue())};
+    const ChannelId busId{static_cast<std::uint64_t>(bus.getLargeIntValue())};
+    assert(saved.roster.find(trackId)->name=="Lead Vox");
+    assert(saved.roster.find(trackId)->sends.front().destination==busId);
+    assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
+    assert(saved.inserts[1].bypass && saved.rackBypassed.front()==busId);
+    juce::AudioPluginFormatManager formats;
+    for(const auto& insert:saved.inserts) {
+        const auto state=std::find_if(states.begin(),states.end(),[&](const auto& blob){
+            return blob.sha256==insert.sha256;
+        });
+        assert(state!=states.end());
+        std::unique_ptr<juce::AudioProcessor> restored;
+        assert(NativeMixerSessionFxRestore::prepareProcessor(
+            insert,&*state,formats,48000.,256,restored).isEmpty());
+        assert(restored && restored->getName()==insert.name);
+    }
+
+    // A second request while an actual commit is queued sees the old model
+    // and rejects. Force the next disk promotion to fail at PREVIOUS, while
+    // HEAD still points to the last accepted and independently readable state.
+    auto remove=command("logical-remove","REMOVE_FX_REFERENCE",bus,
+        juce::JSON::parse(R"({"slot":0})"));
+    submit(remove);
+    submit(command("logical-busy","DELETE_CHANNEL",channel));
+    reject("LOGICAL_EDITOR_BUSY");
+    waitForIO();
+    assert(acks.getLast().getProperty("status",{}).toString()=="ACCEPTED");
+    const auto oldReadback=juce::JSON::toString(control.readback(),true);
+    const int oldCommits=commits;
+    const auto previous=folder.getChildFile("MixerSession").getChildFile("PREVIOUS");
+    assert(previous.deleteFile());
+    assert(previous.createDirectory().wasOk());
+    assert(previous.getChildFile("sentinel").replaceWithText("force failed pointer write"));
+    submit(command("logical-failed","DELETE_CHANNEL",channel));
+    waitForIO();
+    const auto failed=acks.getLast();
+    assert(failed.getProperty("requestId",{}).toString()=="logical-failed");
+    assert(failed.getProperty("status",{}).toString()=="REJECTED");
+    assert(juce::JSON::toString(control.readback(),true)==oldReadback);
+    assert(commits==oldCommits);
+    MixerSessionDocument head;
+    std::vector<BinaryState> headStates;
+    assert(NativeMixerSessionStore(folder).load(head,headStates).isEmpty());
+    assert(head.acceptedRevision==control.workspace().revision());
+    assert(head.roster.find(trackId) && head.inserts.size()==saved.inserts.size()-1);
+    assert(previous.deleteRecursively());
+
+    accept(command("logical-delete","DELETE_CHANNEL",channel));
+    accept(command("logical-remove-bus","REMOVE_BUS",bus));
+    bool opened=false;
+    assert(worker.load(file,[&](juce::String error,MixerSessionDocument document,
+                                std::vector<BinaryState> binary){
+        assert(error.isEmpty());
+        assert(control.open(std::move(document),std::move(binary),[&](juce::String openError){
+            assert(openError.isEmpty());
+            opened=true;
+        }));
+    }));
+    waitForIO();
+    assert(opened);
+    assert(control.workspace().document().roster.find(trackId));
+    assert(control.workspace().document().roster.find(busId));
+    assert(folder.deleteRecursively());
+}
+
 int main(){
+    verifyLogicalControlTransactions();
     verifyLegacyHarmoniceSessionName();
     verifyOfflineLogicalSessionAndFile();
     verifyProductionPlayerFirstSoundWithSourceOnly();
