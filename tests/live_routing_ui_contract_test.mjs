@@ -67,7 +67,7 @@ test("MUTE gate precedes processing and suppresses previous audible crossfade",(
   assert.match(gate,/fadeRemaining_=rampFrames/);
   assert.match(gate,/fadeFromL_=fadeFromR_=0\.f/);
   assert.match(gate,/lastOutputL_=lastOutputR_=0\.f/);
-  assert.match(gate,/if\(!meterOnly\)\{silence\(\);return true;\}/);
+  assert.match(gate,/if\(!meterOnly\)\s*\{\s*renderAudit_\.muted\(\);\s*silence\(\);return true;\s*\}/);
   assert.match(gate,/meterOnly\?mutedMain_\[0\]\.data\(\):mainL\+offset/);
   assert.match(lab,/if\(outputs\[c\] && \(meterOnly \|\|/);
   assert.ok(!lab.includes("masterMuted?0.f:std::clamp(masterGain"), "don't mute before fade and then reintroduce old samples");
