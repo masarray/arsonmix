@@ -67,10 +67,51 @@ int main(){
     // ages out safely without touching physical routing/output authority.
     for(int i=0;i<950;++i) {
         float l[128]{},r[128]{};
-        bank(vocal,l,r,128);
+        for(int j=0;j<128;++j) {
+            const double t=static_cast<double>(i*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.20*std::sin(
+                6.28318530718*220.*t));
+        }
+        bank(vocal,l,r,128); // singer remains live during guide loss
+        for(int j=0;j<128;++j)
+            assert(std::isfinite(l[j])&&std::isfinite(r[j]));
     }
+    assert(live->observedNote()>=0); // no lead/pitch-analysis interruption
     assert(live->observedMusicKey()==-1);
     assert(live->effectiveKeyCode()==14); // music absent: manual D minor
+    // Regression: resuming a missing music ChannelId must NOT reuse its
+    // previously acquired key after two seconds of missing PCM. The old
+    // detector retained a valid C-major estimate and immediately published
+    // it on the first resumed source block, before any new tonal evidence.
+    {
+        float resumedL[128]{},resumedR[128]{};
+        for(int j=0;j<128;++j){
+            const double t=static_cast<double>(j)/48000.;
+            resumedL[j]=resumedR[j]=static_cast<float>(.09*(
+                std::sin(6.28318530718*220.*t)+
+                std::sin(6.28318530718*261.625565*t)+
+                std::sin(6.28318530718*329.627557*t)));
+        }
+        const float originalL=resumedL[17],originalR=resumedR[17];
+        bank(music,resumedL,resumedR,128);
+        assert(resumedL[17]==originalL&&resumedR[17]==originalR);
+        assert(live->observedMusicKey()==-1);
+        assert(live->effectiveKeyCode()==14); // no stale C major flash
+    }
+    // Fresh A-minor guide must eventually retune after reacquisition.
+    for(int block=0;block<1450;++block){
+        float l[128]{},r[128]{};
+        for(int j=0;j<128;++j){
+            const double t=static_cast<double>(block*128+j)/48000.;
+            l[j]=r[j]=static_cast<float>(.09*(
+                std::sin(6.28318530718*220.*t)+
+                std::sin(6.28318530718*261.625565*t)+
+                std::sin(6.28318530718*329.627557*t)));
+        }
+        bank(music,l,r,128);
+    }
+    assert(live->observedMusicKey()==9&&live->observedMusicScale()==1);
+    assert(live->effectiveKeyCode()==21);
     juce::MemoryBlock saved;
     live->getStateInformation(saved);
     // Realtime processor owns fixed DSP and reflection rings; production
