@@ -17,6 +17,7 @@
 #include "../engine/device/JuceActivePortSnapshot.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
+#include "../engine/core/ProductionRenderAudit.h"
 #include "../engine/device/LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
@@ -2777,6 +2778,7 @@ public:
         // do not spin or take a lock on the host-owned realtime callback.
         armix::rt::RealtimeRenderPermit exclusive{rendering_};
         if(!exclusive) {
+            renderAudit_.deniedOverlap();
             if(outputs && frames>0 && frames<=Block::hardFrameLimit)
                 for(int c=0;c<outputCount;++c)
                     if(outputs[c])juce::FloatVectorOperations::clear(outputs[c],frames);
@@ -2823,6 +2825,7 @@ public:
         // channel, AUX and MASTER vendor processing until explicit native ACK.
         // One atomic read; outputs are cleared by the fail-silent gate above.
         if(!userPatched_.load(std::memory_order_acquire)) {
+            renderAudit_.unpatched();
             fadeRemaining_=0;
             lastOutputL_=lastOutputR_=0.f;
             silence();return true;
@@ -2889,7 +2892,10 @@ public:
             fadeRemaining_=rampFrames;
             fadeFromL_=fadeFromR_=0.f;
             lastOutputL_=lastOutputR_=0.f;
-            if(!meterOnly){silence();return true;}
+            if(!meterOnly){
+                renderAudit_.muted();
+                silence();return true;
+            }
         }
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
@@ -2902,6 +2908,12 @@ public:
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
         }
+        // One attempt per outer JUCE callback; a 64/256/1024-frame chunk
+        // loop still owns exactly ONE native or compatibility DSP pass.
+        const auto auditPath=channelIdRender?
+            armix::rt::ProductionRenderAudit::Path::channelId:
+            armix::rt::ProductionRenderAudit::Path::compatibilityM4;
+        renderAudit_.started(auditPath);
         float peakL=0.f,peakR=0.f,monitorPeakL=0.f,monitorPeakR=0.f;
         std::array<float,count> perChannelPeaks{};
         std::array<float,count> perChannelPeaksL{},perChannelPeaksR{};
@@ -2967,6 +2979,7 @@ public:
                 // A native publication can briefly contend with a reader.
                 // The epoch/pin checks above own sticky topology faults.
                 if(!channelIdRender)topologyFault_.store(true,std::memory_order_release);
+                renderAudit_.failed(auditPath);
                 silence();return true;
             }
             for(int ch=0;ch<count;++ch) {
@@ -3035,6 +3048,7 @@ public:
             }
             nativeMeterEpoch_.store(generation,std::memory_order_release);
         } else nativeMeterEpoch_.store(0,std::memory_order_release);
+        renderAudit_.completed(auditPath);
         return true;
     }
 
@@ -3046,6 +3060,20 @@ public:
         out->setProperty("hasAcceptedRoute",hasExplicitRoute());
         const bool nativePcm=channelIdPhysicalPcmActive();
         out->setProperty("nativeChannelIdPcmActive",nativePcm);
+        // Exact attempted PCM producers, not an optimistic GUI/admission
+        // indicator. Allocations are CONTROL-only in status(), never render().
+        const auto evidence=renderAudit_.snapshot();
+        auto audit=std::make_unique<juce::DynamicObject>();
+        audit->setProperty("nativeStarted",static_cast<juce::int64>(evidence.nativeStarted));
+        audit->setProperty("nativeCompleted",static_cast<juce::int64>(evidence.nativeCompleted));
+        audit->setProperty("nativeFailed",static_cast<juce::int64>(evidence.nativeFailed));
+        audit->setProperty("m4Started",static_cast<juce::int64>(evidence.m4Started));
+        audit->setProperty("m4Completed",static_cast<juce::int64>(evidence.m4Completed));
+        audit->setProperty("m4Failed",static_cast<juce::int64>(evidence.m4Failed));
+        audit->setProperty("overlapDenied",static_cast<juce::int64>(evidence.overlapDenied));
+        audit->setProperty("unpatchedSilent",static_cast<juce::int64>(evidence.unpatchedSilent));
+        audit->setProperty("mutedNoRender",static_cast<juce::int64>(evidence.mutedNoRender));
+        out->setProperty("renderAudit",juce::var(audit.release()));
         // ShowV2 and the legacy M4 route cannot serialize extra ChannelId
         // GROUP/FX RETURN buses. This stays visible even after DSP faults
         // silent so SAVE/RECALL cannot silently discard audible topology.
@@ -3209,6 +3237,7 @@ private:
     static constexpr int mutedMeterFrames=512;
     std::array<std::array<float,mutedMeterFrames>,2> mutedMain_{},mutedMonitor_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT; // one AUDIO producer
+    armix::rt::ProductionRenderAudit renderAudit_; // per-process, RT-only writers
     Publisher publisher_;
     armix::mixer::DynamicNativeSessionPublisher nativePublisher_;
     armix::mixer::UnifiedLegacyAccepted nativeAccepted_;
