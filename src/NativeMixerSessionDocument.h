@@ -4,6 +4,7 @@
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "NativeShowStore.h"
+#include "NativeHotkeyRegistry.h"
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -58,6 +59,8 @@ struct MixerSessionDocument final {
     // Logical-only per-slot bypass intentions; no fabricated FX processor
     // state or fake vendor SHA. Physical sessions keep existing inserts.
     std::vector<PlannedSlotBypass> plannedSlotBypassed;
+    // Session-specific global shortcuts; app-wide keys live in native settings.
+    std::vector<armix::hotkey::Mapping> hotkeys;
     float masterGain=1.f;
     bool masterMute=false,masterMono=false;
     // Internal checkpoint preference, distinct from the hardware monitor pair.
@@ -417,6 +420,11 @@ public:
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
         if(d.resumeMain.has_value())set(root,"resumeMain",*d.resumeMain);
         set(root,"legacyIds",ids(d.legacyIds));
+        if(!d.hotkeys.empty()) {
+            juce::Array<juce::var> hotkeys;
+            for(const auto& mapping:d.hotkeys)hotkeys.add(armix::hotkey::Registry::encode(mapping));
+            set(root,"hotkeys",juce::var(hotkeys));
+        }
         auto bind=object();
         set(bind,"backend",d.binding.backend);
         set(bind,"capture",d.binding.capture);
@@ -633,6 +641,27 @@ public:
             entries.push_back(std::move(row));
         }
         if(!doc.roster.restoreExact(doc.acceptedRevision,entries))return false;
+        // Optional additive H1 field. Old .smix sessions decode unchanged.
+        // Exact ChannelId ownership prevents rename/reorder/strip replacement
+        // from silently retargeting an operator's global shortcut.
+        const auto hotkeys=get(root,"hotkeys");
+        if(!hotkeys.isVoid()) {
+            const auto* mappings=hotkeys.getArray();
+            if(!mappings || mappings->size()>128)return false;
+            std::set<juce::String> ids;
+            std::set<std::pair<int,int>> chords;
+            for(const auto& entry:*mappings) {
+                armix::hotkey::Mapping mapping;
+                if(!armix::hotkey::Registry::decode(entry,mapping) ||
+                   mapping.scope!="SESSION" || mapping.sessionId!=doc.id ||
+                   !ids.insert(mapping.id).second ||
+                   !chords.emplace(mapping.vk,mapping.modifiers).second)return false;
+                std::uint64_t channelId=0;
+                if(!parseDecimal(juce::var(mapping.channelId),channelId) ||
+                   !doc.roster.find(ChannelId{channelId}))return false;
+                doc.hotkeys.push_back(std::move(mapping));
+            }
+        }
         const auto seek=[&doc](ChannelId id,ChannelRole role){
             const auto* row=doc.roster.find(id);
             return row && row->role==role;
