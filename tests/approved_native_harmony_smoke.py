@@ -85,7 +85,7 @@ def main():
                     "LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
                 state["graph"]["channels"][0]["fxRackBypassed"]=False
                 state["graph"]["channels"][0]["inserts"].append({
-                    "id":INSTANCE,"catalogId":ID,"name":"Harmony","bypassed":False})
+                    "id":INSTANCE,"catalogId":ID,"name":"Harmonice","bypassed":False})
                 state["mixerSession"]["channels"]=copy.deepcopy(
                     state["graph"]["channels"])
                 emit(page,"arMixConsoleSnapshot",state)
@@ -97,8 +97,8 @@ def main():
                 row.locator('[data-action="openPlugin"]').click()
                 editor=page.locator("#mxNativeHarmony")
                 editor.wait_for(state="visible")
-                assert page.locator(".mx-harm-brand").inner_text()=="Harmony Effect"
-                assert editor.get_attribute("aria-label")=="Harmony Effect"
+                assert page.locator(".mx-harm-brand").inner_text()=="Harmonice"
+                assert editor.get_attribute("aria-label")=="Harmonice"
                 shell=editor.bounding_box()
                 assert shell and abs(shell["width"]-min(800,width-14))<=1,(width,shell)
                 # Native LCD must not fabricate manual/detected effective key
