@@ -289,7 +289,7 @@ def main():
             assert page.locator('[data-native-monitor]').is_disabled()
             assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
-            assert 'OUTPUT WAITING FOR DEVICE' in page.locator('#transport').inner_text()
+            assert 'Output disconnected' in page.locator('#transport').inner_text()
             page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
             emit(page,'arMixConsoleSnapshot',retained)
             assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()

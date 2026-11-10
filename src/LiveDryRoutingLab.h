@@ -2654,6 +2654,15 @@ public:
                     return true;
         return false;
     }
+    // A pristine SOURCE NONE mixer must not disappear when an ASIO callback
+    // stops/restarts. It contains no authored FX, WIRE, source or fader edit;
+    // rebuilding it is safe only on CONTROL after verifying the same device.
+    bool hasPristineSilentMixerAwaitingDevice() const noexcept {
+        return active() && sourceTemplate_.isObject() &&
+            !acceptedRoute_.isObject() && !nativeStructureLive_ &&
+            !nativeControlDirty_ && !channelIdPhysicalPcmActive() &&
+            !hasAuthoredMixerContent();
+    }
     // CONTROL only. The verified profile proves identical port ordinals.
     // Rebuild DSP scratch/PDC while retaining the accepted document and
     // compatible processors. Never re-use a processor at a different rate.

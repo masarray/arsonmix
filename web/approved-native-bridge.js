@@ -266,6 +266,13 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // A product never advertises unfinished internal QA/FAT certification to
+    // operators. This is a display-only adapter, not an audio-state override.
+    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
+      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
+      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
+      return "Mixer ready";
+    }
     const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
     if(internalCode ||
        /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
@@ -301,14 +308,19 @@
     if (info && info.textContent !== text) info.textContent = text;
   };
   // The original preview's say() may still populate this footer.
-  // Observe two text nodes only, no polling, audio callback or DOM-wide scans.
+  // Observe the three footer nodes, no polling, audio callback or DOM-wide scans.
   if(connected){
+    const transport=document.getElementById?.("transport");
     const info=document.getElementById?.("info");
     const warning=document.querySelector?.(".status-bar .warning");
+    if(transport)transport.textContent="Opening mixer…";
     if(info)info.textContent="Opening mixer…";
     if(warning)warning.textContent="CONNECTING AUDIO…";
     if(typeof MutationObserver==="function"){
-      const nodes=[info,warning].filter(Boolean);
+      // The preview, legacy host and new bridge can all write into the
+      // transport/last-action/warning footer. Guard *all three* output nodes.
+      // Native only; public browser preview retains its instructional copy.
+      const nodes=[transport,info,warning].filter(Boolean);
       const sanitize=()=>{
         for(const node of nodes){
           const clean=operatorMessage(node.textContent);
@@ -1689,11 +1701,12 @@
       scope.master.output=mainOutput;
       if(!next?.admitted && !next?.retained)scope.render?.();
     }
-    const transport=next?.retained?"OUTPUT WAITING FOR DEVICE":
-      !deviceOpen?"Audio device not ready":
-      (d.outputArmed?"MONITOR ON":"MONITOR OFF")+" · OUT "+playback+
-      (virtualOut?" · VIRTUAL / NO SPEAKERS":"");
-    if(label && label.textContent!==transport)label.textContent=transport;
+    const transport=next?.retained?"Output disconnected · Open Audio I/O":
+      !deviceOpen?"Audio device unavailable · Open Audio I/O":
+      (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
+      (virtualOut?" · Virtual output · No speakers":"");
+    const operatorTransport=operatorMessage(transport);
+    if(label && label.textContent!==operatorTransport)label.textContent=operatorTransport;
     const warning=document.querySelector?.(".status-bar .warning");
     // A silent first-sound session is not an operator failure and does
     // not require Patch CH1 / Arm / Start controls. The real IN dropdown
@@ -3548,12 +3561,17 @@
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
-    backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",visualReady:true,audioReady:false,
-      viewportWidth:Math.round(window.innerWidth),
-      viewportHeight:Math.round(window.innerHeight),
-      devicePixelRatio:window.devicePixelRatio
-    });
+    // Only the installed native Pages scope can authenticate host GUI readiness.
+    // This handshake says nothing about whether physical PCM is admitted.
+    if(scope?.installGraph && scope?.render){
+      backend.emitEvent("arMixGuiReady",{
+        gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
+        visualReady:true,audioReady:false,
+        viewportWidth:Math.round(window.innerWidth),
+        viewportHeight:Math.round(window.innerHeight),
+        devicePixelRatio:window.devicePixelRatio
+      });
+    } else status("Native mixer renderer unavailable · repair application");
     controller.subscribe();
   };
   if(document.readyState==="loading")

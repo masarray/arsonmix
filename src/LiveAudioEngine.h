@@ -473,14 +473,13 @@ public:
         return registered.registration.ok() &&
             asioPinnedRegistration_.sameDriverClass(registered.registration.identity);
     }
-    // A vendor ASIO4ALL restart can leave JUCE with NO current device object.
+    // An ASIO driver restart can leave JUCE with NO current device object.
     // Only the previously selected, explicitly approved driver name and its
     // FULL registered CLSID may be reopened; never choose a default endpoint.
     // CONTROL only: registry lookup and JUCE setup are forbidden in callback.
     bool selectedRetainedAsioDriverForReopen() {
-        using Policy=armix::session::MixerDeviceBindingPolicy;
         if(deviceManager_.getCurrentAudioDevice() || !acceptedMixerBinding_ ||
-           !Policy::isAsio4All(*acceptedMixerBinding_) ||
+           acceptedMixerBinding_->backend!="ASIO" ||
            !asioPinnedRegistration_.valid() || !attached_ || independent_.active() ||
            deviceManager_.getCurrentAudioDeviceType()!="ASIO")return false;
         juce::AudioDeviceManager::AudioDeviceSetup setup;
@@ -495,9 +494,8 @@ public:
             asioPinnedRegistration_.sameDriverClass(registered.registration.identity);
     }
     bool authorizeRetainedAsioRestart() {
-        using Policy=armix::session::MixerDeviceBindingPolicy;
         if(!hasRetainedNativeSession() || !acceptedMixerBinding_ ||
-           !Policy::isAsio4All(*acceptedMixerBinding_) || !asioPinnedRegistration_.valid() ||
+           acceptedMixerBinding_->backend!="ASIO" || !asioPinnedRegistration_.valid() ||
            !allOutputsDisarmed() || independent_.active() || !attached_ || handoff_.busy() ||
            fxMovePhase_.load(std::memory_order_acquire)!=0 ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
@@ -542,9 +540,10 @@ public:
     }
     bool reattachRetainedAsioMixer() {
         using Policy=armix::session::MixerDeviceBindingPolicy;
-        if(!acceptedMixerBinding_ || !Policy::isAsio4All(*acceptedMixerBinding_) ||
+        if(!acceptedMixerBinding_ || acceptedMixerBinding_->backend!="ASIO" ||
            !hasRetainedNativeSession() || !allOutputsDisarmed() ||
-           !directFence_.permitted() || handoff_.busy())return false;
+           !directFence_.permitted() || handoff_.busy() ||
+           !sameRetainedAsioDriver())return false;
         armix::session::MixerSessionDocument document;
         if(!dryRoutingLab_.describeRetainedAsioSession(document))return false;
         document.binding=*acceptedMixerBinding_;
@@ -557,6 +556,31 @@ public:
                                                     inspected.live.frames))return false;
         acceptedMixerBinding_=std::move(inspected.live);
         return true;
+    }
+    // A SOURCE NONE starter is not an authored Show: it has no FX/WIRE to
+    // rebind, yet still must survive an ASIO STOP/START as an actual PCM
+    // mixer. Keep the old playback identity and pin names; no auto-redirect.
+    bool hasPristineSilentMixerAwaitingAsio() const noexcept {
+        return dryRoutingLab_.hasPristineSilentMixerAwaitingDevice() &&
+            acceptedMixerBinding_ && acceptedMixerBinding_->backend=="ASIO" &&
+            asioPinnedRegistration_.valid() && attached_ && !independent_.active();
+    }
+    bool rebuildPristineSilentAsioMixer() {
+        if(!hasPristineSilentMixerAwaitingAsio() || !allOutputsDisarmed() ||
+           handoff_.busy() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute()!=armix::diagnostics::Route::normal)return false;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen() || !sameRetainedAsioDriver())return false;
+        const auto current=readMixerBinding(*device);
+        if(current.backend!="ASIO" ||
+           current.playback!=acceptedMixerBinding_->playback ||
+           current.outputMask!=acceptedMixerBinding_->outputMask ||
+           current.outputNames!=acceptedMixerBinding_->outputNames ||
+           current.rate!=acceptedMixerBinding_->rate)return false;
+        if(!approveDirectRoute(&asioPinnedRegistration_))return false;
+        return startUnpatchedProductionSession().isEmpty() &&
+            dryRoutingLab_.channelIdPhysicalPcmActive();
     }
     bool takeAsioResetMonitorIntent() noexcept {
         return resumeMainAfterAsioReset_.exchange(false,std::memory_order_acq_rel);

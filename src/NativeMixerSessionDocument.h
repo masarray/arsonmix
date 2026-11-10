@@ -120,8 +120,11 @@ struct MixerDeviceBindingPolicy final {
            (mode==Mode::verifiedDeviceApply &&
             (saved.backend!=live.backend || saved.playback!=live.playback)))
             return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:unavailable;
+        // The host checks the pinned registered ASIO driver identity first.
+        // Physical MAIN pin mapping still requires exact verified readback.
         if(mode==Mode::verifiedAsioRestart &&
-           (!isAsio4All(live) || saved.backend!=live.backend || saved.playback!=live.playback))
+           (saved.backend!="ASIO" || live.backend!="ASIO" ||
+            saved.capture!=live.capture || saved.playback!=live.playback))
             return unavailable;
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
@@ -247,6 +250,8 @@ struct MixerDeviceBindingPolicy final {
                         source.inputR=remapPin(oldPins,newPins,saved.inputNames,live.inputNames,source.inputR,false);
                     if(source.inputL>=0 && (!source.stereo || source.inputR>=0))mapped.push_back(source);
                 }
+                if(mode==Mode::verifiedAsioRestart && mapped.size()!=sources.size())
+                    return "NEEDS_REMAP: saved capture pins unavailable on the active ASIO driver";
                 sources=std::move(mapped);
             }
         }

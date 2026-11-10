@@ -232,6 +232,15 @@ public:
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var ready)
               {
+                  // A Pages-only demo cannot authenticate native session readiness.
+                  if (ready.getProperty ("gui", "").toString() !=
+                          "APPROVED_PAGES_PREVIEW_BUTTONS" ||
+                      !static_cast<bool> (ready.getProperty ("nativeBridgeAttached", false)))
+                  {
+                      diagnostics_.record ("GUI_NATIVE_BRIDGE_MISSING",
+                          "Ignoring Pages-only readiness notification");
+                      return;
+                  }
                   browser_.loaded = true;
                   guiReadyTick_ = juce::Time::getMillisecondCounter();
                   // WebView2 may finish its first navigation while this
@@ -3049,13 +3058,35 @@ private:
                 // Only filesystem enumeration, bounded in scope and output,
                 // is performed on the worker. Never block the JUCE message
                 // loop or ASIO callback while importing a large USB folder.
-                std::thread([safe,folder] {
+                // Copy immutable IDs/paths on GUI thread; expensive USB
+                // existence checks and relink planning belong on the worker.
+                const auto initialLibrary=safe->playerLibrary_;
+                const int protectedCurrent=safe->playerCurrent_;
+                std::thread([safe,folder,initialLibrary,protectedCurrent] {
                     auto scan=armix::player::PlayerLibraryPolicy::scanFolder(folder);
+                    auto relinks=armix::player::PlayerLibraryPolicy::planMissingRelinks(
+                        initialLibrary,scan,protectedCurrent);
                     juce::MessageManager::callAsync(
-                        [safe,scan=std::move(scan)]() mutable {
+                        [safe,scan=std::move(scan),
+                         relinks=std::move(relinks),initialLibrary]() mutable {
                             if(!safe)return;
                             safe->playerFolderBusy_=false;
-                            int added=0;
+                            int added=0,relinked=0;
+                            // Update only the exact rows the worker saw.
+                            // Edits made during the scan must remain intact.
+                            for(const auto& change:relinks) {
+                                if(change.index>=initialLibrary.size() ||
+                                   change.index>=safe->playerLibrary_.size() ||
+                                   static_cast<int>(change.index)==safe->playerCurrent_ ||
+                                   safe->playerLibrary_[change.index]!=
+                                       initialLibrary[change.index] ||
+                                   std::find(safe->playerLibrary_.begin(),
+                                       safe->playerLibrary_.end(),
+                                       change.replacement)!=safe->playerLibrary_.end())
+                                    continue;
+                                safe->playerLibrary_[change.index]=change.replacement;
+                                ++relinked; // keep stable IDs + KEY/TEMPO
+                            }
                             int first=-1;
                             for(const auto& file:scan.files) {
                                 const auto found=std::find(
@@ -3073,9 +3104,9 @@ private:
                             if(safe->playerSelected_<0 && first>=0)
                                 safe->playerSelected_=first;
                             safe->playerError_=scan.truncated?
-                                "Folder scan reached its safe size limit; only some songs were added":
-                                added==0?
-                                    "No new supported songs found in this folder":
+                                "Folder scan reached its safe size limit; only some songs were found":
+                                added==0 && relinked==0?
+                                    "No new supported songs or safe missing-file matches found":
                                     juce::String{};
                             safe->persistPlayerLibrary();
                             safe->emitPlayerState(true);
@@ -5606,7 +5637,10 @@ private:
 
     void serviceAsioMixerRestart() {
         const auto epoch=engine_.dryRoutingLabEpoch();
-        if(epoch==asioRecoveryEpoch_ || !engine_.hasRetainedNativeSession() ||
+        const bool retained=engine_.hasRetainedNativeSession();
+        const bool silent=!mixerSessionRecoveryPending_ &&
+            engine_.hasPristineSilentMixerAwaitingAsio();
+        if(epoch==asioRecoveryEpoch_ || (!retained && !silent) ||
            audioDeviceApplyActive_ || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
@@ -5614,7 +5648,6 @@ private:
         auto* device=engine_.devices().getCurrentAudioDevice();
         if(device) {
             if(device->getTypeName()!="ASIO" ||
-               !device->getName().startsWithIgnoreCase("ASIO4ALL") ||
                !engine_.sameRetainedAsioDriver())return;
         } else if(!engine_.selectedRetainedAsioDriverForReopen()) {
             // The device pointer disappeared: never open an unapproved or
@@ -5635,32 +5668,55 @@ private:
             }
             juce::AudioDeviceManager::AudioDeviceSetup setup;
             engine_.devices().getAudioDeviceSetup(setup);
-            // A deliberate 0-IN session remains 0-IN. Never resurrect a mic.
-            setup.useDefaultInputChannels=!setup.inputChannels.isZero();
-            setup.useDefaultOutputChannels=true;
+            // ASIO4ALL can rediscover WDM pins. Other drivers must reopen
+            // their selected masks; a restart is not a new device selection.
+            const bool refreshWdm=setup.outputDeviceName.startsWithIgnoreCase("ASIO4ALL");
+            setup.useDefaultInputChannels=refreshWdm && !setup.inputChannels.isZero();
+            setup.useDefaultOutputChannels=refreshWdm;
             asioRecoveryGate_.driverTransaction(now);
-            if(!device)diagnostics_.record("ASIO4ALL_DEVICE_MISSING",
+            if(!device)diagnostics_.record("ASIO_DEVICE_MISSING",
                 "Reopening previously approved registered ASIO driver; no fallback");
             const auto error=openSelectedAudioDevice("ASIO",setup,true);
             asioRecoveryGate_.carryInternalEpoch(engine_.dryRoutingLabEpoch());
             device=engine_.devices().getCurrentAudioDevice();
             if(error.isNotEmpty() || !device || !device->isOpen()) {
-                diagnostics_.record("ASIO4ALL_REOPEN_FAILED",error);
+                diagnostics_.record("ASIO_REOPEN_FAILED",error);
                 emitApprovedNativeSnapshot();
                 return;
             }
+        }
+        if(silent) {
+            // Recreate the original unedited SOURCE NONE PCM publisher only
+            // after proving the SAME ASIO driver and playback pin identity.
+            // No saved mixer, FX or WIRE may be replaced by this path.
+            if(!engine_.rebuildPristineSilentAsioMixer()) {
+                asioRecoveryGate_.bindFailed(now);
+                diagnostics_.record("ASIO_SILENT_MIXER_REBUILD_REJECTED",
+                    "Registered ASIO driver/pins or native graph not ready");
+                emitApprovedNativeSnapshot();
+                return;
+            }
+            asioRecoveryEpoch_=engine_.dryRoutingLabEpoch();
+            asioRecoveryGate_.carryInternalEpoch(asioRecoveryEpoch_);
+            asioRecoveryGate_.recovered();
+            mixerSessionStatus_="PRISTINE_SOURCE_NONE_REATTACHED";
+            mixerSessionError_.clear();
+            diagnostics_.record("ASIO_SILENT_MIXER_REATTACHED",
+                "Same physical ASIO output; no mic source and no auto-arm");
+            emitApprovedNativeSnapshot();
+            return;
         }
         if(!engine_.authorizeRetainedAsioRestart()) {
             // Admission can lag driver restart without any driver call.
             // It MUST NOT exhaust the bounded reopen/correction allowance.
             asioRecoveryGate_.waitForReadback(now);
-            diagnostics_.record("ASIO4ALL_BIND_NOT_READY","Waiting for verified callback/readback");
+            diagnostics_.record("ASIO_BIND_NOT_READY","Waiting for verified callback/readback");
             return;
         }
         if(const auto corrected=engine_.asioRestartPinCorrection()) {
             if(!asioRecoveryGate_.mayChangeDriver()) {
                 asioRecoveryGate_.waitForReadback(now);
-                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_DEFERRED",
+                diagnostics_.record("ASIO_PIN_CORRECTION_DEFERRED",
                     "Driver transaction budget exhausted for this physical epoch");
                 return;
             }
@@ -5676,7 +5732,7 @@ private:
                reopened->getActiveInputChannels()!=corrected->inputChannels ||
                reopened->getActiveOutputChannels()!=corrected->outputChannels ||
                !engine_.authorizeRetainedAsioRestart()) {
-                diagnostics_.record("ASIO4ALL_PIN_CORRECTION_FAILED",
+                diagnostics_.record("ASIO_PIN_CORRECTION_FAILED",
                     error.isNotEmpty()?error:juce::String("Readback changed during correction"));
                 emitApprovedNativeSnapshot();
                 return;
@@ -5689,7 +5745,7 @@ private:
             // current epoch; retry without reopening hardware at an
             // exponentially bounded CONTROL cadence.
             asioRecoveryGate_.bindFailed(now);
-            diagnostics_.record("ASIO4ALL_REATTACH_FAILED",error);
+            diagnostics_.record("ASIO_REATTACH_FAILED",error);
             emitApprovedNativeSnapshot();
             return;
         }
@@ -5700,7 +5756,7 @@ private:
         mixerSessionError_.clear();
         if(engine_.takeAsioResetMonitorIntent())requestAutomaticMain(false);
         if(engine_.isMonitorEnabled())mixerSessionStatus_="RESTORED_MONITORING";
-        diagnostics_.record("ASIO4ALL_REATTACHED","Verified driver and current MAIN pair");
+        diagnostics_.record("ASIO_REATTACHED","Verified driver and current MAIN pair");
         emitApprovedNativeSnapshot();
     }
 

@@ -1007,6 +1007,32 @@ int main(){
     duplicatePins.outputNames.add("2nd output with SST 1");
     assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,duplicatePins,2,
         BindingMode::verifiedAsioRestart).valid());
+    // A third-party ASIO driver must rebind only the SAME registered host
+    // and verified physical MAIN, never guess a new output or capture device.
+    auto genericAsio=asio;
+    genericAsio.binding.capture=genericAsio.binding.playback="MAONO PS22 ASIO";
+    auto vendorCurrent=genericAsio.binding;
+    const auto vendorMain=MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart);
+    assert(vendorMain.valid() && vendorMain.mainL==genericAsio.outputs.mainL &&
+           vendorMain.mainR==genericAsio.outputs.mainR);
+    auto vendorRestored=genericAsio;
+    assert(MixerDeviceBindingPolicy::apply(vendorRestored,vendorCurrent,vendorMain,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    vendorCurrent.playback="Different ASIO interface";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
+    vendorCurrent=genericAsio.binding;
+    vendorCurrent.capture="Other capture";
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        genericAsio,vendorCurrent,2,BindingMode::verifiedAsioRestart).valid());
+    auto lostCapture=genericAsio.binding;
+    lostCapture.inputMask="0";
+    auto unboundCapture=genericAsio;
+    assert(!unboundCapture.request.sources.empty());
+    assert(MixerDeviceBindingPolicy::apply(unboundCapture,lostCapture,vendorMain,0,
+        BindingMode::verifiedAsioRestart).isNotEmpty());
+    assert(Codec::encode(unboundCapture)==Codec::encode(genericAsio));
     auto exact=d;
     assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());
