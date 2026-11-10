@@ -37,7 +37,7 @@ public:
             channel.id={i};
             channel.role=ChannelRole::input;
             channel.format=ProcessingFormat::stereo;
-            channel.name="CH "+(i<10?"0":"")+std::to_string(i);
+            channel.name=std::string("CH ")+(i<10?"0":"")+std::to_string(i);
             channel.sends.push_back({ChannelId{15},1.f,false,0.f,true,i});
             rows.push_back(std::move(channel));
         }
