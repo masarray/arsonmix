@@ -121,6 +121,16 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # M4: a native FX fixture goes through the SAME descriptor/prepare path
+  # as all built-ins, without registration branches in Main or RT graph.
+  juce_add_console_app(ARMixNativeFxExtensionTests PRODUCT_NAME "ArSonMix Native FX Host Extension Tests")
+  target_sources(ARMixNativeFxExtensionTests PRIVATE
+      tests/native_fx_registry_extension_test.cpp src/NativeBuiltInFx.h)
+  target_link_libraries(ARMixNativeFxExtensionTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeFxExtensionTests PRIVATE cxx_std_20)
+  add_test(NAME M4NativeFxCatalogExtensionAndStatePreparation
+      COMMAND ARMixNativeFxExtensionTests)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
@@ -214,6 +224,7 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
   add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeFxExtensionTests)
   juce_add_console_app(ARMixApprovedRoutingPcmTests PRODUCT_NAME "ArSonMix Approved WIRE PCM Tests")
   target_sources(ARMixApprovedRoutingPcmTests PRIVATE tests/approved_native_routing_pcm_test.cpp)
   target_link_libraries(ARMixApprovedRoutingPcmTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
