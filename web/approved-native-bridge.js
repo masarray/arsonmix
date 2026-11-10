@@ -3389,7 +3389,7 @@
   // Disable physical control gestures while G0 has no accepted ChannelId graph.
   // Presentation-only bank/selection remains available.
   document.addEventListener("pointerdown",event=>{
-    if (flags.acceptedGraphConnected) return;
+    if (flags.acceptedGraphConnected || logicalView) return;
     const t=scope?.findTrack?.(event.target);
     if(m4Verified() && (t?.kind==="audio"||t?.kind==="master"))return;
     if (!event.target.closest?.(".fader-box,.center-pan")) return;
