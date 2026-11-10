@@ -40,6 +40,10 @@ struct StoredInsert final {
     int uid=0;
     bool bypass=false;
 };
+struct PlannedSlotBypass final {
+    ChannelId channel{};
+    std::size_t slot=0;
+};
 struct MixerSessionDocument final {
     juce::String id;
     DynamicChannelRoster roster{ChannelRosterBudget{
@@ -51,6 +55,9 @@ struct MixerSessionDocument final {
     std::vector<WaitingAsioInput> waitingAsioInputs;
     std::vector<StoredInsert> inserts;
     std::vector<ChannelId> rackBypassed;
+    // Logical-only per-slot bypass intentions; no fabricated FX processor
+    // state or fake vendor SHA. Physical sessions keep existing inserts.
+    std::vector<PlannedSlotBypass> plannedSlotBypassed;
     float masterGain=1.f;
     bool masterMute=false,masterMono=false;
     // Internal checkpoint preference, distinct from the hardware monitor pair.
@@ -495,6 +502,16 @@ public:
         }
         for(auto id:d.rackBypassed)racks.add(decimal(id.value));
         set(root,"inserts",juce::var(inserts));set(root,"rackBypassed",juce::var(racks));
+        if(d.logicalOnly) {
+            juce::Array<juce::var> planned;
+            for(const auto& item:d.plannedSlotBypassed) {
+                auto p=object();
+                set(p,"channel",decimal(item.channel.value));
+                set(p,"slot",static_cast<int>(item.slot));
+                planned.add(p);
+            }
+            set(root,"plannedSlotBypassed",juce::var(planned));
+        }
         return juce::JSON::toString(root,false);
     }
     static bool decode(const juce::String& json,MixerSessionDocument& output) {
@@ -708,6 +725,26 @@ public:
                std::find(doc.rackBypassed.begin(),doc.rackBypassed.end(),id)!=
                doc.rackBypassed.end())return false;
             doc.rackBypassed.push_back(id);
+        }
+        const auto planned=get(root,"plannedSlotBypassed");
+        if(!planned.isVoid()) {
+            const auto* list=planned.getArray();
+            if(!doc.logicalOnly || !list ||
+               list->size()>channels->size()*8)return false;
+            std::set<std::pair<std::uint64_t,int>> seen;
+            for(const auto& item:*list) {
+                PlannedSlotBypass p;
+                int slot=0;
+                if(!parseDecimal(get(item,"channel"),p.channel.value) ||
+                   !integral(get(item,"slot"),slot,0,7) ||
+                   !doc.roster.find(p.channel) ||
+                   static_cast<std::size_t>(slot)>=
+                     doc.roster.find(p.channel)->insertCatalogIds.size() ||
+                   !seen.emplace(p.channel.value,slot).second)
+                    return false;
+                p.slot=static_cast<std::size_t>(slot);
+                doc.plannedSlotBypassed.push_back(p);
+            }
         }
         // Encode always emits in ChannelId/slot order. A manually shuffled or
         // duplicated slot manifest is rejected; its vendor states must never
