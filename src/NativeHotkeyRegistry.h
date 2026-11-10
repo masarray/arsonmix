@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+// This header is included from the mixer/FX translation unit. Win32's legacy
+// min/max macros corrupt std::numeric_limits and std::min/max throughout JUCE
+// and the DSP headers. Suppress them BEFORE any transitive Windows include.
+#if defined(_WIN32) && !defined(NOMINMAX)
+#define NOMINMAX 1
+#endif
 #include <juce_core/juce_core.h>
 #include <algorithm>
 #include <functional>
@@ -7,6 +13,14 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <commctrl.h>
+// Some consumers may have included windows.h before this service: make sure
+// neither legacy macro escapes into the audio engine's source translation unit.
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
 #if defined(_MSC_VER)
 #pragma comment(lib, "Comctl32.lib")
 #endif
