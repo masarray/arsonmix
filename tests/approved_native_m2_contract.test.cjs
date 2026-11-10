@@ -1293,10 +1293,13 @@ test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 c
 });
 test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
  const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const apply=read("src/NativeDeviceApplyCoordinator.h");
  assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
  assert.match(cpp,/candidate\.useDefaultInputChannels=!outputOnly/);
  assert.match(cpp,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
- assert.match(cpp,/\(outputOnly&&!inMask\.isZero\(\)\)/);
+ assert.match(cpp,/NativeDeviceApplyCoordinator::parsePinMasks/);
+ assert.match(apply,/\(outputOnly&&!in\.isZero\(\)\)/);
+ assert.match(apply,/out\.countNumberOfSetBits\(\)<2/);
  assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
  assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
