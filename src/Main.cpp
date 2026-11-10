@@ -2541,7 +2541,7 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",2);
+        reply->setProperty("schemaVersion",3);
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             const auto s=processor->acceptedSettings();
@@ -2549,6 +2549,7 @@ private:
             settings->setProperty("key",s.key);
             settings->setProperty("scale",s.scale);
             settings->setProperty("voices",s.voices);
+            settings->setProperty("voiceMode",s.voiceMode);
             settings->setProperty("correction",s.correction);
             settings->setProperty("wet",s.wet);
             settings->setProperty("space",s.space);
@@ -3643,7 +3644,8 @@ private:
             }
             const auto v=args.getProperty("settings",{});
             const auto k=v.getProperty("key",{}),sc=v.getProperty("scale",{});
-            const auto voices=v.getProperty("voices",{}),tune=v.getProperty("correction",{});
+            const auto voices=v.getProperty("voices",{}),mode=v.getProperty("voiceMode",{});
+            const auto tune=v.getProperty("correction",{});
             auto num=[](const juce::var& value,float& output) {
                 if(!value.isDouble()&&!value.isInt())return false;
                 const auto x=static_cast<double>(value);
@@ -3651,13 +3653,15 @@ private:
                 output=static_cast<float>(x);return std::isfinite(output);
             };
             armix::harmony::Settings settings{};
-            const bool typed=k.isInt()&&sc.isInt()&&voices.isInt()&&tune.isBool()&&
+            const bool typed=k.isInt()&&sc.isInt()&&voices.isInt()&&mode.isInt()&&tune.isBool()&&
                 num(v.getProperty("wet",{}),settings.wet)&&
                 num(v.getProperty("space",{}),settings.space)&&
                 num(v.getProperty("color",{}),settings.color)&&
                 num(v.getProperty("gainDb",{}),settings.gainDb);
             settings.key=static_cast<int>(k);settings.scale=static_cast<int>(sc);
-            settings.voices=static_cast<int>(voices);settings.correction=static_cast<bool>(tune);
+            settings.voices=static_cast<int>(voices);
+            settings.voiceMode=static_cast<int>(mode);
+            settings.correction=static_cast<bool>(tune);
             // Exact ChannelId is never parsed from a JS number. Validate
             // against the currently admitted native graph, not a UI track
             // index or a remembered localStorage name.
