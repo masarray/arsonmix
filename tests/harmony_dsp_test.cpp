@@ -137,7 +137,61 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
+// This is a native PCM proof, not a certified real-singer naturalness test.
+static void testUnisonDoubler(){
+  for(int rate:{48000,96000}){
+    Settings unison;unison.voiceMode=1;unison.voices=2;
+    unison.wet=.75f;unison.space=.7f;unison.correction=false;
+    Engine::PreparedSettings prep{};
+    need(Engine::prepareSettings(unison,prep),"Doubler settings rejected");
+    need(prep.mixL[0]>0.f&&prep.mixR[0]>0.f,
+         "Doubler has no wet unison companion");
+    for(int i=1;i<Engine::maxVoices;++i)
+      need(prep.mixL[i]==0.f&&prep.mixR[i]==0.f,
+           "Doubler unexpectedly generated pitched harmony singers");
+    Settings duo=unison;duo.voiceMode=0;
+    need(Engine::prepareSettings(duo,prep),"Duo settings rejected");
+    need(prep.mixL[0]>0.f&&prep.mixL[2]>0.f,
+         "Duo must retain two pitch-harmony voices");
+    const auto render=[&](const Settings& set){
+      auto dsp=std::make_unique<Engine>();
+      need(dsp->prepare(rate)&&dsp->setSettings(set),
+           "Doubler/duo DSP prepare failed");
+      std::vector<float> l(rate/2),r(rate/2);
+      for(int i=0;i<rate/2;++i){
+        const double phase=6.283185307179586*220.*i/rate;
+        l[i]=r[i]=static_cast<float>(
+          .16*std::sin(phase)+.041*std::sin(2*phase+.2));
+      }
+      for(int i=0;i<rate/2;i+=64)
+        dsp->process(l.data()+i,r.data()+i,std::min(64,rate/2-i));
+      return l;
+    };
+    const auto a=render(unison);
+    Settings alternate=unison;alternate.key=9;alternate.scale=1;
+    need(a==render(alternate),
+         "Unison Doubler pitch changed with Harmony key/scale");
+    const auto pitched=render(duo);
+    double wetEnergy=0.,modeDifference=0.;
+    for(int i=rate/4;i<rate/2;++i){
+      const float x=a[static_cast<std::size_t>(i)];
+      const float y=pitched[static_cast<std::size_t>(i)];
+      need(std::isfinite(x)&&std::isfinite(y),"Doubler non-finite PCM");
+      const int t=i-2*static_cast<int>(std::lround(.016*rate));
+      const double phase=6.283185307179586*220.*t/rate;
+      const float delayedDry=static_cast<float>(
+        .16*std::sin(phase)+.041*std::sin(2*phase+.2));
+      wetEnergy+=std::abs(x-delayedDry);
+      modeDifference+=std::abs(x-y);
+    }
+    need(wetEnergy>rate*.0004,"Unison Doubler wet path is silent");
+    need(modeDifference>rate*.0004,
+         "Doubler accidentally equals pitched Duo PCM");
+  }
+}
 int main(){
+  testUnisonDoubler();
   testLeadTune();
   testVoicePlanner();
   // Each Engine owns fixed ring buffers. Allocate offline fixtures on heap:
