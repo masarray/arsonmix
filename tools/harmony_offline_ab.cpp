@@ -152,7 +152,8 @@ static Wave fold(const Wave& in){
 static void generateReport(const fs::path& folder,const Wave& input,
              const Wave& dry,const Wave& legacy,const Wave& modern,
              const Wave& backing,const Wave& previousStage,
-             const Wave& previousPresence){
+             const Wave& previousPresence,const Wave& lowStem,
+             const Wave& midStem,const Wave& highStem){
     std::ofstream out(folder/"metrics.json");
     out<<"{\n  \"sampleRate\": "<<input.rate<<",\n  \"frames\": "<<input.left.size()
        <<",\n  \"dryRms\": "<<rms(dry)<<",\n  \"legacyRms\": "<<rms(legacy)
@@ -160,6 +161,9 @@ static void generateReport(const fs::path& folder,const Wave& input,
        <<",\n  \"backingDifferenceRms\": "<<rms(backing)
        <<",\n  \"previousDepthRms\": "<<rms(previousStage)
        <<",\n  \"previousPresenceRms\": "<<rms(previousPresence)
+       <<",\n  \"lowSoloRms\": "<<rms(lowStem)
+       <<",\n  \"midSoloRms\": "<<rms(midStem)
+       <<",\n  \"highSoloRms\": "<<rms(highStem)
        <<",\n  \"sourceFormantsMeasured\": false,\n  \"realSingerQualified\": false,\n"
        <<"  \"method\": \"same native input, independently reset engines; backing = wet mix - Wet0 lead, correction OFF, gain 0dB\"\n}\n";
 }
@@ -206,7 +210,8 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"13_presence_old_backing_only.wav",subtract(previousPresence,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
-    generateReport(folder,input,dry,old,modern,backing,previousDepth,previousPresence);
+    generateReport(folder,input,dry,old,modern,backing,previousDepth,
+                   previousPresence,lowStem,midStem,highStem);
 }
 int main(int argc,char** argv){
     try{
