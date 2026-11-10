@@ -92,6 +92,12 @@ int main() {
     assert(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     assert(store.saveNew(bad).isNotEmpty());
+    assert(BuiltInFxUserPresetStore::safeId(
+        "12345678-1234-AbCd-ABCD-0123456789Ab"));
+    assert(!BuiltInFxUserPresetStore::safeId(
+        "12345678-1234-AbCd-GBCD-0123456789Ab"));
+    assert(!BuiltInFxUserPresetStore::safeId(
+        "12345678-1234-AbCd-ABCD-0123456789A/"));
     assert(!BuiltInFxUserPresetStore::safeId("../outside"));
     assert(!BuiltInFxUserPresetStore::safeText("../outside",80));
     assert(!BuiltInFxUserPresetStore::safeText("bad/name",80));
