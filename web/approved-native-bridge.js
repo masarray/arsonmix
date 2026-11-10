@@ -247,6 +247,7 @@
   let nativeFxPowerSerial=0,pendingNativeFxPower=null;
   const pendingM4RackPowers=new Map();
   let controller = null;
+  let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
   // Human-facing presentation is isolated from native diagnostic state.
   // Internal identifiers remain in engine logs, never footer, dialog or toast.
   const operatorMessage = message => {
@@ -319,11 +320,68 @@
     }
     scope?.stopDemo?.();
     const authority = flags.productionCallbackLive ? "product-live" :
-      flags.acceptedGraphConnected ? "pcm-accepted" : "not-admitted";
+      flags.acceptedGraphConnected ? "pcm-accepted" :
+      logicalView ? "logical-editable" : "not-admitted";
     if (document.documentElement.dataset.armixNativeAuthority !== authority)
       document.documentElement.dataset.armixNativeAuthority = authority;
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
+  const activeView=()=>logicalView||controller?.state()?.current;
+  // Dedicated logical transactions never advertise physical PCM admission.
+  // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
+  function logicalIntent(operation,channelId,payload={}) {
+    if(!logicalView || pendingLogical)
+      return {ok:false,error:pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
+    if(!logicalView.graph.capabilities.supportedOps.includes(operation))
+      return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
+    const requestId="logical-"+(++logicalSerial);
+    const value=operation==="SET_FADER"?payload.valueDb:
+      operation==="SET_PAN"?payload.value:
+      ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
+        payload.enabled:undefined;
+    pendingLogical={requestId,operation,channelId,payload,
+      beforeRevision:logicalView.graph.revision,ackRevision:null,createdId:null};
+    backend.emitEvent("arMixLogicalIntent",{
+      requestId,baseRevision:logicalView.graph.revision,operation,
+      ...(channelId?{channelId}:{}),payload,
+      ...(value===undefined?{}:{value})
+    });
+    window.setTimeout(()=>{
+      if(pendingLogical?.requestId!==requestId)return;
+      pendingLogical=null;
+      status("Mixer edit not confirmed · previous saved settings retained");
+      controller?.subscribe();
+    },8000);
+    return {ok:true,requestId};
+  }
+  function logicalReadbackProves(p,graph) {
+    const row=graph.channels.find(ch=>ch.id===p.channelId),v=p.payload;
+    switch(p.operation) {
+      case "CREATE_CHANNEL":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="INPUT");
+      case "CREATE_GROUP":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="GROUP");
+      case "DELETE_CHANNEL":case "REMOVE_BUS":return !row;
+      case "RENAME_CHANNEL":return row?.name===v.name;
+      case "SET_PROCESSING_FORMAT":return row?.processingFormat===v.format;
+      case "SET_FADER":return !!row&&Math.abs(row.controls.faderDb-v.valueDb)<.11;
+      case "SET_PAN":return !!row&&Math.abs(row.controls.pan-v.value)<.011;
+      case "SET_MUTE":return row?.controls.mute===v.enabled;
+      case "SET_SOLO":return row?.controls.solo===v.enabled;
+      case "SET_FX_RACK_BYPASS":return row?.fxRackBypassed===v.enabled;
+      case "ADD_FX_REFERENCE":return row?.inserts?.some(fx=>fx.catalogId===v.catalogId);
+      case "WIRE_TRANSACTION": {
+        const change=v.changes?.[0];
+        if(!change)return false;
+        const edges=graph.edges.filter(e=>e.from===change.from);
+        if(change.op==="REMOVE")return !edges.some(e=>e.edgeId===change.edgeId);
+        if(change.op==="DISCONNECT")return !edges.some(e=>e.primaryOutput);
+        if(change.op==="ROUTE_ONLY")return edges.some(e=>e.to===change.to&&e.primaryOutput);
+        if(change.op==="CONNECT")return edges.some(e=>e.to===change.to&&!e.primaryOutput);
+        if(change.op==="RETARGET")return edges.some(e=>e.edgeId===change.edgeId&&e.to===change.to);
+        return false;
+      }
+      default:return false;
+    }
+  }
   function queueWireGainFlush(){
     if(wireGainFlushQueued)return;
     wireGainFlushQueued=true;
@@ -364,6 +422,7 @@
           label+" ["+ch.id+"]":label};});
   }
   const intent = (operation,t,payload) => {
+    if(logicalView)return logicalIntent(operation,nativeIdFor(t),payload).ok;
     if (!flags.acceptedGraphConnected) {
       status("NATIVE: accepted graph not projected; control unchanged");
       return false;
