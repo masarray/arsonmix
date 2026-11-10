@@ -29,6 +29,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_dsp_test.cpp -o /tmp/arson-harmony-engine
           /tmp/arson-harmony-engine
+      - name: Compile offline 32/24/16 ms PDC and partition safety matrix (NOT singer QA)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_latency_candidate_test.cpp -o /tmp/harmonice-latency-study
+          /tmp/harmonice-latency-study
       - name: Verify stage separation, mono and exact PCM
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_stage_spatial_test.cpp -o /tmp/arson-harmony-spatial
