@@ -2377,10 +2377,39 @@
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
+    // On unplug, a newer retained PCM graph wins over an older disk-based
+    // logical mirror. Otherwise a stale offline projection could silently
+    // discard a recently edited channel, WIRE or real vendor insert.
+    const retainedMatches=()=>{
+      if(!next?.retained)return true;
+      const physical=next.graph,logical=offline?.graph;
+      if(!logical || physical.revision!==logical.revision ||
+         physical.rosterRevision!==logical.rosterRevision ||
+         physical.channels.length!==logical.channels.length ||
+         (physical.edges||[]).length!==(logical.edges||[]).length)return false;
+      const rows=new Map(logical.channels.map(ch=>[ch.id,ch]));
+      for(const ch of physical.channels){
+        const own=rows.get(ch.id);
+        if(!own||ch.role!==own.role||
+           ch.processingFormat!==own.processingFormat||
+           ch.name!==own.name||
+           (ch.primaryOutId||null)!==(own.primaryOutId||null)||
+           (ch.inserts||[]).map(fx=>fx.catalogId).join("|")!==
+             (own.inserts||[]).map(fx=>fx.catalogId).join("|"))return false;
+      }
+      const edges=new Map(logical.edges.map(e=>[e.edgeId,e]));
+      for(const e of physical.edges||[]){
+        const own=edges.get(e.edgeId);
+        if(!own||own.from!==e.from||own.to!==e.to||
+           own.primaryOutput!==e.primaryOutput||
+           own.tap!==e.tap||own.gainLinear!==e.gainLinear)return false;
+      }
+      return true;
+    };
     // Physical SessionSnapshot remains unadmitted. Render the separately
     // validated logical C++ document ONLY when hardware is unavailable.
     // This is not a PCM graph, hardware meter or browser draft.
-    const logicalAvailable=!next.admitted&&!m4Verified() &&
+    const logicalAvailable=!next.admitted&&!m4Verified()&&retainedMatches() &&
       offline?.schema==="arsonmix.native.logical-mixer.v1" &&
       offline.authority==="LOGICAL_ONLY"&&
       offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
