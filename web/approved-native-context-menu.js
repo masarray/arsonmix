@@ -388,9 +388,6 @@
           button.type="button";button.textContent=caption;
           button.setAttribute("aria-label","Assign "+caption+" hotkey for "+(p.name||p.id));
           button.addEventListener("click",()=>{
-            const owner=fxParameterOwner(scope.findTrack(
-              document.querySelector('.strip[data-id="'+
-                (menuTrack?.id??"")+'"]')),fxParamSelection.slot);
             // Latest native accepted identity still must match the inspected
             // instance; a removed/replaced plugin must never capture a key.
             const current=activeNative()?.graph?.channels
