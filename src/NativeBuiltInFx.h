@@ -33,6 +33,11 @@ struct NativeBuiltInFx {
 template<class Processor>
 std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
         double rate,int frames,const void* state,int bytes) {
+    // State bytes are CONTROL-only. A missing pointer with a positive size
+    // must never be mistaken for a valid default, especially during restore.
+    if(bytes<0 || bytes>8*1024*1024 ||
+       (state==nullptr && bytes!=0) || (state!=nullptr && bytes==0))
+        return {};
     auto processor=std::make_unique<Processor>();
     processor->prepareToPlay(rate,frames);
     if(!processor->isReady() || (state && !processor->restoreUnpublishedState(state,bytes)))
