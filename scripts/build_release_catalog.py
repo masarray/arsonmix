@@ -1,7 +1,8 @@
-"""Publish a strict, static download catalog built from actual GitHub Release assets.
+"""Publish a strict static catalog from verified GitHub Release assets.
 
-Browser uses only same-origin release-catalog.json. No GitHub API, Actions or
-release-page navigation. Invalid/absent OS binaries are never offered.
+The browser first loads this same-origin catalog and may recover via the public
+GitHub Releases API when Pages is stale. Never point to Actions artifacts or
+unverified / absent OS binaries.
 """
 import argparse
 import json
