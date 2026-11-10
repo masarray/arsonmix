@@ -32,6 +32,9 @@ namespace armix::hotkey {
 struct Mapping final {
     juce::String id, scope, sessionId, channelId, operation;
     int vk=0, modifiers=0;
+    // Preserve the exact plugin instance, not merely the positional slot.
+    int slot=-1;
+    juce::String insertId;
 };
 class Registry final {
 public:
@@ -48,8 +51,14 @@ public:
                        (m.vk>=0x70&&m.vk<=0x7a);
         const bool chord=(m.modifiers&~7)==0 &&
                          (m.modifiers&3)!=0; // global chords need Ctrl or Alt
+        const bool fxSlot=m.operation=="SET_FX_SLOT_BYPASS";
         const bool command=m.operation=="PANIC_MUTE" ||
-                           m.operation=="SET_MUTE"||m.operation=="SET_SOLO";
+                           m.operation=="SET_MUTE"||m.operation=="SET_SOLO"||
+                           m.operation=="SET_FX_RACK_BYPASS"||fxSlot;
+        const bool target=fxSlot?
+            m.slot>=0 && m.slot<8 && m.insertId.isNotEmpty() &&
+            m.insertId.length()<=128:
+            m.slot==-1 && m.insertId.isEmpty();
         const bool app=m.scope=="APP" && m.operation=="PANIC_MUTE" &&
                        m.channelId.isEmpty() && m.sessionId.isEmpty();
         const bool session=m.scope=="SESSION" && m.operation!="PANIC_MUTE" &&
@@ -57,7 +66,7 @@ public:
                            m.channelId.isNotEmpty() && m.channelId!="0" &&
                            m.sessionId.isNotEmpty() && m.sessionId.length()<=48;
         return m.id.isNotEmpty()&&m.id.length()<=64 && key && chord &&
-               command && (app||session);
+               command && target && (app||session);
     }
     static juce::var encode(const Mapping& m) {
         auto out=juce::var(new juce::DynamicObject());
@@ -67,6 +76,10 @@ public:
         o->setProperty("channelId",m.channelId);
         o->setProperty("operation",m.operation);
         o->setProperty("vk",m.vk);o->setProperty("modifiers",m.modifiers);
+        if(m.operation=="SET_FX_SLOT_BYPASS") {
+            o->setProperty("slot",m.slot);
+            o->setProperty("insertId",m.insertId);
+        }
         return out;
     }
     static bool decode(const juce::var& v,Mapping& m) {
@@ -81,6 +94,14 @@ public:
            !field("sessionId",m.sessionId)||!field("channelId",m.channelId)||
            !field("operation",m.operation)||!vk.isInt()||!mods.isInt())return false;
         m.vk=static_cast<int>(vk);m.modifiers=static_cast<int>(mods);
+        m.slot=-1;m.insertId.clear(); // old H1 documents remain readable
+        if(m.operation=="SET_FX_SLOT_BYPASS") {
+            const auto slot=v.getProperty("slot",{}),token=v.getProperty("insertId",{});
+            if(!slot.isInt()||!token.isString()||token.toString().length()>128)
+                return false;
+            m.slot=static_cast<int>(slot);m.insertId=token.toString();
+        } else if(!v.getProperty("slot",{}).isVoid() ||
+                  !v.getProperty("insertId",{}).isVoid())return false;
         return valid(m);
     }
     void setHandler(std::function<void(const Mapping&)> handler) {
