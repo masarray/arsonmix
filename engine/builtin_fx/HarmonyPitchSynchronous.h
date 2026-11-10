@@ -13,7 +13,10 @@ namespace armix::harmony {
 // Positive waveform peaks are approximate epochs, NOT proven glottal closures.
 // This must pass actual singer A/B before acoustic release qualification.
 // All state is fixed; no allocation, locks, FFT or IO in process().
-template <std::size_t Capacity, int Voices>
+// The default ring-cursor walk is sample-exact to the original lookup.
+// False compiles the historical age/subtraction loop for SAME-RUNNER offline
+// A/B; this is a compile-time switch, never a GUI/session/RT branch.
+template <std::size_t Capacity, int Voices, bool FastEpochWalk=true>
 class PitchSynchronousVoice final {
     static_assert(Capacity >= 4096 && (Capacity & (Capacity-1)) == 0);
     static_assert(Voices > 0 && Voices <= 8);
@@ -95,11 +98,27 @@ private:
         if(end<start)return -1;
         std::int64_t peak=-1;
         float best=.003f;
-        for(auto t=start;t<=end;++t) {
-            const auto age=static_cast<std::size_t>(
-                static_cast<std::int64_t>(time)-t);
-            const float value=input[(writeIndex+Capacity-age)&(Capacity-1)];
-            if(value>best){best=value;peak=t;}
+        if constexpr(FastEpochWalk) {
+            // Adjacent integer sample times occupy adjacent ring cells. One
+            // initial age/index calculation replaces the repeated 64-bit
+            // per-candidate age and index arithmetic, without changing sample
+            // access order, threshold or earliest-max tie behavior.
+            const auto firstAge=static_cast<std::size_t>(
+                static_cast<std::int64_t>(time)-start);
+            auto ring=(writeIndex+Capacity-firstAge)&(Capacity-1);
+            for(auto t=start;t<=end;++t) {
+                const float value=input[ring];
+                if(value>best){best=value;peak=t;}
+                ring=(ring+1)&(Capacity-1);
+            }
+        }else{
+            // Legacy reference, built only by the offline PCM/CPU verifier.
+            for(auto t=start;t<=end;++t) {
+                const auto age=static_cast<std::size_t>(
+                    static_cast<std::int64_t>(time)-t);
+                const float value=input[(writeIndex+Capacity-age)&(Capacity-1)];
+                if(value>best){best=value;peak=t;}
+            }
         }
         return peak;
     }
