@@ -14,13 +14,14 @@ ROOT=Path(__file__).resolve().parents[1]
 def logical_graph(revision="1", extra=False, source_only=False):
     channels=[]
     edges=[]
-    for index in range(1,16+(1 if extra else 0)):
+    order=list(range(1,15))+([16] if extra else [])+[15]
+    for index in order:
         if index==15:
             role,name="MAIN","MAIN"
         elif 11<=index<=14:
             role,name="FX_RETURN",f"AUX {chr(65+index-11)}"
         elif index==16:
-            role,name="INPUT","Backing"
+            role,name="INPUT","Track 16"
         else:
             role,name="INPUT",f"CH {index:02d}"
         row={"id":str(index),"name":name,"role":role,
@@ -115,7 +116,7 @@ def main():
         state=snapshot("2",True)
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>document.querySelectorAll('#tracks .strip').length===15""")
-        new_track=page.locator("#tracks .strip").filter(has_text="Backing").first
+        new_track=page.locator("#tracks .strip").filter(has_text="Track 16").first
         assert new_track.count()==1
         assert page.locator("#addTrack").is_enabled()
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")=="logical-editable"
@@ -131,7 +132,7 @@ def main():
         assert wire["operation"]=="WIRE_TRANSACTION"
         assert wire["payload"]["changes"][0]["op"]=="DISCONNECT"
         assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
-            t=>t.name==='Backing')?.output""")=="Master", "Pages model changed before native readback"
+            t=>t.name==='Track 16')?.output""")=="Master", "Pages model changed before native readback"
         emit(page,"arMixLogicalAck",{"requestId":wire["requestId"],
             "status":"ACCEPTED","errorCode":"NONE","revision":"3",
             "physicalOutputAdmitted":False})
