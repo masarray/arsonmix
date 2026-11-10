@@ -1084,10 +1084,42 @@ private:
             const auto* pf=p.getProperty("inserts",{}).getArray();
             const auto* lf=own.getProperty("inserts",{}).getArray();
             if(!pf||!lf||pf->size()!=lf->size())return false;
-            for(int i=0;i<pf->size();++i)
+            for(int i=0;i<pf->size();++i) {
                 if(pf->getReference(i).getProperty("catalogId","").toString()!=
-                   lf->getReference(i).getProperty("catalogId","").toString())
+                       lf->getReference(i).getProperty("catalogId","").toString() ||
+                   pf->getReference(i).getProperty("bypassed",{}).isBool()!=
+                       lf->getReference(i).getProperty("bypassed",{}).isBool() ||
+                   pf->getReference(i).getProperty("bypassed",false)!=
+                       lf->getReference(i).getProperty("bypassed",false))
                     return false;
+            }
+            // A native scalar may change without bumping the topology
+            // revision. A structurally equal roster does NOT justify
+            // overwriting the owner's unsaved fader, pan, mute or solo.
+            const auto controls=p.getProperty("controls",{});
+            const auto ownControls=own.getProperty("controls",{});
+            if(!controls.isObject()||!ownControls.isObject())return false;
+            for(const char* field:{"faderDb","pan"}) {
+                const auto value=controls.getProperty(field,{});
+                const auto ownValue=ownControls.getProperty(field,{});
+                if(!(value.isDouble()||value.isInt()) ||
+                   !(ownValue.isDouble()||ownValue.isInt()))
+                    return false;
+                const auto a=static_cast<double>(value);
+                const auto b=static_cast<double>(ownValue);
+                if(!std::isfinite(a)||!std::isfinite(b) ||
+                   std::abs(a-b)>(juce::String(field)=="faderDb"?0.05:0.01))
+                    return false;
+            }
+            for(const char* field:{"mute","solo"}) {
+                const auto value=controls.getProperty(field,{});
+                const auto ownValue=ownControls.getProperty(field,{});
+                if(!value.isBool()||!ownValue.isBool()||value!=ownValue)
+                    return false;
+            }
+            if(p.getProperty("fxRackBypassed",false)!=
+               own.getProperty("fxRackBypassed",false))
+                return false;
         }
         for(const auto& edge:*ae) {
             const auto id=edge.getProperty("edgeId","").toString();
