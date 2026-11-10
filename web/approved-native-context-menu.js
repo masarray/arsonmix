@@ -498,7 +498,17 @@
       // Never expose Chromium/WebView2 browser menu inside the native app.
       e.preventDefault();
       dismissMenu();
-      const button=e.target.closest?.('.mx-hw-key[data-action="mute"],.mx-hw-key[data-action="solo"]');
+      const power=e.target.closest?.('[data-action="slotPower"],[data-action="fxOn"]');
+       if(power){
+         const selected=nativeFxHotkeyTarget(power);
+         if(selected){
+           menuTrack=scope.findTrack(power);menuSlot=selected.slot??-1;
+           menuTarget=selected;requestHotkeyList();
+           showMenu(e.clientX,e.clientY,"hotkey");
+         }
+         return;
+       }
+       const button=e.target.closest?.('.mx-hw-key[data-action="mute"],.mx-hw-key[data-action="solo"]');
       if(button){
         const track=scope.findTrack(button);
         const operation=button.dataset.action==="mute"?"SET_MUTE":"SET_SOLO";
@@ -535,14 +545,28 @@
       const originX=menu.offsetLeft,originY=menu.offsetTop+menu.offsetHeight;
       if(action==="hotkey-register"){dismissMenu();openHotkeyRegister();return;}
       if(action==="hotkey-add"&&selected?.kind==="hotkey"){
-        dismissMenu();openHotkeyCapture(selected);return;
+        const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,selected));
+         dismissMenu();openHotkeyCapture(selected,existing||null);return;
       }
-      if(action==="hotkey-mute"||action==="hotkey-solo"){
+      if(action==="hotkey-remove"&&selected?.kind==="hotkey"){
+         const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,selected));
+         dismissMenu();
+         if(existing&&!hotkeyPending){
+           hotkeyPending={requestId:nextHotkeyRequest(),kind:"DELETE",mapping:existing};
+           backend.emitEvent("arMixHotkeyIntent",{operation:"DELETE",
+             requestId:hotkeyPending.requestId,mappingId:existing.id});
+         }
+         return;
+       }
+       if(action==="hotkey-mute"||action==="hotkey-solo"){
         const operation=action==="hotkey-mute"?"SET_MUTE":"SET_SOLO";
         const channelId=eligibleHotkey(track,operation);
         dismissMenu();
-        if(channelId)openHotkeyCapture({channelId,operation,scope:"SESSION",
-          label:track.name+" · "+(operation==="SET_MUTE"?"MUTE":"SOLO")});
+        if(channelId){
+          const target={channelId,operation,scope:"SESSION",
+            label:track.name+" · "+(operation==="SET_MUTE"?"MUTE":"SOLO")};
+          openHotkeyCapture(target,hotkeyEntries.find(m=>sameHotkeyTarget(m,target))||null);
+        }
         return;
       }
       if(action==="delete"){
