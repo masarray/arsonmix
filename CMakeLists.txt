@@ -132,6 +132,15 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # One user-owned, effect-scoped library; not .smix or FX-chain .armix.
+  # File IO is forbidden in the realtime PCM callback.
+  juce_add_console_app(ARMixBuiltInFxPresetStoreTests PRODUCT_NAME "ArSonMix Native Built-in FX User Preset Store")
+  target_sources(ARMixBuiltInFxPresetStoreTests PRIVATE
+      tests/builtin_fx_user_preset_store_test.cpp src/BuiltInFxUserPresetStore.h)
+  target_link_libraries(ARMixBuiltInFxPresetStoreTests PRIVATE
+      juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixBuiltInFxPresetStoreTests PRIVATE cxx_std_20)
+  add_test(NAME BuiltInFxUserPresetNativePortableSaveAndRecovery COMMAND ARMixBuiltInFxPresetStoreTests)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
