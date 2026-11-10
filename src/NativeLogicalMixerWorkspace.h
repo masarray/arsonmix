@@ -136,6 +136,15 @@ public:
                 ChannelEdit::Kind::setMute:ChannelEdit::Kind::setSolo;
             edit.enabled=static_cast<bool>(number);
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_FX_RACK_BYPASS") {
+            if(!number.isBool() || !editor_.roster().find(id))
+                return bad("INVALID_LOGICAL_RACK");
+            // Drive one revision through the SAME roster transaction,
+            // retaining immutable FX catalog references.
+            const auto* row=editor_.roster().find(id);
+            edit.kind=ChannelEdit::Kind::setFader;
+            edit.value=row->faderLinear;
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="ADD_FX_REFERENCE") {
             // A physically saved Show may contain vendor states. Never
             // invent a binary processor lease or mismatch its state manifest.
@@ -196,6 +205,12 @@ public:
             return ack;
         }
         sync();
+        if(operation=="SET_FX_RACK_BYPASS") {
+            const bool bypass=static_cast<bool>(number);
+            auto& racks=document_.rackBypassed;
+            racks.erase(std::remove(racks.begin(),racks.end(),id),racks.end());
+            if(bypass)racks.push_back(id);
+        }
         // Delete never keeps a dangling native insert/preset from the removed
         // ChannelId; no vendor destructors or PCM are touched here.
         if(operation=="DELETE_CHANNEL" || operation=="REMOVE_BUS") {
@@ -228,7 +243,7 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
-            "ADD_FX_REFERENCE"})operations.add(juce::String(op));
+            "ADD_FX_REFERENCE","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
         set(cap,"dynamicChannels",true);set(cap,"groups",true);
         set(cap,"fxReturns",true);set(cap,"monitor",false);
