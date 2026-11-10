@@ -364,6 +364,9 @@ public:
         orbit_.stop();
         catalog_.onChanged = nullptr;
         closePluginEditor();
+        // Tear down the modal transaction first. A closing window must not
+        // re-enter device rebind while ConsoleWindow is being destroyed.
+        audioSetupLease_.reset();
         audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
         // Drain any earlier file work before the final muted checkpoint.
@@ -485,6 +488,9 @@ private:
     armix::mixer::NativeMusicTempoMonitor::State lastMusicTempo_{};
     std::unique_ptr<PluginEditorWindow> editorWindow_;
     std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
+    // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
+    // device selector is open, not merely during the initial show() call.
+    std::optional<armix::device::NativeDeviceApplyCoordinator::Lease> audioSetupLease_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
@@ -1867,7 +1873,8 @@ private:
             browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceApplyAck",juce::var(ack.release()));
             return;
         }
-        auto applying=deviceApply_.tryBegin();
+        auto applying=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::explicitApply);
         if(!applying)return; // busy ACK already emitted above
         const auto oldGeneration=engine_.status().getProperty("deviceGeneration",0);
         auto send=[&](bool ok,const juce::String& state,const juce::String& error,
@@ -2063,16 +2070,7 @@ private:
         if(changedAsioPinLayout)
             error="ASIO pin layout changed. Output remains muted; review the new playback pins.";
         if(error.isEmpty()) {
-            armix::device::NativeDeviceApplyCoordinator::AppliedReadback observed;
-            observed.actual=actual;
-            observed.backend=manager.getCurrentAudioDeviceType();
-            observed.open=opened!=nullptr&&opened->isOpen();
-            if(observed.open) {
-                observed.activeInputs=opened->getActiveInputChannels();
-                observed.activeOutputs=opened->getActiveOutputChannels();
-                observed.deviceRate=opened->getCurrentSampleRate();
-                observed.deviceBuffer=opened->getCurrentBufferSizeSamples();
-            }
+            const auto observed=armix::device::NativeDeviceApplyCoordinator::inspectApplied(manager);
             if(!armix::device::NativeDeviceApplyCoordinator::matchesApplied(
                     requested,candidate,observed))
                 error="Driver readback mismatch; device setting was not accepted";
@@ -2119,17 +2117,7 @@ private:
         const auto restored=recovery.priorKnownOpen&&previousType.isNotEmpty()&&
             openSelectedAudioDevice(previousType,before).isEmpty()&&
             manager.getCurrentAudioDeviceType()==previousType;
-        juce::AudioDeviceManager::AudioDeviceSetup checked;
-        manager.getAudioDeviceSetup(checked);
-        armix::device::NativeDeviceApplyCoordinator::RollbackReadback rollback;
-        rollback.actual=checked;
-        rollback.backend=manager.getCurrentAudioDeviceType();
-        auto* recovered=manager.getCurrentAudioDevice();
-        rollback.open=recovered!=nullptr&&recovered->isOpen();
-        if(rollback.open) {
-            rollback.inputNames=recovered->getInputChannelNames();
-            rollback.outputNames=recovered->getOutputChannelNames();
-        }
+        const auto rollback=armix::device::NativeDeviceApplyCoordinator::inspectRollback(manager);
         const bool verified=restored&&
             armix::device::NativeDeviceApplyCoordinator::matchesRollback(
                 before,previousType,originalInputNames,originalOutputNames,rollback)&&
@@ -2148,13 +2136,25 @@ private:
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
         if (setupLaunching_) return;
-        // Suspend physical output but retain ALL authored mixer state while
-        // the real JUCE device selector is visible (including no-change close).
+        // Repeated clicks must not re-suspend output or discard a pending
+        // preserve-monitor intention. The selector itself is already active.
+        if (audioSetupWindow_ && audioSetupWindow_->isVisible()) {
+            audioSetupWindow_->toFront(true);
+            return;
+        }
+        auto modalLease=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
+        if(!modalLease) {
+            emitNotice("Finish the active audio device change first.",true);
+            return;
+        }
+        audioSetupLease_.emplace(std::move(modalLease));
+        // Hold a lease for the WHOLE modal selection, including ASIO's
+        // nested dispatcher and the final accepted mixer rebind.
         autoMainEpoch_=0;
         engine_.beginManualAudioSetup(true);
 
-        // The native JUCE device list is cached after first construction:
-        // reopening the settings window avoids repeating full widget setup.
+        // Reuse cached JUCE selector without creating another DeviceManager.
         if (audioSetupWindow_ != nullptr)
         {
             audioSetupWindow_->setVisible (true);
@@ -2171,7 +2171,11 @@ private:
                 std::make_unique<AudioSetupWindow> (safe->engine_.devices(),
                     [safe]
                     {
-                        if (safe == nullptr) return;
+                        if (safe == nullptr || !safe->audioSetupLease_) return;
+                        // Keep the transaction reserved until the selector
+                        // close has completed rebind, native readback and ACK.
+                        auto closingLease=std::move(*safe->audioSetupLease_);
+                        safe->audioSetupLease_.reset();
                         if (safe->finishAudioSetupAndRecoverMixer())
                         {
                             safe->requestAutomaticMain(!safe->engine_.takeAsioResetMonitorIntent());
@@ -5957,24 +5961,29 @@ private:
     bool finishAudioSetupAndRecoverMixer(MixerBindingMode bindingMode=MixerBindingMode::exact) {
         if(logicalVendorEditor_ || mixerSessionWorker_.busy())return false;
         const bool bound=engine_.finishManualAudioSetup(bindingMode!=MixerBindingMode::verifiedMainPinApply);
-        if(!engine_.directRouteAuthorized())return false;
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        const bool hasCheckpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
-        const bool recoverPristine=hasCheckpoint && mixerSessionRecoveryPending_ && engine_.hasPristineStartupMixer();
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) &&
-           !recoverPristine)return true;
-        if(engine_.hasRetainedNativeSession() || hasCheckpoint) {
-            if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
-                bindingMode=MixerBindingMode::verifiedAsioRestart;
-            const auto error=restoreSavedMixerSession(false,bindingMode);
-            if(error.isNotEmpty()) {
-                mixerSessionError_=error;
-                emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
-                return false;
-            }
-            return true;
+        const bool checkpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
+        using Coordinator=armix::device::NativeDeviceApplyCoordinator;
+        const auto decision=Coordinator::decideMixerRebind({
+            engine_.directRouteAuthorized(),
+            static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)),
+            checkpoint,mixerSessionRecoveryPending_,engine_.hasPristineStartupMixer(),
+            engine_.hasRetainedNativeSession(),bound
+        });
+        if(decision==Coordinator::MixerRebindAction::retainInstalled ||
+           decision==Coordinator::MixerRebindAction::acceptFreshBound)return true;
+        if(decision!=Coordinator::MixerRebindAction::restoreRetained)return false;
+        // Only a verified retained identity may upgrade exact -> ASIO restart.
+        // The .smix document remains authoritative and is never reset here.
+        if(bindingMode==MixerBindingMode::exact && engine_.sameRetainedAsioDriver())
+            bindingMode=MixerBindingMode::verifiedAsioRestart;
+        const auto error=restoreSavedMixerSession(false,bindingMode);
+        if(error.isNotEmpty()) {
+            mixerSessionError_=error;
+            emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
+            return false;
         }
-        return bound;
+        return true;
     }
 
     std::uint64_t asioRecoveryEpoch_=0; // last successfully bound generation
@@ -6002,7 +6011,8 @@ private:
         const auto now=monotonicMilliseconds();
         asioRecoveryGate_.observeEpoch(epoch,now);
         if(!asioRecoveryGate_.due(now))return; // let ASIO4ALL WDM pin inventory settle
-        auto applying=deviceApply_.tryBegin();
+        auto applying=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!applying)return;
         if(!device || !device->isOpen() ||
            device->getActiveOutputChannels().countNumberOfSetBits()<2) {

@@ -324,7 +324,9 @@ test('P0 MAONO: one APPLY MUTE-ACKs before switching and native ARM',()=>{
   assert.match(js,/deviceNote=ack\?\.ok\?'DEVICE ACCEPTED · OUTPUT MUTED · '\+devicePinNextStep\(\)/);
   assert.match(main,/!engine_\.allOutputsDisarmed\(\)/);
   assert.match(main,/NativeDeviceApplyCoordinator::matchesApplied/);
-  assert.match(main,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
+  assert.match(main,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+  assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
+  assert.match(applyOwner,/live\.deviceName==requested\.playback/);
   assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
   assert.match(applyOwner,/std::abs\(live\.deviceRate-a\.sampleRate\)/);
   assert.match(engine,/return isOutputMuted\(\) && !secondaryOutput_\.armed\(\)/);
@@ -360,9 +362,12 @@ test('DEVICE2 native device list is cached on overlay open; explicit scan is fai
  const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
                           native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
  assert.match(apply,/NativeDeviceApplyCoordinator::matchesApplied/);
- assert.match(apply,/observed\.activeInputs=opened->getActiveInputChannels\(\)/);
- assert.match(apply,/observed\.activeOutputs=opened->getActiveOutputChannels\(\)/);
- assert.match(apply,/observed\.deviceBuffer=opened->getCurrentBufferSizeSamples\(\)/);
+ assert.match(apply,/NativeDeviceApplyCoordinator::inspectApplied\(manager\)/);
+ assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
+ assert.match(applyOwner,/evidence\.activeOutputs=device->getActiveOutputChannels\(\)/);
+ assert.match(applyOwner,/evidence\.deviceBuffer=device->getCurrentBufferSizeSamples\(\)/);
+ assert.match(apply,/NativeDeviceApplyCoordinator::inspectRollback\(manager\)/);
+ assert.match(applyOwner,/live\.deviceName==before\.outputDeviceName/);
  assert.match(applyOwner,/live\.activeInputs==a\.inputChannels/);
  assert.match(applyOwner,/live\.activeOutputs==a\.outputChannels/);
  assert.match(applyOwner,/live\.deviceBuffer==a\.bufferSize/);
@@ -682,4 +687,22 @@ test('offline checkpoints stay protected until verified native restore',()=>{
   const control=read('src/NativeLogicalMixerControl.h');
   assert.match(control,/workspace_=std::move\(\*candidate\);[\s\S]*?checkpointSaved_\(workspace_.document\(\).id\)/);
   assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
+});
+
+// Exact control-thread serialization source contract for nested JUCE modal loops.
+test('M2b native AUDIO SETUP holds one lease through visible selection and rebind',()=>{
+ const cpp=read('src/Main.cpp');
+ const owner=read('src/NativeDeviceApplyCoordinator.h');
+ const setup=cpp.slice(cpp.indexOf('void showDeviceSetup()'),
+                       cpp.indexOf('// A Windows native Explorer picker',cpp.indexOf('void showDeviceSetup()')));
+ assert.match(setup,/audioSetupWindow_ && audioSetupWindow_->isVisible\(\)/);
+ assert.match(setup,/deviceApply_\.tryBegin\([\s\S]*?Purpose::setupDialog/);
+ assert.match(setup,/audioSetupLease_\.emplace\(std::move\(modalLease\)\)/);
+ assert.match(setup,/engine_\.beginManualAudioSetup\(true\)/);
+ assert.match(setup,/auto closingLease=std::move\(\*safe->audioSetupLease_\)/);
+ assert.match(setup,/safe->finishAudioSetupAndRecoverMixer\(\)/);
+ assert.match(owner,/enum class Purpose : std::uint8_t/);
+ assert.match(cpp,/Purpose::asioRecovery/);
+ assert.match(cpp,/Purpose::explicitApply/);
+ assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
 });
