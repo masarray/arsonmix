@@ -386,6 +386,7 @@ private:
     armix::session::NativeMixerSessionSaveWorker mixerSessionWorker_;
     armix::session::NativeLogicalMixerWorkspace logicalWorkspace_;
     bool logicalWorkspaceLoaded_=false;
+    bool logicalWorkspaceReadOnly_=false; // damaged HEAD never overwritten
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
@@ -1037,12 +1038,20 @@ private:
         if(!store.exists())return;
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
-        if(store.load(doc,states).isEmpty()) {
-            if(!logicalWorkspace_.load(std::move(doc),std::move(states)))
-                diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
-                    "Saved channel graph failed offline DAG validation");
-        } else diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
-                    "Verified mixer HEAD unavailable; retaining empty native workspace");
+        const auto loadError=store.load(doc,states);
+        if(loadError.isNotEmpty() ||
+           !logicalWorkspace_.load(std::move(doc),std::move(states))) {
+            // Keep the fallback logical console visible, but NEVER replace a
+            // corrupt or cyclic HEAD with a freshly generated default graph.
+            // Explicit Open can restore a verified .smix file safely.
+            logicalWorkspaceReadOnly_=true;
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="DAMAGED_SESSION";
+            mixerSessionError_=loadError.isNotEmpty()?loadError:
+                "Saved logical mixer routing is invalid or cyclic";
+            diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
+                                mixerSessionError_);
+        }
     }
 
     // Logical intents never pass through PCM admission. A separate ACK
@@ -1062,10 +1071,12 @@ private:
         const bool physical=static_cast<bool>(
             capabilities.getProperty("callbackOwnsChannelIds",false)) ||
             sessionAuthority=="M4" || sessionAuthority=="CHANNEL_ID";
-        if(!supportedId || replay || physical || audioDeviceApplyActive_ ||
-           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending()) {
+        if(!supportedId || replay || logicalWorkspaceReadOnly_ ||
+           physical || audioDeviceApplyActive_ || nativeShowBusy_ ||
+           studioBackupBusy_ || engine_.isGraphSwitchPending()) {
             failure=!supportedId?"INVALID_LOGICAL_REQUEST":
                 replay?"DUPLICATE_LOGICAL_REQUEST":
+                logicalWorkspaceReadOnly_?"SAVED_MIXER_RECOVERY_REQUIRED":
                 physical?"PHYSICAL_PCM_AUTHORITY_ACTIVE":"LOGICAL_EDITOR_BUSY";
         } else {
             acceptedControlRequests_.add(id);
@@ -1144,8 +1155,15 @@ private:
         if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))) {
             // Separate field: physical graph remains truthful/unadmitted.
             // Browsers may render this only as an explicitly unbound editor.
-            accepted.getDynamicObject()->setProperty("logicalMixer",
-                                                     logicalWorkspace_.snapshot());
+            auto logical=logicalWorkspace_.snapshot();
+            logical.getDynamicObject()->setProperty("readOnly",
+                                                    logicalWorkspaceReadOnly_);
+            if(logicalWorkspaceReadOnly_) {
+                logical.getProperty("graph",{}).getProperty("capabilities",{})
+                    .getDynamicObject()->setProperty("supportedOps",
+                                                     juce::var(juce::Array<juce::var>{}));
+            }
+            accepted.getDynamicObject()->setProperty("logicalMixer",logical);
         }
         if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
@@ -2679,6 +2697,8 @@ private:
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={}) {
         const bool automatic=exportFile==juce::File{};
         ensureLogicalWorkspace();
+        if(logicalWorkspaceReadOnly_)
+            return "Saved mixer recovery required before writing a new session";
         const auto live=engine_.status().getProperty("dryRoutingLab",{});
         if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
             // True no-device save: never synthesize a physical output
@@ -2776,13 +2796,22 @@ private:
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
+                safe->ensureLogicalWorkspace();
                 const auto id=doc.id;
+                const auto original=safe->logicalWorkspace_.document();
+                const auto originalStates=safe->logicalWorkspace_.states();
                 if(!safe->logicalWorkspace_.load(doc,states))
                     error="Saved logical routing is invalid or cyclic";
                 else {
                     error=armix::session::NativeMixerSessionStore(
                         settingsDirectory()).commit(doc,states);
+                    if(error.isNotEmpty()) {
+                        // OPEN is transactional: a failed disk write cannot
+                        // replace the view with a never-saved mixer.
+                        (void)safe->logicalWorkspace_.load(original,originalStates);
+                    }
                     if(error.isEmpty()) {
+                        safe->logicalWorkspaceReadOnly_=false;
                         safe->logicalWorkspaceLoaded_=true;
                         safe->mixerSessionId_=id;
                         safe->mixerSessionRecoveryPending_=false;
