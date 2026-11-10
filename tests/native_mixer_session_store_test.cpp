@@ -749,6 +749,54 @@ static void verifyOfflineLogicalSessionAndFile() {
     assert(workspace.revision()==reopened.revision());
     assert(liveStore.load(verifiedHead,headStates).isEmpty() &&
            verifiedHead.acceptedRevision==workspace.revision());
+    // Edit a later slot even when an earlier alpha.9 slot only has a
+    // catalog reference. Persist the actual processor bytes without PCM.
+    fx.getDynamicObject()->setProperty("catalogId",
+        armix::builtin_fx::ChannelEqProcessor::catalogIdentity);
+    assert(workspace.apply(command("ADD_FX_REFERENCE",fx,track)).accepted);
+    const ChannelId trackId{static_cast<std::uint64_t>(track.getLargeIntValue())};
+    armix::builtin_fx::ChannelEqProcessor eq;
+    eq.prepareToPlay(48000.,256);
+    auto band=eq.acceptedBands()[2];
+    band.gainDb=5.f;
+    assert(eq.queueBand(2,band,1));
+    eq.consumeRealtimeEdits();
+    armix::builtin_fx::ChannelEqProcessor::Completion applied{};
+    assert(eq.pollCompletion(applied)&&applied.applied);
+    juce::MemoryBlock bytes;
+    eq.getStateInformation(bytes);
+    StoredInsert insert;
+    insert.channel=trackId;
+    insert.slot=1;
+    insert.catalogId=armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
+    insert.name=eq.getName();
+    assert(workspace.saveFx(insert,std::move(bytes)));
+    assert(liveStore.commit(workspace.document(),workspace.states()).isEmpty());
+    assert(liveStore.load(verifiedHead,headStates).isEmpty()&&headStates.size()==1);
+    assert(verifiedHead.logicalOnly&&verifiedHead.inserts.front().slot==1);
+    armix::builtin_fx::ChannelEqProcessor reopenedEq;
+    reopenedEq.prepareToPlay(48000.,256);
+    assert(reopenedEq.restoreUnpublishedState(headStates.front().bytes.getData(),
+        static_cast<int>(headStates.front().bytes.getSize())));
+    assert(reopenedEq.acceptedBands()[2].gainDb==5.f);
+    auto slot=juce::var(new juce::DynamicObject());
+    slot.getDynamicObject()->setProperty("slot",0);
+    assert(workspace.apply(command("REMOVE_FX_REFERENCE",slot,track)).accepted);
+    assert(workspace.storedFx(trackId,0)&&workspace.states().size()==1);
+    assert(workspace.apply(command("REMOVE_FX_REFERENCE",slot,track)).accepted);
+    assert(!workspace.storedFx(trackId,0)&&workspace.states().empty());
+    // No source comes from the borrowed MAIN pair. A deleted legacy strip
+    // stays deleted, while its compatibility entry is explicitly absent.
+    assert(workspace.apply(command("DELETE_CHANNEL",{},"1")).accepted);
+    auto toBind=workspace.document();
+    const auto binding=makeSession().binding;
+    const VerifiedNativeOutputs outputs{2,0,1,-1,-1,false};
+    assert(!Codec::bindLogicalToVerifiedMain(toBind,binding,{},2));
+    assert(toBind.logicalOnly);
+    assert(Codec::bindLogicalToVerifiedMain(toBind,binding,outputs,2));
+    assert(!toBind.logicalOnly && toBind.request.sources.empty() &&
+           toBind.request.physicalInputs==2 && toBind.legacyIds.inputs[0].value==0);
+    assert(Codec::decode(Codec::encode(toBind),restored) && !restored.roster.find({1}));
     assert(folder.deleteRecursively());
 }
 

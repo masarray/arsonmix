@@ -1705,6 +1705,14 @@ public:
         return {};
     }
 
+    juce::String prepareUnboundMixerFx(const armix::session::StoredInsert& insert,
+            const armix::shows::BinaryState* state,double rate,
+            std::unique_ptr<juce::AudioProcessor>& processor) {
+        // Control-side processor ownership only. No device, render publisher or callback.
+        return armix::session::NativeMixerSessionFxRestore::prepareProcessor(
+            insert,state,formats_,rate,256,processor);
+    }
+
     // Prepare fresh vendor processors before publishing the replacement.
     // A successful publication leaves MAIN disarmed for caller verification.
     juce::String restoreNativeMixerSession(
@@ -1724,6 +1732,19 @@ public:
         MixerBindingInspection inspected;
         auto bindingError=inspectNativeMixerSessionBinding(document,inspected,mode);
         if(bindingError.isNotEmpty())return bindingError;
+        if(document.logicalOnly) {
+            // First binding borrows only the MAIN pair of the already
+            // verified native callback. Never translate unbound data into
+            // microphone patches or choose a different output device.
+            if(!replaceActive || !dryRoutingLab_.channelIdPhysicalPcmActive())
+                return "Choose a verified MAIN audio output for this mixer";
+            const auto pair=dryRoutingLab_.acceptedMainCallbackPair();
+            inspected.outputs={inspected.pins.outputCount,pair[0],pair[1],-1,-1,false};
+            if(!armix::session::Codec::bindLogicalToVerifiedMain(
+                    document,inspected.live,inspected.outputs,inspected.callbackInputs))
+                return "Offline mixer layout cannot bind to the verified native callback";
+            mode=armix::session::MixerDeviceBindingPolicy::Mode::exact;
+        }
         using BindingPolicy=armix::session::MixerDeviceBindingPolicy;
         if(sameLiveOutputs)
             *sameLiveOutputs=dryRoutingLab_.matchesNativeMixerOutputs(inspected.outputs);

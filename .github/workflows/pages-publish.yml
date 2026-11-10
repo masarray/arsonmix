@@ -69,7 +69,7 @@ jobs:
             fi
             while IFS= read -r path; do
               case "$path" in
-                site/index.html|site/googlec34c43149eef6100.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
+                README.md|site/index.html|site/googlec34c43149eef6100.html|site/landing.css|site/downloads.js|site/media/*|scripts/build_landing_assets.py|scripts/build_release_catalog.py|scripts/capture_landing_screenshots.py|tests/landing_page_*|tests/downloads_runtime_contract.test.mjs|tests/test_release_catalog.py|.github/workflows/pages-publish.yml|.github/workflows/alpha-preview-publish.yml|tests/release_ci_dispatch_contract.test.mjs)
                   ;;
                 *)
                   echo "fresh=false" >> "$GITHUB_OUTPUT"

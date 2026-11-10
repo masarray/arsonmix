@@ -24,10 +24,13 @@ public:
         stopThread(-1);
     }
     bool busy() const noexcept {return busy_.load(std::memory_order_acquire);}
-    void finishForShutdown() {
+    void finishForShutdown(bool applySaveCompletion=false) {
         waitForThreadToExit(-1);
+        ++serial_; // invalidate the queued message-thread completion
         busy_.store(false,std::memory_order_release);
+        auto completion=std::move(done_);
         done_={};readDone_={};states_.clear();
+        if(applySaveCompletion&&completion)completion(saveResult_);
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
@@ -65,7 +68,10 @@ private:
                 NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
         }catch(...) {error="Mixer session IO worker exception";}
         // Release potentially large VST3 binary buffers before callback.
-        if(!readDone_)states_.clear();
+        if(!readDone_) {
+            saveResult_=error;
+            states_.clear();
+        }
         auto alive=alive_;
         const auto serial=serial_;
         juce::MessageManager::callAsync([this,alive,error,serial]() mutable {
@@ -82,6 +88,7 @@ private:
     juce::File studio_,exportFile_;
     MixerSessionDocument doc_;
     std::vector<armix::shows::BinaryState> states_;
+    juce::String saveResult_;
     Completion done_;
     ReadCompletion readDone_;
     unsigned serial_=0;

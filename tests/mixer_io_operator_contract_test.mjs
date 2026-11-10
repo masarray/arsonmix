@@ -661,10 +661,10 @@ test('ASIO restart cannot strand MAIN off after temporary graph readiness faults
 });
 
 test('offline checkpoints stay protected until verified native restore',()=>{
-  const edit=main.slice(main.indexOf('void handleLogicalMixerIntent('),
+  const edit=main.slice(main.indexOf('bool saveLogicalWorkspace('),
     main.indexOf('juce::var approvedNativeSnapshot ('));
   const open=main.slice(main.indexOf('armix::session::NativeLogicalMixerWorkspace opened;'),
-    main.indexOf('if(error.isEmpty()&&doc.logicalOnly)'));
+    main.indexOf('if(error.isEmpty())error=safe->materializeLogicalFxForBinding(doc,states);'));
   const save=main.slice(main.indexOf('juce::String saveMixerSession('),
     main.indexOf('void openMixerFile('));
   assert.match(edit,/mixerSessionRecoveryPending_=true;\s*safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND"/);

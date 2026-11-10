@@ -113,8 +113,31 @@ def main():
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
         state=snapshot()
+        state["logicalMixer"]["graph"]["channels"][0]["inserts"]=[
+            {"id":"logical-eq","catalogId":"armix.builtin.channel-eq.v1",
+             "name":"Parametric EQ","bypassed":False},
+            {"id":"logical-vendor","catalogId":"vst3.fixture",
+             "name":"Vendor FX","bypassed":False},
+        ]
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'""")
+        rack=page.locator("#tracks .strip").first
+        rack.locator('[data-action="openPlugin"][data-slot="0"]').click()
+        assert page.locator("#mxNativePeq").is_visible()
+        assert not page.locator("#fastPicker").is_visible()
+        eq=page.evaluate("""()=>window.__events.find(e=>
+            e.payload?.action==='nativeEqSnapshot')?.payload""")
+        assert eq["workspaceToken"]=="workspace-a" and eq["deviceEpoch"]=="0"
+        assert eq["instanceId"]=="logical-eq"
+        page.evaluate("()=>window.ArSonMixNativeEq.close()")
+        rack.locator('[data-action="openPlugin"][data-slot="1"]').click()
+        vendor=page.evaluate("""()=>window.__events.find(e=>
+            e.payload?.action==='logicalVendorFxEditor')?.payload""")
+        assert vendor["instanceId"]=="logical-vendor" and vendor["deviceEpoch"]=="0"
+        assert not page.locator("#fastPicker").is_visible()
+        rack.locator('[data-action="openPlugin"][data-slot="2"]').click()
+        assert page.locator("#fastPicker").is_visible()
+        page.locator("#fastClose").click()
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14

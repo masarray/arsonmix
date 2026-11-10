@@ -82,16 +82,16 @@ class ReleaseCatalogContract(unittest.TestCase):
             mod.catalog({"releases": []})
 
 
-    def test_zip_first_and_backward_compatible_exe(self):
+    def test_direct_exe_first_with_verified_zip_fallback(self):
         tag = "v0.5.0-alpha.5"
         r = release(tag)
         r["assets"].append(asset(tag, f"ArSonMix-{tag}-Windows-x64-Setup.zip"))
         chosen = mod.catalog([r])["platforms"]["windows"]
-        self.assertEqual(chosen["name"], f"ArSonMix-{tag}-Windows-x64-Setup.zip")
+        self.assertEqual(chosen["name"], f"ArSonMix-{tag}-Windows-x64-Setup.exe")
         r["assets"] = [a for a in r["assets"]
-                       if not a["name"].endswith("Windows-x64-Setup.zip")]
+                       if not a["name"].endswith("Windows-x64-Setup.exe")]
         fallback = mod.catalog([r])["platforms"]["windows"]
-        self.assertTrue(fallback["name"].endswith("Windows-x64-Setup.exe"))
+        self.assertTrue(fallback["name"].endswith("Windows-x64-Setup.zip"))
 
     def test_version_order_beats_late_publication_of_old_build(self):
         early = release("v0.5.0-alpha.5", "2026-11-08T02:00:00Z")

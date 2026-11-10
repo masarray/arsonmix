@@ -3079,10 +3079,14 @@
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
-        if(mixerSession()?.authority==="CHANNEL_ID") {
-          const current=controller?.state()?.current,id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
+        if(logicalView||mixerSession()?.authority==="CHANNEL_ID") {
+          const current=activeView(),id=nativeIdFor(t),slot=Number(btn?.dataset.slot);
+          if(!Number.isInteger(slot)||slot<0||slot>=8)return true;
           const insert=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot];
-          if(current?.admitted&&insert?.id&&Number.isInteger(slot)&&slot>=0&&slot<8) {
+          if(!insert?.id) {
+            discoverFxOnFirstPickerOpen();
+            scope?.openFastPicker?.(t,slot,btn);
+          } else if(current.admitted||current.logical) {
             if(insert.catalogId==='armix.builtin.channel-eq.v1') {
               window.ArSonMixNativeEq?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.channel-compressor.v1') {
@@ -3091,9 +3095,13 @@
               window.ArSonMixNativeHarmony?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.vocal-throw.v1') {
               window.ArSonMixNativeVocalThrow?.open(t,slot);
+            } else if(current.logical) {
+              backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",channelId:id,
+                slot,instanceId:insert.id,workspaceToken:current.workspaceToken,
+                graphRevision:current.graph.revision,deviceEpoch:"0"});
             } else backend.emitEvent("arMixAction",{action:"routingFxEditor",channelId:id,slot,
               instanceId:insert.id,deviceEpoch:current.device.epoch,revision:current.graph.revision});
-          } else {discoverFxOnFirstPickerOpen();scope?.openFastPicker?.(t,slot,btn);}
+          } else nativeToast("This FX is held with the disconnected audio session");
           return true;
         }
         const slot=Number(btn?.dataset.slot),instance=verifiedFxFor(t,slot);
@@ -3414,6 +3422,7 @@
       return true;
     },
     applyIdentity:acceptIdentityPresentation,
+    fxEditorState:activeView,
     state:()=>controller?.state() || null
   });
   window.__ARMIX_NATIVE_M2__ = nativeHooks;

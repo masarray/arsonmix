@@ -3,9 +3,11 @@
 
 #include "../engine/core/DeviceIndependentMixerSession.h"
 #include "NativeMixerSessionDocument.h"
+#include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
 #include <cmath>
 #include <span>
+#include <tuple>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,6 +56,45 @@ public:
     }
     std::uint64_t revision() const noexcept {return editor_.revision();}
     const juce::String& workspaceToken() const noexcept {return workspaceToken_;}
+
+    juce::String fxToken(ChannelId id,std::size_t slot) const {
+        return "logical:"+workspaceToken_+":"+str(revision())+":"+str(id.value)+":"+str(slot);
+    }
+
+    const StoredInsert* storedFx(ChannelId id,std::size_t slot) const {
+        const auto& inserts=document_.inserts;
+        const auto it=std::find_if(inserts.begin(),inserts.end(),[&](const auto& fx){
+            return fx.channel==id && fx.slot==slot;
+        });
+        return it==inserts.end()?nullptr:&*it;
+    }
+
+    bool saveFx(StoredInsert insert,juce::MemoryBlock bytes) {
+        const auto* row=document_.roster.find(insert.channel);
+        if(!row || insert.slot>=row->insertCatalogIds.size() ||
+           insert.catalogId.toStdString()!=row->insertCatalogIds[insert.slot] ||
+           bytes.getSize()>8U*1024U*1024U)
+            return false;
+        insert.sha256=juce::SHA256(bytes).toHexString();
+        const auto id=insert.channel;
+        const auto slot=insert.slot;
+        if(const auto* old=storedFx(id,slot))insert.bypass=old->bypass;
+        auto& planned=document_.plannedSlotBypassed;
+        if(std::erase_if(planned,[&](const auto& fx){return fx.channel==id&&fx.slot==slot;}))
+            insert.bypass=true;
+        auto& inserts=document_.inserts;
+        std::erase_if(inserts,[&](const auto& fx){return fx.channel==id&&fx.slot==slot;});
+        if(std::none_of(states_.begin(),states_.end(),
+                [&](const auto& state){return state.sha256==insert.sha256;}))
+            states_.push_back({insert.sha256,std::move(bytes)});
+        inserts.push_back(std::move(insert));
+        std::sort(inserts.begin(),inserts.end(),[](const auto& a,const auto& b){
+            return std::tie(a.channel.value,a.slot)<std::tie(b.channel.value,b.slot);
+        });
+        pruneFxStates();
+        document_.savedMs=juce::Time::currentTimeMillis();
+        return true;
+    }
 
     struct Ack final {
         bool accepted=false;
@@ -144,21 +185,15 @@ public:
             edit.enabled=static_cast<bool>(number);
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="REMOVE_FX_REFERENCE") {
-            if(!document_.logicalOnly)return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
             const auto* row=editor_.roster().find(id);
             const auto v=payload.getProperty("slot",{});
             if(!v.isInt() || !row || static_cast<int>(v)<0 ||
                static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
                 return bad("INVALID_LOGICAL_FX_SLOT");
-            if(std::any_of(document_.inserts.begin(),document_.inserts.end(),
-                   [&](const auto& fx){return fx.channel==id &&
-                       fx.slot==static_cast<std::size_t>(static_cast<int>(v));}))
-                return bad("FX_SLOT_OWNS_SAVED_STATE");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
             edit.position=static_cast<std::size_t>(static_cast<int>(v));
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FX_SLOT_BYPASS") {
-            if(!document_.logicalOnly)return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
             const auto* row=editor_.roster().find(id);
             const auto v=payload.getProperty("slot",{}),enabled=payload.getProperty("enabled",{});
             if(!v.isInt() || !enabled.isBool() || !row || static_cast<int>(v)<0 ||
@@ -174,10 +209,6 @@ public:
             edit.kind=ChannelEdit::Kind::touchDocumentRevision;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="ADD_FX_REFERENCE") {
-            // A physically saved Show may contain vendor states. Never
-            // invent a binary processor lease or mismatch its state manifest.
-            if(!document_.logicalOnly)
-                return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
             const auto catalog=payload.getProperty("catalogId","").toString();
             // The JUCE host verifies every external identity against its
             // actual installed catalog before calling this editor. Here we
@@ -239,6 +270,11 @@ public:
         if(operation=="REMOVE_FX_REFERENCE") {
             const auto erased=static_cast<std::size_t>(static_cast<int>(
                 payload.getProperty("slot",0)));
+            auto& inserts=document_.inserts;
+            std::erase_if(inserts,[&](const auto& fx){return fx.channel==id&&fx.slot==erased;});
+            for(auto& fx:inserts)
+                if(fx.channel==id && fx.slot>erased)--fx.slot;
+            pruneFxStates();
             auto& planned=document_.plannedSlotBypassed;
             planned.erase(std::remove_if(planned.begin(),planned.end(),
                 [&](const auto& p){return p.channel==id && p.slot==erased;}),
@@ -335,7 +371,7 @@ public:
                 const auto& catalog=row.insertCatalogIds[slot];
                 const auto id=juce::String::fromUTF8(catalog.c_str());
                 auto fx=object();
-                set(fx,"id","planned:"+str(row.id.value)+":"+juce::String(static_cast<int>(slot)));
+                set(fx,"id",fxToken(row.id,slot));
                 set(fx,"catalogId",id);
                 const auto stored=std::find_if(document_.inserts.begin(),
                     document_.inserts.end(),[&](const auto& insert){
@@ -393,6 +429,13 @@ private:
     MixerSessionDocument document_;
     juce::String workspaceToken_=juce::Uuid().toDashedString().toLowerCase();
     std::vector<armix::shows::BinaryState> states_;
+
+    void pruneFxStates() {
+        std::erase_if(states_,[&](const auto& state){
+            return std::none_of(document_.inserts.begin(),document_.inserts.end(),
+                [&](const auto& fx){return fx.sha256==state.sha256;});
+        });
+    }
 
     void sync() {
         document_.roster=editor_.roster();

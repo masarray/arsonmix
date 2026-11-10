@@ -3060,7 +3060,7 @@ public:
         // accepted snapshot, NOT merely a catalog name or M4 CH1 label.
         // Message-thread diagnostic only; no false universal capabilities.
         out->setProperty("originalCh1GraphLeased",
-            nativePcm && nativeAccepted_.fxOwners &&
+            nativePcm && nativeAccepted_.fxOwners && nativeAccepted_.graph.ids.inputs[0].value &&
             nativeAccepted_.fxOwners->externalChannel()==
                 nativeAccepted_.graph.ids.inputs[0]);
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));

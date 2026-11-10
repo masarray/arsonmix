@@ -401,9 +401,9 @@ class Codec final {
         if(!in||!aux||in->size()!=stripCount||aux->size()!=auxBusCount)
             return false;
         for(int i=0;i<stripCount;++i)
-            if(!parseDecimal(in->getReference(i),ids.inputs[i].value))return false;
+            if(!parseDecimal(in->getReference(i),ids.inputs[i].value,true))return false;
         for(int i=0;i<auxBusCount;++i)
-            if(!parseDecimal(aux->getReference(i),ids.aux[i].value))return false;
+            if(!parseDecimal(aux->getReference(i),ids.aux[i].value,true))return false;
         return parseDecimal(get(v,"main"),ids.main.value) &&
                parseDecimal(get(v,"monitor"),ids.monitor.value,true);
     }
@@ -589,7 +589,7 @@ public:
            !strictBool(get(master,"mono"),doc.masterMono))return false;
         const auto channelsVar=get(root,"channels");
         const auto* channels=channelsVar.getArray();
-        if(!channels||channels->size()<(doc.logicalOnly?1:15)||channels->size()>2048)return false;
+        if(!channels||channels->isEmpty()||channels->size()>2048)return false;
         std::vector<ChannelStripDefinition> entries;
         entries.reserve(static_cast<std::size_t>(channels->size()));
         for(const auto& ch:*channels) {
@@ -638,8 +638,8 @@ public:
             return row && row->role==role;
         };
         if(!doc.logicalOnly) {
-            for(auto id:doc.legacyIds.inputs)if(!seek(id,ChannelRole::input))return false;
-            for(auto id:doc.legacyIds.aux)if(!seek(id,ChannelRole::fxReturn))return false;
+            for(auto id:doc.legacyIds.inputs)if(id.value&&!seek(id,ChannelRole::input))return false;
+            for(auto id:doc.legacyIds.aux)if(id.value&&!seek(id,ChannelRole::fxReturn))return false;
         }
         if(!seek(doc.legacyIds.main,ChannelRole::main) ||
            (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
@@ -762,7 +762,8 @@ public:
                 ch.insertCatalogIds[0]=="legacy:aux-rack";
             for(const auto& fxRow:doc.inserts)
                 if(fxRow.channel==ch.id) {
-                    if(fxRow.slot!=slot++)return false;
+                    if((!doc.logicalOnly || legacyMarker) && fxRow.slot!=slot)return false;
+                    ++slot;
                     // A malformed, otherwise SHA-correct document can claim
                     // more FX slots than the accepted roster's catalog.
                     // Bound-check BEFORE indexing: never allow UB on restore.
@@ -776,7 +777,7 @@ public:
             // No orphan leases, and no phantom roster FX. In particular an
             // empty catalog cannot authorize an installed vendor processor.
             // Logical-only references are plans, not instantiated vendor
-            // processors. A stored FX state may be a verified prefix; the
+            // processors. A stored FX state can be saved independently per slot; the
             // remaining catalog references are deferred until physical bind.
             if(!legacyMarker && (doc.logicalOnly?
                 slot>ch.insertCatalogIds.size():
@@ -785,5 +786,30 @@ public:
         output=std::move(doc);
         return true;
     }
+
+    // The caller supplies an already verified native callback layout.
+    // Logical sessions never gain physical capture patches from first binding.
+    static bool bindLogicalToVerifiedMain(MixerSessionDocument& document,
+            const HardwareBinding& binding,const VerifiedNativeOutputs& outputs,int captureCount) {
+        if(!document.logicalOnly || !outputs.valid() ||
+           std::any_of(document.request.sources.begin(),document.request.sources.end(),
+               [](const auto& source){return source.kind==DynamicSourceKind::physical;}))
+            return false;
+        auto bound=document;
+        bound.binding=binding;
+        bound.outputs=outputs;
+        bound.request.physicalInputs=captureCount;
+        bound.logicalOnly=false;
+        bound.plannedSlotBypassed.clear(); // already materialized into each insert
+        for(auto& id:bound.legacyIds.inputs)
+            if(!bound.roster.find(id))id={};
+        for(auto& id:bound.legacyIds.aux)
+            if(!bound.roster.find(id))id={};
+        MixerSessionDocument verified;
+        if(!decode(encode(bound),verified))return false;
+        document=std::move(bound);
+        return true;
+    }
+
 };
 } // namespace armix::session

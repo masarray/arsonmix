@@ -18,7 +18,7 @@ const fresh=()=>defaults.map((f,i)=>({enabled:false,frequencyHz:f,gainDb:0,q:i>=
 const dom=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!==undefined)e.textContent=txt;return e};
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
-const state=()=>window.__ARMIX_NATIVE_M2__?.state?.()?.current;
+const state=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const cap=()=>Math.min(20000,Math.max(20,Math.floor(sampleRate*.45)));
 const CUT=i=>i===0||i===7, SHELF=i=>i===1||i===6;
 const LOG=Math.log(1000),XL=34,XR=642,YT=21,YB=293,ZO=157,G=18;
@@ -119,9 +119,10 @@ const context=()=>{
    n?.graph?.channels?.find(ch=>ch.id===current.channelId)?.id;
  const channelId=current.channelId||id;
  const insert=n?.graph?.channels?.find(ch=>ch.id===channelId)?.inserts?.[current.slot];
- if(!n?.admitted||!insert||insert.catalogId!==ID||!insert.id||
+ if(!(n?.admitted||n?.logical)||!insert||insert.catalogId!==ID||!insert.id||
     (current.instanceId&&insert.id!==current.instanceId))return null;
- return {channelId,deviceEpoch:n.device.epoch,graphRevision:n.graph.revision,
+ return {channelId,deviceEpoch:n.logical?"0":n.device.epoch,
+  ...(n.logical?{workspaceToken:n.workspaceToken}:{}),graphRevision:n.graph.revision,
   instanceId:insert.id,slot:current.slot};
 };
 const effective=()=>draft?.list||bands;
@@ -363,7 +364,7 @@ const api={
   current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest.clear();draft=null;
   const n=state();const nativeId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===nativeId);
-  if(native()&&n?.admitted&&ch?.inserts?.[slot]?.catalogId===ID){
+  if(native()&&(n?.admitted||n?.logical)&&ch?.inserts?.[slot]?.catalogId===ID){
    current.channelId=nativeId;current.instanceId=ch.inserts[slot].id;
    mode="NATIVE";bands=fresh();sampleRate=48000;
    hint("NATIVE · READING ACCEPTED DSP STATE");requestSnapshot();

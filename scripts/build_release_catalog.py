@@ -1,7 +1,8 @@
-"""Publish a strict, static download catalog built from actual GitHub Release assets.
+"""Publish a strict static catalog from verified GitHub Release assets.
 
-Browser uses only same-origin release-catalog.json. No GitHub API, Actions or
-release-page navigation. Invalid/absent OS binaries are never offered.
+The browser first loads this same-origin catalog and may recover via the public
+GitHub Releases API when Pages is stale. Never point to Actions artifacts or
+unverified / absent OS binaries.
 """
 import argparse
 import json
@@ -18,9 +19,9 @@ TAG = re.compile(r"^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$")
 DIGEST = re.compile(r"^sha256:([a-f0-9]{64})$")
 SHA = re.compile(r"^[a-f0-9]{40}$")
 SUFFIXES = {
-    # New releases present the verified installer INSIDE a ZIP to reduce
-    # browser friction; older signed releases remain reachable as direct EXE.
-    "windows": ("Windows-x64-Setup.zip", "Windows-x64-Setup.exe"),
+    # A direct Setup EXE is the least confusing Windows download; verified
+    # installer ZIP remains a fallback when the EXE asset is absent.
+    "windows": ("Windows-x64-Setup.exe", "Windows-x64-Setup.zip"),
     "linux": ("Linux-x86_64.AppImage", "Linux-x86_64.tar.gz"),
     "macos": ("macOS-universal.dmg", "macOS-arm64.dmg", "macOS-x64.dmg"),
 }
@@ -69,7 +70,7 @@ def catalog(releases):
         raise ValueError("Release API response must be an array")
     selected = {key: None for key in SUFFIXES}
     # Newest valid VERSION per OS. A backfilled older upload cannot displace
-    # a more recent alpha, while a real ZIP can take priority within one tag.
+    # a more recent alpha; direct EXE takes priority over ZIP within one tag.
     ordered = sorted((r for r in releases if isinstance(r, dict)),
                      key=release_sort_key, reverse=True)
     for release in ordered:

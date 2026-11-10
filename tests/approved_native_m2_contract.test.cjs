@@ -1247,7 +1247,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
  const engine=read('src/LiveAudioEngine.h');
  const route=read('src/LiveDryRoutingLab.h');
  assert.match(main,/nativeAlreadyActive && !retained &&/);
- assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply\) &&/);
+ assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply \|\| firstBinding\) &&/);
  assert.match(main,/recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&\s*mixerSessionRecoveryPending_/);
  assert.match(main,/!usedPrevious && !retained/); // only normal auto-resume, not recovery admission
  assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);
