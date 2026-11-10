@@ -1058,87 +1058,9 @@ private:
     // device-independent edit authority. A stale checkpoint is never allowed
     // to overwrite newer live PCM changes made before device removal.
     bool retainedGraphMatchesLogical(const juce::var& snapshot) const {
-        const auto physical=snapshot.getProperty("graph",{});
-        const auto logical=logicalWorkspace_.snapshot().getProperty("graph",{});
-        if(physical.getProperty("revision","").toString()!=
-                logical.getProperty("revision","").toString() ||
-           physical.getProperty("rosterRevision","").toString()!=
-                logical.getProperty("rosterRevision","").toString())
-            return false;
-        const auto* a=physical.getProperty("channels",{}).getArray();
-        const auto* b=logical.getProperty("channels",{}).getArray();
-        const auto* ae=physical.getProperty("edges",{}).getArray();
-        const auto* be=logical.getProperty("edges",{}).getArray();
-        if(!a||!b||!ae||!be||a->size()!=b->size()||ae->size()!=be->size())
-            return false;
-        for(const auto& p:*a) {
-            const auto id=p.getProperty("id","").toString();
-            const auto found=std::find_if(b->begin(),b->end(),[&](const auto& x){
-                return x.getProperty("id","").toString()==id;
-            });
-            if(found==b->end())return false;
-            const auto& own=*found;
-            for(const char* field:{"role","name","processingFormat","primaryOutId"})
-                if(p.getProperty(field,"").toString()!=
-                   own.getProperty(field,"").toString())return false;
-            const auto* pf=p.getProperty("inserts",{}).getArray();
-            const auto* lf=own.getProperty("inserts",{}).getArray();
-            if(!pf||!lf||pf->size()!=lf->size())return false;
-            for(int i=0;i<pf->size();++i) {
-                if(pf->getReference(i).getProperty("catalogId","").toString()!=
-                       lf->getReference(i).getProperty("catalogId","").toString() ||
-                   pf->getReference(i).getProperty("bypassed",{}).isBool()!=
-                       lf->getReference(i).getProperty("bypassed",{}).isBool() ||
-                   pf->getReference(i).getProperty("bypassed",false)!=
-                       lf->getReference(i).getProperty("bypassed",false))
-                    return false;
-            }
-            // A native scalar may change without bumping the topology
-            // revision. A structurally equal roster does NOT justify
-            // overwriting the owner's unsaved fader, pan, mute or solo.
-            const auto controls=p.getProperty("controls",{});
-            const auto ownControls=own.getProperty("controls",{});
-            if(!controls.isObject()||!ownControls.isObject())return false;
-            for(const char* field:{"faderDb","pan"}) {
-                const auto value=controls.getProperty(field,{});
-                const auto ownValue=ownControls.getProperty(field,{});
-                if(!(value.isDouble()||value.isInt()) ||
-                   !(ownValue.isDouble()||ownValue.isInt()))
-                    return false;
-                const auto a=static_cast<double>(value);
-                const auto b=static_cast<double>(ownValue);
-                if(!std::isfinite(a)||!std::isfinite(b) ||
-                   std::abs(a-b)>(juce::String(field)=="faderDb"?0.05:0.01))
-                    return false;
-            }
-            for(const char* field:{"mute","solo"}) {
-                const auto value=controls.getProperty(field,{});
-                const auto ownValue=ownControls.getProperty(field,{});
-                if(!value.isBool()||!ownValue.isBool()||value!=ownValue)
-                    return false;
-            }
-            if(p.getProperty("fxRackBypassed",false)!=
-               own.getProperty("fxRackBypassed",false))
-                return false;
-        }
-        for(const auto& edge:*ae) {
-            const auto id=edge.getProperty("edgeId","").toString();
-            const auto found=std::find_if(be->begin(),be->end(),[&](const auto& x){
-                return x.getProperty("edgeId","").toString()==id;
-            });
-            if(found==be->end())return false;
-            for(const char* field:{"from","to","tap"})
-                if(edge.getProperty(field,"").toString()!=
-                   found->getProperty(field,"").toString())return false;
-            if(static_cast<bool>(edge.getProperty("primaryOutput",false))!=
-               static_cast<bool>(found->getProperty("primaryOutput",false)))
-                return false;
-            const auto gain=static_cast<double>(edge.getProperty("gainLinear",1.));
-            const auto ownGain=static_cast<double>(found->getProperty("gainLinear",1.));
-            if(!std::isfinite(gain)||!std::isfinite(ownGain)||
-               std::abs(gain-ownGain)>0.00001)return false;
-        }
-        return true;
+        return armix::session::NativeLogicalMixerWorkspace::sameRetainedGraph(
+            snapshot.getProperty("graph",{}),
+            logicalWorkspace_.snapshot().getProperty("graph",{}));
     }
 
     // Logical intents never pass through PCM admission. A separate ACK
