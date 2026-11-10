@@ -7,7 +7,7 @@
 namespace armix::diagnostics
 {
 // Diagnostic routes are temporary, never persisted as the chosen user device.
-enum class Route : int { normal = 0, dryThrough = 1, outputOnlyTone = 2, captureOnly = 3 };
+enum class Route : int { normal = 0, dryThrough = 1, outputOnlyTone = 2, captureOnly = 3, mainOutputTone = 4 };
 
 inline constexpr const char* routeName (Route route) noexcept
 {
@@ -17,6 +17,7 @@ inline constexpr const char* routeName (Route route) noexcept
         case Route::dryThrough:     return "DRY_THROUGH";
         case Route::outputOnlyTone: return "OUTPUT_ONLY_TONE";
         case Route::captureOnly:    return "CAPTURE_ONLY";
+        case Route::mainOutputTone: return "MAIN_OUTPUT_TONE";
     }
     return "INVALID";
 }

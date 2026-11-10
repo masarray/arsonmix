@@ -202,9 +202,16 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  for(const flag of ['JUCE_ASIO=1','JUCE_WASAPI=1','JUCE_DIRECTSOUND=1'])assert.ok(cm.includes(flag));
  assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/); // hidden fallback only
  assert.match(native,/action == "audioDeviceApply"/);
- assert.match(native,/setAudioDeviceSetup\(candidate,true\)/);
+ const open=native.slice(native.indexOf('juce::String openSelectedAudioDevice('),
+   native.indexOf('void applyCustomAudioDevice('));
+ assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
+ assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
+ assert.match(open,/setAudioDeviceSetup\(setup,true\)/);
+ assert.match(open,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+ assert.match(open,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
+ assert.doesNotMatch(open,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
- assert.match(native,/finishManualAudioSetup\(\)/);
+ assert.match(native,/finishManualAudioSetup\(bindingMode!=MixerBindingMode::verifiedMainPinApply\)/);
  assert.match(native,/RESTORED_MUTED/);
  assert.match(native,/RECOVERY_REQUIRED/);
  assert.match(native,/arMixAudioDeviceApplyAck/);
@@ -220,10 +227,15 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
 test('explicit device Apply restores the authored mixer after driver readback and can roll back',()=>{
  const main=read('src/Main.cpp');
  const apply=main.slice(main.indexOf('void applyCustomAudioDevice('),main.indexOf('void showDeviceSetup()'));
- assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(true\)\)/);
+ assert.match(apply,/if\(error\.isEmpty\(\)&&!finishAudioSetupAndRecoverMixer\(bindingMode\)\)/);
  assert.match(apply,/if\(!previousMixerBound && engine_\.directRouteAuthorized\(\)/);
  assert.match(apply,/finishAudioSetupAndRecoverMixer\(\);/);
- assert.match(main,/BindingMode::verifiedDeviceApply:BindingMode::exact/);
+ assert.match(apply,/explicitPairStillIdentified\?MixerBindingMode::verifiedMainPinApply/);
+ assert.match(apply,/pinOutput.getArray\(\)->size\(\)!=2/);
+ assert.match(main,/restoreSavedMixerSession\(false,bindingMode\)/);
+ assert.match(apply,/if\(refreshedAsio4All\) \{[\s\S]*?openSelectedAudioDevice\(typeName,candidate,true\)/);
+ assert.match(main,/epoch==asioRecoveryEpoch_/);
+ assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
 });
 
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{
@@ -584,4 +596,51 @@ test('hardware input CH1/CH2/CH10 selectable on the mixer itself without an IO m
  assert.match(io,/ENABLED capture pin\(s\)/);
  assert.match(css,/\.arChannelQuickInput\{/);
  assert.doesNotMatch(css,/backdrop-filter|filter:blur/);
+});
+
+// Recovery regression: a transient ASIO4ALL reopen must not consume the
+// only opportunity to bind the retained ChannelId PCM graph.
+test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verified readback',()=>{
+  const src=read('src/Main.cpp');
+  const service=src.slice(src.indexOf('void serviceAsioMixerRestart()'),src.indexOf('void changeListenerCallback ('));
+  assert.match(service,/asioRecoveryGate_\.observeEpoch\(epoch,now\)/);
+  assert.match(service,/asioRecoveryGate_\.due\(now\)/);
+  assert.match(service,/asioRecoveryGate_\.mayChangeDriver\(\)/);
+  assert.match(service,/asioRecoveryGate_\.driverTransaction\(now\)/);
+  assert.match(service,/asioRecoveryGate_\.carryInternalEpoch\(engine_\.dryRoutingLabEpoch\(\)\)/);
+  assert.match(service,/asioRecoveryGate_\.bindFailed\(now\)/);
+  assert.match(service,/audioSetupWindow_->isVisible\(\)/);
+  assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
+  assert.match(service,/setup\.useDefaultInputChannels=!setup\.inputChannels\.isZero\(\)/);
+  const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
+  assert.doesNotMatch(apply,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\);\s*if\(changedAsioPinLayout\)/);
+});
+
+test('ASIO4ALL missing JUCE device can reopen only the pinned user-selected driver',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+  const service=main.slice(main.indexOf('void serviceAsioMixerRestart()'),
+                           main.indexOf('void changeListenerCallback ('));
+  assert.match(service,/else if\(!engine_\.selectedRetainedAsioDriverForReopen\(\)\)/);
+  assert.match(service,/if\(!device \|\| !device->isOpen\(\)/);
+  assert.match(service,/ASIO4ALL_DEVICE_MISSING/);
+  const selected=engine.slice(engine.indexOf('bool selectedRetainedAsioDriverForReopen()'),
+                              engine.indexOf('bool authorizeRetainedAsioRestart()'));
+  assert.match(selected,/deviceManager_\.getCurrentAudioDevice\(\)/);
+  assert.match(selected,/deviceManager_\.getCurrentAudioDeviceType\(\)!="ASIO"/);
+  assert.match(selected,/Policy::isAsio4All\(\*acceptedMixerBinding_\)/);
+  assert.match(selected,/setup\.outputDeviceName!=acceptedMixerBinding_->playback/);
+  assert.match(selected,/setup\.inputDeviceName!=acceptedMixerBinding_->capture/);
+  assert.match(selected,/asioPinnedRegistration_\.sameDriverClass\(registered\.registration\.identity\)/);
+});
+
+test('ASIO restart cannot strand MAIN off after temporary graph readiness faults',()=>{
+  const main=read('src/Main.cpp'),engine=read('src/LiveAudioEngine.h');
+  const arm=main.slice(main.indexOf('void serviceAutomaticMain()'),main.indexOf('void requestAutomaticMain('));
+  assert.ok(arm.indexOf('liveOutputArmFault(autoMainRequiresInput_)')<
+            arm.indexOf('autoMainCheckedRevision_=revision;'),'only a verified ARM consumes the revision');
+  const begin=engine.slice(engine.indexOf('void audioDeviceAboutToStart ('),engine.indexOf('void audioDeviceStopped()'));
+  assert.match(begin,/if\(monitor_\.load\(std::memory_order_acquire\)\)/);
+  assert.match(begin,/resumeMainAfterAsioReset_\.store\(true/);
+  assert.ok(begin.indexOf('resumeMainAfterAsioReset_.store(true')<begin.indexOf('setOutputMuted(true)'));
 });

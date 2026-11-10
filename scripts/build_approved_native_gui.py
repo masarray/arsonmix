@@ -58,6 +58,12 @@ def accepted_pages_html() -> str:
 # HTML at native build time. Every anchor must occur exactly once: no silent
 # breakage if Pages GUI source evolves. No extra layout or simulated PCM.
 NATIVE_EVENT_HOOKS = (
+    # The mixer shell must remain visible even with zero audio endpoints or
+    # before the first accepted roster. Native control intents are still
+    # fenced by the bridge's authoritative ACK/readback; no mock PCM runs.
+    ("Mixer · Reference Session", "Mixer · Native Session"),
+    ("Interactive visual reference. Changes are local to this mockup.", "Preparing native mixer…"),
+    ("SIMULATED METERS · NO REAL AUDIO", "NATIVE AUDIO"),
     # The published /preview/ HTML and its V28 checkpoint are immutable.
     # Change ONLY the compiled native WebView's operator fader travel law.
     # The DSP gain remains exact dB -> 10^(dB/20), and the mapping is
@@ -228,10 +234,10 @@ NATIVE_EVENT_HOOKS = (
      " setNativeCatalog(rows){\n"
      "  pluginCatalog=rows.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').map(x=>({\n"
      "   id:x.id,name:x.name,vendor:x.vendor||'Unknown',category:x.category||'Utility',\n"
-     "   format:'VST3',status:'ready',latencySamples:null,\n"
+     "   format:x.format==='Native'?'Native':'VST3',status:'ready',latencySamples:null,\n"
      "   favorite:!!x.favorite,hidden:false}));\n"
      "  const label=document.querySelector('.plugin-disclaimer');\n"
-     "  if(label)label.textContent='NATIVE JUCE VST3 · only verified scanned catalog entries are insertable';\n"
+     "  if(label)label.textContent='Native EQ/Compressor/Harmony ready · external VST3 require verified scan';\n"
      "  renderPluginCatalog();renderFastPicker();return pluginCatalog.length;\n"
      " },\n"
      " closeNativePicker(){setFastPicker(false);},\n"

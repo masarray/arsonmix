@@ -24,6 +24,10 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertEqual(bundle.public_from_native(native), approved)
             self.assertNotIn("__ARMIX_NATIVE_M2__", approved)
             self.assertIn("__ARMIX_NATIVE_M2__", native)
+            # Never let a missing ASIO driver or delayed native snapshot
+            # hide the entire mixer. Readback controls remain separately gated.
+            self.assertNotIn('id="native-mixer-startup"', native)
+            self.assertNotIn('html:not([data-armix-native-roster]) :is(.console-pane,#trackCount){visibility:hidden}', native)
             # M3 native-only scope is embedded inside the existing Pages IIFE:
             # no visual duplication; it must be stripped in public_from_native.
             self.assertIn("window.__ARMIX_NATIVE_SCOPE__=Object.freeze({", native)

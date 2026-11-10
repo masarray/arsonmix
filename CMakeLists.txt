@@ -78,13 +78,22 @@ target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/bu
 if(MSVC)
   target_compile_options(ARMixConsole PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 endif()
+# Stamp the build source in Copy Audio Report, including Windows field trials.
+execute_process(COMMAND git rev-parse --verify HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE ARMIX_BUILD_SOURCE_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE ARMIX_BUILD_SOURCE_STATUS ERROR_QUIET)
+if(NOT ARMIX_BUILD_SOURCE_STATUS EQUAL 0 OR NOT ARMIX_BUILD_SOURCE_SHA MATCHES "^[0-9a-f]+$")
+  set(ARMIX_BUILD_SOURCE_SHA "unavailable")
+endif()
 # One JUCE mixer/PCM host on all three desktops. Device backends are OS owned.
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
-    JUCE_APPLICATION_VERSION_STRING="0.5.0-p2")
+    JUCE_APPLICATION_VERSION_STRING="0.5.0-p2"
+    ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}")
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -115,9 +124,22 @@ if(BUILD_TESTING)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
+  add_executable(ARMixHarmonyOfflineAb tools/harmony_offline_ab.cpp)
+  target_compile_features(ARMixHarmonyOfflineAb PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyOfflineDryAndABRenderHarness COMMAND ARMixHarmonyOfflineAb --self-test)
+  add_executable(ARMixHarmonyPitchSyncTests tests/harmony_pitch_synchronous_test.cpp)
+  target_compile_features(ARMixHarmonyPitchSyncTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity COMMAND ARMixHarmonyPitchSyncTests)
+  add_executable(ARMixHarmonySpatialTests tests/harmony_stage_spatial_test.cpp)
+  target_compile_features(ARMixHarmonySpatialTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyBackingStageSpatialDepthAndMonoPDC COMMAND ARMixHarmonySpatialTests)
   add_executable(ARMixHarmonyDspTests tests/harmony_dsp_test.cpp)
   target_compile_features(ARMixHarmonyDspTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyMultivoicePitchAndRealtimeFinitePCM COMMAND ARMixHarmonyDspTests)
+  # Non-gating synthetic engine-only CPU profile (not ASIO certification).
+  add_executable(ARMixHarmonyCpuProfileTests tests/harmony_cpu_profile_test.cpp)
+  target_compile_features(ARMixHarmonyCpuProfileTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonySyntheticCallbackCpuProfile COMMAND ARMixHarmonyCpuProfileTests)
   add_executable(ARMixHarmonyMusicGuideTests tests/harmony_music_key_test.cpp)
   target_compile_features(ARMixHarmonyMusicGuideTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyCrossChannelMusicKeyAndManualFallback COMMAND ARMixHarmonyMusicGuideTests)
@@ -126,10 +148,18 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixHarmonyChannelPcmTests PRIVATE juce::juce_audio_processors juce::juce_recommended_config_flags)
   target_compile_features(ARMixHarmonyChannelPcmTests PRIVATE cxx_std_20)
   add_test(NAME NativeHarmonyMusicFromOtherChannelIdAndStateMigration COMMAND ARMixHarmonyChannelPcmTests)
+  # Explicit FX lease + ChannelId PCM regression: continuous Harmony DSP on
+  # disabled insert/rack, exact dry PDC and state-identical wet reactivation.
+  juce_add_console_app(ARMixHarmonyBypassPcmTests PRODUCT_NAME "ArSonMix Harmony Clickless Bypass PCM")
+  target_sources(ARMixHarmonyBypassPcmTests PRIVATE tests/harmony_bypass_reliability_test.cpp)
+  target_link_libraries(ARMixHarmonyBypassPcmTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixHarmonyBypassPcmTests PRIVATE cxx_std_20)
+  add_test(NAME NativeHarmonyWarmBypassRackSlotAndLatencyParity COMMAND ARMixHarmonyBypassPcmTests)
   add_test(NAME ApprovedNativeHarmonyEditorAckAndSingleGui COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_harmony_assembly_test.py")
   add_executable(ARMixMixerRoutingTests tests/mixer_routing_plan_test.cpp)
   target_compile_features(ARMixMixerRoutingTests PRIVATE cxx_std_20)
-  add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixHarmonyDspTests ARMixHarmonyMusicGuideTests ARMixHarmonyChannelPcmTests ARMixHarmonyBypassPcmTests ARMixHarmonyCpuProfileTests)
   add_test(NAME TenStripStaticRoutingAndMaster COMMAND ARMixMixerRoutingTests)
   # M3D atomic native Session: the accepted Console roster cannot advance
   # without a successful epoch/revision-gated PCM publication.
@@ -272,6 +302,10 @@ if(BUILD_TESTING)
   add_executable(ARMixStreamWatchdogTests tests/independent_stream_watchdog_test.cpp)
   target_compile_features(ARMixStreamWatchdogTests PRIVATE cxx_std_20)
   add_test(NAME IndependentStreamSilenceRecovery COMMAND ARMixStreamWatchdogTests)
+  add_executable(ARMixAsioRestartGateTests tests/asio_restart_recovery_gate_test.cpp
+    engine/device/AsioRestartRecoveryGate.h)
+  target_compile_features(ARMixAsioRestartGateTests PRIVATE cxx_std_20)
+  add_test(NAME Asio4AllWdmSettleBoundedDriverTransactionsAndDeferredRebind COMMAND ARMixAsioRestartGateTests)
   add_executable(ARMixRecoveryTests tests/direct_restore_backoff_test.cpp)
   target_compile_features(ARMixRecoveryTests PRIVATE cxx_std_20)
   add_test(NAME BoundedDirectDeviceRecovery COMMAND ARMixRecoveryTests)
@@ -432,6 +466,30 @@ if(BUILD_TESTING)
   add_test(NAME NativeCompressorDeviceRestartAckAndShowPCM
       COMMAND ARMixNativeCompressorLifecycleTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeCompressorLifecycleTests)
+
+  add_executable(ARMixNativeVocalThrowTests tests/builtin_vocal_throw_test.cpp
+      engine/builtin_fx/VocalThrow.h)
+  target_compile_features(ARMixNativeVocalThrowTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalThrowPhraseCaptureManualAutoAndNoHeap COMMAND ARMixNativeVocalThrowTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeVocalThrowTests)
+  # A stopped ASIO callback must not execute old, UI-rejected THROW cues
+  # on resume. Exercise the real JUCE processor and its SPSC completion.
+  juce_add_console_app(ARMixVocalThrowCancelTests PRODUCT_NAME
+      "ArSonMix Vocal Throw Expired Cue Safety Tests")
+  target_sources(ARMixVocalThrowCancelTests PRIVATE
+      tests/native_vocal_throw_cancel_test.cpp
+      engine/builtin_fx/VocalThrowProcessor.h)
+  target_link_libraries(ARMixVocalThrowCancelTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixVocalThrowCancelTests PRIVATE cxx_std_20)
+  add_test(NAME NativeVocalThrowExpiredCueCancellation COMMAND ARMixVocalThrowCancelTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixVocalThrowCancelTests)
+  add_executable(ARMixNativeMusicTempoTests tests/native_music_tempo_test.cpp
+      engine/core/NativeMusicTempoMonitor.h)
+  target_compile_features(ARMixNativeMusicTempoTests PRIVATE cxx_std_20)
+  add_test(NAME NativeMusicTempoSourceOnsetsAndFallback COMMAND ARMixNativeMusicTempoTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeMusicTempoTests)
+
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)

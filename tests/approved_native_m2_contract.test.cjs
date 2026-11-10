@@ -381,7 +381,10 @@ test("P0 first Add FX discovers real local VST3 lazily without an audio-thread s
  assert.match(bridge,/discoverFxOnFirstPickerOpen\(\);[\s\S]*?scope\?\.openFastPicker/);
  assert.match(native,/action == "scanVst3"[\s\S]*?catalog_\.scanDefaults\(\)/);
  assert.match(catalog,/struct Scanner final : juce::Thread/);
- assert.match(bridge,/scope\?\.setNativeCatalog\?\.\(\[\.\.\.nativeCatalog\.values\(\)\]\)/);
+ // The approved picker publishes real compiled-in FX independently of
+ // external scanner state; the verified VST3 library follows those entries.
+ assert.match(bridge,/const presentFxCatalog=\(\)=>scope\?\.setNativeCatalog\?\.\(/);
+ assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
  // Neither startup nor audio callback can trigger a surprise system scan.
  assert.doesNotMatch(bridge.slice(0,bridge.indexOf("function discoverFxOnFirstPickerOpen")),
    /action:"scanVst3"/);
@@ -563,7 +566,8 @@ test("P0 WIRE-to-MAIN and channel OUT use one acknowledged native transaction",(
  assert.match(native,/engine_\.repatchDryRoutingLabChannel\(channel,/);
  assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\)/);
  assert.match(builder,/closeNativePicker\(\)\{setFastPicker\(false\);\}/);
- assert.match(builder,/NATIVE JUCE VST3/);
+ assert.match(builder,/Native EQ\/Compressor\/Harmony ready/);
+ assert.match(builder,/external VST3 require verified scan/);
  assert.doesNotMatch(bridge,/AudioContext|AudioWorklet/);
 });
 test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics",()=>{
@@ -703,7 +707,7 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
  assert.match(bridge,/const virtualCableFeedbackPair=/);
  const native=read("src/Main.cpp");
- assert.match(native,/if\(engine_\.liveOutputArmFault\(\)\.isNotEmpty\(\)\)return;/);
+ assert.match(native,/if\(engine_\.liveOutputArmFault\(autoMainRequiresInput_\)\.isNotEmpty\(\)\)return;/);
  assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
@@ -1238,14 +1242,66 @@ test("P0 native FX rack and per-slot readback update mounted strip without repla
  assert.equal(paints,2,"an actual VST instance identity change MUST re-project");
 });
 
+test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId",()=>{
+ const main=read('src/Main.cpp');
+ const engine=read('src/LiveAudioEngine.h');
+ const route=read('src/LiveDryRoutingLab.h');
+ assert.match(main,/nativeAlreadyActive && !retained &&/);
+ assert.match(main,/\(startupOnSavedDevice \|\| recoveringAfterDeviceApply\) &&/);
+ assert.match(main,/recoveringAfterDeviceApply=bindingMode!=MixerBindingMode::exact &&\s*mixerSessionRecoveryPending_/);
+ assert.match(main,/!usedPrevious && !retained/); // only normal auto-resume, not recovery admission
+ assert.match(main,/engine_\.hasPristineStartupMixer\(\)/);
+ assert.match(main,/restoreNativeMixerSession\(std::move\(doc\),states,\s*replacePristineStartup/);
+ assert.match(engine,/dryRoutingLab_\.canReplacePristineStartupMixer\(\)/);
+ assert.match(route,/bool canReplacePristineStartupMixer\(\) const noexcept/);
+ assert.match(route,/!nativeControlDirty_ && nativeAccepted_\.fxOwners/);
+});
+
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/NO CAPTURE INPUT · OPEN AUDIO I\/O/);
+ assert.match(bridge,/next.admitted\?"CHOOSE AN INPUT"/);
+ assert.doesNotMatch(bridge,/FAT PENDING/);
+ assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
  assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
  assert.doesNotMatch(bridge,/NO AUDIBLE OUTPUT · PATCH INPUT \+ ARM/);
  assert.match(bridge,/const preparedFirstSound=session\?\.authority==="NONE"/);
  assert.match(bridge,/const deviceReady=\(\)=>/);
+});
+test("P0 native built-in FX appear before vendor scan and remain after catalog refresh",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ for(const id of ["armix.builtin.channel-eq.v1",
+                  "armix.builtin.channel-compressor.v1",
+                  "armix.builtin.arson-harmony.v1"])
+   assert.ok(bridge.includes('id:"'+id+'"'));
+ assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
+ assert.ok(bridge.includes('presentFxCatalog(); // compiled native FX'));
+ assert.ok(builder.includes("x.format==='Native'?'Native':'VST3'"));
+ assert.ok(!bridge.includes('scope?.setNativeCatalog?.([])'));
+});
+test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 catalog scan",()=>{
+ const cpp=read("src/Main.cpp");
+ const gate=cpp.slice(cpp.indexOf('const bool builtInEq=catalogId=='),
+   cpp.indexOf('const auto result=builtInEq?',cpp.indexOf('const bool builtInEq=catalogId==')));
+ assert.ok(gate.includes('const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony'));
+ assert.ok(gate.includes('externalCatalog&&(!plugin||catalog_.busy())'));
+ assert.ok(!gate.includes('||catalog_.busy()||nativeShowBusy_'),
+  'third-party metadata discovery must not disable compiled-in FX');
+ assert.ok(gate.includes('nativeShowBusy_')&&gate.includes('studioBackupBusy_'),
+  'native structural session/backup safety interlocks remain active');
+});
+test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
+ const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
+ assert.match(cpp,/candidate\.useDefaultInputChannels=!outputOnly/);
+ assert.match(cpp,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
+ assert.match(cpp,/\(outputOnly&&!inMask\.isZero\(\)\)/);
+ assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
+ assert.match(bridge,/No hardware input \(Player \/ FX\)/);
+ assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
+ assert.doesNotMatch(bridge,/ack\.active\.enabledInputs\.length>0/);
+ assert.match(bridge,/FX\/WIRE available/);
 });
 test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to native",()=>{
  const vm=require("node:vm"),sent=[],listeners=new Map(),renderedChoices=[];
@@ -1440,8 +1496,8 @@ test("native Windows operator can explicitly patch first physical input, arm and
  assert.match(js,/if\(ack\.ok===true\)/);
  assert.match(js,/NATIVE PATCH REJECTED:/);
  assert.match(js,/NO VERIFIED AUDIO DEVICE/);
- assert.match(js,/NATIVE PCM · HARDWARE FAT PENDING/);
- assert.match(js,/MAIN MONITOR ON · PCM ADMISSION NOT VERIFIED/);
+ assert.doesNotMatch(js,/FAT PENDING/);
+ assert.match(js,/CHECK AUDIO CONNECTION/);
  assert.match(main,/action=="routingSourceSwitch"/);
  assert.match(main,/engine_\.liveOutputArmFault\(\)/);
  assert.match(main,/safe->emitApprovedNativeSnapshot\(\)/);

@@ -195,7 +195,7 @@ test('R0B B3 preserves diagnostic isolation without exposing an accepted patch',
  assert.match(diagnostic,/dryRoutingLab_\.disable\(\)/);
  assert.match(diagnostic,/startUnpatchedProductionSession\(\)/);
  assert.match(diagnostic,/resumeVerifiedDirectRoute\(\)/);
- const manual=e.slice(e.indexOf('void beginManualAudioSetup()'),
+ const manual=e.slice(e.indexOf('void beginManualAudioSetup('),
                       e.indexOf('bool independentClockActive()'));
  assert.match(manual,/setOutputMuted\(true\)/);
  assert.match(manual,/secondaryOutput_\.disarm\(\)/);

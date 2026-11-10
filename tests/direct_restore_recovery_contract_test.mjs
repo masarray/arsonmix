@@ -35,6 +35,19 @@ test('actual device recoveries occur on message thread, not inside audio callbac
   assert.match(gate,/generation == generation_/);
   assert.match(gate,/State::exhausted/);
 });
+test('output-only SAME-device WASAPI recovery never invents or requires microphone pins',()=>{
+  const begin=engine.indexOf('bool verifyRestoredDirectDevice (');
+  const end=engine.indexOf('void detach()',begin);
+  assert.ok(begin>0&&end>begin);
+  const restore=engine.slice(begin,end);
+  assert.ok(restore.includes('active->getActiveOutputChannels().countNumberOfSetBits()<2'));
+  assert.ok(!restore.includes('active->getActiveInputChannels().isZero()'),
+    'zero actual capture pins must not make a valid output-only mixer unrecoverable');
+  assert.ok(restore.includes('current.inputDeviceName == expected.inputDeviceName'));
+  assert.ok(restore.includes('current.outputDeviceName == expected.outputDeviceName'));
+  assert.match(engine,/resumeVerifiedDirectRoute\(\)/);
+  assert.match(main,/No verified stereo playback device; audio remains gated/);
+});
 test('restore retry is bounded and disabled on success, explicit direct and setup paths',()=>{
   assert.match(main,/directRestore_\.failed \(snapshot\.generation, now\)/);
   assert.match(main,/directRestore_\.recovered \(snapshot\.generation\)/);
@@ -87,8 +100,10 @@ test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',(
   }
   assert.ok(engine.includes('EXACT_ACTIVE_INPUT_AND_OUTPUT_CHANNEL_BITMASKS'));
   assert.ok(fence.includes('UNEXPECTED_DIRECT_BACKEND_DEVICE_OR_CHANNEL_MASK'));
-  assert.ok(fence.includes('!validMask(inputMask)'));
-  assert.ok(fence.includes('!validMask(outputMask)'));
+  // A real output-only playback session has the canonical zero input mask.
+  // The exact device fingerprint must still reject absent physical outputs.
+  assert.ok(fence.includes('!validMask(inputMask,true)'));
+  assert.ok(fence.includes('!validMask(outputMask,false)'));
   const callback=engine.slice(engine.indexOf('void audioDeviceIOCallbackWithContext'));
   assert.ok(callback.indexOf('!directFence_.permitted()')>=0);
   assert.ok(callback.indexOf('!directFence_.permitted()')<callback.indexOf('handoff_.beginCycle()'));

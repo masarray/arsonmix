@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+#include <algorithm>
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "NativeShowStore.h"
@@ -7,7 +8,9 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 // The logical session and its hardware binding are deliberately separate.
@@ -24,6 +27,12 @@ struct HardwareBinding final {
     // still decode without inventing an ASIO pin inventory.
     juce::StringArray inputNames,outputNames;
 };
+// A disconnected source has a physical identity but no live PCM ordinal.
+struct WaitingAsioInput final {
+    ChannelId id{};
+    int left=-1,right=-1; // physical pin indices, for legacy files without labels
+    juce::String leftName,rightName;
+};
 struct StoredInsert final {
     ChannelId channel{};
     std::size_t slot=0;
@@ -39,6 +48,7 @@ struct MixerSessionDocument final {
     LegacyChannelIds legacyIds{};
     VerifiedNativeOutputs outputs{};
     HardwareBinding binding{};
+    std::vector<WaitingAsioInput> waitingAsioInputs;
     std::vector<StoredInsert> inserts;
     std::vector<ChannelId> rackBypassed;
     float masterGain=1.f;
@@ -65,54 +75,90 @@ struct MixerDeviceBindingPolicy final {
                (!a.monitorEnabled ||
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
-    enum class Mode { exact, verifiedDeviceApply };
+    enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply, verifiedAsioRestart };
+    static bool isAsio4All(const HardwareBinding& binding) {
+        return binding.backend=="ASIO" && binding.playback.startsWithIgnoreCase("ASIO4ALL");
+    }
+    static std::optional<juce::BigInteger> translateNamedPins(
+            const juce::BigInteger& previous,const juce::StringArray& oldNames,
+            const juce::StringArray& newNames) {
+        juce::BigInteger result;
+        for(int pin=previous.findNextSetBit(0);pin>=0;pin=previous.findNextSetBit(pin+1)) {
+            const int next=findSamePin(oldNames,newNames,pin);
+            if(next<0 || next>=64)return {};
+            result.setBit(next);
+        }
+        return result;
+    }
+    static bool addReturningCapturePins(std::span<const WaitingAsioInput> waiting,
+            const juce::StringArray& names,juce::BigInteger& mask) {
+        const auto previous=mask;
+        for(const auto& patch:waiting) {
+            const int left=uniquePin(names,patch.leftName);
+            const int right=uniquePin(names,patch.rightName);
+            if(left<0 || left>=64 || (patch.right>=0 && (right<0 || right>=64 || right==left)))continue;
+            mask.setBit(left);
+            if(patch.right>=0)mask.setBit(right);
+        }
+        return mask!=previous;
+    }
     static VerifiedNativeOutputs proposedOutputs(const MixerSessionDocument& document,
             const HardwareBinding& live,int count,Mode mode=Mode::exact) {
         const auto& saved=document.binding;
-        if(mode==Mode::verifiedDeviceApply &&
-           (saved.backend!=live.backend || saved.playback!=live.playback))
-            return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:
-                            VerifiedNativeOutputs{count,-1,-1,-1,-1,false};
-        // A matching endpoint name does NOT prove an unchanged physical
-        // jack inventory. Reject rather than silently rebase MAIN to 1/2
-        // if pin labels changed or an unknown ASIO inventory lost pins.
-        if(mode==Mode::verifiedDeviceApply &&
-           ((!saved.outputNames.isEmpty() && saved.outputNames!=live.outputNames) ||
-            (saved.outputNames.isEmpty() && live.backend=="ASIO" &&
-             saved.outputMask!=live.outputMask)))
-            return {count,-1,-1,-1,-1,false};
+        const VerifiedNativeOutputs unavailable{count,-1,-1,-1,-1,false};
+        if(mode==Mode::verifiedMainPinApply ||
+           (mode==Mode::verifiedDeviceApply &&
+            (saved.backend!=live.backend || saved.playback!=live.playback)))
+            return count==2?VerifiedNativeOutputs{count,0,1,-1,-1,false}:unavailable;
+        if(mode==Mode::verifiedAsioRestart &&
+           (!isAsio4All(live) || saved.backend!=live.backend || saved.playback!=live.playback))
+            return unavailable;
         auto outputs=document.outputs;
         outputs.activeOutputChannels=count;
-        if(saved.outputMask!=live.outputMask) {
-            const auto oldPins=mask(saved.outputMask);
-            const auto newPins=mask(live.outputMask);
-            outputs.mainL=remapPin(oldPins,newPins,outputs.mainL);
-            outputs.mainR=remapPin(oldPins,newPins,outputs.mainR);
+        const auto oldPins=mask(saved.outputMask),newPins=mask(live.outputMask);
+        if(mode!=Mode::exact || saved.outputMask!=live.outputMask) {
+            const auto remap=[&](int ordinal) {
+                return remapPin(oldPins,newPins,saved.outputNames,live.outputNames,
+                                ordinal,live.backend=="ASIO");
+            };
+            outputs.mainL=remap(outputs.mainL);
+            outputs.mainR=remap(outputs.mainR);
             if(outputs.monitorEnabled) {
-                outputs.monitorL=remapPin(oldPins,newPins,outputs.monitorL);
-                outputs.monitorR=remapPin(oldPins,newPins,outputs.monitorR);
+                outputs.monitorL=remap(outputs.monitorL);
+                outputs.monitorR=remap(outputs.monitorR);
             }
         }
         if(!outputs.valid()) {
             outputs.monitorL=outputs.monitorR=-1;
             outputs.monitorEnabled=false;
         }
-        // Never substitute the first available pair when the saved MAIN
-        // physical connectors disappear. Audio may only return after the
-        // operator explicitly patches MAIN to available output pins.
+        // The same approved ASIO4ALL driver can expose a different speaker
+        // after a WDM selection. Adopt the sole verified physical pair.
+        if(!outputs.valid() && (mode==Mode::verifiedDeviceApply || mode==Mode::verifiedAsioRestart) &&
+           isAsio4All(live) && count>=2) {
+            // ASIO4ALL can expose virtual and physical WDM outputs together.
+            // A unique, enabled physical stereo pair is safe to recover even
+            // when its callback ordinals are 3/4 or arrive in reverse order.
+            // Ambiguous speakers and virtual-only inventories remain muted.
+            if(const auto pair=uniqueNamedSpeakerPair(newPins,live.outputNames))
+                return {count,pair->first,pair->second,-1,-1,false};
+        }
         return outputs;
     }
     static juce::String apply(MixerSessionDocument& document,
             const HardwareBinding& live,
             const VerifiedNativeOutputs& outputs,
             int callbackInputs,Mode mode) {
-        if(!outputs.valid() || callbackInputs<1 || callbackInputs>256 ||
-           live.backend.isEmpty() || live.capture.isEmpty() ||
+        if(callbackInputs<0 || callbackInputs>256 ||
+           live.backend.isEmpty() ||
+           (callbackInputs>0 && live.capture.isEmpty()) ||
            live.playback.isEmpty() || live.inputMask.isEmpty() ||
            live.outputMask.isEmpty() || !std::isfinite(live.rate) ||
            live.rate<8000. || live.rate>384000. ||
            live.frames<16 || live.frames>8192)
             return "NEEDS_REMAP: live device verification incomplete";
+        if(!outputs.valid())
+            return "NEEDS_REMAP: saved MAIN pair unavailable on the active playback pins";
         const auto oldPins=mask(document.binding.inputMask);
         const auto newPins=mask(live.inputMask);
         if(oldPins.countNumberOfSetBits()!=document.request.physicalInputs ||
@@ -128,42 +174,71 @@ struct MixerDeviceBindingPolicy final {
             return exact?juce::String{}:juce::String(
                 "NEEDS_REMAP: select the saved audio device and pin layout in Audio I/O");
 
-        // An Apply of the SAME playback endpoint must keep the saved
-        // physical MAIN connectors. The current mask only changes their
-        // ordinals; it never authorizes quietly switching MAIN to another
-        // jack. Compare against the policy-computed remap even when a caller
-        // supplies a valid but DIFFERENT output pair.
-        if(saved.backend==live.backend && saved.playback==live.playback) {
-            const auto mapped=proposedOutputs(document,live,
-                outputs.activeOutputChannels,Mode::verifiedDeviceApply);
+        if(mode==Mode::verifiedMainPinApply || mode==Mode::verifiedAsioRestart ||
+           (saved.backend==live.backend && saved.playback==live.playback)) {
+            const auto mapped=proposedOutputs(document,live,outputs.activeOutputChannels,mode);
             if(!mapped.valid() || !sameOutputs(mapped,outputs))
-                return "NEEDS_REMAP: saved MAIN output pins are no longer selected; explicitly choose MAIN outputs";
+                return "NEEDS_REMAP: MAIN does not match the verified playback pair";
         }
 
         auto& sources=document.request.sources;
-        if(saved.backend!=live.backend || saved.capture!=live.capture ||
-           !samePinNames(saved.inputNames,live.inputNames,live.backend)) {
-            // Different capture hardware invalidates PHYSICAL pins only.
-            // PlayerDeck is a DEVICE-INDEPENDENT source with no ASIO ordinal.
-            // Preserve it (still muted until physical output is verified).
-            sources.erase(std::remove_if(sources.begin(),sources.end(),
-                [](const DynamicSourcePatch& p) {
-                    return p.kind==DynamicSourceKind::physical;
-                }),sources.end());
-        } else if(oldPins!=newPins) {
-            std::vector<DynamicSourcePatch> mapped;
-            mapped.reserve(sources.size());
-            for(auto source:sources) {
+        if(isAsio4All(saved) && isAsio4All(live) && saved.playback==live.playback) {
+            // Binding playback is independent of capture. Keep the user's
+            // patch by physical identity until the selected input returns.
+            auto desired=std::move(document.waitingAsioInputs);
+            desired.reserve(desired.size()+sources.size());
+            std::vector<DynamicSourcePatch> virtualSources;
+            virtualSources.reserve(sources.size());
+            for(const auto& source:sources) {
+                // ASIO capture remap never translates virtual music into pin 0.
                 if(source.kind==DynamicSourceKind::playerDeck) {
-                    mapped.push_back(source); // no physical input pin to remap
+                    virtualSources.push_back(source);
                     continue;
                 }
-                source.inputL=remapPin(oldPins,newPins,source.inputL);
-                if(source.stereo)source.inputR=remapPin(oldPins,newPins,source.inputR);
-                if(source.inputL>=0 && (!source.stereo || source.inputR>=0))
-                    mapped.push_back(source);
+                const auto left=physicalAt(oldPins,source.inputL);
+                const auto right=physicalAt(oldPins,source.inputR);
+                desired.push_back({source.id,left,right,
+                    saved.inputNames[left],saved.inputNames[right]});
             }
-            sources=std::move(mapped);
+            sources=std::move(virtualSources);
+            document.waitingAsioInputs.clear();
+            for(auto& source:desired) {
+                const auto* channel=document.roster.find(source.id);
+                if(!channel || channel->role!=ChannelRole::input)continue;
+                const auto resolve=[&](int previous,const juce::String& label) {
+                    const auto pin=label.isEmpty()?previous:uniquePin(live.inputNames,label);
+                    return callbackAt(newPins,pin);
+                };
+                const auto left=resolve(source.left,source.leftName);
+                const auto right=resolve(source.right,source.rightName);
+                const bool stereo=source.right>=0;
+                if(left>=0 && (!stereo || (right>=0 && left!=right)))
+                    sources.push_back({source.id,left,right,stereo});
+                else
+                    document.waitingAsioInputs.push_back(std::move(source));
+            }
+        } else {
+            document.waitingAsioInputs.clear();
+            if(saved.backend!=live.backend || saved.capture!=live.capture) {
+                sources.erase(std::remove_if(sources.begin(),sources.end(),
+                    [](const DynamicSourcePatch& p) {
+                        return p.kind==DynamicSourceKind::physical;
+                    }),sources.end());
+            } else if(oldPins!=newPins || saved.inputNames!=live.inputNames) {
+                std::vector<DynamicSourcePatch> mapped;
+                mapped.reserve(sources.size());
+                for(auto source:sources) {
+                    if(source.kind==DynamicSourceKind::playerDeck) {
+                        mapped.push_back(source);
+                        continue;
+                    }
+                    source.inputL=remapPin(oldPins,newPins,saved.inputNames,live.inputNames,source.inputL,false);
+                    if(source.stereo)
+                        source.inputR=remapPin(oldPins,newPins,saved.inputNames,live.inputNames,source.inputR,false);
+                    if(source.inputL>=0 && (!source.stereo || source.inputR>=0))mapped.push_back(source);
+                }
+                sources=std::move(mapped);
+            }
         }
         document.request.physicalInputs=callbackInputs;
         document.binding=live;
@@ -171,25 +246,74 @@ struct MixerDeviceBindingPolicy final {
         return {};
     }
 private:
-    static bool samePinNames(const juce::StringArray& saved,const juce::StringArray& live,
-                             const juce::String& backend) {
-        return saved.isEmpty()?backend!="ASIO":saved==live;
-    }
     static juce::BigInteger mask(const juce::String& text) {
         juce::BigInteger bits;
         bits.parseString(text,16);
         return bits;
     }
-    static int remapPin(const juce::BigInteger& saved,const juce::BigInteger& current,int ordinal) {
+    static std::optional<std::pair<int,int>> uniqueNamedSpeakerPair(
+            const juce::BigInteger& pins,const juce::StringArray& names) {
+        std::optional<std::pair<int,int>> chosen;
+        for(int leftPin=pins.findNextSetBit(0);leftPin>=0;
+            leftPin=pins.findNextSetBit(leftPin+1)) {
+            if(leftPin>=names.size() || uniquePin(names,names[leftPin])!=leftPin)continue;
+            const auto label=names[leftPin].trim().toLowerCase();
+            if(!label.endsWith(" 1"))continue;
+            const auto stem=label.dropLastCharacters(2);
+            if(stem.isEmpty() || stem.contains("vb-audio") || stem.contains("cable") ||
+               stem.contains("virtual") || stem.contains("loopback") ||
+               stem.contains("monitor") ||
+               !(stem.contains("realtek") || stem.contains("speaker") ||
+                 stem.contains("output with sst")))continue;
+            int rightPin=-1;
+            for(int pin=pins.findNextSetBit(0);pin>=0;pin=pins.findNextSetBit(pin+1)) {
+                if(pin<names.size() &&
+                   names[pin].trim().toLowerCase()==stem+" 2") {
+                    if(rightPin>=0)return {}; // duplicate right endpoint
+                    rightPin=pin;
+                }
+            }
+            if(rightPin<0 || uniquePin(names,names[rightPin])!=rightPin)continue;
+            const int left=callbackAt(pins,leftPin),right=callbackAt(pins,rightPin);
+            if(left<0 || right<0 || left==right || chosen)return {};
+            chosen=std::make_pair(left,right);
+        }
+        return chosen;
+    }
+    static int uniquePin(const juce::StringArray& names,const juce::String& name) {
+        if(name.isEmpty())return -1;
+        const auto pin=names.indexOf(name);
+        return pin>=0 && names.indexOf(name,false,pin+1)<0?pin:-1;
+    }
+    static int findSamePin(const juce::StringArray& previous,const juce::StringArray& live,int pin) {
+        const auto name=previous[pin];
+        return uniquePin(previous,name)==pin?uniquePin(live,name):-1;
+    }
+    static int physicalAt(const juce::BigInteger& mask,int ordinal) {
         if(ordinal<0)return -1;
-        int physical=saved.findNextSetBit(0);
-        for(int i=0;i<ordinal && physical>=0;++i)
-            physical=saved.findNextSetBit(physical+1);
-        if(physical<0 || !current[physical])return -1;
+        int pin=mask.findNextSetBit(0);
+        for(int i=0;i<ordinal && pin>=0;++i)pin=mask.findNextSetBit(pin+1);
+        return pin;
+    }
+    static int callbackAt(const juce::BigInteger& mask,int physical) {
+        if(physical<0 || !mask[physical])return -1;
         int index=0;
-        for(int pin=current.findNextSetBit(0);pin<physical;pin=current.findNextSetBit(pin+1))
-            ++index;
+        for(int pin=mask.findNextSetBit(0);pin<physical;pin=mask.findNextSetBit(pin+1))++index;
         return index;
+    }
+    static int remapPin(const juce::BigInteger& saved,const juce::BigInteger& current,
+            const juce::StringArray& savedNames,const juce::StringArray& currentNames,
+            int ordinal,bool requireNames) {
+        int physical=physicalAt(saved,ordinal);
+        if(physical<0)return -1;
+        if(savedNames!=currentNames || requireNames) {
+            if(savedNames.isEmpty()) {
+                if(requireNames && saved!=current)return -1;
+            } else {
+                physical=findSamePin(savedNames,currentNames,physical);
+            }
+        }
+        return callbackAt(current,physical);
     }
 };
 inline juce::String decimal(std::uint64_t value) {
@@ -231,6 +355,21 @@ class Codec final {
     static void set(juce::var& obj,const char* k,const juce::var& v) {
         obj.getDynamicObject()->setProperty(k,v);
     }
+    static juce::var pinNames(const juce::StringArray& names) {
+        juce::Array<juce::var> values;
+        for(const auto& name:names)values.add(name);
+        return juce::var(values);
+    }
+    static bool readPinNames(const juce::var& value,juce::StringArray& names) {
+        const auto* values=value.getArray();
+        if(!values || values->size()>256)return false;
+        for(const auto& entry:*values) {
+            juce::String name;
+            if(!textField(entry,name,256,true))return false;
+            names.add(name);
+        }
+        return true;
+    }
     static juce::var ids(const LegacyChannelIds& ids) {
         auto v=object();
         juce::Array<juce::var> in,aux;
@@ -270,7 +409,20 @@ public:
         set(bind,"outputMask",d.binding.outputMask);
         set(bind,"rate",d.binding.rate);
         set(bind,"frames",d.binding.frames);
+        if(!d.binding.inputNames.isEmpty())set(bind,"inputNames",pinNames(d.binding.inputNames));
+        if(!d.binding.outputNames.isEmpty())set(bind,"outputNames",pinNames(d.binding.outputNames));
         set(root,"binding",bind);
+        if(!d.waitingAsioInputs.empty()) {
+            juce::Array<juce::var> waiting;
+            for(const auto& pin:d.waitingAsioInputs) {
+                auto entry=object();
+                set(entry,"id",decimal(pin.id.value));
+                set(entry,"left",pin.left);set(entry,"right",pin.right);
+                set(entry,"leftName",pin.leftName);set(entry,"rightName",pin.rightName);
+                waiting.add(entry);
+            }
+            set(root,"waitingAsioInputs",juce::var(waiting));
+        }
         auto output=object();
         set(output,"active",d.outputs.activeOutputChannels);
         set(output,"mainL",d.outputs.mainL);set(output,"mainR",d.outputs.mainR);
@@ -363,7 +515,7 @@ public:
         doc.savedMs=static_cast<juce::int64>(ms);
         const auto binding=get(root,"binding");
         if(!textField(get(binding,"backend"),doc.binding.backend,128)||
-           !textField(get(binding,"capture"),doc.binding.capture,256)||
+           !textField(get(binding,"capture"),doc.binding.capture,256,true)||
            !textField(get(binding,"playback"),doc.binding.playback,256)||
            !textField(get(binding,"inputMask"),doc.binding.inputMask,256)||
            !textField(get(binding,"outputMask"),doc.binding.outputMask,256))
@@ -373,6 +525,10 @@ public:
         doc.binding.rate=n;
         if(!integral(get(binding,"frames"),doc.binding.frames,16,8192))
             return false;
+        if((binding.getDynamicObject()->hasProperty("inputNames") &&
+            !readPinNames(get(binding,"inputNames"),doc.binding.inputNames)) ||
+           (binding.getDynamicObject()->hasProperty("outputNames") &&
+            !readPinNames(get(binding,"outputNames"),doc.binding.outputNames)))return false;
         auto outputs=get(root,"outputs");
         if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,2,256)||
            !integral(get(outputs,"mainL"),doc.outputs.mainL,0,255)||
@@ -442,13 +598,19 @@ public:
            (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
             return false;
         auto req=get(root,"request");
-        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,1,256)||
+        if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,0,256)||
            !integral(get(req,"maxFrames"),doc.request.maxFrames,16,8192)||
            !strictBool(get(req,"mainMonoAfterFx"),doc.request.mainMonoAfterFx))
             return false;
         const auto sourcesVar=get(req,"sources");
         const auto* sources=sourcesVar.getArray();
+        // An all-virtual MUSIC session is legitimate even with zero
+        // connected capture pins. The per-source decoder below still
+        // rejects EVERY physical ordinal when physicalInputs == 0.
         if(!sources||sources->size()>channels->size())return false;
+        if(doc.binding.capture.isEmpty() &&
+           (doc.request.physicalInputs!=0 || doc.binding.inputMask!="0"))
+            return false;
         std::set<std::uint64_t> seenSources;
         for(const auto& src:*sources) {
             DynamicSourcePatch p;
@@ -476,6 +638,22 @@ public:
                     return false;
             }
             doc.request.sources.push_back(p);
+        }
+        if(root.getDynamicObject()->hasProperty("waitingAsioInputs")) {
+            const auto waiting=get(root,"waitingAsioInputs");
+            const auto* entries=waiting.getArray();
+            if(!entries || entries->size()>channels->size() ||
+               !MixerDeviceBindingPolicy::isAsio4All(doc.binding))return false;
+            for(const auto& entry:*entries) {
+                WaitingAsioInput pin;
+                if(!parseDecimal(get(entry,"id"),pin.id.value) ||
+                   !seenSources.insert(pin.id.value).second || !seek(pin.id,ChannelRole::input) ||
+                   !integral(get(entry,"left"),pin.left,0,255) ||
+                   !integral(get(entry,"right"),pin.right,-1,255) || pin.left==pin.right ||
+                   !textField(get(entry,"leftName"),pin.leftName,256,true) ||
+                   !textField(get(entry,"rightName"),pin.rightName,256,true))return false;
+                doc.waitingAsioInputs.push_back(std::move(pin));
+            }
         }
         const auto fxVar=get(root,"inserts"),racksVar=get(root,"rackBypassed");
         const auto* fx=fxVar.getArray();

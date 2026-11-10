@@ -1489,3 +1489,70 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 .routing-wire-overlay path{filter:none!important;pointer-events:none}
 
 
+
+/* Desktop JUCE titlebar: one real OS window caption, no doubled WebView header.
+   The public interactive browser reference keeps its own top identity bar. */
+html.armix-native-desktop .app > .window-title{display:none!important}
+.window-title .logo{display:inline-flex!important;align-items:center;gap:0;letter-spacing:.015em}
+.window-title .logo .armix-brand-ar{color:#48d5f3}
+.window-title .logo .armix-brand-son{color:#eff8fa}
+.window-title .logo .armix-brand-mix{color:#ffad59}
+/* Compact consistent operator toolbar spacing, preserving existing BTN-180 skin. */
+.app .command-bar{
+ min-height:34px!important;align-items:center!important;column-gap:5px!important;
+ padding-left:9px!important;padding-right:9px!important;
+}
+.app .command-bar>.sep{margin-left:2px!important;margin-right:2px!important}
+.app .command-bar .toolbar-label{font-size:9px!important;letter-spacing:.06em}
+@media(max-width:1220px){
+ .app .command-bar{column-gap:3px!important;padding-left:5px!important;padding-right:5px!important}
+}
+
+/* Native desktop toolbar V2 — functional hardware keys stay 29px high.
+   Separate command groups visually; keep the bank and More fully usable.
+   The public /preview/ layout and historical fixture are untouched. */
+html.armix-native-desktop .app .command-bar{
+ height:43px!important;min-height:43px!important;max-height:43px!important;
+ flex:0 0 43px!important;
+ align-items:center!important;column-gap:8px!important;
+ padding-inline:12px!important;
+ background:linear-gradient(180deg,#1b3340 0%,#172d39 100%)!important;
+ border-top:1px solid #5f7b864c!important;
+ border-bottom:1px solid #081922!important;
+}
+html.armix-native-desktop .app .command-bar>.armix-toolbar-divider,
+html.armix-native-desktop .app .command-bar>.sep{
+ display:block!important;flex:0 0 1px!important;width:1px!important;
+ height:21px!important;padding:0!important;
+ margin:0 4px!important;align-self:center!important;pointer-events:none!important;
+ background:linear-gradient(180deg,transparent,#7799a27d 30%,#7799a27d 70%,transparent)!important;
+ border:0!important;
+}
+html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
+html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
+ padding-inline:10px!important;
+}
+html.armix-native-desktop .app .command-bar>.mixer-file-tool{
+ gap:6px!important;
+}
+html.armix-native-desktop .app .command-bar>.mixer-file-tool img{
+ display:block;width:16px;height:16px;flex:none;
+}
+html.armix-native-desktop .app .command-bar>.toolbar-label{
+ font-size:9px!important;letter-spacing:.09em!important;
+}
+@media(max-width:1360px){
+ html.armix-native-desktop .app .command-bar{
+  column-gap:5px!important;padding-inline:7px!important;
+ }
+ html.armix-native-desktop .app .command-bar>.armix-toolbar-divider{display:none!important}
+ html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
+ html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
+  padding-inline:7px!important;
+ }
+}
+@media(max-width:1150px){
+ html.armix-native-desktop .app .command-bar{
+  column-gap:4px!important;padding-inline:5px!important;
+ }
+}

@@ -139,6 +139,14 @@ async def verify_phone(browser, width: int, height: int):
         await page.locator("#playerKeyPlus").click()
         assert "desktop app" in await page.locator("#playerFeedback").inner_text()
         assert await page.locator("#playerKeyValue").inner_text() == "0 st"
+        folder_button=page.locator("#playerAddFolder")
+        assert await folder_button.is_visible()
+        folder_bounds=await folder_button.bounding_box()
+        assert folder_bounds and folder_bounds["x"]>=0
+        assert folder_bounds["x"]+folder_bounds["width"]<=width+2
+        assert await page.locator("#playerRelink").is_hidden()
+        await folder_button.click()
+        assert "desktop app" in await page.locator("#playerFeedback").inner_text()
         await page.locator("#playerAdd").click()
         feedback = await page.locator("#playerFeedback").inner_text()
         assert "desktop app" in feedback, ("public preview must not fake playback", feedback)

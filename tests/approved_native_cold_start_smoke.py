@@ -1,4 +1,4 @@
-"""Real compiled DOM from G0: first drag without OUT priming, first native
+"""Real compiled DOM: hide reference G0, first drag without OUT priming, first native
 FX picker insert on original CH with structural=false, then vendor editor.
 Backend isolation is emulated; actual latency/sample evidence is CTest.
 """
@@ -41,6 +41,75 @@ def main():
                 addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
             page.goto((out/'index.html').as_uri())
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+            # Native Console is ALWAYS visible, even with no callback/device.
+            # Bridge still rejects unadmitted PCM edits until accepted readback.
+            assert page.locator('.console-pane').is_visible()
+            assert not page.evaluate('()=>window.__nativeIntents.length')
+            # Built-in JUCE DSP must be discoverable before ANY third-party
+            # VST3 catalog response. The native host never inserts demo FX.
+            for native_id in ('armix.builtin.channel-eq.v1',
+                              'armix.builtin.channel-compressor.v1',
+                              'armix.builtin.arson-harmony.v1'):
+                assert page.locator('#fastResults [data-fast-id="'+native_id+'"]').count()==1, (
+                    'Compiled native FX missing from cold-start picker: '+native_id)
+            # Output-only playback is a REAL Audio I/O choice, not a hidden
+            # capture prerequisite. Verify native intent/ACK on the approved
+            # assembled Windows GUI at every supported viewport.
+            page.locator('.command-bar [data-native-io]').click()
+            io_inventory={
+                'types':[{'name':'Windows Audio','separate':True,
+                          'inputs':['Studio Mic'],'outputs':['Speakers']}],
+                'active':{'backend':'Windows Audio','captureDevice':'Studio Mic',
+                          'playbackDevice':'Speakers','open':True,
+                          'authorized':True,'deviceGeneration':23,
+                          'inputNames':['Mic 1'],'outputNames':['L','R'],
+                          'enabledInputs':[0],'enabledOutputs':[0,1],
+                          'rate':48000,'buffer':480,
+                          'rates':[48000],'buffers':[480]}}
+            emit(page,'arMixAudioDeviceInventory',io_inventory)
+            capture_select=page.locator('.armix-audio-dialog [data-audio-field="capture"]')
+            capture_select.select_option(value='')
+            assert capture_select.input_value()==''
+            assert page.locator('.armix-audio-dialog [data-audio-apply]').is_enabled()
+            page.locator('.armix-audio-dialog [data-audio-apply]').click()
+            request=page.evaluate("""()=>window.__events.filter(e=>
+              e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
+            assert request and request['config']['captureDevice']==''
+            assert request['config']['playbackDevice']=='Speakers'
+            assert request['config']['enabledInputs']==[]
+            assert request['config']['enabledOutputs']==[]
+            out_active={**io_inventory['active'],'captureDevice':'',
+                        'inputNames':[],'enabledInputs':[],
+                        'outputNames':['WDM L','WDM R','Realtek L','Realtek R']}
+            emit(page,'arMixAudioDeviceApplyAck',{
+                'requestId':request['requestId'],'ok':True,
+                'state':'ACCEPTED_MUTED','active':out_active,
+                'outputMuted':True,'mixerBound':True})
+            assert page.locator('.armix-audio-shade').is_hidden()
+            page.locator('.command-bar [data-native-io]').click()
+            io_inventory['active']=out_active
+            emit(page,'arMixAudioDeviceInventory',io_inventory)
+            assert capture_select.input_value()=='' # reopening does not auto-patch a mic
+            page.locator('.armix-audio-dialog details summary').click()
+            assign_main=page.locator('[data-audio-main-pins]')
+            def playback_pin(index):
+                return page.locator(f'[data-audio-pin="output"][data-pin-index="{index}"]')
+            playback_pin(0).uncheck()
+            assert assign_main.is_hidden()
+            playback_pin(1).uncheck()
+            playback_pin(2).check()
+            playback_pin(3).check()
+            assign_main.click()
+            repatch=page.evaluate("""()=>window.__events.filter(e=>
+              e.payload?.action==='audioDeviceApply').at(-1)?.payload""")
+            assert repatch['config']['assignSelectedPlaybackPinsToMain'] is True
+            assert repatch['config']['enabledOutputs']==[2,3]
+            assert repatch['config']['enabledInputs']==[]
+            emit(page,'arMixAudioDeviceApplyAck',{
+                'requestId':repatch['requestId'],'ok':True,
+                'state':'ACCEPTED_MUTED','active':{**out_active,'enabledOutputs':[2,3]},
+                'outputMuted':True,'mixerBound':True})
+            assert page.locator('.armix-audio-shade').is_hidden()
             g0=json.loads((ROOT/'integration/console-v6/fixtures.json').read_text())['g0']
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
@@ -90,6 +159,9 @@ def main():
             emit(page,"arMixNativeSessionAck",{"operation":"OPEN","ok":False,"error":"Invalid mixer JSON"})
             assert page.get_by_text("Invalid mixer JSON",exact=True).count()>=1
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            show_click("Test MAIN output")
+            assert page.evaluate("()=>window.__events.at(-1).payload")=={
+                "action":"diagnosticRoute","value":"TOGGLE_MAIN_OUTPUT_TONE"}
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
@@ -124,12 +196,12 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
-                page.locator('.section-rail [data-section="send"]').click()
-            # Release before bootstrap SOURCE's later native readback arrives.
-            drag(page,1,2)
+            # Failed preflight and an unbound audio device must not blank the
+            # operator workspace. No unadmitted intent can escape to JUCE.
+            assert page.locator('.console-pane').is_visible()
             assert not page.evaluate('()=>window.__nativeIntents.length')
             state=snapshot()
+            state['device'].update(enabledInputs=[],inputEndpoints=[])
             state['graph']['edges'].pop(1)  # genuinely no existing channel send
             state['graph']['capabilities']['supportedOps'] += ['LOAD_INSERT']
             for ident, role, name in [('101','GROUP','Vocal Group'),
@@ -142,6 +214,10 @@ def main():
             state['legacyM4']={'active':True,'routeAccepted':True,'routingRevision':'77',
                 'nativeBusStructural':False,'fxInstances':[[] for _ in range(14)]}
             emit(page,'arMixConsoleSnapshot',state)
+            page.locator('.console-pane').wait_for(state='visible')
+            if 'collapsed-send' in (page.locator('.console-body').get_attribute('class') or ''):
+                page.locator('.section-rail [data-section="send"]').click()
+            drag(page,1,2)
             page.wait_for_function('()=>window.__nativeIntents.length===1')
             route=page.evaluate('()=>window.__nativeIntents[0]')
             assert route['operation']=='APPLY_WIRE_TRANSACTION'
@@ -209,16 +285,16 @@ def main():
                 channels=copy.deepcopy(retained['graph']['channels']))
             emit(page,'arMixConsoleSnapshot',retained)
             page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__.state().current?.retained')
-            assert page.locator('.status-bar .warning').inner_text().startswith('NEEDS REMAP')
+            assert page.locator('.status-bar .warning').inner_text().startswith('PLAYBACK UNAVAILABLE')
             assert page.locator('[data-native-monitor]').is_disabled()
             assert add_track.is_disabled()
             assert page.locator('#tracks .strip').count()==4
-            assert 'OUT NEEDS REMAP' in page.locator('#transport').inner_text()
+            assert 'OUTPUT WAITING FOR DEVICE' in page.locator('#transport').inner_text()
             page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
             emit(page,'arMixConsoleSnapshot',retained)
             assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()
             strip=page.locator('#tracks .strip[data-id="1"]')
-            assert strip.locator('select[data-field="input"]').input_value()=='NEEDS REMAP'
+            assert strip.locator('select[data-field="input"]').input_value()=='Waiting for device'
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             before=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')
             strip.locator('.fx-section [data-action="openPlugin"]').first.click()
@@ -249,7 +325,8 @@ def main():
                 'state':'ACCEPTED_LIVE','active':active,'mixerBound':True,'outputMuted':False})
             assert page.locator('.armix-audio-shade').is_hidden()
             rebound=copy.deepcopy(state)
-            rebound['device'].update(epoch='93',outputArmed=True)
+            rebound['device'].update(epoch='93',outputArmed=True,
+                enabledInputs=g0['device']['enabledInputs'],inputEndpoints=g0['device']['inputEndpoints'])
             rebound['graph']['revision']='6'
             rebound['graph']['capabilities']['supportedOps'].append('CREATE_CHANNEL')
             rebound['mixerSession'].update(deviceEpoch='93',routeRevision='6')

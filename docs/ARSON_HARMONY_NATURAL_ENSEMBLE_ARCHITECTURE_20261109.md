@@ -1,0 +1,95 @@
+# ArSon Harmony — Natural Vocal Ensemble DSP Architecture & Evidence
+2026-11-09 | source branch PR #487 | Design audit, **NOT** acoustic certification
+
+## Product acceptance
+
+A user singing one live monophonic lead must hear **one intelligible lead in front and independently perceived backing singers**, e.g. three voices behind, moderately left, near-center and moderately right. The BACKINGS must vary in timing, intonation, timbre and room position without creating robotic timbre, metallic grain edges, clicks, doubling of consonant transients, excess latency or ASIO XRUN. Key buttons should respond immediately with *pending* feedback, then turn *accepted* only on true native DSP ACK/readback. GUI should display an audio-owned tracking note, not pretend that pressing Key triggers sound or proves PCM processing.
+
+## Source-code diagnosis (before redesign)
+
+Current `engine/builtin_fx/HarmonyDsp.h` uses one phase-safe mono analysis/grain source for all harmony voices, two overlapping 16ms grains per shifter, identical initial grain phase for all voices, note-locked fixed diatonic offsets `{+2,+4,-2,+6,-4}` scale degrees, the **same one-pole Color** coefficient for all voices, equal-power stereo pan, and shared smoothing. `Space` only multiplies pan; it supplies no distance, room or early reflections. There are no differentiated vocal-formant paths, per-voice onset microtiming, natural vibrato or voice-leading across chords. The current declared DSP PDC at 48k remains **1536 samples / 32ms**. `Voice count=3` represents three wet harmony voices in addition to dry lead, not three separately modeled people.
+
+This is functional prototype pitch-shifting, **not** a formant-stable choir model. Improving pan or reverb alone cannot repair consonant smearing, pitch-mark phase discontinuity, or shifted formants. `Color` is *brightness*, not voice-tract formant preservation.
+
+## Research cross-check (public engineering references)
+
+- Antares Harmony Engine: independent voice timbre/vibrato/panning, humanize and choir controls; scale, chord and arranged notes; https://www.antarestech.com/products/creative-vocal-effects/harmony-engine
+- Antares walkthrough: per-voice pan/throat length, vibrato onset/rate, timing and pitch variation; https://www.antarestech.com/blog/tutorial-introduction-to-harmony-engine
+- Eventide H949: intelligent de-glitched splicing, micropitch and randomized delay to reduce lockstep duplication; https://www.eventideaudio.com/plug-ins/h949-harmonizer/
+- Eventide Quadravox: independent diatonic voice intervals and pitch transitions; https://cdn.eventideaudio.com/manuals/h90/1.1.2/content/algorithms/pitch.html
+- PSOLA singing paper: pitch marks and 2-period Hann window, formant-aware spectral envelope processing, low-cost resynthesis but pitch-mark error is audible; https://www.mdpi.com/2076-3417/6/11/368
+- AES PSOLA + transient preservation: pitched segmentation needs robust marks and explicit consonant/transient bypass/reinjection; https://aes.org/publications/elibrary-page/?id=15624
+- Real-time phase vocoder spectral envelope: whitening/reconstruction is an alternative but incurs spectral window work and transient tradeoffs; https://www.isca-archive.org/interspeech_2017/lenarczyk17_interspeech.pdf
+- Rubber Band documentation: `OptionFormantPreserved` and `OptionPitchHighConsistency` for dynamically varying vocal pitch. LiveShifter documents **>=50ms delay** depending on settings; not a free drop-in replacement for a low-latency live ASIO path; https://breakfastquay.com/rubberband/integration.html and https://breakfastquay.com/rubberband/code-doc/classRubberBand_1_1RubberBandLiveShifter.html. License GPLv2+ or commercial, review distribution terms before any integration: https://breakfastquay.com/rubberband/license.html
+- Backing-vocal spatial placement / front-back depth: complementary pan and differences in timbre, early reflections, reverb/delay; natural doubles need independent microtiming; mono-check to avoid comb filtering: https://www.izotope.com/community/blog/tips-for-mixing-vocal-harmonies and https://www.izotope.com/community/blog/what-is-mix-depth-how-to-create-front-back-space and https://www.izotope.com/community/blog/10-tips-for-better-mixes-through-panning
+
+## Committed engineering decision, staged — no rushed wholesale DSP swap
+
+**P0: native GUI provenance, truth, response.** Keep one audio-owned ChannelId/InstanceId, native ACK and readback. Preserve editor across device/graph revision using safe auto-rebind. `observedNote` (quantized tracked MIDI note, *not exact raw singing F0*) now drives a small `TRACKING A3` / `WAITING VOICE` indicator on existing console ticks at <=2Hz, including Manual Key. Key gesture outlined as *queued* immediately while the actual LCD highlight is still the last accepted DSP value. No new polling timer, speculative PCM meters, Lab modes, FX permission gates or GUI shell redesign.
+
+**P0: make pitch/resynthesis natural, then measure.** Retain the proven prototype behind a native A/B flag during experimentation. Candidate quality path: confidence-gated fundamental detection -> robust glottal-epoch / pitch-mark tracking (using existing pitch estimator as an initial predictor; verify each mark by correlation) -> low-cost overlap-add on two-period tapered periods, scheduled at target F0. Preserve spectral envelope via pitch-synchronous segment handling; if audible vowel/formant drift persists at large shifts, benchmark pre/post spectral-envelope or LPC correction off the shared analysis window. Shared normalized/unvoiced consonant and transient path should not create three repeated sibilant attacks. When pitch confidence falls, crossfade safely to neutral or limited fallback rather than random target harmonies. Do not invent claims that TD-PSOLA alone is perfect at large intervals. Maintain the same single native PCM owner, immutable prepared controls, bounded history and predictable callback instruction budget.
+
+**P1: three distinct backing singers; ensemble spatializer.** Model each voice independently AFTER pitch generation: slight deterministic, slowly evolving detune rather than random-per-sample jitter; own phrase-onset delay / vibrato rate+depth/offset; mild unique spectral contour and intentional register. Keep leading dry vocal prominent. Initial *hypotheses to measure/listen*, not shipped presets: pan L=-0.35 to -0.45, inner=-0.05 to +0.05, R=+0.35 to +0.45; differences in onset 10–25ms; low-amplitude individual 3–8-cent pitch drift (slow and correlated within a phrase), modest sustain-only vibrato ~4–6 Hz, no hard random reset at graph boundaries. Per-voice room-send and early reflection mix with small filtered reflected taps ~20–50ms, not five independent convolution reverbs. Reverberant-to-direct ratio and high-frequency loss convey distance; simply cranking global width does not make a voice sound behind the lead. Pan+room must remain mono-compatible with no unexpected polarity cancellation; avoid phase-widening shortcuts.
+
+**P2: musical arrangement reliability.** Key+scale alone does NOT tell the current chord; fixed diatonic thirds/fifths can harmonize out of chord when music changes. Source-channel Music Guide must stay an independent read-only reference with confidence hysteresis/fallback; explore chord estimation / optional MIDI note control and smooth voice-leading only AFTER reliable native PCM keys and natural pitch shifting. No silent auto-chord hallucination. `Space` remains a single easy control that intelligently combines width/depth with carefully tuned bounds; power and Wet remain intuitive.
+
+**Low-latency ownership rule.** The source singer's ASIO monitor must not be slowed by experimental spatialization. Any PDC change needs native graph/host correctness and same-time dry/wet alignment verification. The present 1536-sample lookback is a measured *code delay*, not a benchmark of total ASIO round trip. Incremental tuning cannot be declared 'zero latency'. No locks/malloc/blocking on callback, no unbounded FFT work on sample path, no plugin worker feeding the realtime thread with a blocking rendezvous.
+
+## Measured acceptance gates before release promotion
+
+1. Exact Windows native compiled tests at 32/44.1/48/96/192 kHz and callback periods 64/128/256: deterministic output across buffer partitionings; bounded per-sample/per-block costs, no NaN/inf, clipping, lost ACK, stale FX lease or phase-cancelled mono.
+2. Native visual/transport tests: tap Key while voice is live -> immediate pending outline/status; only accepted key after audio ACK and matching readback; live pitch tracking readback while Manual; Graph revision, device restart, FX move/recreate, stale ACK rejected; renderer never strands user on REOPEN.
+3. Voice quality: licensed/consented male/female/child-free adult recordings, vowels A/E/I/O/U, breath/voiced/unvoiced consonants and held/fast syllables; measure F0 trajectory error, F1/F2/F3 shift, transient repetition, onset jitter, sibilance and phrase coherence against dry and reference algorithms.
+4. Spatial A/B with mono fold-down: blind listen for **three distinguishable backup singers behind the lead**, not combed/flanged copies. Check L/C/R placements, loudness-normalized mono/stereo, low/normal/high background levels, output on mono speakers and headphones.
+5. Actual ASIO physical FAT at 48/96 kHz, 64/128/256 frames: CPU time distribution p95/p99, deadline margin and XRUNs with 2/3/5 voices and multiple mixer plugins, hot graph/device rebind. These results cannot be inferred from ordinary GitHub Actions.
+
+**Non-claim:** The present PR does not yet implement or certify natural formants, an acoustic spatial engine, or a shorter engine PDC. Changing those requires measured code, CTest, render comparisons, audio A/B and physical ASIO proof.
+
+## 2026-11-09 P1 implemented — bounded singer individuation and early room
+
+New `engine/builtin_fx/HarmonyEnsembleSpace.h` defines five deterministic
+backing singer identities, allocated as fixed-size fields and prepared on the
+control thread. Each has its own arrival offset (5–17ms), phase and slight
+detune (~1–3 cents) with onset-ramped, subtle 4.5–5.35Hz vibrato, and a
+mild unique timbre coefficient. Up to five fixed 4096-sample reflection rings
+supply one integer-delay, opposite-side quiet early reflection (12–20ms).
+The same existing `Space` control now governs moderate pan width and
+room amount, without adding another GUI mode or `.smix` schema field.
+
+No `sin`, `pow`, heap allocation, locks, worker or buffered audio queue
+runs inside callback; each singer's LFO uses control-thread sine LUT. All
+reflection histories advance when backing voices are inactive so stale FX
+cannot reappear. No native graph, VST3, ASIO callback owner, slider/preset,
+transport or routing changes. Plugin PDC remains 1536 samples @48k
+(32ms). Vocal backing output is intentionally slightly later than the
+lead, rather than delaying the lead itself: this is *musical onset and
+depth*, NOT an additional reported whole-plugin latency.
+
+Acceptance includes fixed-tap reflection impulse at 32–192k, isolation
+between singers, bounded detune/vibrato and mono-compatible 3-voice
+stereo field at 48/96k. Existing PCM block-partitioning, host bypass,
+anti-phase dry and realtime CPU diagnostic still apply. This is a P1
+ensemble-spatial realism increment, **not a formant-preserving
+resynthesis fix**. The original two-grain pitch shifter can still sound
+robotic on real recorded consonants and wide intervals. It requires a
+separate pitch-synchronous/formant-aware algorithm and A/B acoustic gate.
+
+## 2026-11-09 P0 native pitch-synchronous candidate (requires physical singer qualification)
+
+Audit found the audible 16ms fixed-grain playback still changes vowel phase at unrelated seam boundaries. This commit adds a **causal, bounded pitch-synchronous window candidate** to the same ChannelId `HarmonyDsp`. It uses source-F0 pitch periods and local positive source landmarks to read waveform windows at **unity PCM speed**, while note ratio controls the spacing of synthesis centers; formants are no longer intentionally frequency-scaled by speeding the source playback. The original grain shifter is retained as the fallback for missing landmarks/low correlation/unvoiced phonemes; transitions ramp over 12ms. This is an approximation, not a proven glottal-closure PSOLA or completed formant-safe voice model.
+
+- One 16,384-sample mono history already owned by Harmony; no new audio route, device, host, PDC, user control or UI. Per-voice candidate stores at most 8 active source windows, fixed-size. Peak searches are bounded to <1 source period and never read future input.
+- New original-harmonic source CTest checks up/down ratios, a low male period, high-rate registers and **exact 64/257 callback-partition PCM parity** at 48/96/192k. Existing native lead preservation and phase-safe music tests still apply.
+- **Crucial nonclaim:** harmonic synthetic tests do not establish a singer's natural vowel formants or consonant intelligibility. Positive peaks are not reliable epochs for all breathy, growled or multi-pitch vocals. Do not mark PR production-ready until real recorded-vocal spectral F1/F2/F3, fricative/phrase boundaries, loudness-matched blind A/B and worst-case ASIO xrun/latency testing. If an audible regression occurs, fall back to the previous grain implementation before release.
+
+## 2026-11-09 Native vocal A/B workstation milestone
+
+The same `HarmonyDsp::Engine` now exposes an **offline reference-only** switch to re-render the previous grain synthesis against the pitch-synchronous candidate; normal live devices always default to the candidate and no new GUI mode/schema/control packet is added. The separate `ARMixHarmonyOfflineAb` C++ CLI takes a licensed/consented **adult** voice excerpt in mono/stereo 16/24-bit PCM or 32-bit float RIFF WAV, 32–192 kHz, <=60 seconds:
+
+```sh
+ARMixHarmonyOfflineAb dry-vocal.wav output-directory
+```
+
+Outputs `01_lead_reference.wav`, `02_legacy_grain_mix.wav`, `03_new_space_060.wav`, `04_new_backing_only.wav`, `05_new_mono_fold.wav`, `06_new_space_000.wav`, `07_new_space_100.wav`, and `metrics.json`. All cases are reset from identical input and Manual C major / three voices / Wet 45%, Pitch Tune OFF, Gain 0dB. Wet0 lead is compared sample-exact across candidates; backing stem is mathematical difference from that lead and rejects hard-clipped output. The tool runs offline only; no filesystem IO in the audio callback. Compile/run `--self-test` as a quick synthetic source integrity check.
+
+**Unmet acoustic gates:** actual consented singer recordings and blind A/B, F1/F2/F3/vowel envelope preservation, noisy consonants, source expression, physical Windows ASIO loopback and CPU/xrun timings. Do NOT use the synthetic self-test or unnormalized WAV comparison to claim a professional natural-sounding result.

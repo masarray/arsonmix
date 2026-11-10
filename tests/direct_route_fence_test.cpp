@@ -12,7 +12,12 @@ int main()
     check(f.fault() == F::awaitingApproval);
     check(!f.observeStart("ASIO", "Live USB", "3", "3"));
     check(!f.approve("ASIO", "", "3", "3"));
-    check(!f.approve("ASIO", "Live USB", "0", "3"));
+    // Explicit output-only setup keeps a real zero capture mask, not fake IN.
+    check(f.approve("ASIO", "Live USB", "0", "3"));
+    check(f.observeStart("ASIO", "Live USB", "0", "3"));
+    check(!f.observeStart("ASIO", "Live USB", "0", "0"));
+    f.suspend();
+    check(!f.approve("ASIO", "Live USB", "0", "0"));
     check(!f.approve("ASIO", "Live USB", "3", ""));
     check(!f.approve("ASIO", "Live USB", "03", "3"));
     check(!f.approve("ASIO", "Live USB", "G", "3"));

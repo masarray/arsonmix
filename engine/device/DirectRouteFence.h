@@ -92,8 +92,10 @@ public:
                                      std::string_view inputMask,
                                      std::string_view outputMask) noexcept
     {
-        if (type.empty() || device.empty() || !validMask(inputMask)
-            || !validMask(outputMask)) return 0;
+        // Zero capture pins are permitted ONLY for the input side of an
+        // output-only session. The playback mask must identify real pins.
+        if (type.empty() || device.empty() || !validMask(inputMask,true)
+            || !validMask(outputMask,false)) return 0;
         std::uint64_t hash=14695981039346656037ull;
         append(hash, type);
         append(hash, device);
@@ -102,9 +104,10 @@ public:
         return hash ? hash : 1; // reserve zero for never-approved
     }
 private:
-    static bool validMask(std::string_view mask) noexcept
+    static bool validMask(std::string_view mask,bool allowZero) noexcept
     {
-        if (mask.empty() || mask.front() == '0') return false;
+        if (mask.empty() || (mask.front() == '0' &&
+            !(allowZero && mask.size() == 1))) return false;
         for (const unsigned char c : mask)
             if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
                 return false;

@@ -73,17 +73,20 @@ int main(){
     assert(live->effectiveKeyCode()==14); // music absent: manual D minor
     juce::MemoryBlock saved;
     live->getStateInformation(saved);
-    ChannelHarmonyProcessor restored;
+    // Realtime processor owns fixed DSP and reflection rings; production
+    // allocates FX instances on heap. Two stack-local processors overflow
+    // the default Windows 1 MiB CTest stack after stage-reflection growth.
+    auto restored=std::make_unique<ChannelHarmonyProcessor>();
     // Production NativeMixerSessionFxRestore prepares first, then restores.
     // Source must be armed at the actual DSP input, not just in accepted UI.
-    restored.prepareToPlay(48000.,128);
-    assert(restored.isReady());
-    assert(restored.restoreUnpublishedState(saved.getData(),
+    restored->prepareToPlay(48000.,128);
+    assert(restored->isReady());
+    assert(restored->restoreUnpublishedState(saved.getData(),
                                             static_cast<int>(saved.getSize())));
-    assert(restored.acceptedSettings().guideMode==1);
-    assert(restored.acceptedSettings().guideChannelId==music.value);
-    assert(restored.musicSourceChannel()==music.value);
-    assert(restored.observedMusicKey()==-1); // no stale old-device estimate
+    assert(restored->acceptedSettings().guideMode==1);
+    assert(restored->acceptedSettings().guideChannelId==music.value);
+    assert(restored->musicSourceChannel()==music.value);
+    assert(restored->observedMusicKey()==-1); // no stale old-device estimate
     // Version-1 state still loads as Manual Key with no source binding.
     juce::MemoryBlock old;
     {
@@ -97,14 +100,14 @@ int main(){
         writer.writeFloat(.5f);writer.writeFloat(0.f);
     }
     assert(old.getSize()>0);
-    ChannelHarmonyProcessor migrated;
-    migrated.prepareToPlay(48000.,128);
-    assert(migrated.isReady());
-    assert(migrated.restoreUnpublishedState(old.getData(),
+    auto migrated=std::make_unique<ChannelHarmonyProcessor>();
+    migrated->prepareToPlay(48000.,128);
+    assert(migrated->isReady());
+    assert(migrated->restoreUnpublishedState(old.getData(),
                                            static_cast<int>(old.getSize())));
-    assert(migrated.acceptedSettings().guideMode==0);
-    assert(migrated.acceptedSettings().guideChannelId==0);
-    assert(migrated.musicSourceChannel()==0);
+    assert(migrated->acceptedSettings().guideMode==0);
+    assert(migrated->acceptedSettings().guideChannelId==0);
+    assert(migrated->musicSourceChannel()==0);
     // Music-source retarget must not bleed the old channel's guide into the
     // new source. After switching to Manual the other-channel PCM must never
     // change the selected manual key. A third row owns no FX and no audible WIRE.
@@ -146,7 +149,11 @@ int main(){
                 std::sin(6.28318530718*261.625565*t)+
                 std::sin(6.28318530718*329.627557*t)));
         }
+        // Real anti-phase other-channel PCM remains unmodified by the guide.
+        for(int j=0;j<128;++j)r[j]=-l[j];
+        const float originalL=l[17],originalR=r[17];
         bank2(musicB,l,r,128);
+        assert(l[17]==originalL&&r[17]==originalR);
     }
     assert(live->observedMusicKey()==9&&live->observedMusicScale()==1);
     assert(live->effectiveKeyCode()==21); // detected A minor

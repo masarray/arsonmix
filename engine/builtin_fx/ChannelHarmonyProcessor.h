@@ -141,6 +141,7 @@ public:
     }
     double acceptedSampleRate() const noexcept {return sampleRate_;}
     bool isReady() const noexcept{return ready_;}
+    bool requiresContinuousBypassProcessing() const noexcept override {return true;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
         return queued_.empty()&&completion_.empty()&&!pendingId_;

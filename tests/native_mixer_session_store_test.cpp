@@ -93,6 +93,61 @@ public:
     double rate=48000.;
 };
 
+static void outputOnlyNativeStartup() {
+    // Real output-only callback: never invent a capture pin, but a silent
+    // ChannelId session, its FX/WIRE bus and physical zero output are valid.
+    FixtureDevice playback;
+    playback.inputMask.clear();
+    LiveDryRoutingLab mixer;
+    juce::AudioPluginFormatManager formats;
+    mixer.prepareDevice(&playback);
+    assert(mixer.startUnpatchedSession(true,false,0,formats,48000.,480).isEmpty());
+    assert(mixer.ready() && !mixer.hasExplicitRoute());
+    // Legacy startup is silent before the one deliberate native migration.
+    assert(!mixer.admitChannelIdFromAcceptedM4(0,480,true));
+    assert(mixer.admitChannelIdFromAcceptedM4(0,480,true,{},true));
+    assert(mixer.hasExplicitRoute() && !mixer.hasVerifiedNativeSources());
+    assert(mixer.canReplacePristineStartupMixer());
+    // Startup automatically restores an existing .smix on precisely the
+    // same verified device. The saved Show must win over a never-edited
+    // SOURCE NONE starter, without a second publisher/audio callback.
+    {
+        auto saved=makeSession();
+        saved.binding={"Windows Audio","","Verified WASAPI fixture","0","3",48000.,480};
+        saved.request.physicalInputs=0;
+        saved.request.sources.clear();
+        saved.request.maxFrames=480;
+        saved.rackBypassed.clear();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault;
+        assert(armix::device::JuceActivePortSnapshot::capture(&playback,mixer.epoch(),pins,fault));
+        std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+        const auto prepare=NativeMixerSessionFxRestore::prepare(saved,{},formats,
+            48000.,480,pins.epoch,mixer.nativeGraphRevisionForRestore(),bank);
+        assert(prepare.isEmpty() && bank);
+        assert(mixer.restoreNativeMixerSession(saved,std::move(bank),pins,true,true).isEmpty());
+        assert(!mixer.canReplacePristineStartupMixer()); // saved Show is now authored
+        assert(mixer.hasExplicitRoute() && !mixer.hasVerifiedNativeSources());
+    }
+    const auto native=mixer.nativeBusStatus();
+    assert(native.isObject());
+    const auto graph=static_cast<std::uint64_t>(
+        native.getProperty("graphRevision",{}).toString().getLargeIntValue());
+    const auto roster=static_cast<std::uint64_t>(
+        native.getProperty("rosterRevision",{}).toString().getLargeIntValue());
+    const auto add=mixer.createNativeInputChannel(mixer.epoch(),graph,roster,
+        "No Microphone Track",ProcessingFormat::stereo,true);
+    assert(add.accepted && !mixer.hasVerifiedNativeSources());
+    assert(!mixer.canReplacePristineStartupMixer()); // edited graph can never be replaced
+    std::array<float,480> left{},right{};
+    left.fill(1.f);right.fill(1.f); // must be cleared, not fake audio
+    float* outputs[]={left.data(),right.data()};
+    assert(mixer.process(nullptr,0,outputs,2,480,1.f,true,
+        nullptr,nullptr,false,nullptr,nullptr,true));
+    for(const auto s:left)assert(s==0.f);
+    for(const auto s:right)assert(s==0.f);
+}
+
 static void nativeDeviceRecovery() {
     FixtureDevice device;
     auto saved=makeSession();
@@ -252,6 +307,59 @@ static void nativeDeviceRecovery() {
     assert(current.inserts.size()==1 && current.inserts[0].catalogId==eqId);
     current.binding=saved.binding;
 
+    // Render actual PCM after a sparse ASIO4ALL re-enumeration. Two compact
+    // callbacks now address physical pins 2 and 3, with MAIN L at ordinal 1.
+    auto aggregate=current;
+    aggregate.binding={"ASIO","ASIO4ALL v2","ASIO4ALL v2","3","3",48000.,480,
+        {"VB-Audio Point 1","VB-Audio Point 2"},{"2nd output with SST 1","2nd output with SST 2"}};
+    auto reenumerated=aggregate.binding;
+    reenumerated.inputMask=reenumerated.outputMask="6";
+    reenumerated.inputNames.insert(0,"Other capture");
+    reenumerated.outputNames={"Other playback","2nd output with SST 2","2nd output with SST 1"};
+    const auto asioPair=MixerDeviceBindingPolicy::proposedOutputs(
+        aggregate,reenumerated,2,BindingMode::verifiedAsioRestart);
+    assert(MixerDeviceBindingPolicy::apply(aggregate,reenumerated,asioPair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    mixer.deviceStopped();
+    device.inputMask.setBit(2);device.inputMask.clearBit(0);
+    device.outputMask=device.inputMask;
+    mixer.prepareDevice(&device);
+    assert(restore(aggregate,currentStates,true).isEmpty());
+    process(true);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    process(false);
+    assert(outL.back()>.02f && outR.back()>outL.back()+.01f);
+    const auto reattachAsio=[&](const HardwareBinding& previous,const HardwareBinding& live) {
+        mixer.deviceStopped();
+        mixer.prepareDevice(&device);
+        MixerSessionDocument draft;
+        assert(mixer.describeRetainedAsioSession(draft));
+        draft.binding=previous;
+        const auto pair=MixerDeviceBindingPolicy::proposedOutputs(draft,live,2,
+            BindingMode::verifiedAsioRestart);
+        assert(MixerDeviceBindingPolicy::apply(draft,live,pair,
+            device.inputMask.countNumberOfSetBits(),BindingMode::verifiedAsioRestart).isEmpty());
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault;
+        assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+        assert(mixer.rebindRetainedAsioSession(std::move(draft),pins,480));
+    };
+    auto noCapture=reenumerated;
+    noCapture.inputMask="0";
+    device.inputMask.clear();
+    reattachAsio(reenumerated,noCapture);
+    assert(mixer.channelIdPhysicalPcmActive() && mixer.waitingAsioInputCount()==1);
+    assert(mixer.setNativeInputMix(mixer.epoch(),mixer.controlRevision(),{1},.6f,0.f));
+    process(false);
+    assert(outL.back()==0.f && outR.back()==0.f);
+    device.inputMask.setRange(1,2,true);
+    reattachAsio(noCapture,reenumerated);
+    assert(mixer.waitingAsioInputCount()==0);
+    process(false);
+    assert(outL.back()>.02f && outR.back()>outL.back()+.01f);
+    device.inputMask.clearBit(2);device.inputMask.setBit(0);
+    device.outputMask=device.inputMask;
+
     // The field failure switched Realtek playback to HDMI while keeping the
     // same VB-Cable source and a live FX rack. The new epoch has working PCM,
     // existing WIRE IDs and a repatchable ChannelId graph after one Apply.
@@ -396,6 +504,57 @@ static void verifyVirtualPlayerSessionSerialization() {
            DynamicSourceKind::playerDeck);
     assert(document.request.sources.front().deckId==1);
     assert(document.roster.find({17})->sends.front().destination.value==15);
+
+    // Reconciled ASIO4ALL + ArSon Player: physically disconnected inputs
+    // must NOT erase the mixer-owned virtual MUSIC source or its MAIN wire.
+    auto virtualOnly=makeSession();
+    auto channels=virtualOnly.roster.channels();
+    channels.push_back(player);
+    assert(virtualOnly.roster.restoreExact(virtualOnly.acceptedRevision,channels));
+    virtualOnly.request.sources.clear();
+    virtualOnly.request.sources.push_back(
+        {{17},-1,-1,true,DynamicSourceKind::playerDeck,1});
+    virtualOnly.request.physicalInputs=0;
+    virtualOnly.binding.backend="ASIO";
+    virtualOnly.binding.capture=virtualOnly.binding.playback="ASIO4ALL v2";
+    virtualOnly.binding.inputMask="0";
+    virtualOnly.binding.inputNames.clear();
+    virtualOnly.binding.outputMask="3";
+    virtualOnly.binding.outputNames={"Realtek Speakers 1","Realtek Speakers 2"};
+    const auto onlyPlayer=Codec::encode(virtualOnly);
+    MixerSessionDocument restoredPlayer;
+    assert(Codec::decode(onlyPlayer,restoredPlayer));
+    assert(restoredPlayer.request.physicalInputs==0 &&
+           restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().kind==
+               DynamicSourceKind::playerDeck);
+    assert(Codec::encode(restoredPlayer)==onlyPlayer);
+    auto returned=virtualOnly.binding;
+    returned.inputMask="3";
+    returned.inputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    const auto pair=MixerDeviceBindingPolicy::proposedOutputs(
+        restoredPlayer,returned,2,BindingMode::verifiedAsioRestart);
+    assert(pair.valid());
+    assert(MixerDeviceBindingPolicy::apply(restoredPlayer,returned,pair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(restoredPlayer.request.physicalInputs==2 &&
+           restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().kind==
+               DynamicSourceKind::playerDeck);
+    assert(restoredPlayer.roster.find({17})->sends.front()
+           .destination.value==15);
+    // The reverse transition 2-IN -> 0-IN must also retain the same deck.
+    const auto absent=virtualOnly.binding;
+    assert(MixerDeviceBindingPolicy::apply(restoredPlayer,absent,pair,0,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(restoredPlayer.request.sources.size()==1 &&
+           restoredPlayer.request.sources.front().deckId==1);
+    // Never relax zero-input validation for physical mic ordinals.
+    auto bad=juce::JSON::parse(onlyPlayer);
+    auto src=bad.getProperty("request",{}).getProperty("sources",{});
+    src.getArray()->getReference(0).getDynamicObject()
+       ->removeProperty("kind");
+    assert(!Codec::decode(juce::JSON::toString(bad,false),restoredPlayer));
 }
 
 // Actual production callback fixture: a freshly verified mixer needs ZERO
@@ -481,6 +640,22 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
 int main(){
     verifyProductionPlayerFirstSoundWithSourceOnly();
     verifyVirtualPlayerSessionSerialization();
+    // Zero-input is a legitimate saved SOURCE NONE workspace, never a fake mic.
+    {
+        auto silent=makeSession();
+        silent.binding={"Windows Audio","","Speakers","0","3",48000.,256};
+        silent.request.sources.clear();silent.request.physicalInputs=0;
+        MixerSessionDocument decoded;
+        assert(Codec::decode(Codec::encode(silent),decoded));
+        assert(decoded.request.physicalInputs==0 && decoded.request.sources.empty());
+        assert(decoded.roster.revision()==silent.roster.revision());
+        assert(MixerDeviceBindingPolicy::apply(decoded,decoded.binding,
+            decoded.outputs,0,BindingMode::exact).isEmpty());
+        auto malformed=juce::JSON::parse(Codec::encode(silent));
+        malformed.getProperty("binding",{}).getDynamicObject()->setProperty("inputMask","3");
+        assert(!Codec::decode(juce::JSON::toString(malformed,false),decoded));
+    }
+    outputOnlyNativeStartup();
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
@@ -548,6 +723,18 @@ int main(){
     assert(MixerDeviceBindingPolicy::apply(main34,only12,unauthorized12,2,
         BindingMode::verifiedDeviceApply).startsWith("NEEDS_REMAP"));
     assert(Codec::encode(main34)==main34Before);
+    // Deliberate MAIN assignment through the verified current two-pin mask
+    // is distinct from a normal Apply that must preserve the original pair.
+    auto explicitlyRepatched=main34;
+    const auto explicitPair=MixerDeviceBindingPolicy::proposedOutputs(
+        main34,only12,2,BindingMode::verifiedMainPinApply);
+    assert(explicitPair.valid() && explicitPair.mainL==0 && explicitPair.mainR==1);
+    assert(MixerDeviceBindingPolicy::apply(explicitlyRepatched,only12,explicitPair,2,
+        BindingMode::verifiedMainPinApply).isEmpty());
+    assert(explicitlyRepatched.binding.outputMask=="3");
+    assert(explicitlyRepatched.roster.revision()==main34.roster.revision());
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(main34,main34.binding,4,
+        BindingMode::verifiedMainPinApply).valid());
     // If outputs 3/4 remain physically selected, ordinal 2/3 -> 0/1
     // is a legal SAME-PIN remap, not an automatic route to different jacks.
     auto only34=main34.binding;
@@ -580,7 +767,103 @@ int main(){
         BindingMode::exact).isNotEmpty());
     assert(MixerDeviceBindingPolicy::apply(reordered,reorderedPins,d.outputs,2,
         BindingMode::verifiedDeviceApply).isEmpty());
-    assert(reordered.request.sources.empty());
+    assert(reordered.request.sources.size()==d.request.sources.size());
+    assert(reordered.request.sources.front().inputL==1);
+    assert(reordered.request.sources.front().inputR==-1);
+
+    // ASIO4ALL can reorder the VB-Cable input and the Realtek pair even
+    // though JUCE still reports the same registered driver name.
+    auto asio=d;
+    asio.binding.backend="ASIO";
+    asio.request.sources.front().stereo=true;
+    asio.request.sources.front().inputR=1;
+    asio.binding.capture=asio.binding.playback="ASIO4ALL v2";
+    asio.binding.inputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    asio.binding.outputNames={"2nd output with SST 1","2nd output with SST 2"};
+    asio.binding.outputMask="3";
+    asio.outputs={2,0,1,-1,-1,false};
+    auto shifted=asio.binding;
+    shifted.inputNames={"New input","VB-Audio Point 1","VB-Audio Point 2"};
+    shifted.inputMask="6";
+    shifted.outputNames={"New output","2nd output with SST 2","2nd output with SST 1"};
+    shifted.outputMask="6";
+    const auto shiftedPair=MixerDeviceBindingPolicy::proposedOutputs(asio,shifted,2,
+        BindingMode::verifiedAsioRestart);
+    assert(shiftedPair.valid() && shiftedPair.mainL==1 && shiftedPair.mainR==0);
+    auto shiftedSession=asio;
+    assert(MixerDeviceBindingPolicy::apply(shiftedSession,shifted,shiftedPair,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(shiftedSession.request.sources.front().inputL==0);
+    assert(shiftedSession.request.sources.front().inputR==1);
+    assert(shiftedSession.roster.revision()==asio.roster.revision());
+    juce::BigInteger oldCapturePins;
+    oldCapturePins.setRange(0,2,true);
+    const auto translated=MixerDeviceBindingPolicy::translateNamedPins(
+        oldCapturePins,asio.binding.inputNames,shifted.inputNames);
+    assert(translated && translated->toString(16)=="6");
+    auto temporarilyUnavailable=shifted;
+    temporarilyUnavailable.inputMask="0";
+    auto waiting=shiftedSession;
+    assert(MixerDeviceBindingPolicy::apply(waiting,temporarilyUnavailable,shiftedPair,0,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(waiting.request.physicalInputs==0 && waiting.request.sources.empty());
+    assert(waiting.waitingAsioInputs.size()==1);
+    assert(waiting.roster.revision()==asio.roster.revision());
+    assert(waiting.inserts.size()==asio.inserts.size());
+    MixerSessionDocument reopenedWhileDisconnected;
+    assert(Codec::decode(Codec::encode(waiting),reopenedWhileDisconnected));
+    assert(reopenedWhileDisconnected.binding.outputNames==shifted.outputNames);
+    assert(reopenedWhileDisconnected.waitingAsioInputs[0].leftName=="VB-Audio Point 1");
+    juce::BigInteger returningMask;
+    assert(!MixerDeviceBindingPolicy::addReturningCapturePins(
+        reopenedWhileDisconnected.waitingAsioInputs,{"VB-Audio Point 1"},returningMask));
+    assert(returningMask.isZero()); // a stereo half cannot open an unrelated capture
+    assert(MixerDeviceBindingPolicy::addReturningCapturePins(
+        reopenedWhileDisconnected.waitingAsioInputs,shifted.inputNames,returningMask));
+    assert(returningMask.toString(16)=="6");
+
+    auto nextSpeaker=shifted;
+    nextSpeaker.outputMask="3";
+    nextSpeaker.outputNames={"Realtek HD Audio output with SST 1","Realtek HD Audio output with SST 2"};
+    const auto newlyApproved=MixerDeviceBindingPolicy::proposedOutputs(
+        reopenedWhileDisconnected,nextSpeaker,2,BindingMode::verifiedAsioRestart);
+    assert(newlyApproved.valid() && newlyApproved.mainL==0 && newlyApproved.mainR==1);
+    assert(MixerDeviceBindingPolicy::apply(reopenedWhileDisconnected,nextSpeaker,newlyApproved,2,
+        BindingMode::verifiedAsioRestart).isEmpty());
+    assert(reopenedWhileDisconnected.waitingAsioInputs.empty());
+    assert(reopenedWhileDisconnected.request.sources.front().inputL==0);
+    assert(reopenedWhileDisconnected.request.sources.front().inputR==1);
+    // ASIO4ALL often exposes VB-Cable and Realtek together: the physical
+    // MAIN pair must be recovered at callback ordinals 2/3, not rejected
+    // simply because four output pins are active.
+    auto simultaneous=shifted;
+    simultaneous.outputMask="f";
+    simultaneous.outputNames={"VB-Audio Point 1","VB-Audio Point 2",
+        "Realtek HD Audio output with SST 1","Realtek HD Audio output with SST 2"};
+    const auto recoveredRealtek=MixerDeviceBindingPolicy::proposedOutputs(
+        asio,simultaneous,4,BindingMode::verifiedAsioRestart);
+    assert(recoveredRealtek.valid() && recoveredRealtek.activeOutputChannels==4 &&
+           recoveredRealtek.mainL==2 && recoveredRealtek.mainR==3);
+    auto multiOutputSession=asio;
+    assert(MixerDeviceBindingPolicy::apply(multiOutputSession,simultaneous,
+        recoveredRealtek,2,BindingMode::verifiedAsioRestart).isEmpty());
+    assert(multiOutputSession.request.sources.size()==1 &&
+           multiOutputSession.request.sources[0].inputL==0);
+    // Multiple physical speaker pairs are ambiguous and must never
+    // automatically redirect a live singer to the wrong output.
+    auto ambiguous=simultaneous;
+    ambiguous.outputNames={"Realtek Speakers A 1","Realtek Speakers A 2",
+                           "Realtek Speakers B 1","Realtek Speakers B 2"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(
+        asio,ambiguous,4,BindingMode::verifiedAsioRestart).valid());
+    auto virtualCable=nextSpeaker;
+    virtualCable.outputNames={"VB-Audio Point 1","VB-Audio Point 2"};
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,virtualCable,2,
+        BindingMode::verifiedDeviceApply).valid());
+    auto duplicatePins=shifted;
+    duplicatePins.outputNames.add("2nd output with SST 1");
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(asio,duplicatePins,2,
+        BindingMode::verifiedAsioRestart).valid());
     auto exact=d;
     assert(MixerDeviceBindingPolicy::apply(exact,d.binding,d.outputs,2,BindingMode::exact)
            .isEmpty());

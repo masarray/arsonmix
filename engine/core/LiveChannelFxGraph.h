@@ -33,6 +33,7 @@ public:
     struct FxInstance final : juce::AudioProcessorListener {
         std::unique_ptr<Processor> processor;
         RealtimeNativeFxControl* nativeControl=nullptr; // bound once OFF realtime
+        bool continuousBypassProcessing=false; // prepared once; no dynamic cast in RT
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
@@ -61,7 +62,11 @@ public:
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
-                if(nativeControl)nativeControl->sealForRealtime();
+                if(nativeControl){
+                    continuousBypassProcessing=
+                        nativeControl->requiresContinuousBypassProcessing();
+                    nativeControl->sealForRealtime();
+                }
                 processor->addListener(this);
             }
         }
@@ -116,14 +121,19 @@ public:
             }
             // G5C: atomic request from control; fade and scratch RT-owned.
             // Master rack bypass affects the WET/DRY envelope, never the remembered insert preference.
-            bypassFade.request(rackBypassed || bypassRequested.load(std::memory_order_relaxed));
+            const bool requestedBypass=rackBypassed ||
+                bypassRequested.load(std::memory_order_relaxed);
+            bypassFade.request(requestedBypass);
             if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
                 juce::FloatVectorOperations::clear(left,std::max(0,samples));
                 juce::FloatVectorOperations::clear(right,std::max(0,samples));
                 processing.clear(std::memory_order_release);
                 return;
             }
-            // Drain at most one native EQ control edit even while bypassed.
+            if(nativeControl)
+                nativeControl->onRealtimeBypass(requestedBypass,
+                                                bypassFade.fullyBypassed());
+            // Drain at most one native FX control edit even while bypassed.
             // Fully bypassed plugins otherwise never call processBlock, which
             // would strand pending GUI commands until users turned them ON.
             if(nativeControl && bypassFade.fullyBypassed())
@@ -135,11 +145,16 @@ public:
                 dryLeft[static_cast<std::size_t>(i)]=l;
                 dryRight[static_cast<std::size_t>(i)]=r;
             }
-            if(bypassFade.fullyBypassed()||latencyChanged.load(std::memory_order_acquire)) {
+            const bool fullyBypassed=bypassFade.fullyBypassed();
+            if((fullyBypassed&&!continuousBypassProcessing)||
+               latencyChanged.load(std::memory_order_acquire)) {
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
                 processing.clear(std::memory_order_release);return;
             }
+            // Harmony alone remains timeline-warm while fully bypassed.
+            // The host consumes real PCM, but publishes the exact PDC dry path:
+            // no stale pitch history or room tail can leak on reactivation.
             const bool fading=bypassFade.transitioning();
             try {
                 float* planar[]{left,right};
@@ -152,7 +167,10 @@ public:
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
             }
-            if(fading)for(int i=0;i<samples;++i) {
+            if(fullyBypassed){
+                juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
+                juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
+            } else if(fading)for(int i=0;i<samples;++i) {
                 const auto mix=bypassFade.next();
                 left[i]=left[i]*mix.wet+dryLeft[static_cast<std::size_t>(i)]*mix.dry;
                 right[i]=right[i]*mix.wet+dryRight[static_cast<std::size_t>(i)]*mix.dry;

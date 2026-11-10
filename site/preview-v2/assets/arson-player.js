@@ -32,6 +32,8 @@
  toggle.addEventListener("click",()=>open(root.hidden));
  $("playerClose").addEventListener("click",()=>open(false));
  $("playerAdd").addEventListener("click",()=>send("playerAdd"));
+ $("playerAddFolder").addEventListener("click",()=>send("playerAddFolder"));
+ $("playerRelink").addEventListener("click",()=>send("playerRelink"));
  $("playerPlay").addEventListener("click",()=>{
    send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay");
  });
@@ -144,11 +146,17 @@
         "Music playing · output muted",
       ERROR:"Unable to decode this file"
    }[state]||"");
-   const indicator=(t.processingChangePending && !model.error && !t.error &&
+   const indicator=model.libraryBusy && !model.error?
+     "Adding songs from folder…":
+     (t.processingChangePending && !model.error && !t.error &&
        state!=="EMPTY" && state!=="ERROR")
-     ?"Preparing music KEY/TEMPO in decoder…":detail;
+       ?"Preparing music KEY/TEMPO in decoder…":detail;
    showFeedback(indicator,Boolean(model.error||t.error));
    $("playerChooseOutput").hidden=!native || !Boolean(model.chooseOutput);
+   const missing=model.tracks.find(x=>x.id===model.selected)?.missing;
+   $("playerRelink").hidden=!native || !missing;
+   $("playerAddFolder").disabled=Boolean(model.libraryBusy);
+   $("playerAdd").disabled=Boolean(model.libraryBusy);
    $("playerCount").textContent=model.tracks.length+" songs";
    renderTracks();
  }

@@ -1,0 +1,39 @@
+name: Harmony native DSP fast verification
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/builtin_fx/Harmony*.h'
+      - 'tests/harmony*.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/harmony-fast-dsp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: harmony-fast-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  harmony-cpp:
+    name: Native DSP compile and PCM regression (Linux, no JUCE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Build and run synchronous vocal fixture
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_pitch_synchronous_test.cpp -o /tmp/arson-harmony-psola
+          /tmp/arson-harmony-psola
+      - name: Compile and run complete engine dry, pitch, stereo and graph-independent PCM fixtures
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_dsp_test.cpp -o /tmp/arson-harmony-engine
+          /tmp/arson-harmony-engine
+      - name: Verify stage separation, mono and exact PCM
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_stage_spatial_test.cpp -o /tmp/arson-harmony-spatial
+          /tmp/arson-harmony-spatial
+      - name: Compile and exercise native offline listening A/B renderer
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
+          /tmp/arson-harmony-ab --self-test

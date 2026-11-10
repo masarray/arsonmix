@@ -163,7 +163,8 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
   assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
-  assert.equal(fatOnly,8,'Portable FAT, genuine release rollback, and Inno build/verify/upload require deliberate manual opt-in');
+  assert.equal(fatOnly,8,'All portable FAT, installer and genuine two-release rollback jobs require deliberate manual opt-in');
+  assert.match(native,/Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(native,/scripts\/test_two_genuine_inno_releases_windows\.ps1/);
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
