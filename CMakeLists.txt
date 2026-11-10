@@ -425,6 +425,7 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
       juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
+  target_compile_definitions(ARMixDurableMixerSessionTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
   # Presentation-only native identity; no audio-thread access.
   juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")

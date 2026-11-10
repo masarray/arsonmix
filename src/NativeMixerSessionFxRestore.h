@@ -3,10 +3,7 @@
 #include "NativeMixerSessionDocument.h"
 #include "VstBusLayout.h"
 #include "Vst3DescriptionCache.h"
-#include "../engine/builtin_fx/ChannelEqProcessor.h"
-#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
-#include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
-#include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "NativeBuiltInFx.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
 #include <atomic>
@@ -27,73 +24,29 @@ public:
             const armix::shows::BinaryState* state,
             juce::AudioPluginFormatManager& formats,double sampleRate,int frames,
             std::unique_ptr<juce::AudioProcessor>& out) {
-        std::unique_ptr<juce::AudioProcessor> processor;
-        auto* format=formats.getFormat(0);
-        if(insert.catalogId==
-           armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
-            auto eq=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
-            eq->prepareToPlay(sampleRate,frames);
-            if(!eq->isReady()||
-               (state && !eq->restoreUnpublishedState(
-                 state->bytes.getData(),
-                 static_cast<int>(state->bytes.getSize()))))
-                return "Saved native EQ state rejected; graph unchanged";
-            processor=std::move(eq);
-        } else if(insert.catalogId==
-           armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity) {
-            auto comp=std::make_unique<armix::builtin_fx::ChannelCompressorProcessor>();
-            comp->prepareToPlay(sampleRate,frames);
-            if(!comp->isReady()||
-               (state && !comp->restoreUnpublishedState(
-                   state->bytes.getData(),
-                   static_cast<int>(state->bytes.getSize()))))
-                return "Saved native Compressor state rejected; graph unchanged";
-            processor=std::move(comp);
-        } else if(insert.catalogId==
-           armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity) {
-            auto harmony=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
-            harmony->prepareToPlay(sampleRate,frames);
-            if(!harmony->isReady()||
-               (state && !harmony->restoreUnpublishedState(
-                 state->bytes.getData(),static_cast<int>(state->bytes.getSize()))))
-                return "Saved native Harmony state rejected; graph unchanged";
-            processor=std::move(harmony);
-        } else if(insert.catalogId==
-           armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
-            auto throwFx=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
-            throwFx->prepareToPlay(sampleRate,frames);
-            if(!throwFx->isReady()||
-               (state && !throwFx->restoreUnpublishedState(
-                   state->bytes.getData(),
-                   static_cast<int>(state->bytes.getSize()))))
-                return "Saved native Vocal Throw state rejected; graph unchanged";
-            processor=std::move(throwFx);
-        } else {
-            if(!format||
-               !format->fileMightContainThisPluginType(insert.path))
-                return "Saved VST3 unavailable: "+insert.catalogId;
-            const auto chosen=armix::vst::DescriptionCache::resolve(
-                *format,insert.path,insert.uid);
-            if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
-            juce::String pluginError;
-            processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);
-            if(!processor)
-                return "VST3 instance unavailable: "+pluginError;
-            const auto layout=armix::vst::prepareStereoEffectLayout(*processor);
-            if(layout.isNotEmpty())
-                return "Saved VST3 stereo layout rejected: "+layout;
-            processor->prepareToPlay(sampleRate,frames);
+        if(const auto* builtIn=armix::builtin_fx::findNativeBuiltInFx(insert.catalogId)) {
+            auto processor=builtIn->prepare(sampleRate,frames,
+                state?state->bytes.getData():nullptr,
+                state?static_cast<int>(state->bytes.getSize()):0);
+            // An explicitly supplied empty blob was rejected before the
+            // registry was introduced, even though its data pointer is null.
+            if(!processor || (state && state->bytes.isEmpty()))return builtIn->restoreRejected;
+            out=std::move(processor);
+            return {};
         }
-        if(state && insert.catalogId!=
-           armix::builtin_fx::ChannelEqProcessor::catalogIdentity &&
-           insert.catalogId!=
-           armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity &&
-           insert.catalogId!=
-           armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity &&
-           insert.catalogId!=
-           armix::builtin_fx::VocalThrowProcessor::catalogIdentity)
-            processor->setStateInformation(state->bytes.getData(),
-                 static_cast<int>(state->bytes.getSize()));
+        auto* format=formats.getFormat(0);
+        if(!format || !format->fileMightContainThisPluginType(insert.path))
+            return "Saved VST3 unavailable: "+insert.catalogId;
+        const auto chosen=armix::vst::DescriptionCache::resolve(*format,insert.path,insert.uid);
+        if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
+        juce::String pluginError;
+        auto processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);
+        if(!processor)return "VST3 instance unavailable: "+pluginError;
+        const auto layout=armix::vst::prepareStereoEffectLayout(*processor);
+        if(layout.isNotEmpty())return "Saved VST3 stereo layout rejected: "+layout;
+        processor->prepareToPlay(sampleRate,frames);
+        if(state)processor->setStateInformation(state->bytes.getData(),
+            static_cast<int>(state->bytes.getSize()));
         out=std::move(processor);
         return {};
     }

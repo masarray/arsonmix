@@ -37,7 +37,7 @@
 #include "NativeShowSaveWorker.h"
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
-#include "NativeLogicalMixerWorkspace.h"
+#include "NativeLogicalMixerControl.h"
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -365,7 +365,7 @@ public:
         logicalVendorEditor_.reset();
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
-           logicalWorkspaceLoaded_) {
+           logicalMixer_.loaded()) {
             const auto error=saveMixerSession(resumeMain);
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
@@ -396,7 +396,14 @@ private:
     armix::storage::StudioBackup::Worker studioBackupWorker_;
     armix::shows::NativeShowSaveWorker nativeShowWorker_;
     armix::session::NativeMixerSessionSaveWorker mixerSessionWorker_;
-    armix::session::NativeLogicalMixerWorkspace logicalWorkspace_;
+    armix::session::NativeLogicalMixerControl logicalMixer_{
+        settingsDirectory(),mixerSessionWorker_,[this](const juce::String& id) {
+            mixerSessionId_=id;
+            lastMixerSessionFingerprint_.clear();
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+            mixerSessionError_.clear();
+        }};
     struct LogicalVendorEditor {
         armix::session::StoredInsert insert;
         juce::String workspaceToken;
@@ -405,8 +412,6 @@ private:
     };
     std::optional<LogicalVendorEditor> logicalVendorEditor_;
     juce::String lastLogicalFxRequest_,lastLogicalFxInstance_,lastLogicalFxRevision_;
-    bool logicalWorkspaceLoaded_=false;
-    bool logicalWorkspaceReadOnly_=false; // damaged HEAD never overwritten
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
@@ -823,8 +828,19 @@ private:
 
     void emitCatalog()
     {
-        if (browser_.loaded)
-            browser_.emitEventIfBrowserIsVisible ("arMixCatalog", catalog_.snapshot());
+        if(!browser_.loaded)return;
+        auto catalog=catalog_.snapshot();
+        juce::Array<juce::var> builtIns;
+        for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
+            auto entry=std::make_unique<juce::DynamicObject>();
+            entry->setProperty("id",fx.id);
+            entry->setProperty("name",fx.name);
+            entry->setProperty("category",fx.category);
+            entry->setProperty("showInPicker",fx.showInPicker);
+            builtIns.add(juce::var(entry.release()));
+        }
+        catalog.getDynamicObject()->setProperty("builtIns",juce::var(builtIns));
+        browser_.emitEventIfBrowserIsVisible("arMixCatalog",catalog);
     }
 
     // Every plugin insert request gets a structured result. A toast behind
@@ -1049,48 +1065,15 @@ private:
         nativeOrbitInstanceId_.clear();nativeOrbitEpoch_=0;
     }
 
-    // Persistent logical ChannelId state is usable even with NO driver.
-    // Do not instantiate vendor FX, publish a second PCM graph or ARM output.
     void ensureLogicalWorkspace() {
-        if(logicalWorkspaceLoaded_)return;
-        logicalWorkspaceLoaded_=true;
-        armix::session::NativeMixerSessionStore store(settingsDirectory());
-        if(!store.exists())return;
-        if(!mixerSessionStartupInspected_)mixerSessionRecoveryPending_=true;
-        armix::session::MixerSessionDocument doc;
-        std::vector<armix::shows::BinaryState> states;
-        const auto loadError=store.load(doc,states);
-        if(loadError.isNotEmpty() ||
-           !logicalWorkspace_.load(std::move(doc),std::move(states))) {
-            // Keep the fallback logical console visible, but NEVER replace a
-            // corrupt or cyclic HEAD with a freshly generated default graph.
-            // Explicit Open can restore a verified .smix file safely.
-            logicalWorkspaceReadOnly_=true;
+        const auto [found,error]=logicalMixer_.ensureLoaded();
+        if(found && !mixerSessionStartupInspected_)
             mixerSessionRecoveryPending_=true;
-            mixerSessionStatus_="DAMAGED_SESSION";
-            mixerSessionError_=loadError.isNotEmpty()?loadError:
-                "Saved logical mixer routing is invalid or cyclic";
-            diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
-                                mixerSessionError_);
-        }
-    }
-
-    bool saveLogicalWorkspace(std::shared_ptr<armix::session::NativeLogicalMixerWorkspace> candidate,
-                              std::function<void(juce::String)> completion) {
-        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
-        return mixerSessionWorker_.save(settingsDirectory(),candidate->document(),
-                candidate->states(),[safe,candidate,completion=std::move(completion)](juce::String error){
-            if(safe==nullptr)return;
-            if(error.isEmpty()) {
-                safe->logicalWorkspace_=std::move(*candidate);
-                safe->mixerSessionId_=safe->logicalWorkspace_.document().id;
-                safe->lastMixerSessionFingerprint_.clear();
-                safe->mixerSessionRecoveryPending_=true;
-                safe->mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
-                safe->mixerSessionError_.clear();
-            }
-            completion(std::move(error));
-        });
+        if(error.isEmpty())return;
+        mixerSessionRecoveryPending_=true;
+        mixerSessionStatus_="DAMAGED_SESSION";
+        mixerSessionError_=error;
+        diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",error);
     }
 
     juce::String prepareLogicalFx(const armix::session::NativeLogicalMixerWorkspace& workspace,
@@ -1103,10 +1086,7 @@ private:
         insert.channel=channel;
         insert.slot=slot;
         insert.catalogId=juce::String(row->insertCatalogIds[slot]);
-        const bool builtin=insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
-            insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
-            insert.catalogId==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
-            insert.catalogId==armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
+        const bool builtin=armix::builtin_fx::findNativeBuiltInFx(insert.catalogId)!=nullptr;
         if(!builtin) {
             const auto* registered=catalog_.find(insert.catalogId);
             if(!registered || (saved && (saved->uid!=registered->uid || saved->path!=registered->path)))
@@ -1132,20 +1112,8 @@ private:
     }
 
     bool logicalFxTarget(const juce::var& request,std::uint64_t& channel,std::size_t& slot) {
-        const auto rawSlot=request.getProperty("slot",{});
-        const auto index=static_cast<int>(rawSlot);
-        std::uint64_t revision=0;
-        if(!rawSlot.isInt() || index<0 || index>=LiveDryRoutingLab::maxFxPerLane ||
-           request.getProperty("deviceEpoch",{}).toString()!="0" ||
-           request.getProperty("workspaceToken","").toString()!=logicalWorkspace_.workspaceToken() ||
-           !armix::session::parseDecimal(request.getProperty("graphRevision",{}),revision) ||
-           revision!=logicalWorkspace_.revision() ||
-           !armix::session::parseDecimal(request.getProperty("channelId",{}),channel) ||
-           !approvedNativeSnapshot().getProperty("logicalMixer",{}).isObject())
-            return false;
-        slot=static_cast<std::size_t>(index);
-        return request.getProperty("instanceId","").toString()==
-            logicalWorkspace_.fxToken({channel},slot);
+        return approvedNativeSnapshot().getProperty("logicalMixer",{}).isObject() &&
+            logicalMixer_.matchesFxTarget(request,channel,slot);
     }
 
     std::unique_ptr<juce::AudioProcessor> openLogicalBuiltinFx(const juce::var& request,
@@ -1154,15 +1122,15 @@ private:
         std::size_t slot=0;
         std::unique_ptr<juce::AudioProcessor> processor;
         if(!logicalFxTarget(request,channel,slot))return {};
-        const auto* row=logicalWorkspace_.document().roster.find({channel});
+        const auto* row=logicalMixer_.workspace().document().roster.find({channel});
         if(row && slot<row->insertCatalogIds.size() && row->insertCatalogIds[slot]==catalogId &&
-           prepareLogicalFx(logicalWorkspace_,{channel},slot,insert,processor).isEmpty())
+           prepareLogicalFx(logicalMixer_.workspace(),{channel},slot,insert,processor).isEmpty())
             return processor;
         return {};
     }
 
     void openLogicalVendorEditor(const juce::var& request) {
-        if(logicalVendorEditor_ || mixerSessionWorker_.busy() || logicalWorkspaceReadOnly_) {
+        if(logicalVendorEditor_ || mixerSessionWorker_.busy() || logicalMixer_.readOnly()) {
             emitNotice("Close the current FX editor or wait for the mixer to finish saving",true);
             return;
         }
@@ -1173,13 +1141,13 @@ private:
             return;
         }
         LogicalVendorEditor prepared;
-        auto error=prepareLogicalFx(logicalWorkspace_,{channel},slot,prepared.insert,prepared.processor);
+        auto error=prepareLogicalFx(logicalMixer_.workspace(),{channel},slot,prepared.insert,prepared.processor);
         if(error.isEmpty()) {
             try {
                 if(auto* editor=prepared.processor->createEditorIfNeeded()) {
                     prepared.window=std::make_unique<PluginEditorWindow>(
                         prepared.processor->getName(),editor);
-                    prepared.workspaceToken=logicalWorkspace_.workspaceToken();
+                    prepared.workspaceToken=logicalMixer_.workspace().workspaceToken();
                     logicalVendorEditor_=std::move(prepared);
                     return;
                 }
@@ -1195,11 +1163,10 @@ private:
         if(!logicalVendorEditor_ || mixerSessionWorker_.busy() ||
            (!shutdown && logicalVendorEditor_->window->isVisible()))return;
         auto& fx=*logicalVendorEditor_;
-        if(fx.workspaceToken!=logicalWorkspace_.workspaceToken()) {
+        if(fx.workspaceToken!=logicalMixer_.workspace().workspaceToken()) {
             logicalVendorEditor_.reset();
             return;
         }
-        auto candidate=std::make_shared<armix::session::NativeLogicalMixerWorkspace>(logicalWorkspace_);
         juce::MemoryBlock bytes;
         try {
             fx.processor->getStateInformation(bytes);
@@ -1208,8 +1175,7 @@ private:
             if(!shutdown)fx.window->setVisible(true);
             return;
         }
-        if(!candidate->saveFx(fx.insert,std::move(bytes)) ||
-           !saveLogicalWorkspace(std::move(candidate),[this](juce::String error){
+        if(!logicalMixer_.saveFx(fx.insert,std::move(bytes),[this](juce::String error){
                 if(error.isEmpty())logicalVendorEditor_.reset();
                 else {
                     emitNotice("FX settings could not be saved: "+error,true);
@@ -1239,7 +1205,7 @@ private:
             ack->setProperty("errorCode",error.isEmpty()?"NONE":error);
             if(safe->browser_.loaded)safe->browser_.emitEventIfBrowserIsVisible(event,juce::var(ack.release()));
         };
-        if(!queued || logicalWorkspaceReadOnly_ || mixerSessionWorker_.busy() ||
+        if(!queued || logicalMixer_.readOnly() || mixerSessionWorker_.busy() ||
            audioDeviceApplyActive_ || nativeShowBusy_ || studioBackupBusy_)
             return reply("Offline FX settings could not be changed");
         // This isolated processor has no publisher or audio consumer. Drain
@@ -1248,88 +1214,28 @@ private:
         typename Processor::Completion applied{};
         if(!processor->pollCompletion(applied)||!applied.applied)
             return reply("Offline FX settings rejected");
-        auto candidate=std::make_shared<armix::session::NativeLogicalMixerWorkspace>(logicalWorkspace_);
         juce::MemoryBlock bytes;
         processor->getStateInformation(bytes);
-        if(!candidate->saveFx(std::move(insert),std::move(bytes)) ||
-           !saveLogicalWorkspace(std::move(candidate),reply))
+        if(!logicalMixer_.saveFx(std::move(insert),std::move(bytes),reply))
             reply("Offline FX settings could not be saved");
     }
 
-    void emitLogicalMixerAck(const juce::String& id, const juce::String& error,
-            const juce::String& createdId={}) {
-        auto ack=std::make_unique<juce::DynamicObject>();
-        ack->setProperty("requestId",id);
-        ack->setProperty("status",error.isEmpty()?"ACCEPTED":"REJECTED");
-        ack->setProperty("errorCode",error.isEmpty()?"NONE":error);
-        ack->setProperty("revision",
-            juce::String(std::to_string(logicalWorkspace_.revision())));
-        if(error.isEmpty())ack->setProperty("createdId",createdId);
-        ack->setProperty("physicalOutputAdmitted",false);
-        if(browser_.loaded)
-            browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",
-                                                 juce::var(ack.release()));
-    }
-
-    // Retained PCM still owns opaque processor state after unplug. Visible
-    // graph equality cannot transfer that ownership to a disk checkpoint.
     void handleLogicalMixerIntent(const juce::var& request) {
-        ensureLogicalWorkspace();
-        const auto id=request.getProperty("requestId","").toString();
-        if(!id.startsWith("logical-") || id.length()>80)
-            return emitLogicalMixerAck(id,"INVALID_LOGICAL_REQUEST");
-        if(acceptedControlRequests_.contains(id))
-            return emitLogicalMixerAck(id,"DUPLICATE_LOGICAL_REQUEST");
-        if(logicalWorkspaceReadOnly_)
-            return emitLogicalMixerAck(id,"SAVED_MIXER_RECOVERY_REQUIRED");
-        if(audioDeviceApplyActive_ || mixerSessionWorker_.busy() ||
-           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending())
-            return emitLogicalMixerAck(id,"LOGICAL_EDITOR_BUSY");
         const auto snapshot=approvedNativeSnapshot();
-        if(!snapshot.getProperty("logicalMixer",{}).isObject())
-            return emitLogicalMixerAck(id,"PHYSICAL_PCM_AUTHORITY_ACTIVE");
-
-        const auto operation=request.getProperty("operation","").toString();
-        if(logicalVendorEditor_ &&
-           (operation=="REMOVE_FX_REFERENCE" || operation=="DELETE_CHANNEL" || operation=="REMOVE_BUS"))
-            return emitLogicalMixerAck(id,"Close the vendor FX editor before removing channels or inserts");
-        if(operation=="ADD_FX_REFERENCE") {
-            const auto key=request.getProperty("payload",{})
-                .getProperty("catalogId","").toString();
-            const bool builtIn=key==
-                armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
-                key==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
-                key==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
-                key==armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
-            if(!builtIn && (!catalog_.find(key) || catalog_.busy()))
-                return emitLogicalMixerAck(id,"UNKNOWN_OR_SCANNING_FX_CATALOG");
-        }
-
-        auto candidate=std::make_shared<armix::session::NativeLogicalMixerWorkspace>(
-            logicalWorkspace_);
-        const auto result=candidate->apply(request);
-        if(!result.accepted)return emitLogicalMixerAck(id,result.error);
-        if(request.getProperty("operation","").toString()=="ADD_FX_REFERENCE") {
-            std::uint64_t channel=0;
-            const auto oldChannel=armix::session::parseDecimal(request.getProperty("channelId",{}),channel)?
-                logicalWorkspace_.document().roster.find({channel}):nullptr;
-            if(!oldChannel)return emitLogicalMixerAck(id,"INVALID_LOGICAL_CHANNEL");
-            armix::session::StoredInsert insert;
-            std::unique_ptr<juce::AudioProcessor> processor;
-            const auto error=prepareLogicalFx(*candidate,{channel},oldChannel->insertCatalogIds.size(),
-                insert,processor);
-            if(error.isNotEmpty())return emitLogicalMixerAck(id,error);
-            juce::MemoryBlock bytes;
-            processor->getStateInformation(bytes);
-            if(!candidate->saveFx(std::move(insert),std::move(bytes)))
-                return emitLogicalMixerAck(id,"INVALID_FX_STATE");
-        }
-        if(!saveLogicalWorkspace(candidate,[this,id,result](juce::String error){
-            emitLogicalMixerAck(id,error,result.createdId);
-        }))return emitLogicalMixerAck(id,"LOGICAL_EDITOR_BUSY");
-        acceptedControlRequests_.add(id);
-        if(acceptedControlRequests_.size()>512)
-            acceptedControlRequests_.remove(0);
+        logicalMixer_.handleIntent(request,{
+            audioDeviceApplyActive_ || nativeShowBusy_ || studioBackupBusy_ ||
+                engine_.isGraphSwitchPending(),
+            snapshot.getProperty("logicalMixer",{}).isObject(),
+            logicalVendorEditor_.has_value()
+        },[this](const juce::String& key) {
+            return armix::builtin_fx::findNativeBuiltInFx(key) ||
+                (!catalog_.busy() && catalog_.find(key));
+        },[this](const auto& workspace,auto channel,auto slot,auto& insert,auto& processor) {
+            return prepareLogicalFx(workspace,channel,slot,insert,processor);
+        },[this](juce::var ack) {
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",std::move(ack));
+        });
     }
 
     juce::var approvedNativeSnapshot (const juce::var& live)
@@ -1360,15 +1266,7 @@ private:
            !engine_.hasRetainedNativeSession()) {
             // Separate field: physical graph remains truthful/unadmitted.
             // Browsers may render this only as an explicitly unbound editor.
-            auto logical=logicalWorkspace_.snapshot();
-            logical.getDynamicObject()->setProperty("readOnly",
-                                                    logicalWorkspaceReadOnly_);
-            if(logicalWorkspaceReadOnly_) {
-                logical.getProperty("graph",{}).getProperty("capabilities",{})
-                    .getDynamicObject()->setProperty("supportedOps",
-                                                     juce::var(juce::Array<juce::var>{}));
-            }
-            accepted.getDynamicObject()->setProperty("logicalMixer",logical);
+            accepted.getDynamicObject()->setProperty("logicalMixer",logicalMixer_.readback());
         }
         if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
@@ -1456,19 +1354,9 @@ private:
                 // fallback, secondary DSP or user-visible MONITOR ritual.
                 const auto args=command.getProperty("payload",{});
                 const auto catalogId=args.getProperty("catalogId","").toString();
-                const bool builtInEq=catalogId==
-                    armix::builtin_fx::ChannelEqProcessor::catalogIdentity;
-                const bool builtInComp=catalogId==
-                    armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity;
-                const bool builtInHarmony=catalogId==
-                    armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
-                // Built-in DSP is compiled into the native host. Its admit
-                // path must remain usable even while third-party VST3 metadata
-                // discovery blocks or scans in the background. External
-                // plugins still require a fully verified, idle catalog.
-                const bool builtInThrow=catalogId==
-                    armix::builtin_fx::VocalThrowProcessor::catalogIdentity;
-                const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony&&!builtInThrow;
+                const auto* builtIn=armix::builtin_fx::findNativeBuiltInFx(catalogId);
+                // Native FX do not depend on third-party catalog scans.
+                const bool externalCatalog=builtIn==nullptr;
                 const auto* plugin=externalCatalog?catalog_.find(catalogId):nullptr;
                 std::uint64_t ep=0,rev=0,roster=0,target=0;
                 if((externalCatalog&&(!plugin||catalog_.busy()))||nativeShowBusy_||
@@ -1484,18 +1372,9 @@ private:
                             command.getProperty("targetChannelId",{}),target)) {
                     nativeError="NATIVE_VST3_INVALID_SESSION_ID";
                 } else {
-                    const auto result=builtInEq?
-                        engine_.installNativeBuiltInEq(
-                            ep,rev,roster,armix::mixer::ChannelId{target}):
-                        builtInComp?
-                        engine_.installNativeBuiltInCompressor(
-                            ep,rev,roster,armix::mixer::ChannelId{target}):
-                        builtInHarmony?
-                        engine_.installNativeBuiltInHarmony(
-                            ep,rev,roster,armix::mixer::ChannelId{target}):
-                        builtInThrow?
-                        engine_.installNativeBuiltInVocalThrow(
-                            ep,rev,roster,armix::mixer::ChannelId{target}):
+                    const auto result=builtIn?
+                        engine_.installNativeBuiltInFx(
+                            *builtIn,ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
                             plugin->path,plugin->uid,plugin->key());
@@ -2793,10 +2672,7 @@ private:
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
-            if(insert.catalogId==armix::builtin_fx::ChannelEqProcessor::catalogIdentity ||
-               insert.catalogId==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity ||
-               insert.catalogId==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity ||
-               insert.catalogId==armix::builtin_fx::VocalThrowProcessor::catalogIdentity) {
+            if(armix::builtin_fx::findNativeBuiltInFx(insert.catalogId)) {
                 if(insert.path.isNotEmpty() || insert.uid!=0)
                     return "Saved built-in FX identity was modified";
                 continue;
@@ -2875,9 +2751,8 @@ private:
             return error;
         }
         mixerSessionId_=doc.id;
-        if(usedPrevious) {
-            if(logicalWorkspace_.load(doc,states))logicalWorkspaceReadOnly_=false;
-        }
+        if(usedPrevious)
+            (void)logicalMixer_.restoreCheckpoint(doc,states);
         const bool firstBinding=doc.logicalOnly;
         if(firstBinding && !engine_.hasPristineStartupMixer()) {
             mixerSessionRecoveryPending_=true;
@@ -2947,7 +2822,7 @@ private:
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
            catalog_.busy()||engine_.isGraphSwitchPending())
             return "Mixer is busy. Try again after the current operation.";
-        if(logicalWorkspaceReadOnly_)
+        if(logicalMixer_.readOnly())
             return "Saved mixer recovery required before writing a new session";
         const auto liveState=engine_.status();
         const auto live=liveState.getProperty("dryRoutingLab",{});
@@ -2961,10 +2836,9 @@ private:
             // Logical edits and Open already commit HEAD before ACK.
             if(automatic)return {};
             auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
-            if(!mixerSessionWorker_.save(settingsDirectory(),logicalWorkspace_.document(),
-                    logicalWorkspace_.states(),[safe](juce::String error){
+            if(!logicalMixer_.exportTo(exportFile,[safe](juce::String error){
                 if(safe!=nullptr)safe->emitMixerSessionAck("SAVE",error);
-            },exportFile))return "Mixer session IO worker unavailable";
+            }))return "Mixer session IO worker unavailable";
             return {};
         }
         if(automatic&&mixerSessionRecoveryPending_)
@@ -3052,28 +2926,16 @@ private:
                 // Open the real .smix into the same stable-ID logical
                 // document. Never demand audio hardware or instantiate VST3
                 // just to inspect and edit a saved mixer.
-                safe->ensureLogicalWorkspace();
-                const auto id=doc.id;
-                armix::session::NativeLogicalMixerWorkspace opened;
-                if(!opened.load(std::move(doc),std::move(states)))
-                    error="Saved logical routing is invalid or cyclic";
-                else {
-                    error=armix::session::NativeMixerSessionStore(
-                        settingsDirectory()).commit(opened.document(),opened.states());
-                    if(error.isEmpty()) {
-                        safe->logicalWorkspace_=std::move(opened);
-                        safe->logicalWorkspaceReadOnly_=false;
-                        safe->logicalWorkspaceLoaded_=true;
-                        safe->mixerSessionId_=id;
-                        safe->mixerSessionRecoveryPending_=true;
-                        safe->lastMixerSessionFingerprint_.clear();
+                if(!safe->logicalMixer_.open(std::move(doc),std::move(states),
+                        [safe,file](juce::String openError){
+                    if(safe==nullptr)return;
+                    if(openError.isEmpty()) {
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
-                        safe->mixerSessionError_.clear();
                         safe->lastMixerFile_=file;
-                        safe->emitApprovedNativeSnapshot();
                     }
-                }
-                safe->emitMixerSessionAck("OPEN",error);
+                    safe->emitMixerSessionAck("OPEN",openError);
+                    if(openError.isEmpty())safe->emitApprovedNativeSnapshot();
+                }))safe->emitMixerSessionAck("OPEN","Mixer session IO worker unavailable");
                 return;
             }
             if(error.isEmpty())error=safe->materializeLogicalFxForBinding(doc,states);

@@ -192,4 +192,13 @@ inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus,
     return installedChannelIdCallbackAdmitted &&
            projectNativeGraph(snapshot,bus,NativeGraphProjection::installed);
 }
+// Legacy callers supplied a bus from the installed producer, which exposes
+// its WIRE operation. The retained producer supplies an empty operation list.
+// New callers must pass admission explicitly from the owning engine status.
+inline bool projectApprovedNativeV8(juce::var& snapshot,const juce::var& bus) {
+    const auto supported=bus.getProperty("supportedOps",{});
+    const auto* ops=supported.getArray();
+    return projectApprovedNativeV8(snapshot,bus,
+        ops && ops->contains(juce::var("NATIVE_APPLY_WIRE_TRANSACTION")));
+}
 } // namespace armix::console

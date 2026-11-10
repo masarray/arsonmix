@@ -384,7 +384,7 @@ test("P0 first Add FX discovers real local VST3 lazily without an audio-thread s
  // The approved picker publishes real compiled-in FX independently of
  // external scanner state; the verified VST3 library follows those entries.
  assert.match(bridge,/const presentFxCatalog=\(\)=>scope\?\.setNativeCatalog\?\.\(/);
- assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
+ assert.ok(bridge.includes('[...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]'));
  // Neither startup nor audio callback can trigger a surprise system scan.
  assert.doesNotMatch(bridge.slice(0,bridge.indexOf("function discoverFxOnFirstPickerOpen")),
    /action:"scanVst3"/);
@@ -1275,16 +1275,16 @@ test("P0 native built-in FX appear before vendor scan and remain after catalog r
                   "armix.builtin.channel-compressor.v1",
                   "armix.builtin.arson-harmony.v1"])
    assert.ok(bridge.includes('id:"'+id+'"'));
- assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
+ assert.ok(bridge.includes('[...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]'));
  assert.ok(bridge.includes('presentFxCatalog(); // compiled native FX'));
  assert.ok(builder.includes("x.format==='Native'?'Native':'VST3'"));
  assert.ok(!bridge.includes('scope?.setNativeCatalog?.([])'));
 });
 test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 catalog scan",()=>{
  const cpp=read("src/Main.cpp");
- const gate=cpp.slice(cpp.indexOf('const bool builtInEq=catalogId=='),
-   cpp.indexOf('const auto result=builtInEq?',cpp.indexOf('const bool builtInEq=catalogId==')));
- assert.ok(gate.includes('const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony'));
+ const gate=cpp.slice(cpp.indexOf('const auto* builtIn=armix::builtin_fx::findNativeBuiltInFx(catalogId)'),
+   cpp.indexOf('const auto result=builtIn?'));
+ assert.ok(gate.includes('const bool externalCatalog=builtIn==nullptr'));
  assert.ok(gate.includes('externalCatalog&&(!plugin||catalog_.busy())'));
  assert.ok(!gate.includes('||catalog_.busy()||nativeShowBusy_'),
   'third-party metadata discovery must not disable compiled-in FX');

@@ -1166,16 +1166,18 @@
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   // Native JUCE processors: these are real compiled DSP, not demo effects,
   // scanned VST binaries, a JS renderer or placeholder library entries.
-  const nativeBuiltins=Object.freeze([
+  let nativeBuiltins=Object.freeze([
     Object.freeze({id:"armix.builtin.channel-eq.v1",name:"Parametric EQ",
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
-      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"})
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"ArSon Vocal Throw",
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false})
   ]);
   const presentFxCatalog=()=>scope?.setNativeCatalog?.(
-    [...nativeBuiltins,...nativeCatalog.values()]);
+    [...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]);
   let nativeFxDiscoveryRequested=false,nativeFxCatalogScanning=false;
   // Lazy USER-triggered discovery: the first Add FX opens immediately and
   // starts real JUCE VST3 scanning on its dedicated non-audio worker. Never
@@ -2441,7 +2443,14 @@
       controller.subscribe();
     },8000);
   }
-  function onNativeReadback(next) {
+  function playAcceptedWireImpact(changes) {
+    const plug=changes?.find(change=>["CONNECT","ROUTE_ONLY","RETARGET"].includes(change.op));
+    if(!plug)return;
+    const from=uiByNativeId.get(plug.from),to=uiByNativeId.get(plug.to);
+    if(from===undefined||to===undefined||to===scope?.master?.id)return;
+    scope?.kickWireSpring?.(from,to);
+  }
+  function onNativeReadback(next,confirmed) {
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     appearanceFromNative(next);
     updateHardwarePanel(next);
@@ -2467,7 +2476,7 @@
         identity:"logical:"+offline.workspaceToken+":"+offline.revision,logical:true,
         readOnly:offline.readOnly===true,
         admitted:false,retained:false,productLive:false,telemetry:{}};
-      let revealCreatedId=null;
+      let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
       if(pendingLogical) {
@@ -2481,6 +2490,8 @@
           return;
         }
         pendingLogical=null;
+        if(p.operation==="WIRE_TRANSACTION"&&offline.revision===p.ackRevision)
+          wireImpact=p.payload.changes;
         if((p.operation==="CREATE_CHANNEL"||p.operation==="CREATE_GROUP") &&
            p.createdId)revealCreatedId=p.createdId;
         if(logicalRenameId===p.channelId&&p.operation==="RENAME_CHANNEL") {
@@ -2502,6 +2513,7 @@
         }
         lastPaintedSignature=signature;
       }
+      if(wireImpact)playAcceptedWireImpact(wireImpact);
       if(revealCreatedId) {
         const local=uiByNativeId.get(revealCreatedId);
         const strip=scope?.tracks?.find(t=>t.id===local);
@@ -2617,6 +2629,8 @@
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
     syncMonitorButton(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
+    if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
+      playAcceptedWireImpact(confirmed.payload.changes);
     finishNativeTrack(next);finishNativeTrackDelete(next);
     if(pendingFxInsert?.authority==="CHANNEL_ID"){
       const p=pendingFxInsert;
@@ -2909,6 +2923,10 @@
       nativeCatalog=new Map(catalog.items.filter(p=>
         p&&typeof p.id==="string"&&p.id.length>0&&
         typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
+      if(Array.isArray(catalog.builtIns))
+        nativeBuiltins=catalog.builtIns.filter(fx=>fx && typeof fx.id==="string" &&
+          typeof fx.name==="string" && fx.id.length && fx.name.length)
+          .map(fx=>({...fx,vendor:"ArSonMix",format:"Native",source:"builtin"}));
       presentFxCatalog();
       if(nativeFxDiscoveryRequested&&!nativeFxCatalogScanning&&nativeCatalog.size===0)
         status("Built-in FX ready · import VST3 to add more effects");
@@ -3405,11 +3423,7 @@
         return true;
       }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
-      const plugin=nativeCatalog.get(id) ||
-        (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:
-         id==='armix.builtin.channel-compressor.v1'?{id,name:'Compressor'}:
-         id==='armix.builtin.arson-harmony.v1'?{id,name:'Harmonice'}:
-         id==='armix.builtin.vocal-throw.v1'?{id,name:'ArSon Vocal Throw'}:null);
+      const plugin=nativeCatalog.get(id) || nativeBuiltins.find(fx=>fx.id===id);
       const track=scope?.tracks?.find(x=>x.id===target?.channelId)||
         (scope?.master?.id===target?.channelId?scope.master:null);
       const channel=m4Index(track),slot=Number(target?.slot);
