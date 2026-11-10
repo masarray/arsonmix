@@ -49,3 +49,4 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
           /tmp/arson-harmony-ab --self-test
+          python3 tests/harmonice_quality_report_contract_test.py /tmp/arson-harmony-ab
