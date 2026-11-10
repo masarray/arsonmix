@@ -139,6 +139,20 @@ int main() {
                                             "\"sha256\":\"deadbeef")));
     REQUIRE(store.read(saved.catalogId,saved.id,readback).isNotEmpty());
     REQUIRE(store.enumerate(saved.catalogId).empty());
+    // Corruption must not bypass either quota or name collision checks.
+    // This exercise is required in Release; no side-effecting assert().
+    const auto compDir=testRoot.getChildFile("BuiltInFxPresets")
+        .getChildFile("compressor");
+    const auto corrupt=compDir.getChildFile(
+        "22222222-2222-2222-2222-222222222222.armixfx");
+    REQUIRE(corrupt.replaceWithText("{bad json"));
+    auto otherwiseValid=comp();
+    otherwiseValid.name="Safe New";
+    REQUIRE(store.saveNew(otherwiseValid).isNotEmpty());
+    REQUIRE(otherwiseValid.id.isEmpty());
+    REQUIRE(corrupt.deleteFile());
+    // Empty/stale data from another catalogue must not become a mixer preset.
+    REQUIRE(store.enumerate(comp().catalogId).empty());
     std::cout<<"Shared per-built-in FX preset store: EQ/Comp/Harmony/Throw "
              <<"native typed disk roundtrip, corruption and rollback PASS\n";
 }
