@@ -73,6 +73,12 @@ public:
         handler_=std::move(handler);
     }
     juce::String activeSession() const {return activeSession_;}
+    void setCaptureMode(bool enabled) {
+        if(capturing_==enabled)return;
+        capturing_=enabled;
+        if(enabled)clearRegistrations();
+        else registerActive();
+    }
     void activateSession(juce::String id,const std::vector<Mapping>* imported=nullptr) {
         if(id==activeSession_ && !imported)return;
         // Explicit .smix mappings override the portable local copy for that
@@ -224,7 +230,7 @@ private:
     }
     void registerActive() {
 #if defined(_WIN32)
-        if(!window_)return;
+        if(!window_ || capturing_)return;
         for(const auto& m:entries_)if(active(m) && !registered(m.id)) {
             const int id=++nextId_;
             if(::RegisterHotKey(window_,id,
@@ -239,7 +245,7 @@ private:
         juce::Array<juce::var> rows;
         for(const auto& m:entries)rows.add(encode(m));
         o.getDynamicObject()->setProperty("entries",juce::var(rows));
-        if(!file_.getParentDirectory().createDirectory())return false;
+        if(file_.getParentDirectory().createDirectory().failed())return false;
         juce::TemporaryFile tmp(file_);
         return tmp.getFile().replaceWithText(juce::JSON::toString(o,false)) &&
                tmp.overwriteTargetFileWithTemporary();
@@ -290,5 +296,6 @@ private:
     std::vector<Registration> registrations_;
     std::function<void(const Mapping&)> handler_;
     int nextId_=0x7000;
+    bool capturing_=false;
 };
 } // namespace armix::hotkey
