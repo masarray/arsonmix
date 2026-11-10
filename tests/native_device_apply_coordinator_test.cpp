@@ -125,16 +125,30 @@ int main() {
     Coordinator::AppliedReadback observed;
     observed.backend="ASIO";
     observed.actual=candidate;
+    observed.deviceName="ASIO Test";
+    observed.deviceType="ASIO";
     observed.open=true;
     observed.activeInputs=candidate.inputChannels;
     observed.activeOutputs=candidate.outputChannels;
     observed.deviceRate=48000.;
     observed.deviceBuffer=256;
     assert(Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceName="ASIO Different";
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceName="ASIO Test";
+    observed.deviceType="Windows Audio";
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceType="ASIO";
     observed.actual.outputChannels.clearBit(1);
     assert(!Coordinator::matchesApplied(request,candidate,observed));
     observed.actual=candidate;
     observed.deviceBuffer=128;
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceBuffer=256;
+    observed.deviceRate=0.;
+    assert(!Coordinator::matchesApplied(request,candidate,observed));
+    observed.deviceRate=48000.;
+    observed.deviceBuffer=0;
     assert(!Coordinator::matchesApplied(request,candidate,observed));
     observed.deviceBuffer=256;
     observed.backend="Windows Audio";
@@ -147,10 +161,36 @@ int main() {
     rollback.open=true;
     rollback.backend="ASIO";
     rollback.actual=candidate;
+    rollback.deviceName="ASIO Test";
+    rollback.deviceType="ASIO";
+    rollback.activeInputs=candidate.inputChannels;
+    rollback.activeOutputs=candidate.outputChannels;
+    rollback.deviceRate=48000.;
+    rollback.deviceBuffer=256;
     rollback.inputNames={"Mic 1","Mic 2"};
     rollback.outputNames={"Monitor L","Monitor R"};
     assert(Coordinator::matchesRollback(candidate,"ASIO",rollback.inputNames,
                                         rollback.outputNames,rollback));
+    rollback.deviceName="Other ASIO";
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceName="ASIO Test";
+    rollback.activeOutputs.clearBit(1);
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.activeOutputs=candidate.outputChannels;
+    rollback.deviceBuffer=512;
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceBuffer=256;
+    rollback.deviceRate=0.;
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceRate=48000.;
+    rollback.deviceBuffer=0;
+    assert(!Coordinator::matchesRollback(candidate,"ASIO",
+        rollback.inputNames,rollback.outputNames,rollback));
+    rollback.deviceBuffer=256;
     rollback.outputNames={"Monitor R","Monitor L"};
     assert(!Coordinator::matchesRollback(candidate,"ASIO",
         {"Mic 1","Mic 2"},{"Monitor L","Monitor R"},rollback));
@@ -158,5 +198,36 @@ int main() {
     rollback.open=false;
     assert(!Coordinator::matchesRollback(candidate,"ASIO",
         rollback.inputNames,rollback.outputNames,rollback));
+
+    // M2c accepted session/rebind policy must be independent of a device
+    // dialog, DSP and any filesystem writes. Rejections never clear .smix.
+    using Rebind=Coordinator::MixerRebindAction;
+    const auto decide=Coordinator::decideMixerRebind;
+    Coordinator::MixerRebindEvidence e;
+    assert(decide(e)==Rebind::reject);
+    e.installedChannelPcm=true;
+    e.storedCheckpoint=true;
+    e.retainedNativeSession=true;
+    assert(decide(e)==Rebind::reject); // physical fence always wins
+    e.physicalAuthorized=true;
+    assert(decide(e)==Rebind::retainInstalled); // no-change dialog
+    e.pendingStartupRestore=true;
+    e.pristineStartupMixer=true;
+    assert(decide(e)==Rebind::restoreRetained); // must restore accepted Show
+    e.storedCheckpoint=false;
+    e.retainedNativeSession=false;
+    assert(decide(e)==Rebind::retainInstalled); // no file, installed graph valid
+    e.installedChannelPcm=false;
+    assert(decide(e)==Rebind::reject); // no fabricated fresh PCM admission
+    e.freshBound=true;
+    assert(decide(e)==Rebind::acceptFreshBound);
+    e.retainedNativeSession=true;
+    assert(decide(e)==Rebind::restoreRetained);
+    e.retainedNativeSession=false;
+    e.storedCheckpoint=true;
+    assert(decide(e)==Rebind::restoreRetained);
+    e.physicalAuthorized=false;
+    assert(decide(e)==Rebind::reject); // stale device can't replay document
+
     std::cout<<"Native device Apply preflight/rollback: PASS\n";
 }
