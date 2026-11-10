@@ -40,6 +40,7 @@ struct StoredInsert final {
     juce::String catalogId,path,sha256,name;
     int uid=0;
     bool bypass=false;
+    juce::String instanceId; // durable identity of this specific native FX owner
 };
 struct PlannedSlotBypass final {
     ChannelId channel{};
@@ -511,6 +512,8 @@ public:
             set(fx,"catalogId",f.catalogId);set(fx,"path",f.path);
             set(fx,"uid",f.uid);set(fx,"name",f.name);
             set(fx,"sha256",f.sha256);set(fx,"bypass",f.bypass);
+            // Optional v1 field; old .smix files remain byte-for-byte valid.
+            if(f.instanceId.isNotEmpty())set(fx,"instanceId",f.instanceId);
             inserts.add(fx);
         }
         for(auto id:d.rackBypassed)racks.add(decimal(id.value));
@@ -741,6 +744,7 @@ public:
         const auto* racks=racksVar.getArray();
         if(!fx||!racks||fx->size()>16384||racks->size()>channels->size())return false;
         std::set<std::pair<std::uint64_t,std::size_t>> seenFx;
+        std::set<juce::String> seenInstances;
         for(const auto& item:*fx) {
             StoredInsert p;int slot=0;
             if(!parseDecimal(get(item,"channel"),p.channel.value)||
@@ -757,6 +761,17 @@ public:
                p.sha256.length()!=64 ||
                !p.sha256.containsOnly("0123456789abcdef")||
                !strictBool(get(item,"bypass"),p.bypass))return false;
+            const auto durable=get(item,"instanceId");
+            if(!durable.isVoid()) {
+                if(!durable.isString())return false;
+                const auto token=durable.toString();
+                const auto digits=token.startsWith("g5c-")?
+                    token.substring(4):juce::String{};
+                if(digits.isEmpty()||digits.length()>18||digits[0]=='0'||
+                   !digits.containsOnly("0123456789")||
+                   !seenInstances.insert(token).second)return false;
+                p.instanceId=token;
+            }
             doc.inserts.push_back(std::move(p));
         }
         for(const auto& item:*racks) {
