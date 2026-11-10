@@ -110,13 +110,17 @@ public:
         leadRatio_=1.f;leadBlend_=0.f;leadPeriod_=0.f;
         leadRendering_=false;voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
+        pitchSyncValid_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
         pitchSyncReferenceEnabled_=true;
         stageDepthReferenceEnabled_=true;
         roomFocusReferenceEnabled_=true;
         presenceReferenceEnabled_=true;
-        pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
+        // Both renderer choice and missing-epoch recovery are time-domain
+        // crossfades. Never hard-switch their independent source phases.
+        pitchSyncAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.030)));
+        pitchSyncValidAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.005)));
         const float cutoff=1800.f;
         decimationAlpha_=static_cast<float>(1.-std::exp(-2.*3.141592653589793*cutoff/rate));
         write_=0;downWrite_=0;downSeen_=0;downCounter_=0;
@@ -129,7 +133,9 @@ public:
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
         // Preserve the established 48k envelope while keeping durations
         // constant at 32-192k. Exponents computed off the callback.
-        voicedGateAlpha_=static_cast<float>(1.-std::pow(1.-0.002,48000./rate));
+        // Sustain a noisy, vibrato-heavy sung vowel without 2ms square-like
+        // envelope edges; real silence is still detected immediately.
+        voicedGateAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.008)));
         ratioAlpha_=static_cast<float>(1.-std::pow(1.-0.00045,48000./rate));
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
@@ -167,7 +173,12 @@ public:
         for(std::size_t v=0;v<singers.size();++v){
             const auto& singer=singers[v];
             if(!singerActive(singer.role,next.voices))continue;
-            const float angle=(singer.pan*next.space+1.f)*pi*0.25f;
+            // Space maps to perceptual stereo width: a 60% setting now
+            // already gives recognizably separated LOW/HIGH singers.
+            // The sqrt curve and constant-power gains are CONTROL-only;
+            // Space=0 remains a single mono backing center.
+            const float stageWidth=std::sqrt(next.space);
+            const float angle=(singer.pan*stageWidth+1.f)*pi*0.25f;
             const float level=amplitude*singer.presence;
             prepared.mixL[v]=level*std::cos(angle);
             prepared.mixR[v]=level*std::sin(angle);
@@ -342,8 +353,12 @@ public:
                 const auto placed=stage_.place(v,voice,reflection,second,
                                                mixL_[ix],mixR_[ix],space_);
                 if(stageDepthReferenceEnabled_){
-                    outL+=placed.directL*backingDirect+placed.earlyL*earlyReturn;
-                    outR+=placed.directR*backingDirect+placed.earlyR*earlyReturn;
+                    const float directPresence=BackingStageSpatial::
+                        directionalPresence(v,space_);
+                    outL+=placed.directL*backingDirect*directPresence+
+                          placed.earlyL*earlyReturn;
+                    outR+=placed.directR*backingDirect*directPresence+
+                          placed.earlyR*earlyReturn;
                     roomSendL+=placed.roomL;roomSendR+=placed.roomR;
                 }else{
                     outL+=directL*backingDirect+
@@ -438,10 +453,15 @@ private:
         // Invalid PSOLA epochs must never inject zero into the high-voice
         // output while a crossfade is still active.
         if(sync.ready)colorState+=filterCoef*(sync.sample-colorState);
+        // A single missing source epoch must not hard-switch an already
+        // voiced PSOLA singer to a phase-unrelated granular sample. Recover
+        // gradually over 5ms, even as the overall algorithm blends over 30ms.
+        float& valid=pitchSyncValid_[ix];
+        valid+=pitchSyncValidAlpha_*((sync.ready?1.f:0.f)-valid);
         float& blend=pitchSyncBlend_[ix];
-        blend+=pitchSyncAlpha_*((confident&&sync.ready?1.f:0.f)-blend);
-        const float validSync=sync.ready?colorState:f;
-        y=f*(1.f-blend)+validSync*blend;
+        blend+=pitchSyncAlpha_*((confident?1.f:0.f)-blend);
+        const float windowedSync=colorState*valid+f*(1.f-valid);
+        y=f*(1.f-blend)+windowedSync*blend;
         phase_[ix]+=1.f/static_cast<float>(grain_);
         if(phase_[ix]>=1.f)phase_[ix]-=1.f;
         return y;
@@ -512,13 +532,15 @@ private:
         sourceConfidence_=0.f;voiced_=false;noteHold_=0;
         candidateNote_=-1;currentNote_=-1;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
+        sourcePeriodSamples_=0.f;
         leadTune_.release();voicePlanner_.reset();
     }
-    // Keep the last known voiced note through at most two energetic but
-    // ambiguous analysis windows (~13ms at 48k); actual silence immediately
-    // releases. This prevents periodic gating on high vowels/consonants.
+    // Keep the last known voiced note through at most five energetic but
+    // ambiguous analysis windows (~33ms at 48k); true silence immediately
+    // releases. Avoid ~150Hz note-gating during loud vowels and long vibrato.
+    // Six inconclusive windows still release, never an indefinite noise hold.
     void uncertainPitchEvidence() noexcept {
-        if(voiced_&&noteHold_>=2&&uncertainPitchHops_<2){
+        if(voiced_&&noteHold_>=2&&uncertainPitchHops_<5){
             ++uncertainPitchHops_;
             return;
         }
@@ -592,10 +614,23 @@ private:
         currentNote_=note;voiced_=true;tonalTransitionPending_=false;
         if(sourcePeriodSamples_>0.f&&
            std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
-            pitchSync_.reset();pitchSyncBlend_.fill(0.f);
-            pitchSyncFiltered_.fill(0.f);
+            // A confirmed octave-size transition is a new periodicity.
+            // Re-seed grains but let the 5/30ms fallback crossfades mask
+            // this discontinuity instead of resetting output gains to zero.
+            pitchSync_.reset();
+            pitchSyncStable_=false;weakSyncHops_=0;
+            sourcePeriodSamples_=newPeriod;
+        }else if(sourcePeriodSamples_<=0.f){
+            sourcePeriodSamples_=newPeriod;
+        }else{
+            // Six-millisecond F0 windows fluctuate on long singer vibrato.
+            // Slew the source period at note-rate, not as discrete PSOLA
+            // grain-window jumps. A 5% bounded hop still tracks a real
+            // melodic transition promptly; target intervals remain separate.
+            const float bounded=std::clamp(newPeriod,
+                sourcePeriodSamples_*.95f,sourcePeriodSamples_*1.05f);
+            sourcePeriodSamples_+=.30f*(bounded-sourcePeriodSamples_);
         }
-        sourcePeriodSamples_=newPeriod;
         sourceConfidence_=confidence;
         // Hysteresis prevents marginal correlation confidence causing
         // rapid PSOLA/granular alternation. Silence disables it immediately.
@@ -633,13 +668,14 @@ private:
     float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
+    float pitchSyncValidAlpha_=0.f;
     int uncertainPitchHops_=0,weakSyncHops_=0;
     bool pitchSyncStable_=false;
     std::uint64_t sampleClock_=0;
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true;
-    std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{};
+    std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{},pitchSyncValid_{};
     float space_=0.f,targetSpace_=0.f;
     float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
