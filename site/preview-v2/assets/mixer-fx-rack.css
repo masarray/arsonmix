@@ -484,10 +484,10 @@
 .mx-harm-signature strong{font-size:17px;font-weight:500;letter-spacing:-.35px;color:#d1ebec}
 .mx-harm-signature small{font-size:8px;letter-spacing:1.1px;color:#86a8b2}
 .mx-harm-label{font-size:9px;letter-spacing:.9px;color:#a3c0c8;font-weight:500}
-.mx-harm-voices{display:flex;gap:4px;width:100%}
+.mx-harm-voices{display:flex;gap:3px;width:100%}
 .mx-harm-voices button{
  appearance:none;display:flex;align-items:center;justify-content:center;
- gap:3px;flex:1;min-width:0;height:30px;padding:0 3px;border-radius:5px;
+ gap:2px;flex:1;min-width:0;height:30px;padding:0 2px;border-radius:5px;
  border:1px solid #557784;line-height:1;
  background:linear-gradient(180deg,#365b67,#294953);
  color:#cfe5e7;font-size:11px;font-weight:500;
@@ -495,7 +495,7 @@
   0 1px 0 #132d38,0 2px 4px #0618223f;
  transition:background .13s ease,box-shadow .13s ease,color .13s ease
 }
-.mx-harm-voice-glyph{display:block;flex:0 0 13px;width:13px;height:13px}
+.mx-harm-voice-glyph{display:block;flex:0 0 11px;width:11px;height:11px}
 .mx-harm-voices button span{display:block;font-variant-numeric:tabular-nums}
 .mx-harm-voices button.active{
  background:linear-gradient(180deg,#438d7d,#326c63);
@@ -767,7 +767,8 @@
  .mx-harm-signature{min-height:71px}
  .mx-harm-voices{gap:2px}
  .mx-harm-voices button{height:28px;padding:0 2px;gap:2px}
- .mx-harm-voice-glyph{width:11px;height:11px;flex-basis:11px}
+ /* Four counts remain legible in the narrow 112px left rail. */
+ .mx-harm-voice-glyph{display:none}
  .mx-harm-source{flex-wrap:wrap;gap:5px;padding:5px 8px}
  .mx-harm-source-picker{flex:1}
  .mx-harm-guide-status{font-size:8px}
