@@ -96,7 +96,9 @@ def main():
         state=snapshot()
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'""")
-        assert page.locator("#tracks .strip").count()==14
+        # The approved mixer virtualizes/banks strips. Count native-owned
+        # model channels, not only the currently mounted DOM bank.
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         assert page.locator("#addTrack").is_enabled()
         assert page.locator("#addBus").is_visible()
         assert page.evaluate("""()=>window.__events.filter(e=>
@@ -107,15 +109,19 @@ def main():
             e=>e.name==='arMixLogicalIntent').at(-1).payload""")
         assert event["operation"]=="CREATE_CHANNEL"
         assert event["baseRevision"]=="1"
-        assert page.locator("#tracks .strip").count()==14
+        # The approved mixer virtualizes/banks strips. Count native-owned
+        # model channels, not only the currently mounted DOM bank.
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         emit(page,"arMixLogicalAck",{
             "requestId":event["requestId"],"status":"ACCEPTED",
             "errorCode":"NONE","revision":"2","createdId":"16",
             "physicalOutputAdmitted":False})
-        assert page.locator("#tracks .strip").count()==14, "ACK alone changed UI"
+        # The approved mixer virtualizes/banks strips. Count native-owned
+        # model channels, not only the currently mounted DOM bank.
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14, "ACK alone changed UI"
         state=snapshot("2",True)
         emit(page,"arMixConsoleSnapshot",state)
-        page.wait_for_function("""()=>document.querySelectorAll('#tracks .strip').length===15""")
+        page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length===15""")
         new_track=page.locator("#tracks .strip").filter(has_text="Track 16").first
         assert new_track.count()==1
         assert page.locator("#addTrack").is_enabled()
@@ -140,7 +146,7 @@ def main():
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>document.querySelector(
             '#tracks .strip select[data-field="output"] option')!==null""")
-        assert page.locator("#tracks .strip").count()==15
+        assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==15
         assert page.locator("#addTrack").is_enabled()
         assert not errors,errors
         browser.close()
