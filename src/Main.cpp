@@ -2761,6 +2761,33 @@ private:
                 error="Mixer or audio device changed while opening the file";
             if(error.isEmpty()&&engine.secondaryArmed())
                 error="Stop STREAM before opening a mixer";
+            const auto lab=engine.status().getProperty("dryRoutingLab",{});
+            const bool physical=static_cast<bool>(lab.getProperty(
+                "nativeChannelIdPcmActive",false));
+            if(error.isEmpty()&&!physical) {
+                // Open the real .smix into the same stable-ID logical
+                // document. Never demand audio hardware or instantiate VST3
+                // just to inspect and edit a saved mixer.
+                const auto id=doc.id;
+                if(!safe->logicalWorkspace_.load(doc,states))
+                    error="Saved logical routing is invalid or cyclic";
+                else {
+                    error=armix::session::NativeMixerSessionStore(
+                        settingsDirectory()).commit(doc,states);
+                    if(error.isEmpty()) {
+                        safe->logicalWorkspaceLoaded_=true;
+                        safe->mixerSessionId_=id;
+                        safe->mixerSessionRecoveryPending_=false;
+                        safe->lastMixerSessionFingerprint_.clear();
+                        safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
+                        safe->mixerSessionError_.clear();
+                        safe->lastMixerFile_=file;
+                        safe->emitApprovedNativeSnapshot();
+                    }
+                }
+                safe->emitMixerSessionAck("OPEN",error);
+                return;
+            }
             if(error.isEmpty())error=safe->resolveMixerSessionCatalog(doc,false);
             if(error.isEmpty()) {
                 const auto id=doc.id;
