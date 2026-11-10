@@ -173,7 +173,12 @@ public:
         for(std::size_t v=0;v<singers.size();++v){
             const auto& singer=singers[v];
             if(!singerActive(singer.role,next.voices))continue;
-            const float angle=(singer.pan*next.space+1.f)*pi*0.25f;
+            // Space maps to perceptual stereo width: a 60% setting now
+            // already gives recognizably separated LOW/HIGH singers.
+            // The sqrt curve and constant-power gains are CONTROL-only;
+            // Space=0 remains a single mono backing center.
+            const float stageWidth=std::sqrt(next.space);
+            const float angle=(singer.pan*stageWidth+1.f)*pi*0.25f;
             const float level=amplitude*singer.presence;
             prepared.mixL[v]=level*std::cos(angle);
             prepared.mixR[v]=level*std::sin(angle);
