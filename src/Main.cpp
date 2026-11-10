@@ -2760,11 +2760,20 @@ private:
             return "Saved mixer recovery required before writing a new session";
         const liveState=engine_.status();
         const auto live=liveState.getProperty("dryRoutingLab",{});
-        const auto session=approvedNativeSnapshot(liveState)
-            .getProperty("mixerSession",{});
+        const auto observed=approvedNativeSnapshot(liveState);
+        const auto session=observed.getProperty("mixerSession",{});
         const bool m4Active=session.getProperty("authority","").toString()=="M4";
         if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false)) &&
            !m4Active && !engine_.secondaryArmed()) {
+            // P0 loss-prevention: the retained callback graph may be newer
+            // than the last successful .smix checkpoint. Never persist a
+            // stale logical mirror over that last genuine native graph.
+            // Exact ChannelId/EdgeId/FX readback equivalence is mandatory.
+            if(engine_.hasRetainedNativeSession() &&
+               !retainedGraphMatchesLogical(observed))
+                return "Retained native mixer changed after the last saved "
+                       "checkpoint; reconnect audio before saving to avoid "
+                       "overwriting newer channels, WIRE or FX";
             // True no-device save: never synthesize a physical output
             // binding merely to satisfy .smix file serialization.
             const auto& doc=logicalWorkspace_.document();
@@ -2772,7 +2781,8 @@ private:
             if(!automatic) {
                 const auto error=armix::session::NativeMixerSessionStore::writeFile(
                     exportFile,doc,states);
-                emitMixerSessionAck("SAVE",error);
+                // Caller owns failure ACK; never double-report a failed Save.
+                if(error.isEmpty())emitMixerSessionAck("SAVE",{});
                 return error;
             }
             return armix::session::NativeMixerSessionStore(
