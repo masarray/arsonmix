@@ -88,6 +88,11 @@ test('Full native/release qualification retains all CTests; isolated Harmonice F
   assert.match(native, /'ARMixCrackleWindowTests'/);
   assert.match(native, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
   assert.match(native, /FULL_SUITE_NOT_CLAIMED/);
+  // An old PR can retain outdated workflow YAML; focused execution must
+  // use a trusted main workflow and still build the exact PR input SHA.
+  assert.match(read('scripts/chat_ci_dispatch.mjs'),
+    /workflowRef=focusedHarmony\?'main':target\.branch/);
+  assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {

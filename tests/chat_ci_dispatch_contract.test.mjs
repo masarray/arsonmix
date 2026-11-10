@@ -116,7 +116,8 @@ test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file p
   });
   assert.equal(eligible.kind,'dispatched');
   assert.deepEqual(calls.at(-1),{
-    ref:harmonyPr.head.ref,
+    // The CI definition comes from main; the source still comes from SHA.
+    ref:'main',
     inputs:{expected_sha:sha,package_fat:true,focused_harmony_fat:true}
   });
   await performMilestone({

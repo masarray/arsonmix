@@ -284,7 +284,13 @@ jobs:
           )
           & cmake --build build --config Release --parallel 2 --target $targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host "HARMONY_FAT_NATIVE_TARGETS=$($targets.Count) SOURCE_SHA=$env:GITHUB_SHA"
+          # github.sha is the trusted workflow ref when dispatched from main,
+          # not the source commit of a long-lived candidate PR.
+          $sourceSha = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceSha -ne '${{ inputs.expected_sha }}') {
+            throw "HARMONY_FAT_SOURCE_SHA_MISMATCH expected=${{ inputs.expected_sha }} actual=$sourceSha"
+          }
+          Write-Host "HARMONY_FAT_NATIVE_TARGETS=$($targets.Count) SOURCE_SHA=$sourceSha"
 
       - name: Build executable and native RT tests
         if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}

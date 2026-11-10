@@ -117,8 +117,13 @@ export async function performMilestone({event,repo,api}) {
   const inputs=target.lane==='ui'?{expected_sha:target.sha}:
     {expected_sha:target.sha,package_fat:target.lane==='fat',
      ...(focusedHarmony?{focused_harmony_fat:true}:{})};
+  // An old, still-open PR may predate the new focused-FAT workflow input.
+  // Execute the reviewed latest workflow FROM main, but the native job
+  // checks out inputs.expected_sha and verifies its exact 40-hex identity.
+  // This avoids silently running stale all-target YAML from a long-lived PR.
+  const workflowRef=focusedHarmony?'main':target.branch;
   await api('/actions/workflows/'+target.workflow+'/dispatches','POST',
-    {ref:target.branch,inputs});
+    {ref:workflowRef,inputs});
   return {kind:'dispatched',target};
 }
 async function main(){
