@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../src/BuiltInFxUserPresetStore.h"
-#include <cassert>
+#include <array>
+#include <stdexcept>
+#include <string>
 #include <iostream>
 using armix::storage::BuiltInFxUserPreset;
 using armix::storage::BuiltInFxUserPresetStore;
+
+// Do not use <cassert>: Release/NDEBUG omits both assertions AND their
+// mutating operations, producing a false-green Windows CTest.
+#define REQUIRE(expr) do { if (!(expr)) throw std::runtime_error(\
+    std::string("PRESET_TEST_FAILED: ") + #expr + " at line " +\
+    std::to_string(__LINE__)); } while (false)
+
 
 static juce::var object(std::initializer_list<std::pair<const char*,juce::var>> fields) {
     juce::var out(new juce::DynamicObject());
@@ -40,80 +49,96 @@ int main() {
     const auto testRoot=juce::File::getSpecialLocation(
        juce::File::tempDirectory).getChildFile(
            "ArSonMix-Preset-CTest-"+juce::Uuid().toDashedString());
-    assert(!testRoot.exists());
+    REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
     auto items=std::array{comp(),harmony(),throwSettings(),eq()};
     for(auto& item:items) {
-        assert(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
-        assert(store.saveNew(item).isEmpty());
-        assert(BuiltInFxUserPresetStore::safeId(item.id));
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
+        REQUIRE(store.saveNew(item).isEmpty());
+        REQUIRE(BuiltInFxUserPresetStore::safeId(item.id));
         BuiltInFxUserPreset readback;
-        assert(store.read(item.catalogId,item.id,readback).isEmpty());
-        assert(readback.name==item.name);
-        assert(juce::JSON::toString(readback.settings,false)==
+        REQUIRE(store.read(item.catalogId,item.id,readback).isEmpty());
+        REQUIRE(readback.name==item.name);
+        REQUIRE(juce::JSON::toString(readback.settings,false)==
                juce::JSON::toString(item.settings,false));
         const BuiltInFxUserPresetStore reopened(testRoot);
         BuiltInFxUserPreset cold;
-        assert(reopened.read(item.catalogId,item.id,cold).isEmpty());
-        assert(cold.id==item.id);
-        assert(reopened.enumerate(item.catalogId).size()==1);
+        REQUIRE(reopened.read(item.catalogId,item.id,cold).isEmpty());
+        REQUIRE(cold.id==item.id);
+        REQUIRE(reopened.enumerate(item.catalogId).size()==1);
         // Presets are effect-scoped rather than channel, slot or device-scoped.
         for(const auto& other:items)
           if(other.catalogId!=item.catalogId) {
              BuiltInFxUserPreset wrong;
-             assert(reopened.read(other.catalogId,item.id,wrong).isNotEmpty());
+             REQUIRE(reopened.read(other.catalogId,item.id,wrong).isNotEmpty());
           }
     }
     // Factory and user data must remain conceptually distinct; disk-only
     // user presets cannot silently be replaced by same category/name.
     auto duplicate=comp();
-    assert(store.saveNew(duplicate).isNotEmpty());
+    REQUIRE(store.saveNew(duplicate).isNotEmpty());
     auto renamed=items[0];
     renamed.name="Natural Vocal";
-    assert(store.overwrite(renamed).isEmpty());
+    REQUIRE(store.overwrite(renamed).isEmpty());
     BuiltInFxUserPreset readback;
-    assert(store.read(renamed.catalogId,renamed.id,readback).isEmpty());
-    assert(readback.name=="Natural Vocal");
-    assert(store.rename(renamed.catalogId,renamed.id,"Warm Vocal").isEmpty());
-    assert(store.read(renamed.catalogId,renamed.id,readback).isEmpty());
-    assert(readback.name=="Warm Vocal");
-    assert(store.remove(renamed.catalogId,renamed.id).isEmpty());
-    assert(store.read(renamed.catalogId,renamed.id,readback).isNotEmpty());
+    REQUIRE(store.read(renamed.catalogId,renamed.id,readback).isEmpty());
+    REQUIRE(readback.name=="Natural Vocal");
+    REQUIRE(store.rename(renamed.catalogId,renamed.id,"Warm Vocal").isEmpty());
+    REQUIRE(store.read(renamed.catalogId,renamed.id,readback).isEmpty());
+    REQUIRE(readback.name=="Warm Vocal");
+    REQUIRE(store.remove(renamed.catalogId,renamed.id).isEmpty());
+    REQUIRE(store.read(renamed.catalogId,renamed.id,readback).isNotEmpty());
+    // Exercise an actual overwrite of accepted settings; it must survive a
+    // cold store re-open, independent of any mixer channel or session.
+    auto tuned=items[2];
+    tuned.settings.getDynamicObject()->setProperty("wet",0.83);
+    REQUIRE(store.overwrite(tuned).isEmpty());
+    BuiltInFxUserPreset coldTuned;
+    REQUIRE(BuiltInFxUserPresetStore(testRoot).read(
+        tuned.catalogId,tuned.id,coldTuned).isEmpty());
+    REQUIRE(static_cast<double>(
+        coldTuned.settings.getProperty("wet",{}))==0.83);
+    // A new preset may not fake a factory or malformed unique identity.
+    auto preassigned=comp();
+    preassigned.id="../../unsafe";
+    REQUIRE(store.saveNew(preassigned).isEmpty());
+    REQUIRE(BuiltInFxUserPresetStore::safeId(preassigned.id));
+    REQUIRE(store.remove(preassigned.catalogId,preassigned.id).isEmpty());
     // Nonportable channel routing, malformed/hostile values, unknown version
     // and cross-catalog data must all fail without damaging another preset.
     auto bad=harmony();
     bad.settings.getDynamicObject()->setProperty("guideChannelId","123456");
-    assert(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
-    assert(store.saveNew(bad).isNotEmpty());
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+    REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=harmony();bad.settings.getDynamicObject()->setProperty("voices",7);
-    assert(store.saveNew(bad).isNotEmpty());
+    REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=throwSettings();bad.settings.getDynamicObject()->setProperty("bpm",-1);
-    assert(store.saveNew(bad).isNotEmpty());
+    REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
-    assert(store.saveNew(bad).isNotEmpty());
-    assert(BuiltInFxUserPresetStore::safeId(
+    REQUIRE(store.saveNew(bad).isNotEmpty());
+    REQUIRE(BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789Ab"));
-    assert(!BuiltInFxUserPresetStore::safeId(
+    REQUIRE(!BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-GBCD-0123456789Ab"));
-    assert(!BuiltInFxUserPresetStore::safeId(
+    REQUIRE(!BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789A/"));
-    assert(!BuiltInFxUserPresetStore::safeId("../outside"));
-    assert(!BuiltInFxUserPresetStore::safeText("../outside",80));
-    assert(!BuiltInFxUserPresetStore::safeText("bad/name",80));
-    assert(!BuiltInFxUserPresetStore::safeText("hi\nthere",80));
-    assert(!BuiltInFxUserPresetStore::validateSettings(
+    REQUIRE(!BuiltInFxUserPresetStore::safeId("../outside"));
+    REQUIRE(!BuiltInFxUserPresetStore::safeText("../outside",80));
+    REQUIRE(!BuiltInFxUserPresetStore::safeText("bad/name",80));
+    REQUIRE(!BuiltInFxUserPresetStore::safeText("hi\nthere",80));
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(
             "vendor.external.plugin",comp().settings));
     // Checksum or schema corruption must not be advertised as a valid sound.
     const auto& saved=items[1];
     const auto path=testRoot.getChildFile("BuiltInFxPresets")
         .getChildFile("harmonice").getChildFile(saved.id+".armixfx");
-    assert(path.existsAsFile());
+    REQUIRE(path.existsAsFile());
     auto json=path.loadFileAsString();
-    assert(path.replaceWithText(json.replace("\"sha256\":\"",
+    REQUIRE(path.replaceWithText(json.replace("\"sha256\":\"",
                                             "\"sha256\":\"deadbeef")));
-    assert(store.read(saved.catalogId,saved.id,readback).isNotEmpty());
-    assert(store.enumerate(saved.catalogId).empty());
+    REQUIRE(store.read(saved.catalogId,saved.id,readback).isNotEmpty());
+    REQUIRE(store.enumerate(saved.catalogId).empty());
     std::cout<<"Shared per-built-in FX preset store: EQ/Comp/Harmony/Throw "
              <<"native typed disk roundtrip, corruption and rollback PASS\n";
 }
