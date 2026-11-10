@@ -59,7 +59,5 @@ int main() {
         tooMany.add(&bypass);
     assert(FxParameterPolicy::browse(tooMany).empty());
     assert(FxParameterPolicy::find(tooMany,"vendor-bypass")==nullptr);
-    juce::initialiseJuce_GUI(); // no audio graph/device opened
-    juce::shutdownJuce_GUI();
     return 0;
 }
