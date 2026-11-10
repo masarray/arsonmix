@@ -119,6 +119,13 @@ static void focusTest(double rate){
          f.returnGain(0.f,0.f,1.f)==1.f,"room restart stale sample");
 }
 int main(){
+    // Space=0 is unchanged; at wide Space, HIGH retains a small direct
+    // spectral/level anchor rather than drowning in the shared late room.
+    need(BackingStageSpatial::directionalPresence(2,0.f)==1.f&&
+         BackingStageSpatial::directionalPresence(0,1.f)==1.f&&
+         BackingStageSpatial::directionalPresence(2,1.f)>1.3f&&
+         BackingStageSpatial::directionalPresence(4,1.f)>1.09f,
+         "HIGH/support direct focus incorrect or LOW unexpectedly boosted");
     for(double rate:{32000.,44100.,48000.,96000.,192000.}){
         focusTest(rate);
         double previous=-1.;
