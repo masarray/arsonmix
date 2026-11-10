@@ -106,7 +106,7 @@ test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file p
     if(path.includes('/runs?event=pull_request'))
       return {workflow_runs:[{id:9,head_sha:sha,event:'pull_request'}]};
     if(path.includes('/actions/runs/9/jobs'))
-      return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout',
+      return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout)',
         conclusion:'success'}]};
     if(path.endsWith('/dispatches')){calls.push(data);return null;}
     return {workflow_runs:[]};
