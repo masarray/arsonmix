@@ -40,8 +40,19 @@ int main() {
     damagedParam.getDynamicObject()->removeProperty("paramId");
     assert(!Registry::decode(damagedParam,decodedParam));
     damagedParam=Registry::encode(param);
-    damagedParam.getDynamicObject()->setProperty("paramId","wrong\\nid");
+    // A literal backslash+n is a valid string, NOT a newline. The old test
+    // accidentally passed "wrong\\nid" and asserted it was unsafe.
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\nid");
     assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\rid");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\tid");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId",juce::String("wrong\\nid"));
+    assert(Registry::decode(damagedParam,decodedParam));
 
     Mapping restoredSlot;
     assert(Registry::decode(Registry::encode(slot),restoredSlot));
