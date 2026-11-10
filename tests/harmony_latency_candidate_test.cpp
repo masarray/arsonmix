@@ -86,10 +86,10 @@ Audio render(double rate,int ms,int block,const Audio& source){
 }
 }
 int main(){
-    Settings s;
-    check(!Engine{}.prepareForOfflineLatencyStudy(48000.,8),
+    auto invalid=std::make_unique<Engine>();
+    check(!invalid->prepareForOfflineLatencyStudy(48000.,8),
           "unsupported 8 ms candidate admitted");
-    check(!Engine{}.prepareForOfflineLatencyStudy(48000.,32),
+    check(!invalid->prepareForOfflineLatencyStudy(48000.,32),
           "offline API incorrectly duplicates production preparation");
     for(double rate:{44100.,48000.,96000.}){
         for(int ms:{32,24,16}){
