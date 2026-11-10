@@ -1,79 +1,62 @@
 <p align="center">
-  <a href="https://masarray.github.io/arsonmix/"><img src="assets/icon/brand-512.png" width="208" alt="ArSonMix official mixer artwork — MUTE, SOLO, PFL, stereo level meters and silver fader"></a>
+  <a href="https://masarray.github.io/arsonmix/"><img src="assets/icon/brand-512.png" width="128" alt="ArSonMix official mixer icon"></a>
 </p>
-<p align="center"><strong>ArSonMix · Professional Live Mixing Studio</strong></p>
+<p align="center"><strong>ArSonMix — Professional Live Mixing Studio</strong></p>
 <p align="center">
-  <a href="https://masarray.github.io/arsonmix/">Official website &amp; downloads</a> ·
-  <a href="https://masarray.github.io/arsonmix/preview/">Approved mixer</a> ·
-  <a href="https://github.com/masarray/arsonmix/releases">Releases</a>
+  <a href="https://masarray.github.io/arsonmix/">Website & downloads</a> ·
+  <a href="https://masarray.github.io/arsonmix/preview/">Explore the mixer</a> ·
+  <a href="https://github.com/masarray/arsonmix/releases">All releases</a> ·
+  <a href="https://github.com/masarray/arsonmix/issues">Feedback</a>
 </p>
 
-> **ONLY APPROVED ARSONMIX GUI (owner decision, 2026-11-04):** https://masarray.github.io/arsonmix/preview/ . This is the *one* public GUI and Windows UI target, with its specific approved PNG hardware buttons. Bare `/preview-v2/` is wrong as a product preview and is redirect-only; `/preview-buttons/` and old archived previews are also redirect-only. The native JUCE engine must be stitched into exactly the assembled `/preview/` renderer. No alternative `web/index.html`, `web/mixer-layout.js`, `web/console-native.html` or older PR #278/#271 GUI may ship. [Root agent lock](AGENTS.md) · [GUI→native P0 #389](https://github.com/masarray/arsonmix/issues/389) · [current handoff](docs/workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) (historical filename) · [ENGINE #266](https://github.com/masarray/arsonmix/pull/266) · [FAT #270](https://github.com/masarray/arsonmix/pull/270). Browser GUI is simulation, not proof of PCM.
+# ArSonMix
 
-# ArSonMix — Native Realtime Live Mixer and VST3 Host
+**A native live digital mixer for singers, karaoke, streaming and live sound.** Route audio through channels and WIRE connections, work with FX and music, and keep your settings in a `.smix` session. ArSonMix is a live mixing console, **not** a timeline/recording DAW or a browser-based audio mixer.
 
-A Windows-first **live performance digital mixing console** for stage, karaoke, podcast/radio and flexible physical/virtual output, using the *console workflows* of Studio One / Adobe Audition and *live banking/routing* concepts of Waves eMotion LV1. Not a timeline/DAW audio editor, recorder or OBS-only utility.
+## Download — current public preview
 
-## Engineering references (historical designs are not current agent authority)
-- [Approved PR #278 V8 GUI design](https://github.com/masarray/arsonmix/pull/278) and [isolated study](https://github.com/masarray/arsonmix/blob/design/audition-mixer-reference-isolated-20261101/design-references/audition-mixer-study/index.html) — visual reference only
-- [PRD v5.2 — Operator-first live mixer](docs/PRD_ARSONMIX_OPERATOR_FIRST_LIVE_MIXER_V5_20261101.md)
-- [ARD v5.2 — Native Console and realtime safety](docs/ARD_ARSONMIX_UNIVERSAL_REALTIME_CONSOLE_V5_20261101.md)
-- [Puzzle Socket v8 — one native source ABI](docs/PUZZLE_INTEGRATION_CONTRACT_V8_20261101.md)
-- **Current agent authority:** [AGENTS.md](AGENTS.md) and [Smart CI runbook](docs/SMART_CI_RUNNER_WORKFLOW.md). Historical [ENGINE](docs/workstreams/ENGINE_PUZZLE_V8.md), [GUI](docs/workstreams/GUI_PUZZLE_V8.md), and [FAT](docs/workstreams/FAT_PUZZLE_V8.md) packets are references, not approval gates.
-- [AGENTS.md](AGENTS.md) is mandatory for active contributors. Prior G1/G2/R5/L2 dated plans remain in Git history, not current execution authority.
+**Latest published release: [v0.5.0-alpha.9](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.9), 10 November 2026.** It is an **alpha field-test build**, not a stable production release.
 
-## Historical verified M4 audio boundary (2026-11-01 snapshot; NOT a claim of current universal release)
-`main@bb6dff6b42158ba2db4666e0def54bb89abda4f8`: one primary JUCE callback processes **fixed 10 input channels + four AUX**, native MAIN/MONITOR and occupied legacy CH1 VST3/Orbit special path. Windows CI [41263965810](https://github.com/masarray/arsonmix/actions/runs/41263965810) PASS and Chromium [41263965813](https://github.com/masarray/arsonmix/actions/runs/41263965813) PASS; Windows FAT artifact available, **not hardware certified**. Engine [PR #266](https://github.com/masarray/arsonmix/pull/266) is an offline universal publisher/VST lease preparation, NOT yet the live callback cutover. Independent dynamic CH11, Group and FX Return **not shipped**. Zero-FX acoustic crackle [#15](https://github.com/masarray/arsonmix/issues/15) unresolved.
+| System | Official package | Release |
+| --- | --- | --- |
+| **Windows 10/11 x64** | **[Download Setup EXE](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/ArSonMix-v0.5.0-alpha.9-Windows-x64-Setup.exe)** | **alpha.9 — current** |
+| Windows x64, portable | [Download Portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/ArSonMix-v0.5.0-alpha.9-Windows-x64-Portable.zip) | alpha.9 |
+| Linux x86_64 | [Download tar.gz](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-Linux-x86_64.tar.gz) | **alpha.5 — older build** |
+| macOS universal | [Download DMG](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-macOS-universal.dmg) | **alpha.5 — older build** |
 
-### Product completion means audibly real, not just a fancy UI
-Choose device once, then directly from the console:
-`interface IN1 → CH07 own native VST3` and `interface IN2 → CH02 own native VST3` → `real Vocal GROUP → MAIN to user-chosen output`, plus `parallel wet FX RETURN`, independent `MONITOR`, real `+CH11`, Show round-trip, stable faders, true native LEDs. No compulsory routing wizard/advanced matrix or manual multi-step STAGE/MUTE/APPLY/START for routine mixing.
+These are actual uploaded release assets, not CI-only artifacts. **Windows Setup EXE is the recommended one-click download**; the installer ZIP is a fallback. The [website download selector](https://masarray.github.io/arsonmix/#download) checks GitHub Releases and verified SHA-256/provenance metadata and chooses the newest *available package for each operating system*. A newer Windows-only release does not imply that Linux/macOS have been updated. Download and compare [alpha.9 SHA256SUMS.txt](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/SHA256SUMS.txt) before installation.
 
-## Agent onboarding and active integration — single source of truth
+## What's in Windows alpha.9
 
-**Every new ChatGPT thread with GitHub connector access must first read
-[AGENTS.md](AGENTS.md) and
-[Smart CI Runner Workflow](docs/SMART_CI_RUNNER_WORKFLOW.md).**
-Treat live GitHub `main`, open PRs and their current exact HEAD as authority,
-not stale PR labels or past-thread summaries. At the 2026-11-06 checkpoint
-[PR #418](https://github.com/masarray/arsonmix/pull/418) is the canonical P0
-DAW direct-input integration candidate; **verify its latest status before
-continuing**. Earlier #266/#278/#271/#270 are historical inputs, not mandatory
-parallel-agent approval gates.
+- **Native logical mixer sessions:** add, rename and edit channels and buses, WIRE / SOURCE ONLY routing, and rack configuration even before an audio device is connected. The app preserves `.smix` Save/Open with native revision checks and durable readback. **Offline edit does not generate or certify live PCM.**
+- **Live engine recovery:** a previously bound ASIO mixer can recover when the registered driver and playback pins are verified. Saved capture-patch choices are preserved if pins are missing; there is no claim that arbitrary hardware remapping is automatic.
+- **Harmonice FX:** consistent plugin name in picker/editor and legacy session restore, an 8 ms bypass fade, and reacquisition of a Music guide after source loss. The released processing latency is still **32 ms**; experimental 24/16 ms work is *not* shipped.
+- **ArSon Player:** relink missing songs through a completed folder scan using a unique *full filename*, retaining song identity, KEY and TEMPO.
+- **Desktop workflow:** updated native titlebar and operator-facing status. The approved mixer UI is available as a read-only/simulated browser preview.
 
-The ChatGPT agent **works in GitHub itself**: reconcile current code,
-continue one appropriate PR, run targeted checks, and choose meaningful
-milestone CI via a single owner-authenticated PR comment using the connector:
-`/arsonmix-ci ui <SHA>`, `/arsonmix-ci native <SHA>`, or
-`/arsonmix-ci fat <SHA>`. The default-branch dispatcher launches the selected
-workflow; no manual GitHub Actions button is expected from the owner.
-Every relevant PR commit gets **cheap Linux fast contracts**; Chromium,
-Windows MSVC/CTest and experimental ZIP are reserved for selected milestones
-(and relevant `main` qualification), **not every commit**. `fat` includes
-`native` build/CTest, so never request both for the same SHA without a
-specific new reason. Avoid duplicate/obsolete PRs, cancelled runner churn,
-repeated packaging, hidden status assumptions, and unproven audio claims.
+See the [alpha.9 release notes](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.9) for detailed scope and test limitations. A green build is **not** proof of physical hardware performance.
 
-Preserve the sole approved `/preview/`, real accepted ChannelId/EdgeId
-routing, one realtime callback, genuine VST3 host, live readback and safe
-device control. Physical ASIO sound/crackle evidence remains a separate
-stop-ship criterion even when CI is green. See [issue #15](https://github.com/masarray/arsonmix/issues/15).
+## Get started
 
-One accepted ChannelId graph, one JUCE realtime callback, one native VST3 owner, and one request/ACK truth. Continuous controls must not restart the audio device; structural edits prepare safely off callback. Accepted native capabilities gate UI: no fake channel/FX/PCM. Preserve operator-selected I/O and report actual buffer/latency behavior.
+1. Install the Windows Setup EXE (or extract the portable ZIP), then start ArSonMix. A supported audio driver and Windows WebView2 runtime may be required.
+2. Open the audio setup and choose the actual device/pins for listening. The mixer can be edited without hardware, but it can only output sound through a valid live audio device graph.
+3. Use channel controls, FX and WIRE in the [approved console](https://masarray.github.io/arsonmix/preview/). Save/Open `.smix` sessions for your work. Start testing at safe headphone/speaker volume.
+4. Report reproducible driver, WIRE, VST3, session or dropout problems in [GitHub Issues](https://github.com/masarray/arsonmix/issues), with device type, channel graph, sample rate, buffer size and steps.
 
-## Browser preview, native builds and QA
-**ONLY approved GUI:** https://masarray.github.io/arsonmix/preview/ (visual UI reference, **NO REAL AUDIO**). Old `/preview-v2/`, `/preview-buttons/` and `/preview/mixer.html` redirect to this one approved screen. Source: https://github.com/masarray/arsonmix. Windows x64 native packages: [Windows Actions workflow](https://github.com/masarray/arsonmix/actions/workflows/p1-windows.yml). Download only a successful exact-source-SHA artifact; verify `BUILD_PROVENANCE.json` and EXE SHA-256, install WebView2/real device driver, test at safe headphone volume.
+### Field-test limitations
 
-Use owner CSS `web/styles-src/**` and deterministic `scripts/build_ui_css.py` regeneration; avoid manual generated HTML drift. Read the current `AGENTS.md` and smart CI runbook, run targeted tests, then trigger only the required Windows/CTest, Chromium or FAT lane **from the connected GitHub connector** at meaningful checkpoints. For physical clicks use SIGNAL CHECK → MARK CRACKLE → COPY FULL REPORT. Real-device 0FX and loaded-FX performance must be signed off before release.
+**Not yet certified for unattended or production-critical audio.** Physical ASIO/ASIO4ALL timing, real singer listening, vendor VST3 state, full device-loss behavior and uninterrupted performance still need hardware qualification. Initial hardware binding from a purely offline-created session and continued editing of a previously bound graph after unplugging are limited in alpha.9. If audio is disconnected, reconnect the verified device to resume its previously bound graph. Experimental Harmonice latency changes and Vocal Throw M15 remain outside this release.
 
-## Licenses and distribution
-Respect source/SDK licenses. Third-party VST3 files remain in user-controlled private Studio vault; do not bundle unlicensed commercial plugins. FactoryFX requires signed/provenance-approved host-qualified packages. Reference workflows, never copy proprietary Audition/Studio One/LV1 artwork.
+Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.9 features.
 
-## Historical diagnostics and visual references (NOT active execution authority)
+## Preview vs real audio
 
-Retained for traceable physical hardware diagnostics under [#15](https://github.com/masarray/arsonmix/issues/15):
-- [Smart Audio Engine ARD — archival render/device-clock analysis](docs/ARD_SMART_AUDIO_ENGINE_V1_2026-10-25.md).
-- [Smart Audio Engine Implementation Blueprint — archival ASIO/WASAPI FAT details](docs/SMART_AUDIO_ENGINE_IMPLEMENTATION_BLUEPRINT.md).
-- [Original approved GUI baseline — archival visual comparison](docs/GUI_BASELINE_LOCK_2026-10-25.md).
+**The one approved GUI:** [masarray.github.io/arsonmix/preview/](https://masarray.github.io/arsonmix/preview/). It is an interactive **visual preview only** — no browser hardware audio, no real native VST3 processing and no promise that a UI illustration is a supported sound route. Older preview URLs redirect here. The native Windows app uses the approved mixer renderer; changes must not introduce competing skins.
 
-These explain prior device-clock evidence and fader/LED design. For **current implementation and workflow authority**, read `AGENTS.md`, the live GitHub code/PR state, and the Smart CI runbook first. Earlier PRD/ARD versions are historical design references, not current operational instructions. The historical specs do not override native ChannelId admission or justify an extra render callback.
+## Source, builds and contribution
+
+The release tag **[v0.5.0-alpha.9](https://github.com/masarray/arsonmix/tree/v0.5.0-alpha.9)** is the authoritative source for that published binary. Development `main` and open draft PRs can have different feature/qualification status; **do not infer that every released alpha.9 change is already merged to `main`**, or that an unmerged experiment is released.
+
+Contributors and development agents must read **[AGENTS.md](AGENTS.md)** and the **[Smart CI workflow](docs/SMART_CI_RUNNER_WORKFLOW.md)**, inspect live `main` plus open PRs, preserve one native JUCE PCM callback and native ChannelId/EdgeId authority, and qualify changes using selective exact-SHA tests. Hardware ASIO testing is separate from automated CI. Website deployment uses one `site/` landing and one assembled `/preview/` on GitHub Pages and Cloudflare Pages, with platform downloads resolved from verified GitHub Release assets. See [Pages publishing](docs/GITHUB_PAGES_PREVIEW.md) and [Cloudflare](docs/CLOUDFLARE_PAGES_BUILD.md).
+
+Respect all source, SDK and VST3 plugin licenses. Third-party commercial VST3 plugins are not redistributed without authorization. Historical architecture and testing records remain in [docs/](docs/), rather than being presented as current shipping features.
