@@ -18,7 +18,16 @@
       "#armixOrbit .head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:14px;font-weight:550;cursor:grab;touch-action:none}",
       "#armixOrbit .head:active{cursor:grabbing}",
       "#armixContext button:disabled{opacity:.35;cursor:default}",
-      "#armixHotkeyCard[hidden],#armixHotkeyRegister[hidden]{display:none!important}",
+      "#armixHotkeyCard[hidden],#armixHotkeyRegister[hidden],#armixFxParamBrowse[hidden]{display:none!important}",
+      "#armixFxParamBrowse{position:fixed;z-index:10026;width:355px;max-width:calc(100vw - 16px);max-height:76vh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;padding:11px;border:1px solid #507584;border-radius:7px;background:#142933;box-shadow:0 15px 35px #000b;color:#e0edf2;font:12px Inter,system-ui,sans-serif}",
+      "#armixFxParamBrowse input{width:100%;box-sizing:border-box;height:29px;padding:5px 8px;background:#0d202a;color:#e5f4f6;border:1px solid #426a7b;border-radius:4px}",
+      "#armixFxParamBrowse .armix-param-list{overflow-y:auto;min-height:64px;margin-top:8px}",
+      "#armixFxParamBrowse .armix-param-row{padding:8px 2px;border-bottom:1px solid #304c5b;display:flex;align-items:center;gap:5px;justify-content:space-between}",
+      "#armixFxParamBrowse .armix-param-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      "#armixFxParamBrowse .armix-param-actions{display:flex;flex-shrink:0;gap:4px}",
+      "#armixFxParamBrowse button{cursor:pointer;border:1px solid #426c7d;border-radius:4px;background:#225061;color:#e4f5f7;padding:4px 7px;font:11px Inter,system-ui,sans-serif}",
+      "#armixFxParamBrowse .armix-param-row span small{display:block;color:#88aebc;font-size:10px}",
+
       "#armixHotkeyCard,#armixHotkeyRegister{position:fixed;z-index:10028;box-sizing:border-box;max-width:calc(100vw - 16px);padding:12px;border:1px solid #4b7180;border-radius:7px;background:#132731;color:#dbeef4;box-shadow:0 14px 35px #000c;font:12px Inter,system-ui,sans-serif}",
       "#armixHotkeyCard{width:286px}#armixHotkeyRegister{width:580px;max-height:76vh;display:flex;flex-direction:column}",
       ".armix-hk-head{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:grab;touch-action:none;font-weight:550;font-size:12px;margin-bottom:10px}",
@@ -84,6 +93,18 @@
       '<div class="armix-hk-state" data-hk-feedback role="status"></div>'+
       '<div class="armix-hk-operations"><button type="button" data-hk-panic>+ Emergency Mute</button><button type="button" data-hk-refresh>Refresh</button></div>';
     document.body.appendChild(hotkeyRegister);
+    const fxParamPanel=document.createElement("section");
+    fxParamPanel.id="armixFxParamBrowse";fxParamPanel.hidden=true;
+    fxParamPanel.setAttribute("role","dialog");
+    fxParamPanel.setAttribute("aria-label","Assign Parameter Hotkey");
+    fxParamPanel.innerHTML=
+      '<div class="armix-hk-head"><span>VST3 PARAMETERS</span><button type="button" data-fxparam-close aria-label="Close">×</button></div>'+
+      '<div class="armix-hk-target" data-fxparam-title></div>'+
+      '<input type="search" aria-label="Find VST3 parameter" placeholder="Find parameter…" data-fxparam-search>'+
+      '<div class="armix-hk-state" role="status" data-fxparam-state>Reading VST3 parameters…</div>'+
+      '<div class="armix-param-list" data-fxparam-list></div>';
+    document.body.appendChild(fxParamPanel);
+    let fxParamSelection=null,fxParamStatus=null,fxParamRequest="";
     const moreTools=document.querySelector("#moreTools .more-tools-panel");
     if(moreTools){
       const openButton=document.createElement("button");
@@ -144,6 +165,13 @@
               '<button role="menuitem" data-menu="hotkey-solo">Solo · Assign Hotkey…</button>':'')+
             '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
         }
+      }else if(kind==="fx"){
+        menu.innerHTML=
+          '<button role="menuitem" data-menu="fx-param-last">Last Touched Hotkey…</button>'+
+          '<button role="menuitem" data-menu="fx-param-browse">Browse Parameters…</button>'+
+          (hooks.orbitTarget(menuTrack,menuSlot)?
+            '<button role="menuitem" data-menu="orbit">Orbit…</button>':'')+
+          '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
       }else if(kind==="hotkey"){
         const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,menuTarget));
         menu.innerHTML='<button role="menuitem" data-menu="hotkey-add">'+
@@ -294,16 +322,131 @@
       return target && m.scope===target.scope &&
         m.operation===target.operation &&
         m.channelId===(target.channelId||"") &&
+        (!target.operation.startsWith("SET_FX_PARAM_") ||
+          (m.insertId===target.insertId&&m.catalogId===target.catalogId&&
+           m.paramId===target.paramId)) &&
         (target.operation!=="SET_FX_SLOT_BYPASS" ||
          (m.slot===target.slot&&m.insertId===target.insertId));
     }
+    function fxParameterOwner(track,slot){
+      const state=activeNative(),channelId=hooks.nativeIdFor?.(track);
+      if(!state?.admitted||state?.retained||!channelId||
+         !Number.isInteger(slot)||slot<0||slot>=8)return null;
+      const channel=state.graph?.channels?.find(ch=>ch.id===channelId);
+      if(!channel||!["INPUT","GROUP","FX_RETURN"].includes(channel.role))return null;
+      const insert=channel.inserts?.[slot];
+      if(!insert?.id||!insert?.catalogId)return null;
+      return {channelId,slot,insertId:insert.id,catalogId:insert.catalogId,
+        label:track.name+" · FX "+(slot+1),epoch:state.device?.epoch,
+        revision:state.graph?.revision,rosterRevision:state.graph?.rosterRevision};
+    }
+    function closeFxParamBrowser(){
+      fxParamPanel.hidden=true;
+      fxParamSelection=null;fxParamStatus=null;fxParamRequest="";
+    }
+    function openFxParamBrowser(track,slot,mode,x,y){
+      const owner=fxParameterOwner(track,slot);
+      if(!owner)return;
+      closeFxParamBrowser();
+      fxParamSelection={...owner,mode};
+      fxParamRequest=nextHotkeyRequest();
+      fxParamPanel.hidden=false;
+      fxParamPanel.querySelector("[data-fxparam-title]").textContent=owner.label;
+      fxParamPanel.querySelector("[data-fxparam-search]").value="";
+      fxParamPanel.querySelector("[data-fxparam-list]").replaceChildren();
+      fxParamPanel.querySelector("[data-fxparam-state]").textContent="Inspecting native VST3…";
+      place(fxParamPanel,x,y);
+      backend.emitEvent("arMixFxParameterHotkeyInspect",{
+        requestId:fxParamRequest,channelId:owner.channelId,
+        insertId:owner.insertId,catalogId:owner.catalogId,
+        deviceEpoch:owner.epoch,revision:owner.revision,
+        rosterRevision:owner.rosterRevision});
+    }
+    function paintFxParamBrowser(){
+      const list=fxParamPanel.querySelector("[data-fxparam-list]");
+      list.replaceChildren();
+      if(!fxParamSelection||!fxParamStatus?.ok)return;
+      const filter=fxParamPanel.querySelector("[data-fxparam-search]").value.toLowerCase();
+      const params=fxParamStatus.parameters||[];
+      const last=fxParamStatus.lastTouchedId;
+      const eligible=fxParamSelection.mode==="last"&&last?
+        params.filter(p=>p.id===last):params;
+      for(const p of eligible){
+        if(!(p.name+" "+p.id).toLowerCase().includes(filter))continue;
+        const row=document.createElement("div");
+        row.className="armix-param-row";
+        const label=document.createElement("span");label.className="armix-param-name";
+        label.textContent=p.name||p.id;
+        const detail=document.createElement("small");
+        detail.textContent="ID "+p.id;
+        label.appendChild(detail);row.appendChild(label);
+        const commands=document.createElement("span");commands.className="armix-param-actions";
+        const choices=p.toggle?[["Toggle","SET_FX_PARAM_TOGGLE"]]:
+          [["+", "SET_FX_PARAM_UP"],["−","SET_FX_PARAM_DOWN"]];
+        for(const [caption,operation] of choices){
+          const button=document.createElement("button");
+          button.type="button";button.textContent=caption;
+          button.setAttribute("aria-label","Assign "+caption+" hotkey for "+(p.name||p.id));
+          button.addEventListener("click",()=>{
+            const owner=fxParameterOwner(scope.findTrack(
+              document.querySelector('.strip[data-id="'+
+                (menuTrack?.id??"")+'"]')),fxParamSelection.slot);
+            // Latest native accepted identity still must match the inspected
+            // instance; a removed/replaced plugin must never capture a key.
+            const current=activeNative()?.graph?.channels
+              ?.find(ch=>ch.id===fxParamSelection.channelId)
+              ?.inserts?.some(ins=>ins.id===fxParamSelection.insertId&&
+                                     ins.catalogId===fxParamSelection.catalogId);
+            if(!current){closeFxParamBrowser();return;}
+            const target={scope:"SESSION",channelId:fxParamSelection.channelId,
+              operation,slot:fxParamSelection.slot,
+              insertId:fxParamSelection.insertId,catalogId:fxParamSelection.catalogId,
+              paramId:p.id,paramName:p.name,
+              label:fxParamSelection.label+" · "+p.name+" · "+caption};
+            const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,target));
+            closeFxParamBrowser();
+            openHotkeyCapture(target,existing||null);
+          });
+          commands.appendChild(button);
+        }
+        row.appendChild(commands);list.appendChild(row);
+      }
+      if(!list.childElementCount) {
+        const empty=document.createElement("span");empty.className="armix-hk-state";
+        empty.textContent="No matching parameter";list.appendChild(empty);
+      }
+    }
+    backend.addEventListener("arMixFxParameterHotkeyState",state=>{
+      if(!fxParamSelection||state?.requestId!==fxParamRequest ||
+         state.channelId!==fxParamSelection.channelId ||
+         state.insertId!==fxParamSelection.insertId)return;
+      fxParamStatus=state;
+      const message=fxParamPanel.querySelector("[data-fxparam-state]");
+      if(!state.ok){message.textContent=state.error||"VST3 unavailable";return;}
+      message.textContent=fxParamSelection.mode==="last"?
+        (state.lastTouchedId?"Verified last-touched parameter":
+          "No vendor gesture yet · Browse Parameters instead"):
+        "Automatable parameters · native ParamID";
+      if(fxParamSelection.mode==="last"&&!state.lastTouchedId)
+        fxParamSelection.mode="browse";
+      paintFxParamBrowser();
+    });
+    fxParamPanel.querySelector("[data-fxparam-search]")
+      .addEventListener("input",paintFxParamBrowser);
+    fxParamPanel.addEventListener("click",e=>{
+      if(e.target.closest("[data-fxparam-close]"))closeFxParamBrowser();
+    });
     function requestHotkeyList(){
       backend.emitEvent("arMixHotkeyIntent",{operation:"LIST"});
     }
     function hotkeyLabel(mapping){
       if(mapping.operation==="PANIC_MUTE")return "Emergency Output Mute";
       const name=activeNative()?.graph?.channels?.find(c=>c.id===mapping.channelId)?.name;
-      const suffix=mapping.operation==="SET_FX_RACK_BYPASS"?"FX Rack Power":
+      const suffix=mapping.operation.startsWith("SET_FX_PARAM_")?
+          "VST3 · "+(mapping.paramName||mapping.paramId)+" · "+
+          (mapping.operation==="SET_FX_PARAM_TOGGLE"?"Toggle":
+           mapping.operation==="SET_FX_PARAM_UP"?"Step +":"Step −"):
+        mapping.operation==="SET_FX_RACK_BYPASS"?"FX Rack Power":
         mapping.operation==="SET_FX_SLOT_BYPASS"?
           "FX "+(Number(mapping.slot)+1)+" · Power":
         mapping.operation==="SET_MUTE"?"Mute":"Solo";
@@ -343,6 +486,8 @@
             if(action==="Edit")openHotkeyCapture({
               channelId:mapping.channelId,operation:mapping.operation,
               slot:mapping.slot,insertId:mapping.insertId,
+              catalogId:mapping.catalogId,paramId:mapping.paramId,
+              paramName:mapping.paramName,
               label:title,scope:mapping.scope},mapping);
             else {
               hotkeyPending={requestId:nextHotkeyRequest(),kind:"DELETE",mapping};
@@ -419,8 +564,12 @@
         scope:hotkeyTarget.scope,sessionId:hotkeyTarget.scope==="APP"?"":hotkeySession,
         channelId:hotkeyTarget.channelId||"",operation:hotkeyTarget.operation,
         vk:hotkeyChord.vk,modifiers:hotkeyChord.modifiers,
-        ...(hotkeyTarget.operation==="SET_FX_SLOT_BYPASS"?
-          {slot:hotkeyTarget.slot,insertId:hotkeyTarget.insertId}:{})
+        ...((hotkeyTarget.operation==="SET_FX_SLOT_BYPASS"||
+             hotkeyTarget.operation.startsWith("SET_FX_PARAM_"))?
+          {slot:hotkeyTarget.slot,insertId:hotkeyTarget.insertId}:{}),
+        ...(hotkeyTarget.operation.startsWith("SET_FX_PARAM_")?
+          {catalogId:hotkeyTarget.catalogId,paramId:hotkeyTarget.paramId,
+           paramName:hotkeyTarget.paramName}:{})
       };
       hotkeyPending={kind:"REGISTER",requestId:nextHotkeyRequest(),mapping};
       $("armixHkError").textContent="Registering and saving in native host…";
@@ -464,7 +613,11 @@
           found.modifiers===p.mapping.modifiers&&found.operation===p.mapping.operation&&
           found.channelId===p.mapping.channelId&&
           (found.operation!=="SET_FX_SLOT_BYPASS"||
-           (found.slot===p.mapping.slot&&found.insertId===p.mapping.insertId));
+           (found.slot===p.mapping.slot&&found.insertId===p.mapping.insertId))&&
+          (!found.operation.startsWith("SET_FX_PARAM_")||
+           (found.insertId===p.mapping.insertId&&
+            found.catalogId===p.mapping.catalogId&&
+            found.paramId===p.mapping.paramId));
         if(confirmed){
           hotkeyPending=null;if(p.kind==="REGISTER")closeHotkeyCapture();
         }else{
@@ -531,10 +684,11 @@
       }
       if(row){
         const track=scope.findTrack(row),slot=Number(row.dataset.slot);
-        const target=hooks.orbitTarget(track,slot);
-        if(!target)return;
-        menuTrack=track;menuSlot=slot;menuTarget={...target};
-        showMenu(e.clientX,e.clientY,"orbit");
+        const paramTarget=fxParameterOwner(track,slot);
+        const orbitTarget=hooks.orbitTarget(track,slot);
+        if(!paramTarget&&!orbitTarget)return;
+        menuTrack=track;menuSlot=slot;menuTarget=orbitTarget||paramTarget;
+        showMenu(e.clientX,e.clientY,paramTarget?"fx":"orbit");
       }
     },true);
     menu.addEventListener("click",e=>{
@@ -544,6 +698,10 @@
       // Read coordinates before dismissMenu(): hidden menu offset is zero.
       const originX=menu.offsetLeft,originY=menu.offsetTop+menu.offsetHeight;
       if(action==="hotkey-register"){dismissMenu();openHotkeyRegister();return;}
+      if(action==="fx-param-last"||action==="fx-param-browse"){
+        const mode=action==="fx-param-last"?"last":"browse";
+        dismissMenu();openFxParamBrowser(track,slot,mode,originX,originY);return;
+      }
       if(action==="hotkey-add"&&selected?.kind==="hotkey"){
         const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,selected));
          dismissMenu();openHotkeyCapture(selected,existing||null);return;
@@ -624,6 +782,7 @@
     document.addEventListener("keydown",e=>{
       if(e.key!=="Escape")return;
       if(!menu.hidden){e.preventDefault();e.stopImmediatePropagation();dismissMenu();}
+      else if(!fxParamPanel.hidden){e.preventDefault();closeFxParamBrowser();}
       else if(!hotkeyRegister.hidden){e.preventDefault();hotkeyRegister.hidden=true;}
       else if(!orbit.hidden){e.preventDefault();e.stopImmediatePropagation();closeOrbit();}
     },true);
