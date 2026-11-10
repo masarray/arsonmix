@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 
 using Coordinator=armix::device::NativeDeviceApplyCoordinator;
 using Setup=juce::AudioDeviceManager::AudioDeviceSetup;
@@ -32,6 +33,35 @@ int main() {
     assert(!owner.busy());
     auto reacquired=owner.tryBegin();
     assert(reacquired && owner.busy());
+    assert(owner.activePurpose()==Coordinator::Purpose::explicitApply);
+    // A JUCE modal dialog must reserve the SAME coordinator for its entire
+    // visible lifecycle, not just the showDeviceSetup call stack.
+    Coordinator modalOwner;
+    std::optional<Coordinator::Lease> visibleSetup;
+    auto lease=modalOwner.tryBegin(Coordinator::Purpose::setupDialog);
+    assert(lease);
+    visibleSetup.emplace(std::move(lease));
+    assert(modalOwner.busy() &&
+           modalOwner.activePurpose()==Coordinator::Purpose::setupDialog);
+    assert(!modalOwner.tryBegin(Coordinator::Purpose::explicitApply));
+    assert(!modalOwner.tryBegin(Coordinator::Purpose::asioRecovery));
+    assert(!modalOwner.tryBegin(Coordinator::Purpose::setupDialog));
+    // During the close callback move out the lease. New actions must remain
+    // rejected until the final hardware readback/rebind finishes.
+    {
+        auto closing=std::move(*visibleSetup);
+        visibleSetup.reset();
+        assert(modalOwner.busy());
+        assert(!modalOwner.tryBegin(Coordinator::Purpose::explicitApply));
+    }
+    assert(!modalOwner.busy() &&
+           modalOwner.activePurpose()==Coordinator::Purpose::none);
+    assert(!modalOwner.tryBegin(Coordinator::Purpose::none));
+    {
+        auto restart=modalOwner.tryBegin(Coordinator::Purpose::asioRecovery);
+        assert(restart && !modalOwner.tryBegin(Coordinator::Purpose::setupDialog));
+    }
+    assert(!modalOwner.busy());
 
     const auto valid=config(R"({"backend":"ASIO","captureDevice":"ASIO Test",
         "playbackDevice":"ASIO Test","sampleRate":48000,"bufferSize":256,

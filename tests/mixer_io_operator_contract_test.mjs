@@ -683,3 +683,21 @@ test('offline checkpoints stay protected until verified native restore',()=>{
   assert.match(control,/workspace_=std::move\(\*candidate\);[\s\S]*?checkpointSaved_\(workspace_.document\(\).id\)/);
   assert.match(save,/if\(automatic&&mixerSessionRecoveryPending_\)[\s\S]*?return "[^"]+";[\s\S]*?captureNativeMixerSession/);
 });
+
+// Exact control-thread serialization source contract for nested JUCE modal loops.
+test('M2b native AUDIO SETUP holds one lease through visible selection and rebind',()=>{
+ const cpp=read('src/Main.cpp');
+ const owner=read('src/NativeDeviceApplyCoordinator.h');
+ const setup=cpp.slice(cpp.indexOf('void showDeviceSetup()'),
+                       cpp.indexOf('// A Windows native Explorer picker',cpp.indexOf('void showDeviceSetup()')));
+ assert.match(setup,/audioSetupWindow_ && audioSetupWindow_->isVisible\(\)/);
+ assert.match(setup,/deviceApply_\.tryBegin\([\s\S]*?Purpose::setupDialog/);
+ assert.match(setup,/audioSetupLease_\.emplace\(std::move\(modalLease\)\)/);
+ assert.match(setup,/engine_\.beginManualAudioSetup\(true\)/);
+ assert.match(setup,/auto closingLease=std::move\(\*safe->audioSetupLease_\)/);
+ assert.match(setup,/safe->finishAudioSetupAndRecoverMixer\(\)/);
+ assert.match(owner,/enum class Purpose : std::uint8_t/);
+ assert.match(cpp,/Purpose::asioRecovery/);
+ assert.match(cpp,/Purpose::explicitApply/);
+ assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
+});
