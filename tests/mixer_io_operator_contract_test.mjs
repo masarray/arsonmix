@@ -204,12 +204,14 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
  assert.match(native,/action == "audioDeviceApply"/);
  const open=native.slice(native.indexOf('juce::String openSelectedAudioDevice('),
    native.indexOf('void applyCustomAudioDevice('));
+ const coordinator=read('src/NativeDeviceApplyCoordinator.h');
+ assert.match(open,/NativeDeviceApplyCoordinator::openSelected/);
  assert.match(native,/openSelectedAudioDevice\(typeName,candidate\)/);
  assert.match(native,/openSelectedAudioDevice\(previousType,before\)/);
- assert.match(open,/setAudioDeviceSetup\(setup,true\)/);
- assert.match(open,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
- assert.match(open,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
- assert.doesNotMatch(open,/manager\.setCurrentAudioDeviceType\(/);
+ assert.match(coordinator,/setAudioDeviceSetup\(setup,true\)/);
+ assert.match(coordinator,/manager\.initialise\(2,2,xml\.get\(\),false\)/);
+ assert.match(coordinator,/manager\.closeAudioDevice\(\);[\s\S]*manager\.initialise/);
+ assert.doesNotMatch(coordinator,/manager\.setCurrentAudioDeviceType\(/);
  assert.match(native,/beginManualAudioSetup\(\)/);
  assert.match(native,/finishManualAudioSetup\(bindingMode!=MixerBindingMode::verifiedMainPinApply\)/);
  assert.match(native,/RESTORED_MUTED/);
