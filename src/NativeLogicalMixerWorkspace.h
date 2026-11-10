@@ -136,6 +136,26 @@ public:
                 ChannelEdit::Kind::setMute:ChannelEdit::Kind::setSolo;
             edit.enabled=static_cast<bool>(number);
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="REMOVE_FX_REFERENCE") {
+            if(!document_.logicalOnly)return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
+            const auto* row=editor_.roster().find(id);
+            const auto v=payload.getProperty("slot",{});
+            if(!v.isInt() || !row || static_cast<int>(v)<0 ||
+               static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
+                return bad("INVALID_LOGICAL_FX_SLOT");
+            edit.kind=ChannelEdit::Kind::removeInsertReference;
+            edit.position=static_cast<std::size_t>(static_cast<int>(v));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_FX_SLOT_BYPASS") {
+            if(!document_.logicalOnly)return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
+            const auto* row=editor_.roster().find(id);
+            const auto v=payload.getProperty("slot",{}),enabled=payload.getProperty("enabled",{});
+            if(!v.isInt() || !enabled.isBool() || !row || static_cast<int>(v)<0 ||
+               static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
+                return bad("INVALID_LOGICAL_FX_SLOT");
+            edit.kind=ChannelEdit::Kind::setFader;
+            edit.value=row->faderLinear;
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FX_RACK_BYPASS") {
             if(!number.isBool() || !editor_.roster().find(id))
                 return bad("INVALID_LOGICAL_RACK");
@@ -208,6 +228,26 @@ public:
             return ack;
         }
         sync();
+        if(operation=="REMOVE_FX_REFERENCE") {
+            const auto erased=static_cast<std::size_t>(static_cast<int>(
+                payload.getProperty("slot",0)));
+            auto& planned=document_.plannedSlotBypassed;
+            planned.erase(std::remove_if(planned.begin(),planned.end(),
+                [&](const auto& p){return p.channel==id && p.slot==erased;}),
+                planned.end());
+            for(auto& p:planned)
+                if(p.channel==id && p.slot>erased)--p.slot;
+        }
+        if(operation=="SET_FX_SLOT_BYPASS") {
+            auto& planned=document_.plannedSlotBypassed;
+            const auto slot=static_cast<std::size_t>(static_cast<int>(
+                payload.getProperty("slot",0)));
+            planned.erase(std::remove_if(planned.begin(),planned.end(),
+                [&](const auto& p){return p.channel==id && p.slot==slot;}),
+                planned.end());
+            if(static_cast<bool>(payload.getProperty("enabled",false)))
+                planned.push_back({id,slot});
+        }
         if(operation=="SET_FX_RACK_BYPASS") {
             const bool bypass=static_cast<bool>(number);
             auto& racks=document_.rackBypassed;
@@ -221,6 +261,10 @@ public:
                 document_.inserts.begin(),document_.inserts.end(),
                 [&](const auto& fx){return !editor_.roster().find(fx.channel);}),
                 document_.inserts.end());
+            document_.plannedSlotBypassed.erase(std::remove_if(
+                document_.plannedSlotBypassed.begin(),document_.plannedSlotBypassed.end(),
+                [&](const auto& fx){return !editor_.roster().find(fx.channel);}),
+                document_.plannedSlotBypassed.end());
             document_.rackBypassed.erase(std::remove_if(
                 document_.rackBypassed.begin(),document_.rackBypassed.end(),
                 [&](auto channel){return !editor_.roster().find(channel);}),
@@ -246,7 +290,8 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
-            "ADD_FX_REFERENCE","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
+            "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
+            "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
         set(cap,"dynamicChannels",true);set(cap,"groups",true);
         set(cap,"fxReturns",true);set(cap,"monitor",false);
@@ -281,7 +326,10 @@ public:
                     id.containsIgnoreCase("harmony")?"ArSon Harmony":
                     id.containsIgnoreCase("channel-eq")?"Parametric EQ":id;
                 set(fx,"name",label);
-                set(fx,"bypassed",false);
+                set(fx,"bypassed",std::any_of(
+                    document_.plannedSlotBypassed.begin(),
+                    document_.plannedSlotBypassed.end(),
+                    [&](const auto& p){return p.channel==row.id&&p.slot==slot;}));
                 inserts.add(fx);
             }
             for(const auto& send:row.sends) {
