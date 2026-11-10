@@ -263,6 +263,15 @@ if(BUILD_TESTING)
   add_executable(ARMixDeviceSessionTransitionTests tests/device_session_transition_policy_test.cpp engine/device/DeviceSessionTransitionPolicy.h)
   target_compile_features(ARMixDeviceSessionTransitionTests PRIVATE cxx_std_20)
   add_test(NAME NonDestructiveAudioSetupRetainsMixerDocument COMMAND ARMixDeviceSessionTransitionTests)
+  # M2 control-thread device Apply owner: UI preflight, exact pin identity,
+  # nested modal reentry, accepted readback and fail-closed rollback.
+  juce_add_console_app(ARMixDeviceApplyCoordinatorTests PRODUCT_NAME "ArSonMix Device Apply Coordinator Tests")
+  target_sources(ARMixDeviceApplyCoordinatorTests PRIVATE
+      tests/native_device_apply_coordinator_test.cpp src/NativeDeviceApplyCoordinator.h)
+  target_link_libraries(ARMixDeviceApplyCoordinatorTests PRIVATE
+      juce::juce_audio_devices juce::juce_recommended_config_flags)
+  target_compile_features(ARMixDeviceApplyCoordinatorTests PRIVATE cxx_std_20)
+  add_test(NAME NativeDeviceApplyPinValidationAndRollbackEvidence COMMAND ARMixDeviceApplyCoordinatorTests)
   add_executable(ARMixLiveRoutingEpochTests tests/live_port_epoch_publisher_test.cpp)
   target_compile_features(ARMixLiveRoutingEpochTests PRIVATE cxx_std_20)
   add_test(NAME P1ELivePortGenerationRevisionAndRealtimeRetirement COMMAND ARMixLiveRoutingEpochTests)
