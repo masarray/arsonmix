@@ -207,7 +207,28 @@ int main(int argc,char** argv){
             std::cout<<"Offline native A/B test passed (synthetic only)\n";
             return 0;
         }
-        if(argc!=3){std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n";return 1;}
+        if(argc==6&&std::string(argv[1])=="--lead-tune"){
+            const auto input=readWave(argv[2]);
+            const fs::path folder=argv[3];
+            fs::create_directories(folder);
+            Settings s;
+            s.wet=0.f;s.key=std::stoi(argv[4]);s.scale=std::stoi(argv[5]);
+            const auto dry=process(input,s,true);
+            s.correction=true;
+            const auto tuned=process(input,s,true);
+            writeWave(folder/"lead-dry.wav",dry);
+            writeWave(folder/"lead-pitch-tune.wav",tuned);
+            s.correction=false;s.wet=.45f;
+            const auto mix=process(input,s,true);
+            writeWave(folder/"lead-and-backing.wav",mix);
+            writeWave(folder/"backing-only.wav",subtract(mix,dry));
+            return 0;
+        }
+        if(argc!=3){
+            std::cerr<<"usage: harmony_offline_ab input.wav output_directory\n"
+                     <<"       harmony_offline_ab --lead-tune input.wav output_directory key scale\n";
+            return 1;
+        }
         renderAb(readWave(argv[1]),argv[2]);
         std::cout<<"WAV A/B written. No human-singing/formant qualification implied.\n";
         return 0;

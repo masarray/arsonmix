@@ -49,7 +49,8 @@ public:
         distanceLowpass_.fill(0.f);
         ageStart_=static_cast<int>(rate*.065);
         ageRamp_=static_cast<float>(1./(rate*.165));
-        age_=0;cursor_=0;
+        expressionAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
+        expression_=0.f;age_=0;cursor_=0;
         return true;
     }
     float shadeBacking(int v,float sample,float space) noexcept {
@@ -78,8 +79,7 @@ public:
         const float wave=sine_[index]+(sine_[following]-sine_[index])*fraction;
         phase_[i]+=increment_[i];
         if(phase_[i]>=1.f)phase_[i]-=1.f;
-        const float mature=std::clamp((age_-ageStart_)*ageRamp_,0.f,1.f);
-        return ratio_[i]*(1.f+wave*vibratoRatio_[i]*mature);
+        return ratio_[i]*(1.f+wave*vibratoRatio_[i]*expression_);
     }
     // Exactly one filtered early reflection from each independent singer.
     // Fixed integer tap delay: changing Space can never sweep a delay line
@@ -102,10 +102,13 @@ public:
     int secondReflectionSamples(int singer) const noexcept {
         return secondDelay_[static_cast<std::size_t>(singer)];
     }
+    void beginNote() noexcept { age_=0; }
     void advance(bool voiced) noexcept {
         cursor_=(cursor_+1)&(reflectionCapacity-1);
         if(!voiced)age_=0;
         else if(age_<100000000)++age_;
+        const float mature=std::clamp((age_-ageStart_)*ageRamp_,0.f,1.f);
+        expression_+=expressionAlpha_*(mature-expression_);
     }
 private:
     std::array<float,sineCount> sine_{};
@@ -116,6 +119,6 @@ private:
     std::array<int,voices> reflectionDelay_{},secondDelay_{};
     std::size_t cursor_=0;
     int age_=0,ageStart_=0;
-    float ageRamp_=0.f;
+    float ageRamp_=0.f,expressionAlpha_=0.f,expression_=0.f;
 };
 } // namespace armix::harmony

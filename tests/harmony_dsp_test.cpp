@@ -10,7 +10,136 @@
 #include <limits>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
+// The fixture has the same fundamental in both channels and different
+// harmonic/phase content. A mono replacement loses the stereo residual.
+struct LeadFixture {std::vector<float> left,right;};
+static LeadFixture leadFixture(int rate,double noteHz,float cents,float vibrato){
+  LeadFixture out{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+  constexpr double tau=6.283185307179586;
+  double phase=0.;
+  for(int i=0;i<2*rate;++i){
+    const double modulation=vibrato*std::sin(tau*5.*i/rate);
+    phase+=tau*noteHz*std::exp2((cents+modulation)/1200.)/rate;
+    out.left[i]=static_cast<float>(.17*std::sin(phase)+.045*std::sin(2*phase));
+    out.right[i]=static_cast<float>(.11*std::sin(phase+.38)+.04*std::sin(2*phase+1.2));
+  }
+  return out;
+}
+static LeadFixture tune(LeadFixture signal,int rate,bool correction,
+                        int block=127,float color=.5f,int releaseAt=-1){
+  auto engine=std::make_unique<Engine>();
+  need(engine->prepare(rate)&&engine->latencySamples()==2*std::lround(.016*rate),
+       "Pitch Tune changed PDC");
+  Settings s;s.wet=0.f;s.correction=correction;s.color=color;
+  need(engine->setSettings(s),"lead-only settings rejected");
+  const int size=static_cast<int>(signal.left.size());
+  for(int i=0;i<size;){
+    if(i==releaseAt){
+      s.correction=false;
+      need(engine->setSettings(s),"Pitch Tune release rejected");
+    }
+    const int end=i<releaseAt?releaseAt:size;
+    const int n=std::min(block,end-i);
+    engine->process(signal.left.data()+i,signal.right.data()+i,n);
+    i+=n;
+  }
+  return signal;
+}
+static std::vector<double> centsByCycle(const LeadFixture& signal,int rate,double target){
+  std::vector<double> cents;
+  const auto& x=signal.left;
+  double previous=-1.;
+  for(int i=rate;i<static_cast<int>(x.size())-1;++i){
+    if(x[i]>=0.f||x[i+1]<0.f)continue;
+    const double crossing=i-x[i]/(x[i+1]-x[i]);
+    if(previous>=0.)cents.push_back(1200.*std::log2(rate/(crossing-previous)/target));
+    previous=crossing;
+  }
+  std::sort(cents.begin(),cents.end());
+  need(cents.size()>50,"lead fixture lacks steady pitch");
+  return cents;
+}
+static double stereoResidual(const LeadFixture& signal,int rate){
+  double side=0.,mid=0.;
+  for(std::size_t i=static_cast<std::size_t>(rate);i<signal.left.size();++i){
+    const double l=signal.left[i],r=signal.right[i];
+    side+=(l-r)*(l-r);mid+=(l+r)*(l+r);
+  }
+  return side/mid;
+}
+static void testLeadTune(){
+  for(int rate:{48000,96000}){
+    for(double hz:{82.406889,220.,523.251131,1046.502261}){
+      const auto inTune=leadFixture(rate,hz,0.f,0.f);
+      const auto dry=tune(inTune,rate,false);
+      const auto unity=tune(inTune,rate,true);
+      need(unity.left==dry.left&&unity.right==dry.right,
+           "steady pitch inside the deadband altered stereo PCM");
+      const auto sharp=leadFixture(rate,hz,35.f,0.f);
+      const auto corrected=tune(sharp,rate,true);
+      const auto cents=centsByCycle(corrected,rate,hz);
+      const auto center=cents[cents.size()/2];
+      need(center>=5.&&center<=27.,"lead correction failed to reduce pitch error gently");
+      const auto sharpDry=tune(sharp,rate,false);
+      need(std::abs(stereoResidual(corrected,rate)/stereoResidual(sharpDry,rate)-1.)<.10,
+           "correction collapsed or inflated the stereo lead");
+      const auto warm=tune(sharp,rate,true,64,0.f);
+      need(warm.left==corrected.left&&warm.right==corrected.right,
+           "lead correction changed with block size or backing COLOR");
+    }
+    const auto vibrato=leadFixture(rate,220.,0.f,55.f);
+    const auto tuned=tune(vibrato,rate,true);
+    const auto cycles=centsByCycle(tuned,rate,220.);
+    const auto original=centsByCycle(tune(vibrato,rate,false),rate,220.);
+    const auto span=[](const auto& values){
+      return values[9*values.size()/10]-values[values.size()/10];
+    };
+    need(span(cycles)>.85*span(original)&&span(cycles)<1.15*span(original),
+         "wide vibrato changed excessively");
+    auto mono=leadFixture(rate,220.,-35.f,0.f);
+    mono.right=mono.left;
+    const auto on=tune(mono,rate,true);
+    need(on.left==on.right,"mono lead acquired a stereo discrepancy");
+    const auto dry=tune(mono,rate,false);
+    const auto disabled=tune(mono,rate,true,127,.5f,rate);
+    need(std::equal(disabled.left.begin()+rate+rate/10,disabled.left.end(),
+                    dry.left.begin()+rate+rate/10),
+         "disable did not return to sample-exact delayed lead");
+    for(int i=rate;i<rate+rate/10;++i)
+      need(std::abs(disabled.left[i]-disabled.left[i-1])<.06f,
+           "Pitch Tune toggle caused a PCM step");
+  }
+}
+static void testVoicePlanner(){
+  for(const auto& scale:{major,minor}){
+    for(int key=0;key<12;++key){
+      VoicePlanner planner;
+      for(int melody=48;melody<=84;++melody){
+        if(std::find(scale.begin(),scale.end(),(melody-key)%12)==scale.end())continue;
+        planner.plan(melody,key,scale);
+        for(std::size_t i=0;i<singers.size();++i){
+          const int note=planner.target(i);
+          const auto& role=singers[i];
+          need(note>=melody+role.minInterval&&note<=melody+role.maxInterval,
+               "diatonic singer crossed its register band");
+          need(std::find(scale.begin(),scale.end(),(note-key)%12)!=scale.end(),
+               "diatonic singer left the selected key");
+        }
+      }
+    }
+  }
+  VoicePlanner planner;
+  planner.plan(69,0,major);
+  const int high=planner.target(2);
+  planner.plan(67,0,major);
+  need(planner.target(2)==high,"HIGH missed a stable common tone");
+  planner.reset();
+  planner.plan(67,0,major);
+  need(planner.target(2)!=high,"reset retained previous phrase voicing");
+}
 int main(){
+  testLeadTune();
+  testVoicePlanner();
   // Each Engine owns fixed ring buffers. Allocate offline fixtures on heap:
   // many simultaneous stack-local instances exceed the Windows CTest stack.
   static_assert(sizeof(Engine)>64*1024,"verify test heap-fixture rationale");
@@ -594,12 +723,21 @@ int main(){
     need(Engine::prepareSettings(settings,modern)&&
          Engine::prepareSettings(settings,legacy,false),
          "prepared Harmony wet staging rejected");
-    for(int voice=0;voice<voices;++voice){
+    float energy=0.f;
+    int count=0;
+    for(std::size_t voice=0;voice<singers.size();++voice){
       const float level=std::hypot(modern.mixL[voice],modern.mixR[voice]);
       const float prior=std::hypot(legacy.mixL[voice],legacy.mixR[voice]);
-      need(std::abs(level-Engine::normalizedBackingWetAmplitude(1.f,voices))<1.e-5f&&
-           level>prior*1.73f,"prepared Harmony pan lost presence or normalization");
+      energy+=level*level;
+      if(singerActive(singers[voice].role,voices)){
+        ++count;
+        need(level>prior*1.73f&&level<prior*1.80f,"Wet gain changed per singer");
+      }else need(level==0.f,"inactive singer contributes to Wet");
     }
+    need(count==voices&&std::abs(energy-1.15f*1.15f)<1.e-5f,
+         "ensemble gain changes with voice count");
+    need(modern.mixL[0]>modern.mixR[0]&&modern.mixR[2]>modern.mixL[2],
+         "LOW/HIGH changed sides when voice count changed");
   }
   // P0 lead preservation: backing Wet must never change the lead amplitude.
   // The *only* intentional lead replacement is Pitch Tune's explicit blend.

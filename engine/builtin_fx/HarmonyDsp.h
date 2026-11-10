@@ -12,6 +12,8 @@
 #include "HarmonyRoomFocus.h"
 #include "HarmonyStageSpatial.h"
 #include "HarmonyPitchSynchronous.h"
+#include "HarmonyLeadTune.h"
+#include "HarmonyVoicePlanner.h"
 
 // Deterministic, allocation-free vocal harmony DSP. No JUCE or GUI dependency.
 // Grain shifting is a functioning prototype, not formant-accurate synthesis.
@@ -68,6 +70,7 @@ inline float smoothGrainBlend(float phase) noexcept {
 class Engine final {
 public:
     static constexpr int maxVoices=5;
+    static_assert(singers.size()==maxVoices);
     static constexpr int maxPitchLagsPerSlice=8; // fewer burst MACs per sample
     // Maximum 192 kHz grain is 3072 frames: 2*grain latency + 3*grain
     // history = 15360, so 16384 frames retain the full rate/ratio budget.
@@ -92,7 +95,6 @@ public:
         left_.fill(0.f);right_.fill(0.f);mono_.fill(0.f);decimated_.fill(0.f);
         filtered_.fill(0.f);phase_.fill(0.f);ratio_.fill(1.f);targetRatio_.fill(1.f);
         // Independent grain clocks avoid five identical backing-singer seams.
-        // Lead correction keeps its neutral original phase.
         for(int v=0;v<maxVoices;++v)
             phase_[static_cast<std::size_t>(v)]=.157f*static_cast<float>(v);
         // Low-pass before downsampling: raw 12 kHz decimation aliases vocal sibilants
@@ -103,6 +105,10 @@ public:
             !stage_.prepare(rate)||!roomFocus_.prepare(rate))return false;
         pitchIntervals_.prepare();
         pitchSync_.reset();
+        leadShifter_.reset();
+        leadTune_.prepare(detectEvery_/rate);
+        leadRatio_=1.f;leadBlend_=0.f;leadPeriod_=0.f;
+        leadRendering_=false;voicePlanner_.reset();
         pitchSyncBlend_.fill(0.f);pitchSyncFiltered_.fill(0.f);
         sourcePeriodSamples_=0.f;sourceConfidence_=0.f;sampleClock_=0;
         pitchSyncReferenceEnabled_=true;
@@ -150,15 +156,20 @@ public:
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
         constexpr float pi=3.14159265358979323846f;
+        float profileEnergy=0.f;
+        for(const auto& singer:singers)
+            if(singerActive(singer.role,next.voices))
+                profileEnergy+=singer.presence*singer.presence;
         const float amplitude=normalizedBackingWetAmplitude(
-            next.wet,next.voices,enhancedPresence);
-        for(int v=0;v<next.voices;++v){
-            // Width is moderate even at the center-friendly default Space.
-            const float pan=.72f*next.space*
-                (2.f*static_cast<float>(v)/(next.voices-1)-1.f);
-            const float angle=(pan+1.f)*pi*0.25f;
-            prepared.mixL[v]=amplitude*std::cos(angle);
-            prepared.mixR[v]=amplitude*std::sin(angle);
+            next.wet,next.voices,enhancedPresence)*
+            std::sqrt(static_cast<float>(next.voices)/profileEnergy);
+        for(std::size_t v=0;v<singers.size();++v){
+            const auto& singer=singers[v];
+            if(!singerActive(singer.role,next.voices))continue;
+            const float angle=(singer.pan*next.space+1.f)*pi*0.25f;
+            const float level=amplitude*singer.presence;
+            prepared.mixL[v]=level*std::cos(angle);
+            prepared.mixR[v]=level*std::sin(angle);
         }
         out=prepared;return true;
     }
@@ -172,11 +183,14 @@ public:
            next.settings.guideMode!=settings_.guideMode||
            next.settings.guideChannelId!=settings_.guideChannelId){
             candidateNote_=-1;noteHold_=0;tonalTransitionPending_=true;
+            leadTune_.release();
         }
         if(next.settings.guideMode!=settings_.guideMode||
            next.settings.guideChannelId!=settings_.guideChannelId){
             guideKey_=-1;guideScale_=-1;
         }
+        if(settings_.correction&&!next.settings.correction)
+            leadTune_.release();
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetSpace_=next.settings.space;
@@ -189,7 +203,6 @@ public:
         if(!processed_){
             wet_=targetWet_;color_=targetColor_;space_=targetSpace_;
             gain_=targetGain_;
-            correctionMix_=targetCorrection_;
             mixL_=targetMixL_;mixR_=targetMixR_;
         }
         return true;
@@ -212,6 +225,7 @@ public:
             // A guide-key revision is not vocal silence. Preserve the
             // continuous sound and retune at the next stable pitch evidence.
             candidateNote_=-1;noteHold_=0;tonalTransitionPending_=true;
+            leadTune_.release();
         }
     }
     int effectiveKey() const noexcept {
@@ -265,7 +279,6 @@ public:
             color_+=a*(targetColor_-color_);
             space_+=a*(targetSpace_-space_);
             gain_+=a*(targetGain_-gain_);
-            correctionMix_+=a*(targetCorrection_-correctionMix_);
             for(int v=0;v<maxVoices;++v){
                 const auto ix=static_cast<std::size_t>(v);
                 mixL_[ix]+=a*(targetMixL_[ix]-mixL_[ix]);
@@ -298,15 +311,11 @@ public:
             const float dryR=tap(right_,static_cast<float>(latency_));
             voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*voicedGateAlpha_;
             // Compute the device-rate-correct filter coefficient once per
-            // active sample, not once for each of up to six shifters.
+            // active sample, not once for each backing shifter.
             const float filterCoef=voicedGain_>0.00001f?
                 toneColor_.coefficient(color_):0.f;
-            float lead=0.f;
-            if(correctionMix_>0.00001f&&voicedGain_>0.00001f)
-                lead=shifted(maxVoices,filterCoef);
-            const float leadBlend=correctionMix_*voicedGain_;
-            float outL=leadPath(dryL,lead,leadBlend);
-            float outR=leadPath(dryR,lead,leadBlend);
+            float outL=dryL,outR=dryR;
+            renderLead(outL,outR);
             // Direct sound and reflections from backing singers only.
             // Preserve the exact previous spatial gains in offline reference.
             const auto stageGain=BackingStageSpatial::gains(space_);
@@ -360,13 +369,31 @@ public:
             outL+=room.left*roomReturn;outR+=room.right*roomReturn;
             l[i]=std::clamp(outL*gain_,-4.f,4.f);
             r[i]=std::clamp(outR*gain_,-4.f,4.f);
-            ensemble_.advance(voiced_);
+            ensemble_.advance(voiced_&&sourceConfidence_>.87f&&noteHold_>=2);
             stage_.advance();
             write_=(write_+1)%capacity;
             ++sampleClock_;
         }
     }
 private:
+    void renderLead(float& left,float& right) noexcept {
+        const float target=leadTune_.ratio();
+        const bool tuning=targetCorrection_>0.f&&std::abs(target-1.f)>.00015f;
+        if(!tuning&&leadBlend_<.00001f){
+            if(leadRendering_)leadShifter_.reset();
+            leadRendering_=false;leadBlend_=0.f;leadRatio_=1.f;
+            return;
+        }
+        leadRendering_=true;
+        leadRatio_+=ratioAlpha_*(target-leadRatio_);
+        const auto tuned=leadShifter_.processStereo(0,sampleClock_,write_,mono_,
+            left_,right_,leadPeriod_,leadRatio_,static_cast<float>(latency_));
+        leadBlend_+=smoothingAlpha_*((tuning&&tuned.ready?1.f:0.f)-leadBlend_);
+        if(tuned.ready){
+            left=leadPath(left,tuned.left,leadBlend_);
+            right=leadPath(right,tuned.right,leadBlend_);
+        }
+    }
     float tap(const std::array<float,capacity>& a,float delay) const noexcept {
         const float d=std::clamp(delay,1.f,static_cast<float>(capacity-3));
         const int whole=static_cast<int>(d);
@@ -398,7 +425,7 @@ private:
         // previous validated granular shifter with a bounded 12ms crossfade.
         const bool confident=pitchSyncReferenceEnabled_&&voiced_&&sourceConfidence_>.82f&&
                              sourcePeriodSamples_>=8.f;
-        PitchSynchronousVoice<capacity,maxVoices+1>::Output sync{};
+        PitchSynchronousVoice<capacity,maxVoices>::Output sync{};
         if(confident)
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
@@ -431,7 +458,7 @@ private:
             pitchEnergy_+=x*x;
         }
         if(pitchEnergy_/static_cast<double>(span)<1.e-6){
-            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;
+            releasePitch();
             return;
         }
         pitchCorrelations_.fill(0.f);
@@ -474,6 +501,11 @@ private:
             finishPitchAnalysis();
         }
     }
+    void releasePitch() noexcept {
+        sourceConfidence_=0.f;voiced_=false;noteHold_=0;
+        candidateNote_=-1;currentNote_=-1;
+        leadTune_.release();voicePlanner_.reset();
+    }
     void finishPitchAnalysis() noexcept {
         const auto& correlations=pitchCorrelations_;
         float best=pitchBest_;
@@ -481,13 +513,17 @@ private:
         // Prefer shortest strong period rather than an octave-multiple peak.
         if(best>0.77f){
             for(int lag=lowLag_;lag<=highLag_;++lag){
-                if(correlations[static_cast<std::size_t>(lag)]>=std::max(0.77f,best-0.035f)){
+                const float peak=correlations[static_cast<std::size_t>(lag)];
+                if(peak>=std::max(0.77f,best-0.035f)&&
+                   (lag==lowLag_||peak>=correlations[static_cast<std::size_t>(lag-1)])&&
+                   (lag==highLag_||peak>=correlations[static_cast<std::size_t>(lag+1)])){
                     bestLag=lag;break;
                 }
             }
         }
         if(bestLag==0||best<=0.77f){
-            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            releasePitch();
+            return;
         }
         // Three-point peak interpolation reduces integer-lag tuning steps,
         // especially at the high end of the supported singing range.
@@ -503,15 +539,15 @@ private:
         const float hz=static_cast<float>(rate_)/(decimation_*lag);
         const float midi=69.f+12.f*std::log2(hz/440.f);
         if(!std::isfinite(midi)||midi<31.f||midi>96.f){
-            sourceConfidence_=0.f;voiced_=false;noteHold_=0;candidateNote_=-1;currentNote_=-1;return;
+            releasePitch();
+            return;
         }
         const int activeKey=effectiveKey(),activeScale=effectiveScale();
-        int degree=nearestDegree(midi,activeKey,activeScale);
+        const int degree=nearestDegree(midi,activeKey,activeScale);
         int note=noteAt(degree,activeKey,activeScale);
         if(!tonalTransitionPending_ &&
            !pitchChangeHasMargin(currentNote_,note,midi)){
             note=currentNote_;
-            degree=nearestDegree(static_cast<float>(note),activeKey,activeScale);
         }
         if(note!=candidateNote_){candidateNote_=note;noteHold_=1;}
         // Saturate the hold counter: a multi-hour sustained note must not
@@ -519,30 +555,37 @@ private:
         else if(noteHold_<3)++noteHold_;
         // Two consistent windows for both phrase onset and melodic transitions;
         // do not generate provisional harmony on a single noisy transient.
-        if(noteHold_<2)return;
-        currentNote_=note;voiced_=true;tonalTransitionPending_=false;
+        const float confidence=std::clamp(
+            correlations[static_cast<std::size_t>(bestLag)],0.f,1.f);
+        if(noteHold_<2){
+            leadTune_.release();
+            return;
+        }
         const float newPeriod=static_cast<float>(rate_/hz);
+        if(settings_.correction){
+            leadPeriod_=newPeriod;
+            leadTune_.observe(midi,note,confidence);
+        }
+        if(note!=currentNote_||tonalTransitionPending_){
+            voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
+            ensemble_.beginNote();
+        }
+        currentNote_=note;voiced_=true;tonalTransitionPending_=false;
         if(sourcePeriodSamples_>0.f&&
            std::abs(newPeriod-sourcePeriodSamples_)>.25f*sourcePeriodSamples_){
             pitchSync_.reset();pitchSyncBlend_.fill(0.f);
             pitchSyncFiltered_.fill(0.f);
         }
         sourcePeriodSamples_=newPeriod;
-        sourceConfidence_=std::clamp(best,0.f,1.f);
-        // Fifth harmony voice is a lower sixth in key; keep each voice
-        // independent and normalize its level against the total count.
-        // One fractional-pitch exponent per analysis hop; each harmony
-        // interval is an integer number of semitones in the chosen scale.
-        // Five previous pow() calls move to the CONTROL prepared LUT.
-        const float baseRatio=std::pow(2.f,(note-midi)/12.f);
-        constexpr std::array<int,maxVoices> intervals{{2,4,-2,6,-4}};
-        for(int v=0;v<maxVoices;++v){
-            const int target=noteAt(degree+intervals[static_cast<std::size_t>(v)],
-                                    activeKey,activeScale);
-            targetRatio_[static_cast<std::size_t>(v)]=std::clamp(
-                baseRatio*pitchIntervals_.ratio(target-note),0.50f,2.0f);
+        sourceConfidence_=confidence;
+        // Integer intervals come from the prepared LUT. The single
+        // fractional ratio tracks the current microphone pitch.
+        const float baseRatio=std::exp2((note-midi)/12.f);
+        for(std::size_t v=0;v<singers.size();++v){
+            const int target=voicePlanner_.target(v);
+            targetRatio_[v]=target<0?1.f:std::clamp(
+                baseRatio*pitchIntervals_.ratio(target-note),.50f,2.f);
         }
-        targetRatio_[maxVoices]=std::clamp(baseRatio,0.75f,1.34f);
     }
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
     int lowLag_=12,highLag_=144;std::size_t write_=0,downWrite_=0,downSeen_=0;
@@ -568,9 +611,9 @@ private:
     bool pitchSyncReferenceEnabled_=true,stageDepthReferenceEnabled_=true;
     bool roomFocusReferenceEnabled_=true;
     bool presenceReferenceEnabled_=true;
-    std::array<float,maxVoices+1> pitchSyncBlend_{},pitchSyncFiltered_{};
+    std::array<float,maxVoices> pitchSyncBlend_{},pitchSyncFiltered_{};
     float space_=0.f,targetSpace_=0.f;
-    float gain_=1.f,targetGain_=1.f,correctionMix_=0.f,targetCorrection_=0.f;
+    float gain_=1.f,targetGain_=1.f,targetCorrection_=0.f;
     std::array<float,maxVoices> mixL_{},mixR_{},targetMixL_{},targetMixR_{};
     float decimationLowpass_=0.f,decimationAlpha_=0.f;
     StereoPhaseSafeFold vocalFold_{};
@@ -580,10 +623,15 @@ private:
     BackingDepthRoom depthRoom_{};
     BackingStageSpatial stage_{};
     BackingRoomFocus roomFocus_{};
-    PitchSynchronousVoice<capacity,maxVoices+1> pitchSync_{};
+    PitchSynchronousVoice<capacity,maxVoices> pitchSync_{};
+    PitchSynchronousVoice<capacity,1> leadShifter_{};
+    LeadTune leadTune_{};
+    VoicePlanner voicePlanner_{};
+    bool leadRendering_=false;
+    float leadRatio_=1.f,leadBlend_=0.f,leadPeriod_=0.f;
     Settings settings_{};
     std::array<float,capacity> left_{},right_{},mono_{};
     std::array<float,2048> decimated_{};
-    std::array<float,maxVoices+1> filtered_{},phase_{},ratio_{},targetRatio_{};
+    std::array<float,maxVoices> filtered_{},phase_{},ratio_{},targetRatio_{};
 };
 } // namespace armix::harmony

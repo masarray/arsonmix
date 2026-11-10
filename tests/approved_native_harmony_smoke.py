@@ -104,7 +104,47 @@ def main():
                 # Native LCD must not fabricate manual/detected effective key
                 # until the exact instance-scoped DSP snapshot arrives.
                 assert page.locator("#mxHKeyReadout").inner_text()=="—"
+                switch=page.get_by_role("switch",name="PITCH TUNE")
+                assert switch.is_disabled() and switch.get_attribute("aria-busy")=="true"
                 readback(page,state,DEFAULT,0,0,observed=57)
+                assert switch.get_attribute("aria-checked")=="false"
+                track=switch.locator(".mx-harm-switch-track").bounding_box()
+                label=switch.get_by_text("PITCH TUNE").bounding_box()
+                assert track and label and (track["width"],track["height"])==(32,16)
+                assert abs(track["y"]+track["height"]/2-label["y"]-label["height"]/2)<1
+                if width==1366:
+                    editor.screenshot(path="arsonmix-native-harmony-editor-pitch-tune-off.png")
+                switch.focus()
+                switch.press("Space")
+                pitch_edit=last_action(page,"nativeHarmonySetSettings")
+                assert pitch_edit["settings"]["correction"] is True
+                assert switch.get_attribute("aria-checked")=="false"
+                assert switch.get_attribute("aria-busy")=="true"
+                emit(page,"arMixBuiltinHarmonyAck",
+                     {"requestId":pitch_edit["requestId"],"status":"APPLIED"})
+                assert switch.get_attribute("aria-checked")=="false"
+                readback(page,state,{**DEFAULT,"correction":True},0,0,
+                         applied=pitch_edit["requestId"],observed=57)
+                assert switch.get_attribute("aria-checked")=="true"
+                assert switch.get_attribute("aria-busy")=="false"
+                switch.evaluate("el=>el.blur()")
+                if width==1366:
+                    page.wait_for_timeout(160)
+                    editor.screenshot(path="arsonmix-native-harmony-editor-pitch-tune-on.png")
+                page.locator("#mxHPreset").select_option("quartet")
+                preset_settings=last_action(page,"nativeHarmonySetSettings")["settings"]
+                assert preset_settings["voices"]==4 and preset_settings["correction"] is True
+                apply_edit(page,state,preset_settings,0,0)
+                switch.click()
+                assert last_action(page,"nativeHarmonySetSettings")["settings"]["correction"] is False
+                assert switch.get_attribute("aria-checked")=="true"
+                apply_edit(page,state,{**preset_settings,"correction":False},0,0)
+                assert switch.get_attribute("aria-checked")=="false"
+                page.locator("#mxHClose").click()
+                row.locator('[data-action="openPlugin"]').click()
+                assert switch.is_disabled()
+                readback(page,state,DEFAULT,0,0,observed=57)
+                assert switch.get_attribute("aria-checked")=="false"
                 assert page.locator("#mxHTracking").inner_text()=="TRACKING A3"
                 assert page.locator("#mxHKeyReadout").inner_text()=="C"
                 assert page.locator("#mxHGuideStatus").inner_text()=="MANUAL"

@@ -33,7 +33,10 @@ root.innerHTML=`
     <nav class="mx-harm-voices" id="mxHVoices" aria-label="Harmonice voice count">
      <button type="button" data-voices="3" aria-label="3 harmony voices" aria-pressed="true">${voiceGlyph}<span>3</span></button><button type="button" data-voices="4" aria-label="4 harmony voices" aria-pressed="false">${voiceGlyph}<span>4</span></button><button type="button" data-voices="5" aria-label="5 harmony voices" aria-pressed="false">${voiceGlyph}<span>5</span></button>
     </nav>
-    <label class="mx-harm-correction"><input id="mxHCorrection" type="checkbox"> PITCH TUNE</label>
+    <button type="button" id="mxHCorrection" class="mx-harm-correction" role="switch"
+      aria-checked="false" aria-busy="true" disabled>
+     <span class="mx-harm-switch-track" aria-hidden="true"></span><span>PITCH TUNE</span>
+    </button>
    </aside>
    <section class="mx-harm-control-deck" aria-label="Harmony sound controls">
     <div class="mx-harm-sliders" id="mxHSliders"></div>
@@ -95,11 +98,11 @@ const fresh=()=>({key:0,scale:0,voices:3,correction:false,
                    guideMode:0,guideChannelId:"0",
                    color:0.5,space:0.6,wet:0.45,gainDb:0});
 const presets={
- duo:{voices:2,color:.45,space:.35,wet:.31,correction:false,gainDb:0},
- trio:{voices:3,color:.50,space:.56,wet:.40,correction:false,gainDb:0},
- quartet:{voices:4,color:.66,space:.95,wet:.52,correction:true,gainDb:-2},
- quintet:{voices:5,color:.61,space:.88,wet:.45,correction:true,gainDb:-3},
- choir:{voices:4,color:.24,space:.30,wet:.58,correction:true,gainDb:-3}
+ duo:{voices:2,color:.45,space:.35,wet:.31,gainDb:0},
+ trio:{voices:3,color:.50,space:.56,wet:.40,gainDb:0},
+ quartet:{voices:4,color:.66,space:.95,wet:.52,gainDb:-2},
+ quintet:{voices:5,color:.61,space:.88,wet:.45,gainDb:-3},
+ choir:{voices:4,color:.24,space:.30,wet:.58,gainDb:-3}
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
@@ -276,7 +279,12 @@ function paint(){
  }
  for(const b of scaleButtons)b.classList.toggle("active",
    reliable&&Number(b.dataset.scale)===displayScale);
- el("mxHCorrection").checked=v.correction;
+ const correction=el("mxHCorrection");
+ const syncing=nativeView&&!verified;
+ const correctionPending=nativeView&&v.correction!==settings.correction;
+ correction.disabled=syncing;
+ correction.setAttribute("aria-busy",String(syncing||correctionPending));
+ correction.setAttribute("aria-checked",String(!syncing&&settings.correction));
  showText(el("mxHKeyReadout"),reliable?keys[displayKey]+(displayScale?"m":""):"—");
  showText(el("mxHNote"),reliable?(displayScale?"MINOR":"MAJOR"):"KEY");
  el("mxHKeyReadout").setAttribute("aria-label",
@@ -370,7 +378,10 @@ el("mxHGuideSource").addEventListener("change",e=>{
  const source=e.target.value;
  edit({guideMode:source==="0"?0:1,guideChannelId:source});
 });
-el("mxHCorrection").addEventListener("change",e=>edit({correction:e.target.checked}));
+el("mxHCorrection").addEventListener("click",()=>{
+ const desired=latest||pending?.settings||settings;
+ edit({correction:!desired.correction});
+});
 sliders.forEach(({input})=>input.addEventListener("input",()=>{
  const k=input.dataset.field,x=Number(input.value);
  edit({[k]:k==="gainDb"?x:x/100});

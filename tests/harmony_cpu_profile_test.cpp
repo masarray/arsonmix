@@ -31,7 +31,8 @@ void profile(double rate,int block,int voices,bool musicGuide=false){
     std::array<float,256> l{},r{},musicL{},musicR{};
     std::array<double,measured> elapsed{};
     double phase=0.;
-    const double step=6.283185307179586*220./rate;
+    // 35 cents sharp so the enabled lead shifter actually runs.
+    const double step=6.283185307179586*220.*std::exp2(35./1200.)/rate;
     for(int blockIndex=0;blockIndex<warmup+measured;++blockIndex){
         // Synthesis and timer calls are outside DSP timing.
         for(int i=0;i<block;++i){
