@@ -276,6 +276,9 @@ public:
               .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
                   handleNativeHotkeyIntent(args);
               })
+              .withEventListener ("arMixHotkeyCapture", [this] (juce::var args) {
+                  hotkeys_.setCaptureMode(args.getProperty("enabled",false)==juce::var(true));
+              })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
                   consoleSubscribed_ = true;
@@ -1258,6 +1261,9 @@ private:
         const auto action=args.getProperty("operation","").toString();
         const auto requestId=args.getProperty("requestId","").toString();
         if(action=="LIST")return sendHotkeyRegistry();
+        // A capture card temporarily releases OS chords so a previously
+        // mapped shortcut can be re-entered. Always restore them on Save.
+        hotkeys_.setCaptureMode(false);
         juce::String error;
         if(requestId.isEmpty()||requestId.length()>96 ||
            consumedHotkeyRequests_.contains(requestId))
@@ -1337,7 +1343,7 @@ private:
         payload.getDynamicObject()->setProperty("value",!static_cast<bool>(existing));
         auto request=juce::var(new juce::DynamicObject());
         auto* o=request.getDynamicObject();
-        o->setProperty("requestId","hotkey-"+juce::String(++firedHotkeySerial_));
+        o->setProperty("requestId","hotkey-"+juce::String(static_cast<juce::int64>(++firedHotkeySerial_)));
         o->setProperty("operation",mapping.operation);
         o->setProperty("targetChannelId",mapping.channelId);
         o->setProperty("deviceEpoch",accepted.getProperty("device",{}).getProperty("epoch","0"));
