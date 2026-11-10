@@ -64,9 +64,9 @@
     const hotkeyCard=document.createElement("section");
     hotkeyCard.id="armixHotkeyCard";hotkeyCard.hidden=true;
     hotkeyCard.setAttribute("role","dialog");
-    hotkeyCard.setAttribute("aria-label","Add Hotkey");
+    hotkeyCard.setAttribute("aria-label","Assign Hotkey");
     hotkeyCard.innerHTML=
-      '<div class="armix-hk-head"><span>ADD HOTKEY</span><button type="button" data-hk-cancel aria-label="Close">×</button></div>'+
+      '<div class="armix-hk-head"><span data-hk-title>ASSIGN HOTKEY</span><button type="button" data-hk-cancel aria-label="Close">×</button></div>'+
       '<div class="armix-hk-target" id="armixHkTarget"></div>'+
       '<div class="armix-hk-state">Please press Hotkey</div>'+
       '<div class="armix-hk-chord" id="armixHkChord">Press Ctrl / Alt + key</div>'+
@@ -81,6 +81,7 @@
       '<div class="armix-hk-head"><span>HOTKEY REGISTER</span><button type="button" data-hk-register-close>×</button></div>'+
       '<input aria-label="Search hotkeys" placeholder="Find shortcut or target…" data-hk-search>'+
       '<div class="hk-list" data-hk-list></div>'+
+      '<div class="armix-hk-state" data-hk-feedback role="status"></div>'+
       '<div class="armix-hk-operations"><button type="button" data-hk-panic>+ Emergency Mute</button><button type="button" data-hk-refresh>Refresh</button></div>';
     document.body.appendChild(hotkeyRegister);
     const moreTools=document.querySelector("#moreTools .more-tools-panel");
@@ -139,13 +140,17 @@
             (canDelete?'':'disabled')+'>Delete…</button>'+
             (canDelete?'':'<div class="detail">Delete unavailable for this native strip</div>')+
             (eligibleHotkey(menuTrack,"SET_MUTE")?
-              '<button role="menuitem" data-menu="hotkey-mute">Add Mute Hotkey…</button>'+
-              '<button role="menuitem" data-menu="hotkey-solo">Add Solo Hotkey…</button>':'')+
+              '<button role="menuitem" data-menu="hotkey-mute">Mute · Assign Hotkey…</button>'+
+              '<button role="menuitem" data-menu="hotkey-solo">Solo · Assign Hotkey…</button>':'')+
             '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
         }
-      }else if(kind==="hotkey")
-        menu.innerHTML='<button role="menuitem" data-menu="hotkey-add">Add Hotkey…</button>'+
+      }else if(kind==="hotkey"){
+        const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,menuTarget));
+        menu.innerHTML='<button role="menuitem" data-menu="hotkey-add">'+
+          (existing?'Change Hotkey…':'Assign Hotkey…')+'</button>'+
+          (existing?'<button role="menuitem" data-menu="hotkey-remove">Remove Hotkey</button>':'')+
           '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
+      }
       else menu.innerHTML='<button role="menuitem" data-menu="orbit">Orbit…</button>'+
           '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
       place(menu,x,y);
@@ -264,14 +269,45 @@
         ["SET_MUTE","SET_SOLO"].includes(operation) &&
         state.graph.capabilities.supportedOps.includes(operation)?channelId:null;
     }
+    function nativeFxHotkeyTarget(button){
+      const track=scope.findTrack(button),state=activeNative();
+      const channelId=hooks.nativeIdFor?.(track);
+      const channel=state?.graph?.channels?.find(ch=>ch.id===channelId);
+      if(!state?.admitted||state?.retained||!channelId||!channel||
+         !["INPUT","GROUP","FX_RETURN"].includes(channel.role))return null;
+      if(button.dataset.action==="fxOn" &&
+         typeof channel.fxRackBypassed==="boolean")
+        return {kind:"hotkey",channelId,operation:"SET_FX_RACK_BYPASS",
+          scope:"SESSION",label:track.name+" · FX Rack Power"};
+      const slot=Number(button.dataset.slot ??
+        button.closest(".fxslot-row")?.dataset.slot);
+      const insert=channel.inserts?.[slot];
+      if(button.dataset.action==="slotPower" && Number.isInteger(slot) &&
+         slot>=0&&slot<8&&typeof insert?.id==="string"&&insert.id&&
+         typeof insert.bypassed==="boolean")
+        return {kind:"hotkey",channelId,operation:"SET_FX_SLOT_BYPASS",
+          scope:"SESSION",slot,insertId:insert.id,
+          label:track.name+" · FX "+(slot+1)+" · "+(insert.name||"Power")};
+      return null;
+    }
+    function sameHotkeyTarget(m,target){
+      return target && m.scope===target.scope &&
+        m.operation===target.operation &&
+        m.channelId===(target.channelId||"") &&
+        (target.operation!=="SET_FX_SLOT_BYPASS" ||
+         (m.slot===target.slot&&m.insertId===target.insertId));
+    }
     function requestHotkeyList(){
       backend.emitEvent("arMixHotkeyIntent",{operation:"LIST"});
     }
     function hotkeyLabel(mapping){
       if(mapping.operation==="PANIC_MUTE")return "Emergency Output Mute";
       const name=activeNative()?.graph?.channels?.find(c=>c.id===mapping.channelId)?.name;
-      return (name||"Channel "+mapping.channelId)+" · "+
-        (mapping.operation==="SET_MUTE"?"Mute":"Solo");
+      const suffix=mapping.operation==="SET_FX_RACK_BYPASS"?"FX Rack Power":
+        mapping.operation==="SET_FX_SLOT_BYPASS"?
+          "FX "+(Number(mapping.slot)+1)+" · Power":
+        mapping.operation==="SET_MUTE"?"Mute":"Solo";
+      return (name||"Channel "+mapping.channelId)+" · "+suffix;
     }
     function shortcutLabel(vk,mods){
       const label=vk>=0x70&&vk<=0x7a?"F"+(vk-0x6f):
@@ -306,6 +342,7 @@
             if(hotkeyPending)return;
             if(action==="Edit")openHotkeyCapture({
               channelId:mapping.channelId,operation:mapping.operation,
+              slot:mapping.slot,insertId:mapping.insertId,
               label:title,scope:mapping.scope},mapping);
             else {
               hotkeyPending={requestId:nextHotkeyRequest(),kind:"DELETE",mapping};
@@ -333,6 +370,8 @@
     function openHotkeyCapture(target,editing=null){
       if(!target)return;
       closeHotkeyCapture();hotkeyTarget={...target};hotkeyEdit=editing;
+      hotkeyCard.querySelector("[data-hk-title]").textContent=
+        editing?"CHANGE HOTKEY":"ASSIGN HOTKEY";
       hotkeyChord=editing?{vk:editing.vk,modifiers:editing.modifiers}:null;
       $("armixHkTarget").textContent=target.label;
       $("armixHkChord").textContent=hotkeyChord?
@@ -379,7 +418,9 @@
         id:hotkeyEdit?.id||"hk-"+Date.now().toString(36)+"-"+(++hotkeySerial),
         scope:hotkeyTarget.scope,sessionId:hotkeyTarget.scope==="APP"?"":hotkeySession,
         channelId:hotkeyTarget.channelId||"",operation:hotkeyTarget.operation,
-        vk:hotkeyChord.vk,modifiers:hotkeyChord.modifiers
+        vk:hotkeyChord.vk,modifiers:hotkeyChord.modifiers,
+        ...(hotkeyTarget.operation==="SET_FX_SLOT_BYPASS"?
+          {slot:hotkeyTarget.slot,insertId:hotkeyTarget.insertId}:{})
       };
       hotkeyPending={kind:"REGISTER",requestId:nextHotkeyRequest(),mapping};
       $("armixHkError").textContent="Registering and saving in native host…";
@@ -406,6 +447,8 @@
       if(hotkeyPending&&state.requestId===hotkeyPending.requestId){
         if(state.status!=="ACCEPTED"){
           $("armixHkError").textContent=state.errorCode||"Native registration rejected";
+          hotkeyRegister.querySelector("[data-hk-feedback]").textContent=
+            state.errorCode||"Native registration rejected";
           hotkeyCard.querySelector("[data-hk-save]").disabled=!hotkeyChord;
           hotkeyPending=null;
           if(!hotkeyCard.hidden)setHotkeyCapture(true);
@@ -415,10 +458,13 @@
         }
       }else if(hotkeyPending?.acked&&!state.requestId){
         const p=hotkeyPending;
-        const found=hotkeyEntries.find(m=>m.id===(p.mapping?.id||p.mapping?.id));
+        const found=hotkeyEntries.find(m=>m.id===p.mapping?.id);
         const confirmed=p.kind==="DELETE"?!hotkeyEntries.some(m=>m.id===p.mapping.id):
           found&&found.vk===p.mapping.vk&&
-          found.modifiers===p.mapping.modifiers&&found.operation===p.mapping.operation;
+          found.modifiers===p.mapping.modifiers&&found.operation===p.mapping.operation&&
+          found.channelId===p.mapping.channelId&&
+          (found.operation!=="SET_FX_SLOT_BYPASS"||
+           (found.slot===p.mapping.slot&&found.insertId===p.mapping.insertId));
         if(confirmed){
           hotkeyPending=null;if(p.kind==="REGISTER")closeHotkeyCapture();
         }else{
