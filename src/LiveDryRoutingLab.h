@@ -2276,7 +2276,8 @@ public:
                     const auto hash=juce::SHA256(bytes).toHexString();
                     draft.inserts.push_back({channel.id,slot,(*owner)->catalogId,
                         {},hash,(*owner)->name,0,
-                        (*owner)->bypassRequested.load(std::memory_order_acquire)});
+                        (*owner)->bypassRequested.load(std::memory_order_acquire),
+                        (*owner)->instanceId});
                     if(hashes.insert(hash).second) {
                         armix::shows::BinaryState entry;
                         entry.sha256=hash;entry.bytes=std::move(bytes);
