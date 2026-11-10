@@ -5,6 +5,7 @@ on:
     paths:
       - 'engine/builtin_fx/Harmony*.h'
       - 'tests/harmony*.cpp'
+      - 'tools/harmony_offline_ab.cpp'
       - 'CMakeLists.txt'
       - '.github/workflows/harmony-fast-dsp.yml'
 permissions:

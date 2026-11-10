@@ -115,6 +115,28 @@ static Wave subtract(const Wave& x,const Wave& y){
     }
     return z;
 }
+// Auditable isolated BACKING roles from the *same* live native PCM DSP.
+// Rebuild an independent engine for each role, using one five/singer planner
+// and the identical dry lead, then set only that role's prepared output gains
+// to zero for every other singer. No browser masks or in-place muting.
+static Wave roleStem(const Wave& input,Settings settings,
+                     int singerIndex,const Wave& dry){
+    if(singerIndex<0||singerIndex>=Engine::maxVoices)
+        throw std::runtime_error("invalid solo Harmony role");
+    auto e=std::make_unique<Engine>();
+    Engine::PreparedSettings prepared{};
+    if(!e->prepare(input.rate)||!Engine::prepareSettings(settings,prepared))
+        throw std::runtime_error("cannot prepare singer solo");
+    for(int i=0;i<Engine::maxVoices;++i)
+        if(i!=singerIndex){prepared.mixL[i]=0.f;prepared.mixR[i]=0.f;}
+    if(!e->applyPreparedSettings(prepared))
+        throw std::runtime_error("cannot apply singer solo");
+    Wave out=input;
+    for(std::size_t pos=0;pos<out.left.size();pos+=127)
+        e->process(out.left.data()+pos,out.right.data()+pos,
+                   static_cast<int>(std::min(std::size_t(127),out.left.size()-pos)));
+    return subtract(out,dry);
+}
 static bool same(const Wave& x,const Wave& y){
     if(x.left.size()!=y.left.size())return false;
     for(std::size_t i=0;i<x.left.size();++i)
@@ -130,7 +152,8 @@ static Wave fold(const Wave& in){
 static void generateReport(const fs::path& folder,const Wave& input,
              const Wave& dry,const Wave& legacy,const Wave& modern,
              const Wave& backing,const Wave& previousStage,
-             const Wave& previousPresence){
+             const Wave& previousPresence,const Wave& lowStem,
+             const Wave& midStem,const Wave& highStem){
     std::ofstream out(folder/"metrics.json");
     out<<"{\n  \"sampleRate\": "<<input.rate<<",\n  \"frames\": "<<input.left.size()
        <<",\n  \"dryRms\": "<<rms(dry)<<",\n  \"legacyRms\": "<<rms(legacy)
@@ -138,6 +161,9 @@ static void generateReport(const fs::path& folder,const Wave& input,
        <<",\n  \"backingDifferenceRms\": "<<rms(backing)
        <<",\n  \"previousDepthRms\": "<<rms(previousStage)
        <<",\n  \"previousPresenceRms\": "<<rms(previousPresence)
+       <<",\n  \"lowSoloRms\": "<<rms(lowStem)
+       <<",\n  \"midSoloRms\": "<<rms(midStem)
+       <<",\n  \"highSoloRms\": "<<rms(highStem)
        <<",\n  \"sourceFormantsMeasured\": false,\n  \"realSingerQualified\": false,\n"
        <<"  \"method\": \"same native input, independently reset engines; backing = wet mix - Wet0 lead, correction OFF, gain 0dB\"\n}\n";
 }
@@ -165,6 +191,16 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"02_legacy_grain_mix.wav",old);
     writeWave(folder/"03_new_space_060.wav",modern);
     writeWave(folder/"04_new_backing_only.wav",backing);
+    // Each solo includes its own direct path, early reflections and the
+    // corresponding contribution to the single shared room (not a fake
+    // volume-only subtraction). These three files make the owner's HIGH
+    // robotic/stutter report independently listenable.
+    const auto lowStem=roleStem(input,settings,0,dry);
+    const auto midStem=roleStem(input,settings,1,dry);
+    const auto highStem=roleStem(input,settings,2,dry);
+    writeWave(folder/"14_low_backing_only.wav",lowStem);
+    writeWave(folder/"15_mid_backing_only.wav",midStem);
+    writeWave(folder/"16_high_backing_only.wav",highStem);
     writeWave(folder/"05_new_mono_fold.wav",fold(modern));
     writeWave(folder/"08_previous_depth_space_060.wav",previousDepth);
     writeWave(folder/"09_previous_backing_only.wav",subtract(previousDepth,dry));
@@ -174,7 +210,8 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"13_presence_old_backing_only.wav",subtract(previousPresence,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
-    generateReport(folder,input,dry,old,modern,backing,previousDepth,previousPresence);
+    generateReport(folder,input,dry,old,modern,backing,previousDepth,
+                   previousPresence,lowStem,midStem,highStem);
 }
 int main(int argc,char** argv){
     try{
@@ -189,6 +226,27 @@ int main(int argc,char** argv){
             auto before=process(v,s,false);
             auto after=process(v,s,true);
             if(!(rms(before)>0.01&&rms(after)>0.01))return 2;
+            // Isolated LOW/MID/HIGH renders must recombine with the
+            // simultaneously rendered (unclipped) full wet backing, with
+            // only bounded float rounding in the shared linear room.
+            Settings dryVoiceSettings=s;
+            dryVoiceSettings.wet=0.f;
+            const auto dryRole=process(v,dryVoiceSettings,true);
+            const auto full=process(v,s,true);
+            const auto lowRole=roleStem(v,s,0,dryRole);
+            const auto midRole=roleStem(v,s,1,dryRole);
+            const auto highRole=roleStem(v,s,2,dryRole);
+            double parts=0.;
+            for(std::size_t i=0;i<v.left.size();++i){
+                const float l=lowRole.left[i]+midRole.left[i]+highRole.left[i];
+                const float r=lowRole.right[i]+midRole.right[i]+highRole.right[i];
+                const float wholeL=full.left[i]-dryRole.left[i];
+                const float wholeR=full.right[i]-dryRole.right[i];
+                if(std::abs(l-wholeL)>2.e-4f||
+                   std::abs(r-wholeR)>2.e-4f)return 6;
+                parts+=std::abs(highRole.left[i])+std::abs(highRole.right[i]);
+            }
+            if(!(parts>10.))return 7;
             s.wet=1.f;s.space=.6f;s.voices=4;
             const auto baseline=process(v,s,true,127,true,true,false);
             const auto boosted=process(v,s,true,127,true,true,true);
