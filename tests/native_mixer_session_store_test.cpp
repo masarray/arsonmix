@@ -7,6 +7,7 @@
 #include "../src/NativeMixerSessionStore.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
+#include "../src/NativeLogicalMixerWorkspace.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -637,7 +638,86 @@ static void verifyProductionPlayerFirstSoundWithSourceOnly() {
     assert(outL.back()>.10f && outR.back()<-.05f);
 }
 
+static void verifyOfflineLogicalSessionAndFile() {
+    NativeLogicalMixerWorkspace workspace;
+    assert(workspace.isLogicalOnly() && workspace.revision()==1);
+    const auto initial=workspace.snapshot();
+    assert(initial.getProperty("authority","").toString()=="LOGICAL_ONLY");
+    assert(!static_cast<bool>(initial.getProperty("physicalOutputAdmitted",true)));
+    assert(!static_cast<bool>(initial.getProperty("outputArmed",true)));
+    const auto graph=initial.getProperty("graph",{});
+    const auto caps=graph.getProperty("capabilities",{});
+    assert(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",true)));
+    assert(graph.getProperty("channels",{}).getArray()->size()==15);
+    auto command=[&](const char* operation,const juce::var& payload,
+                     const juce::String& id=juce::String{}) {
+        auto request=juce::var(new juce::DynamicObject());
+        request.getDynamicObject()->setProperty("operation",operation);
+        request.getDynamicObject()->setProperty("baseRevision",
+            juce::String(std::to_string(workspace.revision())));
+        request.getDynamicObject()->setProperty("channelId",id);
+        request.getDynamicObject()->setProperty("payload",payload);
+        return request;
+    };
+    auto name=juce::var(new juce::DynamicObject());
+    name.getDynamicObject()->setProperty("name","Offline Backing");
+    auto created=workspace.apply(command("CREATE_CHANNEL",name));
+    assert(created.accepted && created.createdId.isNotEmpty());
+    const auto track=created.createdId;
+    assert(workspace.revision()==2);
+    auto fx=juce::var(new juce::DynamicObject());
+    fx.getDynamicObject()->setProperty("catalogId",
+        "armix.builtin.channel-compressor.v1");
+    assert(workspace.apply(command("ADD_FX_REFERENCE",fx,track)).accepted);
+    auto rename=juce::var(new juce::DynamicObject());
+    rename.getDynamicObject()->setProperty("name","Vocal Backing");
+    assert(workspace.apply(command("RENAME_CHANNEL",rename,track)).accepted);
+    // No fake callback/output admission is ever supplied by the GUI status.
+    const auto projected=workspace.snapshot();
+    assert(!static_cast<bool>(projected.getProperty("physicalOutputAdmitted",true)));
+    const auto rows=projected.getProperty("graph",{}).getProperty("channels",{});
+    bool found=false;
+    for(const auto& row:*rows.getArray())
+        if(row.getProperty("id","").toString()==track) {
+            assert(row.getProperty("name","").toString()=="Vocal Backing");
+            assert(row.getProperty("inserts",{}).getArray()->size()==1);
+            found=true;
+        }
+    assert(found);
+    const auto json=Codec::encode(workspace.document());
+    MixerSessionDocument restored;
+    assert(Codec::decode(json,restored));
+    assert(restored.logicalOnly);
+    assert(restored.binding.backend.isEmpty() &&
+           restored.binding.playback.isEmpty() &&
+           restored.binding.outputMask=="0");
+    assert(restored.outputs.activeOutputChannels==0);
+    assert(restored.roster.find({static_cast<std::uint64_t>(track.getLargeIntValue())}));
+    auto forged=juce::JSON::parse(json);
+    forged.getProperty("binding",{}).getDynamicObject()->setProperty(
+        "playback","Unverified Speaker");
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    forged=juce::JSON::parse(json);
+    forged.getProperty("outputs",{}).getDynamicObject()->setProperty("active",2);
+    assert(!Codec::decode(juce::JSON::toString(forged,false),restored));
+    const auto folder=juce::File::getSpecialLocation(
+        juce::File::tempDirectory).getNonexistentChildFile("armix-offline-logical-","",false);
+    assert(folder.createDirectory().wasOk());
+    const auto file=folder.getChildFile("saved.smix");
+    assert(NativeMixerSessionStore::writeFile(file,workspace.document(),{}).isEmpty());
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,restored,states).isEmpty());
+    assert(restored.logicalOnly && states.empty());
+    NativeLogicalMixerWorkspace reopened;
+    assert(reopened.load(restored));
+    assert(reopened.revision()==workspace.revision());
+    assert(reopened.snapshot().getProperty("graph",{}).getProperty(
+        "channels",{}).getArray()->size()==16);
+    assert(folder.deleteRecursively());
+}
+
 int main(){
+    verifyOfflineLogicalSessionAndFile();
     verifyProductionPlayerFirstSoundWithSourceOnly();
     verifyVirtualPlayerSessionSerialization();
     // Zero-input is a legitimate saved SOURCE NONE workspace, never a fake mic.
