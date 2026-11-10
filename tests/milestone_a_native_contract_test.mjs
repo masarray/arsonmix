@@ -40,18 +40,24 @@ test('breaking native event protocol or accepted-readback reconciliation blocks 
   assert.equal(status(inspect(brokenProtocol),'gui-four-event-consumer').pass,false);
 });
 
-test('engine-only graph headers or a fake native producer cannot pass milestone A',()=>{
-  const fake={...sources,
-    nativeV8:'PuzzleV8Wire nativeBus acceptedRouting',
-    projection:'mainChannelId processingFormat',
-    entry:sources.entry+'#include "ConsoleLiveBridgeV6.h"\n',
-    engine:sources.engine+' nativeChannelIdPcmActive ',
-  };
-  assert.equal(status(inspect(fake),'real-v8-producer-installed').pass,true,
-    'a static adapter reference alone can match SOURCE, but is NOT audio proof');
-  assert.equal(status(inspect(fake),'intent-dispatch-not-g0-rejection').pass,false,
-    'G0 REJECTED dispatch must still prohibit release');
-  assert.equal(inspect(fake).integration.every(x=>x.pass),false);
+test('release requires the installed native producer, dispatcher and PCM callback',()=>{
+  const qualified=inspect(sources);
+  assert.deepEqual(qualified.integration.filter(x=>!x.pass).map(x=>x.id),[]);
+  const without=(key,symbol)=>inspect({...sources,
+    [key]:sources[key].replaceAll(symbol,'DISCONNECTED'),
+  });
+  assert.equal(status(without('entry','projectInstalledNativeChannelIdGraph'),
+    'real-v8-producer-installed').pass,false);
+  assert.equal(status(without('runtimeSnapshot','actualFlag(route,"nativeChannelIdPcmActive")'),
+    'real-v8-producer-installed').pass,false);
+  assert.equal(status(without('entry','executeApprovedNativeControl'),
+    'intent-dispatch-not-g0-rejection').pass,false);
+  assert.equal(status(without('nativeIntent','callbackOwnsChannelIds'),
+    'intent-dispatch-not-g0-rejection').pass,false);
+  assert.equal(status(without('engine','dryRoutingLab_.process'),
+    'actual-channelid-callback-readback').pass,false);
+  assert.equal(status(without('dryRouting','nativePublisher_.render'),
+    'actual-channelid-callback-readback').pass,false);
 });
 
 test('accepted native callback still requires a proper event dispatcher and physical FAT',()=>{

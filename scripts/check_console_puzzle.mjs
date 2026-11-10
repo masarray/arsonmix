@@ -13,7 +13,9 @@ export const PATHS=Object.freeze({
   entry:'src/Main.cpp',
   engine:'src/LiveAudioEngine.h',
   nativeG0:'src/ApprovedConsoleNativeTransportV6.h',
-  nativeV8:'src/ConsoleLiveBridgeV6.h',
+  runtimeSnapshot:'integration/ApprovedNativeRuntimeSnapshot.h',
+  nativeIntent:'integration/ApprovedNativeControlIntent.h',
+  dryRouting:'src/LiveDryRoutingLab.h',
   projection:'integration/ApprovedNativeV8Projection.h',
   renderOwner:'engine/core/NativeRenderAuthority.h',
   gui:'web/approved-native-bridge.js',
@@ -80,18 +82,24 @@ export function inspectMilestoneA(s) {
     yes('ci-keeps-native-qualification',tests,
       'One Windows pipeline must build, CTest, verify approved GUI and package')
   ];
-  const producerJoined=has('entry',/ConsoleLiveBridgeV6\.h/) &&
-    has('nativeV8',/PuzzleV8Wire/) &&
-    has('projection',/mainChannelId/) &&
-    has('projection',/processingFormat/);
-  const dispatched=has('entry',/processNativeBusIntent|processConsoleIntent|dispatchConsoleIntent/) &&
+  const producerJoined=has('entry',/projectInstalledNativeChannelIdGraph\s*\(accepted,\s*live\)/) &&
+    has('runtimeSnapshot',/actualFlag\(route,"nativeChannelIdPcmActive"\)/) &&
+    has('runtimeSnapshot',/projectApprovedNativeV8\(snapshot,bus,true\)/) &&
+    has('projection',/mainChannelId/) && has('projection',/processingFormat/);
+  const dispatched=has('entry',/withEventListener\s*\("arMixConsoleIntent",[\s\S]*?handleApprovedNativeControl\(args\)/) &&
+    has('entry',/translateApprovedNativeControl\(\s*request,before,installedBus\)/) &&
+    has('entry',/executeApprovedNativeControl\(engine_,command,&nativeError\)/) &&
+    has('entry',/nativeStillAdmitted\?"ACCEPTED":"REJECTED"/) &&
+    has('nativeIntent',/caps.getProperty\("callbackOwnsChannelIds",false\)/) &&
     !has('entry',/native_console_m2::reject\s*\(\s*args,\s*accepted\s*\)/);
-  const pcmReadback=has('engine',/nativeChannelIdPcmActive|acceptedChannelId/) &&
-    has('engine',/audioDeviceIOCallbackWithContext/) &&
-    has('nativeV8',/nativeBus|acceptedRouting/);
+  const pcmReadback=has('engine',/audioDeviceIOCallbackWithContext\s*\([\s\S]*?dryRoutingLab_\.process\(inputs,inputChannels,outputs,/) &&
+    has('engine',/setProperty\s*\("dryRoutingLab",dryRoutingLab_\.status\(capture\)\)/) &&
+    has('dryRouting',/if\(channelIdRender\)\s*\{[\s\S]*?processed=nativePublisher_\.render\(/) &&
+    has('dryRouting',/setProperty\("nativeChannelIdPcmActive",nativePcm\)/) &&
+    has('dryRouting',/if\(nativePcm\)out->setProperty\("nativeBus",nativeBusStatus\(\)\)/);
   const integration=[
     yes('real-v8-producer-installed',producerJoined,
-      'ENGINE #266 must connect its real accepted native V8 graph producer to Main.cpp',true),
+      'Main.cpp must project the installed ChannelId graph from verified engine status',true),
     yes('intent-dispatch-not-g0-rejection',dispatched,
       'Valid admitted native intents must execute on the ONE engine; G0 blanket reject cannot ship',true),
     yes('actual-channelid-callback-readback',pcmReadback,
@@ -110,7 +118,8 @@ export function inspectMilestoneA(s) {
   return {baseline,integration,g0Truthful:currentG0};
 }
 async function cli() {
-  const release=process.argv.includes('--release');
+  // The Windows publisher exports this only after verifying the release ref.
+  const release=process.argv.includes('--release') || Boolean(process.env.ARMIX_RELEASE_TAG);
   execFileSync(process.execPath,['--test','tests/console_v6_puzzle_seam_test.mjs',
     'tests/milestone_a_native_contract_test.mjs',
     'tests/m4_operator_routing.test.mjs'],{stdio:'inherit'});
