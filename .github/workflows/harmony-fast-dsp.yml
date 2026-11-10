@@ -25,6 +25,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_pitch_synchronous_test.cpp -o /tmp/arson-harmony-psola
           /tmp/arson-harmony-psola
+      - name: Profile legacy versus exact-output epoch scan on same runner (non-gating)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmonice_epoch_cpu_profile_test.cpp -o /tmp/harmonice-epoch-cpu
+          /tmp/harmonice-epoch-cpu
       - name: Compile and run complete engine dry, pitch, stereo and graph-independent PCM fixtures
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_dsp_test.cpp -o /tmp/arson-harmony-engine
