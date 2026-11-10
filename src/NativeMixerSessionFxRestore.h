@@ -37,7 +37,7 @@ public:
         auto* format=formats.getFormat(0);
         if(!format || !format->fileMightContainThisPluginType(insert.path))
             return "Saved VST3 unavailable: "+insert.catalogId;
-        const auto chosen=armix::vst::DescriptionCache::resolve(*format,insert.path,insert.uid);
+        const auto chosen=armix::vst::DescriptionCache::resolve(*format,insert.path,insert.uid,insert.name);
         if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
         juce::String pluginError;
         auto processor=formats.createPluginInstance(*chosen,sampleRate,frames,pluginError);

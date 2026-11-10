@@ -30,6 +30,7 @@
 #endif
 #endif
 #include "PluginCatalog.h"
+#include "StartupVst3RecoveryGuard.h"
 #include "PortableWorkspace.h"
 #include "StudioBackup.h"
 #include "NativeLiveShowCapture.h"
@@ -386,6 +387,9 @@ public:
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
         engine_.stop();
+        // Normal shutdown is not an interrupted startup. Leave marker intact
+        // on abnormal vendor termination (destructors never run).
+        if(startupFxGuard_)(void)startupFxGuard_->complete();
         browser_.setVisible (false);
         setLookAndFeel (nullptr); // before the owned LookAndFeel is destroyed
     }
@@ -434,6 +438,8 @@ private:
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool mixerSessionRecoveryPending_=false;
+    std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> startupFxGuard_;
+    juce::uint32 startupFxGuardTick_=0;
     std::unique_ptr<juce::FileChooser> mixerFileChooser_;
     bool mixerFileDialogOpen_=false;
     juce::File lastMixerFile_;
@@ -1629,7 +1635,7 @@ private:
                             *builtIn,ep,rev,roster,armix::mixer::ChannelId{target}):
                         engine_.installNativeVst3(
                             ep,rev,roster,armix::mixer::ChannelId{target},
-                            plugin->path,plugin->uid,plugin->key());
+                            plugin->path,plugin->uid,plugin->key(),plugin->name);
                     applied=result.accepted && result.error &&
                             result.error[0]==0;
                     if(!applied)nativeError=result.error;
@@ -5724,7 +5730,7 @@ private:
                 closePluginEditor();
                 try
                 {
-                    error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key());
+                    error = engine_.addVst3 (plugin->path, plugin->uid, plugin->key(),plugin->name);
                 }
                 catch (const std::exception& ex)
                 {
@@ -6204,12 +6210,43 @@ private:
             mixerSessionStartupInspected_=true;
             if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
                 mixerSessionRecoveryPending_=true;
-                const auto error=restoreSavedMixerSession(startupError_.isEmpty());
-                if(error.isNotEmpty())
-                    emitNotice(error.startsWith("NEEDS_REMAP:")?error.fromFirstOccurrenceOf(": ",false,false):error,true);
-                else
-                    deviceSettingsDirty_=true;
+                auto guard=std::make_unique<armix::startup::Vst3RestoreCrashGuard>(settingsDirectory());
+                // A crash in vendor DLL code bypasses C++ exception handling.
+                // Preserve the user's .smix without replaying its FX at every
+                // launch. Manual Open remains available after diagnosis.
+                if(guard->interrupted()) {
+                    mixerSessionStatus_="STARTUP_FX_SAFE_RECOVERY";
+                    mixerSessionError_="Previous startup ended during FX restore. "
+                        "Session preserved; reopen it manually after checking VST3 plugins.";
+                    diagnostics_.record("STARTUP_FX_RESTORE_CRASH_GUARD",mixerSessionError_);
+                    emitNotice(mixerSessionError_,true);
+                } else if(!guard->arm()) {
+                    mixerSessionStatus_="STARTUP_FX_RESTORE_UNAVAILABLE";
+                    mixerSessionError_="Unable to protect saved FX startup. "
+                        "Session preserved; check the settings folder permissions.";
+                    diagnostics_.record("STARTUP_FX_RESTORE_GUARD_IO",mixerSessionError_);
+                    emitNotice(mixerSessionError_,true);
+                } else {
+                    startupFxGuard_=std::move(guard);
+                    const auto error=restoreSavedMixerSession(startupError_.isEmpty());
+                    if(error.isNotEmpty()) {
+                        (void)startupFxGuard_->complete();
+                        startupFxGuard_.reset();
+                        emitNotice(error.startsWith("NEEDS_REMAP:")?
+                            error.fromFirstOccurrenceOf(": ",false,false):error,true);
+                    } else {
+                        // Count stability only after vendor construction.
+                        startupFxGuardTick_=juce::Time::getMillisecondCounter();
+                        deviceSettingsDirty_=true;
+                    }
+                }
             }else if(startupError_.isEmpty())requestAutomaticMain();
+        }
+        // Do not clear the marker as soon as constructors return: Waves and
+        // other VST3 vendors may crash in their first audio callbacks.
+        if(startupFxGuard_ && browser_.loaded &&
+           juce::Time::getMillisecondCounter()-startupFxGuardTick_>=15000u) {
+            if(startupFxGuard_->complete())startupFxGuard_.reset();
         }
         serviceAsioMixerRestart();
         // ONE actionable notice per unexpected DIRECT reroute. The audio

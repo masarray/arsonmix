@@ -1027,7 +1027,8 @@ public:
     }
 
     juce::String addVst3(const juce::String& filename,int uid,
-                        const juce::String& catalogId)
+                        const juce::String& catalogId,
+                        const juce::String& expectedName={})
     {
         if(independent_.active())return "Return to DIRECT mode before editing VST3";
         if(handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0)
@@ -1044,7 +1045,7 @@ public:
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         if(!(rate>0.0) || frames>maxFrames)
             return "Unsupported device sample rate or buffer quantum";
-        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid);
+        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid,expectedName);
         if(!chosen)return "Effect identity not found inside VST3 module";
         juce::String error;
         auto instance=formats_.createPluginInstance(*chosen,rate,frames,error);
@@ -1152,7 +1153,7 @@ public:
             if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
                 !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
                 return "Plugin is missing or invalid: " + fx.name;
-            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid);
+            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid,fx.name);
             if (!match) return "VST3 plugin identity missing: " + fx.name;
 
             juce::String error;
@@ -2071,7 +2072,8 @@ public:
     LiveDryRoutingLab::NativeBusResult installNativeVst3(
             std::uint64_t ep,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId id,
-            const juce::String& path,int uid,const juce::String& catalogId) {
+            const juce::String& path,int uid,const juce::String& catalogId,
+            const juce::String& expectedName={}) {
         LiveDryRoutingLab::NativeBusResult fail{};
         fail.error="NATIVE_VST3_HOST_UNAVAILABLE";
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -2091,7 +2093,7 @@ public:
         if(!fmt||!fmt->fileMightContainThisPluginType(path))
             {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
         try {
-            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid);
+            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid,expectedName);
             if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
             juce::String pluginError;
             auto instance=formats_.createPluginInstance(*chosen,rate,
