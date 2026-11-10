@@ -151,8 +151,11 @@ public:
             if(!document_.logicalOnly)
                 return bad("FX_PLAN_REQUIRES_UNBOUND_SESSION");
             const auto catalog=payload.getProperty("catalogId","").toString();
-            if(!catalog.startsWith("armix.builtin.") ||
-               catalog.getNumBytesAsUTF8()>256)
+            // The JUCE host verifies every external identity against its
+            // actual installed catalog before calling this editor. Here we
+            // store only an opaque reference, never load a vendor DLL.
+            if(catalog.isEmpty() || catalog.getNumBytesAsUTF8()>256 ||
+               catalog.containsChar('\n') || catalog.containsChar('\r'))
                 return bad("INVALID_OFFLINE_FX_CATALOG");
             edit.kind=ChannelEdit::Kind::addInsertReference;
             edit.text=catalog.toStdString();
