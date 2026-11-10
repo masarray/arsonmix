@@ -820,17 +820,34 @@
 .mx-vthrow .vt-throw-button{position:relative;display:block;width:212px;height:212px;flex:0 0 auto;
  border:0;padding:0;border-radius:50%;overflow:visible;touch-action:manipulation;cursor:pointer;
  background:transparent url("arson-vocal-throw-performance.svg") center/contain no-repeat;
- filter:drop-shadow(0 8px 9px #090d15af);transform:translateZ(0);
- transition:filter 150ms ease,transform 100ms ease}
+ filter:drop-shadow(0 8px 9px #090d15af);transform:translateZ(0)}
+/* Owner's unchanged SVG and OUTER bezel are fixed; only the interior
+   ring illuminates and the central cap gains a small inset shadow. */
 .mx-vthrow .vt-throw-aura{position:absolute;inset:10%;border-radius:50%;pointer-events:none;
  box-shadow:inset 0 0 0 1px #b267c821,0 0 0 1px #11141b;
- transition:box-shadow 150ms ease}
-.mx-vthrow .vt-throw-button:hover:not(:disabled){filter:brightness(1.19) drop-shadow(0 8px 10px #080c13ca)}
-.mx-vthrow .vt-throw-button:hover:not(:disabled) .vt-throw-aura{box-shadow:0 0 22px #bc36df3b,inset 0 0 0 1px #c17fdd3a}
-.mx-vthrow .vt-throw-button:active:not(:disabled){transform:scale(.958) translateY(2px);
- filter:brightness(1.32) drop-shadow(0 1px 2px #000b)}
+ transition:box-shadow 140ms ease}
+.mx-vthrow .vt-throw-button::after{content:"";position:absolute;inset:31%;border-radius:50%;
+ pointer-events:none;box-shadow:inset 0 0 0 1px #d7a2f008;
+ transform:translateY(0);transition:transform 100ms ease,box-shadow 100ms ease}
+.mx-vthrow .vt-throw-button:hover:not(:disabled) .vt-throw-aura{
+ box-shadow:0 0 22px #bc36df3b,inset 0 0 0 2px #c17fdd72}
+.mx-vthrow .vt-throw-button:active:not(:disabled){transform:translateZ(0);
+ filter:drop-shadow(0 8px 9px #090d15af)}
+.mx-vthrow .vt-throw-button:active:not(:disabled) .vt-throw-aura{
+ box-shadow:0 0 34px #c743ffe0,inset 0 0 0 4px #e3a2ffdd}
+.mx-vthrow .vt-throw-button:active:not(:disabled)::after{
+ transform:translateY(2px);box-shadow:inset 0 5px 14px #160522a8,0 1px 0 #e1b2ff3d}
+@keyframes vt-armed-ring{
+ 0%,100%{box-shadow:0 0 14px #8c26b65b,inset 0 0 0 2px #9b57ba9c}
+ 50%{box-shadow:0 0 31px #c743ffa6,inset 0 0 0 3px #e2a0ffcc}
+}
+.mx-vthrow .vt-throw-button[data-armed=true]:not(:disabled) .vt-throw-aura{
+ animation:vt-armed-ring 1.25s ease-in-out infinite}
 .mx-vthrow .vt-throw-button[data-tail=true]:not(:disabled) .vt-throw-aura{
- box-shadow:0 0 29px #bb29e73f,inset 0 0 0 1px #e7a7f783}
+ box-shadow:0 0 29px #bb29e78f,inset 0 0 0 3px #e7a7f7ad}
+@media(prefers-reduced-motion:reduce){
+ .mx-vthrow .vt-throw-button[data-armed=true] .vt-throw-aura{animation:none}
+}
 .mx-vthrow .vt-throw-button:disabled{opacity:.53;filter:grayscale(.72) brightness(.8)}
 .mx-vthrow .vt-throw-engraving{margin-top:-3px;color:#bca0cc;
  font-size:9px;letter-spacing:.24em;font-weight:560;user-select:none;
