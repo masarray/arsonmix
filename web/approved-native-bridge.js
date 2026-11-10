@@ -379,6 +379,9 @@
       case "SET_SOLO":return row?.controls.solo===v.enabled;
       case "SET_FX_RACK_BYPASS":return row?.fxRackBypassed===v.enabled;
       case "ADD_FX_REFERENCE":return row?.inserts?.some(fx=>fx.catalogId===v.catalogId);
+      case "REMOVE_FX_REFERENCE":return !!row&&
+        row.inserts.length===v.beforeCount-1;
+      case "SET_FX_SLOT_BYPASS":return row?.inserts?.[v.slot]?.bypassed===v.enabled;
       case "WIRE_TRANSACTION": {
         const change=v.changes?.[0];
         if(!change)return false;
@@ -3019,6 +3022,13 @@
       if (["wireExpand","wireSource","wireRoute"].includes(action))
         return false;
       if(action==="removeFx") {
+        if(logicalView){
+          const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
+          const slot=Number(btn?.dataset.slot);
+          if(row&&Number.isInteger(slot)&&slot>=0&&slot<row.inserts.length)
+            logicalIntent("REMOVE_FX_REFERENCE",id,{slot,beforeCount:row.inserts.length});
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
         const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
         editNativeFx(t,slot,null,0,token);return true;
@@ -3058,7 +3068,11 @@
       }
       if(action==="slotPower"){
         if(logicalView){
-          nativeToast("Individual FX bypass requires audio connection");
+          const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
+          const slot=Number(btn?.dataset.slot),insert=row?.inserts?.[slot];
+          if(insert)
+            logicalIntent("SET_FX_SLOT_BYPASS",id,
+                          {slot,enabled:!insert.bypassed});
           return true;
         }
         if(mixerSession()?.authority==="CHANNEL_ID"){
