@@ -79,22 +79,35 @@ public:
         if(enabled)clearRegistrations();
         else registerActive();
     }
-    void activateSession(juce::String id,const std::vector<Mapping>* imported=nullptr) {
-        if(id==activeSession_ && !imported)return;
-        // Explicit .smix mappings override the portable local copy for that
-        // session, but never remove a different session's shortcuts.
-        if(imported && !imported->empty()) {
+    // Import is explicit only for opening .smix. Implicit restart recovery
+    // keeps the newer crash-safe local journal instead of overwriting it with
+    // an older checkpoint. An empty imported list intentionally clears keys.
+    juce::String activateSession(juce::String id,
+                                 const std::vector<Mapping>* imported=nullptr) {
+        if(id==activeSession_ && !imported)return {};
+        if(imported) {
             auto next=entries_;
             next.erase(std::remove_if(next.begin(),next.end(),
                 [&id](const Mapping& m){return m.scope=="SESSION"&&m.sessionId==id;}),
                 next.end());
-            for(const auto& m:*imported)if(m.scope=="SESSION" && m.sessionId==id &&
-                                         valid(m))next.push_back(m);
-            if(next.size()<=256 && save(next))entries_=std::move(next);
+            for(const auto& m:*imported) {
+                if(!valid(m)||m.scope!="SESSION"||m.sessionId!=id)
+                    return "INVALID_IMPORTED_HOTKEY";
+                if(std::any_of(next.begin(),next.end(),
+                    [&m](const Mapping& other){return other.id==m.id ||
+                        (other.scope=="SESSION"&&other.sessionId==m.sessionId &&
+                         other.vk==m.vk&&other.modifiers==m.modifiers);}))
+                    return "DUPLICATE_IMPORTED_HOTKEY";
+                next.push_back(m);
+            }
+            if(next.size()>256)return "HOTKEY_LIMIT_REACHED";
+            if(!save(next))return "HOTKEY_IMPORT_PERSISTENCE_FAILED";
+            entries_=std::move(next);
         }
         clearRegistrations();
         activeSession_=std::move(id);
         registerActive();
+        return {};
     }
     std::vector<Mapping> sessionEntries() const {
         std::vector<Mapping> result;
