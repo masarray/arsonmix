@@ -3161,6 +3161,20 @@ private:
                 }))safe->emitMixerSessionAck("OPEN","Mixer session IO worker unavailable");
                 return;
             }
+            // Physical Open may construct vendor DLLs inside the logical FX
+            // materialization step. Arm the marker BEFORE any preparation,
+            // not merely before the final native graph restore.
+            std::unique_ptr<armix::startup::Vst3RestoreCrashGuard> explicitRecovery;
+            bool hadPreviousCrashEvidence=false;
+            if(error.isEmpty()) {
+                explicitRecovery=std::make_unique<armix::startup::Vst3RestoreCrashGuard>(
+                    settingsDirectory());
+                hadPreviousCrashEvidence=explicitRecovery->interrupted();
+                if(!explicitRecovery->armExplicitRetry())
+                    error="Cannot protect VST3 Open: settings folder is not writable";
+                else
+                    safe->startupFxGuard_.reset(); // old timer must not clear new marker
+            }
             if(error.isEmpty())error=safe->materializeLogicalFxForBinding(doc,states);
             if(error.isEmpty())error=safe->resolveMixerSessionCatalog(doc,false);
             if(error.isEmpty()) {
@@ -3182,9 +3196,17 @@ private:
                     safe->mixerSessionStatus_=engine.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
                     safe->mixerSessionError_.clear();
                     safe->lastMixerFile_=file;
+                    safe->startupFxGuard_=std::move(explicitRecovery);
+                    safe->startupFxGuardTick_=juce::Time::getMillisecondCounter();
+                    safe->diagnostics_.record("STARTUP_FX_EXPLICIT_RECOVERY_ACCEPTED",
+                        "Manual FX graph restored; pending 15s stability verification");
                     safe->emitApprovedNativeSnapshot();
                 }
             }
+            // A controlled rejection is not an abnormal process crash.
+            // Never erase an earlier failure marker if safe recovery existed.
+            if(error.isNotEmpty()&&explicitRecovery&&!hadPreviousCrashEvidence)
+                (void)explicitRecovery->complete();
             safe->emitMixerSessionAck("OPEN",error);
         }))emitMixerSessionAck("OPEN","Mixer file operation already in progress");
     }

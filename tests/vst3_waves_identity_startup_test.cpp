@@ -47,9 +47,23 @@ int main() {
     assert(nextLaunch.interrupted());
     assert(!nextLaunch.arm());
     assert(session.loadFileAsString()=="PRESERVE_USER_SESSION");
-    assert(nextLaunch.complete());
-    assert(!nextLaunch.interrupted());
-    assert(nextLaunch.arm());
-    assert(nextLaunch.complete());
+    // In safe recovery, an explicit retry must keep the marker during
+    // potentially crashing vendor creation and for the stability window.
+    assert(nextLaunch.armExplicitRetry());
+    assert(nextLaunch.interrupted());
+    assert(session.loadFileAsString()=="PRESERVE_USER_SESSION");
+    // Another simulated crash during manual Open still blocks auto replay.
+    armix::startup::Vst3RestoreCrashGuard retryAfterCrash(temp);
+    assert(retryAfterCrash.interrupted());
+    assert(!retryAfterCrash.arm());
+    assert(retryAfterCrash.armExplicitRetry());
+    assert(retryAfterCrash.interrupted());
+    // Successful manual Open plus stable timer/graceful shutdown clears it;
+    // next application launch can safely resume normal automatic restores.
+    assert(retryAfterCrash.complete());
+    assert(!retryAfterCrash.interrupted());
+    assert(retryAfterCrash.arm());
+    assert(retryAfterCrash.complete());
+    assert(session.loadFileAsString()=="PRESERVE_USER_SESSION");
     assert(temp.deleteRecursively());
 }
