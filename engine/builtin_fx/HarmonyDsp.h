@@ -20,6 +20,7 @@
 namespace armix::harmony {
 struct Settings {
     int key=0, scale=0, voices=3; // C=0..B=11; 0=major, 1=natural minor; 2..5 voices
+    int voiceMode=0; // 0=pitched harmony (2-5), 1=true unison doubler (one wet take)
     bool correction=false;
     // Manual is always the trusted fallback. Music follows another accepted
     // ChannelId only after stable chroma confidence (never a PCM route).
@@ -29,6 +30,7 @@ struct Settings {
 };
 inline bool valid(const Settings& s) noexcept {
     return s.key>=0&&s.key<12&&s.scale>=0&&s.scale<=1&&
+      s.voiceMode>=0&&s.voiceMode<=1&&
       s.guideMode>=0&&s.guideMode<=1&&
       (s.guideMode==0?s.guideChannelId==0:s.guideChannelId>0)&&
       s.voices>=2&&s.voices<=5&&std::isfinite(s.wet)&&s.wet>=0&&s.wet<=1&&
@@ -157,6 +159,19 @@ public:
         prepared.settings=next;
         prepared.gain=std::pow(10.f,next.gainDb/20.f);
         constexpr float pi=3.14159265358979323846f;
+        if(next.voiceMode==1){
+            // Real unison double, NOT 2 pitched harmony voices. One
+            // independently windowed take follows source F0 at unity ratio.
+            // A tiny prepared left-back offset plus the existing shared
+            // room/detune/arrival give a second-take character.
+            const float pan=-.40f*next.space;
+            const float angle=(pan+1.f)*pi*.25f;
+            const float amount=next.wet*(.77f+.38f*next.wet)*.74f;
+            prepared.mixL[0]=amount*std::cos(angle);
+            prepared.mixR[0]=amount*std::sin(angle);
+            out=prepared;
+            return true;
+        }
         float profileEnergy=0.f;
         for(const auto& singer:singers)
             if(singerActive(singer.role,next.voices))
@@ -192,6 +207,12 @@ public:
         }
         if(settings_.correction&&!next.settings.correction)
             leadTune_.release();
+        if(next.settings.voiceMode!=settings_.voiceMode){
+            // Re-evaluate note targets on the next accepted analysis,
+            // without stopping the dry singer or reinitializing the room.
+            tonalTransitionPending_=true;
+            if(next.settings.voiceMode==1)targetRatio_.fill(1.f);
+        }
         settings_=next.settings;
         targetWet_=next.settings.wet;targetColor_=next.settings.color;
         targetSpace_=next.settings.space;
@@ -563,7 +584,11 @@ private:
         }
         const int activeKey=effectiveKey(),activeScale=effectiveScale();
         const int degree=nearestDegree(midi,activeKey,activeScale);
-        int note=noteAt(degree,activeKey,activeScale);
+        // In DOUBLE the source's own melody is authoritative, not the key
+        // wheel's diatonic quantization. Harmony keeps the existing scale.
+        int note=settings_.voiceMode==1?
+            static_cast<int>(std::lround(midi)):
+            noteAt(degree,activeKey,activeScale);
         if(!tonalTransitionPending_ &&
            !pitchChangeHasMargin(currentNote_,note,midi)){
             note=currentNote_;
@@ -586,7 +611,9 @@ private:
             leadTune_.observe(midi,note,confidence);
         }
         if(note!=currentNote_||tonalTransitionPending_){
-            voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
+            if(settings_.voiceMode==0)
+                voicePlanner_.plan(note,activeKey,activeScale==0?major:minor);
+            else voicePlanner_.reset();
             ensemble_.beginNote();
         }
         currentNote_=note;voiced_=true;tonalTransitionPending_=false;
@@ -606,11 +633,17 @@ private:
         }else weakSyncHops_=0;
         // Integer intervals come from the prepared LUT. The single
         // fractional ratio tracks the current microphone pitch.
-        const float baseRatio=std::exp2((note-midi)/12.f);
-        for(std::size_t v=0;v<singers.size();++v){
-            const int target=voicePlanner_.target(v);
-            targetRatio_[v]=target<0?1.f:std::clamp(
-                baseRatio*pitchIntervals_.ratio(target-note),.50f,2.f);
+        if(settings_.voiceMode==1){
+            // Preserve the exact sung melody with only EnsembleSpace's
+            // small individual cents/vibrato, no scale transposition.
+            targetRatio_.fill(1.f);
+        }else{
+            const float baseRatio=std::exp2((note-midi)/12.f);
+            for(std::size_t v=0;v<singers.size();++v){
+                const int target=voicePlanner_.target(v);
+                targetRatio_[v]=target<0?1.f:std::clamp(
+                    baseRatio*pitchIntervals_.ratio(target-note),.50f,2.f);
+            }
         }
     }
     double rate_=0.; int grain_=0,latency_=0,decimation_=4,detectEvery_=320;
