@@ -747,6 +747,12 @@
   let lastM4PortSignature="",pendingOutputPatch=null,m4RequestSerial=0,outputSerial=7000;
   const pendingSourceQueue=new Map();
   function requestProcessingFormat(t){
+    if(logicalView){
+      const id=nativeIdFor(t),source=logicalView.graph.channels.find(ch=>ch.id===id);
+      if(source?.role!=="INPUT")return false;
+      const format=source.processingFormat==="MONO"?"STEREO":"MONO";
+      return logicalIntent("SET_PROCESSING_FORMAT",id,{format}).ok;
+    }
     // Once the native ChannelId callback owns PCM, the old M4 routing
     // revision is no longer authoritative. Send M/ST through the SAME
     // admitted epoch/revision/roster transaction as WIRE and SOURCE.
@@ -824,6 +830,19 @@
   // One request/ACK/readback path for BOTH the ordinary OUT select and the
   // hardware-like OUT→MAIN WIRE jack. No browser graph mutation on click.
   function requestPrimaryOut(t,target){
+    if(logicalView) {
+      const from=nativeIdFor(t);
+      const source=logicalView.graph.channels.find(ch=>ch.id===from);
+      if(!source||!["INPUT","GROUP","FX_RETURN"].includes(source.role))return false;
+      const to=target==="NONE"?null:target==="MAIN"?
+        logicalView.graph.mainChannelId:
+        nativeOutputTargets(t,logicalView.graph.channels).find(x=>x.label===target)?.id;
+      if(target!=="NONE"&&!to)return false;
+      if((source.primaryOutId||null)===to)return true;
+      return logicalIntent("WIRE_TRANSACTION",from,{changes:[to?
+        {op:"ROUTE_ONLY",from,to,gainLinear:1}:
+        {op:"DISCONNECT",from}]}).ok;
+    }
     // Exactly ONE PCM route authority: the admitted ChannelId publisher
     // owns all MAIN/Group WIRE and OUT mutations, including original CH1-10.
     // Calling the old M4 structural patch after native WIRE admission would
@@ -924,6 +943,7 @@
   }
   let pendingBusCreate=null,pendingTrackDelete=null,stripRequestSerial=0;
   function requestNativeTrackDelete(track){
+    if(logicalView)return logicalIntent("DELETE_CHANNEL",nativeIdFor(track),{}).ok;
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const channel=current?.graph?.channels?.find(ch=>ch.id===id);
     if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
@@ -953,6 +973,7 @@
   // BUS and FX_RETURN use their actual ChannelId; never remove them from
   // browser state before the native publisher ACK and independent graph readback.
   function requestNativeBusDelete(track){
+    if(logicalView)return logicalIntent("REMOVE_BUS",nativeIdFor(track),{}).ok;
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const channel=current?.graph?.channels?.find(ch=>ch.id===id);
     if(!connected||pendingTrackDelete||pendingBusCreate||controller?.state()?.pending||
@@ -987,6 +1008,10 @@
     return false;
   }
   function canDeleteNativeStrip(track){
+    if(logicalView){
+      const row=logicalView.graph.channels.find(ch=>ch.id===nativeIdFor(track));
+      return ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
+    }
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const ch=current?.graph?.channels?.find(row=>row.id===id);
     return Boolean(current?.admitted&&!current.retained&&ch&&
@@ -1072,6 +1097,8 @@
     nativeToast(strip.name+" added · choose its IN to receive audio");
   }
   function requestNativeBusCreate(track=false){
+    if(logicalView)
+      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
     const accepted=controller?.state()?.current;
     const session=mixerSession();
     const capabilities=accepted?.graph?.capabilities?.supportedOps;
