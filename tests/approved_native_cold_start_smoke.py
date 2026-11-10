@@ -294,7 +294,9 @@ def main():
             emit(page,'arMixConsoleSnapshot',retained)
             assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled()
             strip=page.locator('#tracks .strip[data-id="1"]')
-            assert strip.locator('select[data-field="input"]').input_value()=='Waiting for device'
+            # Retained physical PCM uses the non-alarming native label.
+            # A separate LOGICAL_ONLY session remains editable without pins.
+            assert strip.locator('select[data-field="input"]').input_value()=='Audio connection lost'
             assert strip.locator('.fx-section [data-action="openPlugin"]').first.inner_text()=='Latency VST'
             before=page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="routingFxEditor").length')
             strip.locator('.fx-section [data-action="openPlugin"]').first.click()
