@@ -3252,6 +3252,17 @@
     addFx:"Use a verified FX insert slot on an admitted channel"
   });
   function presentNativeOnlyTools(){
+    // The static Pages reference includes demo labels even in its popup
+    // windows. Keep the approved DOM/CSS for rendering, never advertise
+    // "UI DEMO" or reference-only tools inside the installed native app.
+    document.title="ArSonMix — Native Digital Mixer";
+    for(const selector of [".plugin-disclaimer",
+         "#wireConfigWindow .wire-config-foot",
+         "#wireWorkspace .wire-ws-foot > span:last-child"]){
+      const el=document.querySelector(selector);
+      if(el){el.style?.setProperty?.("display","none","important");
+        el.setAttribute?.("aria-hidden","true");}
+    }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);
       if(!el)continue;
