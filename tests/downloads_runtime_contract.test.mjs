@@ -63,10 +63,10 @@ async function render(staticCatalog, releases, failLive=false, failStatic=false)
   await new Promise(resolve=>setImmediate(resolve));
   return {cards,summary,hero,calls};
 }
-test('new public ZIP replaces stale Pages installer without a redeploy',async()=>{
+test('current direct Windows installer replaces stale Pages version without redeploy',async()=>{
   const result=await render(local(4),[release(5,['Windows-x64-Setup.exe','Windows-x64-Setup.zip'])]);
-  assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.zip$/);
-  assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download installer ZIP');
+  assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.exe$/);
+  assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download Windows installer');
   assert.match(result.summary.textContent,/Ready to download/);
   assert.equal(result.hero.href,'#download');
   assert.equal(result.calls.length,2);
@@ -109,5 +109,12 @@ test('three actual OS artifacts expose separate download buttons without automat
   assert.notEqual(links[0],links[1]);
   assert.notEqual(links[1],links[2]);
   assert.equal(result.hero.href,'#download');
-  assert.match(result.summary.textContent,/Windows · Linux · macOS/);
+  assert.match(result.summary.textContent,/Windows v0\.5\.0-alpha\.5 · Linux v0\.5\.0-alpha\.5 · macOS v0\.5\.0-alpha\.5/);
+});
+
+test('older platform builds show their own version instead of claiming Windows parity', async()=>{
+  const result=await render(local(9),[release(9),release(5,['Linux-x86_64.tar.gz','macOS-universal.dmg'])]);
+  assert.match(result.summary.textContent,/Windows v0\.5\.0-alpha\.9/);
+  assert.match(result.summary.textContent,/Linux v0\.5\.0-alpha\.5/);
+  assert.match(result.summary.textContent,/macOS v0\.5\.0-alpha\.5/);
 });

@@ -1,4 +1,4 @@
-/* Verified official ArSonMix direct downloads. GitHub API repairs stale Pages releases. */
+/* Only verified official ArSonMix release assets; prefer direct Setup EXE over ZIP. */
 (() => {
   "use strict";
   const cards = [...document.querySelectorAll("[data-platform]")];
@@ -9,7 +9,7 @@
   const keys = ["windows", "linux", "macos"];
   const labels = { windows: "Windows", linux: "Linux", macos: "macOS" };
   const suffixes = {
-    windows: ["Windows-x64-Setup.zip", "Windows-x64-Setup.exe"],
+    windows: ["Windows-x64-Setup.exe", "Windows-x64-Setup.zip"],
     linux: ["Linux-x86_64.AppImage", "Linux-x86_64.tar.gz"],
     macos: ["macOS-universal.dmg", "macOS-arm64.dmg", "macOS-x64.dmg"]
   };
@@ -111,7 +111,8 @@
     card.querySelector("[data-release-state]").textContent =
       item.prerelease ? "EARLY ACCESS" : "AVAILABLE";
     card.querySelector("[data-link-label]").textContent =
-      zipped ? "Download installer ZIP" : "Download for " + labels[card.dataset.platform];
+      zipped ? "Download installer ZIP" : (card.dataset.platform === "windows"
+        ? "Download Windows installer" : "Download for " + labels[card.dataset.platform]);
     link.href = item.url;
     link.removeAttribute("target");
     link.removeAttribute("aria-disabled");
@@ -119,6 +120,7 @@
     link.setAttribute("aria-label", "Download verified " + item.name);
     card.querySelector("[data-release-note]").textContent =
       item.tag + " · " + (item.size / 1048576).toFixed(1) + " MB" +
+      (item.prerelease ? " · Alpha preview" : "") +
       (zipped ? " · Extract ZIP, run Setup" : "");
   }
   function render(selected, source) {
@@ -130,7 +132,8 @@
     }
     const availablePlatforms = keys.filter(k => validAsset(selected[k], k));
     summary.textContent = count
-      ? "Ready to download · " + availablePlatforms.map(k => labels[k]).join(" · ")
+      ? "Ready to download · " + availablePlatforms.map(k =>
+          labels[k] + " " + selected[k].tag).join(" · ")
       : "Downloads are being prepared. Explore the mixer in your browser.";
   }
   async function load() {
