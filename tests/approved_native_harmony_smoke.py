@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 ID="armix.builtin.arson-harmony.v1"
 INSTANCE="harmony-native-1"
 DEFAULT={
-    "key":0,"scale":0,"voices":3,"correction":False,
+    "key":0,"scale":0,"voices":3,"voiceMode":0,"correction":False,
     "guideMode":0,"guideChannelId":"0",
     "color":0.5,"space":0.6,"wet":0.45,"gainDb":0.0,
 }
@@ -32,7 +32,7 @@ def readback(page,state,values,key,scale,detected=(-1,-1),applied=None,
         "channelId":SOURCE,"instanceId":instance,"status":"ACCEPTED",
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
-        "schemaVersion":2,"sampleRate":48000,"latencySamples":1536,
+        "schemaVersion":3,"sampleRate":48000,"latencySamples":1536,
         "settings":copy.deepcopy(values),"observedNote":observed,
         "guideDetectedKey":detected[0],"guideDetectedScale":detected[1],
         "guideConfidence":0.75 if detected[0]>=0 else 0.0,
@@ -148,6 +148,28 @@ def main():
                 apply_edit(page,state,duo,0,0)
                 assert page.locator('.mx-harm-voices [data-voices="2"]').get_attribute(
                     "aria-pressed")=="true"
+                # Distinct from Duo, DOUBLER changes the *native* mode.
+                # Its selected state waits for matching ACK/readback.
+                dbl=page.locator('.mx-harm-type [data-voice-mode="1"]')
+                dbl.click()
+                mode_request=last_action(page,"nativeHarmonySetSettings")
+                assert mode_request["settings"]["voiceMode"]==1
+                assert dbl.get_attribute("aria-pressed")=="false"
+                doubled={**duo,"voiceMode":1}
+                apply_edit(page,state,doubled,0,0)
+                assert dbl.get_attribute("aria-pressed")=="true"
+                assert page.locator('#mxHGuideStatus').inner_text()=="UNISON"
+                assert page.locator('[data-voices="2"]').is_disabled()
+                page.locator("#mxHPreset").select_option("doubleWide")
+                wide=last_action(page,"nativeHarmonySetSettings")["settings"]
+                assert wide["voiceMode"]==1 and wide["space"]>.7,wide
+                apply_edit(page,state,wide,0,0)
+                harmony=page.locator('.mx-harm-type [data-voice-mode="0"]')
+                harmony.click()
+                restored={**wide,"voiceMode":0}
+                apply_edit(page,state,restored,0,0)
+                assert harmony.get_attribute("aria-pressed")=="true"
+                assert not page.locator('[data-voices="2"]').is_disabled()
                 page.locator("#mxHClose").click()
                 row.locator('[data-action="openPlugin"]').click()
                 assert switch.is_disabled()
