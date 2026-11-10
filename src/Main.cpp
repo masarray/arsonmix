@@ -37,6 +37,7 @@
 #include "NativeShowSaveWorker.h"
 #include "NativeChannelAppearanceStore.h"
 #include "NativeMixerSessionSaveWorker.h"
+#include "NativeLogicalMixerWorkspace.h"
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -259,6 +260,9 @@ public:
               .withEventListener ("arMixChannelIdentitySet", [this] (juce::var args) {
                   handleNativeChannelIdentitySet(args);
               })
+              .withEventListener ("arMixLogicalIntent", [this] (juce::var args) {
+                  handleLogicalMixerIntent(args);
+              })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
                   consoleSubscribed_ = true;
@@ -348,7 +352,8 @@ public:
         engine_.disconnectSecondaryOutput();
         mixerSessionWorker_.finishForShutdown();
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false))) {
+        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
+           logicalWorkspaceLoaded_) {
             const auto error=saveMixerSession(resumeMain);
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
@@ -379,6 +384,8 @@ private:
     armix::storage::StudioBackup::Worker studioBackupWorker_;
     armix::shows::NativeShowSaveWorker nativeShowWorker_;
     armix::session::NativeMixerSessionSaveWorker mixerSessionWorker_;
+    armix::session::NativeLogicalMixerWorkspace logicalWorkspace_;
+    bool logicalWorkspaceLoaded_=false;
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
@@ -1021,6 +1028,81 @@ private:
         nativeOrbitInstanceId_.clear();nativeOrbitEpoch_=0;
     }
 
+    // Persistent logical ChannelId state is usable even with NO driver.
+    // Do not instantiate vendor FX, publish a second PCM graph or ARM output.
+    void ensureLogicalWorkspace() {
+        if(logicalWorkspaceLoaded_)return;
+        logicalWorkspaceLoaded_=true;
+        armix::session::NativeMixerSessionStore store(settingsDirectory());
+        if(!store.exists())return;
+        armix::session::MixerSessionDocument doc;
+        std::vector<armix::shows::BinaryState> states;
+        if(store.load(doc,states).isEmpty()) {
+            if(!logicalWorkspace_.load(std::move(doc),std::move(states)))
+                diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
+                    "Saved channel graph failed offline DAG validation");
+        } else diagnostics_.record("LOGICAL_MIXER_RESTORE_REJECTED",
+                    "Verified mixer HEAD unavailable; retaining empty native workspace");
+    }
+
+    // Logical intents never pass through PCM admission. A separate ACK
+    // and LATER C++ readback prove edits; disk commit is transactional.
+    void handleLogicalMixerIntent(const juce::var& request) {
+        ensureLogicalWorkspace();
+        const auto id=request.getProperty("requestId","").toString();
+        juce::String failure;
+        armix::session::NativeLogicalMixerWorkspace::Ack result;
+        const bool supportedId=id.startsWith("logical-")&&id.length()<=80;
+        const bool replay=acceptedControlRequests_.contains(id);
+        const auto snapshot=approvedNativeSnapshot(engine_.status());
+        const auto capabilities=snapshot.getProperty("graph",{})
+            .getProperty("capabilities",{});
+        const bool physical=static_cast<bool>(
+            capabilities.getProperty("callbackOwnsChannelIds",false));
+        if(!supportedId || replay || physical || audioDeviceApplyActive_ ||
+           nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending()) {
+            failure=!supportedId?"INVALID_LOGICAL_REQUEST":
+                replay?"DUPLICATE_LOGICAL_REQUEST":
+                physical?"PHYSICAL_PCM_AUTHORITY_ACTIVE":"LOGICAL_EDITOR_BUSY";
+        } else {
+            acceptedControlRequests_.add(id);
+            if(acceptedControlRequests_.size()>512)
+                acceptedControlRequests_.remove(0);
+            const auto original=logicalWorkspace_.document();
+            const auto blobs=logicalWorkspace_.states();
+            result=logicalWorkspace_.apply(request);
+            if(!result.accepted)failure=result.error;
+            else {
+                failure=armix::session::NativeMixerSessionStore(
+                    settingsDirectory()).commit(logicalWorkspace_.document(),
+                                                 logicalWorkspace_.states());
+                if(failure.isNotEmpty()) {
+                    // Disk failure is NOT an accepted edit. Restore the
+                    // original roster/FX blobs before any later readback.
+                    if(!logicalWorkspace_.load(original,blobs))
+                        diagnostics_.record("LOGICAL_MIXER_ROLLBACK_FAILED",
+                            "Rejected persistence write");
+                } else {
+                    mixerSessionId_=logicalWorkspace_.document().id;
+                    mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
+                    mixerSessionRecoveryPending_=false;
+                }
+            }
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",id);
+        ack->setProperty("status",failure.isEmpty()?"ACCEPTED":"REJECTED");
+        ack->setProperty("errorCode",failure.isEmpty()?"NONE":failure);
+        ack->setProperty("revision",
+            juce::String(std::to_string(logicalWorkspace_.revision())));
+        ack->setProperty("createdId",result.createdId);
+        ack->setProperty("physicalOutputAdmitted",false);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixLogicalAck",
+                                                 juce::var(ack.release()));
+        // No optimistic same-handler snapshot: browser SUBSCRIBE after ACK.
+    }
+
     juce::var approvedNativeSnapshot (const juce::var& live)
     {
         auto accepted=armix::native_console_m2::snapshot (
@@ -1036,6 +1118,15 @@ private:
             (void) armix::console::projectRetainedNativeChannelIdGraph (accepted, live);
         // Sole control-thread SessionSnapshot from the installed PCM publisher.
         armix::console::publishAuthoritativeMixerSession(accepted);
+        ensureLogicalWorkspace();
+        const auto caps=accepted.getProperty("graph",{})
+            .getProperty("capabilities",{});
+        if(!static_cast<bool>(caps.getProperty("callbackOwnsChannelIds",false))) {
+            // Separate field: physical graph remains truthful/unadmitted.
+            // Browsers may render this only as an explicitly unbound editor.
+            accepted.getDynamicObject()->setProperty("logicalMixer",
+                                                     logicalWorkspace_.snapshot());
+        }
         if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
@@ -2567,6 +2658,22 @@ private:
 
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={}) {
         const bool automatic=exportFile==juce::File{};
+        ensureLogicalWorkspace();
+        const auto live=engine_.status().getProperty("dryRoutingLab",{});
+        if(!static_cast<bool>(live.getProperty("nativeChannelIdPcmActive",false))) {
+            // True no-device save: never synthesize a physical output
+            // binding merely to satisfy .smix file serialization.
+            const auto& doc=logicalWorkspace_.document();
+            const auto& states=logicalWorkspace_.states();
+            if(!automatic) {
+                const auto error=armix::session::NativeMixerSessionStore::writeFile(
+                    exportFile,doc,states);
+                emitMixerSessionAck("SAVE",error);
+                return error;
+            }
+            return armix::session::NativeMixerSessionStore(
+                settingsDirectory()).commit(doc,states);
+        }
         if(automatic&&mixerSessionRecoveryPending_)
             return "The retained mixer checkpoint is awaiting a verified device";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_||
