@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
-#include <juce_gui_extra/juce_gui_extra.h>
+#include <juce_core/juce_core.h>
 #include <algorithm>
 #include <functional>
 #include <vector>
@@ -256,7 +256,8 @@ private:
         if(content.getNumBytesAsUTF8()>128*1024)return;
         const auto doc=juce::JSON::parse(content);
         if(doc.getProperty("schema","").toString()!="arsonmix.hotkey-registry.v1")return;
-        const auto* rows=doc.getProperty("entries",{}).getArray();
+        const auto entriesValue=doc.getProperty("entries",{});
+        const auto* rows=entriesValue.getArray();
         if(!rows || rows->size()>256)return;
         std::vector<Mapping> read;
         for(const auto& row:*rows) {
