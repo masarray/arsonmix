@@ -1057,8 +1057,11 @@ private:
         const auto snapshot=approvedNativeSnapshot(engine_.status());
         const auto capabilities=snapshot.getProperty("graph",{})
             .getProperty("capabilities",{});
+        const auto sessionAuthority=snapshot.getProperty("mixerSession",{})
+            .getProperty("authority","").toString();
         const bool physical=static_cast<bool>(
-            capabilities.getProperty("callbackOwnsChannelIds",false));
+            capabilities.getProperty("callbackOwnsChannelIds",false)) ||
+            sessionAuthority=="M4" || sessionAuthority=="CHANNEL_ID";
         if(!supportedId || replay || physical || audioDeviceApplyActive_ ||
            nativeShowBusy_ || studioBackupBusy_ || engine_.isGraphSwitchPending()) {
             failure=!supportedId?"INVALID_LOGICAL_REQUEST":
