@@ -95,6 +95,11 @@ on:
         type: boolean
         required: false
         default: false
+      focused_harmony_fat:
+        description: "Isolated Harmonice FAT only: full app + relevant native PCM/ASIO/RT tests; not full release qualification"
+        type: boolean
+        required: false
+        default: false
       expected_sha:
         description: "Immutable source SHA for ChatGPT milestone"
         type: string
@@ -163,6 +168,11 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: windows-2022
     timeout-minutes: 50
+    env:
+      # Owner-dispatched FAT on an isolated Harmony-only PR can skip
+      # compiling unrelated CTest executables, never the actual JUCE GUI.
+      # Main/release builds and every generic native milestone remain full.
+      FOCUSED_HARMONY_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true && inputs.focused_harmony_fat == true }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -248,10 +258,72 @@ jobs:
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
+      # Manual, scope-authorized Harmonice field FAT must compile the REAL
+      # app plus DSP/PCM/ASIO boundary probes, not 70+ unrelated fixtures.
+      # The CTest phase took ~8 sec in a full 80-test Windows run while its
+      # full compilation took ~18 min. This is a build cost optimization,
+      # NOT permission to skip the full CTest gate before release.
+      - name: Build actual JUCE app and focused Harmonice native tests
+        if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
+        shell: pwsh
+        run: |
+          $targets = @(
+            'ARMixConsole'
+            'ARMixHarmonyOfflineAb'
+            'ARMixHarmonyPitchSyncTests'
+            'ARMixHarmonySpatialTests'
+            'ARMixHarmonyDspTests'
+            'ARMixHarmonyCpuProfileTests'
+            'ARMixHarmonyMusicGuideTests'
+            'ARMixHarmonyChannelPcmTests'
+            'ARMixHarmonyBypassPcmTests'
+            'ARMixProductionRenderAuditTests'
+            'ARMixCrackleWindowTests'
+            'ARMixNativeMixerSessionTests'
+            'ARMixLiveChannelFxTests'
+          )
+          & cmake --build build --config Release --parallel 2 --target $targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "HARMONY_FAT_NATIVE_TARGETS=$($targets.Count) SOURCE_SHA=$env:GITHUB_SHA"
+
       - name: Build executable and native RT tests
-        # Build the default CMake graph so every registered CTest executable is built.
+        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}
+        # Full build remains mandatory for main, release and native/full requests.
         run: cmake --build build --config Release --parallel 2
+      - name: Test focused Harmonice PCM and ASIO boundary (NOT full CTest)
+        if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
+        shell: pwsh
+        run: |
+          $requiredTests = @(
+            'NativeHarmonyOfflineDryAndABRenderHarness'
+            'NativeHarmonyPitchSynchronousFormantCandidateAndBlockParity'
+            'NativeHarmonyBackingStageSpatialDepthAndMonoPDC'
+            'NativeHarmonyMultivoicePitchAndRealtimeFinitePCM'
+            'NativeHarmonySyntheticCallbackCpuProfile'
+            'NativeHarmonyCrossChannelMusicKeyAndManualFallback'
+            'NativeHarmonyMusicFromOtherChannelIdAndStateMigration'
+            'NativeHarmonyWarmBypassRackSlotAndLatencyParity'
+            'ApprovedNativeHarmonyEditorAckAndSingleGui'
+            'M3ActualProductionRenderPathAndFailSilentCounters'
+            'P0PreMarkerFiveSecondEvidenceWindow'
+            'P1FPhysicalPortToNativeMasterAndEpochGuard'
+            'P1HRealNativePerChannelFxAndSafeRetirement'
+          )
+          # GitHub/CTest can exit 0 when -R matches zero tests. Fail closed
+          # if a refactor renamed a test without updating this focused lane.
+          $catalog = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to read native CTest catalog' }
+          $available = @($catalog.tests | ForEach-Object { $_.name })
+          $missing = @($requiredTests | Where-Object { $_ -notin $available })
+          if ($missing.Count -ne 0) {
+            throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
+          }
+          $pattern = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
+          Write-Host "FOCUSED_HARMONY_FAT_CTEST_COUNT=$($requiredTests.Count) FULL_SUITE_NOT_CLAIMED"
+          & ctest --test-dir build -C Release --output-on-failure -R $pattern
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test realtime control primitives
+        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}

@@ -70,12 +70,24 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
 });
 
-test('Windows builds the default CMake graph before running all CTests', () => {
+test('Full native/release qualification retains all CTests; isolated Harmonice FAT compiles only its verified targets', () => {
   assert.match(native, /-DBUILD_TESTING=ON/);
-  const build = native.indexOf('run: cmake --build build --config Release --parallel 2');
-  const ctest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
-  assert.ok(build >= 0 && ctest > build, 'Build all default targets before CTest');
-  assert.doesNotMatch(native, /cmake --build [^\r\n]*--target\b/);
+  const fullBuild = native.indexOf('run: cmake --build build --config Release --parallel 2');
+  const fullCTest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
+  assert.ok(fullBuild >= 0 && fullCTest > fullBuild,
+    'Full CTest still requires the default all-target CMake build');
+  assert.match(native, /focused_harmony_fat:/);
+  assert.match(native, /FOCUSED_HARMONY_FAT: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true && inputs\.focused_harmony_fat == true \}\}/);
+  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT != 'true' \}\}/);
+  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT == 'true' \}\}/);
+  assert.match(native, /cmake --build build --config Release --parallel 2 --target \$targets/);
+  assert.match(native, /'ARMixConsole'/);
+  assert.match(native, /'ARMixHarmonyDspTests'/);
+  assert.match(native, /'ARMixHarmonyChannelPcmTests'/);
+  assert.match(native, /'ARMixNativeMixerSessionTests'/);
+  assert.match(native, /'ARMixCrackleWindowTests'/);
+  assert.match(native, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
+  assert.match(native, /FULL_SUITE_NOT_CLAIMED/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
