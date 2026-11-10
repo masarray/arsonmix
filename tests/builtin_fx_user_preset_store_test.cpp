@@ -46,6 +46,7 @@ static BuiltInFxUserPreset eq() {
         object({{"bands",bands}})};
 }
 int main() {
+  try {
     const auto testRoot=juce::File::getSpecialLocation(
        juce::File::tempDirectory).getChildFile(
            "ArSonMix-Preset-CTest-"+juce::Uuid().toDashedString());
@@ -134,9 +135,10 @@ int main() {
     const auto path=testRoot.getChildFile("BuiltInFxPresets")
         .getChildFile("harmonice").getChildFile(saved.id+".armixfx");
     REQUIRE(path.existsAsFile());
-    auto json=path.loadFileAsString();
-    REQUIRE(path.replaceWithText(json.replace("\"sha256\":\"",
-                                            "\"sha256\":\"deadbeef")));
+    auto tampered=juce::JSON::parse(path.loadFileAsString());
+    REQUIRE(tampered.isObject());
+    tampered.getDynamicObject()->setProperty("sha256","deadbeef");
+    REQUIRE(path.replaceWithText(juce::JSON::toString(tampered,false)));
     REQUIRE(store.read(saved.catalogId,saved.id,readback).isNotEmpty());
     REQUIRE(store.enumerate(saved.catalogId).empty());
     // Corruption must not bypass either quota or name collision checks.
@@ -155,4 +157,12 @@ int main() {
     REQUIRE(store.enumerate(comp().catalogId).empty());
     std::cout<<"Shared per-built-in FX preset store: EQ/Comp/Harmony/Throw "
              <<"native typed disk roundtrip, corruption and rollback PASS\n";
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr<<"PRESET_CTEST_REJECTED: "<<e.what()<<'\n';
+    return 1;
+  } catch (...) {
+    std::cerr<<"PRESET_CTEST_REJECTED: unknown error"<<'\n';
+    return 2;
+  }
 }
