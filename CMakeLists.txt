@@ -6,9 +6,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT DEFINED JUCE_ROOT)
   message(FATAL_ERROR "Pass -DJUCE_ROOT=C:/path/to/JUCE (8.0.15+ required)")
 endif()
-add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# JUCE 8.0.15 WaveShell class indices move after setHostContext.
+# Apply audited upstream 3fa28d0 ordering correction before compilation.
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/patch_juce_vst3_waveshell.py"
+            --juce-root "${JUCE_ROOT}"
+    RESULT_VARIABLE ARMIX_WAVESHELL_PATCH_RESULT
+    OUTPUT_VARIABLE ARMIX_WAVESHELL_PATCH_MESSAGE
+    ERROR_VARIABLE ARMIX_WAVESHELL_PATCH_ERROR)
+if(NOT ARMIX_WAVESHELL_PATCH_RESULT EQUAL 0)
+  message(FATAL_ERROR "JUCE WaveShell VST3 host fix not verified: ${ARMIX_WAVESHELL_PATCH_ERROR}")
+endif()
+message(STATUS "${ARMIX_WAVESHELL_PATCH_MESSAGE}")
+add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
 # The independent exact-byte verifier must use the SAME Python interpreter
 # selected by CMake to generate compressed favicon/PNG resources (Windows
 # runners can have several Python versions with different zlib builds).
@@ -276,6 +287,16 @@ if(BUILD_TESTING)
       juce::juce_audio_devices juce::juce_recommended_config_flags)
   target_compile_features(ARMixDeviceApplyCoordinatorTests PRIVATE cxx_std_20)
   add_test(NAME NativeDeviceApplyPinValidationAndRollbackEvidence COMMAND ARMixDeviceApplyCoordinatorTests)
+  juce_add_console_app(ARMixVst3StartupSafetyTests PRODUCT_NAME "ArSonMix Waves VST3 Identity and Recovery Tests")
+  target_sources(ARMixVst3StartupSafetyTests PRIVATE
+      tests/vst3_waves_identity_startup_test.cpp
+      src/Vst3DescriptionCache.h src/StartupVst3RecoveryGuard.h)
+  target_link_libraries(ARMixVst3StartupSafetyTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixVst3StartupSafetyTests PRIVATE cxx_std_20)
+  add_test(NAME WavesVst3IdentityAndStartupCrashRecovery COMMAND ARMixVst3StartupSafetyTests)
+  add_test(NAME Vst3WaveShellHostContextOrderingFixture
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_waveshell_juce_patch.py")
   add_executable(ARMixLiveRoutingEpochTests tests/live_port_epoch_publisher_test.cpp)
   target_compile_features(ARMixLiveRoutingEpochTests PRIVATE cxx_std_20)
   add_test(NAME P1ELivePortGenerationRevisionAndRealtimeRetirement COMMAND ARMixLiveRoutingEpochTests)

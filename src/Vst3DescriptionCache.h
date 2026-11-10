@@ -13,20 +13,35 @@ class DescriptionCache final {
 public:
     using Descriptions=juce::OwnedArray<juce::PluginDescription>;
 
+    // WaveShell can expose hundreds of classes from the same module.
+    // Enumeration index and JUCE's 32-bit UID alone cannot disambiguate.
+    // Reject all ambiguous matches rather than load a different product.
+    static std::optional<juce::PluginDescription> choose(
+            const Descriptions& descriptions,int uid,
+            const juce::String& name={}) {
+        const juce::PluginDescription* selected=nullptr;
+        for(const auto* item:descriptions) {
+            if(!item||item->isInstrument||item->uniqueId!=uid||
+               (name.isNotEmpty()&&!item->name.equalsIgnoreCase(name)))continue;
+            if(selected)return {};
+            selected=item;
+        }
+        return selected?std::optional<juce::PluginDescription>(*selected):std::nullopt;
+    }
+
     static std::optional<juce::PluginDescription> resolve(
-            juce::AudioPluginFormat& format,const juce::String& path,int uid) {
+            juce::AudioPluginFormat& format,const juce::String& path,int uid,
+            const juce::String& expectedName={}) {
         if(!format.fileMightContainThisPluginType(path))return {};
         DescriptionCache cache;
-        if(auto saved=cache.find(path,uid))return saved;
+        if(auto saved=cache.find(path,uid,expectedName))return saved;
         const auto stamp=moduleStamp(juce::File(path));
         Descriptions discovered;
         format.findAllTypesForFile(discovered,path);
         // A module updated while scanning must not seed a warm cache.
         if(stamp.isNotEmpty()&&stamp==moduleStamp(juce::File(path)))
             cache.remember(discovered);
-        for(const auto* item:discovered)
-            if(item && item->uniqueId==uid && !item->isInstrument)return *item;
-        return {};
+        return choose(discovered,uid,expectedName);
     }
 
     explicit DescriptionCache(juce::File root=storage::PortableWorkspace::machineDataRoot()
@@ -50,11 +65,10 @@ public:
         }
     }
 
-    std::optional<juce::PluginDescription> find(const juce::String& path,int uid) const {
+    std::optional<juce::PluginDescription> find(const juce::String& path,int uid,
+            const juce::String& name={}) const {
         const auto descriptions=read(path);
-        for(const auto* item:descriptions)
-            if(item->uniqueId==uid && !item->isInstrument)return *item;
-        return {};
+        return choose(descriptions,uid,name);
     }
 
     Descriptions read(const juce::String& path) const {
