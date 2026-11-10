@@ -134,7 +134,7 @@ jobs:
     needs: quick
     # Run dedicated Vocal Throw visual validation in the reconciled native
     # engine branch too; generic /preview/ smoke does not call this fixture.
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'feature/vocal-throw-m15-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
