@@ -25,6 +25,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_pitch_synchronous_test.cpp -o /tmp/arson-harmony-psola
           /tmp/arson-harmony-psola
+      - name: Prove low-register 65 Hz causal lookback and reject unsafe 16 ms claim
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_low_register_quality_gate_test.cpp -o /tmp/harmonice-low-singer
+          /tmp/harmonice-low-singer
       - name: Compile and run complete engine dry, pitch, stereo and graph-independent PCM fixtures
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tests/harmony_dsp_test.cpp -o /tmp/arson-harmony-engine
