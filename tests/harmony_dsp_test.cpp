@@ -137,6 +137,40 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// Octave harmonics can become louder than the true F0 in a busy chorus.
+// Two noisy analyses must not reset five active backing PSOLA windows;
+// a genuine sustained octave jump must still converge in bounded time.
+static void testPeriodContinuityOnLoudOctaveErrors(){
+    PeriodContinuity tracker;
+    need(tracker.current()==0.f,"new tracker not silent");
+    need(tracker.observe(std::nanf(""))==0.f,
+         "invalid octave period acquired");
+    const float established=tracker.observe(218.f);
+    need(established==218.f,"initial F0 period not acquired");
+    for(int i=0;i<2;++i){
+        need(tracker.observe(109.f)==established,
+             "one/two spurious octave hops retuned singer");
+    }
+    need(!tracker.transitioning(),
+         "short octave error entered period-transition state");
+    need(std::abs(tracker.observe(218.5f)-established)<1.f,
+         "return to original vowel failed");
+    float previous=tracker.current();
+    for(int hop=0;hop<18;++hop){
+        const float next=tracker.observe(109.f);
+        need(std::isfinite(next)&&next>8.f&&next<=previous*1.001f,
+             "accepted octave caused nonmonotone/unbounded source period");
+        need(previous-next<=previous*.111f,
+             "source-period leap would abruptly retime PSOLA grains");
+        previous=next;
+    }
+    need(std::abs(tracker.current()-109.f)<7.f,
+         "real sustained octave did not converge");
+    tracker.reset();
+    need(tracker.current()==0.f&&!tracker.transitioning(),
+         "new singer phrase inherited stale source period");
+}
+
 // Stress the USER failure shape: a long 5Hz/70-cent vibrato under
 // chorus-level gain with short noisy consonants. Dry/Wet are checked using
 // the actual native Engine; fixture is NOT an ASIO or human-likeness claim.
@@ -211,6 +245,7 @@ static void testLoudVibratoContinuity(){
 }
 
 int main(){
+  testPeriodContinuityOnLoudOctaveErrors();
   testLoudVibratoContinuity();
   testLeadTune();
   testVoicePlanner();
