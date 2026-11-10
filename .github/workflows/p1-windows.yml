@@ -318,67 +318,7 @@ jobs:
           if ($missing.Count -ne 0) {
             throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
           }
-          $pattern = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')
-      - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install Inno Setup 6 compiler if missing
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
-              -not (Test-Path -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
-            choco install innosetup --yes --no-progress --limit-output
-            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compiler installation failed' }
-          }
-      - name: Compile and validate per-user Windows RC installer from exact FAT PE
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # One opt-in exact-SHA FAT: genuine published alpha.4 -> alpha.5 ->
-      # alpha.4 rollback, always on a disposable GitHub Windows runner.
-      # Never executed by ordinary PR/push, never on a user's workstation.
-      - name: Prove two authentic historical Inno releases upgrade and roll back
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        shell: pwsh
-        run: |
-          & ./scripts/test_two_genuine_inno_releases_windows.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        with:
-          name: ArSonMix-Windows-Installer-Preview-${{ github.run_id }}
-          path: installer-output/
-          if-no-files-found: error
-          retention-days: 14
-      # Optional manual FAT only: never churn experimental ZIPs per commit.
-      # Preview artifact is build/installer verified. Owner physical listening is field evidence,
-      # distinct from automated exact-SHA hardware performance certification.
-      - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
-        with:
-          name: ArSonMix-Windows-FAT-Preview-${{ github.run_id }}
-          path: dist/
-          if-no-files-found: error
-          retention-days: 14
-
+          $pattern = '^(' + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
           Write-Host "FOCUSED_HARMONY_FAT_CTEST_COUNT=$($requiredTests.Count) FULL_SUITE_NOT_CLAIMED"
           & ctest --test-dir build -C Release --output-on-failure -R $pattern
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
