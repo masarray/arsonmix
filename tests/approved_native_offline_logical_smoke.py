@@ -70,6 +70,24 @@ def snapshot(revision="1",extra=False,source_only=False):
     return raw
 
 
+def retained_snapshot(stale_scalar=False):
+    """True PCM-retained readback, not a fabricated admitted audio device."""
+    raw=snapshot(revision="2",extra=True)
+    raw["device"]["epoch"]="69"
+    raw["graph"]=copy.deepcopy(raw["logicalMixer"]["graph"])
+    raw["graph"]["bindingState"]="NEEDS_REMAP"
+    raw["graph"]["capabilities"]["callbackOwnsChannelIds"]=False
+    raw["graph"]["capabilities"]["supportedOps"]=[]
+    raw["mixerSession"]={"authority":"CHANNEL_ID",
+        "bindingState":"NEEDS_REMAP","deviceEpoch":"69",
+        "routeRevision":"2","rosterRevision":"2",
+        "channels":copy.deepcopy(raw["graph"]["channels"])}
+    if stale_scalar:
+        # Same ChannelId graph generation, newer unsaved physical fader.
+        raw["graph"]["channels"][0]["controls"]["faderDb"]=-7
+    return raw
+
+
 def emit(page, name, data):
     page.evaluate("([n,d])=>window.__nativeListeners.get(n)?.(d)",[name,data])
 
@@ -155,8 +173,30 @@ def main():
             t=>t.name==='Track 16')?.output""")=="SOURCE ONLY (No Main)"
         assert page.locator("#addTrack").is_enabled()
         assert not errors,errors
+        page.close()
+        # Device-loss boundary: the retained PCM graph may still carry a
+        # newer scalar at IDENTICAL topology revision. It must never
+        # authorize editing an outdated disk mirror or report PCM admitted.
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        page.on("pageerror",lambda error:errors.append(str(error)))
+        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+          window.__JUCE__={backend:{
+             emitEvent(name,payload){window.__events.push({name,payload});},
+             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+          }};""")
+        page.goto((out/"index.html").as_uri())
+        page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+        emit(page,"arMixConsoleSnapshot",retained_snapshot())
+        page.wait_for_function("""()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'""")
+        assert page.locator("#addTrack").is_enabled()
+        emit(page,"arMixConsoleSnapshot",retained_snapshot(stale_scalar=True))
+        page.wait_for_function("""()=>document.querySelector('#addTrack').disabled""")
+        assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")!="logical-editable"
+        assert page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').length""")==0
+        assert not errors,errors
         browser.close()
-    print("PASS native compiled GUI: no hardware, track edit, ACK-only freeze, WIRE source-only readback")
+    print("PASS native compiled GUI: offline ACK, WIRE SOURCE ONLY and retained scalar mismatch fail-closed")
 
 
 if __name__=="__main__":
