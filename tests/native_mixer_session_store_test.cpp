@@ -1001,6 +1001,85 @@ static void verifyLogicalControlTransactions() {
     assert(folder.deleteRecursively());
 }
 
+// H1: a saved VST3 Power mapping survives a real .smix Save/Open and the
+// restored native FX lease keeps the EXACT token. A plugin replaced at that
+// slot cannot inherit the shortcut. Legacy files omit instanceId completely.
+static void verifyDurableNativeFxPowerIdentity() {
+    using FxOwner=armix::mixer::LiveChannelFxGraph::FxInstance;
+    auto doc=makeSession();
+    auto rows=doc.roster.channels();
+    for(auto& channel:rows)
+        if(channel.id.value==5)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(doc.roster.restoreExact(doc.acceptedRevision,rows));
+
+    StoredInsert saved;
+    saved.channel={5};saved.slot=0;
+    saved.catalogId="fixture.vst3.power";
+    saved.name="Power Fixture";
+    saved.sha256=juce::String::repeatedString("0123456789abcdef",4);
+    saved.bypass=true;
+    // An ID comes from the native control owner, NOT the .smix file name,
+    // catalog identity, user-facing FX label or slot ordinal.
+    saved.instanceId="g5c-724";
+    doc.inserts.push_back(saved);
+    doc.hotkeys.push_back({"power-hotkey","SESSION",doc.id,"5",
+        "SET_FX_SLOT_BYPASS",0x76,6,0,saved.instanceId});
+
+    const auto durable=Codec::encode(doc);
+    MixerSessionDocument reopened;
+    assert(Codec::decode(durable,reopened));
+    assert(reopened.inserts.size()==1&&reopened.hotkeys.size()==1);
+    assert(reopened.inserts[0].instanceId=="g5c-724");
+    assert(reopened.hotkeys[0].insertId==reopened.inserts[0].instanceId);
+    assert(Codec::encode(reopened)==durable);
+    // No vendor DSP is invoked in this fixture: construction and identity
+    // reservation are CONTROL-thread state only.
+    FxOwner restored(nullptr,"fixture.vst3.power","Power Fixture",64,
+        reopened.inserts[0].instanceId);
+    assert(restored.instanceId==reopened.hotkeys[0].insertId);
+    FxOwner next(nullptr,"fixture.vst3.power","Next Insert",64);
+    assert(next.instanceId.startsWith("g5c-"));
+    assert(next.instanceId.substring(4).getLargeIntValue()>724);
+
+    auto invalid=juce::JSON::parse(durable);
+    auto inserts=invalid.getProperty("inserts",{});
+    assert(inserts.isArray());
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","g5c-0");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","not-native-token");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId",juce::var(24));
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+
+    // A second channel must not claim the same native FX instance identity.
+    auto duplicate=doc;
+    auto second=saved;second.channel={6};
+    duplicate.inserts.push_back(second);
+    auto withSecond=duplicate.roster.channels();
+    for(auto& channel:withSecond)
+        if(channel.id.value==6)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(duplicate.roster.restoreExact(duplicate.acceptedRevision,withSecond));
+    assert(!Codec::decode(Codec::encode(duplicate),reopened));
+
+    // Older .smix files containing vendor blobs but no native FX token decode
+    // normally; adding durable identity does not force a schema bump.
+    auto legacy=doc;
+    legacy.inserts[0].instanceId.clear();
+    legacy.hotkeys.clear();
+    const auto old=Codec::encode(legacy);
+    assert(Codec::decode(old,reopened));
+    assert(reopened.inserts[0].instanceId.isEmpty());
+}
+
 static void verifyHotkeyDocumentIdentityAndMigration() {
     auto doc=makeSession();
     const auto legacy=Codec::encode(doc);
@@ -1062,6 +1141,7 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
 }
 
 int main(){
+    verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
     verifyLogicalControlTransactions();
     verifyLegacyHarmoniceSessionName();
