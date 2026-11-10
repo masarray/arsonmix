@@ -224,10 +224,12 @@ public:
     juce::var snapshot() const {
         auto graph=object(),cap=object();
         set(cap,"callbackOwnsChannelIds",false);
-        set(cap,"supportedOps",juce::var(juce::StringArray{
-            "CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP","REMOVE_BUS",
-            "RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE","SET_SOLO",
-            "SET_PROCESSING_FORMAT","WIRE_TRANSACTION","ADD_FX_REFERENCE"}.toArray()));
+        juce::Array<juce::var> operations;
+        for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
+            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
+            "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
+            "ADD_FX_REFERENCE"})operations.add(juce::String(op));
+        set(cap,"supportedOps",juce::var(operations));
         set(cap,"dynamicChannels",true);set(cap,"groups",true);
         set(cap,"fxReturns",true);set(cap,"monitor",false);
         juce::Array<juce::var> rows,edges,destinations;
