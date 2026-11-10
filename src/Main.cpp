@@ -1300,6 +1300,15 @@ private:
                                 found=true;
                     }
                     if(!found)error="HOTKEY_CHANNEL_NOT_ADMITTED";
+                    const auto operation=supplied.getProperty("operation","").toString();
+                    const auto ops=caps.getProperty("supportedOps",{});
+                    const auto* allowed=ops.getArray();
+                    if(error.isEmpty() &&
+                       (operation!="SET_MUTE" && operation!="SET_SOLO"))
+                        error="HOTKEY_ACTION_UNSUPPORTED";
+                    if(error.isEmpty() &&
+                       (!allowed || !allowed->contains(juce::var(operation))))
+                        error="HOTKEY_ACTION_NOT_ADMITTED";
                     if(error.isEmpty()) {
                         if(mixerSessionId_.isEmpty())
                             mixerSessionId_=juce::Uuid().toDashedString().toLowerCase();
