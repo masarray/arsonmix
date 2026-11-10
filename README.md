@@ -15,18 +15,20 @@
 
 ## Download — current public preview
 
-**Latest published release: [v0.5.0-alpha.9](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.9), 10 November 2026.** It is an **alpha field-test build**, not a stable production release.
+**Latest published release: [v0.5.0-alpha.10](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.10), 10 November 2026.** It is an **alpha field-test build**, not a stable production release.
 
 | System | Official package | Release |
 | --- | --- | --- |
-| **Windows 10/11 x64** | **[Download Setup EXE](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/ArSonMix-v0.5.0-alpha.9-Windows-x64-Setup.exe)** | **alpha.9 — current** |
-| Windows x64, portable | [Download Portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/ArSonMix-v0.5.0-alpha.9-Windows-x64-Portable.zip) | alpha.9 |
+| **Windows 10/11 x64** | **[Download Setup EXE](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/ArSonMix-v0.5.0-alpha.10-Windows-x64-Setup.exe)** | **alpha.10 — current** |
+| Windows x64, portable | [Download Portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/ArSonMix-v0.5.0-alpha.10-Windows-x64-Portable.zip) | alpha.10 |
 | Linux x86_64 | [Download tar.gz](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-Linux-x86_64.tar.gz) | **alpha.5 — older build** |
 | macOS universal | [Download DMG](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-macOS-universal.dmg) | **alpha.5 — older build** |
 
-These are actual uploaded release assets, not CI-only artifacts. **Windows Setup EXE is the recommended one-click download**; the installer ZIP is a fallback. The [website download selector](https://masarray.github.io/arsonmix/#download) checks GitHub Releases and verified SHA-256/provenance metadata and chooses the newest *available package for each operating system*. A newer Windows-only release does not imply that Linux/macOS have been updated. Download and compare [alpha.9 SHA256SUMS.txt](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.9/SHA256SUMS.txt) before installation.
+These are actual uploaded release assets, not CI-only artifacts. **Windows Setup EXE is the recommended one-click download**; the installer ZIP is a fallback. The [website download selector](https://masarray.github.io/arsonmix/#download) checks GitHub Releases and verified SHA-256/provenance metadata and chooses the newest *available package for each operating system*. A newer Windows-only release does not imply that Linux/macOS have been updated. Download and compare [alpha.10 SHA256SUMS.txt](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/SHA256SUMS.txt) before installation.
 
-## What's in Windows alpha.9
+## What's in Windows alpha.10
+
+This build aligns the shipped native logical mixer milestone with its now-merged [PR #513](https://github.com/masarray/arsonmix/pull/513). The previous preview had shipped early from a separate release branch; alpha.10 is freshly compiled and tested from merged `main`.
 
 - **Native logical mixer sessions:** add, rename and edit channels and buses, WIRE / SOURCE ONLY routing, and rack configuration even before an audio device is connected. The app preserves `.smix` Save/Open with native revision checks and durable readback. **Offline edit does not generate or certify live PCM.**
 - **Live engine recovery:** a previously bound ASIO mixer can recover when the registered driver and playback pins are verified. Saved capture-patch choices are preserved if pins are missing; there is no claim that arbitrary hardware remapping is automatic.
@@ -34,7 +36,7 @@ These are actual uploaded release assets, not CI-only artifacts. **Windows Setup
 - **ArSon Player:** relink missing songs through a completed folder scan using a unique *full filename*, retaining song identity, KEY and TEMPO.
 - **Desktop workflow:** updated native titlebar and operator-facing status. The approved mixer UI is available as a read-only/simulated browser preview.
 
-See the [alpha.9 release notes](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.9) for detailed scope and test limitations. A green build is **not** proof of physical hardware performance.
+See the [alpha.10 release notes](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.10) for detailed scope and test limitations. A green build is **not** proof of physical hardware performance.
 
 ## Get started
 
@@ -45,9 +47,9 @@ See the [alpha.9 release notes](https://github.com/masarray/arsonmix/releases/ta
 
 ### Field-test limitations
 
-**Not yet certified for unattended or production-critical audio.** Physical ASIO/ASIO4ALL timing, real singer listening, vendor VST3 state, full device-loss behavior and uninterrupted performance still need hardware qualification. Initial hardware binding from a purely offline-created session and continued editing of a previously bound graph after unplugging are limited in alpha.9. If audio is disconnected, reconnect the verified device to resume its previously bound graph. Experimental Harmonice latency changes and Vocal Throw M15 remain outside this release.
+**Not yet certified for unattended or production-critical audio.** Physical ASIO/ASIO4ALL timing, real singer listening, vendor VST3 state, full device-loss behavior and uninterrupted performance still need hardware qualification. Initial hardware binding from a purely offline-created session and continued editing of a previously bound graph after unplugging are limited in alpha.10. If audio is disconnected, reconnect the verified device to resume its previously bound graph. Experimental Harmonice latency changes and Vocal Throw M15 remain outside this release.
 
-Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.9 features.
+Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.10 features.
 
 ## Preview vs real audio
 
@@ -55,7 +57,7 @@ Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.9 featu
 
 ## Source, builds and contribution
 
-The release tag **[v0.5.0-alpha.9](https://github.com/masarray/arsonmix/tree/v0.5.0-alpha.9)** is the authoritative source for that published binary. Development `main` and open draft PRs can have different feature/qualification status; **do not infer that every released alpha.9 change is already merged to `main`**, or that an unmerged experiment is released.
+The release tag **[v0.5.0-alpha.10](https://github.com/masarray/arsonmix/tree/v0.5.0-alpha.10)** is the authoritative source for that published binary. **Alpha.10 rebuilds the merged `main` baseline at [`4aabea90`](https://github.com/masarray/arsonmix/commit/4aabea90263c96014a514c3c42669b6fc0328482)** plus its release-notes commit. Open draft PRs and later `main` commits are not part of this immutable release.
 
 Contributors and development agents must read **[AGENTS.md](AGENTS.md)** and the **[Smart CI workflow](docs/SMART_CI_RUNNER_WORKFLOW.md)**, inspect live `main` plus open PRs, preserve one native JUCE PCM callback and native ChannelId/EdgeId authority, and qualify changes using selective exact-SHA tests. Hardware ASIO testing is separate from automated CI. Website deployment uses one `site/` landing and one assembled `/preview/` on GitHub Pages and Cloudflare Pages, with platform downloads resolved from verified GitHub Release assets. See [Pages publishing](docs/GITHUB_PAGES_PREVIEW.md) and [Cloudflare](docs/CLOUDFLARE_PAGES_BUILD.md).
 
