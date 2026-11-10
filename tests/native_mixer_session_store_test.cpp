@@ -708,6 +708,16 @@ static void verifyOfflineLogicalSessionAndFile() {
     std::vector<BinaryState> states;
     assert(NativeMixerSessionStore::readFile(file,restored,states).isEmpty());
     assert(restored.logicalOnly && states.empty());
+    // The automatic HEAD generation must accept the identical unbound
+    // file; re-open cannot depend on an installed ASIO/WASAPI device.
+    NativeMixerSessionStore liveStore(folder);
+    assert(liveStore.commit(workspace.document(),{}).isEmpty());
+    MixerSessionDocument verifiedHead;
+    std::vector<BinaryState> headStates;
+    assert(liveStore.load(verifiedHead,headStates).isEmpty());
+    assert(verifiedHead.logicalOnly &&
+           verifiedHead.roster.revision()==workspace.revision() &&
+           verifiedHead.binding.playback.isEmpty() && headStates.empty());
     NativeLogicalMixerWorkspace reopened;
     assert(reopened.load(restored));
     assert(reopened.revision()==workspace.revision());
