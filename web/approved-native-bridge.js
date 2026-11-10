@@ -343,8 +343,9 @@
   // Dedicated logical transactions never advertise physical PCM admission.
   // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
   function logicalIntent(operation,channelId,payload={}) {
-    if(!logicalView || pendingLogical)
-      return {ok:false,error:pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
+    if(!logicalView || logicalView.readOnly || pendingLogical)
+      return {ok:false,error:logicalView?.readOnly?"SAVED_MIXER_RECOVERY_REQUIRED":
+        pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
@@ -1027,7 +1028,8 @@
   function canDeleteNativeStrip(track){
     if(logicalView){
       const row=logicalView.graph.channels.find(ch=>ch.id===nativeIdFor(track));
-      return ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
+      return !logicalView.readOnly&&
+        ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
     }
     const current=controller?.state()?.current,id=nativeIdFor(track);
     const ch=current?.graph?.channels?.find(row=>row.id===id);
@@ -1085,7 +1087,8 @@
     return true;
   }
   function canCreateNativeTrack(next){
-    if(logicalView)return logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
+    if(logicalView)return !logicalView.readOnly &&
+      logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
     if(next?.retained)return false;
     if(next?.admitted)
       return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
@@ -2389,6 +2392,7 @@
     if(logicalAvailable) {
       const staged={...next,graph:offline.graph,
         identity:"logical:"+offline.revision,logical:true,
+        readOnly:offline.readOnly===true,
         admitted:false,retained:false,productLive:false,telemetry:{}};
       if(pendingLogical) {
         const p=pendingLogical;
@@ -2425,7 +2429,9 @@
       stopDemo();syncAddTrack(staged);
       const addBus=document.getElementById("addBus");
       if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
-      status("Mixer ready to edit · connect Audio I/O to enable sound");
+      status(staged.readOnly?
+        "Saved mixer recovery required · Open a verified .smix file":
+        "Mixer ready to edit · connect Audio I/O to enable sound");
       return;
     }
     logicalView=null;
