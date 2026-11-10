@@ -7,8 +7,7 @@
   // The public GUI owns one lexical model. Native-only bundle exports a narrow
   // reference to that SAME model; never reconstruct a parallel DOM/DSP.
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
-  const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
-    protocol?.createController && scope?.installGraph && scope?.render);
+  const connected = Boolean(backend?.emitEvent && backend?.addEventListener && protocol);
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -3285,13 +3284,17 @@
     updateHardwarePanel(null);
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
-    backend.emitEvent("arMixGuiReady",{
-      gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
-      visualReady:true,audioReady:false,
-      viewportWidth:Math.round(window.innerWidth),
-      viewportHeight:Math.round(window.innerHeight),
-      devicePixelRatio:window.devicePixelRatio
-    });
+    // A missing compiled Pages/native scope may still expose the contract
+    // listener in tests, but is never admitted as a ready Windows mixer.
+    if(scope?.installGraph && scope?.render){
+      backend.emitEvent("arMixGuiReady",{
+        gui:"APPROVED_PAGES_PREVIEW_BUTTONS",nativeBridgeAttached:true,
+        visualReady:true,audioReady:false,
+        viewportWidth:Math.round(window.innerWidth),
+        viewportHeight:Math.round(window.innerHeight),
+        devicePixelRatio:window.devicePixelRatio
+      });
+    } else status("Native mixer renderer unavailable · reinstall or repair application");
     controller.subscribe();
   };
   if(document.readyState==="loading")
