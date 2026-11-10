@@ -280,7 +280,20 @@ int main(int argc,char** argv){
                      process(v,s,true,127,true,true,true)))return 3;
             if(!same(process(v,s,true,127,false),
                      process(v,s,true,127,true)))return 4;
-            std::cout<<"Offline native A/B test passed (synthetic only)\n";
+            // A/B WAVs must be objectively aligned before a singer compares
+            // latency candidates; false dry timing differences bias listening.
+            const auto dry32=process(v,s,true);
+            const int baselineFrames=2*static_cast<int>(std::round(v.rate*.016));
+            for(int ms:{24,16}){
+                const auto shorter=process(v,s,true,127,true,true,true,ms);
+                const int shorterFrames=2*static_cast<int>(std::round(
+                    v.rate*static_cast<double>(ms)/2000.));
+                const auto aligned=delayedCopy(shorter,baselineFrames-shorterFrames);
+                if(alignedDifferenceRms(dry32,aligned,baselineFrames+256)>1.e-7)
+                    return 6;
+            }
+            std::cout<<"Offline native A/B and candidate dry alignment passed"
+                         " (synthetic only)\n";
             return 0;
         }
         if(argc==4&&std::string(argv[1])=="--latency-study"){
