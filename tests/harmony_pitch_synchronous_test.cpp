@@ -10,7 +10,8 @@ using Shifter=PitchSynchronousVoice<16384,6>;
 static void need(bool yes,const char* reason){
     if(!yes){std::cerr<<reason<<"\n";std::exit(2);}
 }
-static std::vector<float> render(double rate,double f0,double ratio,int block){
+static std::vector<float> render(double rate,double f0,double ratio,int block,
+                                 double amplitude=1.,double polarity=1.){
     auto p=Shifter{};
     std::array<float,16384> ring{};
     const int n=static_cast<int>(rate*.65);
@@ -19,8 +20,8 @@ static std::vector<float> render(double rate,double f0,double ratio,int block){
         const int t=pos+j;
         const double phase=6.283185307179586*f0*t/rate;
         ring[static_cast<std::size_t>(t)&16383]=static_cast<float>(
-            .19*std::sin(phase)+.052*std::sin(2*phase+.31)+
-            .029*std::sin(3*phase+.17));
+            amplitude*polarity*(.19*std::sin(phase)+
+            .052*std::sin(2*phase+.31)+.029*std::sin(3*phase+.17)));
         const auto sample=p.process(0,t,static_cast<std::size_t>(t)&16383,ring,
             static_cast<float>(rate/f0),static_cast<float>(ratio),
             static_cast<float>(rate*.032));
@@ -68,6 +69,24 @@ int main(){
         const auto result=measuredHz(a,v[0],v[1]*v[2]);
         need(std::abs(result-v[1]*v[2])/(v[1]*v[2])<.024,
              "synchronous target pitch mismatch");
+    }
+    // Previously a hard-coded +0.003V positive epoch threshold made
+    // genuine soft high-register vowels leave the PSOLA output at zero.
+    // Explicitly exercise low-amplitude *negative*-polarity waveforms at
+    // ASIO-shaped block boundaries. These tests measure basic continuity,
+    // not perceived naturalness in an actual sung phrase.
+    for(const double polarity:{-1.,1.}){
+        const auto soft64=render(48000.,1046.502261,1.4,64,.004,polarity);
+        const auto soft257=render(48000.,1046.502261,1.4,257,.004,polarity);
+        need(soft64==soft257,"soft soprano changed with callback partitioning");
+        double energy=0.;int audible=0;
+        for(int i=14400;i<26400;++i){
+            const double x=soft64[static_cast<std::size_t>(i)];
+            energy+=x*x;
+            if(std::abs(x)>1.e-5)++audible;
+        }
+        need(energy>1.e-5&&audible>6000,
+             "soft high vowel lost epochs or became a rapid gated voice");
     }
     // Invalid or truncated source must return cleanly without allocations or
     // producing undefined samples, even after a partially scheduled phrase.
