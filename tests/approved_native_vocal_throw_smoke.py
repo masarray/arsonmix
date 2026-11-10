@@ -361,6 +361,7 @@ def main():
                 tb=trigger.bounding_box();assert tb
                 page.mouse.move(tb["x"]+tb["width"]/2,tb["y"]+tb["height"]/2)
                 page.mouse.down()
+                page.wait_for_timeout(160) # let the 140ms purple ring transition settle
                 pressed=trigger.evaluate("""el=>{
                   const r=el.getBoundingClientRect();
                   return {x:r.x,y:r.y,width:r.width,height:r.height,
