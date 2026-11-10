@@ -137,6 +137,19 @@ int main() {
     fx.id=backing;fx.text="armix.builtin.channel-compressor.v1";
     settings.push_back(fx);
     valid(logical.edit(logical.revision(),settings).accepted());
+    // A saved FX metadata adjustment must update document revision without
+    // touching the underlying DSP fader, pan or ChannelId routing.
+    ChannelEdit meta;
+    meta.kind=ChannelEdit::Kind::touchDocumentRevision;
+    meta.id=backing;
+    const auto beforeMeta=logical.revision();
+    const auto beforeGain=logical.roster().find(backing)->faderLinear;
+    const auto beforePan=logical.roster().find(backing)->pan;
+    valid(logical.edit(beforeMeta,std::span<const ChannelEdit>{&meta,1}).accepted());
+    valid(logical.revision()==beforeMeta+1);
+    valid(logical.roster().find(backing)->faderLinear==beforeGain);
+    valid(logical.roster().find(backing)->pan==beforePan);
+    valid(!logical.edit(beforeMeta,std::span<const ChannelEdit>{&meta,1}).accepted());
     DeviceIndependentMixerSession restored;
     valid(restored.restore(logical.roster()));
     valid(restored.revision()==logical.revision());
