@@ -1025,6 +1025,14 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     auto* rows=hotkeys.getArray();
     assert(rows&&rows->size()==2);
     rows->getReference(0).getDynamicObject()->setProperty("channelId","999999");
+    // Deleting a track does not make the entire mixer unsaveable. The
+    // orphan shortcut remains visible but can never fire for another ID.
+    assert(Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    assert(decoded.hotkeys[0].channelId=="999999");
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","05");
     assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
     damaged=juce::JSON::parse(stable);
     hotkeys=damaged.getProperty("hotkeys",{});
