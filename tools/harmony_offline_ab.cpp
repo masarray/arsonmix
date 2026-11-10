@@ -3,6 +3,7 @@
 // Synthesized self-test is only a build and integrity gate, not an ear-test.
 #include "../engine/builtin_fx/HarmonyDsp.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -310,11 +311,11 @@ static void renderLatencyStudy(const Wave& input,const fs::path& folder){
           <<",\n  \"productionLatencyMs\": "
           <<1000.*baselineDelay/input.rate<<",\n"
           <<"  \"physicalAsioMeasured\": false,\n"
-          <<"  \"humanSingerListeningPassed\": false,\n"
-          <<"  \"experimentalCandidates\": [\n";
+          <<"  \"humanSingerListeningPassed\": false,\n";
     const double baselineBackingRms=rms(subtract(baseline,baselineDry));
     report<<"  \"baselineBackingRms\": "<<baselineBackingRms<<",\n"
-          <<"  \"syntheticFormantsProved\": false,\n";
+          <<"  \"syntheticFormantsProved\": false,\n"
+          <<"  \"experimentalCandidates\": [\n";
     bool first=true;
     for(int ms:{24,16}){
         const int frames=2*static_cast<int>(std::round(
