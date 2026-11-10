@@ -1043,6 +1043,7 @@
     return true;
   }
   function canCreateNativeTrack(next){
+    if(logicalView)return logicalView.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
     if(next?.retained)return false;
     if(next?.admitted)
       return next.graph.capabilities.supportedOps.includes("CREATE_CHANNEL");
@@ -2321,6 +2322,66 @@
     updateHardwarePanel(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
+    const offline=next?.raw?.logicalMixer;
+    // Physical SessionSnapshot remains unadmitted. Render the separately
+    // validated logical C++ document ONLY when hardware is unavailable.
+    // This is not a PCM graph, hardware meter or browser draft.
+    const logicalAvailable=!next.admitted&&!deviceReady() &&
+      offline?.schema==="arsonmix.native.logical-mixer.v1" &&
+      offline.authority==="LOGICAL_ONLY"&&
+      offline.physicalOutputAdmitted===false&&offline.outputArmed===false&&
+      offline.graph?.capabilities?.callbackOwnsChannelIds===false&&
+      protocol.decimal(offline.revision)!==null&&offline.revision!=="0"&&
+      offline.revision===offline.graph?.revision&&
+      offline.revision===offline.graph?.rosterRevision&&
+      Array.isArray(offline.graph?.channels)&&Array.isArray(offline.graph?.edges);
+    if(logicalAvailable) {
+      const staged={...next,graph:offline.graph,
+        identity:"logical:"+offline.revision,logical:true,
+        admitted:false,retained:true,productLive:false,telemetry:{}};
+      if(pendingLogical) {
+        const p=pendingLogical;
+        if(!p.ackRevision)return; // no optimistic pre-ACK projection
+        if(BigInt(offline.revision)<BigInt(p.ackRevision))return;
+        if(!logicalReadbackProves(p,offline.graph)){
+          pendingLogical=null;
+          status("Mixer change not verified · refreshing saved session");
+          controller?.subscribe();
+          return;
+        }
+        pendingLogical=null;
+        if(logicalRenameId===p.channelId&&p.operation==="RENAME_CHANNEL") {
+          logicalRenameId=null;
+          scope?.closeChannelIdentity?.();
+        }
+        status("Mixer changes saved · audio device not connected");
+        window.queueMicrotask(flushLiveScalars);
+      }
+      logicalView=staged;
+      const signature="logical|"+offline.revision+"|"+JSON.stringify(
+        offline.graph.channels.map(ch=>[ch.id,ch.name,ch.controls,ch.inserts,ch.fxRackBypassed]))+
+        "|"+JSON.stringify(offline.graph.edges);
+      if(signature!==lastPaintedSignature) {
+        if(!projectNativeGraphWithoutFocusLoss(staged)){
+          logicalView=null;
+          status("Saved logical mixer readback invalid · controls unchanged");
+          return;
+        }
+        lastPaintedSignature=signature;
+      }
+      document.documentElement.dataset.armixNativeRoster="logical";
+      flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      stopDemo();syncAddTrack(staged);
+      const addBus=document.getElementById("addBus");
+      if(addBus){addBus.hidden=false;addBus.disabled=!!pendingLogical;}
+      status("Mixer ready to edit · connect Audio I/O to enable sound");
+      return;
+    }
+    logicalView=null;
+    if(pendingLogical) {
+      pendingLogical=null;
+      status("Audio connection changed · refresh mixer before editing");
+    }
     if(!session || session.deviceEpoch!==next.device.epoch) {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
@@ -2503,6 +2564,22 @@
       finally{profiler.sample("nativeSnapshotJsMs",performance.now()-started);}
     });
     backend.addEventListener("arMixConsoleAck", ack=>controller.onAck(ack));
+    backend.addEventListener("arMixLogicalAck",ack=>{
+      const pending=pendingLogical;
+      if(!pending||pending.requestId!==ack?.requestId)return;
+      if(ack.status!=="ACCEPTED"||ack.errorCode!=="NONE"||
+         protocol.decimal(ack.revision)===null ||
+         BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
+        pendingLogical=null;
+        status("Mixer edit rejected · previous saved settings retained");
+        controller?.subscribe();
+        return;
+      }
+      pending.ackRevision=ack.revision;
+      pending.createdId=ack.createdId||null;
+      // An ACK does NOT establish readback, let alone PCM.
+      controller?.subscribe();
+    });
     backend.addEventListener("arMixChannelIdentityAck", ack=>{
       if(!pendingIdentity||ack?.requestId!==pendingIdentity.requestId)return;
       if(ack.ok!==true){
