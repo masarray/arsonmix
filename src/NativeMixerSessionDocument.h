@@ -657,8 +657,12 @@ public:
                    !ids.insert(mapping.id).second ||
                    !chords.emplace(mapping.vk,mapping.modifiers).second)return false;
                 std::uint64_t channelId=0;
+                // A removed channel retains an inert stable-id shortcut so
+                // the operator can explicitly remap/delete it. Reject
+                // malformed IDs, never rebind to the same strip ordinal.
                 if(!parseDecimal(juce::var(mapping.channelId),channelId) ||
-                   !doc.roster.find(ChannelId{channelId}))return false;
+                   juce::String(std::to_string(channelId))!=mapping.channelId)
+                    return false;
                 doc.hotkeys.push_back(std::move(mapping));
             }
         }
