@@ -7,11 +7,13 @@
 #include <vector>
 using armix::harmony::PitchSynchronousVoice;
 using Shifter=PitchSynchronousVoice<16384,6>;
+using ReferenceShifter=PitchSynchronousVoice<16384,6,false>;
 static void need(bool yes,const char* reason){
     if(!yes){std::cerr<<reason<<"\n";std::exit(2);}
 }
+template <bool Fast>
 static std::vector<float> render(double rate,double f0,double ratio,int block){
-    auto p=Shifter{};
+    auto p=PitchSynchronousVoice<16384,6,Fast>{};
     std::array<float,16384> ring{};
     const int n=static_cast<int>(rate*.65);
     std::vector<float> out(static_cast<std::size_t>(n));
@@ -60,11 +62,15 @@ int main(){
         {{48000.,82.40689,1.2}},{{96000.,440.,.75}},
         {{192000.,880.,1.4}}
     }}){
-        const auto a=render(v[0],v[1],v[2],64);
-        const auto b=render(v[0],v[1],v[2],257);
+        const auto a=render<true>(v[0],v[1],v[2],64);
+        const auto b=render<true>(v[0],v[1],v[2],257);
+        const auto legacy=render<false>(v[0],v[1],v[2],64);
         need(a.size()==b.size(),"different source length");
-        for(std::size_t i=0;i<a.size();++i)
+        for(std::size_t i=0;i<a.size();++i){
             need(a[i]==b[i],"callback partition changed PSOLA PCM");
+            need(a[i]==legacy[i],
+                 "optimized epoch cursor changed historical PSOLA PCM");
+        }
         const auto result=measuredHz(a,v[0],v[1]*v[2]);
         need(std::abs(result-v[1]*v[2])/(v[1]*v[2])<.024,
              "synchronous target pitch mismatch");
