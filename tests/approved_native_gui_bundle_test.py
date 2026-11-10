@@ -25,7 +25,8 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn('id="armix-native-boot-guard"', native)
             self.assertNotIn('id="armix-native-boot-guard"', approved)
             self.assertIn('data-armix-native-boot="waiting"', native)
-            self.assertIn('nativeBridgeAttached:true', native)
+            self.assertIn('nativeBridgeAttached:true',
+                (out / 'assets/approved-native-bridge.js').read_text('utf-8'))
             self.assertNotIn("__ARMIX_NATIVE_M2__", approved)
             self.assertIn("__ARMIX_NATIVE_M2__", native)
             # Never let a missing ASIO driver or delayed native snapshot
