@@ -1084,9 +1084,15 @@ private:
         if(found && !mixerSessionStartupInspected_)
             mixerSessionRecoveryPending_=true;
         if(error.isEmpty()) {
-            if(found && hotkeys_.activeSession()!=logicalMixer_.workspace().document().id)
-                hotkeys_.activateSession(logicalMixer_.workspace().document().id,
-                    &logicalMixer_.workspace().document().hotkeys);
+            if(found && hotkeys_.activeSession()!=logicalMixer_.workspace().document().id) {
+                const auto& document=logicalMixer_.workspace().document();
+                (void)hotkeys_.activateSession(document.id);
+                // Local shortcut journal is newer than checkpoint on crash.
+                if(hotkeys_.sessionEntries().empty() && !document.hotkeys.empty()) {
+                    const auto issue=hotkeys_.activateSession(document.id,&document.hotkeys);
+                    if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+                }
+            }
             return;
         }
         mixerSessionRecoveryPending_=true;
@@ -2900,7 +2906,11 @@ private:
             (void)logicalMixer_.restoreCheckpoint(doc,states);
         const bool firstBinding=doc.logicalOnly;
         if(firstBinding && !engine_.hasPristineStartupMixer()) {
-            hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+            (void)hotkeys_.activateSession(mixerSessionId_);
+            if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
+                const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+                if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+            }
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="LOGICAL_SESSION_SAVED_UNBOUND";
             return "Saved mixer is offline and awaiting verified device binding";
@@ -2953,7 +2963,11 @@ private:
             return error;
         }
         mixerSessionRecoveryPending_=false;
-        hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+        (void)hotkeys_.activateSession(mixerSessionId_);
+        if(hotkeys_.sessionEntries().empty() && !restoredHotkeys.empty()) {
+            const auto issue=hotkeys_.activateSession(mixerSessionId_,&restoredHotkeys);
+            if(issue.isNotEmpty())diagnostics_.record("HOTKEY_IMPORT_REJECTED",issue);
+        }
         if(resume)requestAutomaticMain(bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
@@ -3083,7 +3097,8 @@ private:
                     if(safe==nullptr)return;
                     if(openError.isEmpty()) {
                         safe->mixerSessionId_=importedId;
-                        safe->hotkeys_.activateSession(importedId,&importedHotkeys);
+                        const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
+                        if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
                         safe->lastMixerFile_=file;
                     }
@@ -3106,7 +3121,8 @@ private:
                     safe->closePluginEditor();
                     safe->stopOrbit();
                     safe->mixerSessionId_=id;
-                    safe->hotkeys_.activateSession(id,&importedHotkeys);
+                    const auto keyError=safe->hotkeys_.activateSession(id,&importedHotkeys);
+                    if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
                     safe->mixerSessionRecoveryPending_=false;
                     safe->lastMixerSessionFingerprint_.clear();
                     safe->mixerSessionStatus_=engine.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
