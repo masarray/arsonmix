@@ -1095,7 +1095,8 @@
     const button=document.getElementById("addTrack");
     if(!button)return;
     const available=canCreateNativeTrack(next);
-    button.disabled=!available || !!pendingBusCreate || !!pendingTrackDelete;
+    button.disabled=!available || !!pendingBusCreate ||
+      !!pendingTrackDelete || !!pendingLogical;
     button.title=available?"Add a stereo audio track routed to MAIN":
       "Connect a verified audio device in Audio I/O to add tracks";
   }
@@ -1375,6 +1376,12 @@
     pendingNativeControl.set(key,edit); // coalesce: last writer always wins
     if(parameter==="faderDb"||parameter==="masterGain")
       liveFaderVisualTargets.set(key,edit);
+    // Offline document changes are not realtime PCM. Persist only the
+    // released target, not one .smix generation per pointer-move frame.
+    if(logicalView){
+      if(final)flushLiveScalars();
+      return true;
+    }
     const last=lastNativeControlSent.get(key);
     if(final||last===undefined||now-last>=30)
       flushLiveScalars(); // pointermove publishes BEFORE pointerup
@@ -2854,7 +2861,7 @@
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
       if(t?.kind!=="audio")return ["None"];
-      if(controller?.state()?.current?.retained)return [t.input||"None"];
+      if(controller?.state()?.current?.retained&&!logicalView)return [t.input||"None"];
       const choices=inputChoicesFor().map(x=>x.label);
       // The native BUS lane is selectable only for display: never invent a
       // hardware pin or promote the internal BUS to a writable physical IN.
@@ -2862,6 +2869,7 @@
       return choices;
     },
     outputChoices(t) {
+      if(logicalView&&t?.kind==="master")return ["Choose audio output"];
       if(t?.kind==="master")
         return [hardware?.retained?NEEDS_REMAP:
           String(hardware?.device?.playbackDevice||t.output||"Choose audio output")];
@@ -2870,7 +2878,8 @@
         // never pretend the demo's other destinations have native PCM.
         const options=["Master","SOURCE ONLY (No Main)"];
         const graph=controller?.state()?.current?.graph;
-        if(mixerSession()?.authority==="CHANNEL_ID"&&graph?.channels)
+        if((logicalView||mixerSession()?.authority==="CHANNEL_ID")&&
+           (logicalView?.graph?.channels||graph?.channels))
           for(const target of nativeOutputTargets(t))options.push(target.label);
         if(t.output&&!options.includes(t.output))options.push(t.output);
         return options;
@@ -2883,7 +2892,7 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
-      if(controller?.state()?.current?.retained){
+      if(controller?.state()?.current?.retained&&!logicalView){
         if(field==="output" && t.kind==="master" && event.type==="change")
           openNativeAudioIO();
         if(field==="level" || field==="pan" || field==="input" || field==="output")
