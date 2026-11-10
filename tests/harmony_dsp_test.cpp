@@ -137,7 +137,81 @@ static void testVoicePlanner(){
   planner.plan(67,0,major);
   need(planner.target(2)!=high,"reset retained previous phrase voicing");
 }
+// Stress the USER failure shape: a long 5Hz/70-cent vibrato under
+// chorus-level gain with short noisy consonants. Dry/Wet are checked using
+// the actual native Engine; fixture is NOT an ASIO or human-likeness claim.
+static void testLoudVibratoContinuity(){
+  constexpr int rate=48000,frames=rate*2;
+  std::vector<float> inL(frames),inR(frames);
+  constexpr double tau=6.283185307179586;
+  double phase=0.;
+  for(int i=0;i<frames;++i){
+    const double t=static_cast<double>(i)/rate;
+    const double vibrato=70.*std::sin(tau*5.1*t);
+    phase+=tau*220.*std::exp2(vibrato/1200.)/rate;
+    const double chorus=std::clamp((t-.4)*15.,0.,1.)*
+                        (1.-std::clamp((t-1.25)*15.,0.,1.));
+    const double level=.12+.16*chorus;
+    // Busy phrase: a 14ms noisy consonant every 210ms after warm-up.
+    const double noise=(i>rate/3 && i%(rate*21/100)<rate*14/1000)?
+      .07*static_cast<double>((i*977+17)%137-68)/68.:0.;
+    inL[i]=static_cast<float>(
+      level*(std::sin(phase)+.26*std::sin(2.*phase+.2)+
+             .16*std::sin(3.*phase))+noise);
+    inR[i]=static_cast<float>(
+      level*(.85*std::sin(phase+.12)+.31*std::sin(3.*phase+.4))+
+      noise*.85);
+  }
+  auto process=[&](int block,int voices,bool wet){
+    auto dsp=std::make_unique<Engine>();
+    need(dsp->prepare(rate)&&dsp->latencySamples()==1536,
+         "vibrato engine PDC changed");
+    Settings settings;settings.voices=voices;settings.wet=wet?.75f:0.f;
+    settings.space=.82f;
+    need(dsp->setSettings(settings),"vibrato DSP settings rejected");
+    auto l=inL,r=inR;
+    int audibleTicks=0,checkedTicks=0;
+    for(int pos=0;pos<frames;pos+=block){
+      const int count=std::min(block,frames-pos);
+      dsp->process(l.data()+pos,r.data()+pos,count);
+      if(pos>rate/3&&pos<rate*6/5){
+        ++checkedTicks;
+        if(dsp->voiced())++audibleTicks;
+      }
+    }
+    need(audibleTicks>checkedTicks*.96,
+         "loud-vibrato tracking repeatedly lost voiced continuity");
+    return std::pair{std::move(l),std::move(r)};
+  };
+  const auto five64=process(64,5,true);
+  const auto five257=process(257,5,true);
+  need(five64==five257,
+       "heavy five-voice vibrato output depends on ASIO callback partition");
+  const auto dry=process(257,5,false);
+  double harmonyE=0.,outE=0.,monoE=0.;
+  float largestStep=0.f;
+  for(int i=rate/2;i<frames;++i){
+    const float l=five64.first[static_cast<std::size_t>(i)];
+    const float r=five64.second[static_cast<std::size_t>(i)];
+    const float dl=dry.first[static_cast<std::size_t>(i)];
+    const float dr=dry.second[static_cast<std::size_t>(i)];
+    need(std::isfinite(l)&&std::isfinite(r)&&
+         std::abs(l)<3.9f&&std::abs(r)<3.9f,
+         "loud vibrato harmonic mixed PCM nonfinite or clipped");
+    harmonyE+=(l-dl)*(l-dl)+(r-dr)*(r-dr);
+    outE+=l*l+r*r;
+    monoE+=(l+r)*(l+r)*.25;
+    largestStep=std::max(largestStep,std::abs(l-
+      five64.first[static_cast<std::size_t>(i-1)]));
+  }
+  need(harmonyE>1.&&outE>4.&&monoE>1.,
+       "high-demand ensemble lost harmony or mono energy");
+  need(largestStep<.65f,
+       "long-vibrato ensemble produced an unbounded sample discontinuity");
+}
+
 int main(){
+  testLoudVibratoContinuity();
   testLeadTune();
   testVoicePlanner();
   // Each Engine owns fixed ring buffers. Allocate offline fixtures on heap:
@@ -738,6 +812,21 @@ int main(){
          "ensemble gain changes with voice count");
     need(modern.mixL[0]>modern.mixR[0]&&modern.mixR[2]>modern.mixL[2],
          "LOW/HIGH changed sides when voice count changed");
+    // 60% SPACE must now create an audible hard-sided LOW/HIGH pair
+    // without making the center MID dominate the music mix.
+    need(modern.mixL[0]>modern.mixR[0]*3.f&&
+         modern.mixR[2]>modern.mixL[2]*3.f,
+         "perceptual HARD stereo spread not applied to LOW/HIGH");
+    const float low=std::hypot(modern.mixL[0],modern.mixR[0]);
+    const float high=std::hypot(modern.mixL[2],modern.mixR[2]);
+    need(high>low*1.11f,"HIGH voice still masked behind LOW");
+    Settings centered=settings;centered.space=0.f;
+    Engine::PreparedSettings mono{};
+    need(Engine::prepareSettings(centered,mono),
+         "Space0 layout invalid");
+    need(std::abs(mono.mixL[0]-mono.mixR[0])<1.e-6f&&
+         std::abs(mono.mixL[2]-mono.mixR[2])<1.e-6f,
+         "hard pan leaks when Space=0");
   }
   // P0 lead preservation: backing Wet must never change the lead amplitude.
   // The *only* intentional lead replacement is Pitch Tune's explicit blend.
