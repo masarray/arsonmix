@@ -1138,6 +1138,28 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     hotkeys=damaged.getProperty("hotkeys",{});
     hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("insertId","");
     assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+
+    // H2 .smix preserves the exact vendor parameter ID and class identity,
+    // even if FX slot order changes. Missing host parameter -> inert mapping.
+    auto withParam=doc;
+    withParam.hotkeys.push_back({"p-vendor-1","SESSION",session,"5",
+        "SET_FX_PARAM_TOGGLE",0x73,6,1,"g5c-724",
+        "verified-vst3-class-id","vendor-param-203","Stereo Width"});
+    const auto saved=Codec::encode(withParam);
+    assert(Codec::decode(saved,decoded));
+    assert(decoded.hotkeys.size()==5);
+    assert(decoded.hotkeys.back().paramId=="vendor-param-203");
+    assert(decoded.hotkeys.back().catalogId=="verified-vst3-class-id");
+    assert(Codec::encode(decoded)==saved);
+    auto unsafe=juce::JSON::parse(saved);
+    auto entries=unsafe.getProperty("hotkeys",{}).getArray();
+    assert(entries&&entries->size()==5);
+    entries->getReference(4).getDynamicObject()->setProperty("paramId","");
+    assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
+    unsafe=juce::JSON::parse(saved);
+    unsafe.getProperty("hotkeys",{}).getArray()->getReference(4)
+        .getDynamicObject()->setProperty("catalogId","");
+    assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
 }
 
 int main(){
