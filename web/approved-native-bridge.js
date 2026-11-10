@@ -3057,6 +3057,10 @@
         return true;
       }
       if(action==="slotPower"){
+        if(logicalView){
+          nativeToast("Individual FX bypass requires audio connection");
+          return true;
+        }
         if(mixerSession()?.authority==="CHANNEL_ID"){
           if(!requestAdmittedFxPower(t,action,btn))
             nativeToast("Native FX slot unavailable · accepted insert/epoch required");
@@ -3069,6 +3073,13 @@
         return true;
       }
       if(action==="fxOn"){
+        if(logicalView){
+          const channelId=nativeIdFor(t);
+          const row=logicalView.graph.channels.find(ch=>ch.id===channelId);
+          if(row)logicalIntent("SET_FX_RACK_BYPASS",channelId,
+                               {enabled:!row.fxRackBypassed});
+          return true;
+        }
         const authority=mixerSession()?.authority;
         const ok=authority==="M4"?requestM4RackPower(t):
           authority==="CHANNEL_ID"?requestAdmittedFxPower(t,action,btn):false;
@@ -3256,6 +3267,20 @@
     },
     nativeIdFor(t){return nativeIdFor(t);},
     insertPlugin(id,target){
+      if(logicalView){
+        const t=scope?.tracks?.find(x=>x.id===target?.channelId)||
+          (scope?.master?.id===target?.channelId?scope.master:null);
+        const channelId=nativeIdFor(t);
+        const channel=logicalView.graph.channels.find(ch=>ch.id===channelId);
+        const slot=Number(target?.slot);
+        if(!channel||!Number.isInteger(slot)||slot!==channel.inserts.length||
+           slot<0||slot>=8){
+          nativeToast("Choose the next empty FX slot");return true;
+        }
+        if(!logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id}).ok)
+          nativeToast("FX selection not saved");
+        return true;
+      }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
       const plugin=nativeCatalog.get(id) ||
         (id==='armix.builtin.channel-eq.v1'?{id,name:'Parametric EQ'}:
