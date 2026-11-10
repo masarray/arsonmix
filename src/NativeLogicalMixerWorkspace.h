@@ -242,17 +242,15 @@ public:
             if(!v.isInt() || !enabled.isBool() || !row || static_cast<int>(v)<0 ||
                static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
                 return bad("INVALID_LOGICAL_FX_SLOT");
-            edit.kind=ChannelEdit::Kind::setFader;
-            edit.value=row->faderLinear;
+            edit.kind=ChannelEdit::Kind::touchDocumentRevision;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FX_RACK_BYPASS") {
             if(!number.isBool() || !editor_.roster().find(id))
                 return bad("INVALID_LOGICAL_RACK");
-            // Drive one revision through the SAME roster transaction,
-            // retaining immutable FX catalog references.
+            // Bypass lives in .smix metadata. Bump the authoritative
+            // revision explicitly, never rewrite a live DSP parameter.
             const auto* row=editor_.roster().find(id);
-            edit.kind=ChannelEdit::Kind::setFader;
-            edit.value=row->faderLinear;
+            edit.kind=ChannelEdit::Kind::touchDocumentRevision;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="ADD_FX_REFERENCE") {
             // A physically saved Show may contain vendor states. Never
