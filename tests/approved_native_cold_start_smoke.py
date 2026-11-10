@@ -382,6 +382,7 @@ def main():
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':rejected['requestId'],'ok':False,
                 'state':'REJECTED','active':active,'error':'Test driver rejected'})
             assert progress.is_hidden() and apply.is_enabled() and capture_select.is_enabled()
+            emit(page,'arMixAudioDeviceApplyAck',{'state':'REJECTED','error':'Unsolicited ACK'})
             assert 'Test driver rejected' in page.locator('[data-audio-active]').inner_text()
             apply.click()
             wait_apply()

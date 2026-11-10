@@ -2081,7 +2081,7 @@
       renderDevicePanel();
     });
     backend.addEventListener("arMixAudioDeviceApplyAck",ack=>{
-      if(!devicePanel||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
+      if(!devicePanel||!deviceBusy||ack?.requestId!==devicePanel.dataset.pendingRequest)return;
       deviceBusy=false;
       delete devicePanel.dataset.pendingRequest;
       showDeviceApplyProgress(false);
