@@ -95,6 +95,49 @@ test('Full native/release qualification retains all CTests; isolated Harmonice F
   assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
 });
 
+test('focused FAT preflights exact candidate CMake before 10-minute JUCE build', () => {
+  const begin = native.indexOf('- name: Build actual JUCE app and focused Harmonice native tests');
+  const end = native.indexOf('- name: Build executable and native RT tests', begin);
+  assert.ok(begin >= 0 && end > begin, 'focused build section missing');
+  const section = native.slice(begin, end);
+  const source = read('CMakeLists.txt');
+  // Previous failed source commit lacked this newer production audit target.
+  // The main CI workflow must not blindly assume that it exists on a
+  // long-lived candidate source branch.
+  const originalTargets = section.slice(section.indexOf('$targets = @('),
+    section.indexOf(')', section.indexOf('$targets = @(')) + 1);
+  assert.doesNotMatch(originalTargets, /ARMixProductionRenderAuditTests/,
+    'production audit reintroduced as unconditional legacy target');
+  assert.match(section, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
+  assert.match(section, /\$targets \+= 'ARMixProductionRenderAuditTests'/);
+  assert.match(section, /Get-Content -LiteralPath 'CMakeLists\.txt' -Raw/);
+  assert.match(section, /FOCUSED_FAT_UNDECLARED_CMAKE_TARGET/);
+  assert.match(section, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
+  assert.ok(section.indexOf('FOCUSED_FAT_UNDECLARED_CMAKE_TARGET') <
+    section.indexOf('cmake --build build'),
+    'missing target should fail *before* the costly build');
+  assert.ok(section.indexOf('FOCUSED_FAT_MISSING_REQUIRED_TESTS') <
+    section.indexOf('cmake --build build'),
+    'missing required CTest must fail during preflight');
+  const requiredTargets = [...originalTargets.matchAll(/'([A-Za-z0-9_]+)'/g)]
+    .map(x => x[1]);
+  assert.ok(requiredTargets.length >= 11);
+  for (const target of requiredTargets) {
+    assert.match(source, new RegExp(
+      '^\\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\\(\\s*' +
+      target + '\\b', 'm'), 'main CMake missing mandatory '+target);
+  }
+  const testSection = native.slice(
+    native.indexOf('- name: Test focused Harmonice PCM and ASIO boundary'),
+    native.indexOf('- name: Test realtime control primitives'));
+  const requiredBlock = testSection.slice(testSection.indexOf('$requiredTests = @('),
+    testSection.indexOf(')', testSection.indexOf('$requiredTests = @(')) + 1);
+  assert.doesNotMatch(requiredBlock, /M3ActualProductionRenderPathAndFailSilentCounters/);
+  assert.match(testSection, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
+  assert.match(testSection, /\$requiredTests \+= 'M3ActualProductionRenderPathAndFailSilentCounters'/);
+  assert.match(testSection, /FULL_SUITE_NOT_CLAIMED/);
+});
+
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
   for (const filename of [
     'web/approved-native-bridge.js',
