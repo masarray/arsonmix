@@ -2083,7 +2083,7 @@ public:
             auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
                 std::move(processor),
                 juce::String(armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity),
-                "ArSon Harmony",LiveDryRoutingLab::Block::hardFrameLimit);
+                "Harmonice",LiveDryRoutingLab::Block::hardFrameLimit);
             return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
                 rosterRevision,id,
                 armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity,
