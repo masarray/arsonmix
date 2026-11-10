@@ -101,7 +101,7 @@ def main():
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         # The approved Pages tool tray is a real collapsible <details>.
         # Open it as the operator would; never assert hidden children visible.
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary.tool").click()
         assert page.locator("#addTrack").is_visible()
         assert page.locator("#addTrack").is_enabled()
         assert page.locator("#addBus").is_visible()
