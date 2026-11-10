@@ -46,6 +46,95 @@ public:
         states_=std::move(states);
         return true;
     }
+    // Control-thread comparison for a retained native publisher versus the
+    // durable logical mirror. Native PARAMETER changes do NOT necessarily
+    // advance graph topology revision: compare every observable scalar too.
+    // This proves descriptor equality, NOT opaque VST3 binary-state parity.
+    // Never use it to ARM an output or silently resolve hardware bindings.
+    static bool sameRetainedGraph(const juce::var& physical,
+                                  const juce::var& logical) {
+        if(physical.getProperty("revision","").toString()!=
+                logical.getProperty("revision","").toString() ||
+           physical.getProperty("rosterRevision","").toString()!=
+                logical.getProperty("rosterRevision","").toString())
+            return false;
+        const auto* a=physical.getProperty("channels",{}).getArray();
+        const auto* b=logical.getProperty("channels",{}).getArray();
+        const auto* ae=physical.getProperty("edges",{}).getArray();
+        const auto* be=logical.getProperty("edges",{}).getArray();
+        if(!a||!b||!ae||!be||a->size()!=b->size()||ae->size()!=be->size())
+            return false;
+        for(const auto& channel:*a) {
+            const auto id=channel.getProperty("id","").toString();
+            const auto found=std::find_if(b->begin(),b->end(),[&](const auto& x) {
+                return x.getProperty("id","").toString()==id;
+            });
+            if(found==b->end())return false;
+            const auto& own=*found;
+            for(const char* field:{"role","name","processingFormat","primaryOutId"})
+                if(channel.getProperty(field,"").toString()!=
+                   own.getProperty(field,"").toString())return false;
+            const auto controls=channel.getProperty("controls",{});
+            const auto mirror=own.getProperty("controls",{});
+            if(!controls.isObject()||!mirror.isObject())return false;
+            for(const char* field:{"faderDb","pan"}) {
+                const auto p=controls.getProperty(field,{});
+                const auto l=mirror.getProperty(field,{});
+                if(!(p.isDouble()||p.isInt()) ||
+                   !(l.isDouble()||l.isInt()))return false;
+                const auto a=static_cast<double>(p),b=static_cast<double>(l);
+                if(!std::isfinite(a)||!std::isfinite(b) ||
+                   std::abs(a-b)>(juce::String(field)=="faderDb"?0.05:0.01))
+                    return false;
+            }
+            for(const char* field:{"mute","solo"}) {
+                const auto p=controls.getProperty(field,{});
+                const auto l=mirror.getProperty(field,{});
+                if(!p.isBool()||!l.isBool()||p!=l)return false;
+            }
+            const auto power=channel.getProperty("fxRackBypassed",{});
+            const auto ownPower=own.getProperty("fxRackBypassed",{});
+            if(!power.isBool()||!ownPower.isBool()||power!=ownPower)
+                return false;
+            const auto* fx=channel.getProperty("inserts",{}).getArray();
+            const auto* ownFx=own.getProperty("inserts",{}).getArray();
+            if(!fx||!ownFx||fx->size()!=ownFx->size())return false;
+            for(int i=0;i<fx->size();++i) {
+                const auto& p=fx->getReference(i);
+                const auto& l=ownFx->getReference(i);
+                if(p.getProperty("catalogId","").toString()!=
+                   l.getProperty("catalogId","").toString())
+                    return false;
+                const auto pBypass=p.getProperty("bypassed",{});
+                const auto lBypass=l.getProperty("bypassed",{});
+                if(!pBypass.isBool()||!lBypass.isBool()||pBypass!=lBypass)
+                    return false;
+            }
+        }
+        for(const auto& edge:*ae) {
+            const auto id=edge.getProperty("edgeId","").toString();
+            const auto found=std::find_if(be->begin(),be->end(),[&](const auto& x){
+                return x.getProperty("edgeId","").toString()==id;
+            });
+            if(found==be->end())return false;
+            for(const char* field:{"from","to","tap"})
+                if(edge.getProperty(field,"").toString()!=
+                   found->getProperty(field,"").toString())return false;
+            const auto physicalPrimary=edge.getProperty("primaryOutput",{});
+            const auto logicalPrimary=found->getProperty("primaryOutput",{});
+            if(!physicalPrimary.isBool()||!logicalPrimary.isBool()||
+               physicalPrimary!=logicalPrimary)return false;
+            const auto value=edge.getProperty("gainLinear",{});
+            const auto ownValue=found->getProperty("gainLinear",{});
+            if(!(value.isDouble()||value.isInt())||
+               !(ownValue.isDouble()||ownValue.isInt()))return false;
+            const auto gain=static_cast<double>(value);
+            const auto ownGain=static_cast<double>(ownValue);
+            if(!std::isfinite(gain)||!std::isfinite(ownGain)||
+               std::abs(gain-ownGain)>0.00001)return false;
+        }
+        return true;
+    }
     bool isLogicalOnly() const noexcept {return document_.logicalOnly;}
     const MixerSessionDocument& document() const noexcept {return document_;}
     const std::vector<armix::shows::BinaryState>& states() const noexcept {
