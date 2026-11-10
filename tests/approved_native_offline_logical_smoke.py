@@ -130,7 +130,8 @@ def main():
             e=>e.name==='arMixLogicalIntent').at(-1).payload""")
         assert wire["operation"]=="WIRE_TRANSACTION"
         assert wire["payload"]["changes"][0]["op"]=="DISCONNECT"
-        assert new_track.locator('select[data-field="output"]').input_value()!=            "SOURCE ONLY (No Main)", "UI optimistically committed before ACK"
+        assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
+            t=>t.name==='Backing')?.output""")=="Master", "Pages model changed before native readback"
         emit(page,"arMixLogicalAck",{"requestId":wire["requestId"],
             "status":"ACCEPTED","errorCode":"NONE","revision":"3",
             "physicalOutputAdmitted":False})
