@@ -151,6 +151,8 @@ def main():
         page.wait_for_function("""()=>document.querySelector(
             '#tracks .strip select[data-field="output"] option')!==null""")
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==15
+        assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
+            t=>t.name==='Track 16')?.output""")=="SOURCE ONLY (No Main)"
         assert page.locator("#addTrack").is_enabled()
         assert not errors,errors
         browser.close()
