@@ -205,6 +205,93 @@ static double alignedDifferenceRms(const Wave& a,const Wave& b,int skip){
     }
     return used?std::sqrt(sum/static_cast<double>(used)):0.;
 }
+// Lightweight offline diagnostics of the ALIGNED output. These are not
+// perceptual scores and must never enter the realtime audio callback.
+static double sideRms(const Wave& v){
+    double sum=0.;
+    for(std::size_t i=0;i<v.left.size();++i){
+        const double side=.5*(double(v.left[i])-v.right[i]);
+        sum+=side*side;
+    }
+    return v.left.empty()?0.:std::sqrt(sum/v.left.size());
+}
+static double peakAbsolute(const Wave& v){
+    double peak=0.;
+    for(std::size_t i=0;i<v.left.size();++i)
+        peak=std::max(peak,std::max(std::abs(double(v.left[i])),
+                                     std::abs(double(v.right[i]))));
+    return peak;
+}
+static double largestOneSampleStep(const Wave& v){
+    double maximum=0.;
+    for(std::size_t i=1;i<v.left.size();++i)
+        maximum=std::max(maximum,std::max(
+            std::abs(double(v.left[i])-v.left[i-1]),
+            std::abs(double(v.right[i])-v.right[i-1])));
+    return maximum;
+}
+// A reproducible non-human signal with sustained/soft vowel harmonics,
+// quiet sections, onset/release and deterministic breath-like noise. It is
+// deliberately NOT a substitute for original male/female singer recordings.
+static Wave syntheticVocal(unsigned rate,double hz,bool antiphase){
+    const int frames=static_cast<int>(rate*1.60);
+    Wave out;out.rate=rate;
+    out.left.resize(static_cast<std::size_t>(frames));
+    out.right.resize(static_cast<std::size_t>(frames));
+    constexpr double twoPi=6.2831853071795864769;
+    std::uint32_t noise=0x574f4341u; // repeatable across Windows/Linux
+    for(int i=0;i<frames;++i){
+        const double t=static_cast<double>(i)/rate;
+        // A brief consonant-like noise onset and periodic late release.
+        double amp=0.;
+        if(t<.05)amp=.11*(t/.05);
+        else if(t<.85)amp=.11;
+        else if(t<1.02)amp=.11*(1.02-t)/.17;
+        else if(t<1.18)amp=0.;
+        else if(t<1.22)amp=.095*(t-1.18)/.04;
+        else if(t<1.48)amp=.095;
+        else amp=.095*std::max(0.,(1.60-t)/.12);
+        const double phase=twoPi*hz*t+(.015*std::sin(twoPi*4.4*t));
+        const double vowel=std::sin(phase)+
+            .40*std::sin(2*phase+.2)+.19*std::sin(3*phase+.31)+
+            .09*std::sin(4*phase+.12);
+        noise=noise*1664525u+1013904223u;
+        const double white=double((noise>>8)&0xffffu)/32767.5-1.;
+        const double burst=(t>=.015&&t<.055)||(t>=1.17&&t<1.21)?
+            .015*white:0.;
+        const float sample=static_cast<float>(amp*vowel+burst);
+        const auto at=static_cast<std::size_t>(i);
+        out.left[at]=sample;
+        out.right[at]=antiphase?-sample:sample;
+    }
+    return out;
+}
+static void renderLatencyStudy(const Wave& input,const fs::path& folder);
+static void makeSyntheticCorpus(const fs::path& folder){
+    // Names disclose synthetic origin so nobody mistakes this package for
+    // male/female human-singer listening or formant preservation evidence.
+    fs::create_directories(folder);
+    struct Fixture {const char* name;double hz;bool antiphase;};
+    for(const auto& cfg:std::array<Fixture,4>{{
+        {"SYNTHETIC_low_C2_65Hz",65.,false},
+        {"SYNTHETIC_mid_A3_220Hz",220.,false},
+        {"SYNTHETIC_high_A4_440Hz",440.,false},
+        {"SYNTHETIC_antiphase_A3_220Hz",220.,true}
+    }}){
+        const auto input=syntheticVocal(48000,cfg.hz,cfg.antiphase);
+        writeWave(folder/(std::string(cfg.name)+".wav"),input);
+        renderLatencyStudy(input,folder/cfg.name);
+    }
+    std::ofstream description(folder/"READ_ME_FIRST.txt");
+    description<<"SYNTHETIC Harmonice DSP/A-B diagnostics ONLY.\n"
+                 "These generated waveforms are NOT recordings of humans,\n"
+                 "cannot qualify naturalness, real-singer formants, consonants,\n"
+                 "live ASIO round-trip latency, crackles or physical XRUNs.\n"
+                 "Listen to aligned 32/24/16ms WAVs as a debugging aid only.\n"
+                 "For acoustic acceptance, rerun --latency-study with genuine\n"
+                 "consented adult-singer WAVs at identical source settings.\n";
+    if(!description)throw std::runtime_error("corpus README write failed");
+}
 static void renderLatencyStudy(const Wave& input,const fs::path& folder){
     fs::create_directories(folder);
     Settings settings;
@@ -225,6 +312,9 @@ static void renderLatencyStudy(const Wave& input,const fs::path& folder){
           <<"  \"physicalAsioMeasured\": false,\n"
           <<"  \"humanSingerListeningPassed\": false,\n"
           <<"  \"experimentalCandidates\": [\n";
+    const double baselineBackingRms=rms(subtract(baseline,baselineDry));
+    report<<"  \"baselineBackingRms\": "<<baselineBackingRms<<",\n"
+          <<"  \"syntheticFormantsProved\": false,\n";
     bool first=true;
     for(int ms:{24,16}){
         const int frames=2*static_cast<int>(std::round(
@@ -239,13 +329,26 @@ static void renderLatencyStudy(const Wave& input,const fs::path& folder){
         writeWave(folder/(prefix+"_dry_aligned.wav"),alignedDry);
         if(!first)report<<",\n";
         first=false;
+        const Wave backing=subtract(aligned,alignedDry);
+        const double candidateBackingRms=rms(backing);
+        const double minimumPitchSyncHz=1.2*input.rate/frames;
         report<<"    {\"targetMs\": "<<ms<<", \"reportedPdcFrames\": "<<frames
               <<", \"actualLatencyMs\": "<<1000.*frames/input.rate
               <<", \"offlineAlignmentFrames\": "<<align
+              <<", \"pitchSyncMinimumSourceHz\": "<<minimumPitchSyncHz
+              <<", \"pitchSync65HzCausallySupported\": "
+              <<(minimumPitchSyncHz<=65.?"true":"false")
               <<", \"alignedMixDifferenceRms\": "
               <<alignedDifferenceRms(baseline,aligned,baselineDelay+256)
               <<", \"alignedDryDifferenceRms\": "
               <<alignedDifferenceRms(baselineDry,alignedDry,baselineDelay+256)
+              <<", \"wetBackingRms\": "<<candidateBackingRms
+              <<", \"wetBackingRmsRelativeTo32ms\": "
+              <<candidateBackingRms/(baselineBackingRms+1.e-12)
+              <<", \"stereoSideRms\": "<<sideRms(aligned)
+              <<", \"monoFoldRms\": "<<rms(fold(aligned))
+              <<", \"maximumAbsSample\": "<<peakAbsolute(aligned)
+              <<", \"maximumOneSampleStep\": "<<largestOneSampleStep(aligned)
               <<", \"qualityAccepted\": false}";
     }
     report<<"\n  ],\n  \"note\": \"Synthetic metrics are not perceptual quality; "
@@ -296,13 +399,20 @@ int main(int argc,char** argv){
                          " (synthetic only)\n";
             return 0;
         }
+        if(argc==3&&std::string(argv[1])=="--synthetic-corpus"){
+            makeSyntheticCorpus(argv[2]);
+            std::cout<<"Synthetic-only WAV corpus and aligned A/B diagnostics written; "
+                         "no human-singer qualification.\n";
+            return 0;
+        }
         if(argc==4&&std::string(argv[1])=="--latency-study"){
             renderLatencyStudy(readWave(argv[2]),argv[3]);
             std::cout<<"32/24/16 ms latency A/B WAVs aligned. Human listening NOT verified.\n";
             return 0;
         }
         if(argc!=3){std::cerr<<"usage: harmony_offline_ab input.wav output_directory"
-                                     " | harmony_offline_ab --latency-study input.wav output_directory\n";return 1;}
+                                     " | harmony_offline_ab --latency-study input.wav output_directory"
+                                     " | harmony_offline_ab --synthetic-corpus output_directory\n";return 1;}
         renderAb(readWave(argv[1]),argv[2]);
         std::cout<<"WAV A/B written. No human-singing/formant qualification implied.\n";
         return 0;
