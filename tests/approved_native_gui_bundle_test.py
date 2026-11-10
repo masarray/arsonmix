@@ -50,6 +50,20 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn('document.addEventListener("contextmenu"', context_menu)
             self.assertIn("requestDeleteTrack", context_menu)
             self.assertIn("orbitAction", context_menu)
+            # H1 uses the SAME native-only /preview/ context handler. Never
+            # intercept vendor HWNDs or implement a JS-only global shortcut.
+            self.assertIn("arMixHotkeyIntent", context_menu)
+            self.assertIn("arMixHotkeyRegistry", context_menu)
+            self.assertIn("Please press Hotkey", context_menu)
+            self.assertIn("hotkey-add", context_menu)
+            self.assertIn("hotkey-register", context_menu)
+            self.assertIn("requestDeleteTrack", context_menu)
+            self.assertIn("Orbit…", context_menu)
+            native_host = (ROOT / "src/Main.cpp").read_text("utf-8")
+            self.assertIn('withEventListener ("arMixHotkeyIntent"', native_host)
+            self.assertIn("fireNativeHotkey", native_host)
+            self.assertIn("handleApprovedNativeControl(request)", native_host)
+            self.assertIn("WM_HOTKEY", (ROOT / "src/NativeHotkeyRegistry.h").read_text("utf-8"))
             self.assertNotIn("approved-native-context-menu.js", approved)
             self.assertIn("arMixGuiReady", (out / "assets/approved-native-bridge.js").read_text("utf-8"))
             self.assertIn("nativeBridgeAttached:true",
