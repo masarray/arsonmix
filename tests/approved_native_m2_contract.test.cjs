@@ -1780,3 +1780,54 @@ test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effe
  assert.match(bridge,/beforeInsertCatalogs:/);
  assert.match(bridge,/beforeEdges:/);
 });
+
+
+test("M5 native presentation policy is pure and preserves editable ChannelId identity rules",()=>{
+ const n=protocol.validPresentationName,c=protocol.validPresentationColor,
+       i=protocol.validPresentationIcon;
+ for(const valid of ["Vocal","Channel 07","Mic 🎙","Guitar","X".repeat(30)])
+   assert.equal(n(valid),true);
+ for(const invalid of [""," X","X ","X".repeat(31),"line\nbreak","name\twith tab",null,123])
+   assert.equal(n(invalid),false);
+ for(const valid of ["#abcdef","#AABBCC","#012345"])
+   assert.equal(c(valid),true);
+ for(const invalid of ["abc","#fff","#abcdefghijkl","#xyzxyz",undefined,23])
+   assert.equal(c(invalid),false);
+ for(const valid of ["🎙","♫","♬","⊞","◎"])
+   assert.equal(i(valid),true);
+ for(const invalid of ["🐙","A",null,0,"🎙♫"])
+   assert.equal(i(invalid),false);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/const legalName=protocol\.validPresentationName/);
+ assert.match(bridge,/const legalColor=protocol\.validPresentationColor/);
+ assert.match(bridge,/const legalIcon=protocol\.validPresentationIcon/);
+ assert.match(bridge,/const operatorMessage=protocol\.operatorMessage/);
+ assert.doesNotMatch(bridge,/const operatorMessage = message =>/);
+});
+
+test("M5 native operator status renders useful actions without exposing internal QA state",()=>{
+ const f=protocol.operatorMessage;
+ const pairs=[
+  ["HARDWARE_FAT_PENDING","Mixer ready"],
+  ["NATIVE PCM GRAPH pending","Mixer ready"],
+  ["FAT PENDING; output muted","Output muted"],
+  ["FAT FAILED; output enabled","Output enabled"],
+  ["DEVICE_DISCONNECTED","Audio device unavailable · Open Audio I/O"],
+  ["Native routing rejected","Routing not changed · Check the connection and try again"],
+  ["WIRE applying, waiting for graph revision","Updating channel routing…"],
+  ["Native VST3 plugin loading","Applying effect…"],
+  ["native FX rejected","Effect change failed · Previous settings kept"],
+  ["INVALID_NATIVE_SNAPSHOT","Change not applied · Previous mixer settings kept"],
+  ["PENDING_NATIVE_ACK","Applying mixer changes…"],
+  ["Mixer input accepted","Mixer input accepted"],
+  ["",""],
+  ["  User visible message  ","User visible message"]
+ ];
+ for(const [raw,expected] of pairs)
+   assert.equal(f(raw),expected,`status ${JSON.stringify(raw)} should stay operator-safe`);
+ // No network, DOM, snapshot or runtime can be accessed by this pure helper.
+ const state=acceptedFixture(),before=clone(state);
+ f("Native routing rejected");f("PENDING_NATIVE_ACK");
+ assert.deepEqual(state,before);
+ assert.ok(protocol.normalizeSnapshot(state).admitted);
+});

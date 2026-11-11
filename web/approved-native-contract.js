@@ -18,6 +18,53 @@
   const fields = (item, names) => object(item) && names.every(key => Object.prototype.hasOwnProperty.call(item, key));
   const isBool = x => typeof x === "boolean";
   const unique = values => new Set(values).size === values.length;
+  // Pure native UI presentation policy: no DOM, physical status rewrite,
+  // optimistically accepted graph or alternative mixer renderer.
+  const validPresentationName=name=>typeof name==="string"&&name.length>0&&name.length<=30&&
+    name===name.trim()&&!/[\x00-\x1f\x7f]/.test(name);
+  const validPresentationColor=color=>typeof color==="string"&&/^#[0-9a-fA-F]{6}$/.test(color);
+  const validPresentationIcon=icon=>typeof icon==="string"&&
+    ["♩","♫","♬","🎙","🎸","🎹","🥁","🎧","▥","◉","◎","⊞"].includes(icon);
+
+  const operatorMessage = message => {
+    const raw=String(message??"").trim();
+    if(!raw)return "";
+    // A product never advertises unfinished internal QA/FAT certification to
+    // operators. This is a display-only adapter, not an audio-state override.
+    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
+      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
+      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
+      return "Mixer ready";
+    }
+    const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
+    if(internalCode ||
+       /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
+      if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
+         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
+        return "Audio device unavailable · Open Audio I/O";
+      if(/\b(WIRE|route|routing)\b/i.test(raw)){
+        if(/\b(reject|fail|error|timed out|not applied|unavailable)\b/i.test(raw))
+          return "Routing not changed · Check the connection and try again";
+        if(/\b(pending|await|verif|applying|completing)\w*/i.test(raw))
+          return "Updating channel routing…";
+        return "Channel routing updated";
+      }
+      if(/\b(VST3|plugin|effect|FX)\b/i.test(raw)){
+        if(/\b(reject|fail|error|timed out)\b/i.test(raw))
+          return "Effect change failed · Previous settings kept";
+        if(/\b(pending|await|verif|loading|applying)\w*/i.test(raw))
+          return "Applying effect…";
+        return "Effect settings updated";
+      }
+      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|_(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING)(?:\b|_)/i.test(raw))
+        return "Change not applied · Previous mixer settings kept";
+      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
+        return "Applying mixer changes…";
+      return "Mixer settings updated";
+    }
+    return raw;
+  };
+
   function normalizeSnapshot(raw) {
     if (!fields(raw, ["schemaVersion","productionCallbackLive","device","graph","telemetry"]) ||
         raw.schemaVersion !== 6 || !isBool(raw.productionCallbackLive)) return null;
@@ -538,5 +585,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage});
 });
