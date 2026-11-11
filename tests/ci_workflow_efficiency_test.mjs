@@ -176,8 +176,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
   for (const filename of [
     'tests/pages_wire_first_canonical_main_smoke.py',
     'tests/wire_graph_canonical_model.test.cjs',
-    'tests/wire_main_native_handoff_contract.test.cjs',
-    'tests/ci_workflow_efficiency_test.mjs'
+    'tests/wire_main_native_handoff_contract.test.cjs'
   ]) {
     assert.equal(nativePrSelected(filename), false);
     assert.equal(selected(windowsPush, filename), false);
@@ -303,4 +302,34 @@ test('CI-only main promotion avoids native rebuild but any runtime change fails 
   assert.match(native,/needs\.quick\.outputs\.native_required == 'true'/);
   assert.match(native,/github\.event_name != 'push' \|\| needs\.quick\.outputs\.native_required/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
+});
+
+
+test('CI-only main commits never schedule unqualified full Chromium or Pages workflow_run',()=>{
+  const noVisualChange=[
+    '.github/workflows/ui-smoke.yml',
+    '.github/workflows/pages-publish.yml',
+    '.github/workflows/chat-ci-milestone.yml',
+    'scripts/chat_ci_dispatch.mjs',
+    'tests/chat_ci_dispatch_contract.test.mjs',
+    'tests/ci_workflow_efficiency_test.mjs'
+  ];
+  for(const path of noVisualChange){
+    assert.equal(selected(uiPush,path),false,
+      'CI-only file would launch expensive main Chromium and falsely signal Pages: '+path);
+    assert.equal(uiPRSelected(path),true,
+      'CI-only file must still qualify through cheap PR UI contracts: '+path);
+  }
+  for(const path of [
+    'web/app.js',
+    'web/approved-native-bridge.js',
+    'site/preview-v2/assets/mixer-native-compressor.js',
+    'site/preview-v2/assets/mixer-contextual-buttons.css',
+    'tests/pages_wire_first_canonical_main_smoke.py',
+    'scripts/build_pages.py'
+  ]){
+    assert.ok(selected(uiPush,path),'Real GUI/runtime source must retain full main visual gate: '+path);
+  }
+  assert.match(pages,/github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(pages,/github\.event\.workflow_run\.event == 'push'/);
 });
