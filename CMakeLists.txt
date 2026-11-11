@@ -228,6 +228,13 @@ if(BUILD_TESTING)
   # all CTests. Make its native session regression a build dependency so the
   # new executable is actually present (without editing the CI target list).
   add_dependencies(ARMixMixerRoutingTests ARMixDynamicAcceptedSessionTests)
+  # O1/O2: integrated deterministic PCM on the existing Windows FAT CTest.
+  # No additional workflow job or duplicate native build.
+  add_executable(ARMixPhysicalExternalOutputTests tests/physical_external_output_pcm_test.cpp)
+  target_compile_features(ARMixPhysicalExternalOutputTests PRIVATE cxx_std_20)
+  add_test(NAME O1PhysicalExternalOutputNativePcmAndFailClosedRouting
+           COMMAND ARMixPhysicalExternalOutputTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixPhysicalExternalOutputTests)
   # Integration-only producer/consumer: accepted ChannelId readback + real
   # offline PCM with CH07/CH02, GROUP, wet FX RETURN and MONITOR. No new host.
   add_executable(ARMixConsoleBridgeV6Tests tests/console_native_integration_test.cpp
