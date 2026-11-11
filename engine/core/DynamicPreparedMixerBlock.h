@@ -850,6 +850,21 @@ public:
         // All input reads and native plugin calls are already complete. The
         // host must not clear these dedicated output buffers a second time.
         if(hardwareOutputs && hardwareOutputCount) {
+            // A JUCE/ASIO callback ordinal must own a unique physical PCM
+            // buffer. Two DIFFERENT EXTERNAL pairs can otherwise alias the
+            // same amplifier memory and silently mix unrelated ChannelIds.
+            // Previous validation only compared each pair against MAIN,
+            // MONITOR, or its own opposite side; it missed cross-pair alias.
+            // Compare borrowed pointers, not port labels: non-contiguous
+            // enabled ASIO masks are explicitly supported. Bounded O(N²)
+            // for the already-verified active callback pins, no allocation,
+            // sorting, lock, driver lookup or additional DSP pass on AUDIO.
+            for(int c=0;c<hardwareOutputCount;++c) {
+                if(!hardwareOutputs[c])continue; // inactive pins cannot receive PCM
+                for(int earlier=0;earlier<c;++earlier)
+                    if(hardwareOutputs[c]==hardwareOutputs[earlier])
+                        return false; // publisher clears ALL physical outputs
+            }
             for(int c=0;c<hardwareOutputCount;++c) {
                 float* out=hardwareOutputs[c];
                 if(out && out!=outputL && out!=outputR &&

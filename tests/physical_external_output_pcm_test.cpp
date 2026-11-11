@@ -199,6 +199,33 @@ static void verifyAliasedCallbackPinFailsClosed() {
         for(int frame=0;frame<Harness::frames;++frame)
             assert(near(h.outputPointers[c][frame],0.f));
 }
+
+static void verifyCrossExternalAliasFailsClosedAndRecovers() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,8));
+    assert(h.render(8));
+    assert(near(h.output[2][63],.50f)&&near(h.output[4][63],.21f));
+    // These two callback ordinals are distinct physical ASIO pins, but a
+    // broken backend supplies one shared float* for their destination.
+    // Previously the two BUS PCM paths were SUMMED into the same buffer.
+    h.outputPointers[4]=h.output[2].data();
+    for(auto& output:h.output)output.fill(.875f);
+    assert(!h.render(8));
+    // A native failure must silence even MAIN and untouched external pairs,
+    // not leave stale samples driving an amplifier.
+    for(int c=0;c<8;++c)
+        for(float* sample=h.outputPointers[c];sample!=h.outputPointers[c]+Harness::frames;++sample)
+            assert(near(*sample,0.f));
+    // Transient callback aliasing must not permanently corrupt routing:
+    // original ChannelIds, destinations, and FX continue on the next
+    // legitimate, uniquely-backed JUCE block without re-ARM or re-WIRE.
+    h.outputPointers[4]=h.output[4].data();
+    assert(h.render(8));
+    assert(near(h.output[2][63],.50f)&&near(h.output[3][63],.20f));
+    assert(near(h.output[4][63],.21f)&&near(h.output[5][63],.12f));
+    assert(near(h.output[0][63],.71f)&&near(h.output[1][63],.32f));
+}
 // Main MUTE is not a device/global STOP. The native callback stays active,
 // while 64-sample MAIN attenuation leaves distinct ASIO BUS taps unchanged.
 static void verifyMainOnlyMuteAndAllOutputFxTransitions() {
@@ -275,6 +302,7 @@ int main() {
     verifyFourPinMainAndOneBus();
     verifyFailClosedAllPhysicalOutputBuffers();
     verifyAliasedCallbackPinFailsClosed();
+    verifyCrossExternalAliasFailsClosedAndRecovers();
     verifyMainOnlyMuteAndAllOutputFxTransitions();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();
