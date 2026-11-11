@@ -109,3 +109,26 @@ Use process-safe install sentinel/manifest so repeated setup doesn't relaunch ve
 - Maintain native source-of-truth for accepted graph/readback and device authorisation; never add a JS authority or second independent renderer.
 - Stop before publishing any RC if driver redistribution/provenance or installer/first-run native gates are incomplete.
 - Every PR commit must state exact test evidence, which behaviors have a physical proof, and what remains unimplemented.
+
+## 8. Implemented checkpoint (2026-11-12; PR #579)
+
+| Component | Evidence | State |
+| --- | --- | --- |
+| PRD and this ARD | Reviewed product journeys, no hidden output-arm bypass, vendor licensing and error matrix | **Committed** |
+| Portable policy | `engine/device/FirstRunEndpointPolicy.h`: pure first-run candidate ranking, preserved saved profile, unique active ID + name, trusted physical render, stereo output, safe fallback Player-only | **Implemented, not yet called from Windows MMDevice adapter** |
+| Native C++ fixtures | `tests/first_run_endpoint_policy_test.cpp`: explicit ASIO, valid VB capture/physical speaker, virtual default, no driver, duplicate name/ID, ambiguous/current/historical defaults, unverified vendor, unplug, mono output | **Implemented** |
+| CI gates | GNU C++20 `-Wall -Wextra -Werror` preflight before paid MSVC, plus new CMake CTest target | **Committed; [quick native green](https://github.com/masarray/arsonmix/actions/runs/43077083147)** |
+| Existing FX repairs | [PR #579](https://github.com/masarray/arsonmix/pull/579) FX/preset/picker/window work | **Fast native, targeted preset and UI smoke green at source SHA `e6fa363`** |
+| Windows device auto-select | Read actual MMDevice IDs, driver class, pre/post installer defaults, open JUCE, verify/rollback, route and authorize MAIN | **NOT IMPLEMENTED — no automatic first sound claim** |
+| VB-Audio package | Verify official package bits/hash/signature, preserve AS-IS licence, consent/UAC/reboot/repair | **NOT IMPLEMENTED — no driver bundled in installer** |
+| RC and landing page | Exact-SHA full Windows MSVC/CTest, hardware-free installer scenarios, ZIP hashes, release tag and landing direct download | **NOT QUALIFIED / NOT PUBLISHED** |
+
+**Important source distinction:** An `Endpoint.kind=physical` candidate must come from a trusted Windows hardware-classification adapter. It MUST NOT be populated merely from `Speaker`, `Realtek`, a name prefix or first item. The current code intentionally has no adapter that could fabricate this classification. The policy is now testable but is not a functioning end-user first-run fix until that adapter, JUCE APPLY and output graph ACK are integrated.
+
+**Last known quick CI** (exact PR head `e6fa363aa8eef8041ee3d6362fff008532f59e31`):
+- [native quick workflow](https://github.com/masarray/arsonmix/actions/runs/43077083147) — success (full PR MSVC job skipped by intentional CI policy)
+- [targeted native FX presets](https://github.com/masarray/arsonmix/actions/runs/43077080762) — success
+- [UI smoke](https://github.com/masarray/arsonmix/actions/runs/43077080754) — success
+- [Harmony DSP fast](https://github.com/masarray/arsonmix/actions/runs/43077080903) — success
+
+This milestone must remain a **draft** until real sound path and third-party driver packaging criteria are implemented. Do not merge it as an RC or claim a verified audible default route.
