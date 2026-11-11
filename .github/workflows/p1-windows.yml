@@ -447,24 +447,123 @@ jobs:
         run: |
           & ./scripts/test_two_genuine_inno_releases_windows.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v4
+      # The expensive Windows compiler job terminates BEFORE the unreliable
+      # artifact service. A byte-authenticated, run-unique Actions cache handoff
+      # lets a failed upload job be retried by itself (no MSVC/CTest rebuild).
+      - name: Seal exact-SHA FAT delivery payload after all installer tests
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        shell: pwsh
+        env:
+          FAT_SOURCE_SHA: ${{ inputs.expected_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:FAT_SOURCE_SHA){throw 'FAT_HANDOFF_SOURCE_MISMATCH'}
+          $provenance=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          $exe=Join-Path 'dist' $provenance.executable
+          $setup='installer-output/ArSonMix-Windows-x64-Setup-Preview.exe'
+          if($provenance.sourceCommit -ne $env:FAT_SOURCE_SHA -or
+             $provenance.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             -not (Test-Path -LiteralPath $exe -PathType Leaf) -or
+             -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
+             (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.exeSha256){
+            throw 'FAT_HANDOFF_PROVENANCE_INVALID'
+          }
+          $root=(Resolve-Path '.').Path
+          $files=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |
+            Sort-Object FullName | ForEach-Object {
+              [ordered]@{
+                path=$_.FullName.Substring($root.Length+1).Replace('\','/')
+                bytes=$_.Length
+                sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              }
+            })
+          if($files.Count -lt 5 -or $files.Count -gt 5000){throw 'FAT_HANDOFF_FILE_COUNT_INVALID'}
+          [ordered]@{schema='arsonmix.ci-fat-handoff.v1';sourceSha=$env:FAT_SOURCE_SHA;files=$files} |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'delivery-receipt.json' -Encoding UTF8
+          Write-Host "FAT_CACHE_SEALED source=$actual files=$($files.Count)"
+      - name: Save completed FAT packages for retryable upload job
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            dist/
+            installer-output/
+            delivery-receipt.json
+          key: arsonmix-fat-delivery-v1-${{ inputs.expected_sha }}-${{ github.run_id }}
+
+  # Upload is separate from the 30-minute Windows compiler + 92 CTests.
+  # If GitHub returns HTML instead of JSON (observed at 43094957798),
+  # retry ONLY this job; the completed build is preserved in the immutable
+  # run-unique cache key and all bytes are re-hashed before publish.
+  fat-upload:
+    name: Publish verified Windows FAT artifacts (retry without recompiling)
+    needs: windows-build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+    runs-on: windows-2022
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+      - name: Restore the immutable, completed same-run FAT payload
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            dist/
+            installer-output/
+            delivery-receipt.json
+          key: arsonmix-fat-delivery-v1-${{ inputs.expected_sha }}-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: Re-verify every FAT cache byte and original source provenance
+        shell: pwsh
+        env:
+          FAT_SOURCE_SHA: ${{ inputs.expected_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:FAT_SOURCE_SHA){throw 'FAT_UPLOAD_CHECKOUT_MISMATCH'}
+          $receipt=Get-Content -LiteralPath 'delivery-receipt.json' -Raw | ConvertFrom-Json
+          if($receipt.schema -ne 'arsonmix.ci-fat-handoff.v1' -or $receipt.sourceSha -ne $actual) {
+            throw 'FAT_UPLOAD_RECEIPT_MISMATCH'
+          }
+          $root=(Resolve-Path '.').Path
+          $actualFiles=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |
+            Sort-Object FullName)
+          if($actualFiles.Count -ne @($receipt.files).Count -or $actualFiles.Count -lt 5) {
+            throw 'FAT_UPLOAD_FILE_LIST_MISMATCH'
+          }
+          for($i=0;$i -lt $actualFiles.Count;$i++){
+            $file=$actualFiles[$i]
+            $relative=$file.FullName.Substring($root.Length+1).Replace('\','/')
+            $expected=$receipt.files[$i]
+            if($relative -cne $expected.path -or $file.Length -ne $expected.bytes -or
+               (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected.sha256){
+              throw "FAT_UPLOAD_HASH_MISMATCH: $relative"
+            }
+          }
+          $provenance=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          $exe=Join-Path 'dist' $provenance.executable
+          if($provenance.sourceCommit -ne $actual -or
+             $provenance.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $provenance.exeSha256 -or
+             -not (Test-Path -LiteralPath 'installer-output/ArSonMix-Windows-x64-Setup-Preview.exe' -PathType Leaf)){
+            throw 'FAT_UPLOAD_EXE_OR_SETUP_INVALID'
+          }
+          Write-Host "FAT_CACHE_REVALIDATED exact_sha=$actual files=$($actualFiles.Count)"
+      - uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-Windows-Installer-Preview-${{ github.run_id }}
           path: installer-output/
           if-no-files-found: error
           retention-days: 14
-          # Installer is already Inno/LZMA2 compressed; avoid ZIP re-deflate.
           compression-level: 0
-      # Optional manual FAT only: never churn experimental ZIPs per commit.
-      # Preview artifact is build/installer verified. Owner physical listening is field evidence,
-      # distinct from automated exact-SHA hardware performance certification.
+          overwrite: true
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
           name: ArSonMix-Windows-FAT-Preview-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
-          # Dist already includes independently verified compressed ZIPs.
           compression-level: 0
+          overwrite: true
