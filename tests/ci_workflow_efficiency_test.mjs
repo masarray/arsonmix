@@ -277,3 +277,16 @@ test('Manual FAT and visual qualification survive simultaneous commit pushes wit
   }
   assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
 });
+
+test('WaveShell preflight fails closed but accepts historical pre-patch source',()=>{
+  const begin=native.indexOf('- name: WaveShell JUCE 8 class-index regression (source-aware)');
+  const end=native.indexOf('- name: Compressor exact-source native CPU A/B',begin);
+  assert.ok(begin>0 && end>begin,'source-aware WaveShell quick gate missing');
+  const section=native.slice(begin,end);
+  assert.ok(section.includes('if [[ -f scripts/patch_juce_vst3_waveshell.py ]]'));
+  assert.ok(section.includes('if [[ ! -f tests/test_waveshell_juce_patch.py ]]'));
+  assert.ok(section.includes('WAVESHELL_SOURCE_TEST_MISSING'));
+  assert.ok(section.includes('WAVESHELL_SOURCE_PATCH_MISSING'));
+  assert.ok(section.includes('WAVESHELL_CHECK_NOT_IN_EXACT_SOURCE'));
+  assert.ok(section.includes('python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v'));
+});
