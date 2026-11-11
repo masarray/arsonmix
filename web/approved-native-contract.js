@@ -90,6 +90,23 @@
         Number.isFinite(ch.controls.pan) && isBool(ch.controls.mute) &&
         isBool(ch.controls.solo) && Array.isArray(ch.inserts) &&
         Array.isArray(ch.sends));
+    // Native insert instance tokens are live FX lease identities, not a
+    // browser slot ordinal or catalog name. A malformed slot/duplicate token
+    // must never enter the accepted renderer: MOVE/REMOVE and vendor editors
+    // dereference these entries after native ACK.
+    const validInsert = fx => fields(fx,["id","catalogId"]) &&
+      typeof fx.id === "string" && fx.id.length > 0 &&
+      typeof fx.catalogId === "string" && fx.catalogId.length > 0 &&
+      (fx.name === undefined || typeof fx.name === "string") &&
+      (fx.bypassed === undefined || isBool(fx.bypassed));
+    if (hasAcceptedGraph) {
+      const tokens=[];
+      for (const ch of g.channels) {
+        if (ch.inserts.length > 8 || !ch.inserts.every(validInsert)) return null;
+        for (const fx of ch.inserts) tokens.push(fx.id);
+      }
+      if (!unique(tokens)) return null;
+    }
     const retained = g.bindingState === "NEEDS_REMAP";
     if (retained && (!hasAcceptedGraph || caps.callbackOwnsChannelIds ||
         caps.supportedOps.length !== 0 || d.outputArmed ||
@@ -111,6 +128,9 @@
   // control/route actually reached the accepted native graph. No invented UI
   // updates and no optimistic fader/edge commits.
   function readbackProvesIntent(next, pending) {
+    // Also exposed as a pure test/helper API. A rejected/unadmitted native
+    // snapshot cannot be used to prove an FX or WIRE command.
+    if (!next?.admitted || !pending || !object(pending.payload)) return false;
     const {operation,targetChannelId,payload} = pending;
     const ch = next.graph.channels.find(c=>c.id===targetChannelId);
     if (!ch) return false;
