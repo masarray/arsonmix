@@ -223,7 +223,7 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
   assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
-  assert.equal(fatOnly,8,'All portable FAT, installer and genuine two-release rollback jobs require deliberate manual opt-in');
+  assert.equal(fatOnly,10,'All eight FAT packaging/installer steps plus seal and cache must require deliberate manual opt-in');
   assert.match(native,/Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(native,/scripts\/test_two_genuine_inno_releases_windows\.ps1/);
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
@@ -270,11 +270,11 @@ test('All PR commits run inexpensive filtered contracts; expensive CI is dispatc
   assert.equal(uiPRSelected('README.md'),false);
 });
 
-test('Manual FAT and visual qualification survive simultaneous commit pushes without cancellation',()=>{
-  for(const workflow of [native,ui]) {
-    assert.match(workflow,/github\.event_name == 'workflow_dispatch' && github\.run_id/);
-    assert.match(workflow,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
-  }
+test('Manual FAT and visual qualification preserve immutable FAT; native may be superseded',()=>{
+  assert.match(ui,/github\.event_name == 'workflow_dispatch' && github\.run_id/);
+  assert.match(ui,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
+  assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat && github\.run_id/);
+  assert.match(native,/cancel-in-progress: .*?!inputs\.package_fat/);
   assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
 });
 
