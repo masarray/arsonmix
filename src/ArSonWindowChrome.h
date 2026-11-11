@@ -12,13 +12,23 @@ public:
     explicit MixerCaptionButton (int kind) : Button ("ArSonMiX window control"), kind_ (kind)
     {
         // Exact operator-provided SVG path geometry, in its native 24x24 coordinates.
-        icon_ = load (kind == juce::DocumentWindow::closeButton
+        const auto* iconPath = kind == juce::DocumentWindow::closeButton
             ? "M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"
             : kind == juce::DocumentWindow::minimiseButton
             ? "M6,21V19H18v2H6Z"
-            : "M3,21V3H21V21H3Zm2-2H19V5H5V19Zm0,0V5V19Z");
+            : "M3,21V3H21V21H3Zm2-2H19V5H5V19Zm0,0V5V19Z";
+        icon_ = load (iconPath);
+        // Prebuild dark-ink SVGs once: bright green/yellow pressed faces
+        // otherwise wash out the light icon. No SVG parse or recolour in paint.
+        if (kind != juce::DocumentWindow::closeButton)
+            pressedIcon_ = load (iconPath, kind == juce::DocumentWindow::minimiseButton
+                ? "#103322" : "#37280e");
         if (kind == juce::DocumentWindow::maximiseButton)
-            restoreIcon_ = load ("M8,3H21V16H18V6H8V3ZM3,8H16V21H3V8ZM6,11V18H13V11H6Z");
+        {
+            constexpr auto* restorePath = "M8,3H21V16H18V6H8V3ZM3,8H16V21H3V8ZM6,11V18H13V11H6Z";
+            restoreIcon_ = load (restorePath);
+            pressedRestoreIcon_ = load (restorePath, "#37280e");
+        }
         setTooltip (kind == juce::DocumentWindow::closeButton ? "Close" :
                     kind == juce::DocumentWindow::minimiseButton ? "Minimise" : "Maximise / restore");
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
@@ -44,9 +54,11 @@ public:
             g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f, 2.5f), 3.0f, 1.0f);
         }
         auto* parent = findParentComponentOfClass<juce::DocumentWindow>();
-        auto* image = kind_ == juce::DocumentWindow::maximiseButton &&
-                      parent != nullptr && parent->isFullScreen()
-                    ? restoreIcon_.get() : icon_.get();
+        const bool restoring = kind_ == juce::DocumentWindow::maximiseButton &&
+                               parent != nullptr && parent->isFullScreen();
+        auto* image = restoring
+                    ? (down && pressedRestoreIcon_ != nullptr ? pressedRestoreIcon_.get() : restoreIcon_.get())
+                    : (down && pressedIcon_ != nullptr ? pressedIcon_.get() : icon_.get());
         if (image != nullptr)
         {
             const auto b = getLocalBounds().toFloat();
@@ -79,16 +91,16 @@ private:
                  juce::Colour (0xffe5ae2b), juce::Colour (0xffffdf81) };
     }
 
-    static std::unique_ptr<juce::Drawable> load (const char* path)
+    static std::unique_ptr<juce::Drawable> load (const char* path, const char* ink = "#dcecf2")
     {
-        juce::String source ("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#dcecf2\" d=\"");
-        source << path << "\"/></svg>";
+        juce::String source ("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"");
+        source << ink << "\" d=\"" << path << "\"/></svg>";
         if (auto xml = juce::XmlDocument::parse (source))
             return juce::Drawable::createFromSVG (*xml);
         return {};
     }
     int kind_;
-    std::unique_ptr<juce::Drawable> icon_, restoreIcon_;
+    std::unique_ptr<juce::Drawable> icon_, restoreIcon_, pressedIcon_, pressedRestoreIcon_;
 };
 
 class MixerCaptionLookAndFeel final : public juce::LookAndFeel_V4
