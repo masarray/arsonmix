@@ -41,7 +41,7 @@ test('FX picker closes and opens an actual editor only after accepted native or 
 });
 test('Vocal Throw wheel does not flicker performance button and presets have dark dropdown',()=>{
   assert.doesNotMatch(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|!!pending/);
-  assert.match(throwFx,/vtThrow"\)\.disabled=value!=="on"/);
+  assert.match(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|pending\?\.command==="nativeThrowTrigger"/);
   assert.match(throwFx,/wheelFlush=setTimeout\(\(\)=>\{/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset select\{[\s\S]*?color-scheme:dark/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset :is\(option,optgroup\)\{background-color:#272b34;color:#e8eaf1/);
