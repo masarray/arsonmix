@@ -263,6 +263,7 @@ const channelOptions=(t,type)=>{
       [splitSourceLabel(x.id,'PRE'),splitSourceLabel(x.id,'POST')])]
   :['None'];
  if(type==='output')return t.kind==='master'?['Default Output','Output 1 + 2','Speakers (Realtek)','Virtual Cable']:[...(t.kind==='audio'?['SOURCE ONLY (No Main)']:[]),master.name,...tracks.filter(x=>x.kind==='bus'&&x.id!==t.id).map(x=>x.name),'Output 1 + 2'];
+ if(type==='external')return ['None']; // physical output is native-only
  return ['None',...tracks.filter(x=>(x.kind==='bus'||x.kind==='fx')&&x.id!==t.id).map(x=>x.name)];
 };
 /* V53: demo-only insert identity, one reversible transaction per real move.
@@ -691,7 +692,10 @@ function strip(t){
  if(t.kind==='audio')code+='<div class="route-field"><span class="route-caption">IN</span><select class="route-select" data-field="input" title="Input source (demo choices)" aria-label="'+escapeHtml(t.name)+' input">'+option(channelOptions(t,'input'),t.input)+'</select></div>';
  else if(t.kind==='bus'||t.kind==='fx')code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">'+(t.kind==='bus'?'GROUP':'FX RETURN')+'</span></div>';
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
- code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div></div>';
+ code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Internal WIRE output to MAIN, GROUP or SOURCE ONLY" aria-label="'+escapeHtml(t.name)+' internal output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
+ if(t.kind!=='master')
+  code+='<div class="route-field external-out-field"><span class="route-caption">EXT</span><select class="route-select" data-field="external" title="Independent post-FX physical ASIO output (does not remove WIRE)" aria-label="'+escapeHtml(t.name)+' external physical output">'+option(channelOptions(t,'external'),t.externalOutput||'None')+'</select></div>';
+ code+='</div>';
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
