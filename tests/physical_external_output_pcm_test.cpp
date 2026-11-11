@@ -191,8 +191,11 @@ static void verifyAliasedCallbackPinFailsClosed() {
     h.outputPointers[2]=h.output[0].data(); // same buffer at another ordinal
     for(auto& output:h.output)output.fill(.625f);
     assert(!h.render(8));
-    for(const auto& output:h.output)
-        for(float sample:output)assert(near(sample,0.f));
+    // Verify only the eight buffers actually exported by this callback.
+    // output[2] has been deliberately detached and must not be counted.
+    for(int c=0;c<8;++c)
+        for(int frame=0;frame<Harness::frames;++frame)
+            assert(near(h.outputPointers[c][frame],0.f));
 }
 static void verifyLiveFaderMuteAnd2PortBounds() {
     Harness h;
