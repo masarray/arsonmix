@@ -471,7 +471,7 @@ public:
                 set(row,"left",patch.left);set(row,"right",patch.right);
                 set(row,"leftName",patch.leftName);
                 set(row,"rightName",patch.rightName);
-                assignments.add(juce::var(row.release()));
+                assignments.add(row);
             }
             set(root,"externalOutputs",juce::var(assignments));
         }
