@@ -23,7 +23,16 @@ CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
-                  '<script defer src="assets/approved-native-context-menu.js"></script>')
+                  '<script defer src="assets/approved-native-context-menu.js"></script>\n'
+                  '<style data-armix-o1="physical-output">\n'
+                  '.armix-native-desktop .console-body{--route-h:94px}\n'
+                  '.armix-native-desktop .console-body[data-density="standard"]{--route-h:91px}\n'
+                  '.armix-native-desktop .console-body[data-density="compact"]{--route-h:81px}\n'
+                  '.armix-native-desktop .external-out-field .route-caption{color:#a8d0dd}\n'
+                  '.armix-native-desktop .external-out-field .route-select{border-color:#547685;background:#192a32}\n'
+                  '.armix-native-desktop .external-out-field .route-select[aria-busy="true"]{border-color:#ddb576}\n'
+                  '.armix-native-desktop .external-out-field .route-select[data-status="NEEDS_REMAP"]{color:#d5aa8b}\n'
+                  '</style>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
 
@@ -100,6 +109,15 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
+    (" code+=sectionFx(t)+sectionSend(t);\n",
+     " if(t.kind!=='master'){\n"
+     "  if(!code.endsWith('</div></div>'))throw Error('Native O1 route anchor drift');\n"
+     "  const extRow='<div class=\"route-field external-out-field\"><span class=\"route-caption\">EXT</span>'+\n"
+     "   '<select class=\"route-select\" data-field=\"external\" title=\"Separate post-FX physical ASIO output, internal WIRE unchanged\" aria-label=\"'+escapeHtml(t.name)+' external output\">'+\n"
+     "   option(channelOptions(t,'external'),t.externalOutput||'None')+'</select></div>';\n"
+     "  code=code.slice(0,-6)+extRow+'</div>';\n"
+     " }\n"
+     " code+=sectionFx(t)+sectionSend(t);\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),
