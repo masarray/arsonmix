@@ -279,6 +279,16 @@ public:
         return {externalLeft(pair),externalRight(pair)};
     }
 
+    // Independent audio-callback proof: APPLIED differs from merely
+    // requested until the existing hardware render finishes its transition.
+    std::pair<int,int> appliedExternalOutput(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end())return {-1,-1};
+        const auto pair=externalAppliedTargets_[it->second].load(
+            std::memory_order_acquire);
+        return {externalLeft(pair),externalRight(pair)};
+    }
+
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
@@ -317,6 +327,9 @@ public:
                lanes_[i].role==ChannelRole::fxReturn)
                 externalTerminal=std::max(externalTerminal,output[i]);
         }
+        // Across independent physical buses, PDC shares a single target.
+        terminal=std::max(terminal,externalTerminal);
+        externalTerminal=terminal;
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             if((lane.inputL>=0 || lane.playerDeckId!=0) &&
@@ -575,9 +588,12 @@ public:
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
         }
         next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
+        next.externalAppliedTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalFades_=std::make_unique<ExternalFade[]>(rows.size());
-        for(std::size_t i=0;i<rows.size();++i)
+        for(std::size_t i=0;i<rows.size();++i) {
             next.externalTargets_[i].store(noExternal,std::memory_order_relaxed);
+            next.externalAppliedTargets_[i].store(noExternal,std::memory_order_relaxed);
+        }
         next.sendTargets_=std::make_unique<SendTarget[]>(next.edges_.size());
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
@@ -894,6 +910,9 @@ public:
                         hardwareOutputs[externalRight(active)][f]+=r*nextWeight;
                     }
                 }
+                externalAppliedTargets_[i].store(
+                    fade.remaining==0?fade.current:noExternal,
+                    std::memory_order_release);
             }
         }
         return true;
@@ -913,6 +932,7 @@ private:
     std::unique_ptr<SourceFade[]> sourceFades_;
     std::unique_ptr<SendTarget[]> sendTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> externalTargets_;
+    std::unique_ptr<std::atomic<std::uint32_t>[]> externalAppliedTargets_;
     std::unique_ptr<ExternalFade[]> externalFades_;
     std::size_t main_=notScheduled,monitor_=notScheduled;
     bool mainMonoAfterFx_=false;
