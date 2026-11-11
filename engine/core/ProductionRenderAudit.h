@@ -2,6 +2,8 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <limits>
+#include <span>
 
 // Read-only evidence for the single JUCE production renderer. Neither this
 // type nor its counters authorize PCM/output. No heap, lock, wait or log on RT.
@@ -77,6 +79,67 @@ public:
         if(delta.unpatchedSilent || delta.mutedNoRender)
             return {WindowStatus::silentOrMuted,delta};
         return {WindowStatus::exclusiveNativeObserved,delta};
+    }
+    // CONTROL-only, conservative evidence over MULTIPLE nonempty bounded
+    // windows. This prevents one short transient native window from being
+    // mistaken for proof that the M4 compatibility path can be retired.
+    // processNonce/epoch/admission must come from independently checked
+    // device/session evidence, not from a browser badge or raw counter.
+    // A continuous span crosses NO device restarts; repeat on a new epoch.
+    struct Boundary {
+        Snapshot counters{};
+        std::uint64_t processNonce=0,deviceEpoch=0;
+        bool verifiedInstalledChannelId=false;
+    };
+    enum class SeriesStatus : std::uint8_t {
+        tooFewWindows,invalidContext,badRenderWindow,
+        insufficientNativeBlocks,continuousNativeObserved
+    };
+    struct RenderSeries {
+        SeriesStatus status=SeriesStatus::tooFewWindows;
+        WindowStatus firstBadWindow=WindowStatus::invalidContext;
+        std::uint64_t nativeCompleted=0;
+        [[nodiscard]] constexpr bool continuousNativeObserved() const noexcept {
+            return status==SeriesStatus::continuousNativeObserved;
+        }
+    };
+    [[nodiscard]] static constexpr RenderSeries assessSeries(
+            std::span<const Boundary> boundaries,
+            std::uint64_t minimumNativeCompleted=128) noexcept {
+        // Require >=3 independent bounded windows, not a single callback.
+        // A zero caller-selected threshold cannot bypass the evidence gate.
+        if(boundaries.size()<4 || minimumNativeCompleted==0)
+            return {SeriesStatus::tooFewWindows,WindowStatus::invalidContext,0};
+        const auto& first=boundaries.front();
+        if(!first.processNonce || !first.deviceEpoch ||
+           !first.verifiedInstalledChannelId)
+            return {SeriesStatus::invalidContext,WindowStatus::invalidContext,0};
+        std::uint64_t total=0;
+        for(std::size_t i=1;i<boundaries.size();++i) {
+            const auto& prior=boundaries[i-1];
+            const auto& current=boundaries[i];
+            if(prior.processNonce!=first.processNonce ||
+               current.processNonce!=first.processNonce ||
+               prior.deviceEpoch!=first.deviceEpoch ||
+               current.deviceEpoch!=first.deviceEpoch ||
+               !prior.verifiedInstalledChannelId ||
+               !current.verifiedInstalledChannelId)
+                return {SeriesStatus::invalidContext,WindowStatus::invalidContext,total};
+            const auto window=assessWindow(prior.counters,current.counters,
+                true,true,true);
+            if(!window.exclusiveNativeObserved())
+                return {SeriesStatus::badRenderWindow,window.status,total};
+            if(total>std::numeric_limits<std::uint64_t>::max()-
+                       window.delta.nativeCompleted)
+                return {SeriesStatus::badRenderWindow,
+                        WindowStatus::countersRegressed,total};
+            total+=window.delta.nativeCompleted;
+        }
+        return total>=minimumNativeCompleted?
+            RenderSeries{SeriesStatus::continuousNativeObserved,
+                         WindowStatus::exclusiveNativeObserved,total}:
+            RenderSeries{SeriesStatus::insufficientNativeBlocks,
+                         WindowStatus::noNativeRender,total};
     }
     ProductionRenderAudit()=default;
     ProductionRenderAudit(const ProductionRenderAudit&)=delete;

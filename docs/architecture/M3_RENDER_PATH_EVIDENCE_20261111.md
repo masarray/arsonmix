@@ -54,3 +54,26 @@ The native audit header now exposes `ProductionRenderAudit::assessWindow(before,
 The result `exclusiveNativeObserved` requires at least one **completed** native callback in the bounded window, zero newly rendered M4 blocks, zero native failures or overlap denials, and zero unpatched/muted-no-render exits. It rejects process/device epoch discontinuity, counter regression/reset, and unsettled endpoint snapshots (which can occur because the source counters are independent relaxed atomics). An M4 total from a *previous* window does not itself disqualify current native-only evidence; an M4 increment **in** the window always does.
 
 This deliberately does **not** authorize audio, promise audible ASIO, qualify a device, or automatically remove the compatibility code. A single clean window is insufficient for M3b retirement. Repeat across real hardware sessions and record the matching output identity, source-only and WIRE/BUS/FX PCM fixtures, muted/not-muted state, sample rate/buffer transitions, and independent headphone listening. Until then M4 remains reachable. No new renderer, UI polling, or heavy workflow is introduced.
+
+
+## M3c: bounded multi-window evidence (CONTROL only)
+
+`ProductionRenderAudit::assessSeries(boundaries,minimumNativeCompleted)`
+requires at least **three consecutive clean bounded render windows** and a
+nonzero native callback coverage threshold (default 128 completed callbacks).
+Every boundary must supply independently verified **same process nonce,
+same physical device epoch and installed ChannelId admission**. It rejects
+M4 activity, partial/in-flight counters, native failures, overlap denials,
+unpatched or muted-no-render activity, device epochs changing midseries,
+counter regression and too little callback coverage. A historical M4 count
+before the first boundary does not contaminate a later clean series.
+
+This is a read-only, allocation-free CONTROL-side evidence helper with
+deterministic native tests; it does **not** automatically read hardware facts,
+grant audio permission, delete legacy M4 code or prove physical ASIO output.
+Field runs must collect genuine `dryRoutingLab.renderAudit` snapshots and
+independently record exact device+pins and installed graph evidence. Qualify
+distinct post-restart/device configurations in separate consecutive series.
+Legacy M4 code must remain until separate *physical* FAT and full WIRE/BUS/FX
+PCM continuity is witnessed. A clean CI test of the classifier does not
+qualify any real interface or vendor plugin.
