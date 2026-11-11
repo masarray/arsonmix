@@ -1818,6 +1818,7 @@ test("M5 native operator status renders useful actions without exposing internal
   ["Native VST3 plugin loading","Applying effect…"],
   ["native FX rejected","Effect change failed · Previous settings kept"],
   ["INVALID_NATIVE_SNAPSHOT","Change not applied · Previous mixer settings kept"],
+  ["ACK_READBACK_EFFECT_MISMATCH","Change not applied · Previous mixer settings kept"],
   ["PENDING_NATIVE_ACK","Applying mixer changes…"],
   ["Mixer input accepted","Mixer input accepted"],
   ["",""],

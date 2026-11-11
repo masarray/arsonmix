@@ -56,7 +56,7 @@
           return "Applying effect…";
         return "Effect settings updated";
       }
-      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|_(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING)(?:\b|_)/i.test(raw))
+      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|(?:^|_)(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw))
         return "Change not applied · Previous mixer settings kept";
       if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
         return "Applying mixer changes…";
