@@ -9,6 +9,9 @@
 #ifndef SourceAppVersion
   #error "Supply /DSourceAppVersion from the authoritative CMake project version"
 #endif
+#ifndef VBCableSha256
+  #error "Supply the verified standard VB-CABLE archive hash"
+#endif
 [Setup]
 AppId=ArSonMix.LiveStudio
 AppName=ArSonMix
@@ -41,7 +44,14 @@ SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
 ; WM_CLOSE followed by full process exit is required before replacing EXE.
 CloseApplications=no
 RestartApplications=no
+[Tasks]
+Name: "vbcable_driver"; Description: "Install VB-CABLE driver (VB-Audio donationware, administrator approval and reboot required)"; Flags: unchecked
 [Files]
+; The vendor standard cable ZIP is kept AS IS, with mandatory attribution.
+; Do not redistribute extra A+B / C+D driver packages.
+Source: "{#SourceRoot}\VBCABLE_Driver_Pack45.zip"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
+Source: "{#SourceRoot}\VB-CABLE-NOTICE.txt"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
+Source: "ArSonMixVBCableInstall.ps1"; DestDir: "{app}\ThirdParty\VB-Audio"; Flags: ignoreversion
 ; The shutdown helper is EMBEDDED TEMPORARILY in Setup, never installed.
 ; It handles installed legacy builds that do not implement the new event.
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
@@ -61,6 +71,9 @@ Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
+; Explicit opt-in only; the per-user Setup never obtains blanket admin rights.
+; This script requests UAC only for the independently verified vendor EXE.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"""; WorkingDir: "{app}"; Description: "Optional VB-Audio VB-CABLE driver installation"; Tasks: vbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated
 Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
 
 ; Never delete private Studio data on install/update/uninstall; never install
