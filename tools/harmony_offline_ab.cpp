@@ -167,6 +167,111 @@ static void generateReport(const fs::path& folder,const Wave& input,
        <<",\n  \"sourceFormantsMeasured\": false,\n  \"realSingerQualified\": false,\n"
        <<"  \"method\": \"same native input, independently reset engines; backing = wet mix - Wet0 lead, correction OFF, gain 0dB\"\n}\n";
 }
+// M7: Offline-only temporal evidence. RMS activity is NOT voiced-F0 truth.
+// These flags are REVIEW CANDIDATES, not automatic acoustic certification.
+// The RT callback remains completely unchanged.
+struct QualityWindow {double rms=0.,maxStep=0.,stepRatio=0.;};
+static QualityWindow qualityWindow(const Wave& w,std::size_t first,std::size_t end){
+    double power=0.,derivative=0.,peakStep=0.;
+    for(std::size_t i=first;i<end;++i){
+        const double l=w.left[i],r=w.right[i];
+        power+=l*l+r*r;
+        if(i){
+            const double dl=l-w.left[i-1],dr=r-w.right[i-1];
+            derivative+=dl*dl+dr*dr;
+            peakStep=std::max({peakStep,std::abs(dl),std::abs(dr)});
+        }
+    }
+    const double scale=2.*static_cast<double>(end-first);
+    return {std::sqrt(power/scale),peakStep,
+            peakStep/(std::sqrt(derivative/scale)+1.e-9)};
+}
+static double maximumWaveDifference(const Wave& a,const Wave& b){
+    if(a.rate!=b.rate||a.left.size()!=b.left.size()||
+       a.right.size()!=b.right.size())
+        throw std::runtime_error("WAV partition dimensions do not match");
+    double difference=0.;
+    for(std::size_t i=0;i<a.left.size();++i){
+        difference=std::max({difference,
+            std::abs(double(a.left[i])-b.left[i]),
+            std::abs(double(a.right[i])-b.right[i])});
+    }
+    return difference;
+}
+static bool nearSilentWithActiveSource(QualityWindow source,QualityWindow role){
+    return source.rms>=.025&&role.rms<.0008;
+}
+static bool abruptStepCandidate(QualityWindow role){
+    return role.rms>=.001&&role.maxStep>=.025&&role.stepRatio>=6.;
+}
+static void writeQualityEvidence(const fs::path& folder,const Wave& input,
+                                 const Wave& low,const Wave& mid,const Wave& high,
+                                 const Wave& mix127,const Wave& mix64,
+                                 const Wave& mix257){
+    const auto frames=input.left.size(),rate=input.rate;
+    if(!rate||input.right.size()!=frames)
+        throw std::runtime_error("invalid M7 source WAV");
+    for(const auto* w:{&low,&mid,&high,&mix127,&mix64,&mix257})
+        if(w->rate!=rate||w->left.size()!=frames||w->right.size()!=frames)
+            throw std::runtime_error("M7 WAV shape mismatch");
+    const double diff64=maximumWaveDifference(mix127,mix64);
+    const double diff257=maximumWaveDifference(mix127,mix257);
+    std::ofstream out(folder/"m7_quality_windows.csv",std::ios::trunc);
+    if(!out)throw std::runtime_error("M7 CSV output failed");
+    out<<"timeSec,sourceRms,lowRms,midRms,highRms,"
+          "lowMaxStep,midMaxStep,highMaxStep,"
+          "lowStepRatio,midStepRatio,highStepRatio,"
+          "lowNearSilent,midNearSilent,highNearSilent,"
+          "lowAbruptCandidate,midAbruptCandidate,highAbruptCandidate\n";
+    const std::size_t window=std::max<std::size_t>(1,rate/100); // 10ms
+    std::size_t sourceActive=0,lowSilent=0,midSilent=0,highSilent=0;
+    std::size_t lowAbrupt=0,midAbrupt=0,highAbrupt=0;
+    for(std::size_t start=0;start<frames;start+=window){
+        const auto end=std::min(frames,start+window);
+        const auto source=qualityWindow(input,start,end);
+        const auto a=qualityWindow(low,start,end);
+        const auto b=qualityWindow(mid,start,end);
+        const auto c=qualityWindow(high,start,end);
+        if(source.rms>=.025)++sourceActive;
+        const bool sa=nearSilentWithActiveSource(source,a);
+        const bool sb=nearSilentWithActiveSource(source,b);
+        const bool sc=nearSilentWithActiveSource(source,c);
+        const bool ja=abruptStepCandidate(a);
+        const bool jb=abruptStepCandidate(b);
+        const bool jc=abruptStepCandidate(c);
+        lowSilent+=sa;midSilent+=sb;highSilent+=sc;
+        lowAbrupt+=ja;midAbrupt+=jb;highAbrupt+=jc;
+        out<<double(start)/rate<<','<<source.rms<<','
+           <<a.rms<<','<<b.rms<<','<<c.rms<<','
+           <<a.maxStep<<','<<b.maxStep<<','<<c.maxStep<<','
+           <<a.stepRatio<<','<<b.stepRatio<<','<<c.stepRatio<<','
+           <<sa<<','<<sb<<','<<sc<<','<<ja<<','<<jb<<','<<jc<<'\n';
+    }
+    if(!out)throw std::runtime_error("M7 CSV write failed");
+    std::ofstream report(folder/"m7_quality_summary.txt",std::ios::trunc);
+    if(!report)throw std::runtime_error("M7 quality summary output failed");
+    report<<"M7 offline evidence only; no real singer or physical ASIO approval.\n"
+          <<"Source RMS activity is not proof of voiced pitch; consonants may "
+            "trigger abrupt-step candidates. Inspect timestamps and listen.\n"
+          <<"Window ms: 10; source active RMS >= 0.025; near silent stem RMS < 0.0008.\n"
+          <<"Abrupt candidate: stem RMS >= 0.001, peak step >= 0.025, "
+            "step-to-local-difference-RMS >= 6.\n"
+          <<"Source-active windows: "<<sourceActive<<"\n"
+          <<"LOW near-silent candidates: "<<lowSilent
+          <<"; abrupt-step candidates: "<<lowAbrupt<<"\n"
+          <<"MID near-silent candidates: "<<midSilent
+          <<"; abrupt-step candidates: "<<midAbrupt<<"\n"
+          <<"HIGH near-silent candidates: "<<highSilent
+          <<"; abrupt-step candidates: "<<highAbrupt<<"\n"
+          <<"M6 same-source PCM partition max absolute difference (64 vs 127): "
+          <<diff64<<"\n"
+          <<"M6 same-source PCM partition max absolute difference (257 vs 127): "
+          <<diff257<<"\n"
+          <<"Partition parity (<= 1e-6): "
+          <<((std::max(diff64,diff257)<=1.e-6)?"PASS":"REVIEW")<<"\n"
+          <<"Only on-device ASIO/XRUN + singer A/B can complete field acceptance.\n";
+    if(!report)throw std::runtime_error("M7 quality summary write failed");
+}
 static void renderAb(const Wave& input,const fs::path& folder){
     fs::create_directories(folder);
     Settings settings;settings.voices=3;settings.wet=.45f;settings.space=.6f;
@@ -179,6 +284,8 @@ static void renderAb(const Wave& input,const fs::path& folder){
         throw std::runtime_error("Lead Wet0 no longer sample-exact");
     const Wave old=process(input,settings,false);
     const Wave modern=process(input,settings,true);
+    const Wave partition64=process(input,settings,true,64);
+    const Wave partition257=process(input,settings,true,257);
     // A subtraction stem is invalid when the host output hard-clipped.
     for(std::size_t i=0;i<modern.left.size();++i)
         if(std::abs(modern.left[i])>=3.999f||std::abs(modern.right[i])>=3.999f)
@@ -210,6 +317,8 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"13_presence_old_backing_only.wav",subtract(previousPresence,dry));
     settings.space=0.f;writeWave(folder/"06_new_space_000.wav",process(input,settings,true));
     settings.space=1.f;writeWave(folder/"07_new_space_100.wav",process(input,settings,true));
+    writeQualityEvidence(folder,input,lowStem,midStem,highStem,
+                         modern,partition64,partition257);
     generateReport(folder,input,dry,old,modern,backing,previousDepth,
                    previousPresence,lowStem,midStem,highStem);
 }
@@ -226,6 +335,23 @@ int main(int argc,char** argv){
             auto before=process(v,s,false);
             auto after=process(v,s,true);
             if(!(rms(before)>0.01&&rms(after)>0.01))return 2;
+            // M7 classifier controls: steady harmonics must not be called
+            // stutter, whereas injected one-sample spikes and dropouts must
+            // be observable. No synthetic result certifies human naturalness.
+            const auto steady=qualityWindow(v,6000,6480);
+            if(nearSilentWithActiveSource(steady,steady)||
+               abruptStepCandidate(steady))return 8;
+            Wave spiked=v;
+            spiked.left[6005]+=.9f;spiked.right[6005]-=.9f;
+            if(!abruptStepCandidate(qualityWindow(spiked,6000,6480)))
+                return 9;
+            Wave silent=v;
+            for(int i=6000;i<6480;++i)
+                silent.left[i]=silent.right[i]=0.f;
+            if(!nearSilentWithActiveSource(
+                steady,qualityWindow(silent,6000,6480)))return 10;
+            if(maximumWaveDifference(process(v,s,true,64),
+                                     process(v,s,true,257))>1.e-6)return 11;
             // Isolated LOW/MID/HIGH renders must recombine with the
             // simultaneously rendered (unclipped) full wet backing, with
             // only bounded float rounding in the shared linear room.
