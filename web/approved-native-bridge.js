@@ -26,11 +26,10 @@
   const channelPresentation=new Map();
   let appearanceRevision="0",appearanceWritable=false;
   let pendingIdentity=null,identityRequestSerial=0;
-  const legalName=name=>typeof name==="string"&&name.length>0&&name.length<=30&&
-    name===name.trim()&&!/[\x00-\x1f\x7f]/.test(name);
-  const legalColor=color=>typeof color==="string"&&/^#[0-9a-fA-F]{6}$/.test(color);
-  const legalIcon=icon=>typeof icon==="string"&&
-    ["♩","♫","♬","🎙","🎸","🎹","🥁","🎧","▥","◉","◎","⊞"].includes(icon);
+  // Pure policy shared with Node tests; native controls still own the edit.
+  const legalName=protocol.validPresentationName;
+  const legalColor=protocol.validPresentationColor;
+  const legalIcon=protocol.validPresentationIcon;
   const displayNameFor=ch=>channelPresentation.get(ch.id)?.name||ch.name;
   // Legacy WebView aliases are an import queue ONLY, never rendered or written
   // as authoritative state. Each imported row must receive a native ACK plus
@@ -263,44 +262,8 @@
     Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
   // Internal identifiers remain in engine logs, never footer, dialog or toast.
-  const operatorMessage = message => {
-    const raw=String(message??"").trim();
-    if(!raw)return "";
-    // A product never advertises unfinished internal QA/FAT certification to
-    // operators. This is a display-only adapter, not an audio-state override.
-    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
-      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
-      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
-      return "Mixer ready";
-    }
-    const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
-    if(internalCode ||
-       /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
-      if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
-         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
-        return "Audio device unavailable · Open Audio I/O";
-      if(/\b(WIRE|route|routing)\b/i.test(raw)){
-        if(/\b(reject|fail|error|timed out|not applied|unavailable)\b/i.test(raw))
-          return "Routing not changed · Check the connection and try again";
-        if(/\b(pending|await|verif|applying|completing)\w*/i.test(raw))
-          return "Updating channel routing…";
-        return "Channel routing updated";
-      }
-      if(/\b(VST3|plugin|effect|FX)\b/i.test(raw)){
-        if(/\b(reject|fail|error|timed out)\b/i.test(raw))
-          return "Effect change failed · Previous settings kept";
-        if(/\b(pending|await|verif|loading|applying)\w*/i.test(raw))
-          return "Applying effect…";
-        return "Effect settings updated";
-      }
-      if(/\b(error|failed|rejected|timed out|invalid|unavailable|not applied)\b|_(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING)(?:\b|_)/i.test(raw))
-        return "Change not applied · Previous mixer settings kept";
-      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
-        return "Applying mixer changes…";
-      return "Mixer settings updated";
-    }
-    return raw;
-  };
+  // Exact human-facing status policy, independently testable without WebView.
+  const operatorMessage=protocol.operatorMessage;
   const status = message => {
     lastNativeError = message; // raw engine state remains inspectable internally
     const text = operatorMessage(message);
@@ -365,9 +328,16 @@
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
+    const previous=logicalView.graph.channels.find(ch=>ch.id===channelId);
     pendingLogical={requestId,operation,channelId,payload,
       workspaceToken:logicalView.workspaceToken,
-      beforeRevision:logicalView.graph.revision,ackRevision:null,createdId:null};
+      beforeRevision:logicalView.graph.revision,ackRevision:null,createdId:null,
+      beforeChannelExists:!!previous,
+      beforeInsertCatalogs:Array.isArray(previous?.inserts)?
+        previous.inserts.map(fx=>fx.catalogId):null,
+      beforeEdges:logicalView.graph.edges.filter(e=>e.from===channelId).map(e=>({
+        edgeId:e.edgeId,to:e.to,primaryOutput:e.primaryOutput,tap:e.tap
+      }))};
     backend.emitEvent("arMixLogicalIntent",{
       requestId,workspaceToken:logicalView.workspaceToken,
       baseRevision:logicalView.graph.revision,operation,
@@ -381,37 +351,6 @@
       controller?.subscribe();
     },8000);
     return {ok:true,requestId};
-  }
-  function logicalReadbackProves(p,graph) {
-    const row=graph.channels.find(ch=>ch.id===p.channelId),v=p.payload;
-    switch(p.operation) {
-      case "CREATE_CHANNEL":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="INPUT");
-      case "CREATE_GROUP":return graph.channels.some(ch=>ch.id===p.createdId&&ch.role==="GROUP");
-      case "DELETE_CHANNEL":case "REMOVE_BUS":return !row;
-      case "RENAME_CHANNEL":return row?.name===v.name;
-      case "SET_PROCESSING_FORMAT":return row?.processingFormat===v.format;
-      case "SET_FADER":return !!row&&Math.abs(row.controls.faderDb-v.valueDb)<.11;
-      case "SET_PAN":return !!row&&Math.abs(row.controls.pan-v.value)<.011;
-      case "SET_MUTE":return row?.controls.mute===v.enabled;
-      case "SET_SOLO":return row?.controls.solo===v.enabled;
-      case "SET_FX_RACK_BYPASS":return row?.fxRackBypassed===v.enabled;
-      case "ADD_FX_REFERENCE":return row?.inserts?.some(fx=>fx.catalogId===v.catalogId);
-      case "REMOVE_FX_REFERENCE":return !!row&&
-        row.inserts.length===v.beforeCount-1;
-      case "SET_FX_SLOT_BYPASS":return row?.inserts?.[v.slot]?.bypassed===v.enabled;
-      case "WIRE_TRANSACTION": {
-        const change=v.changes?.[0];
-        if(!change)return false;
-        const edges=graph.edges.filter(e=>e.from===change.from);
-        if(change.op==="REMOVE")return !edges.some(e=>e.edgeId===change.edgeId);
-        if(change.op==="DISCONNECT")return !edges.some(e=>e.primaryOutput);
-        if(change.op==="ROUTE_ONLY")return edges.some(e=>e.to===change.to&&e.primaryOutput);
-        if(change.op==="CONNECT")return edges.some(e=>e.to===change.to&&!e.primaryOutput);
-        if(change.op==="RETARGET")return edges.some(e=>e.edgeId===change.edgeId&&e.to===change.to);
-        return false;
-      }
-      default:return false;
-    }
   }
   function queueWireGainFlush(){
     if(wireGainFlushQueued)return;
@@ -2482,8 +2421,11 @@
       if(pendingLogical) {
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
-        if(BigInt(offline.revision)<BigInt(p.ackRevision))return;
-        if(!logicalReadbackProves(p,offline.graph)){
+        if(protocol.cmp(offline.revision,p.ackRevision)<0)return;
+        // A newer unrelated revision cannot prove THIS ACK's exact edit.
+        // Preserve the accepted document, then resubscribe rather than
+        // falsely animating a WIRE or confirming a different FX instance.
+        if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
           status("Mixer change not verified · refreshing saved session");
           controller?.subscribe();

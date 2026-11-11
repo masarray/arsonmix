@@ -18,6 +18,54 @@
   const fields = (item, names) => object(item) && names.every(key => Object.prototype.hasOwnProperty.call(item, key));
   const isBool = x => typeof x === "boolean";
   const unique = values => new Set(values).size === values.length;
+  // Pure native UI presentation policy: no DOM, physical status rewrite,
+  // optimistically accepted graph or alternative mixer renderer.
+  const validPresentationName=name=>typeof name==="string"&&name.length>0&&name.length<=30&&
+    name===name.trim()&&!/[\x00-\x1f\x7f]/.test(name);
+  const validPresentationColor=color=>typeof color==="string"&&/^#[0-9a-fA-F]{6}$/.test(color);
+  const validPresentationIcon=icon=>typeof icon==="string"&&
+    ["♩","♫","♬","🎙","🎸","🎹","🥁","🎧","▥","◉","◎","⊞"].includes(icon);
+
+  const operatorMessage = message => {
+    const raw=String(message??"").trim();
+    if(!raw)return "";
+    // A product never advertises unfinished internal QA/FAT certification to
+    // operators. This is a display-only adapter, not an audio-state override.
+    if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
+      if(/\b(?:output muted|monitor off)\b/i.test(raw))return "Output muted";
+      if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
+      return "Mixer ready";
+    }
+    const failure=/\b(reject(?:ed|ion)?|fail(?:ed|ure)?|error|timed out|not applied|unavailable|invalid)\b|(?:^|[^A-Z0-9])(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw);
+    const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
+    if(internalCode ||
+       /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
+      if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
+         /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
+        return "Audio device unavailable · Open Audio I/O";
+      if(/\b(WIRE|route|routing)\b|(?:^|_)(?:WIRE|ROUTING)(?:_|$)/i.test(raw)){
+        if(failure)
+          return "Routing not changed · Check the connection and try again";
+        if(/\b(pending|await|verif|applying|completing)\w*/i.test(raw))
+          return "Updating channel routing…";
+        return "Channel routing updated";
+      }
+      if(/\b(VST3|plugin|effect|FX)\b|(?:^|_)(?:VST3|PLUGIN|FX)(?:_|$)/i.test(raw)){
+        if(failure)
+          return "Effect change failed · Previous settings kept";
+        if(/\b(pending|await|verif|loading|applying)\w*/i.test(raw))
+          return "Applying effect…";
+        return "Effect settings updated";
+      }
+      if(failure)
+        return "Change not applied · Previous mixer settings kept";
+      if(/\b(pending|awaiting|verifying|saving|processing|applying|loading|deleting)\b|_PENDING\b|PENDING_/i.test(raw))
+        return "Applying mixer changes…";
+      return "Mixer settings updated";
+    }
+    return raw;
+  };
+
   function normalizeSnapshot(raw) {
     if (!fields(raw, ["schemaVersion","productionCallbackLive","device","graph","telemetry"]) ||
         raw.schemaVersion !== 6 || !isBool(raw.productionCallbackLive)) return null;
@@ -288,6 +336,104 @@
       selectedPin:pin?.port??null,nextAction,
       readout:label+" "+dbfs(raw)+" · MAIN PCM "+dbfs(main)});
   }
+
+  // LOGICAL_ONLY has no physical graph/PCM authority. An offline .smix ACK
+  // proves a committed revision, not the requested edit. Verify exactly the
+  // accepted logical graph effect before revealing a persisted edit in /preview/.
+  // Keep this deterministic alongside installed-native readback, outside DOM.
+  function logicalReadbackProves(p,graph) {
+    if (!object(p) || !object(p.payload) || !object(graph) ||
+        !Array.isArray(graph.channels) || !Array.isArray(graph.edges) ||
+        decimal(p.ackRevision) === null || graph.revision !== p.ackRevision) return false;
+    const v=p.payload, row=graph.channels.find(ch=>ch.id===p.channelId);
+    const validId=id=>decimal(id)!==null && id!=="0";
+    const catalogs=()=>Array.isArray(row?.inserts) ?
+      row.inserts.map(fx=>fx?.catalogId):null;
+    const equal=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&
+      a.length===b.length&&a.every((value,i)=>value===b[i]);
+    switch(p.operation) {
+      case "CREATE_CHANNEL":
+      case "CREATE_GROUP":
+        return validId(p.createdId) && graph.channels.some(ch=>
+          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":"GROUP"));
+      case "DELETE_CHANNEL":
+      case "REMOVE_BUS":
+        return validId(p.channelId) && p.beforeChannelExists===true && !row;
+      case "RENAME_CHANNEL":
+        return !!row && typeof v.name==="string" && row.name===v.name;
+      case "SET_PROCESSING_FORMAT":
+        return !!row && ["MONO","STEREO"].includes(v.format) &&
+          row.processingFormat===v.format;
+      case "SET_FADER":
+        return !!row && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.faderDb) &&
+          Math.abs(row.controls.faderDb-v.valueDb)<0.11;
+      case "SET_PAN":
+        return !!row && Number.isFinite(v.value) &&
+          Number.isFinite(row.controls?.pan) &&
+          Math.abs(row.controls.pan-v.value)<0.011;
+      case "SET_MUTE":
+      case "SET_SOLO":
+        return !!row && isBool(v.enabled) &&
+          row.controls?.[p.operation==="SET_MUTE"?"mute":"solo"]===v.enabled;
+      case "SET_FX_RACK_BYPASS":
+        return !!row && isBool(v.enabled) && row.fxRackBypassed===v.enabled;
+      case "ADD_FX_REFERENCE":
+        // A pre-existing insert of the same catalog is NOT proof that a new
+        // slot was appended. The full ordered rack must match the intended edit.
+        return !!row && typeof v.catalogId==="string" && v.catalogId.length>0 &&
+          Array.isArray(p.beforeInsertCatalogs) &&
+          p.beforeInsertCatalogs.length<8 &&
+          equal(catalogs(),[...p.beforeInsertCatalogs,v.catalogId]);
+      case "REMOVE_FX_REFERENCE": {
+        const before=p.beforeInsertCatalogs,slot=v.slot;
+        if(!row || !Array.isArray(before) || !Number.isInteger(slot) ||
+           slot<0 || slot>=before.length || v.beforeCount!==before.length)return false;
+        const expected=before.slice();expected.splice(slot,1);
+        return equal(catalogs(),expected);
+      }
+      case "SET_FX_SLOT_BYPASS":
+        return !!row && Number.isInteger(v.slot) && v.slot>=0 &&
+          isBool(v.enabled) && row.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "WIRE_TRANSACTION": {
+        // The JUCE logical workspace accepts EXACTLY one WIRE edit per
+        // transaction. More edits can never be silently accepted from [0].
+        if(!row || !Array.isArray(v.changes) || v.changes.length!==1 ||
+           !Array.isArray(p.beforeEdges))return false;
+        const change=v.changes[0];
+        if(!object(change) || !validId(change.from) ||
+           change.from!==p.channelId)return false;
+        const edges=graph.edges.filter(e=>e.from===p.channelId&&e.enabled!==false);
+        const before=p.beforeEdges;
+        const present=id=>before.some(e=>e.edgeId===id);
+        if(change.op==="REMOVE")
+          return validId(change.edgeId) && present(change.edgeId) &&
+            !edges.some(e=>e.edgeId===change.edgeId);
+        if(change.op==="DISCONNECT")
+          return before.some(e=>e.primaryOutput===true) &&
+            !edges.some(e=>e.primaryOutput===true) && !row.primaryOutId;
+        if(change.op==="ROUTE_ONLY")
+          return validId(change.to) && row.primaryOutId===change.to &&
+            edges.some(e=>e.to===change.to && e.primaryOutput===true);
+        if(change.op==="CONNECT")
+          return validId(change.to) && edges.some(e=>
+            e.to===change.to && e.primaryOutput===false &&
+            validId(e.edgeId) && !present(e.edgeId) &&
+            (change.tap===undefined || change.tap===e.tap) &&
+            (change.gainLinear===undefined ||
+              (Number.isFinite(change.gainLinear) &&
+               Number.isFinite(e.gainLinear) &&
+               Math.abs(e.gainLinear-change.gainLinear)<=0.0001)));
+        if(change.op==="RETARGET")
+          return validId(change.edgeId) && validId(change.to) &&
+            before.some(e=>e.edgeId===change.edgeId && e.to!==change.to) &&
+            edges.some(e=>e.edgeId===change.edgeId && e.to===change.to);
+        return false;
+      }
+      default:return false;
+    }
+  }
+
   function createController({emit, onStatus=()=>{}, onAccepted=()=>{}}) {
     if (typeof emit !== "function") throw Error("Native emitter required");
     let current = null, pending = null, lastRequest = 0, lastError = "NATIVE_NOT_SUBSCRIBED";
@@ -440,5 +586,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,diagnoseFirstSound,createController});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage});
 });
