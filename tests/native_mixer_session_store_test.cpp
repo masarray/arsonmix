@@ -1162,6 +1162,87 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
 }
 
+static void verifyIndependentAsioExternalRestoreProvenance() {
+    auto doc=makeSession();
+    doc.binding.outputMask="ff";
+    doc.binding.outputNames={"ASIO OUT 1","ASIO OUT 2",
+        "ASIO OUT 3","ASIO OUT 4","ASIO OUT 5","ASIO OUT 6",
+        "ASIO OUT 7","ASIO OUT 8"};
+    doc.outputs={8,0,1,-1,-1,false};
+    doc.externalOutputs.push_back({{16},2,3,"ASIO OUT 3","ASIO OUT 4",
+        "Verified ASIO"});
+    doc.externalOutputs.push_back({{12},4,5,"ASIO OUT 5","ASIO OUT 6",
+        "Verified ASIO"});
+    const auto saved=Codec::encode(doc);
+    MixerSessionDocument loaded;
+    assert(Codec::decode(saved,loaded));
+    assert(loaded.externalOutputs.size()==2);
+    assert(loaded.externalOutputs[0].playbackDevice=="Verified ASIO");
+    const std::array<int,8> full{{0,1,2,3,4,5,6,7}};
+    const auto same=[&](const StoredExternalOutput& p) {
+        return MixerDeviceBindingPolicy::canRestoreExternalOutput(
+            p,"Verified ASIO",full,doc.binding.outputNames,doc.outputs);
+    };
+    assert(same(loaded.externalOutputs[0]));
+    assert(same(loaded.externalOutputs[1]));
+    // A new ASIO device uses identical generic labels. A verified device
+    // APPLY must not silently transfer saved amp ownership to the new DAC.
+    auto newDevice=doc.binding;
+    newDevice.capture=newDevice.playback="Different ASIO";
+    assert(MixerDeviceBindingPolicy::apply(loaded,newDevice,doc.outputs,
+        2,BindingMode::verifiedDeviceApply).isEmpty());
+    assert(loaded.binding.playback=="Different ASIO");
+    assert(loaded.externalOutputs[0].playbackDevice=="Verified ASIO");
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        loaded.externalOutputs[0],"Different ASIO",full,
+        newDevice.outputNames,doc.outputs));
+    MixerSessionDocument reopened;
+    assert(Codec::decode(Codec::encode(loaded),reopened));
+    assert(reopened.externalOutputs[0].playbackDevice=="Verified ASIO");
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        reopened.externalOutputs[0],"Different ASIO",full,
+        newDevice.outputNames,doc.outputs));
+    // Even when the driver itself returns, a 6-pin enabled mask must
+    // authorize 3/4 independently and keep missing 5/6 as NEEDS_REMAP.
+    const std::array<int,6> sparse{{0,1,2,3,6,7}};
+    VerifiedNativeOutputs sparseHw{6,0,1,-1,-1,false};
+    assert(MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        doc.externalOutputs[0],"Verified ASIO",sparse,
+        doc.binding.outputNames,sparseHw));
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        doc.externalOutputs[1],"Verified ASIO",sparse,
+        doc.binding.outputNames,sparseHw));
+    // Another active stereo pair may only be restored by exact original
+    // driver and without collisions against MAIN or MONITOR.
+    auto hw=doc.outputs;hw.mainL=2;hw.mainR=3;
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        doc.externalOutputs[0],"Verified ASIO",full,
+        doc.binding.outputNames,hw));
+    hw=doc.outputs;hw.monitorEnabled=true;hw.monitorL=4;hw.monitorR=5;
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        doc.externalOutputs[1],"Verified ASIO",full,
+        doc.binding.outputNames,hw));
+    auto renamed=doc.binding.outputNames;
+    renamed.set(2,"MOVED AMP");
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        doc.externalOutputs[0],"Verified ASIO",full,renamed,doc.outputs));
+    // Migration: an O1-v1 .smix with no playbackDevice property inherits
+    // only its ORIGINAL saved binding. It cannot be claimed by another ASIO.
+    auto legacyJson=juce::JSON::parse(saved);
+    auto* legacy=legacyJson.getProperty("externalOutputs",{}).getArray();
+    assert(legacy&&legacy->size()==2);
+    for(auto& item:*legacy)item.getDynamicObject()->removeProperty("playbackDevice");
+    assert(Codec::decode(juce::JSON::toString(legacyJson,false),reopened));
+    assert(reopened.externalOutputs[0].playbackDevice=="Verified ASIO");
+    assert(!MixerDeviceBindingPolicy::canRestoreExternalOutput(
+        reopened.externalOutputs[0],"Different ASIO",full,
+        doc.binding.outputNames,doc.outputs));
+    // A bogus explicit provenance cannot bypass the decoder.
+    auto bad=juce::JSON::parse(saved);
+    bad.getProperty("externalOutputs",{}).getArray()->getReference(0)
+        .getDynamicObject()->setProperty("playbackDevice",juce::var(15));
+    assert(!Codec::decode(juce::JSON::toString(bad,false),reopened));
+}
 static void verifyExternalOutputPortableIntent() {
     auto doc=makeSession();
     // Two additional amplifier pairs are physical intent, not armed state.
@@ -1224,6 +1305,7 @@ int main(){
     nativeDeviceRecovery();
     auto d=makeSession();
     verifyExternalOutputPortableIntent();
+    verifyIndependentAsioExternalRestoreProvenance();
     const auto before=Codec::encode(d);
     MixerSessionDocument restored;
     assert(Codec::decode(before,restored));

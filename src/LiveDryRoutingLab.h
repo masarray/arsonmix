@@ -2354,6 +2354,7 @@ public:
             candidate.left=physicalLeft;candidate.right=physicalRight;
             candidate.leftName=pins.outputNames[physicalLeft];
             candidate.rightName=pins.outputNames[physicalRight];
+            candidate.playbackDevice=pins.deviceName; // confirmed provenance
         } else if(physicalLeft!=-1 || physicalRight!=-1)
             return "EXTERNAL OUT: malformed NONE pair";
         auto amended=externalOutputAssignments_; // CONTROL only; may allocate
@@ -2505,17 +2506,20 @@ public:
             externalOutputVerified_.clear();
             externalOutputEpoch_=0;
             if(pins.typeName=="ASIO" && pins.deviceName==document.binding.playback) {
-                bool exact=true;
+                // Safety is per ChannelId, not all-or-nothing: one absent
+                // amplifier remains disarmed/NEEDS_REMAP while another exact
+                // original-driver pair can resume on this verified epoch.
+                const std::span<const int> callbackPins(
+                    pins.outputByCallback.data(),
+                    static_cast<std::size_t>(pins.outputCount));
+                externalOutputVerified_.reserve(externalOutputAssignments_.size());
                 for(const auto& patch:externalOutputAssignments_)
-                    exact=exact && patch.right<pins.outputNames.size() &&
-                        pins.outputNames[patch.left]==patch.leftName &&
-                        pins.outputNames[patch.right]==patch.rightName;
-                if(exact){
-                    externalOutputEpoch_=generation;
-                    externalOutputVerified_.reserve(externalOutputAssignments_.size());
-                    for(const auto& patch:externalOutputAssignments_)
+                    if(armix::session::MixerDeviceBindingPolicy::
+                       canRestoreExternalOutput(patch,pins.deviceName,
+                           callbackPins,pins.outputNames,nativeAccepted_.hardware))
                         externalOutputVerified_.push_back(patch.channel.value);
-                }
+                if(!externalOutputVerified_.empty())
+                    externalOutputEpoch_=generation;
             }
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;

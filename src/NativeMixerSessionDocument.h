@@ -40,6 +40,10 @@ struct StoredExternalOutput final {
     ChannelId channel{};
     int left=-1,right=-1; // actual 0-based driver physical pins
     juce::String leftName,rightName;
+    // The ASIO playback registration that the operator actually confirmed.
+    // Never overwrite this when a .smix is rebound to a different device:
+    // generic OUT 3/4 labels do not authorize a new physical amplifier.
+    juce::String playbackDevice;
 };
 struct StoredInsert final {
     ChannelId channel{};
@@ -98,6 +102,37 @@ struct MixerDeviceBindingPolicy final {
                 (a.monitorL==b.monitorL && a.monitorR==b.monitorR));
     }
     enum class Mode { exact, verifiedDeviceApply, verifiedMainPinApply, verifiedAsioRestart };
+    // CONTROL-only independent ASIO EXTERNAL restore admission. Each saved
+    // ChannelId is judged against its original driver and currently enabled
+    // physical pins; a missing pair or MAIN/MONITOR collision cannot arm an
+    // unrelated amp. The supplied callback ordinals are NOT physical labels.
+    static bool canRestoreExternalOutput(
+            const StoredExternalOutput& patch,
+            const juce::String& currentDevice,
+            std::span<const int> physicalByCallback,
+            const juce::StringArray& physicalNames,
+            const VerifiedNativeOutputs& hw) {
+        if(patch.playbackDevice.isEmpty() ||
+           patch.playbackDevice!=currentDevice ||
+           !hw.valid() ||
+           hw.activeOutputChannels!=static_cast<int>(physicalByCallback.size()) ||
+           patch.left<0 || patch.left%2!=0 || patch.right!=patch.left+1 ||
+           patch.right>=physicalNames.size() ||
+           patch.leftName.isEmpty() || patch.rightName.isEmpty() ||
+           physicalNames[patch.left]!=patch.leftName ||
+           physicalNames[patch.right]!=patch.rightName)return false;
+        int left=-1,right=-1;
+        for(std::size_t i=0;i<physicalByCallback.size();++i) {
+            if(physicalByCallback[i]==patch.left)left=static_cast<int>(i);
+            if(physicalByCallback[i]==patch.right)right=static_cast<int>(i);
+        }
+        if(left<0 || right<0 || left==right ||
+           left==hw.mainL || left==hw.mainR ||
+           right==hw.mainL || right==hw.mainR)return false;
+        return !hw.monitorEnabled ||
+           (left!=hw.monitorL && left!=hw.monitorR &&
+            right!=hw.monitorL && right!=hw.monitorR);
+    }
     static bool isAsio4All(const HardwareBinding& binding) {
         return binding.backend=="ASIO" && binding.playback.startsWithIgnoreCase("ASIO4ALL");
     }
@@ -267,6 +302,13 @@ struct MixerDeviceBindingPolicy final {
                 sources=std::move(mapped);
             }
         }
+        // Legacy in-memory O1 patches may lack explicit provenance. Capture
+        // the OLD registered ASIO device before rebinding document.binding.
+        // Keeping this identifier through later Save/Open stops a changed
+        // driver with coincidentally matching "OUT 3/4" labels auto-arming.
+        for(auto& patch:document.externalOutputs)
+            if(patch.playbackDevice.isEmpty())
+                patch.playbackDevice=document.binding.playback;
         document.request.physicalInputs=callbackInputs;
         document.binding=live;
         document.outputs=outputs;
@@ -471,6 +513,8 @@ public:
                 set(row,"left",patch.left);set(row,"right",patch.right);
                 set(row,"leftName",patch.leftName);
                 set(row,"rightName",patch.rightName);
+                if(patch.playbackDevice.isNotEmpty())
+                    set(row,"playbackDevice",patch.playbackDevice);
                 assignments.add(row);
             }
             set(root,"externalOutputs",juce::var(assignments));
@@ -680,6 +724,11 @@ public:
                    !textField(get(item,"leftName"),patch.leftName,256) ||
                    !textField(get(item,"rightName"),patch.rightName,256))
                     return false;
+                const auto origin=get(item,"playbackDevice");
+                if(!origin.isVoid() &&
+                   !textField(origin,patch.playbackDevice,256))return false;
+                if(patch.playbackDevice.isEmpty())
+                    patch.playbackDevice=doc.binding.playback; // legacy .smix
                 const auto* owner=doc.roster.find(patch.channel);
                 if(!owner || (owner->role!=ChannelRole::input &&
                               owner->role!=ChannelRole::group &&
