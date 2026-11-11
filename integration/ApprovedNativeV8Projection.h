@@ -46,7 +46,7 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
     if(!rows||rows->isEmpty()||!edges||!nativeV8Decimal(rev)||
        !nativeV8Decimal(roster))return false;
     juce::Array<juce::var> channels,wires,destinations;
-    std::unordered_set<std::string> ids,edgeIds;
+    std::unordered_set<std::string> ids,edgeIds,fxInstanceTokens;
     auto meters=std::make_unique<juce::DynamicObject>();
     juce::String mainId;
     for(const auto& row:*rows) {
@@ -64,7 +64,8 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
            (format!="MONO"&&format!="STEREO")||
            !out.isString()||!nativeV8Number(fader,linear)||
            !nativeV8Number(pan,p)||linear<0.||linear>4.||p< -1.||p>1.||
-           !mute.isBool()||!solo.isBool()||!inserts.isArray())return false;
+           !mute.isBool()||!solo.isBool()||!inserts.isArray()||
+           inserts.getArray()->size()>8)return false;
         if(role=="MAIN"){if(mainId.isNotEmpty())return false;mainId=id.toString();}
         auto ch=std::make_unique<juce::DynamicObject>();
         ch->setProperty("id",id);ch->setProperty("name",name);
@@ -93,7 +94,9 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
             if(!token.isString()||token.toString().isEmpty()||
                !catalog.isString()||catalog.toString().isEmpty()||
                catalog.toString().getNumBytesAsUTF8()>256||
-               !label.isString()||!bypass.isBool())return false;
+               !label.isString()||!bypass.isBool()||
+               !fxInstanceTokens.insert(token.toString().toStdString()).second)
+                return false;
             auto insert=std::make_unique<juce::DynamicObject>();
             insert->setProperty("id",token);insert->setProperty("catalogId",catalog);
             insert->setProperty("name",label);
