@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-#include "../engine/device/JuceActivePortSnapshot.h"
 #if defined(NDEBUG)
 #undef NDEBUG
 #endif
+#include "../engine/device/JuceActivePortSnapshot.h"
 #include <cassert>
 #include <array>
 using namespace armix::device;

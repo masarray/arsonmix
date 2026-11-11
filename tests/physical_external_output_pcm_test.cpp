@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+#if defined(NDEBUG)
+#undef NDEBUG
+#endif
 // O1: deterministic buffer-level proof. This does not certify physical FAT.
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include <array>
@@ -6,9 +9,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#if defined(NDEBUG)
-#undef NDEBUG
-#endif
 using namespace armix::mixer;
 
 static bool near(float a,float b,float eps=0.0001f) {
