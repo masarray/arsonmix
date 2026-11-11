@@ -1,4 +1,4 @@
-/* Only verified official ArSonMix release assets; prefer direct Setup EXE over ZIP. */
+/* Only verified official ArSonMix release assets; prefer the Windows installer ZIP. */
 (() => {
   "use strict";
   const cards = [...document.querySelectorAll("[data-platform]")];
@@ -9,7 +9,7 @@
   const keys = ["windows", "linux", "macos"];
   const labels = { windows: "Windows", linux: "Linux", macos: "macOS" };
   const suffixes = {
-    windows: ["Windows-x64-Setup.exe", "Windows-x64-Setup.zip"],
+    windows: ["Windows-x64-Setup.zip", "Windows-x64-Setup.exe"],
     linux: ["Linux-x86_64.AppImage", "Linux-x86_64.tar.gz"],
     macos: ["macOS-universal.dmg", "macOS-arm64.dmg", "macOS-x64.dmg"]
   };
