@@ -420,3 +420,65 @@
 #nativeFxSelector .ar-plugin-scopes button,#nativePluginManager .ar-plugin-scopes button{border:1px solid #405765;border-radius:4px;background:#172c38;color:#acc4cf;padding:5px 10px;font:500 10px "ArSonMix Inter",sans-serif;cursor:pointer}
 #nativeFxSelector .ar-plugin-scopes button[aria-pressed="true"],#nativePluginManager .ar-plugin-scopes button[aria-pressed="true"]{background:#205363;border-color:#4db1be;color:#e5f8fb}
 #nativeFxSelector .ar-plugin-scopes button:focus-visible,#nativePluginManager .ar-plugin-scopes button:focus-visible{outline:1px solid #76cfdd;outline-offset:1px}
+
+
+/* ArSonMiX compact floating-window chrome V1.
+   Override the legacy 36x36 native picker close / full-width 28px
+   Show-more bar with the same compact FX editor material and semantics. */
+#nativePluginManager,#nativeFxSelector{
+  --armix-window-ctl-face:linear-gradient(#3e5866,#293e4b);
+  --armix-window-ctl-ink:#e0edf2;
+  --armix-window-action-face:linear-gradient(#375564,#243b49);
+  --armix-window-action-border:#638896;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close,
+#nativeFxSelector .native-dialog-header .ar-dialog-close{
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  flex:0 0 24px!important;width:24px!important;min-width:24px!important;max-width:24px!important;
+  height:24px!important;min-height:24px!important;max-height:24px!important;
+  padding:0!important;margin:0!important;border:1px solid #607d8c!important;
+  border-radius:4px!important;background:var(--armix-window-ctl-face)!important;
+  box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75!important;
+  color:var(--armix-window-ctl-ink)!important;cursor:pointer!important;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close svg,
+#nativeFxSelector .native-dialog-header .ar-dialog-close svg{
+  display:none!important;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close::after,
+#nativeFxSelector .native-dialog-header .ar-dialog-close::after{
+  content:"";display:block;width:12px;height:12px;pointer-events:none;
+  background:linear-gradient(45deg,transparent 43%,currentColor 43% 57%,transparent 57%),
+    linear-gradient(-45deg,transparent 43%,currentColor 43% 57%,transparent 57%);
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close:hover,
+#nativeFxSelector .native-dialog-header .ar-dialog-close:hover{
+  color:#fff!important;background:linear-gradient(#64424f,#4d343f)!important;border-color:#b27078!important;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close:active,
+#nativeFxSelector .native-dialog-header .ar-dialog-close:active{
+  color:#fff!important;background:linear-gradient(#cc4753,#982a36)!important;border-color:#ee8b93!important;
+}
+#nativePluginManager .native-dialog-header .ar-dialog-close:focus-visible,
+#nativeFxSelector .native-dialog-header .ar-dialog-close:focus-visible{
+  outline:2px solid #a2dce9!important;outline-offset:2px!important;
+}
+#nativePluginManager .ar-manager-more,
+#nativeFxSelector .native-dialog-footer a[data-plugin-manager]{
+  box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
+  align-self:center;flex:0 0 auto;width:auto;height:auto;min-height:30px;
+  margin:7px auto;padding:6px 13px;border:1px solid var(--armix-window-action-border);
+  border-radius:4px;background:var(--armix-window-action-face);
+  color:#e3f3f7;font:500 10px/1.25 "ArSonMix Inter","Segoe UI",sans-serif;
+  text-decoration:none;white-space:nowrap;cursor:pointer;
+  box-shadow:inset 0 1px #ffffff15;
+}
+#nativePluginManager .ar-manager-more:hover:not(:disabled),
+#nativeFxSelector .native-dialog-footer a[data-plugin-manager]:hover{
+  background:linear-gradient(#466b7b,#2c5060);border-color:#8ac3d2;color:#fff;
+}
+#nativePluginManager .ar-manager-more:focus-visible,
+#nativeFxSelector .native-dialog-footer a[data-plugin-manager]:focus-visible{
+  outline:2px solid #9bdde9;outline-offset:2px;
+}
+#nativePluginManager .ar-manager-more[hidden]{display:none!important}
