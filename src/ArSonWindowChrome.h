@@ -26,26 +26,16 @@ public:
 
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
-        const bool close = kind_ == juce::DocumentWindow::closeButton;
-        // Compact 34 px hit area; only the 30x25 interior lights on hover.
-        // No timers, interpolated animations, allocation or WebView2 messaging.
-        // A pressed command is immediately visible: teal minimise, blue
-        // maximise/restore, and intentionally red close.
+        // Native window caption: semantic, low-glare hover followed by a
+        // clearly lit pressed face. No animations, timers, CSS or WebView2.
+        // Keep the existing 34 px click target and original SVG geometry.
         if (over || down)
         {
-            // Clear chromatic outline on hover; solid pressed state.
-            // The native JUCE Button repaints only on its mouse-state change.
-            const bool minimise = kind_ == juce::DocumentWindow::minimiseButton;
-            const auto accent = close ? juce::Colour (0xffff6874)
-                              : minimise ? juce::Colour (0xff50d4e7)
-                                         : juce::Colour (0xff67b9ff);
-            const auto pressed = close ? juce::Colour (0xffdc3549)
-                               : minimise ? juce::Colour (0xff168fa7)
-                                          : juce::Colour (0xff287abd);
+            const auto palette = paletteFor (kind_);
             const auto face = getLocalBounds().toFloat().reduced (2.0f, 3.0f);
-            g.setColour (down ? pressed : accent.withAlpha ((juce::uint8) 27));
+            g.setColour (down ? palette.pressedFace : palette.hoverFace);
             g.fillRoundedRectangle (face, 3.0f);
-            g.setColour (accent);
+            g.setColour (down ? palette.pressedEdge : palette.hoverEdge);
             g.drawRoundedRectangle (face.reduced (0.5f), 3.0f, 1.0f);
         }
         if (hasKeyboardFocus (true))
@@ -66,6 +56,29 @@ public:
     }
 
 private:
+    struct CaptionPalette
+    {
+        juce::Colour hoverFace, hoverEdge, pressedFace, pressedEdge;
+    };
+
+    // Each action has one authoritative native palette. A dark hover
+    // identifies the action without flashing; a bright press confirms it.
+    // Minimise = green, maximise/restore = amber, close = red.
+    // Pure value construction: no heap allocation or frame-driven repaint.
+    static CaptionPalette paletteFor (int kind) noexcept
+    {
+        if (kind == juce::DocumentWindow::closeButton)
+            return { juce::Colour (0xff5c3039), juce::Colour (0xffab5864),
+                     juce::Colour (0xffef3e50), juce::Colour (0xffff8993) };
+        if (kind == juce::DocumentWindow::minimiseButton)
+            return { juce::Colour (0xff244e3a), juce::Colour (0xff4ead7a),
+                     juce::Colour (0xff1fb76b), juce::Colour (0xff8be2b4) };
+        // JUCE uses the same button for maximised and restored states;
+        // choosing the icon depends on the real DocumentWindow state.
+        return { juce::Colour (0xff584929), juce::Colour (0xffbc9544),
+                 juce::Colour (0xffe5ae2b), juce::Colour (0xffffdf81) };
+    }
+
     static std::unique_ptr<juce::Drawable> load (const char* path)
     {
         juce::String source ("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"#dcecf2\" d=\"");
