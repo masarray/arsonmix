@@ -1162,6 +1162,40 @@ static void verifyHotkeyDocumentIdentityAndMigration() {
     assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
 }
 
+static void verifyExternalOutputPortableIntent() {
+    auto doc=makeSession();
+    // Two additional amplifier pairs are physical intent, not armed state.
+    doc.binding.outputMask="ff";
+    doc.binding.outputNames={"ASIO OUT 1","ASIO OUT 2",
+        "ASIO OUT 3","ASIO OUT 4","ASIO OUT 5","ASIO OUT 6",
+        "ASIO OUT 7","ASIO OUT 8"};
+    doc.outputs.activeOutputChannels=8;
+    doc.externalOutputs.push_back({{16},2,3,"ASIO OUT 3","ASIO OUT 4"});
+    doc.externalOutputs.push_back({{12},4,5,"ASIO OUT 5","ASIO OUT 6"});
+    const auto encoded=Codec::encode(doc);
+    MixerSessionDocument loaded;
+    assert(Codec::decode(encoded,loaded));
+    assert(loaded.externalOutputs.size()==2);
+    assert(loaded.externalOutputs[0].channel.value==16);
+    assert(loaded.externalOutputs[0].left==2);
+    assert(loaded.externalOutputs[0].right==3);
+    assert(loaded.externalOutputs[0].leftName=="ASIO OUT 3");
+    assert(loaded.externalOutputs[1].channel.value==12);
+    // Legacy sessions without the optional field retain their native mixer.
+    doc.externalOutputs.clear();
+    assert(Codec::decode(Codec::encode(doc),loaded));
+    assert(loaded.externalOutputs.empty());
+    // Corrupted pair, duplicate ChannelId or missing pin name fail closed.
+    doc.externalOutputs.push_back({{16},3,4,"ASIO OUT 4","ASIO OUT 5"});
+    assert(!Codec::decode(Codec::encode(doc),loaded));
+    doc.externalOutputs[0]={ {16},2,3,"ASIO OUT 3","ASIO OUT 4" };
+    doc.externalOutputs.push_back(doc.externalOutputs[0]);
+    assert(!Codec::decode(Codec::encode(doc),loaded));
+    doc.externalOutputs.pop_back();
+    doc.externalOutputs[0].leftName.clear();
+    assert(!Codec::decode(Codec::encode(doc),loaded));
+}
+
 int main(){
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
@@ -1189,6 +1223,7 @@ int main(){
     warmVst3Discovery();
     nativeDeviceRecovery();
     auto d=makeSession();
+    verifyExternalOutputPortableIntent();
     const auto before=Codec::encode(d);
     MixerSessionDocument restored;
     assert(Codec::decode(before,restored));
