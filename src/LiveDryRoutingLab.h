@@ -1341,6 +1341,7 @@ public:
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true; // M4 Show cannot represent new inserts.
             nativeMeterEpoch_.store(0,std::memory_order_release);
             out.accepted=true;out.error="";
@@ -1380,7 +1381,8 @@ public:
                 revision,ep,epoch(),false,std::move(fx),false,true);
             if(!committed.ok()){reply.error="NATIVE_FX_RACK_PCM_COMMIT_REJECTED";return reply;}
             nativeAccepted_.graph.roster=std::move(roster);nativeAccepted_.fxOwners=std::move(owner);
-            nativeAccepted_.pcmRevision=committed.revision;nativeStructureLive_=true;
+            nativeAccepted_.pcmRevision=committed.revision;
+            reapplyExternalOutputsSameEpoch();nativeStructureLive_=true;
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";reply.pcmRevision=committed.revision;
             reply.rosterRevision=nativeAccepted_.graph.roster.revision();return reply;
@@ -1535,6 +1537,7 @@ public:
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             // From now on original fixed M4 cannot express the extra BUS.
             // The native publisher remains the authoritative PCM, and a
             // failed scalar mirror MUST fault silent rather than reselect
@@ -1629,6 +1632,7 @@ public:
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true; // never restore stale M4 width
             nativeMeterEpoch_.store(0,std::memory_order_release);
             reply.accepted=true;reply.error="";
@@ -1792,6 +1796,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true; // M4 can no longer represent CH11+
             reply.accepted=true;reply.error="";
             reply.created=created.createdIds.front();
@@ -1867,6 +1872,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             std::erase_if(waitingAsioInputs_,[id](const auto& pin){return pin.id==id;});
             nativeStructureLive_=true;
             nativeMeterEpoch_.store(0,std::memory_order_release);
@@ -1954,6 +1960,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             std::erase_if(waitingAsioInputs_,[channel](const auto& pin){return pin.id==channel;});
             nativeStructureLive_=true; // M4 source roster no longer authoritative
             nativeMeterEpoch_.store(0,std::memory_order_release);
@@ -2027,6 +2034,7 @@ public:
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeMeterEpoch_.store(0,std::memory_order_release);
             r.accepted=true;r.error="";
             r.pcmRevision=published.revision;
@@ -2101,6 +2109,7 @@ public:
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.fxOwners=std::move(owner);
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true; // never fall back to incompatible M4
             nativeMeterEpoch_.store(0,std::memory_order_release);
             r.accepted=true;r.error="";
@@ -2254,6 +2263,7 @@ public:
             draft.outputs=nativeAccepted_.hardware;
             draft.request=nativeAccepted_.graph.request;
             draft.waitingAsioInputs=waitingAsioInputs_;
+            draft.externalOutputs=externalOutputAssignments_;
             std::vector<armix::shows::BinaryState> staged;
             std::set<juce::String> hashes;
             juce::int64 total=0;
@@ -2486,6 +2496,7 @@ public:
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;
             nativeAccepted_.pcmRevision=published.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeStructureLive_=true;
             nativeControlDirty_=true;
             publishedEpoch_.store(0,std::memory_order_release);
@@ -2807,6 +2818,7 @@ public:
             nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.deviceEpoch=newEpoch;
             nativeAccepted_.pcmRevision=applied.revision;
+            reapplyExternalOutputsSameEpoch();
             nativeAccepted_.fxOwners=std::move(owner);
             nativeControlDirty_=true;
             installNativeHardware(newEpoch,hardware,nativeAccepted_.graph.request.maxFrames);
@@ -3001,6 +3013,7 @@ public:
         // Large/variable JUCE quantum is chunked using stack pointer views;
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
+        std::array<float*,armix::device::LiveInputPortRegistry::limit> outputSlices{};
         int max=channelIdRender?static_cast<int>(native>>36):
             std::min(snapshot->prepared->maxFramesPerPlugin(),
                      reboundQuantum_.load(std::memory_order_acquire));
@@ -3026,6 +3039,9 @@ public:
             const int n=std::min(max,frames-offset);
             for(int c=0;c<inputCount;++c)
                 shifted[c]=inputs&&inputs[c]?inputs[c]+offset:nullptr;
+            if(channelIdRender && !meterOnly)
+                for(int c=0;c<outputCount;++c)
+                    outputSlices[c]=outputs[c]?outputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             bool processed=false;
             if(channelIdRender) {
@@ -3053,7 +3069,9 @@ public:
                     monitorR?(meterOnly?mutedMonitor_[1].data():monitorR+offset):nullptr,
                     tapsL,tapsR,
                     std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                        slice.data(),playerPcm.size()));
+                        slice.data(),playerPcm.size()),
+                     meterOnly?nullptr:outputSlices.data(),
+                     meterOnly?0:outputCount);
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
@@ -3127,10 +3145,11 @@ public:
         // All input PCM has been staged/processed by the native graph.
         // Only now silence unselected physical ports; do not clobber an
         // aliased MAIN/MONITOR destination reported twice by a driver.
-        for(int c=0;c<outputCount;++c)
-            if(outputs[c] && (meterOnly || (outputs[c]!=mainL && outputs[c]!=mainR &&
-               outputs[c]!=monitorL && outputs[c]!=monitorR)))
-                juce::FloatVectorOperations::clear(outputs[c],frames);
+        if(!channelIdRender || meterOnly)
+            for(int c=0;c<outputCount;++c)
+                if(outputs[c] && (meterOnly || (outputs[c]!=mainL && outputs[c]!=mainR &&
+                   outputs[c]!=monitorL && outputs[c]!=monitorR)))
+                    juce::FloatVectorOperations::clear(outputs[c],frames);
         monitorPeakL_.store(monitorPeakL,std::memory_order_relaxed);
         monitorPeakR_.store(monitorPeakR,std::memory_order_relaxed);
         peakL_.store(peakL,std::memory_order_relaxed);
