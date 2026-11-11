@@ -43,14 +43,14 @@
       if(/\b(device|driver|audio interface)\b|DEVICE_/i.test(raw) &&
          /\b(disconnect|unavailable|not ready|not open|not found|failed)\b|_(FAILED|ERROR|DISCONNECTED|UNAVAILABLE)/i.test(raw))
         return "Audio device unavailable · Open Audio I/O";
-      if(/\b(WIRE|route|routing)\b/i.test(raw)){
+      if(/\b(WIRE|route|routing)\b|(?:^|_)(?:WIRE|ROUTING)(?:_|$)/i.test(raw)){
         if(failure)
           return "Routing not changed · Check the connection and try again";
         if(/\b(pending|await|verif|applying|completing)\w*/i.test(raw))
           return "Updating channel routing…";
         return "Channel routing updated";
       }
-      if(/\b(VST3|plugin|effect|FX)\b/i.test(raw)){
+      if(/\b(VST3|plugin|effect|FX)\b|(?:^|_)(?:VST3|PLUGIN|FX)(?:_|$)/i.test(raw)){
         if(failure)
           return "Effect change failed · Previous settings kept";
         if(/\b(pending|await|verif|loading|applying)\w*/i.test(raw))
