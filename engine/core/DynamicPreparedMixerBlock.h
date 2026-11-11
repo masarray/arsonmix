@@ -123,6 +123,24 @@ class DynamicPreparedMixerBlock final {
         std::atomic<float> gain{1.f};
         armix::dsp::RealtimeSlew64 applied{};
     };
+    // O1: immutable lane roster + one lock-free control target per lane.
+    // The callback owns the transition state; a physical tap is NOT a WIRE.
+    struct ExternalFade final {
+        std::uint32_t current=0xffffffffu,next=0xffffffffu;
+        int remaining=0;
+    };
+    static constexpr std::uint32_t noExternal=0xffffffffu;
+    static constexpr std::uint32_t encodeExternal(int l,int r) noexcept {
+        return l<0 ? noExternal :
+            static_cast<std::uint32_t>(l) |
+            (static_cast<std::uint32_t>(r)<<16);
+    }
+    static constexpr int externalLeft(std::uint32_t pair) noexcept {
+        return pair==noExternal?-1:static_cast<int>(pair&0xffffu);
+    }
+    static constexpr int externalRight(std::uint32_t pair) noexcept {
+        return pair==noExternal?-1:static_cast<int>(pair>>16);
+    }
     static constexpr std::size_t notScheduled=std::numeric_limits<std::size_t>::max();
 public:
     DynamicPreparedMixerBlock()=default;
@@ -237,6 +255,30 @@ public:
             std::find(renderOrder_.begin(),renderOrder_.end(),found->second)!=renderOrder_.end();
     }
 
+    // CONTROL only: the caller has already verified the ASIO device epoch,
+    // sparse physical pins, exclusive MAIN/MONITOR ownership and graph revision.
+    // Target is a callback ordinal, NEVER a physical port number.
+    bool setExternalOutput(ChannelId id,int left,int right,int outputCount) noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end() || outputCount<2 || outputCount>256 ||
+           (left<0 ? right!=-1 :
+             (right<0 || left>=outputCount || right>=outputCount ||
+              left==right)) || !channelScheduled(id))return false;
+        const auto role=lanes_[it->second].role;
+        if(role!=ChannelRole::input && role!=ChannelRole::group &&
+           role!=ChannelRole::fxReturn)return false;
+        externalTargets_[it->second].store(
+            encodeExternal(left,right),std::memory_order_release);
+        return true;
+    }
+    // Independent installed CONTROL readback. No UI draft can claim LIVE.
+    std::pair<int,int> externalOutput(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end())return {-1,-1};
+        const auto pair=externalTargets_[it->second].load(std::memory_order_acquire);
+        return {externalLeft(pair),externalRight(pair)};
+    }
+
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
@@ -245,7 +287,7 @@ public:
         std::vector<int> arrival(lanes_.size(),0),output(lanes_.size(),0);
         std::size_t bytes=scratch_.size()*sizeof(float);
         edgeDelays_.resize(edges_.size());physicalDelays_.resize(lanes_.size());
-        sinkDelays_.resize(lanes_.size());
+        sinkDelays_.resize(lanes_.size());externalDelays_.resize(lanes_.size());
         const auto allocate=[&](armix::dsp::StereoLatencyDelay& delay,int samples) {
             if(samples<0||samples>armix::dsp::StereoLatencyDelay::maximumSamples)return false;
             const auto need=static_cast<std::size_t>(samples)*2*sizeof(float);
@@ -267,8 +309,14 @@ public:
             for(std::size_t e=lanes_[i].first;e<lanes_[i].last;++e)
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
-        int terminal=0;
-        for(const auto i:renderOrder_)if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
+        int terminal=0,externalTerminal=0;
+        for(const auto i:renderOrder_){
+            if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
+            if(lanes_[i].role==ChannelRole::input ||
+               lanes_[i].role==ChannelRole::group ||
+               lanes_[i].role==ChannelRole::fxReturn)
+                externalTerminal=std::max(externalTerminal,output[i]);
+        }
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             if((lane.inputL>=0 || lane.playerDeckId!=0) &&
@@ -280,6 +328,14 @@ public:
                     error={DynamicGraphFault::scratchBudget,lane.id};return false;
                 }
             if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],terminal-output[i])) {
+                error={DynamicGraphFault::scratchBudget,lane.id};return false;
+            }
+            // All potential direct taps are prepared on CONTROL so changing
+            // an output never allocates or rebuilds a VST rack on AUDIO.
+            if((lane.role==ChannelRole::input ||
+                lane.role==ChannelRole::group ||
+                lane.role==ChannelRole::fxReturn) &&
+               !allocate(externalDelays_[i],externalTerminal-output[i])) {
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
         }
@@ -518,6 +574,10 @@ public:
             target.appliedR.reset(next.lanes_[i].gainR);
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
         }
+        next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
+        next.externalFades_=std::make_unique<ExternalFade[]>(rows.size());
+        for(std::size_t i=0;i<rows.size();++i)
+            next.externalTargets_[i].store(noExternal,std::memory_order_relaxed);
         next.sendTargets_=std::make_unique<SendTarget[]>(next.edges_.size());
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
@@ -538,7 +598,9 @@ public:
                  float* monitorL=nullptr,float* monitorR=nullptr,
                  std::span<float> channelPeaksL={},
                  std::span<float> channelPeaksR={},
-                 std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
+                 std::span<const DynamicPlayerPcmBlock> playerPcm={},
+                 float* const* hardwareOutputs=nullptr,
+                 int hardwareOutputCount=0) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -551,7 +613,9 @@ public:
             std::fill_n(channelPeaksL.data(),channelPeaksL.size(),0.f);
             std::fill_n(channelPeaksR.data(),channelPeaksR.size(),0.f);
         }
-        if(outputL==outputR ||
+        if(outputL==outputR || hardwareOutputCount<0 ||
+           hardwareOutputCount>256 ||
+           (hardwareOutputCount!=0 && !hardwareOutputs) ||
            (monitorL==nullptr)!=(monitorR==nullptr) ||
            (monitor_!=notScheduled && !monitorL) ||
            (monitorL && (monitorL==monitorR || monitorL==outputL ||
@@ -765,6 +829,73 @@ public:
             }
         }
         if(monitorL)copySink(monitor_,monitorL,monitorR);
+        // External hardware taps consume the SAME post-FX/post-fader scratch.
+        // All input reads and native plugin calls are already complete. The
+        // host must not clear these dedicated output buffers a second time.
+        if(hardwareOutputs && hardwareOutputCount) {
+            for(int c=0;c<hardwareOutputCount;++c) {
+                float* out=hardwareOutputs[c];
+                if(out && out!=outputL && out!=outputR &&
+                   out!=monitorL && out!=monitorR)
+                    std::fill_n(out,frames,0.f);
+            }
+            // Validate ALL targets before any sum. A misbehaving callback
+            // exposing aliased hardware pointers fails closed as a whole.
+            for(const auto i:renderOrder_) {
+                const auto pair=externalTargets_[i].load(std::memory_order_acquire);
+                const auto& fading=externalFades_[i];
+                const std::uint32_t targets[3]={pair,fading.current,fading.next};
+                for(const auto target:targets) {
+                    const int l=externalLeft(target),r=externalRight(target);
+                    if(l<0)continue;
+                    if(r<0 || l>=hardwareOutputCount || r>=hardwareOutputCount ||
+                       l==r || !hardwareOutputs[l] || !hardwareOutputs[r] ||
+                       hardwareOutputs[l]==hardwareOutputs[r] ||
+                       hardwareOutputs[l]==outputL || hardwareOutputs[l]==outputR ||
+                       hardwareOutputs[r]==outputL || hardwareOutputs[r]==outputR ||
+                       hardwareOutputs[l]==monitorL || hardwareOutputs[l]==monitorR ||
+                       hardwareOutputs[r]==monitorL || hardwareOutputs[r]==monitorR)
+                        return false;
+                }
+            }
+            // External tap delay advances even while the tap is disconnected,
+            // so reconnect cannot spill a stale FX tail into a new amplifier.
+            for(const auto i:renderOrder_) {
+                const auto& lane=lanes_[i];
+                if(lane.role!=ChannelRole::input &&
+                   lane.role!=ChannelRole::group &&
+                   lane.role!=ChannelRole::fxReturn)continue;
+                auto& fade=externalFades_[i];
+                const auto wanted=externalTargets_[i].load(std::memory_order_acquire);
+                if(fade.remaining==0 && fade.current!=wanted) {
+                    fade.next=wanted;
+                    fade.remaining=armix::dsp::RealtimeSlew64::samples;
+                }
+                const auto slot=lane.slot;
+                const float* src=scratch_.data()+slot*2*block;
+                const float* srcR=src+block;
+                for(int f=0;f<frames;++f) {
+                    float l=src[f],r=srcR[f];
+                    if(!externalDelays_.empty())externalDelays_[i].process(l,r);
+                    float nextWeight=1.f,oldWeight=0.f;
+                    if(fade.remaining>0) {
+                        nextWeight=1.f-static_cast<float>(fade.remaining-1)/
+                           static_cast<float>(armix::dsp::RealtimeSlew64::samples);
+                        oldWeight=1.f-nextWeight;
+                        if(--fade.remaining==0)fade.current=fade.next;
+                    }
+                    if(fade.remaining>0 && fade.current!=noExternal) {
+                        hardwareOutputs[externalLeft(fade.current)][f]+=l*oldWeight;
+                        hardwareOutputs[externalRight(fade.current)][f]+=r*oldWeight;
+                    }
+                    const auto active=fade.remaining>0?fade.next:fade.current;
+                    if(active!=noExternal) {
+                        hardwareOutputs[externalLeft(active)][f]+=l*nextWeight;
+                        hardwareOutputs[externalRight(active)][f]+=r*nextWeight;
+                    }
+                }
+            }
+        }
         return true;
     }
 private:
@@ -775,12 +906,14 @@ private:
     std::vector<unsigned char> initialAudible_,soloAncestors_,soloDescendants_;
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
-    std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_;
+    std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     int latencySamples_=0;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;
     std::unique_ptr<SendTarget[]> sendTargets_;
+    std::unique_ptr<std::atomic<std::uint32_t>[]> externalTargets_;
+    std::unique_ptr<ExternalFade[]> externalFades_;
     std::size_t main_=notScheduled,monitor_=notScheduled;
     bool mainMonoAfterFx_=false;
     int capacity_=0,physicalInputs_=0;
