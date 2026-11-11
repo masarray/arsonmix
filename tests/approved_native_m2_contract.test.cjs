@@ -27,6 +27,67 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("M5 native FX snapshot rejects malformed/duplicate lease tokens without losing accepted state",()=>{
+ const good=acceptedFixture(),input=good.graph.channels[0].id;
+ good.graph.channels[0].inserts=[{
+   id:"native-lease-A",catalogId:"vendor.fx.catalog",name:"Vendor FX",bypassed:false
+ }];
+ const sent=[],statuses=[],controller=protocol.createController({
+   emit:(event,payload)=>sent.push({event,payload}),
+   onStatus:x=>statuses.push(x)
+ });
+ assert.equal(controller.onSnapshot(good),true);
+ const accepted=controller.state().current;
+ assert.ok(accepted.admitted);
+ const mutations=[
+   row=>{row.graph.channels[0].inserts=[null];},
+   row=>{row.graph.channels[0].inserts=[{}];},
+   row=>{row.graph.channels[0].inserts=[{id:"",catalogId:"vendor.fx.catalog"}];},
+   row=>{row.graph.channels[0].inserts=[{id:"native-lease-A",catalogId:""}];},
+   row=>{row.graph.channels[0].inserts=[{id:"native-lease-A",catalogId:"vendor.fx.catalog",bypassed:"false"}];},
+   row=>{row.graph.channels[0].inserts.push({...row.graph.channels[0].inserts[0]});},
+   row=>{row.graph.channels[1].inserts.push({...row.graph.channels[0].inserts[0]});},
+   row=>{row.graph.channels[0].inserts=Array.from({length:9},(_,i)=>({
+     id:"lease-"+i,catalogId:"vendor.fx.catalog"}));}
+ ];
+ for(const mutate of mutations){
+   const bad=clone(good);
+   mutate(bad);
+   assert.equal(protocol.normalizeSnapshot(bad),null,
+     "malformed instance lease must not be accepted as native PCM graph");
+   assert.equal(controller.onSnapshot(bad),false);
+   assert.equal(controller.state().current,accepted,
+     "rejected FX snapshot must preserve the latest accepted physical graph");
+   assert.equal(controller.state().lastError,"INVALID_NATIVE_SNAPSHOT");
+   assert.equal(controller.state().pending,null);
+   assert.equal(sent.length,0,"no bogus native intent or subscription");
+ }
+ assert.equal(statuses.at(-1).lastError,"INVALID_NATIVE_SNAPSHOT");
+ assert.equal(protocol.readbackProvesIntent(null,{
+   operation:"REMOVE_INSERT",targetChannelId:input,payload:{slot:0}
+ }),false,"invalid snapshot may never prove ACK");
+
+ // Malformed unsolicited readback during an edit is not a reason to commit or
+ // lose the valid pending request; a subsequent real ACK+snapshot may recover.
+ const edit=controller.intent("SET_FADER",input,{valueDb:-12});
+ assert.equal(edit.ok,true);
+ const bad=clone(good);bad.graph.channels[0].inserts=[null];
+ assert.equal(controller.onSnapshot(bad),false);
+ assert.equal(controller.state().pending?.requestId,edit.requestId);
+ assert.equal(controller.state().current,accepted);
+ assert.equal(controller.onAck({
+   requestId:edit.requestId,status:"ACCEPTED",
+   deviceEpoch:good.device.epoch,
+   graphRevision:good.graph.revision,
+   rosterRevision:good.graph.rosterRevision,errorCode:"NONE"
+ }),true);
+ const after=clone(good);
+ after.graph.channels[0].controls.faderDb=-12;
+ assert.equal(controller.onSnapshot(after),true);
+ assert.equal(controller.state().lastError,"ACCEPTED_READBACK");
+ assert.equal(controller.state().pending,null);
+ assert.equal(controller.state().current.graph.channels[0].controls.faderDb,-12);
+});
 test("M5 rejected FX intents update observable native status without emitting or repainting PCM",()=>{
  const s=acceptedFixture();
  const ch=s.graph.channels[0];
