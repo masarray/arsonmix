@@ -72,6 +72,19 @@ int main()
         expect (d.renderId == secondPhysical.id,
                 "preinstall physical default outranks new current default");
 
+        inventory[0].preInstallDefaultRender = true;
+        d = P::choose (inventory, false);
+        expect (d.outcome == P::Outcome::chooseSpeakers &&
+                !d.mayAttemptApply(),
+                "two contradictory pre-install defaults must fail closed");
+        inventory[0].preInstallDefaultRender = false;
+        inventory[1].preInstallDefaultRender = false;
+        inventory[1].currentDefaultRender = true;
+        d = P::choose (inventory, false);
+        expect (d.outcome == P::Outcome::chooseSpeakers &&
+                !d.mayAttemptApply(),
+                "two contradictory active defaults must fail closed");
+
         inventory = {physical, cable, cable};
         inventory[2].id = L"{cable-02}";
         inventory[2].name = L"CABLE Output 2";
