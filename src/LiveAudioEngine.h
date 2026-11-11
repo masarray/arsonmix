@@ -19,6 +19,7 @@
 #include "../engine/device/JuceIndependentClockDevice.h"
 #include "../engine/device/LiveSecondaryOutputDevice.h"
 #include "../engine/core/LiveOutputRouteGate.h"
+#include "../engine/core/NativeOutputTransition.h"
 #include "../engine/core/NativeRenderAuthority.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
@@ -3144,6 +3145,9 @@ private:
         if (renderOwner ==
             armix::mixer::NativeRenderOwner::acceptedM4Session)
         {
+            const bool nativePcm=dryRoutingLab_.channelIdPhysicalPcmActive();
+            const bool mainOnlyMuted=nativePcm &&
+                masterMute_.load(std::memory_order_relaxed);
             const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
                 dryRoutingLab_.active(),
                 directFence_.permitted() && !independent_.active(),
@@ -3152,7 +3156,7 @@ private:
                 !masterMute_.load(std::memory_order_relaxed),
                 monitor_.load(std::memory_order_relaxed) &&
                     !topologyPublicationMute_.load(std::memory_order_acquire),
-                secondaryOutput_.armed());
+                secondaryOutput_.armed(),nativePcm);
             const bool outputPermitted=outputGate.renderMain;
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
@@ -3190,7 +3194,7 @@ private:
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                         deckBlocks.data(),deckCount));
+                         deckBlocks.data(),deckCount),mainOnlyMuted);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
@@ -3215,26 +3219,12 @@ private:
             // Apply a single output de-click gain per sample, AFTER graph DSP,
             // without touching third-party plugin lifecycle on the callback.
             if(routedFxMove!=0 || cycle.fadeOut || cycle.fadeIn) {
-                const float step=samples>1?1.f/static_cast<float>(samples-1):0.f;
-                // Fade both INDEPENDENT physical buses on FX MOVE or graph
-                // handoff, not only MAIN. Same callback, no second DSP pass.
-                for(int c=0;c<4;++c) {
-                    auto* const out=c<2?nativeMain[static_cast<std::size_t>(c)]
-                        :nativeMonitor[static_cast<std::size_t>(c-2)];
-                    if(!out)continue;
-                    float peak=0.f;
-                    for(int i=0;i<samples;++i) {
-                        const float phase=static_cast<float>(i)*step;
-                        const float graphGain=cycle.fadeOut?1.f-phase:
-                            cycle.fadeIn?phase:1.f;
-                        const float moveGain=armix::dsp::FxMoveRamp::gain(
-                            routedFxMove,i,samples);
-                        out[i]*=graphGain*moveGain;
-                        peak=juce::jmax(peak,std::abs(out[i]));
-                    }
-                    if(c==0)movedPeakL=peak;
-                    else if(c==1)movedPeakR=peak;
-                }
+                // ONE post-FX envelope for MAIN, MONITOR and ALL physical
+                // ASIO taps. No second render, user ARM or blocking gate.
+                armix::mixer::NativeOutputTransition::apply(
+                    outputs,outputChannels,samples,routedFxMove,
+                    cycle.fadeOut,cycle.fadeIn,
+                    nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
                         fxMovePendingOrder_.load(std::memory_order_acquire),
