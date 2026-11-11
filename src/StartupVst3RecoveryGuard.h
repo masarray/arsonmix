@@ -20,6 +20,13 @@ public:
         return marker_.replaceWithText("RESTORE_IN_PROGRESS\n");
     }
 
+    // Manual Open is an explicit user's retry after safe recovery. Preserve
+    // crash evidence if the process dies again; clear only after the newly
+    // installed FX graph is stable. A writable marker is mandatory.
+    [[nodiscard]] bool armExplicitRetry() {
+        return marker_.replaceWithText("EXPLICIT_FX_RESTORE_IN_PROGRESS\n");
+    }
+
     [[nodiscard]] bool complete() {
         // Called after stable startup or graceful shutdown, never while
         // processor construction is still underway.
