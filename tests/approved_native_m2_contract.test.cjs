@@ -1690,3 +1690,93 @@ test("native vendor editor retention follows current PCM ownership, not inactive
  const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
  assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
 });
+
+
+test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effect",()=>{
+ const id="9007199254740993",main="9007199254740994";
+ const initial={
+   revision:"10",mainChannelId:main,
+   channels:[
+     {id,role:"INPUT",name:"Vocal",processingFormat:"MONO",primaryOutId:main,
+       controls:{faderDb:-6,pan:0,mute:false,solo:false},fxRackBypassed:false,
+       inserts:[{id:"fx-slot-0",catalogId:"vendor.a",bypassed:false},
+                {id:"fx-slot-1",catalogId:"vendor.b",bypassed:false}]},
+     {id:main,role:"MAIN",name:"MAIN",processingFormat:"STEREO",
+       controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[]}
+   ],
+   edges:[{edgeId:"101",from:id,to:main,primaryOutput:true,
+     enabled:true,tap:"POST_FADER",gainLinear:1}]
+ };
+ const originalCatalogs=["vendor.a","vendor.b"];
+ const beforeEdges=clone(initial.edges);
+ const next=()=>{const graph=clone(initial);graph.revision="11";return graph;};
+ const pending=(operation,payload={},extras={})=>({
+   operation,channelId:id,payload,ackRevision:"11",
+   beforeChannelExists:true,beforeInsertCatalogs:originalCatalogs,
+   beforeEdges,...extras
+ });
+ const proves=(p,g)=>protocol.logicalReadbackProves(p,g);
+ let g=next();g.channels[0].inserts.push({id:"fx-slot-2",catalogId:"vendor.a",bypassed:false});
+ assert.equal(proves(pending("ADD_FX_REFERENCE",{catalogId:"vendor.a"}),g),true);
+ g=next();assert.equal(proves(pending("ADD_FX_REFERENCE",{catalogId:"vendor.a"}),g),false,
+   "existing instance of same catalog cannot masquerade as new insert");
+ g=next();g.channels[0].inserts.splice(0,1);
+ assert.equal(proves(pending("REMOVE_FX_REFERENCE",{slot:0,beforeCount:2}),g),true);
+ g=next();g.channels[0].inserts.splice(1,1);
+ assert.equal(proves(pending("REMOVE_FX_REFERENCE",{slot:0,beforeCount:2}),g),false,
+   "identical rack length with wrong slot removed is not accepted");
+ g=next();g.channels[0].controls.faderDb=-12;
+ assert.equal(proves(pending("SET_FADER",{valueDb:-12}),g),true);
+ assert.equal(proves(pending("SET_FADER",{valueDb:"-12"}),g),false);
+ assert.equal(proves(pending("SET_FADER",{valueDb:-12}, {ackRevision:"12"}),g),false,
+   "same effect at wrong revision is not proof of this ACK");
+ assert.equal(proves(pending("SET_FADER",{valueDb:-12}),{revision:"11"}),false);
+ g=next();g.channels[0].controls.mute=true;
+ assert.equal(proves(pending("SET_MUTE",{enabled:true}),g),true);
+ assert.equal(proves(pending("SET_MUTE",{enabled:"true"}),g),false);
+ g=next();g.channels[0].inserts[1].bypassed=true;
+ assert.equal(proves(pending("SET_FX_SLOT_BYPASS",{slot:1,enabled:true}),g),true);
+ assert.equal(proves(pending("SET_FX_SLOT_BYPASS",{slot:2,enabled:true}),g),false);
+ g=next();g.channels[0].fxRackBypassed=true;
+ assert.equal(proves(pending("SET_FX_RACK_BYPASS",{enabled:true}),g),true);
+ g=next();g.channels[0].name="New Vocal";
+ assert.equal(proves(pending("RENAME_CHANNEL",{name:"New Vocal"}),g),true);
+ g=next();g.channels[0].processingFormat="STEREO";
+ assert.equal(proves(pending("SET_PROCESSING_FORMAT",{format:"STEREO"}),g),true);
+ g=next();g.channels.push({id:"9007199254740995",role:"GROUP"});
+ assert.equal(proves(pending("CREATE_GROUP",{},{
+   channelId:null,createdId:"9007199254740995"}),g),true);
+ assert.equal(proves(pending("CREATE_GROUP",{},{
+   channelId:null,createdId:"9007199254740996"}),g),false);
+ g=next();g.channels.shift();g.edges=[];
+ assert.equal(proves(pending("DELETE_CHANNEL"),g),true);
+ assert.equal(proves(pending("DELETE_CHANNEL",{},{
+   beforeChannelExists:false}),g),false);
+ const wire=change=>pending("WIRE_TRANSACTION",{changes:[change]});
+ g=next();g.channels[0].primaryOutId=undefined;g.edges=[];
+ assert.equal(proves(wire({op:"DISCONNECT",from:id}),g),true);
+ assert.equal(proves(wire({op:"REMOVE",from:id,edgeId:"101"}),g),true);
+ assert.equal(proves(wire({op:"REMOVE",from:id,edgeId:"999"}),g),false);
+ g=next();g.edges.push({edgeId:"102",from:id,to:main,primaryOutput:false,
+   enabled:true,tap:"POST_FADER",gainLinear:.5});
+ assert.equal(proves(wire({op:"CONNECT",from:id,to:main,gainLinear:.5}),g),true);
+ assert.equal(proves(wire({op:"CONNECT",from:id,to:main,gainLinear:.8}),g),false);
+ assert.equal(proves(wire({op:"CONNECT",from:id,to:main}),next()),false,
+   "existing edge to the destination is not evidence of a new send");
+ g=next();g.edges[0].to="9007199254740996";
+ assert.equal(proves(wire({op:"RETARGET",from:id,edgeId:"101",to:"9007199254740996"}),g),true);
+ assert.equal(proves(wire({op:"RETARGET",from:id,edgeId:"101",to:main}),next()),false);
+ assert.equal(proves(wire({op:"ROUTE_ONLY",from:id,to:main}),next()),true);
+ assert.equal(proves(wire({op:"ROUTE_ONLY",from:id,to:"9007199254740996"}),next()),false);
+ assert.equal(proves(pending("WIRE_TRANSACTION",{changes:[
+   {op:"ROUTE_ONLY",from:id,to:main},{op:"CONNECT",from:id,to:main}
+ ]}),next()),false,"JUCE accepts one offline WIRE change, never just changes[0]");
+ assert.equal(proves(pending("WIRE_TRANSACTION",{changes:[
+   {op:"ROUTE_ONLY",from:main,to:main}
+ ]}),next()),false,"cross-channel readback cannot prove another ChannelId");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/protocol\.logicalReadbackProves\(p,offline\.graph\)/);
+ assert.doesNotMatch(bridge,/function logicalReadbackProves\(/);
+ assert.match(bridge,/beforeInsertCatalogs:/);
+ assert.match(bridge,/beforeEdges:/);
+});
