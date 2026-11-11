@@ -169,7 +169,7 @@ def verify_external_output(page, out):
     state["externalRevision"]="2"
     state["externalOutputs"]=[]
     emit(page,"arMixConsoleSnapshot",state)
-    page.wait_for_selector('#tracks .strip[data-id="2"] select[data-field="external"]')
+    page.wait_for_selector('#tracks .strip[data-id="2"] select[data-field="external"]',state="attached")
     page.locator("[data-native-io]").click()
     matrix=page.locator("[data-audio-output-matrix] .armix-output-row")
     assert matrix.count()==4,[x.inner_text() for x in matrix.all()]
@@ -221,7 +221,7 @@ def verify_external_output(page, out):
     assert second.get_attribute("data-status")=="LIVE"
     assert "SHARED 2 SOURCES" in first.input_value(),first.input_value()
     page.locator("[data-native-io]").click()
-    row=page.locator("[data-audio-output-matrix] .armix-output-row").nth(2)
+    row=page.locator("[data-audio-output-matrix] .armix-output-row").filter(has_text="OUT 5/6")
     assert "SHARED 2" in row.inner_text(),row.inner_text()
     assert "CH03" in row.inner_text() and "CH04" in row.inner_text()
     state["device"]["outputArmed"]=False
