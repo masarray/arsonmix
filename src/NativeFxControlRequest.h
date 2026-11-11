@@ -21,10 +21,21 @@ struct NativeFxControlRequest final {
         result.rawEpoch=args.getProperty("deviceEpoch",{});
         result.rawRevision=args.getProperty("graphRevision",{});
         result.rawInstance=args.getProperty("instanceId",{});
-        result.request=args.getProperty("requestId",{}).toString();
-        result.slot=static_cast<int>(args.getProperty("slot",-1));
-        result.unbound=args.getProperty("workspaceToken","").toString().isNotEmpty();
-        result.valid=armix::console::approvedNativeId(result.rawChannel,result.channel) &&
+        const auto rawRequest=args.getProperty("requestId",{});
+        const auto rawSlot=args.getProperty("slot",{});
+        const auto rawWorkspace=args.getProperty("workspaceToken",{});
+        // Every built-in editor receives the same typed CONTROL envelope.
+        // Never turn JSON 3.9, "3" or true into slot 3/1; nor coerce an
+        // integer requestId into a string or a numeric workspace token into
+        // LOGICAL_ONLY authority. Existing native callers send integer slots
+        // and string request IDs, including Harmonice user preset actions.
+        result.request=rawRequest.isString()?rawRequest.toString():juce::String{};
+        result.slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
+        result.unbound=rawWorkspace.isString()&&rawWorkspace.toString().isNotEmpty();
+        const bool workspaceTyped=rawWorkspace.isVoid()||rawWorkspace.isString();
+        result.valid=args.isObject() && rawRequest.isString() && rawSlot.isInt() &&
+            workspaceTyped && maximumSlots>0 &&
+            armix::console::approvedNativeId(result.rawChannel,result.channel) &&
             armix::console::approvedNativeId(result.rawEpoch,result.epoch) &&
             armix::console::approvedNativeId(result.rawRevision,result.revision) &&
             result.rawInstance.isString() &&

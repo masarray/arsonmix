@@ -104,6 +104,37 @@ static void verifySharedNativeFxControlRequest() {
     assert(!Target::parse(alter(source,"instanceId",juce::var(1)),8).valid);
     assert(!Target::parse(alter(source,"slot",juce::var(8)),8).valid);
     assert(!Target::parse(alter(source,"slot",juce::var(-1)),8).valid);
+    // A native editor slot is an integer JSON value, not a coercible string,
+    // floating-point value, bool or 64-bit guest pointer/index.
+    for(const auto& invalid: {juce::var("3"),juce::var(3.5),juce::var(3.0),
+                               juce::var(true),juce::var(static_cast<juce::int64>(3))}) {
+        const auto bad=Target::parse(alter(source,"slot",invalid),8);
+        assert(!bad.valid && bad.slot==-1);
+    }
+    assert(!Target::parse(source,0).valid);
+    assert(!Target::parse(source,-1).valid);
+    assert(!Target::parse(alter(source,"requestId",juce::var(12345)),8).valid);
+    assert(!Target::parse(alter(source,"requestId",juce::var(true)),8).valid);
+    // A foreign/non-string workspace token must never select a logical
+    // authority path or silently fall into an installed processor lease.
+    for(const auto& invalid: {juce::var(1),juce::var(true),
+                               juce::var(2.5),juce::var(juce::Array<juce::var>{})}) {
+        const auto bad=Target::parse(alter(source,"workspaceToken",invalid),8);
+        assert(!bad.valid && !bad.unbound);
+    }
+    // Device epoch "0" is intentional when the *separate* saved logical
+    // workspace owns the FX. It is NOT a valid LIVE device identity; its
+    // mailbox sequence still serves offline EQ/COMP/Harmony/Throw edits.
+    auto logicalArgs=alter(source,"deviceEpoch",juce::var("0"));
+    logicalArgs.getDynamicObject()->setProperty("workspaceToken","saved-mixer");
+    const auto unbound=Target::parse(logicalArgs,8);
+    assert(!unbound.valid && unbound.unbound);
+    assert(unbound.sequence("comp-")==good.sequence("comp-"));
+    // Harmonice's new user-preset command reuses the SAME host target
+    // envelope, but must never be interpreted as a realtime DSP mailbox.
+    const auto preset=Target::parse(alter(source,"requestId",
+        juce::var("hpres-1844674407370955161-7")),8);
+    assert(preset.valid && !preset.unbound && preset.sequence("harm-")==0);
     assert(!Target::parse(alter(source,"requestId",juce::var("")),8).valid);
     assert(!Target::parse(alter(source,"requestId",juce::var(juce::String::repeatedString("a",73))),8).valid);
     const auto logical=Target::parse(alter(source,"workspaceToken",juce::var("persisted-mixer")),8);
