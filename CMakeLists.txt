@@ -151,6 +151,21 @@ if(BUILD_TESTING)
       juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixBuiltInFxPresetStoreTests PRIVATE cxx_std_20)
   add_test(NAME BuiltInFxUserPresetNativePortableSaveAndRecovery COMMAND ARMixBuiltInFxPresetStoreTests)
+  # Real JUCE adapters for all four built-in FX: capture ONLY accepted
+  # settings, validate portable types and re-open .armixfx in another store.
+  # Never serialize from a published callback or an offline browser fake.
+  juce_add_console_app(ARMixBuiltInFxAcceptedSnapshotTests PRODUCT_NAME
+      "ArSonMix Native Built-in FX Accepted Preset Snapshot Tests")
+  target_sources(ARMixBuiltInFxAcceptedSnapshotTests PRIVATE
+      tests/builtin_fx_accepted_snapshot_test.cpp
+      src/BuiltInFxAcceptedSnapshot.h)
+  target_link_libraries(ARMixBuiltInFxAcceptedSnapshotTests PRIVATE
+      juce::juce_audio_processors juce::juce_cryptography
+      juce::juce_recommended_config_flags)
+  target_compile_features(ARMixBuiltInFxAcceptedSnapshotTests PRIVATE cxx_std_20)
+  add_test(NAME BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen
+      COMMAND ARMixBuiltInFxAcceptedSnapshotTests)
+
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)

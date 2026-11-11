@@ -149,6 +149,48 @@ int main(){
     assert(migrated->acceptedSettings().guideMode==0);
     assert(migrated->acceptedSettings().guideChannelId==0);
     assert(migrated->musicSourceChannel()==0);
+    assert(migrated->acceptedSettings().voiceMode==0);
+    // A legacy v2 Harmony session must not be reinterpreted as Doubler.
+    juce::MemoryBlock oldV2;
+    {
+        juce::MemoryOutputStream w(oldV2,false);
+        w.writeInt(0x41484d31);w.writeInt(2);
+        w.writeInt(5);w.writeInt(0);w.writeInt(2);
+        w.writeBool(false);w.writeFloat(.5f);w.writeFloat(.5f);
+        w.writeFloat(.5f);w.writeFloat(0.f);
+        w.writeInt(0);w.writeInt64(0);
+    }
+    auto secondLegacy=std::make_unique<ChannelHarmonyProcessor>();
+    secondLegacy->prepareToPlay(48000.,128);
+    assert(secondLegacy->restoreUnpublishedState(oldV2.getData(),
+                                   static_cast<int>(oldV2.getSize())));
+    assert(secondLegacy->acceptedSettings().voices==2);
+    assert(secondLegacy->acceptedSettings().voiceMode==0);
+    // The new v3 state stores an explicit unison Doubler mode, and the
+    // resulting file can be round-tripped to a new cold native insert.
+    juce::MemoryBlock doubleState;
+    {
+        juce::MemoryOutputStream w(doubleState,false);
+        w.writeInt(0x41484d31);w.writeInt(3);
+        w.writeInt(5);w.writeInt(0);w.writeInt(2);
+        w.writeBool(false);w.writeFloat(.45f);w.writeFloat(.65f);
+        w.writeFloat(.50f);w.writeFloat(0.f);
+        w.writeInt(0);w.writeInt64(0);
+        w.writeInt(1);
+    }
+    auto doubled=std::make_unique<ChannelHarmonyProcessor>();
+    doubled->prepareToPlay(48000.,128);
+    assert(doubled->restoreUnpublishedState(doubleState.getData(),
+                                 static_cast<int>(doubleState.getSize())));
+    assert(doubled->acceptedSettings().voiceMode==1);
+    juce::MemoryBlock v3RoundTrip;
+    doubled->getStateInformation(v3RoundTrip);
+    auto reloaded=std::make_unique<ChannelHarmonyProcessor>();
+    reloaded->prepareToPlay(96000.,128);
+    assert(reloaded->restoreUnpublishedState(v3RoundTrip.getData(),
+                                   static_cast<int>(v3RoundTrip.getSize())));
+    assert(reloaded->acceptedSettings().voiceMode==1);
+    assert(reloaded->acceptedSettings().voices==2);
     // Music-source retarget must not bleed the old channel's guide into the
     // new source. After switching to Manual the other-channel PCM must never
     // change the selected manual key. A third row owns no FX and no audible WIRE.

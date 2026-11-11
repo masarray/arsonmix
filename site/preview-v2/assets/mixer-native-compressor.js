@@ -190,10 +190,12 @@ const presetFor=settings=>{
 };
 presetSelect.addEventListener("change",()=>{
  const value=presetSelect.value;
+ if(presetBar.selectUser(value))return;
  if(value==="CUSTOM")return;
  draft=value==="DEFAULT"?defaults():{...presets[value]};
  paint();
- if(native())send();else{saveDemo();hint("BROWSER PREVIEW · NO AUDIO ENGINE");}
+ if(native()){send();presetBar.factoryIntent(pending?.id);}
+ else{saveDemo();hint("BROWSER PREVIEW · NO AUDIO ENGINE");}
 });
 const status=dom("span","mx-comp-status","BROWSER PREVIEW · NO AUDIO");
 status.setAttribute("role","status");
@@ -219,6 +221,21 @@ function context(){
   ...(n.logical?{workspaceToken:n.workspaceToken}:{}),
   graphRevision:n.graph.revision,instanceId:insert.id,slot:current.slot};
 }
+const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
+ host:panel,select:presetSelect,label:"Compressor",catalogId:ID,
+ context,stable:()=>!pending&&!delayed,
+ readAccepted:()=>({...accepted}),validate:valid,
+ factoryValue:presetFor,notice:hint,
+ // Only the existing COMP SPSC -> AUDIO ACK -> snapshot may apply audio.
+ apply:values=>{
+  if(!valid(values)||pending||!context())return null;
+  // Keep the LAST ACCEPTED preset and controls visible during recall.
+  // Only the matching audio ACK + snapshot may repaint the new sound.
+  draft={...values};send();
+  return pending?.id||null;
+ }
+});
+if(!presetBar)throw Error("Shared native built-in preset bar not installed");
 function format(key,value){
  if(key==="ratio")return value.toFixed(1)+":1";
  if(key==="mix")return Math.round(value*100)+"%";
@@ -240,6 +257,7 @@ function compressedOutput(inputDb,s){
 }
 function paint(){
  presetSelect.value=presetFor(draft);
+ presetBar.paint();
  for(const [key,c] of Object.entries(inputs)){
   const value=draft[key],r=defs[key];
   c.input.value=String(value);
@@ -389,7 +407,9 @@ header.addEventListener("pointermove",e=>{
 });
 header.addEventListener("pointerup",e=>{windowDrag=null;header.releasePointerCapture?.(e.pointerId)});
 header.addEventListener("pointercancel",()=>{windowDrag=null});
-close.addEventListener("click",()=>{panel.hidden=true;pending=null;delayed=null;});
+close.addEventListener("click",()=>{
+ panel.hidden=true;pending=null;delayed=null;presetBar.close();
+});
 power.addEventListener("click",()=>{
  if(!current)return;
  if(native())window.__ARMIX_NATIVE_M2__?.consumeAction?.(
@@ -402,7 +422,10 @@ window.addEventListener("resize",()=>{
  panel.style.top=clamp(r.top,0,Math.max(0,innerHeight-r.height))+"px";
 });
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){panel.hidden=true;pending=null;delayed=null;}
+ if(e.key==="Escape"&&!panel.hidden){
+ if(e.target.closest?.(".mx-fxp-form"))return;
+ panel.hidden=true;pending=null;delayed=null;presetBar.close();
+}
 });
 window.ArSonMixNativeCompressor=Object.freeze({
  id:ID,
@@ -410,6 +433,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
  open(track,slot){
   current={track,slot,instanceId:null};
   pending=null;delayed=null;grDb=0;readId="";readSentAt=0;
+  presetBar.reset();
   inputDbfs=outputDbfs=-72;meterSerial=null;meterUpdatedAt=0;
   const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=n?.graph?.channels?.find(c=>c.id===id)?.inserts?.[slot];
@@ -424,7 +448,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
   channel.textContent=track.name;
   panel.hidden=false;paint();
  },
- close(){panel.hidden=true;}
+ close(){panel.hidden=true;presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinCompQueue",reply=>{
  if(!pending||reply?.requestId!==pending.id)return;
@@ -463,6 +487,7 @@ backend()?.addEventListener?.("arMixBuiltinCompSnapshot",reply=>{
    grDb=clamp(reply.gainReductionDb,0,30);
  }
  paintMeters();
+ const appliedPresetEdit=pending?.id||"";
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.id){paint();return;}
   pending=null;
@@ -474,6 +499,7 @@ backend()?.addEventListener?.("arMixBuiltinCompSnapshot",reply=>{
   if(!delayed)draft={...accepted};
   hint("NATIVE DSP ACCEPTED · 0 SAMPLE ADDED");
  }
+ presetBar.onAccepted(accepted,appliedPresetEdit);
  paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
@@ -488,6 +514,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 // 6 Hz metering only while visible. Never poll while closed, never touch PCM.
 window.setInterval(()=>{
  if(panel.hidden)return;
+ presetBar.tick();
  paintMeters();
  if(native()&&context()&&!snapshot()?.logical)requestSnapshot();
 },160);

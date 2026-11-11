@@ -136,6 +136,18 @@ def main():
             assert last(page,"nativeThrowSnapshot")["requestId"]==initial["requestId"],\
                 "snapshot polling overwrote outstanding request too early"
             reply_snapshot(page,state,DEFAULTS)
+            def user_preset_reply(action,operation,**extra):
+                emit(page,"arMixBuiltinFxPresetResult",{
+                    "requestId":action["requestId"],"operation":operation,
+                    "catalogId":ID,"status":"OK","channelId":SOURCE,
+                    "instanceId":INSTANCE,
+                    "deviceEpoch":state["device"]["epoch"],
+                    "graphRevision":state["graph"]["revision"],**extra})
+            listing=last(page,"nativeBuiltinFxUserPreset")
+            assert listing["operation"]=="list" and listing["catalogId"]==ID
+            user_preset_reply(listing,"list",items=[])
+            assert editor.locator(".mx-fxp-save-as").is_enabled()
+            assert editor.locator(".mx-fxp-manage").is_disabled()
             assert editor.locator("#vtStatus").inner_text()=="LIVE"
             assert editor.locator("#vtCount").inner_text()=="0"
             box=editor.bounding_box()
@@ -311,6 +323,82 @@ def main():
                 updated={**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]}
                 reply_snapshot(page,state,updated,applied=rotary["requestId"])
                 assert "%" in editor.locator("#vtWetValue").inner_text()
+                # Portable My Preset — the user file never captures the
+                # current Music ChannelId, detected beat grid or echo tails.
+                editor.locator(".mx-fxp-save-as").click()
+                form=editor.locator(".mx-fxp-form")
+                assert form.is_visible()
+                form.locator(".mx-fxp-name").fill("Live Word")
+                form.locator(".mx-fxp-confirm").click()
+                saving=last(page,"nativeBuiltinFxUserPreset")
+                assert saving["operation"]=="saveAs" and saving["catalogId"]==ID
+                assert saving["instanceId"]==INSTANCE and saving["channelId"]==SOURCE
+                user_id="a3cb87c5-f72b-47e2-baff-d9a5e71abc21"
+                user_preset_reply(saving,"saveAs",presetId=user_id,name="Live Word")
+                listing=last(page,"nativeBuiltinFxUserPreset")
+                assert listing["operation"]=="list"
+                user_preset_reply(listing,"list",items=[{
+                    "id":user_id,"name":"Live Word","category":"My Presets"}])
+                option="user:"+user_id
+                assert editor.locator('#vtPreset option[value="'+option+'"]').count()==1
+                # A real edit followed by audio ACK makes the saved sound
+                # Modified; list and disk ACK alone do not claim audio.
+                editor.locator('.vt-mode-buttons button[data-mode="1"]').click()
+                modified=last(page,"nativeThrowSet")
+                assert modified["settings"]["mode"]==1
+                emit(page,"arMixBuiltinThrowQueue",{
+                    "requestId":modified["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{
+                    "requestId":modified["requestId"],"status":"APPLIED"})
+                reply_snapshot(page,state,{**updated,"mode":1},
+                               applied=modified["requestId"])
+                assert "Modified" in editor.locator(
+                    '#vtPreset option[value="Custom"]').inner_text()
+                editor.locator("#vtPreset").select_option(option)
+                assert form.is_visible()
+                assert "DISCARD" in editor.locator(".mx-fxp-prompt").inner_text()
+                form.locator(".mx-fxp-confirm").click()
+                reading=last(page,"nativeBuiltinFxUserPreset")
+                assert reading["operation"]=="read" and reading["presetId"]==user_id
+                assert editor.locator("#vtMode").input_value()=="1"
+                # Wrong-effect response cannot hijack the pending recall.
+                emit(page,"arMixBuiltinFxPresetResult",{
+                    "requestId":reading["requestId"],"operation":"read",
+                    "catalogId":"armix.builtin.channel-eq.v1","status":"OK",
+                    "channelId":SOURCE,"instanceId":INSTANCE,
+                    "deviceEpoch":state["device"]["epoch"],
+                    "graphRevision":state["graph"]["revision"],
+                    "presetId":user_id,"settings":updated})
+                assert editor.locator("#vtMode").input_value()=="1"
+                user_preset_reply(reading,"read",
+                    presetId=user_id,name="Live Word",settings=updated)
+                restoring=last(page,"nativeThrowSet")
+                assert restoring["settings"]==updated
+                assert editor.locator("#vtMode").input_value()=="1",\
+                    "read of disk may not optimistically claim applied audio"
+                emit(page,"arMixBuiltinThrowQueue",{
+                    "requestId":restoring["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinThrowAck",{
+                    "requestId":restoring["requestId"],"status":"APPLIED"})
+                reply_snapshot(page,state,updated,applied=restoring["requestId"])
+                assert editor.locator("#vtPreset").input_value()==option
+                # Deleting a user record is disk-only and must not trigger
+                # a performer cue or additional native Throw DSP edit.
+                editor.locator(".mx-fxp-manage").click()
+                editor.locator('.mx-fxp-action[data-operation="delete"]').click()
+                assert form.is_visible()
+                form.locator(".mx-fxp-cancel").click()
+                editor.locator(".mx-fxp-manage").click()
+                editor.locator('.mx-fxp-action[data-operation="delete"]').click()
+                form.locator(".mx-fxp-confirm").click()
+                deleting=last(page,"nativeBuiltinFxUserPreset")
+                assert deleting["operation"]=="delete" and deleting["presetId"]==user_id
+                user_preset_reply(deleting,"delete",presetId=user_id)
+                listing=last(page,"nativeBuiltinFxUserPreset")
+                assert listing["operation"]=="list"
+                user_preset_reply(listing,"list",items=[])
+                assert editor.locator("#vtPreset option[value^='user:']").count()==0
+                assert last(page,"nativeThrowSet")["requestId"]==restoring["requestId"]
                 editor.locator("#vtThrow").click()
                 assert editor.locator("#vtThrow").is_disabled(), "no repeated stage cue until native ACK"
                 cue=last(page,"nativeThrowTrigger")

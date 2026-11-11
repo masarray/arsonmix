@@ -10,7 +10,385 @@
 #include <limits>
 using namespace armix::harmony;
 static void need(bool value,const char* why){if(!value){std::cerr<<why<<'\n';std::exit(2);}}
+// The fixture has the same fundamental in both channels and different
+// harmonic/phase content. A mono replacement loses the stereo residual.
+struct LeadFixture {std::vector<float> left,right;};
+static LeadFixture leadFixture(int rate,double noteHz,float cents,float vibrato){
+  LeadFixture out{std::vector<float>(2*rate),std::vector<float>(2*rate)};
+  constexpr double tau=6.283185307179586;
+  double phase=0.;
+  for(int i=0;i<2*rate;++i){
+    const double modulation=vibrato*std::sin(tau*5.*i/rate);
+    phase+=tau*noteHz*std::exp2((cents+modulation)/1200.)/rate;
+    out.left[i]=static_cast<float>(.17*std::sin(phase)+.045*std::sin(2*phase));
+    out.right[i]=static_cast<float>(.11*std::sin(phase+.38)+.04*std::sin(2*phase+1.2));
+  }
+  return out;
+}
+static LeadFixture tune(LeadFixture signal,int rate,bool correction,
+                        int block=127,float color=.5f,int releaseAt=-1){
+  auto engine=std::make_unique<Engine>();
+  need(engine->prepare(rate)&&engine->latencySamples()==2*std::lround(.016*rate),
+       "Pitch Tune changed PDC");
+  Settings s;s.wet=0.f;s.correction=correction;s.color=color;
+  need(engine->setSettings(s),"lead-only settings rejected");
+  const int size=static_cast<int>(signal.left.size());
+  for(int i=0;i<size;){
+    if(i==releaseAt){
+      s.correction=false;
+      need(engine->setSettings(s),"Pitch Tune release rejected");
+    }
+    const int end=i<releaseAt?releaseAt:size;
+    const int n=std::min(block,end-i);
+    engine->process(signal.left.data()+i,signal.right.data()+i,n);
+    i+=n;
+  }
+  return signal;
+}
+static std::vector<double> centsByCycle(const LeadFixture& signal,int rate,double target){
+  std::vector<double> cents;
+  const auto& x=signal.left;
+  double previous=-1.;
+  for(int i=rate;i<static_cast<int>(x.size())-1;++i){
+    if(x[i]>=0.f||x[i+1]<0.f)continue;
+    const double crossing=i-x[i]/(x[i+1]-x[i]);
+    if(previous>=0.)cents.push_back(1200.*std::log2(rate/(crossing-previous)/target));
+    previous=crossing;
+  }
+  std::sort(cents.begin(),cents.end());
+  need(cents.size()>50,"lead fixture lacks steady pitch");
+  return cents;
+}
+static double stereoResidual(const LeadFixture& signal,int rate){
+  double side=0.,mid=0.;
+  for(std::size_t i=static_cast<std::size_t>(rate);i<signal.left.size();++i){
+    const double l=signal.left[i],r=signal.right[i];
+    side+=(l-r)*(l-r);mid+=(l+r)*(l+r);
+  }
+  return side/mid;
+}
+static void testLeadTune(){
+  for(int rate:{48000,96000}){
+    for(double hz:{82.406889,220.,523.251131,1046.502261}){
+      const auto inTune=leadFixture(rate,hz,0.f,0.f);
+      const auto dry=tune(inTune,rate,false);
+      const auto unity=tune(inTune,rate,true);
+      need(unity.left==dry.left&&unity.right==dry.right,
+           "steady pitch inside the deadband altered stereo PCM");
+      const auto sharp=leadFixture(rate,hz,35.f,0.f);
+      const auto corrected=tune(sharp,rate,true);
+      const auto cents=centsByCycle(corrected,rate,hz);
+      const auto center=cents[cents.size()/2];
+      need(center>=5.&&center<=27.,"lead correction failed to reduce pitch error gently");
+      const auto sharpDry=tune(sharp,rate,false);
+      need(std::abs(stereoResidual(corrected,rate)/stereoResidual(sharpDry,rate)-1.)<.10,
+           "correction collapsed or inflated the stereo lead");
+      const auto warm=tune(sharp,rate,true,64,0.f);
+      need(warm.left==corrected.left&&warm.right==corrected.right,
+           "lead correction changed with block size or backing COLOR");
+    }
+    const auto vibrato=leadFixture(rate,220.,0.f,55.f);
+    const auto tuned=tune(vibrato,rate,true);
+    const auto cycles=centsByCycle(tuned,rate,220.);
+    const auto original=centsByCycle(tune(vibrato,rate,false),rate,220.);
+    const auto span=[](const auto& values){
+      return values[9*values.size()/10]-values[values.size()/10];
+    };
+    need(span(cycles)>.85*span(original)&&span(cycles)<1.15*span(original),
+         "wide vibrato changed excessively");
+    auto mono=leadFixture(rate,220.,-35.f,0.f);
+    mono.right=mono.left;
+    const auto on=tune(mono,rate,true);
+    need(on.left==on.right,"mono lead acquired a stereo discrepancy");
+    const auto dry=tune(mono,rate,false);
+    const auto disabled=tune(mono,rate,true,127,.5f,rate);
+    need(std::equal(disabled.left.begin()+rate+rate/10,disabled.left.end(),
+                    dry.left.begin()+rate+rate/10),
+         "disable did not return to sample-exact delayed lead");
+    for(int i=rate;i<rate+rate/10;++i)
+      need(std::abs(disabled.left[i]-disabled.left[i-1])<.06f,
+           "Pitch Tune toggle caused a PCM step");
+  }
+}
+static void testVoicePlanner(){
+  for(const auto& scale:{major,minor}){
+    for(int key=0;key<12;++key){
+      VoicePlanner planner;
+      for(int melody=48;melody<=84;++melody){
+        if(std::find(scale.begin(),scale.end(),(melody-key)%12)==scale.end())continue;
+        planner.plan(melody,key,scale);
+        for(std::size_t i=0;i<singers.size();++i){
+          const int note=planner.target(i);
+          const auto& role=singers[i];
+          need(note>=melody+role.minInterval&&note<=melody+role.maxInterval,
+               "diatonic singer crossed its register band");
+          need(std::find(scale.begin(),scale.end(),(note-key)%12)!=scale.end(),
+               "diatonic singer left the selected key");
+        }
+      }
+    }
+  }
+  VoicePlanner planner;
+  planner.plan(69,0,major);
+  const int high=planner.target(2);
+  planner.plan(67,0,major);
+  need(planner.target(2)==high,"HIGH missed a stable common tone");
+  planner.reset();
+  planner.plan(67,0,major);
+  need(planner.target(2)!=high,"reset retained previous phrase voicing");
+}
+// Duo is two PITCHED wet voices; Doubler is a SINGLE synthetic unison take.
+// This is a native PCM proof, not a certified real-singer naturalness test.
+static void testUnisonDoubler(){
+  for(int rate:{48000,96000}){
+    Settings unison;unison.voiceMode=1;unison.voices=2;
+    unison.wet=.75f;unison.space=.7f;unison.correction=false;
+    Engine::PreparedSettings prep{};
+    need(Engine::prepareSettings(unison,prep),"Doubler settings rejected");
+    need(prep.mixL[0]>0.f&&prep.mixR[0]>0.f,
+         "Doubler has no wet unison companion");
+    for(int i=1;i<Engine::maxVoices;++i)
+      need(prep.mixL[i]==0.f&&prep.mixR[i]==0.f,
+           "Doubler unexpectedly generated pitched harmony singers");
+    Settings duo=unison;duo.voiceMode=0;
+    need(Engine::prepareSettings(duo,prep),"Duo settings rejected");
+    need(prep.mixL[0]>0.f&&prep.mixL[2]>0.f,
+         "Duo must retain two pitch-harmony voices");
+    const auto render=[&](const Settings& set){
+      auto dsp=std::make_unique<Engine>();
+      need(dsp->prepare(rate)&&dsp->setSettings(set),
+           "Doubler/duo DSP prepare failed");
+      std::vector<float> l(rate/2),r(rate/2);
+      for(int i=0;i<rate/2;++i){
+        const double phase=6.283185307179586*220.*i/rate;
+        l[i]=r[i]=static_cast<float>(
+          .16*std::sin(phase)+.041*std::sin(2*phase+.2));
+      }
+      for(int i=0;i<rate/2;i+=64)
+        dsp->process(l.data()+i,r.data()+i,std::min(64,rate/2-i));
+      return l;
+    };
+    const auto a=render(unison);
+    Settings alternate=unison;alternate.key=9;alternate.scale=1;
+    need(a==render(alternate),
+         "Unison Doubler pitch changed with Harmony key/scale");
+    const auto pitched=render(duo);
+    double wetEnergy=0.,modeDifference=0.;
+    for(int i=rate/4;i<rate/2;++i){
+      const float x=a[static_cast<std::size_t>(i)];
+      const float y=pitched[static_cast<std::size_t>(i)];
+      need(std::isfinite(x)&&std::isfinite(y),"Doubler non-finite PCM");
+      const int t=i-2*static_cast<int>(std::lround(.016*rate));
+      const double phase=6.283185307179586*220.*t/rate;
+      const float delayedDry=static_cast<float>(
+        .16*std::sin(phase)+.041*std::sin(2*phase+.2));
+      wetEnergy+=std::abs(x-delayedDry);
+      modeDifference+=std::abs(x-y);
+    }
+    need(wetEnergy>rate*.0004,"Unison Doubler wet path is silent");
+    need(modeDifference>rate*.0004,
+         "Doubler accidentally equals pitched Duo PCM");
+  }
+}
+// Octave harmonics can become louder than the true F0 in a busy chorus.
+// Two noisy analyses must not reset five active backing PSOLA windows;
+// a genuine sustained octave jump must still converge in bounded time.
+static void testPeriodContinuityOnLoudOctaveErrors(){
+    PeriodContinuity tracker;
+    need(tracker.current()==0.f,"new tracker not silent");
+    need(tracker.observe(std::nanf(""))==0.f,
+         "invalid octave period acquired");
+    const float established=tracker.observe(218.f);
+    need(established==218.f,"initial F0 period not acquired");
+    for(int i=0;i<2;++i){
+        need(tracker.observe(109.f)==established,
+             "one/two spurious octave hops retuned singer");
+    }
+    need(!tracker.transitioning(),
+         "short octave error entered period-transition state");
+    need(std::abs(tracker.observe(218.5f)-established)<1.f,
+         "return to original vowel failed");
+    float previous=tracker.current();
+    for(int hop=0;hop<18;++hop){
+        const float next=tracker.observe(109.f);
+        need(std::isfinite(next)&&next>8.f&&next<=previous*1.001f,
+             "accepted octave caused nonmonotone/unbounded source period");
+        need(previous-next<=previous*.111f,
+             "source-period leap would abruptly retime PSOLA grains");
+        previous=next;
+    }
+    need(std::abs(tracker.current()-109.f)<7.f,
+         "real sustained octave did not converge");
+    tracker.reset();
+    need(tracker.current()==0.f&&!tracker.transitioning(),
+         "new singer phrase inherited stale source period");
+}
+
+// A loss of F0 must NOT erase the still-audible PSOLA source period.
+// That used to switch a decaying wet singer to a phase-unrelated granular
+// renderer halfway through its envelope on loud consonants / long vibrato.
+// Full silence must eventually retire grains; no endless pitched gate.
+static void testUnvoicedGapPreservesWetTail(){
+  // The exact same DSP must retain wet-tail epochs at both supported
+  // singing rates. Callback sizes are deliberately mismatched (64/257).
+  for(const int rate:{48000,96000}){
+  const int first=rate*35/100,gap=rate*55/1000;
+  const int reprise=rate*25/100,ending=rate*25/100;
+  const int total=first+gap+reprise+ending;
+  constexpr double tau=6.283185307179586;
+  std::vector<float> inputL(total),inputR(total);
+  double phase=0.;
+  for(int i=0;i<total;++i){
+    const double t=static_cast<double>(i)/rate;
+    phase+=tau*880.*std::exp2(65.*std::sin(tau*5.15*t)/1200.)/rate;
+    const bool active=i<first||(i>=first+gap&&i<first+gap+reprise);
+    const int activePosition=i<first?i:i-(first+gap);
+    const int duration=i<first?first:reprise;
+    const double fade=std::clamp(activePosition/(rate*.004),0.,1.)*
+                      std::clamp((duration-activePosition)/(rate*.004),0.,1.);
+    const float amp=active?static_cast<float>(.16*fade):0.f;
+    inputL[i]=amp*static_cast<float>(std::sin(phase)+
+                                       .27*std::sin(2.*phase+.17));
+    inputR[i]=amp*static_cast<float>(.82*std::sin(phase+.19)+
+                                       .20*std::sin(3.*phase+.46));
+  }
+  struct Result{
+    std::vector<float> l,r;
+    float gapPeriod=0.f,gapGate=0.f,endPeriod=-1.f,endGate=-1.f;
+    bool gapUnvoiced=false,revoice=false,finalSilent=false;
+  };
+  const auto render=[&](int block){
+    auto e=std::make_unique<Engine>();
+    need(e->prepare(rate)&&
+         e->latencySamples()==2*std::lround(.016*rate),
+         "wet-tail engine PDC changed");
+    Settings wet;wet.voices=5;wet.wet=.74f;wet.space=.82f;
+    need(e->setSettings(wet),"wet-tail test settings invalid");
+    Result out;out.l=inputL;out.r=inputR;
+    bool sampled=false;
+    for(int pos=0;pos<total;pos+=block){
+      const int count=std::min(block,total-pos);
+      e->process(out.l.data()+pos,out.r.data()+pos,count);
+      // Observe the gap after its source has become genuinely silent.
+      if(!sampled&&pos+count>=first+gap-64){
+        out.gapPeriod=e->sourcePeriodForOfflineTests();
+        out.gapGate=e->wetGateForOfflineTests();
+        out.gapUnvoiced=!e->voiced();sampled=true;
+      }
+      if(pos+count>=first+gap+reprise-64&&
+         pos+count<first+gap+reprise+block){
+        out.revoice=e->voiced()&&
+            e->sourcePeriodForOfflineTests()>8.f;
+      }
+    }
+    out.endPeriod=e->sourcePeriodForOfflineTests();
+    out.endGate=e->wetGateForOfflineTests();
+    out.finalSilent=!e->voiced();
+    return out;
+  };
+  const auto fine=render(64),coarse=render(257);
+  need(fine.l==coarse.l&&fine.r==coarse.r,
+       "wet-tail recovery depends on ASIO callback partition");
+  for(const auto* scene:{&fine,&coarse}){
+    need(scene->gapUnvoiced&&scene->gapPeriod>30.f&&
+         scene->gapGate>.002f,
+         "pitch loss erased PSOLA period while wet tail still audible");
+    need(scene->revoice,"returning soprano note failed to reacquire");
+    need(scene->finalSilent&&scene->endPeriod==0.f&&
+         scene->endGate<.001f,
+         "long silence retained stale PSOLA source or voiced gate");
+  }
+  for(int i=1;i<total;++i){
+    const auto a=static_cast<std::size_t>(i);
+    need(std::isfinite(fine.l[a])&&std::isfinite(fine.r[a]),
+         "wet-tail high-register output nonfinite");
+    need(std::abs(fine.l[a]-fine.l[a-1])<.45f&&
+         std::abs(fine.r[a]-fine.r[a-1])<.45f,
+         "wet-tail gap caused an unbounded micro-sample discontinuity");
+  }
+  } // sample-rate qualification: 48k and 96k
+}
+
+// Stress the USER failure shape: a long 5Hz/70-cent vibrato under
+// chorus-level gain with short noisy consonants. Dry/Wet are checked using
+// the actual native Engine; fixture is NOT an ASIO or human-likeness claim.
+static void testLoudVibratoContinuity(){
+  constexpr int rate=48000,frames=rate*2;
+  std::vector<float> inL(frames),inR(frames);
+  constexpr double tau=6.283185307179586;
+  double phase=0.;
+  for(int i=0;i<frames;++i){
+    const double t=static_cast<double>(i)/rate;
+    const double vibrato=70.*std::sin(tau*5.1*t);
+    phase+=tau*220.*std::exp2(vibrato/1200.)/rate;
+    const double chorus=std::clamp((t-.4)*15.,0.,1.)*
+                        (1.-std::clamp((t-1.25)*15.,0.,1.));
+    const double level=.12+.16*chorus;
+    // Busy phrase: a 14ms noisy consonant every 210ms after warm-up.
+    const double noise=(i>rate/3 && i%(rate*21/100)<rate*14/1000)?
+      .07*static_cast<double>((i*977+17)%137-68)/68.:0.;
+    inL[i]=static_cast<float>(
+      level*(std::sin(phase)+.26*std::sin(2.*phase+.2)+
+             .16*std::sin(3.*phase))+noise);
+    inR[i]=static_cast<float>(
+      level*(.85*std::sin(phase+.12)+.31*std::sin(3.*phase+.4))+
+      noise*.85);
+  }
+  auto process=[&](int block,int voices,bool wet){
+    auto dsp=std::make_unique<Engine>();
+    need(dsp->prepare(rate)&&dsp->latencySamples()==1536,
+         "vibrato engine PDC changed");
+    Settings settings;settings.voices=voices;settings.wet=wet?.75f:0.f;
+    settings.space=.82f;
+    need(dsp->setSettings(settings),"vibrato DSP settings rejected");
+    auto l=inL,r=inR;
+    int audibleTicks=0,checkedTicks=0;
+    for(int pos=0;pos<frames;pos+=block){
+      const int count=std::min(block,frames-pos);
+      dsp->process(l.data()+pos,r.data()+pos,count);
+      if(pos>rate/3&&pos<rate*6/5){
+        ++checkedTicks;
+        if(dsp->voiced())++audibleTicks;
+      }
+    }
+    need(audibleTicks>checkedTicks*.96,
+         "loud-vibrato tracking repeatedly lost voiced continuity");
+    return std::pair{std::move(l),std::move(r)};
+  };
+  const auto five64=process(64,5,true);
+  const auto five257=process(257,5,true);
+  need(five64==five257,
+       "heavy five-voice vibrato output depends on ASIO callback partition");
+  const auto dry=process(257,5,false);
+  double harmonyE=0.,outE=0.,monoE=0.;
+  float largestStep=0.f;
+  for(int i=rate/2;i<frames;++i){
+    const float l=five64.first[static_cast<std::size_t>(i)];
+    const float r=five64.second[static_cast<std::size_t>(i)];
+    const float dl=dry.first[static_cast<std::size_t>(i)];
+    const float dr=dry.second[static_cast<std::size_t>(i)];
+    need(std::isfinite(l)&&std::isfinite(r)&&
+         std::abs(l)<3.9f&&std::abs(r)<3.9f,
+         "loud vibrato harmonic mixed PCM nonfinite or clipped");
+    harmonyE+=(l-dl)*(l-dl)+(r-dr)*(r-dr);
+    outE+=l*l+r*r;
+    monoE+=(l+r)*(l+r)*.25;
+    largestStep=std::max(largestStep,std::abs(l-
+      five64.first[static_cast<std::size_t>(i-1)]));
+  }
+  need(harmonyE>1.&&outE>4.&&monoE>1.,
+       "high-demand ensemble lost harmony or mono energy");
+  need(largestStep<.65f,
+       "long-vibrato ensemble produced an unbounded sample discontinuity");
+}
+
 int main(){
+  testUnvoicedGapPreservesWetTail();
+  testUnisonDoubler();
+  testPeriodContinuityOnLoudOctaveErrors();
+  testLoudVibratoContinuity();
+  testLeadTune();
+  testVoicePlanner();
   // Each Engine owns fixed ring buffers. Allocate offline fixtures on heap:
   // many simultaneous stack-local instances exceed the Windows CTest stack.
   static_assert(sizeof(Engine)>64*1024,"verify test heap-fixture rationale");
@@ -594,12 +972,36 @@ int main(){
     need(Engine::prepareSettings(settings,modern)&&
          Engine::prepareSettings(settings,legacy,false),
          "prepared Harmony wet staging rejected");
-    for(int voice=0;voice<voices;++voice){
+    float energy=0.f;
+    int count=0;
+    for(std::size_t voice=0;voice<singers.size();++voice){
       const float level=std::hypot(modern.mixL[voice],modern.mixR[voice]);
       const float prior=std::hypot(legacy.mixL[voice],legacy.mixR[voice]);
-      need(std::abs(level-Engine::normalizedBackingWetAmplitude(1.f,voices))<1.e-5f&&
-           level>prior*1.73f,"prepared Harmony pan lost presence or normalization");
+      energy+=level*level;
+      if(singerActive(singers[voice].role,voices)){
+        ++count;
+        need(level>prior*1.73f&&level<prior*1.80f,"Wet gain changed per singer");
+      }else need(level==0.f,"inactive singer contributes to Wet");
     }
+    need(count==voices&&std::abs(energy-1.15f*1.15f)<1.e-5f,
+         "ensemble gain changes with voice count");
+    need(modern.mixL[0]>modern.mixR[0]&&modern.mixR[2]>modern.mixL[2],
+         "LOW/HIGH changed sides when voice count changed");
+    // 60% SPACE must now create an audible hard-sided LOW/HIGH pair
+    // without making the center MID dominate the music mix.
+    need(modern.mixL[0]>modern.mixR[0]*3.f&&
+         modern.mixR[2]>modern.mixL[2]*3.f,
+         "perceptual HARD stereo spread not applied to LOW/HIGH");
+    const float low=std::hypot(modern.mixL[0],modern.mixR[0]);
+    const float high=std::hypot(modern.mixL[2],modern.mixR[2]);
+    need(high>low*1.11f,"HIGH voice still masked behind LOW");
+    Settings centered=settings;centered.space=0.f;
+    Engine::PreparedSettings mono{};
+    need(Engine::prepareSettings(centered,mono),
+         "Space0 layout invalid");
+    need(std::abs(mono.mixL[0]-mono.mixR[0])<1.e-6f&&
+         std::abs(mono.mixL[2]-mono.mixR[2])<1.e-6f,
+         "hard pan leaks when Space=0");
   }
   // P0 lead preservation: backing Wet must never change the lead amplitude.
   // The *only* intentional lead replacement is Pitch Tune's explicit blend.
