@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
   hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
-  focusedHarmonyFileScope}
+  focusedHarmonyFileScope,parseWindowsMilestoneRun,guardWindowsMilestone}
   from '../scripts/chat_ci_dispatch.mjs';
 
 const sha='a'.repeat(40),repo='masarray/arsonmix';
@@ -68,8 +68,8 @@ test('exact SHA and FAT are dispatched only when lightweight checks pass',async(
   const got=await performMilestone({event:event(),repo,api});
   assert.equal(got.kind,'dispatched');
   assert.deepEqual(calls.at(-1).data,{
-    ref:'integration/daw-direct-hardware-input-20261105',
-    inputs:{expected_sha:sha,package_fat:true}
+    ref:'main',
+    inputs:{expected_sha:sha,package_fat:true,request_pr_number:'418'}
   });
   const failed=async(path,method,data)=>path.includes('/actions/runs/7/jobs')?
     {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'failure'}]}:
@@ -118,13 +118,14 @@ test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file p
   assert.deepEqual(calls.at(-1),{
     // The CI definition comes from main; the source still comes from SHA.
     ref:'main',
-    inputs:{expected_sha:sha,package_fat:true,focused_harmony_fat:true}
+    inputs:{expected_sha:sha,package_fat:true,
+      request_pr_number:'418',focused_harmony_fat:true}
   });
   await performMilestone({
     event:event(),repo,api:makeApi([...files,'src/Main.cpp'])
   });
   assert.deepEqual(calls.at(-1),{
-    ref:harmonyPr.head.ref,inputs:{expected_sha:sha,package_fat:true}
+    ref:'main',inputs:{expected_sha:sha,package_fat:true,request_pr_number:'418'}
   });
   // The protection fails closed on unknown or truncated PR file listings.
   const broken=async(path,...args)=>{
@@ -152,4 +153,103 @@ test('dispatcher stays on main with read-only checkout; both lanes pin SHA',()=>
   assert.match(windows,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(windows,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(windows,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
+});
+
+
+const windowsRun=(id,lane,number,source,status='in_progress',conclusion=null)=>({
+  id,event:'workflow_dispatch',
+  display_title:'ArSonMix '+lane.toUpperCase()+' PR'+number+' '+source,
+  status,conclusion,head_branch:'main',head_sha:'c'.repeat(40)
+});
+const checkedApi=(runs,calls)=>async(path,method,data)=>{
+  calls.push({path,method:method||'GET',data});
+  if(path.startsWith('/pulls/418'))return pr();
+  if(path.startsWith('/issues/418/comments'))return [];
+  if(path.includes('event=pull_request'))return {
+    workflow_runs:[{id:7,head_sha:sha,event:'pull_request'}]
+  };
+  if(path==='/actions/runs/7/jobs?per_page=100')
+    return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout',
+                   conclusion:'success'}]};
+  if(path.includes('event=workflow_dispatch'))return {workflow_runs:runs};
+  if(path.endsWith('/dispatches')||path.endsWith('/cancel'))return null;
+  throw Error('Unexpected mocked endpoint: '+path);
+};
+
+test('Windows milestone identity uses verified PR and checked-out source SHA, not workflow-ref SHA',()=>{
+  assert.deepEqual(parseWindowsMilestoneRun(windowsRun(1,'fat',418,sha)),
+    {lane:'fat',number:418,sha});
+  assert.equal(parseWindowsMilestoneRun({
+    ...windowsRun(1,'native',418,sha),display_title:'ArSonMix Windows Native VST3 Host'
+  }),null);
+  assert.equal(parseWindowsMilestoneRun({
+    ...windowsRun(1,'fat',418,sha),event:'push'
+  }),null);
+  assert.equal(parseWindowsMilestoneRun({
+    ...windowsRun(1,'fat',418,sha),display_title:'ArSonMix FAT PR418 main'
+  }),null);
+});
+
+test('FAT promotion cancels only obsolete same-PR native worker before one immutable FAT',async()=>{
+  const calls=[];
+  const api=checkedApi([
+    windowsRun(100,'native',418,sha,'in_progress'),
+    windowsRun(200,'native',419,'d'.repeat(40),'in_progress'),
+    windowsRun(99,'native',418,'e'.repeat(40),'completed','success')
+  ],calls);
+  const result=await performMilestone({event:event(),repo,api});
+  assert.equal(result.kind,'dispatched');
+  const writes=calls.filter(c=>c.method==='POST');
+  assert.deepEqual(writes.map(c=>c.path),[
+    '/actions/runs/100/cancel',
+    '/actions/workflows/p1-windows.yml/dispatches'
+  ]);
+  assert.deepEqual(writes.at(-1).data,{
+    ref:'main',inputs:{expected_sha:sha,package_fat:true,request_pr_number:'418'}
+  });
+});
+
+test('repeat FAT, already-running FAT and completed FAT source are never rebuilt',async()=>{
+  for(const state of [
+    windowsRun(100,'fat',418,sha,'in_progress'),
+    windowsRun(100,'fat',418,sha,'completed','success'),
+    windowsRun(100,'fat',418,'b'.repeat(40),'queued')
+  ]) {
+    const calls=[];
+    const result=await performMilestone({event:event(),repo,
+      api:checkedApi([state],calls)});
+    assert.equal(result.kind,'skipped');
+    assert.equal(calls.some(c=>c.method==='POST'),false);
+  }
+  const calls=[];
+  await assert.rejects(
+    performMilestone({event:event(),repo,api:checkedApi([
+      windowsRun(100,'fat',418,sha,'completed','failure')
+    ],calls)}),
+    /CI_FAT_FAILED_FIX_SOURCE_BEFORE_REDISPATCH/
+  );
+  assert.equal(calls.some(c=>c.method==='POST'),false);
+});
+
+test('native request never duplicates a same-source native or already-running FAT',async()=>{
+  const source=event('/arsonmix-ci native '+sha);
+  for(const lane of ['native','fat']) {
+    const calls=[];
+    const result=await performMilestone({event:source,repo,
+      api:checkedApi([windowsRun(901,lane,418,sha,'in_progress')],calls)});
+    assert.equal(result.kind,'skipped');
+    assert.equal(calls.some(c=>c.method==='POST'),false);
+  }
+});
+
+test('CI workflow preserves FAT while deduplicating cheaper native builds and upload compression',()=>{
+  const wf=readFileSync('.github/workflows/p1-windows.yml','utf8');
+  assert.match(wf,/run-name: "ArSonMix/);
+  assert.match(wf,/request_pr_number:/);
+  assert.match(wf,/inputs\.package_fat && github\.run_id/);
+  assert.match(wf,/cancel-in-progress: .*?!inputs\.package_fat/);
+  assert.equal(wf.match(/compression-level: 0/g)?.length,2);
+  assert.match(wf,/Build executable and native RT tests/);
+  assert.match(wf,/ctest --test-dir build -C Release --output-on-failure/);
+  assert.match(wf,/build_verify_windows_installer\.ps1/);
 });
