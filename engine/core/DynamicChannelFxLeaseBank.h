@@ -125,12 +125,20 @@ public:
                    owner->latencySamples>armix::dsp::StereoLatencyDelay::maximumSamples ||
                    owner->latencyChanged.load(std::memory_order_acquire))
                     return Fault::uncompensatedLatency;
+                // A cloned/restored processor may have a different pointer
+                // but reuse another plugin's durable instance token. Reject it
+                // BEFORE publishing a graph: FX MOVE, bypass, editor and
+                // .smix restoration all identify leases by this opaque token.
+                // This comparison and all JUCE strings stay on CONTROL only.
+                if(owner->instanceId.isEmpty())return Fault::emptyLease;
                 for(const auto& existing:candidate.rows_)
                     for(std::size_t k=0;k<existing.count;++k)
-                        if(existing.owners[k].get()==owner.get())
+                        if(existing.owners[k].get()==owner.get() ||
+                           existing.owners[k]->instanceId==owner->instanceId)
                             return Fault::duplicateInstance;
                 for(std::size_t k=0;k<i;++k)
-                    if(row.owners[k].get()==owner.get())
+                    if(row.owners[k].get()==owner.get() ||
+                       row.owners[k]->instanceId==owner->instanceId)
                         return Fault::duplicateInstance;
                 row.owners[i]=owner; // owner reference acquired OFF realtime
                 row.raw[i]=owner.get();
