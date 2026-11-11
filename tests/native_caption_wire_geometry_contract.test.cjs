@@ -31,6 +31,30 @@ assert.match(palette, /0xff584929[\s\S]*?0xffbc9544[\s\S]*?0xffe5ae2b[\s\S]*?0xf
 assert.doesNotMatch(palette, /0xff50d4e7|0xff67b9ff|0xff168fa7|0xff287abd/);
 assert.match(chrome, /drawRoundedRectangle/);
 assert.match(chrome, /parent->isFullScreen\(\)/);
+
+/* Dark-ink pressed glyphs are prebuilt once, not reparsed/recoloured when
+   paintButton receives a hover or pointer-down transition. Maintain WCAG
+   non-text graphic contrast against the luminous green/amber pressed faces. */
+assert.match(chrome, /pressedIcon_ = load \(iconPath, kind == juce::DocumentWindow::minimiseButton/);
+assert.match(chrome, /pressedRestoreIcon_ = load \(restorePath/);
+assert.match(chrome, /const bool restoring = kind_ == juce::DocumentWindow::maximiseButton/);
+assert.match(chrome, /down && pressedRestoreIcon_ != nullptr/);
+assert.match(chrome, /down && pressedIcon_ != nullptr/);
+assert.match(chrome, /static std::unique_ptr<juce::Drawable> load \(const char\* path, const char\* ink/);
+const paint = chrome.slice(chrome.indexOf('void paintButton '), chrome.indexOf('private:\n    struct CaptionPalette'));
+assert.doesNotMatch(paint, /Drawable::createFromSVG|XmlDocument::parse|std::make_unique|new juce::/);
+const luminance = hex => {
+  const rgb = hex.match(/[a-f0-9]{2}/gi).map(x=>parseInt(x,16)/255);
+  return rgb.map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4)
+    .reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i],0);
+};
+const contrast = (a,b) => {
+  const [lighter,darker] = [luminance(a),luminance(b)].sort((x,y)=>y-x);
+  return (lighter+0.05)/(darker+0.05);
+};
+assert.ok(contrast('1fb76b','103322')>=4.5,'green pressed minimise icon contrast');
+assert.ok(contrast('e5ae2b','37280e')>=4.5,'amber pressed maximise/restore icon contrast');
+
 assert.match(chrome, /GlyphArrangement::getStringWidthInt \(brandFont, word\)/);
 assert.match(chrome, /paintPart \("Ar", juce::Colour/);
 assert.match(chrome, /paintPart \("Son", juce::Colour/);
