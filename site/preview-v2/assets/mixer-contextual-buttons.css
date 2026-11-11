@@ -427,3 +427,9 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
  display:grid!important;place-items:center!important;
  color:inherit!important;text-align:center!important;
 }
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,
+#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],
+[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,
+.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):is(:active,:hover)::after{
+ content:"×"!important;background:none!important;
+}
