@@ -63,7 +63,12 @@ function create(adapter){
 
  function bound(){
   const c=context();
-  return native()&&c&&!c.workspaceToken&&c.deviceEpoch!=="0"?c:null;
+  // Save/list portable presets from the verified persisted logical FX state;
+  // an unavailable audio device must not disable the disk-only library.
+  // The native handler rechecks the exact logical token or physical lease.
+  if(!native()||!c)return null;
+  const logical=typeof c.workspaceToken==="string"&&c.workspaceToken.length>0;
+  return (logical?c.deviceEpoch==="0":c.deviceEpoch!=="0")?c:null;
  }
  function binding(c){return c.instanceId+"@"+c.deviceEpoch+"/"+c.graphRevision;}
  function canWrite(){return verified&&Boolean(bound())&&stable()&&!task&&!recall;}
