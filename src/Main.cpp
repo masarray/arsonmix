@@ -45,6 +45,9 @@
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
 #include "NativeDeviceApplyCoordinator.h"
+#if defined(_WIN32)
+#include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
+#endif
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -1951,6 +1954,49 @@ private:
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceInventory",
                 juce::var(inventory.release()));
+    }
+
+
+    // One-shot OS + JUCE native first-run preflight. This is observation,
+    // not a device replacement or output-arm authority. The decision is
+    // sourced from both Core Audio IDs and JUCE exact selectable names;
+    // it never guesses "speakers" from a JavaScript label. No vendor scans.
+    bool firstRunInventoryInspected_ = false;
+    void inspectFirstRunAudio()
+    {
+#if defined(_WIN32)
+        if (firstRunInventoryInspected_) return;
+        firstRunInventoryInspected_ = true;
+        auto& manager = engine_.devices();
+        std::vector<std::wstring> captures, renders;
+        for (auto* type : manager.getAvailableDeviceTypes())
+        {
+            if (type == nullptr || type->getTypeName() != "Windows Audio") continue;
+            for (const auto& label : type->getDeviceNames(true))
+                captures.emplace_back(label.toWideCharPointer());
+            for (const auto& label : type->getDeviceNames(false))
+                renders.emplace_back(label.toWideCharPointer());
+            break;
+        }
+        const auto result = armix::device::WindowsFirstRunEndpointDiscovery::inspect(
+            captures, renders);
+        const auto& d = result.decision;
+        auto proposal = std::make_unique<juce::DynamicObject>();
+        proposal->setProperty("inspected", result.inspected);
+        proposal->setProperty("state", static_cast<int>(d.outcome));
+        // A proposed candidate is not an open stream or an audible route.
+        proposal->setProperty("captureName", juce::String(d.captureName.c_str()));
+        proposal->setProperty("renderName", juce::String(d.renderName.c_str()));
+        proposal->setProperty("mayAttemptApply", result.inspected && d.mayAttemptApply());
+        proposal->setProperty("message", juce::String(result.diagnostic.c_str()));
+        diagnostics_.record("FIRST_RUN_MMDEVICE_PROPOSAL",
+            juce::String(result.diagnostic.c_str()) + " | state=" +
+            juce::String(static_cast<int>(d.outcome)) + " | apply=" +
+            (d.mayAttemptApply() ? "candidate-only" : "unsafe"));
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible(
+                "arMixFirstRunAudioProposal", juce::var(proposal.release()));
+#endif
     }
 
     juce::var currentDeviceSnapshot()
@@ -6580,6 +6626,12 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+            // Only pristine Windows first runs are candidates. Saved sessions,
+            // explicit ASIO/WASAPI profiles and recovered mixers are excluded.
+            if (saved == nullptr &&
+                !armix::session::NativeMixerSessionStore(settingsDirectory()).exists() &&
+                startupError_.isEmpty())
+                inspectFirstRunAudio();
             if (onStartupStage_) onStartupStage_ (2);
         }
         // Factory entries are published only after asynchronous manifest

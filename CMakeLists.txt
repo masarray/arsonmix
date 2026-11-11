@@ -203,6 +203,15 @@ if(BUILD_TESTING)
   target_compile_features(ARMixFirstRunEndpointPolicyTests PRIVATE cxx_std_20)
   add_test(NAME NativeFirstRunVBCAblePhysicalOutputIdentityAndASIOPreservation
       COMMAND ARMixFirstRunEndpointPolicyTests)
+  if(WIN32)
+    add_executable(ARMixWindowsFirstRunReadOnlyTests
+        tests/windows_first_run_endpoint_discovery_test.cpp
+        engine/device/WindowsFirstRunEndpointDiscovery.h)
+    target_compile_features(ARMixWindowsFirstRunReadOnlyTests PRIVATE cxx_std_20)
+    target_link_libraries(ARMixWindowsFirstRunReadOnlyTests PRIVATE ole32 uuid)
+    add_test(NAME NativeWindowsFirstRunReadOnlyMMDeviceIdentityNoGuess
+        COMMAND ARMixWindowsFirstRunReadOnlyTests)
+  endif()
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
