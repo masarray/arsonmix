@@ -59,7 +59,7 @@
 .plugin-flag.starred{color:#d3b86b}
 .plugin-flag:hover{background:#465055;color:#e6e9eb}
 .plugin-empty{padding:20px 12px;text-align:center;color:#88979b;font-size:11px}
-.plugin-footer{height:36px;flex:none;display:flex;align-items:center;padding:0 7px;gap:6px;border-top:1px solid #181a1b;font-size:10px}
+.plugin-footer{height:auto!important;min-height:40px!important;box-sizing:border-box!important;flex:none;display:flex;align-items:center;padding:0 7px;gap:6px;border-top:1px solid #181a1b;font-size:10px}
 .plugin-footer span{flex:1;color:#a0afb6}
 .plugin-footer button{background:#393d40;border:1px solid #4f575b;color:#bcc6ca;border-radius:2px;padding:4px 6px;font-size:10px}
 .plugin-footer button:disabled{color:#657175;opacity:1;cursor:not-allowed}
@@ -87,7 +87,15 @@
 .fast-effect:hover,.fast-effect:focus-visible{background:#365d6b;border-color:#83c8d4}
 .fast-effect-title{flex:1;min-width:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;color:#a8eac5}
 .fast-effect-kind{color:#a5bfc8;font-size:9px}.fast-star{color:#e9c771}.fast-empty{padding:15px;color:#9eafb7}
-.fast-foot{height:32px;display:flex;gap:7px;align-items:center;padding:0 8px;border-top:1px solid #355363;color:#91acb8;font-size:9px}
+.fast-foot{height:auto!important;min-height:38px!important;box-sizing:border-box!important;display:flex;gap:7px;align-items:center;padding:0 8px;border-top:1px solid #355363;color:#91acb8;font-size:9px}
 .fast-foot button{margin-left:auto;border:0;background:transparent;color:#85d7f1}
 
 
+
+/* V59 RC: plugin browser solely owns footer geometry. The previous contextual
+   owner duplicated height/padding on these two selectors. Preserve the exact
+   <=420px wrapping/padding intent without new cross-owner CSS stacking. */
+@media(max-width:420px){
+  .plugin-footer{flex-wrap:wrap!important;padding:6px 7px!important}
+  .fast-foot{flex-wrap:wrap!important;padding:5px 8px!important}
+}

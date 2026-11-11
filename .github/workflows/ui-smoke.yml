@@ -3,6 +3,10 @@ name: UI smoke (Chromium)
 # or release integration PR. Pages publisher waits for successful quick main push.
 
 on:
+  # IMPORTANT: CI/dispatcher-only commits are checked in PR by the fast UI
+  # contract lane. They MUST NOT trigger a main full Chromium run: a successful
+  # fast-only workflow_run would falsely qualify Pages without a visual test.
+  # Actual preview/web/UI-test source still triggers the full Chromium gate.
   push:
     branches: [main]
     paths:
@@ -23,14 +27,8 @@ on:
       - 'tests/native_ui_contract_test.mjs'
       - 'tests/wire_graph_canonical_model.test.cjs'
       - 'tests/wire_main_native_handoff_contract.test.cjs'
-      - 'tests/ci_workflow_efficiency_test.mjs'
       - 'tests/approved_native_m2_contract.test.cjs'
       - 'scripts/build_ui_css.py'
-      - '.github/workflows/ui-smoke.yml'
-      - '.github/workflows/pages-publish.yml'
-      - 'scripts/chat_ci_dispatch.mjs'
-      - 'tests/chat_ci_dispatch_contract.test.mjs'
-      - '.github/workflows/chat-ci-milestone.yml'
   # Only user-facing GUI/bridge files are relevant. No PR metadata API gate.
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]

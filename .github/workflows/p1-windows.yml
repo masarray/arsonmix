@@ -1,4 +1,8 @@
 name: Windows Native VST3 Host
+# Dispatcher uses the reviewed main workflow and checks out the exact PR SHA.
+# The run name is a verifiable deduplication identity (not github.head_sha,
+# which would refer to main for workflow_dispatch on main).
+run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
 on:
   # Single canonical Windows release producer: main changes to shipped runtime,
   # native C++ or distribution scripts. Historical feature branch pushes are PRs.
@@ -105,12 +109,19 @@ on:
         type: string
         required: false
         default: ""
+      request_pr_number:
+        description: "Verified source PR number supplied only by the owner dispatcher (for per-PR deduplication)"
+        type: string
+        required: false
+        default: ""
 
 concurrency:
-  # Never cancel a deliberately requested, exact-SHA FAT build. For normal
-  # PR updates only the latest commit is eligible for expensive MSVC.
-  group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  # Preserve immutable FAT uploads. Multiple non-FAT Windows requests from
+  # the same PR share one slot and supersede each other; different PRs never
+  # cancel one another. The owner dispatcher separately cancels an obsolete
+  # native compile when a FAT request arrives for that same verified PR.
+  group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && github.run_id || github.event_name == 'workflow_dispatch' && inputs.request_pr_number != '' && format('pr-{0}', inputs.request_pr_number) || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || !inputs.package_fat }}
 
 permissions:
   contents: read
@@ -122,10 +133,40 @@ jobs:
     name: Fast native contracts (no Windows / JUCE checkout)
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    outputs:
+      native_required: ${{ steps.native_scope.outputs.native_required }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Scope main CI-only changes without bypassing real native changes
+        id: native_scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          required=true
+          # Manual FAT/native is ALWAYS full. On a main push, only this exact
+          # reviewed CI-control file allowlist may skip the expensive compiler.
+          # Unknown/invalid/incomplete git history fails closed to full MSVC.
+          if [[ "$GITHUB_EVENT_NAME" == 'push' &&
+                "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if git fetch --no-tags --depth=2 origin "$BEFORE_SHA" >/dev/null 2>&1; then
+              mapfile -t changed < <(git diff --name-only "$BEFORE_SHA" HEAD)
+              if (( ${#changed[@]} > 0 )); then
+                required=false
+                for file in "${changed[@]}"; do
+                  case "$file" in
+                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
+                    *) required=true; break ;;
+                  esac
+                done
+              fi
+            fi
+          fi
+          echo "native_required=$required" >> "$GITHUB_OUTPUT"
+          echo "MAIN_NATIVE_GATE=$required"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -138,7 +179,7 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/first_run_endpoint_policy_test.cpp -o "$RUNNER_TEMP/armix-first-run-policy"
           "$RUNNER_TEMP/armix-first-run-policy"
           node --test tests/native_first_run_bootstrap_contract.test.mjs
-          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
+          node --test tests/rc_operator_workflow_contract.test.mjs tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract.test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
       - name: WaveShell JUCE 8 class-index regression (source-aware)
@@ -187,7 +228,10 @@ jobs:
     needs: quick
     # Draft commits never reserve expensive Windows runners. Non-draft PR
     # synchronizations re-test latest HEAD. Main push and manual always run.
-    if: ${{ github.event_name != 'pull_request' }}
+    # A main push containing ONLY CI policy/contract files was already
+    # checked by the Linux native gate. Any runtime/native or unknown diff
+    # still performs full MSVC/CTest. Owner-dispatched runs always compile.
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') }}
     runs-on: windows-2022
     timeout-minutes: 50
     env:
@@ -439,20 +483,123 @@ jobs:
         run: |
           & ./scripts/test_two_genuine_inno_releases_windows.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v4
+      # The expensive Windows compiler job terminates BEFORE the unreliable
+      # artifact service. A byte-authenticated, run-unique Actions cache handoff
+      # lets a failed upload job be retried by itself (no MSVC/CTest rebuild).
+      - name: Seal exact-SHA FAT delivery payload after all installer tests
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        shell: pwsh
+        env:
+          FAT_SOURCE_SHA: ${{ inputs.expected_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:FAT_SOURCE_SHA){throw 'FAT_HANDOFF_SOURCE_MISMATCH'}
+          $provenance=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          $exe=Join-Path 'dist' $provenance.executable
+          $setup='installer-output/ArSonMix-Windows-x64-Setup-Preview.exe'
+          if($provenance.sourceCommit -ne $env:FAT_SOURCE_SHA -or
+             $provenance.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             -not (Test-Path -LiteralPath $exe -PathType Leaf) -or
+             -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
+             (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.exeSha256){
+            throw 'FAT_HANDOFF_PROVENANCE_INVALID'
+          }
+          $root=(Resolve-Path '.').Path
+          $files=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |
+            Sort-Object FullName | ForEach-Object {
+              [ordered]@{
+                path=$_.FullName.Substring($root.Length+1).Replace('\','/')
+                bytes=$_.Length
+                sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              }
+            })
+          if($files.Count -lt 5 -or $files.Count -gt 5000){throw 'FAT_HANDOFF_FILE_COUNT_INVALID'}
+          [ordered]@{schema='arsonmix.ci-fat-handoff.v1';sourceSha=$env:FAT_SOURCE_SHA;files=$files} |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'delivery-receipt.json' -Encoding UTF8
+          Write-Host "FAT_CACHE_SEALED source=$actual files=$($files.Count)"
+      - name: Save completed FAT packages for retryable upload job
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            dist/
+            installer-output/
+            delivery-receipt.json
+          key: arsonmix-fat-delivery-v1-${{ inputs.expected_sha }}-${{ github.run_id }}
+
+  # Upload is separate from the 30-minute Windows compiler + 92 CTests.
+  # If GitHub returns HTML instead of JSON (observed at 43094957798),
+  # retry ONLY this job; the completed build is preserved in the immutable
+  # run-unique cache key and all bytes are re-hashed before publish.
+  fat-upload:
+    name: Publish verified Windows FAT artifacts (retry without recompiling)
+    needs: windows-build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+    runs-on: windows-2022
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+      - name: Restore the immutable, completed same-run FAT payload
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            dist/
+            installer-output/
+            delivery-receipt.json
+          key: arsonmix-fat-delivery-v1-${{ inputs.expected_sha }}-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: Re-verify every FAT cache byte and original source provenance
+        shell: pwsh
+        env:
+          FAT_SOURCE_SHA: ${{ inputs.expected_sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:FAT_SOURCE_SHA){throw 'FAT_UPLOAD_CHECKOUT_MISMATCH'}
+          $receipt=Get-Content -LiteralPath 'delivery-receipt.json' -Raw | ConvertFrom-Json
+          if($receipt.schema -ne 'arsonmix.ci-fat-handoff.v1' -or $receipt.sourceSha -ne $actual) {
+            throw 'FAT_UPLOAD_RECEIPT_MISMATCH'
+          }
+          $root=(Resolve-Path '.').Path
+          $actualFiles=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |
+            Sort-Object FullName)
+          if($actualFiles.Count -ne @($receipt.files).Count -or $actualFiles.Count -lt 5) {
+            throw 'FAT_UPLOAD_FILE_LIST_MISMATCH'
+          }
+          for($i=0;$i -lt $actualFiles.Count;$i++){
+            $file=$actualFiles[$i]
+            $relative=$file.FullName.Substring($root.Length+1).Replace('\','/')
+            $expected=$receipt.files[$i]
+            if($relative -cne $expected.path -or $file.Length -ne $expected.bytes -or
+               (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected.sha256){
+              throw "FAT_UPLOAD_HASH_MISMATCH: $relative"
+            }
+          }
+          $provenance=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          $exe=Join-Path 'dist' $provenance.executable
+          if($provenance.sourceCommit -ne $actual -or
+             $provenance.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $provenance.exeSha256 -or
+             -not (Test-Path -LiteralPath 'installer-output/ArSonMix-Windows-x64-Setup-Preview.exe' -PathType Leaf)){
+            throw 'FAT_UPLOAD_EXE_OR_SETUP_INVALID'
+          }
+          Write-Host "FAT_CACHE_REVALIDATED exact_sha=$actual files=$($actualFiles.Count)"
+      - uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-Windows-Installer-Preview-${{ github.run_id }}
           path: installer-output/
           if-no-files-found: error
           retention-days: 14
-      # Optional manual FAT only: never churn experimental ZIPs per commit.
-      # Preview artifact is build/installer verified. Owner physical listening is field evidence,
-      # distinct from automated exact-SHA hardware performance certification.
+          compression-level: 0
+          overwrite: true
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         with:
           name: ArSonMix-Windows-FAT-Preview-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
+          overwrite: true

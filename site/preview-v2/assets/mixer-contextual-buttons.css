@@ -400,12 +400,6 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 :is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):disabled{
   opacity:.44!important;cursor:not-allowed!important;
 }
-.fast-foot{height:auto!important;min-height:38px!important;box-sizing:border-box!important}
-.plugin-footer{min-height:40px!important;height:auto!important;box-sizing:border-box!important}
-@media(max-width:420px){
-  .plugin-footer{flex-wrap:wrap!important;padding:6px 7px!important}
-  .fast-foot{flex-wrap:wrap!important;padding:5px 8px!important}
-}
 
 
 /* A user-opened More menu must outrank modeless tool windows, otherwise a

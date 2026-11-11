@@ -91,7 +91,7 @@ test('Full native/release qualification retains all CTests; isolated Harmonice F
   // An old PR can retain outdated workflow YAML; focused execution must
   // use a trusted main workflow and still build the exact PR input SHA.
   assert.match(read('scripts/chat_ci_dispatch.mjs'),
-    /workflowRef=focusedHarmony\?'main':target\.branch/);
+    /workflowRef=target\.lane==='ui'\?target\.branch:'main'/);
   assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
 });
 
@@ -176,8 +176,7 @@ test('docs and isolated CI tests do not fan out into unrelated builds', () => {
   for (const filename of [
     'tests/pages_wire_first_canonical_main_smoke.py',
     'tests/wire_graph_canonical_model.test.cjs',
-    'tests/wire_main_native_handoff_contract.test.cjs',
-    'tests/ci_workflow_efficiency_test.mjs'
+    'tests/wire_main_native_handoff_contract.test.cjs'
   ]) {
     assert.equal(nativePrSelected(filename), false);
     assert.equal(selected(windowsPush, filename), false);
@@ -223,7 +222,7 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/^  windows-build:[\s\S]*?needs: quick\n/m);
   assert.match(native,/github\.event_name != 'pull_request'/);
   const fatOnly = [...native.matchAll(/^        if: .*inputs\.package_fat == true.*$/gm)].length;
-  assert.equal(fatOnly,8,'All portable FAT, installer and genuine two-release rollback jobs require deliberate manual opt-in');
+  assert.equal(fatOnly,8,'All packaging, installer, sealing and cache steps must require deliberate FAT opt-in');
   assert.match(native,/Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(native,/scripts\/test_two_genuine_inno_releases_windows\.ps1/);
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
@@ -270,11 +269,11 @@ test('All PR commits run inexpensive filtered contracts; expensive CI is dispatc
   assert.equal(uiPRSelected('README.md'),false);
 });
 
-test('Manual FAT and visual qualification survive simultaneous commit pushes without cancellation',()=>{
-  for(const workflow of [native,ui]) {
-    assert.match(workflow,/github\.event_name == 'workflow_dispatch' && github\.run_id/);
-    assert.match(workflow,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
-  }
+test('Manual FAT and visual qualification preserve immutable FAT; native may be superseded',()=>{
+  assert.match(ui,/github\.event_name == 'workflow_dispatch' && github\.run_id/);
+  assert.match(ui,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
+  assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat && github\.run_id/);
+  assert.match(native,/cancel-in-progress: .*?!inputs\.package_fat/);
   assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
 });
 
@@ -289,4 +288,48 @@ test('WaveShell preflight fails closed but accepts historical pre-patch source',
   assert.ok(section.includes('WAVESHELL_SOURCE_PATCH_MISSING'));
   assert.ok(section.includes('WAVESHELL_CHECK_NOT_IN_EXACT_SOURCE'));
   assert.ok(section.includes('python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v'));
+});
+
+
+test('CI-only main promotion avoids native rebuild but any runtime change fails closed to MSVC',()=>{
+  assert.match(native,/native_required: \$\{\{ steps\.native_scope\.outputs\.native_required \}\}/);
+  assert.match(native,/if \[\[ "\$GITHUB_EVENT_NAME" == 'push'/);
+  assert.match(native,/required=true/);
+  assert.match(native,/git fetch --no-tags --depth=2 origin "\$BEFORE_SHA"/);
+  assert.match(native,/git diff --name-only "\$BEFORE_SHA" HEAD/);
+  assert.match(native,/\.github\/workflows\/p1-windows\.yml\|scripts\/chat_ci_dispatch\.mjs/);
+  assert.match(native,/\*\) required=true; break/);
+  assert.match(native,/needs\.quick\.outputs\.native_required == 'true'/);
+  assert.match(native,/github\.event_name != 'push' \|\| needs\.quick\.outputs\.native_required/);
+  assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
+});
+
+
+test('CI-only main commits never schedule unqualified full Chromium or Pages workflow_run',()=>{
+  const noVisualChange=[
+    '.github/workflows/ui-smoke.yml',
+    '.github/workflows/pages-publish.yml',
+    '.github/workflows/chat-ci-milestone.yml',
+    'scripts/chat_ci_dispatch.mjs',
+    'tests/chat_ci_dispatch_contract.test.mjs',
+    'tests/ci_workflow_efficiency_test.mjs'
+  ];
+  for(const path of noVisualChange){
+    assert.equal(selected(uiPush,path),false,
+      'CI-only file would launch expensive main Chromium and falsely signal Pages: '+path);
+    assert.equal(uiPRSelected(path),true,
+      'CI-only file must still qualify through cheap PR UI contracts: '+path);
+  }
+  for(const path of [
+    'web/app.js',
+    'web/approved-native-bridge.js',
+    'site/preview-v2/assets/mixer-native-compressor.js',
+    'site/preview-v2/assets/mixer-contextual-buttons.css',
+    'tests/pages_wire_first_canonical_main_smoke.py',
+    'scripts/build_pages.py'
+  ]){
+    assert.ok(selected(uiPush,path),'Real GUI/runtime source must retain full main visual gate: '+path);
+  }
+  assert.match(pages,/github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(pages,/github\.event\.workflow_run\.event == 'push'/);
 });
