@@ -46,3 +46,11 @@ Retire an M4 branch only after actual native field sessions show no M4
 render deltas with equivalent VST3/FX, channel meters, bus and physical MAIN
 performance across restart, devices and output mute. Never permit legacy
 fallback merely because native publication failed.
+
+## M3b conservative window evaluation (source-only helper)
+
+The native audit header now exposes `ProductionRenderAudit::assessWindow(before,after,sameProcess,sameDeviceEpoch,channelIdAdmittedAtBothEnds)` for CONTROL/field-evidence analysis. Supply two independent `dryRoutingLab.renderAudit` observations **and** verify the actual device epoch and installed ChannelId admission at both ends; these booleans are external observations, never inferred from a WebView status badge.
+
+The result `exclusiveNativeObserved` requires at least one **completed** native callback in the bounded window, zero newly rendered M4 blocks, zero native failures or overlap denials, and zero unpatched/muted-no-render exits. It rejects process/device epoch discontinuity, counter regression/reset, and unsettled endpoint snapshots (which can occur because the source counters are independent relaxed atomics). An M4 total from a *previous* window does not itself disqualify current native-only evidence; an M4 increment **in** the window always does.
+
+This deliberately does **not** authorize audio, promise audible ASIO, qualify a device, or automatically remove the compatibility code. A single clean window is insufficient for M3b retirement. Repeat across real hardware sessions and record the matching output identity, source-only and WIRE/BUS/FX PCM fixtures, muted/not-muted state, sample rate/buffer transitions, and independent headphone listening. Until then M4 remains reachable. No new renderer, UI polling, or heavy workflow is introduced.

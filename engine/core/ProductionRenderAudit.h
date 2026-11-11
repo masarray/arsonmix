@@ -14,6 +14,70 @@ public:
         std::uint64_t m4Started=0,m4Completed=0,m4Failed=0;
         std::uint64_t overlapDenied=0,unpatchedSilent=0,mutedNoRender=0;
     };
+    // CONTROL/field diagnostics only. The caller must supply two snapshots
+    // from the same process and same *physical* device epoch, both with an
+    // independently verified installed ChannelId admission. This never grants
+    // permission to render, arm an output, or retire legacy code.
+    enum class WindowStatus : std::uint8_t {
+        invalidContext, countersRegressed, boundaryInFlight,
+        legacyRendered, nativeFailed, noNativeRender,
+        silentOrMuted, exclusiveNativeObserved
+    };
+    struct RenderWindow {
+        WindowStatus status=WindowStatus::invalidContext;
+        Snapshot delta{};
+        [[nodiscard]] constexpr bool exclusiveNativeObserved() const noexcept {
+            return status==WindowStatus::exclusiveNativeObserved;
+        }
+    };
+    [[nodiscard]] static constexpr RenderWindow assessWindow(
+            Snapshot before,Snapshot after,bool sameProcess,
+            bool sameDeviceEpoch,bool channelIdAdmittedAtBothEnds) noexcept {
+        if(!sameProcess || !sameDeviceEpoch || !channelIdAdmittedAtBothEnds)
+            return {WindowStatus::invalidContext,{}};
+        const auto monotonic=[](Snapshot x,Snapshot y) constexpr noexcept {
+            return y.nativeStarted>=x.nativeStarted &&
+                y.nativeCompleted>=x.nativeCompleted &&
+                y.nativeFailed>=x.nativeFailed &&
+                y.m4Started>=x.m4Started &&
+                y.m4Completed>=x.m4Completed &&
+                y.m4Failed>=x.m4Failed &&
+                y.overlapDenied>=x.overlapDenied &&
+                y.unpatchedSilent>=x.unpatchedSilent &&
+                y.mutedNoRender>=x.mutedNoRender;
+        };
+        if(!monotonic(before,after))
+            return {WindowStatus::countersRegressed,{}};
+        // Relaxed atomic CONTROL snapshots can catch one callback in flight.
+        // Neither partial endpoint is valid proof of a completed DSP window.
+        const auto settled=[](Snapshot s) constexpr noexcept {
+            return s.nativeStarted>=s.nativeCompleted &&
+                s.nativeStarted-s.nativeCompleted==s.nativeFailed &&
+                s.m4Started>=s.m4Completed &&
+                s.m4Started-s.m4Completed==s.m4Failed;
+        };
+        if(!settled(before) || !settled(after))
+            return {WindowStatus::boundaryInFlight,{}};
+        const Snapshot delta{
+            after.nativeStarted-before.nativeStarted,
+            after.nativeCompleted-before.nativeCompleted,
+            after.nativeFailed-before.nativeFailed,
+            after.m4Started-before.m4Started,
+            after.m4Completed-before.m4Completed,
+            after.m4Failed-before.m4Failed,
+            after.overlapDenied-before.overlapDenied,
+            after.unpatchedSilent-before.unpatchedSilent,
+            after.mutedNoRender-before.mutedNoRender};
+        if(delta.m4Started || delta.m4Completed || delta.m4Failed)
+            return {WindowStatus::legacyRendered,delta};
+        if(delta.nativeFailed || delta.overlapDenied)
+            return {WindowStatus::nativeFailed,delta};
+        if(delta.nativeCompleted==0)
+            return {WindowStatus::noNativeRender,delta};
+        if(delta.unpatchedSilent || delta.mutedNoRender)
+            return {WindowStatus::silentOrMuted,delta};
+        return {WindowStatus::exclusiveNativeObserved,delta};
+    }
     ProductionRenderAudit()=default;
     ProductionRenderAudit(const ProductionRenderAudit&)=delete;
     ProductionRenderAudit& operator=(const ProductionRenderAudit&)=delete;
