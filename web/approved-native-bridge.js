@@ -737,10 +737,13 @@
       const row=assignments.find(p=>p.channelId===id);
       const match=row&&choices.find(p=>p.left===row.physicalLeft &&
         p.right===row.physicalRight);
-      const state=row?.status==="LIVE"&&match?"LIVE":
+      // Control ACK/applied graph is not audible LIVE while the verified
+      // hardware output is MUTED. Keep patch identity without ghost meters.
+      const pcmInstalled=row?.status==="LIVE"&&match;
+      const state=pcmInstalled?(next?.device?.outputArmed===true?"LIVE":"MUTED"):
         row?.status==="PENDING"&&match?"PENDING":
         row?"NEEDS_REMAP":"NONE";
-      const value=row?(state==="LIVE"?match.label:
+      const value=row?((state==="LIVE"||state==="MUTED")?match.label:
         (state==="PENDING"?"Pending · ":"Needs Remap · ")+
          "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
       t.externalOutput=value;
@@ -767,17 +770,20 @@
       select.title=state==="PENDING"?"Native PCM pending · wait for audio callback":
         state==="NEEDS_REMAP"?
         "Saved physical output disarmed; choose a verified ASIO pair":
+        state==="MUTED"?"ASIO pair connected · output muted, settings retained":
         state==="LIVE"?"LIVE · independent native post-fader PCM":
         "None · internal WIRE remains unchanged";
       const pending=pendingExternal.get(id);
       if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
         pendingExternal.delete(id); // stale device: release only this strip
       else if(pending?.acked &&
-        ((state==="LIVE" && row.physicalLeft===pending.left &&
+        (((state==="LIVE"||state==="MUTED") &&
+          row.physicalLeft===pending.left &&
           row.physicalRight===pending.right) ||
          (pending.left===-1 && !row))){
         pendingExternal.delete(id);
-        status("EXTERNAL OUT verified · "+t.name+" → "+value);
+        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
+          "EXTERNAL OUT verified · "+t.name+" → "+value);
       }
       if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
     }

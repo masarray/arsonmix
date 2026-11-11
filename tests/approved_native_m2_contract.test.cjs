@@ -1871,3 +1871,14 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
  assert.doesNotMatch(control,/setMonitorEnabled\(true\)|setOutputMuted\(false\)/,
      "Control delegates one-shot automatic output acceptance, not blind arm");
 });
+
+test("O2 external OUT never reports LIVE while driver output is muted",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const css=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/const pcmInstalled=row\?\.status==="LIVE"&&match/);
+ assert.match(bridge,/next\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
+ assert.match(bridge,/state==="MUTED"\?"ASIO pair connected/);
+ assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
+ assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
+ assert.match(css,/external-out-state\[data-status="MUTED"\]/);
+});
