@@ -100,7 +100,7 @@ jobs:
         run: |
           node scripts/check_console_puzzle.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/approved_native_m2_contract.test.cjs
+          node --test tests/floating_window_workspace_contract.test.mjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/approved_native_m2_contract.test.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
