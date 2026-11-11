@@ -138,8 +138,25 @@ jobs:
           node --test tests/workstream_coordination_contract.test.mjs tests/ci_workflow_efficiency_test.mjs tests/chat_ci_dispatch_contract.test.mjs tests/approved_native_m2_contract.test.cjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/live_graph_contract_test.mjs tests/native_caption_wire_geometry_contract.test.cjs
           python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
           python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
-      - name: WaveShell JUCE 8 class-index regression (no paid Windows)
-        run: python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v
+      - name: WaveShell JUCE 8 class-index regression (source-aware)
+        shell: bash
+        run: |
+          # Trusted main workflow can test an older exact-PR SHA that
+          # predates this VST3 patch. Do not pretend it passed a test it
+          # never had. If the patch is in source, its test is mandatory.
+          if [[ -f scripts/patch_juce_vst3_waveshell.py ]]; then
+            if [[ ! -f tests/test_waveshell_juce_patch.py ]]; then
+              echo 'WAVESHELL_SOURCE_TEST_MISSING: patch present without regression' >&2
+              exit 1
+            fi
+            python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v
+          else
+            if [[ -f tests/test_waveshell_juce_patch.py ]]; then
+              echo 'WAVESHELL_SOURCE_PATCH_MISSING: regression without patch' >&2
+              exit 1
+            fi
+            echo 'WAVESHELL_CHECK_NOT_IN_EXACT_SOURCE: historical pre-patch candidate'
+          fi
       - name: Compressor exact-source native CPU A/B (same runner, non-gating timing)
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/compressor-') }}
         run: python scripts/benchmark_compressor_ab.py --reference 043748a552e66fd72e217cbf66aa35e6cc3e0b21
