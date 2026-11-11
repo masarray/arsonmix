@@ -56,6 +56,15 @@ test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSo
   assert.match(bootstrap, /Vincent\\s\+Burel/);
   assert.match(bootstrap, /Burel\\s\+Vincent/);
   assert.match(bootstrap, /Get-PnpDevice -PresentOnly/);
+  assert.match(bootstrap, /Get-PnpDevice -ErrorAction Stop/);
+  assert.match(bootstrap, /Get-CimInstance Win32_OperatingSystem/);
+  assert.match(bootstrap, /previous\.state -eq 'PENDING_REBOOT'/);
+  assert.match(bootstrap, /previous\.PSObject\.Properties\['bootUtc'\]/);
+  assert.match(bootstrap, /PENDING_REBOOT.*Restart Windows|Record "PENDING_REBOOT"/);
+  assert.match(bootstrap, /Record "REPAIR_REQUIRED"/);
+  assert.ok(bootstrap.indexOf("previous.state -eq 'PENDING_REBOOT'") <
+            bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
+            'pending reboot must be checked before launching a setup that can remove installed cable');
   assert.match(bootstrap, /-Verb RunAs/);
   assert.match(bootstrap, /PENDING_REBOOT/);
   assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
