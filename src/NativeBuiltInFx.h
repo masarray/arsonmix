@@ -7,6 +7,8 @@
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include <array>
 #include <memory>
+#include <span>
+#include <string_view>
 
 namespace armix::builtin_fx {
 // Control-side registration shared by live insert, offline edit and restore.
@@ -31,6 +33,11 @@ struct NativeBuiltInFx {
 template<class Processor>
 std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
         double rate,int frames,const void* state,int bytes) {
+    // State bytes are CONTROL-only. A missing pointer with a positive size
+    // must never be mistaken for a valid default, especially during restore.
+    if(bytes<0 || bytes>8*1024*1024 ||
+       (state==nullptr && bytes!=0) || (state!=nullptr && bytes==0))
+        return {};
     auto processor=std::make_unique<Processor>();
     processor->prepareToPlay(rate,frames);
     if(!processor->isReady() || (state && !processor->restoreUnpublishedState(state,bytes)))
@@ -61,9 +68,40 @@ inline constexpr std::array nativeBuiltInFx{
         prepareNativeBuiltInFx<VocalThrowProcessor>}
 };
 
-inline const NativeBuiltInFx* findNativeBuiltInFx(const juce::String& id) {
-    for(const auto& fx:nativeBuiltInFx)
-        if(id==fx.id)return &fx;
+// Compile-time registration contract: one stable catalog identity per FX,
+// with one prepare function and a bounded device-rate policy. The same
+// validator is usable by a fixture registry without adding a product host
+// branch or touching the realtime callback.
+constexpr bool validNativeBuiltInFxCatalog(std::span<const NativeBuiltInFx> registry) {
+    if(registry.empty())return false;
+    for(std::size_t i=0;i<registry.size();++i) {
+        const auto& fx=registry[i];
+        if(!fx.id || !fx.name || !fx.category || !fx.prepare ||
+           std::string_view(fx.id).empty() ||
+           std::string_view(fx.name).empty() ||
+           std::string_view(fx.category).empty() ||
+           !(fx.minimumLiveRate>=8000.) ||
+           !(fx.maximumLiveRate>=fx.minimumLiveRate) ||
+           !(fx.maximumLiveRate<=384000.))
+            return false;
+        for(std::size_t j=i+1;j<registry.size();++j)
+            if(registry[j].id && std::string_view(fx.id)==registry[j].id)
+                return false;
+    }
+    return true;
+}
+static_assert(validNativeBuiltInFxCatalog(nativeBuiltInFx));
+
+// One lookup contract for production registration and isolated extension
+// fixtures. Catalog IDs are exact and are never inferred from a slot index.
+inline const NativeBuiltInFx* findNativeBuiltInFxIn(
+        std::span<const NativeBuiltInFx> registry,const juce::String& id) {
+    if(id.isEmpty())return nullptr;
+    for(const auto& fx:registry)
+        if(fx.id && id==fx.id)return &fx;
     return nullptr;
+}
+inline const NativeBuiltInFx* findNativeBuiltInFx(const juce::String& id) {
+    return findNativeBuiltInFxIn(nativeBuiltInFx,id);
 }
 } // namespace armix::builtin_fx

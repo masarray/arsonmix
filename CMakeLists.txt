@@ -132,6 +132,16 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # M4: fixture processor goes through the SAME native FX descriptor path.
+  # Remains part of the existing Windows native mixer qualification build.
+  juce_add_console_app(ARMixNativeFxExtensionTests PRODUCT_NAME "ArSonMix Native FX Host Extension Tests")
+  target_sources(ARMixNativeFxExtensionTests PRIVATE
+      tests/native_fx_registry_extension_test.cpp src/NativeBuiltInFx.h)
+  target_link_libraries(ARMixNativeFxExtensionTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeFxExtensionTests PRIVATE cxx_std_20)
+  add_test(NAME M4NativeFxCatalogExtensionAndStatePreparation
+      COMMAND ARMixNativeFxExtensionTests)
   # One user-owned, effect-scoped library; not .smix or FX-chain .armix.
   # File IO is forbidden in the realtime PCM callback.
   juce_add_console_app(ARMixBuiltInFxPresetStoreTests PRODUCT_NAME "ArSonMix Native Built-in FX User Preset Store")
@@ -234,6 +244,7 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
   add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeFxExtensionTests)
   juce_add_console_app(ARMixApprovedRoutingPcmTests PRODUCT_NAME "ArSonMix Approved WIRE PCM Tests")
   target_sources(ARMixApprovedRoutingPcmTests PRIVATE tests/approved_native_routing_pcm_test.cpp)
   target_link_libraries(ARMixApprovedRoutingPcmTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
