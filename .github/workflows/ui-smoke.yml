@@ -293,6 +293,8 @@ jobs:
         run: python tests/approved_native_peq_smoke.py
       - name: Native Compressor real Chromium FX, transfer curve, ACK and responsive editor
         run: python tests/approved_native_compressor_smoke.py
+      - name: Native Vocal Throw portable My Presets, audio ACK and responsive editor
+        run: python tests/approved_native_vocal_throw_smoke.py
       - name: Native Harmony effective-key LCD, Music/Manual ACK, slow readback and geometry
         run: python tests/approved_native_harmony_smoke.py
       - name: Cold start first WIRE and original-channel VST3 picker editor
