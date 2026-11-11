@@ -15,9 +15,10 @@
 // new branches in Main, the route graph, WebView or the JUCE callback.
 class FixtureGainFx final : public juce::AudioProcessor {
 public:
+    inline static int constructed=0; // CONTROL-only fixture
     FixtureGainFx():juce::AudioProcessor(BusesProperties()
         .withInput("Main",juce::AudioChannelSet::stereo(),true)
-        .withOutput("Main",juce::AudioChannelSet::stereo(),true)){}
+        .withOutput("Main",juce::AudioChannelSet::stereo(),true)){++constructed;}
     const juce::String getName() const override {return "Fixture Gain";}
     void prepareToPlay(double rate,int frames) override {
         ready_=(rate>=8000. && frames>=32);
@@ -165,6 +166,28 @@ int main() {
         assert(armix::builtin_fx::findNativeBuiltInFx(production.id)==&production);
 
     constexpr float gain=1.5f;
+    // M4: malformed device rate/quantum must fail before even creating a
+    // processor. This prevents huge DSP buffers or bad fractional clocks
+    // from a corrupted saved Show/driver request.
+    const int beforeInvalid=FixtureGainFx::constructed;
+    for(const double rate:{
+        std::numeric_limits<double>::quiet_NaN(),
+        std::numeric_limits<double>::infinity(),
+        -std::numeric_limits<double>::infinity(),
+        0.,7999.,384001.}) {
+        assert(!found->prepare(rate,128,&gain,sizeof(gain)));
+    }
+    for(int frames:{-1,0,1,15,8193,std::numeric_limits<int>::max()}) {
+        assert(!found->prepare(48000.,frames,&gain,sizeof(gain)));
+    }
+    assert(!found->prepare(48000.,128,nullptr,1));
+    assert(!found->prepare(48000.,128,&gain,-1));
+    assert(!found->prepare(48000.,128,&gain,8*1024*1024+1));
+    assert(FixtureGainFx::constructed==beforeInvalid);
+    // Host accepts the minimum legitimate 16-frame boundary. The fixture
+    // itself deliberately asks for >=32 and may reject after construction.
+    assert(!found->prepare(48000.,16,&gain,sizeof(gain)));
+    assert(FixtureGainFx::constructed==beforeInvalid+1);
     auto prepared=found->prepare(48000.,128,&gain,sizeof(gain));
     assert(prepared!=nullptr);
     assert(prepared->getLatencySamples()==0);
