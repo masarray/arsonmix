@@ -190,10 +190,20 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         store=(ROOT/"src/BuiltInFxUserPresetStore.h").read_text("utf-8")
         self.assertIn('#include "BuiltInFxUserPresetStore.h"',native)
         self.assertIn('action=="nativeHarmonyUserPreset"',native)
-        self.assertIn('processor->stateSnapshotQuiescent()',native)
+        self.assertIn('realtime->stateSnapshotQuiescent()',native)
         self.assertIn('builtinFxUserPresets_.saveNew(entry)',native)
         self.assertIn('builtinFxUserPresets_.read(catalog,presetId,entry)',native)
-        self.assertIn('entry.settings=portableSettings;',native)
+        self.assertIn('entry.settings=portable;',native)
+        self.assertIn('action=="nativeBuiltinFxUserPreset"',native)
+        self.assertIn('"arMixBuiltinFxPresetResult"',native)
+        self.assertIn('matchesReady(processor,catalog)',native)
+        self.assertIn('juce::var result', (ROOT/"src/BuiltInFxAcceptedSnapshot.h").read_text("utf-8"))
+        serializer=(ROOT/"src/BuiltInFxAcceptedSnapshot.h").read_text("utf-8")
+        for plugin in ("ChannelEqProcessor", "ChannelCompressorProcessor",
+                       "ChannelHarmonyProcessor", "VocalThrowProcessor"):
+            self.assertIn(plugin+"::catalogIdentity",serializer)
+        self.assertIn('BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen',
+                      (ROOT/"CMakeLists.txt").read_text("utf-8"))
         self.assertIn('"arMixBuiltinHarmonyPresetResult"',native)
         self.assertIn('source or falls safely back to Manual Key',store)
         self.assertIn('id="mxHSaveAs"',self.ui)

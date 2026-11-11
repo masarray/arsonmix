@@ -33,6 +33,7 @@
 #include "StartupVst3RecoveryGuard.h"
 #include "PortableWorkspace.h"
 #include "BuiltInFxUserPresetStore.h"
+#include "BuiltInFxAcceptedSnapshot.h"
 #include "StudioBackup.h"
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
@@ -3891,12 +3892,13 @@ private:
         // G0, before ChannelId admission. Do not send GUI demo parameters
         // or mutate a second DSP. One control-thread atomic update only.
 
-        // P1: portable Harmonice user preset library. All operations are on
-        // the message/control thread; no disk access, parsing, processor
-        // lifetime or allocation is introduced in the audio callback.
-        // The exact accepted native ChannelId/slot/instance/epoch lease is
-        // required EVEN for list/read, to prevent wrong-editor cross-talk.
-        if(action=="nativeHarmonyUserPreset") {
+        // One control-thread portable preset service for ALL built-in FX.
+        // Existing Harmonice editor retains the legacy action/result names.
+        // Read/list/rename/delete are disk-only; file data NEVER bypasses
+        // each DSP's existing typed SPSC -> ACK -> snapshot control path.
+        if(action=="nativeHarmonyUserPreset"||
+           action=="nativeBuiltinFxUserPreset") {
+            const bool harmonyLegacy=action=="nativeHarmonyUserPreset";
             const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
                 args,LiveDryRoutingLab::maxFxPerLane);
             const auto& request=fxRequest.request;
@@ -3908,28 +3910,37 @@ private:
             const auto channel=fxRequest.channel,epoch=fxRequest.epoch,
                        revision=fxRequest.revision;
             const int slot=fxRequest.slot;
+            const juce::var requestedCatalog=args.getProperty("catalogId",{});
+            const juce::String catalog=harmonyLegacy?
+                armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity:
+                requestedCatalog.toString();
+            const bool catalogValid=harmonyLegacy||
+                (requestedCatalog.isString()&&
+                 armix::storage::BuiltInFxUserPresetStore::effectFolder(catalog)
+                    .isNotEmpty());
             const bool identity=fxRequest.valid&&!fxRequest.unbound&&epoch!=0&&
-                request.startsWith("hpres-");
+                catalogValid&&request.startsWith(
+                    harmonyLegacy?"hpres-":"fxpres-");
             auto lease=identity?engine_.leaseNativeVst3Editor(
                 epoch,revision,armix::mixer::ChannelId{channel},
                 static_cast<std::size_t>(slot),instance):
                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
-            auto* processor=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
-                lease?lease->processor.get():nullptr);
+            auto* processor=lease?lease->processor.get():nullptr;
+            const bool exactReady=armix::storage::BuiltInFxAcceptedSnapshot
+                ::matchesReady(processor,catalog);
             auto result=std::make_unique<juce::DynamicObject>();
             result->setProperty("requestId",request);
             result->setProperty("operation",operation);
+            result->setProperty("catalogId",catalog);
             result->setProperty("channelId",rawChannel);
             result->setProperty("deviceEpoch",rawEpoch);
             result->setProperty("graphRevision",rawRevision);
             result->setProperty("instanceId",instance);
-            const juce::String catalog=
-                armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
             const auto presetId=args.getProperty("presetId","").toString();
             juce::String error;
-            if(!identity||!processor||!processor->isReady()||
-               nativeShowBusy_||studioBackupBusy_||engine_.independentClockActive())
-                error="STALE_OR_UNAVAILABLE_HARMONY_INSTANCE";
+            if(!identity||!exactReady||nativeShowBusy_||studioBackupBusy_||
+               engine_.independentClockActive())
+                error="STALE_OR_UNAVAILABLE_BUILTIN_FX_INSTANCE";
             else if(operation=="list") {
                 juce::var items(juce::Array<juce::var>{});
                 for(const auto& item:builtinFxUserPresets_.enumerate(catalog)) {
@@ -3944,62 +3955,69 @@ private:
                 armix::storage::BuiltInFxUserPreset entry;
                 error=builtinFxUserPresets_.read(catalog,presetId,entry);
                 if(error.isEmpty()){
-                    // Read is never DSP-applied. JS must send the existing
-                    // nativeHarmonySetSettings request and wait for its
-                    // audio ACK plus matching accepted snapshot.
                     result->setProperty("presetId",entry.id);
                     result->setProperty("name",entry.name);
                     result->setProperty("settings",entry.settings);
                 }
             }else if(operation=="saveAs"||operation=="save") {
-                if(pendingNativeHarmony_.owner||
-                   !processor->stateSnapshotQuiescent())
-                    error="HARMONY_DSP_EDIT_PENDING";
+                // All four native FX publish a single producer and keep their
+                // accepted_ state on CONTROL. Never capture an unapplied edit.
+                const bool busy=
+                    (catalog==armix::builtin_fx::ChannelEqProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeEq_.owner))||
+                    (catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeComp_.owner))||
+                    (catalog==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeHarmony_.owner))||
+                    (catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeThrow_.owner));
+                auto* realtime=dynamic_cast<armix::mixer::RealtimeNativeFxControl*>(processor);
+                if(busy||!realtime||!realtime->stateSnapshotQuiescent())
+                    error="BUILTIN_FX_AUDIO_EDIT_PENDING";
                 else {
-                    const auto accepted=processor->acceptedSettings();
-                    auto data=std::make_unique<juce::DynamicObject>();
-                    data->setProperty("key",accepted.key);
-                    data->setProperty("scale",accepted.scale);
-                    data->setProperty("voices",accepted.voices);
-                    data->setProperty("voiceMode",accepted.voiceMode);
-                    data->setProperty("correction",accepted.correction);
-                    data->setProperty("wet",accepted.wet);
-                    data->setProperty("space",accepted.space);
-                    data->setProperty("color",accepted.color);
-                    data->setProperty("gainDb",accepted.gainDb);
-                    // Music source ChannelId is deliberately NOT portable.
-                    armix::storage::BuiltInFxUserPreset entry;
-                    entry.catalogId=catalog;
-                    entry.category="My Presets";
-                    const juce::var portableSettings(data.release());
-                    entry.settings=portableSettings;
-                    if(operation=="saveAs"){
-                        entry.name=args.getProperty("name","").toString();
-                        error=builtinFxUserPresets_.saveNew(entry);
-                    }else{
-                        error=builtinFxUserPresets_.read(catalog,presetId,entry);
+                    const auto portable=armix::storage::BuiltInFxAcceptedSnapshot
+                        ::acceptedSettings(processor,catalog);
+                    if(!portable.isObject())
+                        error="BUILTIN_FX_ACCEPTED_STATE_INVALID";
+                    else {
+                        armix::storage::BuiltInFxUserPreset entry;
+                        entry.catalogId=catalog;
+                        entry.category="My Presets";
+                        entry.settings=portable;
+                        if(operation=="saveAs"){
+                            entry.name=args.getProperty("name","").toString();
+                            error=builtinFxUserPresets_.saveNew(entry);
+                        }else{
+                            error=builtinFxUserPresets_.read(catalog,presetId,entry);
+                            if(error.isEmpty()){
+                                // Preserve exact existing user ID/name/category.
+                                entry.settings=portable;
+                                error=builtinFxUserPresets_.overwrite(entry);
+                            }
+                        }
                         if(error.isEmpty()){
-                            // Preserve immutable ID/name/category of the
-                            // exact user-owned record being overwritten.
-                            entry.settings=portableSettings;
-                            error=builtinFxUserPresets_.overwrite(entry);
+                            result->setProperty("presetId",entry.id);
+                            result->setProperty("name",entry.name);
                         }
                     }
-                    if(error.isEmpty()){
-                        result->setProperty("presetId",entry.id);
-                        result->setProperty("name",entry.name);
-                    }
                 }
-            }else if(operation=="rename")
+            }else if(operation=="rename") {
                 error=builtinFxUserPresets_.rename(catalog,presetId,
-                        args.getProperty("name","").toString());
-            else if(operation=="delete")
+                          args.getProperty("name","").toString());
+                if(error.isEmpty()) {
+                    result->setProperty("presetId",presetId);
+                    result->setProperty("name",args.getProperty("name","").toString());
+                }
+            }else if(operation=="delete") {
                 error=builtinFxUserPresets_.remove(catalog,presetId);
-            else error="UNSUPPORTED_HARMONY_PRESET_ACTION";
+                if(error.isEmpty())result->setProperty("presetId",presetId);
+            }else error="UNSUPPORTED_BUILTIN_FX_PRESET_ACTION";
             result->setProperty("status",error.isEmpty()?"OK":"REJECTED");
             if(error.isNotEmpty())result->setProperty("errorCode",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
-                "arMixBuiltinHarmonyPresetResult",juce::var(result.release()));
+                harmonyLegacy?"arMixBuiltinHarmonyPresetResult":
+                              "arMixBuiltinFxPresetResult",
+                juce::var(result.release()));
             return;
         }
 
