@@ -218,6 +218,25 @@ static void verifyUniversalChannelIdFxLeaseAndLivePcm() {
     alias[1].inserts=first.inserts; // same native processor twice
     assert(Bank::prepare(epoch,2,alias,blocked)==Bank::Fault::duplicateInstance);
     assert(blocked.lanes()==0);
+    // Distinct native processors can still carry the SAME restored instance
+    // identity. Pointer-only guards miss this and allow the UI/editor to
+    // confuse two owners even if the accepted snapshot later rejects them.
+    auto collidingProcessor=std::make_unique<GainFx>(1.125f);
+    collidingProcessor->prepareToPlay(48000.,64);
+    const auto restoredId=first.inserts[0]->instanceId;
+    auto sameTokenDifferentOwner=std::make_shared<LiveChannelFxGraph::FxInstance>(
+        std::move(collidingProcessor),"collision-fixture","Collision fixture",64,
+        restoredId);
+    assert(sameTokenDifferentOwner.get()!=first.inserts[0].get());
+    alias[1].inserts={sameTokenDifferentOwner};
+    assert(Bank::prepare(epoch,2,alias,blocked)==Bank::Fault::duplicateInstance);
+    assert(blocked.lanes()==0);
+    Bank::Assignment sameChannel=first;
+    sameChannel.inserts.push_back(sameTokenDifferentOwner);
+    assert(Bank::prepare(epoch,2,std::span(&sameChannel,1),blocked)==
+           Bank::Fault::duplicateInstance);
+    assert(blocked.lanes()==0 && bank.insertCount(ch1)==1 &&
+           bank.insertCount(ch11)==1); // previous accepted graph untouched
     // A fixed-latency VST lease is admitted; the PCM publisher consumes its
     // exact inventory to prepare fan-in compensation before publication.
     auto latentProcessor=std::make_unique<GainFx>(1.5f);

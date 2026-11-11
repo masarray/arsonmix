@@ -288,6 +288,104 @@
       selectedPin:pin?.port??null,nextAction,
       readout:label+" "+dbfs(raw)+" · MAIN PCM "+dbfs(main)});
   }
+
+  // LOGICAL_ONLY has no physical graph/PCM authority. An offline .smix ACK
+  // proves a committed revision, not the requested edit. Verify exactly the
+  // accepted logical graph effect before revealing a persisted edit in /preview/.
+  // Keep this deterministic alongside installed-native readback, outside DOM.
+  function logicalReadbackProves(p,graph) {
+    if (!object(p) || !object(p.payload) || !object(graph) ||
+        !Array.isArray(graph.channels) || !Array.isArray(graph.edges) ||
+        decimal(p.ackRevision) === null || graph.revision !== p.ackRevision) return false;
+    const v=p.payload, row=graph.channels.find(ch=>ch.id===p.channelId);
+    const validId=id=>decimal(id)!==null && id!=="0";
+    const catalogs=()=>Array.isArray(row?.inserts) ?
+      row.inserts.map(fx=>fx?.catalogId):null;
+    const equal=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&
+      a.length===b.length&&a.every((value,i)=>value===b[i]);
+    switch(p.operation) {
+      case "CREATE_CHANNEL":
+      case "CREATE_GROUP":
+        return validId(p.createdId) && graph.channels.some(ch=>
+          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":"GROUP"));
+      case "DELETE_CHANNEL":
+      case "REMOVE_BUS":
+        return validId(p.channelId) && p.beforeChannelExists===true && !row;
+      case "RENAME_CHANNEL":
+        return !!row && typeof v.name==="string" && row.name===v.name;
+      case "SET_PROCESSING_FORMAT":
+        return !!row && ["MONO","STEREO"].includes(v.format) &&
+          row.processingFormat===v.format;
+      case "SET_FADER":
+        return !!row && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.faderDb) &&
+          Math.abs(row.controls.faderDb-v.valueDb)<0.11;
+      case "SET_PAN":
+        return !!row && Number.isFinite(v.value) &&
+          Number.isFinite(row.controls?.pan) &&
+          Math.abs(row.controls.pan-v.value)<0.011;
+      case "SET_MUTE":
+      case "SET_SOLO":
+        return !!row && isBool(v.enabled) &&
+          row.controls?.[p.operation==="SET_MUTE"?"mute":"solo"]===v.enabled;
+      case "SET_FX_RACK_BYPASS":
+        return !!row && isBool(v.enabled) && row.fxRackBypassed===v.enabled;
+      case "ADD_FX_REFERENCE":
+        // A pre-existing insert of the same catalog is NOT proof that a new
+        // slot was appended. The full ordered rack must match the intended edit.
+        return !!row && typeof v.catalogId==="string" && v.catalogId.length>0 &&
+          Array.isArray(p.beforeInsertCatalogs) &&
+          p.beforeInsertCatalogs.length<8 &&
+          equal(catalogs(),[...p.beforeInsertCatalogs,v.catalogId]);
+      case "REMOVE_FX_REFERENCE": {
+        const before=p.beforeInsertCatalogs,slot=v.slot;
+        if(!row || !Array.isArray(before) || !Number.isInteger(slot) ||
+           slot<0 || slot>=before.length || v.beforeCount!==before.length)return false;
+        const expected=before.slice();expected.splice(slot,1);
+        return equal(catalogs(),expected);
+      }
+      case "SET_FX_SLOT_BYPASS":
+        return !!row && Number.isInteger(v.slot) && v.slot>=0 &&
+          isBool(v.enabled) && row.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "WIRE_TRANSACTION": {
+        // The JUCE logical workspace accepts EXACTLY one WIRE edit per
+        // transaction. More edits can never be silently accepted from [0].
+        if(!row || !Array.isArray(v.changes) || v.changes.length!==1 ||
+           !Array.isArray(p.beforeEdges))return false;
+        const change=v.changes[0];
+        if(!object(change) || !validId(change.from) ||
+           change.from!==p.channelId)return false;
+        const edges=graph.edges.filter(e=>e.from===p.channelId&&e.enabled!==false);
+        const before=p.beforeEdges;
+        const present=id=>before.some(e=>e.edgeId===id);
+        if(change.op==="REMOVE")
+          return validId(change.edgeId) && present(change.edgeId) &&
+            !edges.some(e=>e.edgeId===change.edgeId);
+        if(change.op==="DISCONNECT")
+          return before.some(e=>e.primaryOutput===true) &&
+            !edges.some(e=>e.primaryOutput===true) && !row.primaryOutId;
+        if(change.op==="ROUTE_ONLY")
+          return validId(change.to) && row.primaryOutId===change.to &&
+            edges.some(e=>e.to===change.to && e.primaryOutput===true);
+        if(change.op==="CONNECT")
+          return validId(change.to) && edges.some(e=>
+            e.to===change.to && e.primaryOutput===false &&
+            validId(e.edgeId) && !present(e.edgeId) &&
+            (change.tap===undefined || change.tap===e.tap) &&
+            (change.gainLinear===undefined ||
+              (Number.isFinite(change.gainLinear) &&
+               Number.isFinite(e.gainLinear) &&
+               Math.abs(e.gainLinear-change.gainLinear)<=0.0001)));
+        if(change.op==="RETARGET")
+          return validId(change.edgeId) && validId(change.to) &&
+            before.some(e=>e.edgeId===change.edgeId && e.to!==change.to) &&
+            edges.some(e=>e.edgeId===change.edgeId && e.to===change.to);
+        return false;
+      }
+      default:return false;
+    }
+  }
+
   function createController({emit, onStatus=()=>{}, onAccepted=()=>{}}) {
     if (typeof emit !== "function") throw Error("Native emitter required");
     let current = null, pending = null, lastRequest = 0, lastError = "NATIVE_NOT_SUBSCRIBED";
@@ -440,5 +538,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,diagnoseFirstSound,createController});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController});
 });
