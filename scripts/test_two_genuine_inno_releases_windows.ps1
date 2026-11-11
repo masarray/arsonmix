@@ -11,6 +11,20 @@ if($env:GITHUB_ACTIONS -cne 'true' -or
     throw 'REAL_RELEASE_FAT_REQUIRES_DISPOSABLE_GITHUB_WINDOWS_RUNNER'
 }
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
+# Release metadata is an API request, not a public asset download. Anonymous
+# GitHub Windows runner IPs can exhaust the unauthenticated 60/hour quota
+# even when every CTest, EXE, ZIP and Inno installer gate has passed.
+# Use ONLY the scoped, masked, read-only Actions token for metadata.
+# Absence of credentials is a hard failure, not permission to skip FAT.
+if([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+    throw 'GENUINE_RELEASE_METADATA_AUTH_REQUIRED'
+}
+$releaseHeaders=@{
+    'User-Agent'='ArSonMix-GenuineFAT/1'
+    Accept='application/vnd.github+json'
+    'X-GitHub-Api-Version'='2022-11-28'
+    Authorization="Bearer $env:GITHUB_TOKEN"
+}
 $repo='masarray/arsonmix'
 $matrix=@(
     @{tag='v0.5.0-alpha.4';sha='7447d82e84a52e583c7e4c30b9a7bbcded1abd11'},
@@ -75,7 +89,7 @@ try {
     foreach($item in $matrix) {
         $tag=$item.tag
         $uri="https://api.github.com/repos/$repo/releases/tags/$tag"
-        $release=Invoke-RestMethod -Uri $uri -Headers @{'User-Agent'='ArSonMix-GenuineFAT/1';Accept='application/vnd.github+json'} -TimeoutSec 45
+        $release=Invoke-RestMethod -Uri $uri -Headers $releaseHeaders -TimeoutSec 45
         Assert-True (-not $release.draft -and $release.tag_name -ceq $tag -and
                      $release.target_commitish -ceq $item.sha) "Unexpected historical published release identity"
         $name="ArSonMix-$tag-Windows-x64-Setup.exe"

@@ -285,6 +285,15 @@ test('two genuine release installers upgrade and roll back only in disposable Wi
   assert.match(real, /proof-user-session\.smix/);
   assert.match(ci, /Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(ci, /scripts\/test_two_genuine_inno_releases_windows\.ps1/);
+  // API requests from shared runner IPs must not silently fail at 60/hour.
+  // The workflow already has contents:read. Only the metadata lookup gets
+  // the scoped Actions token; downloadable release assets stay hash checked.
+  assert.match(real, /GENUINE_RELEASE_METADATA_AUTH_REQUIRED/);
+  assert.match(real, /Authorization="Bearer \$env:GITHUB_TOKEN"/);
+  assert.match(real, /Invoke-RestMethod -Uri \$uri -Headers \$releaseHeaders/);
+  assert.match(ci, /GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}/);
+  assert.match(ci, /permissions:\s*\n\s*contents: read/);
+  assert.doesNotMatch(real, /Invoke-WebRequest -Uri \$url -Headers \$releaseHeaders/);
   assert.doesNotMatch(real, /(?:Stop-Process|taskkill|Remove-Item\s+-LiteralPath\s+\$install\s+-Recurse)/);
 });
 
