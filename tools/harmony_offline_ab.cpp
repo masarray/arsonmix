@@ -208,7 +208,8 @@ static void writeQualityEvidence(const fs::path& folder,const Wave& input,
                                  const Wave& low,const Wave& mid,const Wave& high,
                                  const Wave& mix127,const Wave& mix64,
                                  const Wave& mix257){
-    const auto frames=input.left.size(),rate=input.rate;
+    const auto frames=input.left.size();
+    const unsigned rate=input.rate;
     if(!rate||input.right.size()!=frames)
         throw std::runtime_error("invalid M7 source WAV");
     for(const auto* w:{&low,&mid,&high,&mix127,&mix64,&mix257})
