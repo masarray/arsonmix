@@ -10,24 +10,49 @@ $ErrorActionPreference="Stop"
 $state=Join-Path $env:APPDATA "AR-MIX-Studio"
 New-Item -ItemType Directory -Force -Path $state | Out-Null
 $statusPath=Join-Path $state "VB-CABLE-STATUS.json"
+$script:bootUtc=""
 function Record([string]$stateName,[string]$reason) {
   $temp=$statusPath+".tmp"
   [ordered]@{schema="arsonmix.vendor-driver.v1";state=$stateName;
     reason=$reason;utc=[DateTime]::UtcNow.ToString('o');
+    bootUtc=$script:bootUtc;
     rebootRequired=($stateName -eq 'PENDING_REBOOT')} |
       ConvertTo-Json | Set-Content -LiteralPath $temp -Encoding UTF8
   Move-Item -LiteralPath $temp -Destination $statusPath -Force
 }
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
 try {
-  # Running the vendor installer on an existing driver can REMOVE it.
-  # Any suspected existing VB-Audio endpoint, healthy or damaged, blocks
-  # automatic invocation; unhealthy states require manual repair.
-  $present=@(Get-PnpDevice -PresentOnly -ErrorAction Stop |
-    Where-Object {$_.FriendlyName -match '(?i)VB-Audio Virtual Cable|CABLE (Output|Input).*VB-Audio'})
-  if($present.Count -gt 0) {
-    if(@($present | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
-      Record "REPAIR_REQUIRED" "VB-CABLE device is unhealthy; inspect Windows Device Manager"
+  # A driver already queued for reboot must NOT be run again: the VB-Audio
+  # setup utility can switch into REMOVE mode on a second invocation.
+  # Record the Windows boot epoch and only clear pending after *another* boot
+  # AND a healthy PnP readback. Never infer installation from a process exit.
+  $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+  $script:bootUtc=$os.LastBootUpTime.ToUniversalTime().ToString('o')
+  $previous=$null
+  if(Test-Path -LiteralPath $statusPath -PathType Leaf){
+    $previous=Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop | ConvertFrom-Json
+  }
+  $isCable={ $_.FriendlyName -match '(?i)VB-Audio Virtual Cable|CABLE (Output|Input).*VB-Audio' }
+  # Include non-present devices. Only examining PresentOnly can accidentally
+  # launch the vendor setup in REMOVE mode when a driver awaits reboot.
+  $all=@(Get-PnpDevice -ErrorAction Stop | Where-Object $isCable)
+  $present=@(Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object $isCable)
+  if($null -ne $previous -and $previous.state -eq 'PENDING_REBOOT'){
+    if([string]::IsNullOrWhiteSpace($previous.bootUtc) -or
+       $previous.bootUtc -eq $script:bootUtc){
+      Record "PENDING_REBOOT" "Restart Windows to complete the already-launched VB-CABLE installation"
+      exit 0
+    }
+    if($present.Count -eq 0 -or @($present | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
+      Record "REPAIR_REQUIRED" "After reboot, VB-CABLE did not expose healthy PnP endpoints; do not rerun vendor setup automatically"
+      exit 3
+    }
+    Record "ALREADY_PRESENT" "Reboot complete; verified VB-CABLE PnP presence"
+    exit 0
+  }
+  if($all.Count -gt 0){
+    if($present.Count -eq 0 -or @($all | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
+      Record "REPAIR_REQUIRED" "VB-CABLE installed but missing or unhealthy; inspect Windows Device Manager"
       exit 3
     }
     Record "ALREADY_PRESENT" "VB-CABLE device already installed; vendor installer skipped"
