@@ -1076,3 +1076,45 @@
 @media(prefers-reduced-motion:reduce){
  .mx-vthrow .vt-throw-button,.mx-vthrow .vt-throw-aura{transition:none}
 }
+
+/* Shared native My Presets controls — existing FX Rack CSS owner. */
+/* Single compact built-in FX My Presets control surface.
+   The same classes apply to EQ, Compressor, Harmonice and Vocal Throw.
+   This is intentionally a small anchored tool, never a bulky modal card. */
+.mx-fxp-button{
+ flex:0 0 auto;height:23px;padding:1px 5px;min-width:22px;
+ background:#305763;color:#e1f3f2;border:1px solid #5d8790;
+ border-radius:4px;font-size:9px;font-weight:400;white-space:nowrap;
+ cursor:pointer
+}
+.mx-fxp-button:hover:not(:disabled){background:#447873}
+.mx-fxp-button:disabled{opacity:.4;cursor:default}
+.mx-fxp-menu,.mx-fxp-form{
+ position:absolute;top:33px;right:48px;z-index:18;
+ background:#e4edef;border:1px solid #8da5aa;border-radius:0 0 5px 5px;
+ box-shadow:0 8px 16px #081e285c;color:#253e44;
+ font:400 10px/1.35 Inter,'Segoe UI',Arial,sans-serif;
+ padding:7px;max-width:calc(100% - 12px)
+}
+.mx-fxp-menu{display:flex;flex-direction:column;gap:5px;min-width:145px}
+.mx-fxp-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mx-fxp-menu[hidden],.mx-fxp-form[hidden],.mx-fxp-form [hidden]{display:none}
+.mx-fxp-name{
+ width:140px;max-width:45vw;height:24px;border:1px solid #9aafb3;
+ border-radius:3px;background:#fff;color:#273b41;padding:2px 6px;
+ font-size:10px
+}
+.mx-fxp-form button,.mx-fxp-menu button{
+ min-height:24px;background:#d4e7e4;border:1px solid #829fa4;
+ border-radius:3px;padding:2px 7px;font-size:10px;font-weight:400;
+ color:#274b51;cursor:pointer
+}
+.mx-fxp-form .mx-fxp-confirm{background:#367b73;color:#fff}
+.mx-fxp-menu button{text-align:left}
+.mx-fxp-menu button:hover,.mx-fxp-form button:hover{filter:brightness(.94)}
+.mx-fxp-prompt{font-size:10px;font-weight:500;letter-spacing:.1px}
+@media(max-width:560px){
+ .mx-fxp-menu{right:29px}
+ .mx-fxp-form{left:7px;right:7px}
+ .mx-fxp-button{padding:1px 3px;font-size:8px}
+}
