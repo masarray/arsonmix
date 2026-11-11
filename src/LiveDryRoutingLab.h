@@ -3341,13 +3341,18 @@ public:
             row->setProperty("rightName",patch.rightName);
             const auto live=nativePublisher_.externalOutput(
                 nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
+            const auto applied=nativePublisher_.appliedExternalOutput(
+                nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
             const bool installed=nativePcm && externalOutputEpoch_==epoch() &&
                 live.first>=0 && live.second>=0 &&
+                applied==live &&
                 live.first<callbackOutputCount_.load(std::memory_order_acquire) &&
                 live.second<callbackOutputCount_.load(std::memory_order_acquire) &&
                 enabledOutputPorts_[live.first].load(std::memory_order_relaxed)==patch.left &&
                 enabledOutputPorts_[live.second].load(std::memory_order_relaxed)==patch.right;
-            row->setProperty("status",installed?"LIVE":"NEEDS_REMAP");
+            row->setProperty("status",installed?"LIVE":
+                (nativePcm && externalOutputEpoch_==epoch() && live.first>=0 &&
+                 live.second>=0)?"PENDING":"NEEDS_REMAP");
             external.add(juce::var(row.release()));
         }
         out->setProperty("externalOutputs",juce::var(external));
