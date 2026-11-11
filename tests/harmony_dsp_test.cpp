@@ -224,6 +224,86 @@ static void testPeriodContinuityOnLoudOctaveErrors(){
          "new singer phrase inherited stale source period");
 }
 
+// A loss of F0 must NOT erase the still-audible PSOLA source period.
+// That used to switch a decaying wet singer to a phase-unrelated granular
+// renderer halfway through its envelope on loud consonants / long vibrato.
+// Full silence must eventually retire grains; no endless pitched gate.
+static void testUnvoicedGapPreservesWetTail(){
+  constexpr int rate=48000, first=rate*35/100,gap=rate*55/1000;
+  constexpr int reprise=rate*25/100,ending=rate*25/100;
+  constexpr int total=first+gap+reprise+ending;
+  constexpr double tau=6.283185307179586;
+  std::vector<float> inputL(total),inputR(total);
+  double phase=0.;
+  for(int i=0;i<total;++i){
+    const double t=static_cast<double>(i)/rate;
+    phase+=tau*880.*std::exp2(65.*std::sin(tau*5.15*t)/1200.)/rate;
+    const bool active=i<first||(i>=first+gap&&i<first+gap+reprise);
+    const int activePosition=i<first?i:i-(first+gap);
+    const int duration=i<first?first:reprise;
+    const double fade=std::clamp(activePosition/(rate*.004),0.,1.)*
+                      std::clamp((duration-activePosition)/(rate*.004),0.,1.);
+    const float amp=active?static_cast<float>(.16*fade):0.f;
+    inputL[i]=amp*static_cast<float>(std::sin(phase)+
+                                       .27*std::sin(2.*phase+.17));
+    inputR[i]=amp*static_cast<float>(.82*std::sin(phase+.19)+
+                                       .20*std::sin(3.*phase+.46));
+  }
+  struct Result{
+    std::vector<float> l,r;
+    float gapPeriod=0.f,gapGate=0.f,endPeriod=-1.f,endGate=-1.f;
+    bool gapUnvoiced=false,revoice=false,finalSilent=false;
+  };
+  const auto render=[&](int block){
+    auto e=std::make_unique<Engine>();
+    need(e->prepare(rate)&&e->latencySamples()==1536,
+         "wet-tail engine PDC changed");
+    Settings wet;wet.voices=5;wet.wet=.74f;wet.space=.82f;
+    need(e->setSettings(wet),"wet-tail test settings invalid");
+    Result out;out.l=inputL;out.r=inputR;
+    bool sampled=false;
+    for(int pos=0;pos<total;pos+=block){
+      const int count=std::min(block,total-pos);
+      e->process(out.l.data()+pos,out.r.data()+pos,count);
+      // Observe the gap after its source has become genuinely silent.
+      if(!sampled&&pos+count>=first+gap-64){
+        out.gapPeriod=e->sourcePeriodForOfflineTests();
+        out.gapGate=e->wetGateForOfflineTests();
+        out.gapUnvoiced=!e->voiced();sampled=true;
+      }
+      if(pos+count>=first+gap+reprise-64&&
+         pos+count<first+gap+reprise+block){
+        out.revoice=e->voiced()&&
+            e->sourcePeriodForOfflineTests()>8.f;
+      }
+    }
+    out.endPeriod=e->sourcePeriodForOfflineTests();
+    out.endGate=e->wetGateForOfflineTests();
+    out.finalSilent=!e->voiced();
+    return out;
+  };
+  const auto fine=render(64),coarse=render(257);
+  need(fine.l==coarse.l&&fine.r==coarse.r,
+       "wet-tail recovery depends on ASIO callback partition");
+  for(const auto* scene:{&fine,&coarse}){
+    need(scene->gapUnvoiced&&scene->gapPeriod>30.f&&
+         scene->gapGate>.002f,
+         "pitch loss erased PSOLA period while wet tail still audible");
+    need(scene->revoice,"returning soprano note failed to reacquire");
+    need(scene->finalSilent&&scene->endPeriod==0.f&&
+         scene->endGate<.001f,
+         "long silence retained stale PSOLA source or voiced gate");
+  }
+  for(int i=1;i<total;++i){
+    const auto a=static_cast<std::size_t>(i);
+    need(std::isfinite(fine.l[a])&&std::isfinite(fine.r[a]),
+         "wet-tail high-register output nonfinite");
+    need(std::abs(fine.l[a]-fine.l[a-1])<.45f&&
+         std::abs(fine.r[a]-fine.r[a-1])<.45f,
+         "wet-tail gap caused an unbounded micro-sample discontinuity");
+  }
+}
+
 // Stress the USER failure shape: a long 5Hz/70-cent vibrato under
 // chorus-level gain with short noisy consonants. Dry/Wet are checked using
 // the actual native Engine; fixture is NOT an ASIO or human-likeness claim.
@@ -298,6 +378,7 @@ static void testLoudVibratoContinuity(){
 }
 
 int main(){
+  testUnvoicedGapPreservesWetTail();
   testUnisonDoubler();
   testPeriodContinuityOnLoudOctaveErrors();
   testLoudVibratoContinuity();
