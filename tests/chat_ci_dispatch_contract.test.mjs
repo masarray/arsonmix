@@ -253,3 +253,29 @@ test('CI workflow preserves FAT while deduplicating cheaper native builds and up
   assert.match(wf,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(wf,/build_verify_windows_installer\.ps1/);
 });
+
+
+test('FAT upload is independently retryable without a second Windows compiler and rechecks all file digests',()=>{
+  const wf=readFileSync('.github/workflows/p1-windows.yml','utf8');
+  const build=wf.split(/\n  fat-upload:\n/)[0];
+  const upload=wf.split(/\n  fat-upload:\n/)[1];
+  assert.ok(upload,'dedicated artifact delivery job must exist');
+  assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
+  assert.match(build,/Save completed FAT packages for retryable upload job/);
+  assert.match(build,/actions\/cache\/save@v4/);
+  assert.doesNotMatch(build,/actions\/upload-artifact@v4/);
+  assert.match(upload,/needs: windows-build/);
+  assert.match(upload,/runs-on: windows-2022/);
+  assert.match(upload,/actions\/cache\/restore@v4/);
+  assert.match(upload,/fail-on-cache-miss: true/);
+  assert.match(upload,/FAT_UPLOAD_HASH_MISMATCH/);
+  assert.match(upload,/FAT_UPLOAD_RECEIPT_MISMATCH/);
+  assert.match(upload,/sourceSha -ne \$actual/);
+  assert.match(upload,/FAT_UPLOAD_EXE_OR_SETUP_INVALID/);
+  assert.match(upload,/overwrite: true/);
+  assert.equal((upload.match(/actions\/upload-artifact@v4/g)||[]).length,2);
+  assert.equal((upload.match(/compression-level: 0/g)||[]).length,2);
+  assert.match(build,/ctest --test-dir build -C Release --output-on-failure/);
+  assert.match(build,/Prove two authentic historical Inno releases upgrade and roll back/);
+  assert.match(build,/build_verify_windows_installer\.ps1/);
+});
