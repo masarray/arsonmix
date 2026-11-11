@@ -80,10 +80,22 @@ int main() {
         "sampleRate":0,"bufferSize":0})");
     auto output=Coordinator::parse(outputOnly);
     assert(output && output.value.rate==0. && output.value.block==0.);
+    // Capture name is optional only when it is genuinely absent or empty.
+    const auto explicitEmpty=config(R"({"backend":"Windows Audio",
+        "captureDevice":"","playbackDevice":"Speakers","sampleRate":0,"bufferSize":0})");
+    const auto outputParsed=Coordinator::parse(explicitEmpty);
+    assert(outputParsed && outputParsed.value.capture.isEmpty());
     assert(Coordinator::validateNames(output.value,{},{"Speakers"},true).isEmpty());
     assert(Coordinator::validateNames(output.value,{},{"Speakers"},false).isNotEmpty());
     for(const auto& invalid : {
-        "{}", R"({"backend":"ASIO","playbackDevice":"X","sampleRate":"48000","bufferSize":256})",
+        "{}", R"({"backend":42,"playbackDevice":"X","sampleRate":48000,"bufferSize":256})",
+        R"({"backend":true,"playbackDevice":"X","sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","playbackDevice":19,"sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","playbackDevice":true,"sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","captureDevice":false,"playbackDevice":"X","sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","captureDevice":72,"playbackDevice":"X","sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","playbackDevice":["X"],"sampleRate":48000,"bufferSize":256})",
+        R"({"backend":"ASIO","playbackDevice":"X","sampleRate":"48000","bufferSize":256})",
         R"({"backend":"ASIO","playbackDevice":"X","sampleRate":4000,"bufferSize":256})",
         R"({"backend":"ASIO","playbackDevice":"X","sampleRate":48000,"bufferSize":1.5})",
         R"({"backend":"ASIO","playbackDevice":"X","sampleRate":48000,"bufferSize":8193})",

@@ -5,7 +5,9 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/core/PreparedMixerBlock.h"
 #include <array>
+#include <cmath>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -35,7 +37,15 @@ std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
         double rate,int frames,const void* state,int bytes) {
     // State bytes are CONTROL-only. A missing pointer with a positive size
     // must never be mistaken for a valid default, especially during restore.
-    if(bytes<0 || bytes>8*1024*1024 ||
+    // Reject malformed device formats BEFORE constructing any DSP/hosted
+    // processor. This is shared by EQ, Compressor, Harmonice, Vocal Throw,
+    // offline .smix restore and future built-in catalog entries. A corrupt
+    // rate/quantum must not cause extreme allocation inside prepareToPlay.
+    // 16-frame ASIO is deliberately valid at the universal host boundary;
+    // a processor may impose stricter limits via its own isReady() policy.
+    if(!std::isfinite(rate) || rate<8000. || rate>384000. ||
+       frames<16 || frames>armix::mixer::PreparedMixerBlock::hardFrameLimit ||
+       bytes<0 || bytes>8*1024*1024 ||
        (state==nullptr && bytes!=0) || (state!=nullptr && bytes==0))
         return {};
     auto processor=std::make_unique<Processor>();

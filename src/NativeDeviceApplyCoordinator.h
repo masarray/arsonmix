@@ -58,9 +58,20 @@ public:
             return out;
         }
         auto& r=out.value;
-        r.backend=config.getProperty("backend",{}).toString();
-        r.capture=config.getProperty("captureDevice",{}).toString();
-        r.playback=config.getProperty("playbackDevice",{}).toString();
+        const auto rawBackend=config.getProperty("backend",{});
+        const auto rawCapture=config.getProperty("captureDevice",{});
+        const auto rawPlayback=config.getProperty("playbackDevice",{});
+        // Device names are exact JUCE-provided strings. A JSON number,
+        // boolean or object must never be string-coerced into a physical
+        // endpoint. An omitted/empty capture is valid for output-only mode.
+        if(!rawBackend.isString() || !rawPlayback.isString() ||
+           (!rawCapture.isVoid() && !rawCapture.isString())) {
+            out.error="Invalid audio device name types";
+            return out;
+        }
+        r.backend=rawBackend.toString();
+        r.capture=rawCapture.isVoid()?juce::String{}:rawCapture.toString();
+        r.playback=rawPlayback.toString();
         if(r.backend.isEmpty()||r.playback.isEmpty()||
            r.backend.length()>160||r.capture.length()>250||r.playback.length()>250) {
             out.error="Choose an actual playback device";

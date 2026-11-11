@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 #include "../engine/core/ProductionRenderAudit.h"
+#include <array>
 #include <cassert>
 #include <type_traits>
 #include <utility>
@@ -89,6 +90,65 @@ int main() {
     ++withUnpatched.unpatchedSilent;
     assert(Audit::assessWindow(begin,withUnpatched,true,true,true).status==
            Status::silentOrMuted);
+
+    // M3c: a single successful render window cannot qualify sustained
+    // native-only ownership. Every boundary needs independent same-process
+    // same-physical-epoch admission, and each intervening window must prove
+    // completed ChannelId PCM with no M4/silent/failed/overlap activity.
+    using Boundary=Audit::Boundary;
+    using SeriesStatus=Audit::SeriesStatus;
+    Audit continuous;
+    continuous.started(Audit::Path::compatibilityM4);
+    continuous.completed(Audit::Path::compatibilityM4); // historical only
+    std::array<Boundary,4> boundaries{};
+    for(std::size_t i=0;i<boundaries.size();++i) {
+        boundaries[i]={continuous.snapshot(),73,19,true};
+        if(i+1<boundaries.size())
+            for(int block=0;block<8;++block) {
+                continuous.started(Audit::Path::channelId);
+                continuous.completed(Audit::Path::channelId);
+            }
+    }
+    const auto sustained=Audit::assessSeries(boundaries,24);
+    assert(sustained.continuousNativeObserved());
+    assert(sustained.nativeCompleted==24);
+    assert(Audit::assessSeries(boundaries,25).status==
+           SeriesStatus::insufficientNativeBlocks);
+    assert(Audit::assessSeries(boundaries,0).status==
+           SeriesStatus::tooFewWindows);
+    assert(Audit::assessSeries(std::span<const Boundary>{
+           boundaries.data(),3},1).status==SeriesStatus::tooFewWindows);
+    auto stale=boundaries;
+    stale[2].deviceEpoch=20;
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::invalidContext);
+    stale=boundaries;
+    stale[1].processNonce=74;
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::invalidContext);
+    stale=boundaries;
+    stale[2].verifiedInstalledChannelId=false;
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::invalidContext);
+    stale=boundaries;
+    stale[0].processNonce=0;
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::invalidContext);
+    stale=boundaries;
+    ++stale[2].counters.m4Started;
+    ++stale[2].counters.m4Completed;
+    const auto legacyInWindow=Audit::assessSeries(stale,1);
+    assert(legacyInWindow.status==SeriesStatus::badRenderWindow);
+    assert(legacyInWindow.firstBadWindow==Status::legacyRendered);
+    stale=boundaries;
+    ++stale[2].counters.mutedNoRender;
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::badRenderWindow);
+    stale=boundaries;
+    ++stale[2].counters.nativeStarted; // genuine in-flight snapshot
+    assert(Audit::assessSeries(stale,1).status==SeriesStatus::badRenderWindow);
+    stale=boundaries;
+    stale[2].counters.nativeStarted=0; // reset or swapped process
+    const auto resetSeries=Audit::assessSeries(stale,1);
+    assert(resetSeries.status==SeriesStatus::badRenderWindow);
+    assert(resetSeries.firstBadWindow==Status::countersRegressed);
+    // These results never authorize output, retire M4 or replace physical
+    // ASIO field evidence. A different epoch requires a NEW series.
 
     // A clean native window is *render ownership evidence only*. Neither
     // this test nor the classifier is an audible ASIO physical FAT.
