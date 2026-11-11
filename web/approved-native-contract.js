@@ -172,6 +172,78 @@
       productLive:admitted && raw.productionCallbackLive,
       identity: d.epoch + ":" + g.revision + ":" + g.rosterRevision };
   }
+  // Read-only physical OUTPUTS projection from the authoritative JUCE snapshot.
+  // No guessed ports, UI-owned routing, monitor activation or audible claims.
+  function physicalOutputOverview(snapshot) {
+    const d=snapshot?.device,raw=snapshot?.raw;
+    if(d?.backend!=="ASIO" || !Array.isArray(d.enabledOutputs) ||
+       !Array.isArray(d.outputEndpoints) || !raw) return [];
+    const enabled=new Set(d.enabledOutputs);
+    const ports=new Map(d.outputEndpoints.filter(p=>p?.active===true &&
+      Number.isInteger(p.port) && enabled.has(p.port) &&
+      typeof p.label==="string" && p.label.length>0).map(p=>[p.port,p.label]));
+    const good=(l,r)=>Number.isInteger(l)&&Number.isInteger(r)&&l!==r&&
+      ports.has(l)&&ports.has(r);
+    const pair=(l,r)=>"OUT "+(l+1)+"/"+(r+1);
+    const pins=(l,r)=>ports.get(l)+" + "+ports.get(r);
+    const used=new Set(),rows=[];
+    const names=new Map((snapshot.graph?.channels||[]).map(ch=>[ch.id,ch.name]));
+    const assigned=Array.isArray(raw.externalOutputs)?
+      raw.externalOutputs.filter(p=>p && typeof p.channelId==="string" &&
+        Number.isInteger(p.physicalLeft) && Number.isInteger(p.physicalRight) &&
+        p.physicalLeft>=0 && p.physicalRight>=0):[];
+    const owners=items=>items.map(p=>names.get(p.channelId)||
+      "Channel "+p.channelId).join(" + ");
+    for(const [key,role] of [["physicalMainOutputs","MAIN"],
+                             ["physicalMonitorOutputs","MONITOR"]]){
+      const selected=raw[key];
+      if(!Array.isArray(selected)||selected.length!==2)continue;
+      const [left,right]=selected;
+      if(!Number.isInteger(left)||!Number.isInteger(right))continue;
+      if(good(left,right)){
+        used.add(left);used.add(right);
+        rows.push({pair:pair(left,right),pins:pins(left,right),role,
+          owners:role,status:d.outputArmed?"ENABLED":"MUTED",shared:0});
+      }else rows.push({pair:pair(left,right),pins:"Saved pins unavailable",
+        role,owners:role,status:"NEEDS_REMAP",shared:0});
+    }
+    const activeExternal=new Set();
+    for(const left of [...ports.keys()].sort((a,b)=>a-b)){
+      const right=left+1;
+      // External stereo pair policy is even/odd physical pins only.
+      if(left%2 || !ports.has(right) || used.has(left) || used.has(right))continue;
+      used.add(left);used.add(right);
+      const items=assigned.filter(p=>p.physicalLeft===left&&p.physicalRight===right);
+      activeExternal.add(left+":"+right);
+      const applied=items.filter(p=>snapshot.admitted===true&&p.status==="LIVE");
+      const state=applied.length?(d.outputArmed?"LIVE":"MUTED"):
+        items.some(p=>p.status==="PENDING")?"PENDING":
+        items.length?"NEEDS_REMAP":"FREE";
+      rows.push({pair:pair(left,right),pins:pins(left,right),
+        role:items.length?"EXTERNAL":"AVAILABLE",
+        owners:items.length?owners(items):"Unassigned",status:state,
+        shared:applied.length});
+    }
+    for(const port of [...ports.keys()].sort((a,b)=>a-b)){
+      if(!used.has(port))rows.push({pair:"OUT "+(port+1),
+        pins:ports.get(port),role:"UNPAIRED",owners:"No verified stereo pair",
+        status:"NOT_PATCHABLE",shared:0});
+    }
+    // Retained pairs from another ASIO device remain visible, never LIVE.
+    const remembered=new Map();
+    for(const item of assigned){
+      const key=item.physicalLeft+":"+item.physicalRight;
+      if(activeExternal.has(key))continue;
+      if(!remembered.has(key))remembered.set(key,[]);
+      remembered.get(key).push(item);
+    }
+    for(const [key,items] of remembered){
+      const [left,right]=key.split(":").map(Number);
+      rows.push({pair:pair(left,right),pins:"Saved pair not available",
+        role:"EXTERNAL",owners:owners(items),status:"NEEDS_REMAP",shared:0});
+    }
+    return rows;
+  }
   // ACK alone is never physical evidence. Readback must prove that a known
   // control/route actually reached the accepted native graph. No invented UI
   // updates and no optimistic fader/edge commits.
@@ -586,5 +658,5 @@
     }
     return Object.freeze({subscribe,onSnapshot,onAck,intent,state,expire});
   }
-  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage});
+  return Object.freeze({decimal,cmp,normalizeSnapshot,readbackProvesIntent,logicalReadbackProves,diagnoseFirstSound,createController,validPresentationName,validPresentationColor,validPresentationIcon,operatorMessage,physicalOutputOverview});
 });

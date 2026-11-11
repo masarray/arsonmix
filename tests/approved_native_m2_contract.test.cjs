@@ -1889,3 +1889,67 @@ test("O2 SHARED output means two or more ChannelIds, not one",()=>{
  assert.match(bridge,/const shared=Array\.isArray\(hardware\?\.raw\?\.externalOutputs\)/);
  assert.doesNotMatch(bridge,/shared\?" · SHARED "\+shared/);
 });
+
+test("O3 OUTPUTS overview reflects real ASIO 8-pin ownership and callback status",()=>{
+  const state=acceptedFixture(),voice=state.graph.channels[0].id;
+  state.device.backend="ASIO";
+  state.device.outputArmed=true;
+  state.device.enabledOutputs=[0,1,2,3,4,5,6,7];
+  state.device.outputEndpoints=state.device.enabledOutputs.map(n=>({
+    id:"out:"+n,port:n,callback:n,label:"ASIO "+(n+1),active:true
+  }));
+  const group=(id,name)=>({id,name,role:"GROUP",processingFormat:"STEREO",
+    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]});
+  state.graph.channels.splice(1,0,group("9007199254740994","Music Bus"),
+    group("9007199254740995","Monitor Bus"));
+  state.physicalMainOutputs=[0,1];
+  state.physicalMonitorOutputs=[2,3];
+  state.externalOutputs=[
+    {channelId:voice,physicalLeft:4,physicalRight:5,status:"LIVE"},
+    {channelId:"9007199254740994",physicalLeft:6,physicalRight:7,status:"LIVE"},
+    {channelId:"9007199254740995",physicalLeft:6,physicalRight:7,status:"LIVE"}
+  ];
+  const read=()=>protocol.physicalOutputOverview(protocol.normalizeSnapshot(state));
+  let out=read();
+  assert.equal(out.length,4);
+  assert.deepEqual(out.map(row=>row.pair),["OUT 1/2","OUT 3/4","OUT 5/6","OUT 7/8"]);
+  assert.equal(out[0].role,"MAIN");
+  assert.equal(out[1].role,"MONITOR");
+  assert.equal(out[2].status,"LIVE");
+  assert.equal(out[2].owners,"Vocal");
+  assert.equal(out[2].shared,1,"single source must never be called SHARED");
+  assert.equal(out[3].status,"LIVE");
+  assert.equal(out[3].shared,2);
+  assert.match(out[3].owners,/Music Bus \+ Monitor Bus/);
+  state.device.outputArmed=false;
+  out=read();
+  assert.equal(out[0].status,"MUTED");
+  assert.equal(out[2].status,"MUTED");
+  assert.equal(out[3].status,"MUTED");
+  assert.equal(out[3].shared,2,"verified patch ownership persists through mute");
+  state.device.outputArmed=true;
+  state.externalOutputs[2].status="PENDING";
+  out=read();
+  assert.equal(out[3].shared,1,"pending patch is not already installed PCM");
+  state.externalOutputs[1].status="NEEDS_REMAP";
+  out=read();
+  assert.equal(out[3].status,"PENDING");
+  assert.equal(out[3].shared,0);
+  state.device.outputEndpoints[7].active=false;
+  out=read();
+  assert.equal(out.find(row=>row.role==="EXTERNAL"&&row.pair==="OUT 7/8").status,
+    "NEEDS_REMAP","disabled physical pin can never be LIVE");
+  state.device.backend="WASAPI";
+  assert.deepEqual(read(),[],"ASIO patch view must not invent WASAPI pairs");
+});
+
+test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/protocol\.physicalOutputOverview\(next\)/);
+  assert.match(bridge,/paintPhysicalOutputs\(next\)/);
+  assert.match(bridge,/paintPhysicalOutputs\(hardware\)/);
+  assert.match(bridge,/data-audio-output-overview open/);
+  assert.match(bridge,/data-audio-output-matrix role="list"/);
+  assert.match(bridge,/owner\.textContent=patch\.role/);
+  assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);
+});

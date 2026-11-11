@@ -1725,6 +1725,39 @@
       monitorButton.dataset.armed=String(!!d?.outputArmed);
     }
   }
+  // Output patching is rendered from physical native readback, never a
+  // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
+  function paintPhysicalOutputs(next) {
+    const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
+    if(!view || devicePanel.hidden)return;
+    const patches=protocol.physicalOutputOverview(next);
+    const signature=JSON.stringify(patches);
+    if(devicePanel.dataset.outputSignature===signature)return;
+    devicePanel.dataset.outputSignature=signature;
+    const summary=devicePanel.querySelector("[data-audio-output-overview] summary");
+    if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
+    view.replaceChildren();
+    if(!patches.length){
+      view.textContent="No verified ASIO output pins · choose an ASIO device.";
+      return;
+    }
+    for(const patch of patches){
+      const line=document.createElement("div");
+      line.className="armix-output-row";line.setAttribute("role","listitem");
+      const dest=document.createElement("span");
+      dest.className="armix-output-pair";dest.textContent=patch.pair;
+      const owner=document.createElement("span");
+      owner.className="armix-output-owner";
+      owner.textContent=patch.role+" · "+patch.pins+" · "+patch.owners;
+      const state=document.createElement("span");
+      state.className="armix-output-status";
+      state.dataset.state=patch.status;
+      state.textContent=patch.status.replace("_"," ")+
+        (patch.shared>1?" · SHARED "+patch.shared:"");
+      line.append(dest,owner,state);
+      view.appendChild(line);
+    }
+  }
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -1735,6 +1768,7 @@
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
     syncMonitorButton(d);
+    paintPhysicalOutputs(next);
     const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
       scope.master.output=mainOutput;
@@ -1854,6 +1888,19 @@
         .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
+        .armix-audio-dialog{max-height:90vh;overflow:auto}
+        .armix-output-matrix{max-height:175px;overflow:auto;display:grid;gap:3px;margin:7px 0}
+        .armix-output-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;
+          align-items:center;gap:8px;padding:5px 7px;border-radius:4px;background:#0c202b;
+          font-size:11px;min-height:28px}
+        .armix-output-pair{color:#b9dce8;font-variant-numeric:tabular-nums}
+        .armix-output-owner{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+          color:#ccdce3}
+        .armix-output-status{font-size:10px;color:#b6c9d1;white-space:nowrap}
+        .armix-output-status[data-state="LIVE"],
+        .armix-output-status[data-state="ENABLED"]{color:#9bd3b8}
+        .armix-output-status[data-state="PENDING"]{color:#e5c17d}
+        .armix-output-status[data-state="NEEDS_REMAP"]{color:#e0a18b}
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
           max-height:135px;overflow:auto;padding:5px 0}
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
@@ -1892,6 +1939,11 @@
           <div><strong>Applying audio device…</strong>
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
+        <details data-audio-output-overview open>
+          <summary>OUTPUTS · physical routing</summary>
+          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
+          <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
+        </details>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
@@ -1963,6 +2015,7 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    paintPhysicalOutputs(hardware);
     if(deviceBusy)return;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceResult="";
