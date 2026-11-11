@@ -303,6 +303,12 @@ public:
     int peakPitchLagWork() const noexcept{return peakPitchLagWork_;}
     // Audio-owner telemetry; standalone CTest reads after process() returns.
     int completedPitchAnalyses() const noexcept{return completedPitchAnalyses_;}
+    // Offline native fixture telemetry only: caller reads outside process().
+    // No atomic copy or GUI poll in the realtime audio callback.
+    float sourcePeriodForOfflineTests() const noexcept {
+        return sourcePeriodSamples_;
+    }
+    float wetGateForOfflineTests() const noexcept {return voicedGain_;}
     int abandonedPitchAnalyses() const noexcept{return abandonedPitchAnalyses_;}
     // Wet changes are NEVER a hidden sidechain duck on the real lead. Only
     // explicitly enabled Pitch Tune may substitute corrected lead samples.
