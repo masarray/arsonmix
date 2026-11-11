@@ -10,7 +10,7 @@ const code=read('site/preview-v2/assets/mixer-contextual-buttons.js');
 const css=read('site/preview-v2/assets/mixer-contextual-buttons.css');
 const start=code.indexOf('/* ArSonMiX shared floating-window movement.');
 assert.ok(start>=0,'one modeless pointer controller required');
-const controller=code.slice(start);
+const controller=code.slice(start,code.indexOf('/* DAW-standard wheel adjust',start));
 
 test('All approved modeless tool windows share one drag source',()=>{
   for(const id of ['#fastPicker','#wireConfigWindow','#wireWorkspace','#routeChoice',
