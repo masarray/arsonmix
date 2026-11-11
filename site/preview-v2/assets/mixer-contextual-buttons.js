@@ -189,3 +189,33 @@
     });
   },{passive:true});
 })();
+
+/* DAW-standard wheel adjust for native built-in compressor/Harmonice dials.
+   EQ and Vocal Throw already own their wheel controls; console faders and
+   SEND levels have separate handlers. Do not intercept preset-list scrolling.
+   This never writes native PCM directly: original input listeners own edits,
+   ACK and readback. */
+(()=>{
+  'use strict';
+  const residues=new WeakMap();
+  document.addEventListener('wheel',event=>{
+    if(event.ctrlKey||!Number.isFinite(event.deltaY)||event.deltaY===0)return;
+    const input=event.target.closest?.('.mx-comp-slider,.mx-harm-slider input[type="range"]');
+    if(!input||input.disabled||input.closest?.('[hidden]'))return;
+    const min=Number(input.min),max=Number(input.max),value=Number(input.value);
+    const step=Number(input.step)||1;
+    if(![min,max,value,step].every(Number.isFinite)||step<=0||max<=min)return;
+    event.preventDefault();
+    const pixels=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?240:1);
+    const residue=(residues.get(input)||0)+pixels;
+    const ticks=Math.trunc(residue/100);
+    residues.set(input,residue-ticks*100);
+    if(!ticks)return;
+    const amount=ticks*(event.shiftKey?1:1);
+    const quantized=Math.round((value-min-amount*step)/step)*step+min;
+    const next=Math.max(min,Math.min(max,Number(quantized.toFixed(5))));
+    if(next===value)return;
+    input.value=String(next);
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  },{passive:false});
+})();
