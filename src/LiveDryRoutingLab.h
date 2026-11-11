@@ -2295,6 +2295,92 @@ public:
         } catch(...) {return "Native graph/VST3 state capture failed";}
     }
 
+    // O1 CONTROL: true ASIO physical pin identity -> packed callback ordinal.
+    // No OUT reconfiguration is allowed to steal MAIN or MONITOR. Every edit
+    // preserves the existing internal WIRE graph and FX lease.
+    juce::String setExternalOutput(
+            armix::mixer::ChannelId channel,std::uint64_t expectedEpoch,
+            std::uint64_t expectedRevision,int physicalLeft,int physicalRight,
+            bool confirmed,const armix::device::JuceActivePortSnapshot& pins) {
+        using namespace armix::mixer;
+        if(!channelIdPhysicalPcmActive() || !ready() ||
+           !nativeAccepted_.matches(nativePublisher_,expectedEpoch,expectedRevision) ||
+           !matchesSessionDevice(pins) || pins.epoch!=expectedEpoch ||
+           pins.typeName!="ASIO")
+            return "EXTERNAL OUT: stale ASIO device, epoch or PCM revision";
+        const auto* row=nativeAccepted_.graph.roster.find(channel);
+        if(!row || (row->role!=ChannelRole::input &&
+                    row->role!=ChannelRole::group &&
+                    row->role!=ChannelRole::fxReturn))
+            return "EXTERNAL OUT: select a live INPUT, GROUP or FX RETURN";
+        const bool none=physicalLeft==-1 && physicalRight==-1;
+        int left=-1,right=-1;
+        armix::session::StoredExternalOutput candidate;
+        candidate.channel=channel;
+        if(!none) {
+            if(physicalLeft<0 || physicalLeft%2!=0 ||
+               physicalRight!=physicalLeft+1 ||
+               physicalRight>=pins.outputNames.size() ||
+               pins.outputNames[physicalLeft].isEmpty() ||
+               pins.outputNames[physicalRight].isEmpty())
+                return "EXTERNAL OUT: invalid or unnamed stereo physical pins";
+            for(int i=0;i<pins.outputCount;++i) {
+                if(pins.outputPhysicalPort(i)==physicalLeft)left=i;
+                if(pins.outputPhysicalPort(i)==physicalRight)right=i;
+            }
+            if(left<0 || right<0 || left==right)
+                return "EXTERNAL OUT: selected pair is not active in the ASIO mask";
+            const auto& hw=nativeAccepted_.hardware;
+            if(left==hw.mainL || left==hw.mainR ||
+               right==hw.mainL || right==hw.mainR)
+                return "EXTERNAL OUT: this stereo pair belongs to MAIN";
+            if(hw.monitorEnabled && (left==hw.monitorL || left==hw.monitorR ||
+               right==hw.monitorL || right==hw.monitorR))
+                return "EXTERNAL OUT: this stereo pair belongs to MONITOR";
+            // New amplifier pins must be confirmed by the operator, even
+            // when a UI dropdown was populated from a real device snapshot.
+            if(!confirmed)return "EXTERNAL OUT: confirm the exact physical pair";
+            candidate.left=physicalLeft;candidate.right=physicalRight;
+            candidate.leftName=pins.outputNames[physicalLeft];
+            candidate.rightName=pins.outputNames[physicalRight];
+        } else if(physicalLeft!=-1 || physicalRight!=-1)
+            return "EXTERNAL OUT: malformed NONE pair";
+        auto amended=externalOutputAssignments_; // CONTROL only; may allocate
+        amended.erase(std::remove_if(amended.begin(),amended.end(),
+            [channel](const auto& p){return p.channel==channel;}),amended.end());
+        if(!none)amended.push_back(candidate);
+        if(!nativePublisher_.setExternalOutput(expectedEpoch,expectedRevision,
+                channel,left,right,pins.outputCount))
+            return "EXTERNAL OUT: native graph rejected; previous sound retained";
+        externalOutputAssignments_=std::move(amended);
+        externalOutputEpoch_=expectedEpoch;
+        return {};
+    }
+
+    // The accepted graph can be rebuilt for a WIRE/FX edit in the SAME
+    // verified epoch. Reinstall only existing known pins: never auto-arm
+    // stale destinations after a device restart or a different ASIO device.
+    void reapplyExternalOutputsSameEpoch() noexcept {
+        if(externalOutputEpoch_!=nativeAccepted_.deviceEpoch)return;
+        for(const auto& p:externalOutputAssignments_) {
+            int left=-1,right=-1;
+            const int count=callbackOutputCount_.load(std::memory_order_acquire);
+            for(int i=0;i<count;++i) {
+                const int physical=enabledOutputPorts_[i].load(std::memory_order_relaxed);
+                if(physical==p.left)left=i;
+                if(physical==p.right)right=i;
+            }
+            const auto& hw=nativeAccepted_.hardware;
+            if(left<0 || right<0 || left==right ||
+               left==hw.mainL || right==hw.mainR || left==hw.mainR ||
+               right==hw.mainL || (hw.monitorEnabled &&
+               (left==hw.monitorL || left==hw.monitorR ||
+                right==hw.monitorL || right==hw.monitorR)))continue;
+            (void)nativePublisher_.setExternalOutput(nativeAccepted_.deviceEpoch,
+                nativeAccepted_.pcmRevision,p.channel,left,right,count);
+        }
+    }
+
     bool describeRetainedAsioSession(armix::session::MixerSessionDocument& document) const {
         if(!hasRetainedNativeSession() ||
            !nativeAccepted_.matches(nativePublisher_,nativeAccepted_.deviceEpoch,
@@ -2304,6 +2390,7 @@ public:
         document.legacyIds=nativeAccepted_.graph.ids;
         document.outputs=nativeAccepted_.hardware;
         document.waitingAsioInputs=waitingAsioInputs_;
+        document.externalOutputs=externalOutputAssignments_;
         return true;
     }
 
@@ -2384,6 +2471,18 @@ public:
             waitingAsioInputs_=std::move(document.waitingAsioInputs);
             nativeAccepted_.graph.revision=nativeAccepted_.graph.roster.revision();
             nativeAccepted_.hardware=document.outputs;
+            // Restored physical intentions are inert until exact ASIO identity,
+            // both labeled pins and current MAIN/MONITOR ownership match.
+            externalOutputAssignments_=std::move(document.externalOutputs);
+            externalOutputEpoch_=0;
+            if(pins.typeName=="ASIO" && pins.deviceName==document.binding.playback) {
+                bool exact=true;
+                for(const auto& patch:externalOutputAssignments_)
+                    exact=exact && patch.right<pins.outputNames.size() &&
+                        pins.outputNames[patch.left]==patch.leftName &&
+                        pins.outputNames[patch.right]==patch.rightName;
+                if(exact)externalOutputEpoch_=generation;
+            }
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;
             nativeAccepted_.pcmRevision=published.revision;
@@ -2396,6 +2495,7 @@ public:
             // disarmed until the user independently enables monitoring.
             installNativeHardware(generation,nativeAccepted_.hardware,
                                   nativeAccepted_.graph.request.maxFrames);
+            reapplyExternalOutputsSameEpoch();
             return channelIdPhysicalPcmActive()?juce::String{}:
                 juce::String("NEEDS_REMAP: device changed during native publication");
         }catch(...) {return "Native session restore exception";}
@@ -3212,11 +3312,33 @@ public:
         out->setProperty("mainOutputs",juce::var(liveMain));
         out->setProperty("monitorOutputs",juce::var(liveMonitor));
         out->setProperty("monitorSends",juce::var(liveMonitorSends));
+        juce::Array<juce::var> external;
+        for(const auto& patch:externalOutputAssignments_) {
+            auto row=std::make_unique<juce::DynamicObject>();
+            row->setProperty("channelId",juce::String(std::to_string(patch.channel.value)));
+            row->setProperty("physicalLeft",patch.left);
+            row->setProperty("physicalRight",patch.right);
+            row->setProperty("leftName",patch.leftName);
+            row->setProperty("rightName",patch.rightName);
+            const auto live=nativePublisher_.externalOutput(
+                nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
+            const bool installed=nativePcm && externalOutputEpoch_==epoch() &&
+                live.first>=0 && live.second>=0 &&
+                live.first<callbackOutputCount_.load(std::memory_order_acquire) &&
+                live.second<callbackOutputCount_.load(std::memory_order_acquire) &&
+                enabledOutputPorts_[live.first].load(std::memory_order_relaxed)==patch.left &&
+                enabledOutputPorts_[live.second].load(std::memory_order_relaxed)==patch.right;
+            row->setProperty("status",installed?"LIVE":"NEEDS_REMAP");
+            external.add(juce::var(row.release()));
+        }
+        out->setProperty("externalOutputs",juce::var(external));
         out->setProperty("note","Native 10CH+4AUX production mixer; unpatched startup is SILENT. Explicit input assignment/ACK required. Hardware FAT unqualified.");
         return juce::var(out.release());
     }
 private:
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
+    std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
+    std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state
     // Four 9-bit callback indices (0 means absent) and the prepared quantum.
     // One atomic read gives AUDIO a coherent destination/quantum contract.
     std::atomic<std::uint64_t> nativeHardware_{0};
