@@ -148,8 +148,8 @@ def main():
             assert listing["operation"]=="list" and listing["catalogId"]==ID
             assert listing["instanceId"]==INSTANCE
             fx_result(listing,"list",items=[])
-            assert page.locator(".mx-fxp-save-as").is_enabled()
-            assert page.locator(".mx-fxp-manage").is_disabled()
+            assert page.locator("#mxNativeComp .mx-fxp-save-as").is_enabled()
+            assert page.locator("#mxNativeComp .mx-fxp-manage").is_disabled()
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
             assert page.locator(".mx-comp-brand").inner_text()=="Compressor"
@@ -482,8 +482,8 @@ def main():
 
             if width==1366:
                 # Cross-FX generic bar: Save As is a NATIVE disk request only.
-                page.locator(".mx-fxp-save-as").click()
-                form=page.locator(".mx-fxp-form")
+                page.locator("#mxNativeComp .mx-fxp-save-as").click()
+                form=page.locator("#mxNativeComp .mx-fxp-form")
                 assert form.is_visible()
                 form.locator(".mx-fxp-name").fill("Stage Voice")
                 form.locator(".mx-fxp-confirm").click()
@@ -540,16 +540,16 @@ def main():
                 emit_snapshot(page,state,user_settings,applied=control["requestId"])
                 assert page.locator(".mx-comp-preset-select").input_value()==user_value
                 # A user Delete is disk-only; cancel does not emit anything.
-                page.locator(".mx-fxp-manage").click()
-                page.locator('.mx-fxp-action[data-operation="delete"]').click()
+                page.locator("#mxNativeComp .mx-fxp-manage").click()
+                page.locator('#mxNativeComp .mx-fxp-action[data-operation="delete"]').click()
                 assert form.is_visible()
                 actions_before=page.evaluate("""()=>window.__actions.filter(
                     x=>x.action==='nativeBuiltinFxUserPreset').length""")
                 form.locator(".mx-fxp-cancel").click()
                 assert page.evaluate("""()=>window.__actions.filter(
                     x=>x.action==='nativeBuiltinFxUserPreset').length""")==actions_before
-                page.locator(".mx-fxp-manage").click()
-                page.locator('.mx-fxp-action[data-operation="delete"]').click()
+                page.locator("#mxNativeComp .mx-fxp-manage").click()
+                page.locator('#mxNativeComp .mx-fxp-action[data-operation="delete"]').click()
                 form.locator(".mx-fxp-confirm").click()
                 deleting=last_action(page,"nativeBuiltinFxUserPreset")
                 assert deleting["operation"]=="delete" and deleting["presetId"]==saved_id
@@ -558,7 +558,7 @@ def main():
                 assert listing["operation"]=="list"
                 fx_result(listing,"list",items=[])
                 assert page.locator(".mx-comp-preset-select option[value^='user:']").count()==0
-                assert page.locator(".mx-fxp-manage").is_disabled()
+                assert page.locator("#mxNativeComp .mx-fxp-manage").is_disabled()
                 # Deleting the record MUST leave accepted Compressor PCM
                 # unchanged (no new nativeCompSet dispatched).
                 assert last_action(page,"nativeCompSet")["requestId"]==control["requestId"]
