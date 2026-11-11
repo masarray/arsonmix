@@ -218,7 +218,8 @@ function create(adapter){
   const c=bound();
   if(!c||reply.instanceId!==c.instanceId||
      reply.channelId!==c.channelId||reply.deviceEpoch!==c.deviceEpoch||
-     reply.graphRevision!==c.graphRevision)return;
+     reply.graphRevision!==c.graphRevision||
+     (c.workspaceToken&&reply.workspaceToken!==c.workspaceToken))return;
   const sent=task;task=null;
   if(reply.status!=="OK"){
    notice("MY PRESET REJECTED · "+(reply.errorCode||"UNKNOWN"));paint();return;
