@@ -349,7 +349,7 @@ function paint(){
  if(el("mxHPreset").value!==preset)el("mxHPreset").value=preset;
  const pc=context();
  const canPreset=native()&&verified&&!pending&&!latest&&!heldPatch&&
-   !myPresetAction&&Boolean(pc)&&!pc.workspaceToken&&pc.deviceEpoch!=="0";
+   !myPresetAction&&presetContextReady(pc);
  el("mxHSaveAs").disabled=!canPreset;
  el("mxHManage").disabled=!canPreset||!workingUserId||
     !myPresets.has(workingUserId);
@@ -453,11 +453,15 @@ sliders.forEach(({input})=>input.addEventListener("input",()=>{
  edit({[k]:k==="gainDb"?x:x/100});
 }));
 
+ // Disk-only preset actions accept either a verified physical lease or an
+ // exact committed logical FX identity; never require AUDIO SETUP for save.
+ const presetContextReady=c=>Boolean(c&&(
+   c.workspaceToken?c.deviceEpoch==="0":c.deviceEpoch!=="0"));
  // All library I/O is native; a read is NOT an audio-accepted recall.
  function myPresetCommand(operation,payload={}){
   const c=context();
   if(!native()||!verified||pending||latest||heldPatch||myPresetAction||
-     !c||c.workspaceToken||c.deviceEpoch==="0"){
+     !presetContextReady(c)){
    hint("MY PRESET · WAIT FOR ACCEPTED NATIVE DSP");return false;
   }
   const requestId="hpres-"+Date.now()+"-"+(++seq);
@@ -495,7 +499,7 @@ sliders.forEach(({input})=>input.addEventListener("input",()=>{
  function openMyPresetForm(operation,target=""){
   const c=context();
   if(!native()||!verified||pending||latest||myPresetAction||!c||
-     c.workspaceToken||c.deviceEpoch==="0"){
+     !presetContextReady(c)){
    hint("MY PRESETS · WAIT FOR ACCEPTED NATIVE DSP");return;
   }
   const user=myPresets.get(workingUserId);
@@ -650,7 +654,8 @@ backend()?.addEventListener?.("arMixBuiltinHarmonyPresetResult",reply=>{
     reply.operation!==myPresetAction.operation)return;
  const task=myPresetAction,c=context();
  if(!c||reply.instanceId!==c.instanceId||reply.channelId!==c.channelId||
-    reply.deviceEpoch!==c.deviceEpoch||reply.graphRevision!==c.graphRevision){
+    reply.deviceEpoch!==c.deviceEpoch||reply.graphRevision!==c.graphRevision||
+     (c.workspaceToken&&reply.workspaceToken!==c.workspaceToken)){
   // Never consume a legitimate in-flight request on a stale/wrong
   // instance response. A matching reply or timeout remains possible.
   hint("MY PRESET · STALE RESPONSE IGNORED");return;
@@ -758,7 +763,7 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  }
  refreshGuideSources();
  const cPreset=context();
- if(!myPresetAction&&cPreset&&!cPreset.workspaceToken&&cPreset.deviceEpoch!=="0"&&
+ if(!myPresetAction&&presetContextReady(cPreset)&&
     myPresetBinding!==cPreset.instanceId+"@"+cPreset.deviceEpoch+"/"+cPreset.graphRevision)
   myPresetCommand("list");
  if(latest){const next=latest;latest=null;send(next);}
