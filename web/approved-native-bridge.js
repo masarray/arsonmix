@@ -514,6 +514,12 @@
       const target=out&&nativeOutputTargets(t,accepted.channels).find(x=>x.id===out.id);
       if(ch.role!=="MAIN")t.output=out?.role==="MAIN"?"Master":
         (target?.label||"SOURCE ONLY (No Main)");
+      const direct=Array.isArray(native.raw?.externalOutputs)?
+        native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
+      const pair=direct && hardwareOutputPairs().find(p=>
+        p.left===direct.physicalLeft&&p.right===direct.physicalRight);
+      t.externalOutput=direct?(direct.status==="LIVE"&&pair?
+        pair.label:"Needs Remap · OUT "+(direct.physicalLeft+1)+"/"+(direct.physicalRight+1)):"None";
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
@@ -631,6 +637,7 @@
       next.graph.edges.map(e=>[e.edgeId,e.from,e.to,e.tap,e.enabled,e.primaryOutput])]);
     if(structure!==lastNativeTopologySignature){
       if(!projection(next))return false;
+      paintExternalReadback(next);
       lastNativeTopologySignature=structure;
       return true;
     }
@@ -725,6 +732,7 @@
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
   let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let externalSerial=0,pendingExternal=null;
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
   const safeNativeCounter=x=>{
     if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
@@ -751,6 +759,72 @@
   const NEEDS_REMAP="Audio connection lost";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
+  // Only driver-verified even/odd physical pin pairs (not packed ordinals).
+  // MAIN and MONITOR retain exclusive ownership of their actual pins.
+  const hardwareOutputPairs=()=>{
+    const d=hardware?.device,choices=[{label:"None",left:-1,right:-1}];
+    if(d?.backend!=="ASIO" || !Array.isArray(d.outputEndpoints) ||
+       !Array.isArray(d.enabledOutputs))return choices;
+    const map=new Map(d.outputEndpoints.filter(p=>
+      p.active===true&&Number.isInteger(p.port)&&
+      d.enabledOutputs.includes(p.port)&&
+      typeof p.label==="string"&&p.label.length>0).map(p=>[p.port,p]));
+    const main=Array.isArray(hardware?.raw?.physicalMainOutputs)?
+      hardware.raw.physicalMainOutputs:[];
+    const monitor=Array.isArray(hardware?.raw?.physicalMonitorOutputs)?
+      hardware.raw.physicalMonitorOutputs:[];
+    for(const [left,a] of map) {
+      if(left%2!==0 || !map.has(left+1))continue;
+      const b=map.get(left+1);
+      if(main.includes(left)||main.includes(left+1)||
+         monitor.includes(left)||monitor.includes(left+1))continue;
+      choices.push({label:"OUT "+(left+1)+"/"+(left+2)+" · "+
+        a.label+" + "+b.label,left,right:left+1});
+    }
+    return choices;
+  };
+  const paintExternalReadback=(next)=>{
+    const assignments=Array.isArray(next?.raw?.externalOutputs)?
+      next.raw.externalOutputs:[];
+    const choices=hardwareOutputPairs();
+    for(const t of scope?.tracks||[]) {
+      const id=nativeIdFor(t);
+      const row=assignments.find(p=>p.channelId===id);
+      const match=row&&choices.find(p=>p.left===row.physicalLeft &&
+        p.right===row.physicalRight);
+      const state=row?.status==="LIVE"&&match?"LIVE":
+        row?"NEEDS_REMAP":"NONE";
+      const value=row?(state==="LIVE"?match.label:
+        "Needs Remap · OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
+      t.externalOutput=value;
+      const select=document.querySelector('.strip[data-id="'+t.id+
+        '"] select[data-field="external"]');
+      if(!select)continue;
+      const labels=choices.map(p=>p.label);
+      if(!labels.includes(value))labels.push(value);
+      const signature=labels.join("|");
+      if(select.dataset.choices!==signature){
+        select.replaceChildren(...labels.map(s=>{
+          const op=document.createElement("option");
+          op.value=op.textContent=s;return op;
+        }));
+        select.dataset.choices=signature;
+      }
+      if(select.value!==value)select.value=value;
+      select.dataset.status=state;
+      select.title=state==="NEEDS_REMAP"?
+        "Saved physical output disarmed; choose a verified ASIO pair":
+        state==="LIVE"?"LIVE · independent native post-fader PCM":
+        "None · internal WIRE remains unchanged";
+      if(pendingExternal?.channelId===id && pendingExternal.acked &&
+         ((state==="LIVE" && row.physicalLeft===pendingExternal.left &&
+           row.physicalRight===pendingExternal.right) ||
+          (pendingExternal.left===-1 && !row))){
+        pendingExternal=null;select.removeAttribute("aria-busy");
+        status("EXTERNAL OUT verified · "+t.name+" → "+value);
+      }
+    }
+  };
   const inputChoicesFor=()=>{
     const pins=hardwarePins(),entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
     for(const p of pins)entries.push({
@@ -2454,6 +2528,7 @@
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     appearanceFromNative(next);
     updateHardwarePanel(next);
+    paintExternalReadback(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
@@ -2974,6 +3049,13 @@
       // hardware pin or promote the internal BUS to a writable physical IN.
       if(t.input===INTERNAL_BUS)choices.push(INTERNAL_BUS);
       return choices;
+    },
+    externalChoices(t) {
+      if(t?.kind==="master")return ["None"];
+      const labels=hardwareOutputPairs().map(p=>p.label);
+      if(t?.externalOutput && !labels.includes(t.externalOutput))
+        labels.push(t.externalOutput);
+      return labels;
     },
     outputChoices(t) {
       if(logicalView&&t?.kind==="master")return ["Choose audio output"];
