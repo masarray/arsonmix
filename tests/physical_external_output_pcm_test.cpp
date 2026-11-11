@@ -161,6 +161,28 @@ static void verifyFourPinMainAndOneBus() {
     assert(near(h.output[2][63],.50f));
     assert(near(h.output[3][63],.20f));
 }
+// A failed/revoked render must silence ALL ASIO callback pins. Previously
+// only MAIN/MONITOR were cleared, leaving potentially stale amplifier PCM.
+static void verifyFailClosedAllPhysicalOutputBuffers() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.render(8));
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    for(auto& output:h.output)output.fill(.875f);
+    assert(!h.publisher.render(h.epoch,h.inputPointers.data(),4,
+        h.output[0].data(),h.output[1].data(),Harness::frames,true,fx,
+        nullptr,nullptr,{},{},{},h.outputPointers.data(),8));
+    for(const auto& output:h.output)
+        for(float sample:output)assert(near(sample,0.f));
+    // An epoch mismatch also revokes the physical taps, without leaking
+    // the last render or invoking any hosted plug-in.
+    for(auto& output:h.output)output.fill(.875f);
+    assert(!h.publisher.render(h.epoch+1,h.inputPointers.data(),4,
+        h.output[0].data(),h.output[1].data(),Harness::frames,false,fx,
+        nullptr,nullptr,{},{},{},h.outputPointers.data(),8));
+    for(const auto& output:h.output)
+        for(float sample:output)assert(near(sample,0.f));
+}
 static void verifyLiveFaderMuteAnd2PortBounds() {
     Harness h;
     // A 2-output device has no third/fourth callback ordinal. A driver-level
@@ -183,6 +205,7 @@ int main() {
     verifyIndependentBusPcmAndOncePerFx();
     verifyEightPinIsolationAndAppliedReadback();
     verifyFourPinMainAndOneBus();
+    verifyFailClosedAllPhysicalOutputBuffers();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();
     std::puts("O1 physical external OUT: independent PCM, SRC ONLY, gain/mute, shared sum and stale target PASS");
