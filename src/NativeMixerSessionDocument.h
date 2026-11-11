@@ -34,6 +34,13 @@ struct WaitingAsioInput final {
     int left=-1,right=-1; // physical pin indices, for legacy files without labels
     juce::String leftName,rightName;
 };
+// Physical pin identity is durable intent only. Never serialize callback
+// ordinals, a LIVE flag, an armed amplifier or a native processor pointer.
+struct StoredExternalOutput final {
+    ChannelId channel{};
+    int left=-1,right=-1; // actual 0-based driver physical pins
+    juce::String leftName,rightName;
+};
 struct StoredInsert final {
     ChannelId channel{};
     std::size_t slot=0;
@@ -55,6 +62,7 @@ struct MixerSessionDocument final {
     VerifiedNativeOutputs outputs{};
     HardwareBinding binding{};
     std::vector<WaitingAsioInput> waitingAsioInputs;
+    std::vector<StoredExternalOutput> externalOutputs;
     std::vector<StoredInsert> inserts;
     std::vector<ChannelId> rackBypassed;
     // Logical-only per-slot bypass intentions; no fabricated FX processor
@@ -455,6 +463,18 @@ public:
         set(output,"monitorR",d.outputs.monitorR);
         set(output,"monitorEnabled",d.outputs.monitorEnabled);
         set(root,"outputs",output);
+        if(!d.externalOutputs.empty()) {
+            juce::Array<juce::var> assignments;
+            for(const auto& patch:d.externalOutputs) {
+                auto row=object();
+                set(row,"channelId",decimal(patch.channel.value));
+                set(row,"left",patch.left);set(row,"right",patch.right);
+                set(row,"leftName",patch.leftName);
+                set(row,"rightName",patch.rightName);
+                assignments.add(juce::var(row.release()));
+            }
+            set(root,"externalOutputs",juce::var(assignments));
+        }
         auto master=object();
         set(master,"gain",d.masterGain);set(master,"mute",d.masterMute);
         set(master,"mono",d.masterMono);set(root,"master",master);
@@ -644,6 +664,29 @@ public:
             entries.push_back(std::move(row));
         }
         if(!doc.roster.restoreExact(doc.acceptedRevision,entries))return false;
+        // O1 additive intent, never implicit hardware admission on Open.
+        const auto external=get(root,"externalOutputs");
+        if(!external.isVoid()) {
+            const auto* assignments=external.getArray();
+            if(!assignments || assignments->size()>channels->size())return false;
+            std::set<std::uint64_t> seen;
+            for(const auto& item:*assignments) {
+                StoredExternalOutput patch;
+                if(!parseDecimal(get(item,"channelId"),patch.channel.value) ||
+                   !seen.insert(patch.channel.value).second ||
+                   !integral(get(item,"left"),patch.left,0,255) ||
+                   !integral(get(item,"right"),patch.right,0,255) ||
+                   patch.left%2!=0 || patch.right!=patch.left+1 ||
+                   !textField(get(item,"leftName"),patch.leftName,256) ||
+                   !textField(get(item,"rightName"),patch.rightName,256))
+                    return false;
+                const auto* owner=doc.roster.find(patch.channel);
+                if(!owner || (owner->role!=ChannelRole::input &&
+                              owner->role!=ChannelRole::group &&
+                              owner->role!=ChannelRole::fxReturn))return false;
+                doc.externalOutputs.push_back(std::move(patch));
+            }
+        }
         // Optional additive H1 field. Old .smix sessions decode unchanged.
         // Exact ChannelId ownership prevents rename/reorder/strip replacement
         // from silently retargeting an operator's global shortcut.
