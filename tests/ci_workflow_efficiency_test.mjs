@@ -91,7 +91,7 @@ test('Full native/release qualification retains all CTests; isolated Harmonice F
   // An old PR can retain outdated workflow YAML; focused execution must
   // use a trusted main workflow and still build the exact PR input SHA.
   assert.match(read('scripts/chat_ci_dispatch.mjs'),
-    /workflowRef=focusedHarmony\?'main':target\.branch/);
+    /workflowRef=target\.lane==='ui'\?target\.branch:'main'/);
   assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
 });
 
