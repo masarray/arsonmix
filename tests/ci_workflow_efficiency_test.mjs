@@ -70,12 +70,72 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
 });
 
-test('Windows builds the default CMake graph before running all CTests', () => {
+test('Full native/release qualification retains all CTests; isolated Harmonice FAT compiles only its verified targets', () => {
   assert.match(native, /-DBUILD_TESTING=ON/);
-  const build = native.indexOf('run: cmake --build build --config Release --parallel 2');
-  const ctest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
-  assert.ok(build >= 0 && ctest > build, 'Build all default targets before CTest');
-  assert.doesNotMatch(native, /cmake --build [^\r\n]*--target\b/);
+  const fullBuild = native.indexOf('run: cmake --build build --config Release --parallel 2');
+  const fullCTest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
+  assert.ok(fullBuild >= 0 && fullCTest > fullBuild,
+    'Full CTest still requires the default all-target CMake build');
+  assert.match(native, /focused_harmony_fat:/);
+  assert.match(native, /FOCUSED_HARMONY_FAT: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true && inputs\.focused_harmony_fat == true \}\}/);
+  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT != 'true' \}\}/);
+  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT == 'true' \}\}/);
+  assert.match(native, /cmake --build build --config Release --parallel 2 --target \$targets/);
+  assert.match(native, /'ARMixConsole'/);
+  assert.match(native, /'ARMixHarmonyDspTests'/);
+  assert.match(native, /'ARMixHarmonyChannelPcmTests'/);
+  assert.match(native, /'ARMixNativeMixerSessionTests'/);
+  assert.match(native, /'ARMixCrackleWindowTests'/);
+  assert.match(native, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
+  assert.match(native, /FULL_SUITE_NOT_CLAIMED/);
+  // An old PR can retain outdated workflow YAML; focused execution must
+  // use a trusted main workflow and still build the exact PR input SHA.
+  assert.match(read('scripts/chat_ci_dispatch.mjs'),
+    /workflowRef=focusedHarmony\?'main':target\.branch/);
+  assert.match(native, /HARMONY_FAT_SOURCE_SHA_MISMATCH/);
+});
+
+test('focused FAT preflights exact candidate CMake before 10-minute JUCE build', () => {
+  const begin = native.indexOf('- name: Build actual JUCE app and focused Harmonice native tests');
+  const end = native.indexOf('- name: Build executable and native RT tests', begin);
+  assert.ok(begin >= 0 && end > begin, 'focused build section missing');
+  const section = native.slice(begin, end);
+  const source = read('CMakeLists.txt');
+  // Previous failed source commit lacked this newer production audit target.
+  // The main CI workflow must not blindly assume that it exists on a
+  // long-lived candidate source branch.
+  const originalTargets = section.slice(section.indexOf('$targets = @('),
+    section.indexOf(')', section.indexOf('$targets = @(')) + 1);
+  assert.doesNotMatch(originalTargets, /ARMixProductionRenderAuditTests/,
+    'production audit reintroduced as unconditional legacy target');
+  assert.match(section, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
+  assert.match(section, /\$targets \+= 'ARMixProductionRenderAuditTests'/);
+  assert.match(section, /Get-Content -LiteralPath 'CMakeLists\.txt' -Raw/);
+  assert.match(section, /FOCUSED_FAT_UNDECLARED_CMAKE_TARGET/);
+  assert.match(section, /FOCUSED_FAT_MISSING_REQUIRED_TESTS/);
+  assert.ok(section.indexOf('FOCUSED_FAT_UNDECLARED_CMAKE_TARGET') <
+    section.indexOf('cmake --build build'),
+    'missing target should fail *before* the costly build');
+  assert.ok(section.indexOf('FOCUSED_FAT_MISSING_REQUIRED_TESTS') <
+    section.indexOf('cmake --build build'),
+    'missing required CTest must fail during preflight');
+  const requiredTargets = [...originalTargets.matchAll(/'([A-Za-z0-9_]+)'/g)]
+    .map(x => x[1]);
+  assert.ok(requiredTargets.length >= 11);
+  for (const target of requiredTargets) {
+    assert.match(source, new RegExp(
+      '^\\s*(?:add_executable|juce_add_console_app|juce_add_gui_app)\\(\\s*' +
+      target + '\\b', 'm'), 'main CMake missing mandatory '+target);
+  }
+  const testSection = native.slice(
+    native.indexOf('- name: Test focused Harmonice PCM and ASIO boundary'),
+    native.indexOf('- name: Test realtime control primitives'));
+  const requiredBlock = testSection.slice(testSection.indexOf('$requiredTests = @('),
+    testSection.indexOf(')', testSection.indexOf('$requiredTests = @(')) + 1);
+  assert.doesNotMatch(requiredBlock, /M3ActualProductionRenderPathAndFailSilentCounters/);
+  assert.match(testSection, /if \('M3ActualProductionRenderPathAndFailSilentCounters' -in \$available\)/);
+  assert.match(testSection, /\$requiredTests \+= 'M3ActualProductionRenderPathAndFailSilentCounters'/);
+  assert.match(testSection, /FULL_SUITE_NOT_CLAIMED/);
 });
 
 test('approved Pages to JUCE build seam is a native gate, never an unrelated CSS-only job', () => {
@@ -216,4 +276,17 @@ test('Manual FAT and visual qualification survive simultaneous commit pushes wit
     assert.match(workflow,/cancel-in-progress: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}/);
   }
   assert.match(native,/github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true/);
+});
+
+test('WaveShell preflight fails closed but accepts historical pre-patch source',()=>{
+  const begin=native.indexOf('- name: WaveShell JUCE 8 class-index regression (source-aware)');
+  const end=native.indexOf('- name: Compressor exact-source native CPU A/B',begin);
+  assert.ok(begin>0 && end>begin,'source-aware WaveShell quick gate missing');
+  const section=native.slice(begin,end);
+  assert.ok(section.includes('if [[ -f scripts/patch_juce_vst3_waveshell.py ]]'));
+  assert.ok(section.includes('if [[ ! -f tests/test_waveshell_juce_patch.py ]]'));
+  assert.ok(section.includes('WAVESHELL_SOURCE_TEST_MISSING'));
+  assert.ok(section.includes('WAVESHELL_SOURCE_PATCH_MISSING'));
+  assert.ok(section.includes('WAVESHELL_CHECK_NOT_IN_EXACT_SOURCE'));
+  assert.ok(section.includes('python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v'));
 });

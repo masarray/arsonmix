@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // M3-B CONTROL-thread projection regression. No mock PCM is installed.
 #include "../integration/ApprovedNativeV8Projection.h"
+#include "../src/ApprovedNativeV8Projection.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/FirstSoundSignalEvidence.h"
@@ -89,6 +90,15 @@ static void nativeInsertCatalogInstanceProjectionRegression() {
         ->setProperty("fxRackBypassed",true);
     auto snapshot=canonicalSnapshot();
     assert(projectApprovedNativeV8(snapshot,source,true));
+    auto legacy=canonicalSnapshot();
+    const auto beforeLegacy=juce::JSON::toString(legacy,true);
+    assert(!projectApprovedNativeV8(legacy,source)); // shape alone grants no legacy admission
+    assert(juce::JSON::toString(legacy,true)==beforeLegacy);
+    juce::Array<juce::var> installedOps;
+    installedOps.add("NATIVE_APPLY_WIRE_TRANSACTION");
+    source.getDynamicObject()->setProperty("supportedOps",juce::var(installedOps));
+    assert(projectApprovedNativeV8(legacy,source));
+    assert(juce::JSON::toString(legacy,true)==juce::JSON::toString(snapshot,true));
     const auto live=snapshot.getProperty("graph",{})
         .getProperty("channels",{})[0].getProperty("inserts",{})[0];
     assert(live.getProperty("id","").toString()=="vst3-instance-unique-7");
@@ -104,6 +114,46 @@ static void nativeInsertCatalogInstanceProjectionRegression() {
     const auto before=juce::JSON::toString(untouched,false);
     assert(!projectApprovedNativeV8(untouched,invalid,true));
     assert(juce::JSON::toString(untouched,false)==before);
+
+    // M6: the native projection is the first fail-closed boundary for
+    // unstable VST3 lease tokens. JS must never be asked to guess which
+    // physical plugin/editor is owned by a duplicated instance identity.
+    const auto rejectUnchanged=[](const juce::var& bus) {
+        auto untouched=canonicalSnapshot();
+        const auto before=juce::JSON::toString(untouched,false);
+        assert(!projectApprovedNativeV8(untouched,bus,true));
+        assert(juce::JSON::toString(untouched,false)==before);
+    };
+    auto duplicateAcrossChannels=juce::JSON::parse(
+        juce::JSON::toString(source,false));
+    duplicateAcrossChannels.getProperty("channels",{})[1].getDynamicObject()
+        ->setProperty("inserts",
+            duplicateAcrossChannels.getProperty("channels",{})[0]
+                .getProperty("inserts",{}));
+    rejectUnchanged(duplicateAcrossChannels);
+
+    auto duplicateSameChannel=juce::JSON::parse(
+        juce::JSON::toString(source,false));
+    auto* existing=duplicateSameChannel.getProperty("channels",{})[0]
+        .getProperty("inserts",{}).getArray();
+    assert(existing && existing->size()==1);
+    existing->add(juce::JSON::parse(juce::JSON::toString((*existing)[0],false)));
+    rejectUnchanged(duplicateSameChannel);
+
+    auto overfullRack=juce::JSON::parse(
+        juce::JSON::toString(source,false));
+    juce::Array<juce::var> nine;
+    for(int i=0;i<9;++i) {
+        auto fx=std::make_unique<juce::DynamicObject>();
+        fx->setProperty("instanceId","unique-FX-"+juce::String(i+1));
+        fx->setProperty("id","vendor.eq.catalog");
+        fx->setProperty("name","Vendor EQ");
+        fx->setProperty("bypassed",false);
+        nine.add(juce::var(fx.release()));
+    }
+    overfullRack.getProperty("channels",{})[0].getDynamicObject()
+        ->setProperty("inserts",juce::var(nine));
+    rejectUnchanged(overfullRack);
 }
 
 static void noMutationOnReject(juce::var snapshot,juce::var bus,bool admitted) {

@@ -2,6 +2,8 @@
 
 Status: CURRENT ORIENTATION (audit 2026-11-11). This document describes verified repository source and the proposed ownership model; it does NOT certify the installed Windows application or physical audio. Refresh current main/PR HEAD before changing code.
 
+**Feature milestone status:** H1 hotkeys [MERGED #536](https://github.com/masarray/arsonmix/pull/536), H2 VST3 parameter hotkeys [MERGED #551](https://github.com/masarray/arsonmix/pull/551), exact integrated Windows native **86/86 CTest PASS**; independent physical/vendor field FAT remains pending. O1/O2 FL-style physical multi-output is **NOT IMPLEMENTED**. Use the [O-only execution handoff](MILESTONE_O_MULTIOUTPUT_NEW_THREAD_20261111.md) and [complete technical contract](FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md).
+
 **Entry points:** [Execution blueprint](MAINTAINABILITY_EXECUTION_V1_20261111.md) · [Fast feature playbook](FEATURE_EXTENSION_PLAYBOOK.md) · [Next-thread prompt](NEXT_THREAD_EXECUTION_PROMPT.md) · [Issue #527](https://github.com/masarray/arsonmix/issues/527).
 
 ## What this application is
@@ -14,6 +16,7 @@ The current path to reason about every feature is:
 Assembled /preview/ DOM (presentation only)
   -> web/approved-native-bridge.js + web/approved-native-contract.js
   -> Native JUCE command transport in src/Main.cpp (MESSAGE/CONTROL thread)
+  -> src/NativeLogicalMixerControl.h for unbound edits and readback
   -> accepted logical MixerSessionDocument / ChannelId + EdgeId model
   -> validated mixer graph & FX lease preparation (CONTROL, not callback)
   -> engine/core/DynamicNativeSessionPublisher.h + realtime publication
@@ -29,26 +32,37 @@ Assembled /preview/ DOM (presentation only)
 | Concern | Current primary files | Correct responsibility / future direction |
 | --- | --- | --- |
 | Application composition / bridge transport | src/Main.cpp; src/ApprovedConsoleNativeTransportV6.h | JUCE app lifecycle, WebView wiring, dispatch only; move domain-heavy control use-cases behind narrow services incrementally |
-| Logical mixer & accepted session | src/NativeLogicalMixerWorkspace.h; src/NativeMixerSessionDocument.h; engine/core/DeviceIndependentMixerSession.h; engine/core/DynamicChannelRoster.h | Stable ChannelId/EdgeId, control-authoritative edits, revision guard, logical-only semantics |
+| Logical mixer & accepted session | src/NativeLogicalMixerControl.h; src/NativeLogicalMixerWorkspace.h; src/NativeMixerSessionDocument.h; engine/core/DeviceIndependentMixerSession.h; engine/core/DynamicChannelRoster.h | One accepted workspace. The control service validates requests, stages edits, commits through the shared save worker and returns correlated ACKs. The workspace owns stable IDs and logical readback. |
 | Session persistence | src/NativeMixerSessionStore.h; src/NativeMixerSessionSaveWorker.h; src/NativeMixerSessionFxRestore.h | .smix durable state, rollback, vendor-state retention and explicit schema migration |
 | Native graph publisher & PCM | engine/core/DynamicNativeSessionPublisher.h; engine/core/RealtimeRoutePublisher.h; engine/core/DynamicPreparedMixerBlock.h | Validated immutable prepared graph, atomic publication, safe retirement, callback render state |
 | Audio device policy | src/LiveAudioEngine.h; engine/device/**; src/Main.cpp currently applies device | Verified driver/pins, epochs, reopen/rebind, explicit physical output safety; independent from logical session document |
+| Audio device apply preflight (M2a) | src/NativeDeviceApplyCoordinator.h; src/Main.cpp (remaining orchestration) | Single message-thread transaction guard, JUCE open boundary, typed request/pin checks, accepted readback and fail-closed rollback. Next: extract full apply/rebind orchestration without duplicating DeviceManager |
+| Modal setup transaction (M2b) | src/Main.cpp::showDeviceSetup; NativeDeviceApplyCoordinator.h | Persistent one-owner lease across visible JUCE selector, explicit Apply and automatic ASIO restart; repeated Setup clicks never re-mute; selector close completes readback/rebind before releasing lease |
+| Live hardware readback (M2c) | src/NativeDeviceApplyCoordinator.h; src/Main.cpp | Consolidated actual device-object readback on CONTROL, strict ASIO driver instance identity and live mask/rate/buffer verification before Apply/rollback; no new device owner or callback |
 | Production audio compatibility | src/LiveDryRoutingLab.h; engine/core/UnifiedLegacyProductionAdmission.h | Retain only proven required M4/FAT migration semantics; never create another render authority |
-| Built-in DSP and VST lifecycle | engine/builtin_fx/**; src/FactoryFxRegistry.h; src/PluginCatalog.h; engine/core/DynamicChannelFxLeaseBank.h; src/LiveAudioEngine.h | Per-processor DSP; common host lifecycle, source state, bypass, latency, editor lease and host registration |
+| Waves VST3 / crash-safe recovery | scripts/patch_juce_vst3_waveshell.py; src/Vst3DescriptionCache.h; src/StartupVst3RecoveryGuard.h | Correct JUCE 8 WaveShell class-ordering defect; require name+UID resolution; protect saved .smix from repeated startup vendor crashes |
+| M3a actual render evidence | engine/core/ProductionRenderAudit.h; LiveDryRoutingLab::process/status; docs/architecture/M3_RENDER_PATH_EVIDENCE_20261111.md | One native or M4 render attempt per JUCE callback; success/fault/overlap and muted/unpatched readback; no audio authority change |
+| Built-in DSP and VST lifecycle | engine/builtin_fx/**; src/NativeBuiltInFx.h; src/FactoryFxRegistry.h; src/PluginCatalog.h; engine/core/DynamicChannelFxLeaseBank.h; src/LiveAudioEngine.h | Per-processor DSP; one built-in registration for live insert, offline prepare, restore and native picker. Specialized editors and vendor lease remain with their existing owners. |
 | Player | engine/player/**; src/Main.cpp dispatch | Worker decode / buffered PCM, one native graph virtual input, no independent hardware output callback |
-| Native status projection | integration/ApprovedNativeRuntimeSnapshot.h; integration/ApprovedNativeV8Projection.h; src/ApprovedNativeV8Projection.h | Installed / retained / logical-only readback with one semantic contract and no forged output/PCM authority |
+| Native status projection | integration/ApprovedNativeRuntimeSnapshot.h; integration/ApprovedNativeV8Projection.h; src/NativeLogicalMixerControl.h | Canonical installed and retained projection, with a forwarding include for old clients. Logical-only readback is separate and cannot admit PCM. |
 | GUI state, WIRE, device setup | web/approved-native-bridge.js; web/approved-native-contract.js; web/monitor.js; web/mixer-io.js; site/preview-v2/ (internal build input) | Render accepted native states only; one assembled/public/native /preview/; no competing DOM model or JS PCM |
 | UI build & publishing | scripts/build_pages.py; scripts/build_approved_native_gui.py; site/preview-buttons/ (approved PNG overlay source) | Deterministic single assembled renderer and native bundle provenance, not a second public GUI |
 | Tests & CI | tests/**; CMakeLists.txt; .github/workflows/{ui-smoke,p1-windows,chat-ci-milestone}.yml | Cheap relevant checks every PR update, deliberate exact-SHA UI or native/FAT milestone; physical FAT separate |
 
+## M1 control events
+
+- `arMixLogicalIntent` enters the logical control service. It validates the request ID, workspace token and revision, then commits the candidate document and referenced FX state through `NativeMixerSessionSaveWorker`. An `arMixLogicalAck` reports that commit's revision. A later `arMixConsoleSnapshot.logicalMixer` provides independent readback with `LOGICAL_ONLY` authority.
+- `arMixConsoleIntent` retains the admitted native control path. The approved bridge waits for `arMixConsoleAck` and matching accepted readback before committing the visible control state. Retained graph readback carries no installed callback authority. A verified socket connection or retarget uses the existing renderer's gravity and impact animation after the accepted graph is drawn.
+- `arMixCatalog` carries registered built-in picker metadata alongside verified external catalog entries. One registration in `NativeBuiltInFx.h` supplies the control-side prepare function and limits for a generic built-in insert. An effect with its own editor supplies that editor separately.
+
 ## Verified audit hotspots at main 99f580d76bf20ea994d54f8916098c680897f41d
 
-- src/Main.cpp: 6,499 lines. ConsoleWindow currently owns logical edits, native ACK/status, device selection/apply, built-in FX handlers, plugin editors, Player and UI responsibilities.
+- src/Main.cpp: 6,499 lines. Before M1, ConsoleWindow owned logical edits, native ACK/status, device selection/apply, built-in FX handlers, plugin editors, Player and UI responsibilities.
 - src/LiveAudioEngine.h: 3,564 lines. The single callback shares a class with device lifecycle, legacy routing control, graph/plugin lifecycle, and monitoring policy.
 - src/LiveDryRoutingLab.h: 3,261 lines. Production ChannelId paths coexist with legacy M4/Lab names/guards.
 - web/approved-native-bridge.js: 3,646 lines. Many per-domain event/ACK/DOM pathways in one adapter.
 - web/monitor.js: 2,118 lines; do NOT assume it is entirely in the currently assembled native GUI without checking the build.
-- The two ApprovedNativeV8Projection.h headers define identical helper names and different public projection behavior. integration/ApprovedNativeRuntimeSnapshot.h uses the integration version for installed/retained paths; src/ConsoleLiveBridgeV6.h includes the src version. Never delete either without proving all callers and tests.
+- Before M1, two ApprovedNativeV8Projection.h headers defined overlapping projections. The canonical integration header now serves both callers, and the src header forwards to it.
 - tests/ contains large routing, device, source/session and FX test suites. This is a major asset. Some source-text contract tests intentionally assert exact code strings; refactoring may legitimately need to update these *only when behavior-equivalent tests also exist*.
 - docs/ contains 238 direct entries. The 2026-11-07 Device-Independent ADR says "NOT YET IMPLEMENTED", while merged PR #513 implements *logical-only Milestone A*. This is partially stale wording, not permission to claim hardware binding works.
 - web/styles.css is dominated in bytes by an embedded base64 font; file size is NOT a maintainability score by itself.

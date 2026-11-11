@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
-  hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone}
+  hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
+  focusedHarmonyFileScope}
   from '../scripts/chat_ci_dispatch.mjs';
 
 const sha='a'.repeat(40),repo='masarray/arsonmix';
@@ -74,6 +75,64 @@ test('exact SHA and FAT are dispatched only when lightweight checks pass',async(
     {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'failure'}]}:
     api(path,method,data);
   await assert.rejects(performMilestone({event:event(),repo,api:failed}),/CI_QUICK_FAILED/);
+});
+
+test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file proof',async()=>{
+  const files=[
+    'engine/builtin_fx/HarmonyDsp.h',
+    'engine/builtin_fx/HarmonyPitchSynchronous.h',
+    'site/preview-v2/assets/mixer-native-harmony.js',
+    'site/preview-v2/assets/mixer-fx-rack.css',
+    'tests/harmony_dsp_test.cpp',
+    'tools/harmony_offline_ab.cpp',
+    '.github/workflows/harmony-fast-dsp.yml'
+  ];
+  assert.equal(focusedHarmonyFileScope(files),true);
+  for(const unsafe of ['src/Main.cpp','src/LiveAudioEngine.h',
+    'engine/device/AsioStartupPolicy.h',
+    '.github/workflows/p1-windows.yml','installer/ARsonMix.iss']){
+    assert.equal(focusedHarmonyFileScope([...files,unsafe]),false,
+      'Unexpected bypass of full MSVC test gate: '+unsafe);
+  }
+  assert.equal(focusedHarmonyFileScope([]),false);
+  assert.equal(focusedHarmonyFileScope(['README.md']),false);
+  const harmonyPr=pr();
+  harmonyPr.head.ref='integration/harmonice-lead-ensemble-20261111';
+  const calls=[];
+  const makeApi=changed=>async(path,method,data)=>{
+    if(path.startsWith('/pulls/418/files?'))return changed.map(filename=>({filename}));
+    if(path.startsWith('/pulls/'))return harmonyPr;
+    if(path.startsWith('/issues/'))return [];
+    if(path.includes('/runs?event=pull_request'))
+      return {workflow_runs:[{id:9,head_sha:sha,event:'pull_request'}]};
+    if(path.includes('/actions/runs/9/jobs'))
+      return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout)',
+        conclusion:'success'}]};
+    if(path.endsWith('/dispatches')){calls.push(data);return null;}
+    return {workflow_runs:[]};
+  };
+  const eligible=await performMilestone({
+    event:event(),repo,api:makeApi(files)
+  });
+  assert.equal(eligible.kind,'dispatched');
+  assert.deepEqual(calls.at(-1),{
+    // The CI definition comes from main; the source still comes from SHA.
+    ref:'main',
+    inputs:{expected_sha:sha,package_fat:true,focused_harmony_fat:true}
+  });
+  await performMilestone({
+    event:event(),repo,api:makeApi([...files,'src/Main.cpp'])
+  });
+  assert.deepEqual(calls.at(-1),{
+    ref:harmonyPr.head.ref,inputs:{expected_sha:sha,package_fat:true}
+  });
+  // The protection fails closed on unknown or truncated PR file listings.
+  const broken=async(path,...args)=>{
+    if(path.startsWith('/pulls/418/files?'))return null;
+    return makeApi(files)(path,...args);
+  };
+  await assert.rejects(performMilestone({event:event(),repo,api:broken}),
+    /CI_FILES_INVALID/);
 });
 
 test('dispatcher stays on main with read-only checkout; both lanes pin SHA',()=>{

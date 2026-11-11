@@ -6,9 +6,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT DEFINED JUCE_ROOT)
   message(FATAL_ERROR "Pass -DJUCE_ROOT=C:/path/to/JUCE (8.0.15+ required)")
 endif()
-add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# JUCE 8.0.15 WaveShell class indices move after setHostContext.
+# Apply audited upstream 3fa28d0 ordering correction before compilation.
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/patch_juce_vst3_waveshell.py"
+            --juce-root "${JUCE_ROOT}"
+    RESULT_VARIABLE ARMIX_WAVESHELL_PATCH_RESULT
+    OUTPUT_VARIABLE ARMIX_WAVESHELL_PATCH_MESSAGE
+    ERROR_VARIABLE ARMIX_WAVESHELL_PATCH_ERROR)
+if(NOT ARMIX_WAVESHELL_PATCH_RESULT EQUAL 0)
+  message(FATAL_ERROR "JUCE WaveShell VST3 host fix not verified: ${ARMIX_WAVESHELL_PATCH_ERROR}")
+endif()
+message(STATUS "${ARMIX_WAVESHELL_PATCH_MESSAGE}")
+add_subdirectory("${JUCE_ROOT}" "${CMAKE_BINARY_DIR}/juce")
 # The independent exact-byte verifier must use the SAME Python interpreter
 # selected by CMake to generate compressed favicon/PNG resources (Windows
 # runners can have several Python versions with different zlib builds).
@@ -71,7 +82,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
 # Limit the flag to C++ (not Windows .rc/resource compilation).
@@ -121,6 +132,25 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # M4: fixture processor goes through the SAME native FX descriptor path.
+  # Remains part of the existing Windows native mixer qualification build.
+  juce_add_console_app(ARMixNativeFxExtensionTests PRODUCT_NAME "ArSonMix Native FX Host Extension Tests")
+  target_sources(ARMixNativeFxExtensionTests PRIVATE
+      tests/native_fx_registry_extension_test.cpp src/NativeBuiltInFx.h)
+  target_link_libraries(ARMixNativeFxExtensionTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixNativeFxExtensionTests PRIVATE cxx_std_20)
+  add_test(NAME M4NativeFxCatalogExtensionAndStatePreparation
+      COMMAND ARMixNativeFxExtensionTests)
+  # One user-owned, effect-scoped library; not .smix or FX-chain .armix.
+  # File IO is forbidden in the realtime PCM callback.
+  juce_add_console_app(ARMixBuiltInFxPresetStoreTests PRODUCT_NAME "ArSonMix Native Built-in FX User Preset Store")
+  target_sources(ARMixBuiltInFxPresetStoreTests PRIVATE
+      tests/builtin_fx_user_preset_store_test.cpp src/BuiltInFxUserPresetStore.h)
+  target_link_libraries(ARMixBuiltInFxPresetStoreTests PRIVATE
+      juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
+  target_compile_features(ARMixBuiltInFxPresetStoreTests PRIVATE cxx_std_20)
+  add_test(NAME BuiltInFxUserPresetNativePortableSaveAndRecovery COMMAND ARMixBuiltInFxPresetStoreTests)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
@@ -214,11 +244,16 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeV8ProjectionTests PRIVATE cxx_std_20)
   add_test(NAME M3BNativeV8StableIdReadbackAndFailClosedProjection COMMAND ARMixNativeV8ProjectionTests)
   add_dependencies(ARMixMixerRoutingTests ARMixNativeV8ProjectionTests)
+  add_dependencies(ARMixMixerRoutingTests ARMixNativeFxExtensionTests)
   juce_add_console_app(ARMixApprovedRoutingPcmTests PRODUCT_NAME "ArSonMix Approved WIRE PCM Tests")
   target_sources(ARMixApprovedRoutingPcmTests PRIVATE tests/approved_native_routing_pcm_test.cpp)
   target_link_libraries(ARMixApprovedRoutingPcmTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
   target_compile_features(ARMixApprovedRoutingPcmTests PRIVATE cxx_std_20)
   add_test(NAME P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM COMMAND ARMixApprovedRoutingPcmTests)
+  # M3a: actual ChannelId vs M4 production blocks before compatibility retirement.
+  add_executable(ARMixProductionRenderAuditTests tests/production_render_audit_test.cpp)
+  target_compile_features(ARMixProductionRenderAuditTests PRIVATE cxx_std_20)
+  add_test(NAME M3ActualProductionRenderPathAndFailSilentCounters COMMAND ARMixProductionRenderAuditTests)
   add_dependencies(ARMixMixerRoutingTests ARMixApprovedRoutingPcmTests)
   add_executable(ARMixLatencyCompensationTests tests/dynamic_latency_compensation_test.cpp)
   target_compile_features(ARMixLatencyCompensationTests PRIVATE cxx_std_20)
@@ -263,6 +298,25 @@ if(BUILD_TESTING)
   add_executable(ARMixDeviceSessionTransitionTests tests/device_session_transition_policy_test.cpp engine/device/DeviceSessionTransitionPolicy.h)
   target_compile_features(ARMixDeviceSessionTransitionTests PRIVATE cxx_std_20)
   add_test(NAME NonDestructiveAudioSetupRetainsMixerDocument COMMAND ARMixDeviceSessionTransitionTests)
+  # M2 control-thread device Apply owner: UI preflight, exact pin identity,
+  # nested modal reentry, accepted readback and fail-closed rollback.
+  juce_add_console_app(ARMixDeviceApplyCoordinatorTests PRODUCT_NAME "ArSonMix Device Apply Coordinator Tests")
+  target_sources(ARMixDeviceApplyCoordinatorTests PRIVATE
+      tests/native_device_apply_coordinator_test.cpp src/NativeDeviceApplyCoordinator.h)
+  target_link_libraries(ARMixDeviceApplyCoordinatorTests PRIVATE
+      juce::juce_audio_devices juce::juce_recommended_config_flags)
+  target_compile_features(ARMixDeviceApplyCoordinatorTests PRIVATE cxx_std_20)
+  add_test(NAME NativeDeviceApplyPinValidationAndRollbackEvidence COMMAND ARMixDeviceApplyCoordinatorTests)
+  juce_add_console_app(ARMixVst3StartupSafetyTests PRODUCT_NAME "ArSonMix Waves VST3 Identity and Recovery Tests")
+  target_sources(ARMixVst3StartupSafetyTests PRIVATE
+      tests/vst3_waves_identity_startup_test.cpp
+      src/Vst3DescriptionCache.h src/StartupVst3RecoveryGuard.h)
+  target_link_libraries(ARMixVst3StartupSafetyTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixVst3StartupSafetyTests PRIVATE cxx_std_20)
+  add_test(NAME WavesVst3IdentityAndStartupCrashRecovery COMMAND ARMixVst3StartupSafetyTests)
+  add_test(NAME Vst3WaveShellHostContextOrderingFixture
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_waveshell_juce_patch.py")
   add_executable(ARMixLiveRoutingEpochTests tests/live_port_epoch_publisher_test.cpp)
   target_compile_features(ARMixLiveRoutingEpochTests PRIVATE cxx_std_20)
   add_test(NAME P1ELivePortGenerationRevisionAndRealtimeRetirement COMMAND ARMixLiveRoutingEpochTests)
@@ -425,7 +479,29 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixDurableMixerSessionTests PRIVATE
       juce::juce_audio_devices juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixDurableMixerSessionTests PRIVATE cxx_std_20)
+  target_compile_definitions(ARMixDurableMixerSessionTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
   add_test(NAME P0DynamicMixerSessionDocumentAndCrashSafeRecovery COMMAND ARMixDurableMixerSessionTests)
+  # H1 OS-global shortcut registration and stable identity are control-only.
+  juce_add_console_app(ARMixNativeHotkeyTests PRODUCT_NAME "ArSonMix Native Hotkey Registry Tests")
+  target_sources(ARMixNativeHotkeyTests PRIVATE tests/native_hotkey_registry_test.cpp
+      src/NativeHotkeyRegistry.h)
+  target_link_libraries(ARMixNativeHotkeyTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  if(WIN32)
+    target_link_libraries(ARMixNativeHotkeyTests PRIVATE user32 comctl32)
+  endif()
+  target_compile_features(ARMixNativeHotkeyTests PRIVATE cxx_std_20)
+  add_test(NAME H1NativeGlobalShortcutRegistrationConflictAndPersistence
+      COMMAND ARMixNativeHotkeyTests)
+  # H2 hosted VST3 ParamID remapping / automation flags; no hardware needed.
+  juce_add_console_app(ARMixFxParamHotkeyTests PRODUCT_NAME "ArSonMix FX Parameter Hotkey Tests")
+  target_sources(ARMixFxParamHotkeyTests PRIVATE
+      tests/native_fx_parameter_hotkey_test.cpp src/NativeFxParameterHotkey.h)
+  target_link_libraries(ARMixFxParamHotkeyTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixFxParamHotkeyTests PRIVATE cxx_std_20)
+  add_test(NAME H2HostedParamIdStableAndAutomationSafe COMMAND ARMixFxParamHotkeyTests)
+
   # Presentation-only native identity; no audio-thread access.
   juce_add_console_app(ARMixChannelAppearanceTests PRODUCT_NAME "ArSonMix Channel Appearance Tests")
   target_sources(ARMixChannelAppearanceTests PRIVATE

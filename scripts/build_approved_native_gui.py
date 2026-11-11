@@ -242,7 +242,7 @@ NATIVE_EVENT_HOOKS = (
      " },\n"
      " closeNativePicker(){setFastPicker(false);},\n"
      " colors:COLORS,channelIcons:CHANNEL_ICONS,wireGraph:ArSonWireGraph,\n"
-     " allocateWireId(){return nextWireId++;},\n"
+     " allocateWireId(){return nextWireId++;},kickWireSpring,\n"
      " installGraph(channels,main,edges){\n"
      "  tracks=channels;master=main;wireEdges=edges;\n"
      "  wireWsHistory=[];selectedWireEdgeId=null;\n"

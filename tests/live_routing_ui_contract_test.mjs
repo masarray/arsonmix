@@ -67,7 +67,7 @@ test("MUTE gate precedes processing and suppresses previous audible crossfade",(
   assert.match(gate,/fadeRemaining_=rampFrames/);
   assert.match(gate,/fadeFromL_=fadeFromR_=0\.f/);
   assert.match(gate,/lastOutputL_=lastOutputR_=0\.f/);
-  assert.match(gate,/if\(!meterOnly\)\{silence\(\);return true;\}/);
+  assert.match(gate,/if\(!meterOnly\)\s*\{\s*renderAudit_\.muted\(\);\s*silence\(\);return true;\s*\}/);
   assert.match(gate,/meterOnly\?mutedMain_\[0\]\.data\(\):mainL\+offset/);
   assert.match(lab,/if\(outputs\[c\] && \(meterOnly \|\|/);
   assert.ok(!lab.includes("masterMuted?0.f:std::clamp(masterGain"), "don't mute before fade and then reintroduce old samples");
@@ -360,4 +360,20 @@ test("R3 routing shares approved BTN-180 cap material, has a clear console hiera
   assert.match(ui,/#arRoutingLabPanel\{font-family:"ArSonMix Inter"/);
   assert.match(ui,/id="arPatchGrid"/);
   assert.doesNotMatch(ui,/arPatchCell:hover|arAuxMatrixCell:hover|filter:blur\(|backdrop-filter:/);
+});
+
+test("P0 manual VST3 Open fences vendor preparation and retains Hotkey session",()=>{
+  const enter=main.indexOf("    void openMixerFile(");
+  const exit=main.indexOf("    void chooseMixerFile(",enter);
+  assert.ok(enter>=0&&exit>enter,"native session Open must have one owner");
+  const open=main.slice(enter,exit);
+  const arm=open.indexOf("armExplicitRetry()");
+  const materialize=open.indexOf("materializeLogicalFxForBinding(");
+  const instantiate=open.indexOf("engine.restoreNativeMixerSession(");
+  assert.ok(arm>=0&&materialize>arm&&instantiate>materialize,
+    "crash guard must arm BEFORE logical FX and vendor graph preparation");
+  assert.match(open,/hadPreviousCrashEvidence=explicitRecovery->interrupted\(\)/);
+  assert.match(open,/if\(error\.isNotEmpty\(\)&&explicitRecovery&&!hadPreviousCrashEvidence\)/);
+  assert.match(open,/startupFxGuard_=std::move\(explicitRecovery\)/);
+  assert.match(open,/hotkeys_\.activateSession\(id,&importedHotkeys\)/);
 });

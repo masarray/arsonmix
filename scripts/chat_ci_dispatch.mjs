@@ -38,6 +38,35 @@ export function hadEarlierIdenticalRequest(comments,event,repo) {
       c.author_association==='OWNER' && old?.lane===cmd.lane && old?.sha===cmd.sha;
   });
 }
+// Only isolated Harmony source changes may use the shorter Windows FAT
+// compiler graph. Keep native/full and generic FAT on the complete graph.
+// Failure to fetch a complete changed-file list must fail closed.
+export function focusedHarmonyFileScope(files) {
+  if(!Array.isArray(files)||files.length===0)return false;
+  const permitted=[
+    /^engine\/builtin_fx\/Harmony[^/]*\.h$/,
+    /^tests\/harmony[^/]*\.(cpp|py)$/,
+    /^tests\/native_harmony_assembly_test\.py$/,
+    /^tests\/approved_native_harmony_smoke\.py$/,
+    /^tools\/harmony_offline_ab\.cpp$/,
+    /^site\/preview-v2\/assets\/mixer-native-harmony\.js$/,
+    /^site\/preview-v2\/assets\/mixer-fx-rack\.css$/,
+    /^\.github\/workflows\/harmony-fast-dsp\.yml$/
+  ];
+  return files.every(file=>typeof file==='string'&&
+    permitted.some(pattern=>pattern.test(file)));
+}
+async function readChangedFiles(api,number) {
+  const result=[];
+  for(let page=1;page<=10;page++){
+    const files=await api('/pulls/'+number+'/files?per_page=100&page='+page);
+    if(!Array.isArray(files))throw Error('CI_FILES_INVALID');
+    result.push(...files.map(file=>file.filename));
+    if(files.length<100)return result;
+  }
+  // Never assume a partial list makes a multi-subsystem PR safe to focus.
+  throw Error('CI_FILES_PAGINATION_LIMIT');
+}
 export function hasPriorDispatch(runs,sha) {
   return runs.some(r=>r.head_sha===sha && r.event==='workflow_dispatch' &&
     (r.status!=='completed'||r.conclusion==='success'));
@@ -76,10 +105,25 @@ export async function performMilestone({event,repo,api}) {
     if(hasPriorDispatch((await api(q)).workflow_runs,target.sha))
       return {kind:'skipped',reason:'already-qualified-or-scheduled',target};
   }
+  // Focused FAT saves compilation of unrelated CTest executables for
+  // audibly-qualified Harmonice-only candidate PRs. A branch name alone
+  // is NOT enough: inspect all PR files and deny on any shared engine,
+  // mixer/ASIO or release workflow edit. Full native CTest stays available.
+  let focusedHarmony=false;
+  if(target.lane==='fat'&&/(^|\/)harmonice[-/]/.test(target.branch)) {
+    focusedHarmony=focusedHarmonyFileScope(
+      await readChangedFiles(api,target.number));
+  }
   const inputs=target.lane==='ui'?{expected_sha:target.sha}:
-    {expected_sha:target.sha,package_fat:target.lane==='fat'};
+    {expected_sha:target.sha,package_fat:target.lane==='fat',
+     ...(focusedHarmony?{focused_harmony_fat:true}:{})};
+  // An old, still-open PR may predate the new focused-FAT workflow input.
+  // Execute the reviewed latest workflow FROM main, but the native job
+  // checks out inputs.expected_sha and verifies its exact 40-hex identity.
+  // This avoids silently running stale all-target YAML from a long-lived PR.
+  const workflowRef=focusedHarmony?'main':target.branch;
   await api('/actions/workflows/'+target.workflow+'/dispatches','POST',
-    {ref:target.branch,inputs});
+    {ref:workflowRef,inputs});
   return {kind:'dispatched',target};
 }
 async function main(){

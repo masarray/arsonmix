@@ -27,6 +27,100 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("M5 native FX snapshot rejects malformed/duplicate lease tokens without losing accepted state",()=>{
+ const good=acceptedFixture(),input=good.graph.channels[0].id;
+ good.graph.channels[0].inserts=[{
+   id:"native-lease-A",catalogId:"vendor.fx.catalog",name:"Vendor FX",bypassed:false
+ }];
+ const sent=[],statuses=[],controller=protocol.createController({
+   emit:(event,payload)=>sent.push({event,payload}),
+   onStatus:x=>statuses.push(x)
+ });
+ assert.equal(controller.onSnapshot(good),true);
+ const accepted=controller.state().current;
+ assert.ok(accepted.admitted);
+ const mutations=[
+   row=>{row.graph.channels[0].inserts=[null];},
+   row=>{row.graph.channels[0].inserts=[{}];},
+   row=>{row.graph.channels[0].inserts=[{id:"",catalogId:"vendor.fx.catalog"}];},
+   row=>{row.graph.channels[0].inserts=[{id:"native-lease-A",catalogId:""}];},
+   row=>{row.graph.channels[0].inserts=[{id:"native-lease-A",catalogId:"vendor.fx.catalog",bypassed:"false"}];},
+   row=>{row.graph.channels[0].inserts.push({...row.graph.channels[0].inserts[0]});},
+   row=>{row.graph.channels[1].inserts.push({...row.graph.channels[0].inserts[0]});},
+   row=>{row.graph.channels[0].inserts=Array.from({length:9},(_,i)=>({
+     id:"lease-"+i,catalogId:"vendor.fx.catalog"}));}
+ ];
+ for(const mutate of mutations){
+   const bad=clone(good);
+   mutate(bad);
+   assert.equal(protocol.normalizeSnapshot(bad),null,
+     "malformed instance lease must not be accepted as native PCM graph");
+   assert.equal(controller.onSnapshot(bad),false);
+   assert.equal(controller.state().current,accepted,
+     "rejected FX snapshot must preserve the latest accepted physical graph");
+   assert.equal(controller.state().lastError,"INVALID_NATIVE_SNAPSHOT");
+   assert.equal(controller.state().pending,null);
+   assert.equal(sent.length,0,"no bogus native intent or subscription");
+ }
+ assert.equal(statuses.at(-1).lastError,"INVALID_NATIVE_SNAPSHOT");
+ assert.equal(protocol.readbackProvesIntent(null,{
+   operation:"REMOVE_INSERT",targetChannelId:input,payload:{slot:0}
+ }),false,"invalid snapshot may never prove ACK");
+
+ // Malformed unsolicited readback during an edit is not a reason to commit or
+ // lose the valid pending request; a subsequent real ACK+snapshot may recover.
+ const edit=controller.intent("SET_FADER",input,{valueDb:-12});
+ assert.equal(edit.ok,true);
+ const bad=clone(good);bad.graph.channels[0].inserts=[null];
+ assert.equal(controller.onSnapshot(bad),false);
+ assert.equal(controller.state().pending?.requestId,edit.requestId);
+ assert.equal(controller.state().current,accepted);
+ assert.equal(controller.onAck({
+   requestId:edit.requestId,status:"ACCEPTED",
+   deviceEpoch:good.device.epoch,
+   graphRevision:good.graph.revision,
+   rosterRevision:good.graph.rosterRevision,errorCode:"NONE"
+ }),true);
+ const after=clone(good);
+ after.graph.channels[0].controls.faderDb=-12;
+ assert.equal(controller.onSnapshot(after),true);
+ assert.equal(controller.state().lastError,"ACCEPTED_READBACK");
+ assert.equal(controller.state().pending,null);
+ assert.equal(controller.state().current.graph.channels[0].controls.faderDb,-12);
+});
+test("M5 rejected FX intents update observable native status without emitting or repainting PCM",()=>{
+ const s=acceptedFixture();
+ const ch=s.graph.channels[0];
+ ch.inserts=[{id:"fx-stable-instance-1",catalogId:"armix.builtin.channel-eq.v1"}];
+ s.graph.capabilities.supportedOps.push("REMOVE_INSERT","MOVE_INSERT");
+ const emitted=[],notifications=[];
+ const control=protocol.createController({
+  emit:(name,payload)=>emitted.push({name,payload}),
+  onStatus:value=>notifications.push(value)
+ });
+ assert.equal(control.onSnapshot(s),true);
+ const before=control.state().current;
+ assert.ok(before?.admitted);
+ const check=(result,expected)=>{
+  assert.deepEqual(result,{ok:false,error:expected});
+  assert.equal(control.state().lastError,expected);
+  assert.equal(notifications.at(-1).lastError,expected);
+  assert.equal(control.state().pending,null);
+  assert.equal(control.state().current,before);
+  assert.equal(emitted.length,0,"rejected edit must never reach native dispatcher");
+ };
+ check(control.intent("REMOVE_INSERT",ch.id,{slot:0,instanceId:"wrong-instance"}),
+       "STALE_FX_INSTANCE");
+ check(control.intent("MOVE_INSERT",ch.id,{
+  slot:0,instanceId:"fx-stable-instance-1",toChannelId:s.graph.mainChannelId,toSlot:9
+ }),"INVALID_FX_DESTINATION");
+ check(control.intent("MOVE_INSERT",ch.id,{
+  slot:0,instanceId:"fx-stable-instance-1",toChannelId:"0",toSlot:0
+ }),"INVALID_FX_DESTINATION");
+ check(control.intent("SET_FADER",ch.id,[]),"INVALID_PAYLOAD");
+ check(control.intent("UNSUPPORTED_OP",ch.id,{}),"UNSUPPORTED_OR_UNADMITTED");
+ assert.ok(notifications.length>=6,"all refusals are published to the existing UI");
+});
 test("G0 current JUCE device snapshot is valid, never ChannelId PCM LIVE",()=>{
  const s=protocol.normalizeSnapshot(fixtures.g0);
  assert.ok(s);assert.equal(s.admitted,false);
@@ -384,7 +478,7 @@ test("P0 first Add FX discovers real local VST3 lazily without an audio-thread s
  // The approved picker publishes real compiled-in FX independently of
  // external scanner state; the verified VST3 library follows those entries.
  assert.match(bridge,/const presentFxCatalog=\(\)=>scope\?\.setNativeCatalog\?\.\(/);
- assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
+ assert.ok(bridge.includes('[...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]'));
  // Neither startup nor audio callback can trigger a surprise system scan.
  assert.doesNotMatch(bridge.slice(0,bridge.indexOf("function discoverFxOnFirstPickerOpen")),
    /action:"scanVst3"/);
@@ -1275,16 +1369,16 @@ test("P0 native built-in FX appear before vendor scan and remain after catalog r
                   "armix.builtin.channel-compressor.v1",
                   "armix.builtin.arson-harmony.v1"])
    assert.ok(bridge.includes('id:"'+id+'"'));
- assert.ok(bridge.includes('[...nativeBuiltins,...nativeCatalog.values()]'));
+ assert.ok(bridge.includes('[...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]'));
  assert.ok(bridge.includes('presentFxCatalog(); // compiled native FX'));
  assert.ok(builder.includes("x.format==='Native'?'Native':'VST3'"));
  assert.ok(!bridge.includes('scope?.setNativeCatalog?.([])'));
 });
 test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 catalog scan",()=>{
  const cpp=read("src/Main.cpp");
- const gate=cpp.slice(cpp.indexOf('const bool builtInEq=catalogId=='),
-   cpp.indexOf('const auto result=builtInEq?',cpp.indexOf('const bool builtInEq=catalogId==')));
- assert.ok(gate.includes('const bool externalCatalog=!builtInEq&&!builtInComp&&!builtInHarmony'));
+ const gate=cpp.slice(cpp.indexOf('const auto* builtIn=armix::builtin_fx::findNativeBuiltInFx(catalogId)'),
+   cpp.indexOf('const auto result=builtIn?'));
+ assert.ok(gate.includes('const bool externalCatalog=builtIn==nullptr'));
  assert.ok(gate.includes('externalCatalog&&(!plugin||catalog_.busy())'));
  assert.ok(!gate.includes('||catalog_.busy()||nativeShowBusy_'),
   'third-party metadata discovery must not disable compiled-in FX');
@@ -1293,10 +1387,13 @@ test("P0 built-in EQ/Compressor/Harmony load independent of slow external VST3 c
 });
 test("P0 output-only Audio I/O is a real native configuration, never blocked by missing capture",()=>{
  const cpp=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const apply=read("src/NativeDeviceApplyCoordinator.h");
  assert.match(cpp,/const bool outputOnly=separate&&capture\.isEmpty\(\)/);
  assert.match(cpp,/candidate\.useDefaultInputChannels=!outputOnly/);
  assert.match(cpp,/if\(outputOnly\)candidate\.inputChannels\.clear\(\)/);
- assert.match(cpp,/\(outputOnly&&!inMask\.isZero\(\)\)/);
+ assert.match(cpp,/NativeDeviceApplyCoordinator::parsePinMasks/);
+ assert.match(apply,/\(outputOnly&&!in\.isZero\(\)\)/);
+ assert.match(apply,/out\.countNumberOfSetBits\(\)<2/);
  assert.doesNotMatch(cpp,/opened->getActiveInputChannels\(\)\.countNumberOfSetBits\(\)<1/);
  assert.match(bridge,/No hardware input \(Player \/ FX\)/);
  assert.match(bridge,/t\?\.separate\?\["",\.\.\.\(t\.inputs\|\|\[\]\)\]/);
@@ -1569,8 +1666,17 @@ test("native FX remove/reorder/transfer requires exact token, ACK and ordered re
  c.onAck({requestId:request.requestId,status:'ACCEPTED',errorCode:'NONE',deviceEpoch:t.base.device.epoch,graphRevision:'6',rosterRevision:'8'});
  const wrong=clone(t.base);wrong.graph.revision='6';wrong.graph.rosterRevision='8';
  wrong.graph.channels[1].inserts.push(clone(wrong.graph.channels[0].inserts[0]));
- assert.equal(c.onSnapshot(wrong),false,'name/token copy cannot masquerade as MOVE');
+ assert.equal(c.onSnapshot(wrong),false,'duplicate live token is invalid native schema');
+ assert.equal(c.state().lastError,'INVALID_NATIVE_SNAPSHOT');
+ assert.equal(c.state().pending?.requestId,request.requestId,
+   'invalid transport snapshot must not consume the accepted native ACK');
+ const wrongEffect=clone(t.base);
+ wrongEffect.graph.revision='6';wrongEffect.graph.rosterRevision='8';
+ wrongEffect.graph.channels[0].inserts.reverse();
+ assert.equal(c.onSnapshot(wrongEffect),false,
+   'valid but wrong FX order cannot masquerade as MOVE');
  assert.equal(c.state().lastError,'ACK_READBACK_EFFECT_MISMATCH');
+ assert.equal(c.state().pending,null);
 });
 
 test("native vendor editor retention follows current PCM ownership, not inactive M4 slots",()=>{

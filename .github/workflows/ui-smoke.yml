@@ -297,6 +297,8 @@ jobs:
         run: python tests/approved_native_harmony_smoke.py
       - name: Cold start first WIRE and original-channel VST3 picker editor
         run: python tests/approved_native_cold_start_smoke.py
+      - name: Native VST3 ParamID hotkey Browse, Last Touched and accepted identity
+        run: python tests/approved_native_fx_param_hotkey_smoke.py
       - name: Offline logical mixer native ACK/readback and SOURCE ONLY (Chromium)
         run: python tests/approved_native_offline_logical_smoke.py
       - name: Native desktop titlebar toolbar measured in Chromium at four viewport widths

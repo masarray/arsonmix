@@ -1027,7 +1027,8 @@ public:
     }
 
     juce::String addVst3(const juce::String& filename,int uid,
-                        const juce::String& catalogId)
+                        const juce::String& catalogId,
+                        const juce::String& expectedName={})
     {
         if(independent_.active())return "Return to DIRECT mode before editing VST3";
         if(handoff_.busy() || fxMovePhase_.load(std::memory_order_acquire)!=0)
@@ -1044,7 +1045,7 @@ public:
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         if(!(rate>0.0) || frames>maxFrames)
             return "Unsupported device sample rate or buffer quantum";
-        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid);
+        const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid,expectedName);
         if(!chosen)return "Effect identity not found inside VST3 module";
         juce::String error;
         auto instance=formats_.createPluginInstance(*chosen,rate,frames,error);
@@ -1152,7 +1153,7 @@ public:
             if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
                 !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
                 return "Plugin is missing or invalid: " + fx.name;
-            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid);
+            const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid,fx.name);
             if (!match) return "VST3 plugin identity missing: " + fx.name;
 
             juce::String error;
@@ -2012,11 +2013,12 @@ public:
     // Native built-in EQ travels through EXACTLY the same ordered FxInstance
     // lease, ChannelId graph revision, bypass envelope, and PDC as VST3.
     // It is not the legacy fixed pre-VST EQ bank.
-    LiveDryRoutingLab::NativeBusResult installNativeBuiltInEq(
+    LiveDryRoutingLab::NativeBusResult installNativeBuiltInFx(
+            const armix::builtin_fx::NativeBuiltInFx& fx,
             std::uint64_t ep,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
         LiveDryRoutingLab::NativeBusResult fail{};
-        fail.error="NATIVE_EQ_HOST_UNAVAILABLE";
+        fail.error=fx.hostUnavailable;
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(independent_.active()||!attached_||!device||
            !directFence_.permitted()||secondaryOutput_.armed()||
@@ -2025,159 +2027,27 @@ public:
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal)return fail;
         if(ep!=dryRoutingLab_.epoch()){
-            fail.error="NATIVE_EQ_DEVICE_CHANGED";return fail;
+            fail.error=fx.deviceChanged;return fail;
         }
         const auto rate=device->getCurrentSampleRate();
         const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        if(!(rate>=8000. && rate<=384000.)||
+        if(!(rate>=fx.minimumLiveRate && rate<=fx.maximumLiveRate)||
            frames>LiveDryRoutingLab::Block::hardFrameLimit) {
-            fail.error="NATIVE_EQ_UNSUPPORTED_AUDIO_FORMAT";return fail;
+            fail.error=fx.unsupportedFormat;return fail;
         }
         try {
-            auto processor=std::make_unique<armix::builtin_fx::ChannelEqProcessor>();
-            processor->prepareToPlay(rate,frames);
-            if(!processor->isReady()){
-                fail.error="NATIVE_EQ_PREPARE_REJECTED";return fail;
-            }
-            auto lease=std::make_shared<
-                armix::mixer::LiveChannelFxGraph::FxInstance>(
-                std::move(processor),
-                juce::String(armix::builtin_fx::ChannelEqProcessor::catalogIdentity),
-                "Parametric EQ",LiveDryRoutingLab::Block::hardFrameLimit);
-            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
-                rosterRevision,id,
-                armix::builtin_fx::ChannelEqProcessor::catalogIdentity,
-                std::move(lease),true);
-        } catch(...) {
-            fail.error="NATIVE_EQ_PREPARE_EXCEPTION";return fail;
-        }
-    }
-
-    // Compressor is a first-class ordered ChannelId FX node, exactly like EQ.
-    // No external VST3, lookahead latency or separate realtime renderer.
-    LiveDryRoutingLab::NativeBusResult installNativeBuiltInCompressor(
-            std::uint64_t ep,std::uint64_t pcmRevision,
-            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
-        LiveDryRoutingLab::NativeBusResult fail{};
-        fail.error="NATIVE_COMP_HOST_UNAVAILABLE";
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||secondaryOutput_.armed()||
-           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
-           routeReconfiguring_.load(std::memory_order_acquire)||
-           diagnosticRoute_.load(std::memory_order_acquire)!=
-               armix::diagnostics::Route::normal)return fail;
-        if(ep!=dryRoutingLab_.epoch()){
-            fail.error="NATIVE_COMP_DEVICE_CHANGED";return fail;
-        }
-        const auto rate=device->getCurrentSampleRate();
-        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        if(!(rate>=8000.&&rate<=384000.)||
-           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
-            fail.error="NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT";return fail;
-        }
-        try {
-            auto processor=std::make_unique<armix::builtin_fx::ChannelCompressorProcessor>();
-            processor->prepareToPlay(rate,frames);
-            if(!processor->isReady()){
-                fail.error="NATIVE_COMP_PREPARE_REJECTED";return fail;
-            }
-            auto lease=std::make_shared<
-                armix::mixer::LiveChannelFxGraph::FxInstance>(
-                std::move(processor),
-                juce::String(armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity),
-                "Compressor",LiveDryRoutingLab::Block::hardFrameLimit);
-            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
-                rosterRevision,id,
-                armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity,
-                std::move(lease),true);
-        } catch(...) {
-            fail.error="NATIVE_COMP_PREPARE_EXCEPTION";return fail;
-        }
-    }
-
-    // One ChannelId native insert. No private callback, engine or pre-VST bank.
-    LiveDryRoutingLab::NativeBusResult installNativeBuiltInHarmony(
-            std::uint64_t ep,std::uint64_t pcmRevision,
-            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
-        LiveDryRoutingLab::NativeBusResult fail{};
-        fail.error="NATIVE_HARMONY_HOST_UNAVAILABLE";
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||secondaryOutput_.armed()||
-           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
-           routeReconfiguring_.load(std::memory_order_acquire)||
-           diagnosticRoute_.load(std::memory_order_acquire)!=
-               armix::diagnostics::Route::normal)return fail;
-        if(ep!=dryRoutingLab_.epoch()) {
-            fail.error="NATIVE_HARMONY_DEVICE_CHANGED";return fail;
-        }
-        const auto rate=device->getCurrentSampleRate();
-        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        if(!(rate>=32000.&&rate<=192000.)||
-           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
-            fail.error="NATIVE_HARMONY_UNSUPPORTED_AUDIO_FORMAT";return fail;
-        }
-        try {
-            auto processor=std::make_unique<armix::builtin_fx::ChannelHarmonyProcessor>();
-            processor->prepareToPlay(rate,frames);
-            if(!processor->isReady()||
+            auto processor=fx.prepare(rate,frames,nullptr,0);
+            if(!processor ||
                processor->getLatencySamples()>armix::dsp::StereoLatencyDelay::maximumSamples) {
-                fail.error="NATIVE_HARMONY_PREPARE_OR_PDC_REJECTED";return fail;
+                fail.error=fx.prepareRejected;return fail;
             }
             auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
-                std::move(processor),
-                juce::String(armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity),
-                "Harmonice",LiveDryRoutingLab::Block::hardFrameLimit);
-            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
-                rosterRevision,id,
-                armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity,
-                std::move(lease),true);
-        }catch(...) {
-            fail.error="NATIVE_HARMONY_PREPARE_EXCEPTION";return fail;
-        }
-    }
-
-    // ArSon Vocal Throw: single native PCM graph, same insert leases, bypass,
-    // ChannelId topology and dry monitoring as EQ/Compressor.
-    LiveDryRoutingLab::NativeBusResult installNativeBuiltInVocalThrow(
-            std::uint64_t ep,std::uint64_t pcmRevision,
-            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
-        LiveDryRoutingLab::NativeBusResult fail{};
-        fail.error="NATIVE_THROW_HOST_UNAVAILABLE";
-        auto* device=deviceManager_.getCurrentAudioDevice();
-        if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||secondaryOutput_.armed()||
-           handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
-           routeReconfiguring_.load(std::memory_order_acquire)||
-           diagnosticRoute_.load(std::memory_order_acquire)!=
-               armix::diagnostics::Route::normal)return fail;
-        if(ep!=dryRoutingLab_.epoch()){
-            fail.error="NATIVE_THROW_DEVICE_CHANGED";return fail;
-        }
-        const auto rate=device->getCurrentSampleRate();
-        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
-        if(!(rate>=8000.&&rate<=192000.)||
-           frames>LiveDryRoutingLab::Block::hardFrameLimit) {
-            fail.error="NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT";return fail;
-        }
-        try {
-            auto processor=std::make_unique<armix::builtin_fx::VocalThrowProcessor>();
-            processor->prepareToPlay(rate,frames);
-            if(!processor->isReady()){
-                fail.error="NATIVE_THROW_PREPARE_REJECTED";return fail;
-            }
-            auto lease=std::make_shared<
-                armix::mixer::LiveChannelFxGraph::FxInstance>(
-                std::move(processor),
-                juce::String(armix::builtin_fx::VocalThrowProcessor::catalogIdentity),
-                "ArSon Vocal Throw",LiveDryRoutingLab::Block::hardFrameLimit);
-            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
-                rosterRevision,id,
-                armix::builtin_fx::VocalThrowProcessor::catalogIdentity,
-                std::move(lease),true);
+                std::move(processor),juce::String(fx.id),fx.name,
+                LiveDryRoutingLab::Block::hardFrameLimit);
+            return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,rosterRevision,id,
+                fx.id,std::move(lease),true);
         } catch(...) {
-            fail.error="NATIVE_THROW_PREPARE_EXCEPTION";return fail;
+            fail.error=fx.prepareException;return fail;
         }
     }
 
@@ -2202,7 +2072,8 @@ public:
     LiveDryRoutingLab::NativeBusResult installNativeVst3(
             std::uint64_t ep,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId id,
-            const juce::String& path,int uid,const juce::String& catalogId) {
+            const juce::String& path,int uid,const juce::String& catalogId,
+            const juce::String& expectedName={}) {
         LiveDryRoutingLab::NativeBusResult fail{};
         fail.error="NATIVE_VST3_HOST_UNAVAILABLE";
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -2222,7 +2093,7 @@ public:
         if(!fmt||!fmt->fileMightContainThisPluginType(path))
             {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
         try {
-            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid);
+            const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid,expectedName);
             if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
             juce::String pluginError;
             auto instance=formats_.createPluginInstance(*chosen,rate,

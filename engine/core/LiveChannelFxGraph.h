@@ -40,6 +40,10 @@ public:
         const juce::String instanceId; // stable through MOVE; never a slot index
         const int latencySamples;
         std::atomic<bool> latencyChanged{false};
+        // Vendor editor beginChangeGesture -> atomic index; never allocate,
+        // call JS or touch the JUCE message loop from a parameter callback.
+        std::atomic<int> lastTouchedParameter{-1};
+        std::atomic<bool> hostHotkeyWrite{false};
         armix::dsp::StereoLatencyDelay dryDelay;
         std::atomic<bool> bypassRequested{false};
         armix::dsp::FxBypassEnvelope bypassFade; // RT exclusive state
@@ -50,13 +54,32 @@ public:
         std::atomic<unsigned> exceptions{0};
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
-                   int maxSamples)
+                   int maxSamples,juce::String restoredInstance={})
             : processor(std::move(p)),catalogId(std::move(id)),name(std::move(label)),
-              instanceId("g5c-"+juce::String(static_cast<juce::int64>(
-                  nextId.fetch_add(1,std::memory_order_relaxed)))),
+              // A restored .smix insert retains the SAME logical identity.
+              // Newly-added FX still receive a fresh per-process token.
+              instanceId(restoredInstance.isNotEmpty()?std::move(restoredInstance):
+                  "g5c-"+juce::String(static_cast<juce::int64>(
+                      nextId.fetch_add(1,std::memory_order_relaxed)))),
               latencySamples(processor?processor->getLatencySamples():0),
               dryLeft(static_cast<std::size_t>(maxSamples)),
               dryRight(static_cast<std::size_t>(maxSamples)) {
+            // CONTROL thread only. A restored ID must reserve its numeric
+            // space before subsequent Add FX operations in this process.
+            // The codec validates the prefix and decimal range; no RT work.
+            const auto number=instanceId.startsWith("g5c-")?
+                instanceId.substring(4):juce::String{};
+            if(number.isNotEmpty() && number.length()<=18 &&
+               number.containsOnly("0123456789")) {
+                const auto raw=number.getLargeIntValue();
+                if(raw>0) {
+                    const auto next=static_cast<std::uint64_t>(raw)+1u;
+                    auto observed=nextId.load(std::memory_order_relaxed);
+                    while(observed<next &&
+                          !nextId.compare_exchange_weak(observed,next,
+                              std::memory_order_relaxed)){}
+                }
+            }
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
@@ -82,6 +105,11 @@ public:
             }
         }
         void audioProcessorParameterChanged(juce::AudioProcessor*,int,float) override {}
+        void audioProcessorParameterChangeGestureBegin(
+                juce::AudioProcessor*,int parameterIndex) override {
+            if(!hostHotkeyWrite.load(std::memory_order_acquire))
+                lastTouchedParameter.store(parameterIndex,std::memory_order_release);
+        }
         void audioProcessorChanged(juce::AudioProcessor* p,
                 const juce::AudioProcessorListener::ChangeDetails& details) override {
             if(details.latencyChanged && p && p->getLatencySamples()!=latencySamples)

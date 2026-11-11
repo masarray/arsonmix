@@ -7,7 +7,7 @@
 #include "../src/NativeMixerSessionStore.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
-#include "../src/NativeLogicalMixerWorkspace.h"
+#include "../src/NativeLogicalMixerControl.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -826,7 +826,346 @@ static void verifyLegacyHarmoniceSessionName(){
     assert(saved.inserts.front().name=="ArSon Harmony");
     assert((*lease)->processor->getLatencySamples()==1536);
 }
+static void verifyLogicalControlTransactions() {
+    juce::ScopedJuceInitialiser_GUI juce;
+    const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("armix-logical-control-","",false);
+    assert(folder.createDirectory().wasOk());
+    NativeMixerSessionSaveWorker worker;
+    int commits=0;
+    NativeLogicalMixerControl control(folder,worker,[&](const juce::String& id){
+        assert(id.isNotEmpty());
+        ++commits;
+    });
+    assert(control.ensureLoaded().error.isEmpty());
+    auto command=[&](const char* requestId,const char* operation,
+                     const juce::String& id={},juce::var payload={},juce::var value={}) {
+        auto request=std::make_unique<juce::DynamicObject>();
+        const auto before=control.readback();
+        request->setProperty("requestId",requestId);
+        request->setProperty("operation",operation);
+        request->setProperty("channelId",id);
+        request->setProperty("baseRevision",before.getProperty("revision",{}));
+        request->setProperty("workspaceToken",before.getProperty("workspaceToken",{}));
+        request->setProperty("payload",std::move(payload));
+        request->setProperty("value",std::move(value));
+        return juce::var(request.release());
+    };
+    juce::Array<juce::var> acks;
+    const auto submit=[&](const juce::var& request,
+                           NativeLogicalMixerControl::Availability access={false,true,false}) {
+        control.handleIntent(request,access,
+            [](const juce::String& id){return armix::builtin_fx::findNativeBuiltInFx(id)!=nullptr;},
+            [](const auto& workspace,ChannelId channel,std::size_t slot,auto& insert,auto& processor){
+                insert.channel=channel;
+                insert.slot=slot;
+                insert.catalogId=juce::String(workspace.document().roster.find(channel)
+                    ->insertCatalogIds[slot]);
+                juce::AudioPluginFormatManager formats;
+                const auto error=NativeMixerSessionFxRestore::prepareProcessor(
+                    insert,nullptr,formats,48000.,256,processor);
+                if(error.isEmpty())insert.name=processor->getName();
+                return error;
+            },[&](juce::var ack){acks.add(std::move(ack));});
+    };
+    const auto waitForIO=[&]{
+        const auto deadline=juce::Time::getMillisecondCounter()+10000;
+        while(worker.busy() && juce::Time::getMillisecondCounter()<deadline)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        assert(!worker.busy());
+    };
+    const auto reject=[&](const char* reason){
+        const auto ack=acks.getLast();
+        assert(ack.getProperty("status",{}).toString()=="REJECTED");
+        assert(ack.getProperty("errorCode",{}).toString()==reason);
+        assert(ack.getProperty("revision",{})==control.readback().getProperty("revision",{}));
+    };
+    const auto accept=[&](const juce::var& request){
+        const auto before=control.readback().getProperty("revision",{});
+        const int count=acks.size();
+        submit(request);
+        assert(acks.size()==count && worker.busy());
+        assert(control.readback().getProperty("revision",{})==before);
+        waitForIO();
+        assert(acks.size()==count+1);
+        const auto ack=acks.getLast();
+        assert(ack.getProperty("requestId",{})==request.getProperty("requestId",{}));
+        assert(ack.getProperty("status",{}).toString()=="ACCEPTED");
+        const auto after=control.readback();
+        assert(ack.getProperty("revision",{})==after.getProperty("revision",{}));
+        assert(after.getProperty("revision",{})!=before);
+        assert(after.getProperty("authority",{}).toString()=="LOGICAL_ONLY");
+        assert(!static_cast<bool>(ack.getProperty("physicalOutputAdmitted",true)));
+        assert(!static_cast<bool>(after.getProperty("graph",{}).getProperty("capabilities",{})
+            .getProperty("callbackOwnsChannelIds",true)));
+        return ack.getProperty("createdId",{}).toString();
+    };
+    auto create=command("logical-create","CREATE_CHANNEL",{},
+        juce::JSON::parse(R"({"name":"Lead"})"));
+    submit(create,{false,false,false});
+    reject("PHYSICAL_PCM_AUTHORITY_ACTIVE");
+    auto stale=command("logical-stale","CREATE_GROUP");
+    const auto channel=accept(create);
+    submit(create);
+    reject("DUPLICATE_LOGICAL_REQUEST");
+    submit(stale);
+    reject("STALE_LOGICAL_REVISION");
+    const auto bus=accept(command("logical-bus","CREATE_GROUP",{},
+        juce::JSON::parse(R"({"name":"Vocals"})")));
+    auto wire=juce::JSON::parse(R"({"changes":[{"op":"ROUTE_ONLY"}]})");
+    auto* wireChange=wire.getProperty("changes",{})[0].getDynamicObject();
+    wireChange->setProperty("from",channel);
+    wireChange->setProperty("to",bus);
+    accept(command("logical-wire","WIRE_TRANSACTION",channel,wire));
+    accept(command("logical-rename","RENAME_CHANNEL",channel,
+        juce::JSON::parse(R"({"name":"Lead Vox"})")));
+    for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
+        auto payload=std::make_unique<juce::DynamicObject>();
+        payload->setProperty("catalogId",fx.id);
+        accept(command((juce::String("logical-fx-")+fx.id).toRawUTF8(),
+            "ADD_FX_REFERENCE",bus,juce::var(payload.release())));
+    }
+    accept(command("logical-bypass","SET_FX_SLOT_BYPASS",bus,
+        juce::JSON::parse(R"({"slot":1,"enabled":true})")));
+    accept(command("logical-rack","SET_FX_RACK_BYPASS",bus,{},true));
+    const auto file=folder.getChildFile("concert.smix");
+    assert(control.exportTo(file,[](juce::String error){assert(error.isEmpty());}));
+    waitForIO();
+    MixerSessionDocument saved;
+    std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,saved,states).isEmpty());
+    assert(saved.logicalOnly && saved.request.physicalInputs==0);
+    const ChannelId trackId{static_cast<std::uint64_t>(channel.getLargeIntValue())};
+    const ChannelId busId{static_cast<std::uint64_t>(bus.getLargeIntValue())};
+    assert(saved.roster.find(trackId)->name=="Lead Vox");
+    assert(saved.roster.find(trackId)->sends.front().destination==busId);
+    assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
+    assert(saved.inserts[1].bypass && saved.rackBypassed.front()==busId);
+    juce::AudioPluginFormatManager formats;
+    for(const auto& insert:saved.inserts) {
+        const auto state=std::find_if(states.begin(),states.end(),[&](const auto& blob){
+            return blob.sha256==insert.sha256;
+        });
+        assert(state!=states.end());
+        std::unique_ptr<juce::AudioProcessor> restored;
+        assert(NativeMixerSessionFxRestore::prepareProcessor(
+            insert,&*state,formats,48000.,256,restored).isEmpty());
+        assert(restored && restored->getName()==insert.name);
+    }
+
+    // A second request while an actual commit is queued sees the old model
+    // and rejects. Force the next disk promotion to fail at PREVIOUS, while
+    // HEAD still points to the last accepted and independently readable state.
+    auto remove=command("logical-remove","REMOVE_FX_REFERENCE",bus,
+        juce::JSON::parse(R"({"slot":0})"));
+    submit(remove);
+    submit(command("logical-busy","DELETE_CHANNEL",channel));
+    reject("LOGICAL_EDITOR_BUSY");
+    waitForIO();
+    assert(acks.getLast().getProperty("status",{}).toString()=="ACCEPTED");
+    const auto oldReadback=juce::JSON::toString(control.readback(),true);
+    const int oldCommits=commits;
+    const auto previous=folder.getChildFile("MixerSession").getChildFile("PREVIOUS");
+    assert(previous.deleteFile());
+    assert(previous.createDirectory().wasOk());
+    assert(previous.getChildFile("sentinel").replaceWithText("force failed pointer write"));
+    submit(command("logical-failed","DELETE_CHANNEL",channel));
+    waitForIO();
+    const auto failed=acks.getLast();
+    assert(failed.getProperty("requestId",{}).toString()=="logical-failed");
+    assert(failed.getProperty("status",{}).toString()=="REJECTED");
+    assert(juce::JSON::toString(control.readback(),true)==oldReadback);
+    assert(commits==oldCommits);
+    MixerSessionDocument head;
+    std::vector<BinaryState> headStates;
+    assert(NativeMixerSessionStore(folder).load(head,headStates).isEmpty());
+    assert(head.acceptedRevision==control.workspace().revision());
+    assert(head.roster.find(trackId) && head.inserts.size()==saved.inserts.size()-1);
+    assert(previous.deleteRecursively());
+
+    accept(command("logical-delete","DELETE_CHANNEL",channel));
+    accept(command("logical-remove-bus","REMOVE_BUS",bus));
+    bool opened=false;
+    assert(worker.load(file,[&](juce::String error,MixerSessionDocument document,
+                                std::vector<BinaryState> binary){
+        assert(error.isEmpty());
+        assert(control.open(std::move(document),std::move(binary),[&](juce::String openError){
+            assert(openError.isEmpty());
+            opened=true;
+        }));
+    }));
+    waitForIO();
+    assert(opened);
+    assert(control.workspace().document().roster.find(trackId));
+    assert(control.workspace().document().roster.find(busId));
+    assert(folder.deleteRecursively());
+}
+
+// H1: a saved VST3 Power mapping survives a real .smix Save/Open and the
+// restored native FX lease keeps the EXACT token. A plugin replaced at that
+// slot cannot inherit the shortcut. Legacy files omit instanceId completely.
+static void verifyDurableNativeFxPowerIdentity() {
+    using FxOwner=armix::mixer::LiveChannelFxGraph::FxInstance;
+    auto doc=makeSession();
+    auto rows=doc.roster.channels();
+    for(auto& channel:rows)
+        if(channel.id.value==5)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(doc.roster.restoreExact(doc.acceptedRevision,rows));
+
+    StoredInsert saved;
+    saved.channel={5};saved.slot=0;
+    saved.catalogId="fixture.vst3.power";
+    saved.name="Power Fixture";
+    saved.sha256=juce::String::repeatedString("0123456789abcdef",4);
+    saved.bypass=true;
+    // An ID comes from the native control owner, NOT the .smix file name,
+    // catalog identity, user-facing FX label or slot ordinal.
+    saved.instanceId="g5c-724";
+    doc.inserts.push_back(saved);
+    doc.hotkeys.push_back({"power-hotkey","SESSION",doc.id,"5",
+        "SET_FX_SLOT_BYPASS",0x76,6,0,saved.instanceId});
+
+    const auto durable=Codec::encode(doc);
+    MixerSessionDocument reopened;
+    assert(Codec::decode(durable,reopened));
+    assert(reopened.inserts.size()==1&&reopened.hotkeys.size()==1);
+    assert(reopened.inserts[0].instanceId=="g5c-724");
+    assert(reopened.hotkeys[0].insertId==reopened.inserts[0].instanceId);
+    assert(Codec::encode(reopened)==durable);
+    // No vendor DSP is invoked in this fixture: construction and identity
+    // reservation are CONTROL-thread state only.
+    FxOwner restored(nullptr,"fixture.vst3.power","Power Fixture",64,
+        reopened.inserts[0].instanceId);
+    assert(restored.instanceId==reopened.hotkeys[0].insertId);
+    FxOwner next(nullptr,"fixture.vst3.power","Next Insert",64);
+    assert(next.instanceId.startsWith("g5c-"));
+    assert(next.instanceId.substring(4).getLargeIntValue()>724);
+
+    auto invalid=juce::JSON::parse(durable);
+    auto inserts=invalid.getProperty("inserts",{});
+    assert(inserts.isArray());
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","g5c-0");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId","not-native-token");
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+    invalid=juce::JSON::parse(durable);
+    inserts=invalid.getProperty("inserts",{});
+    inserts.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("instanceId",juce::var(24));
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),reopened));
+
+    // A second channel must not claim the same native FX instance identity.
+    auto duplicate=doc;
+    auto second=saved;second.channel={6};
+    duplicate.inserts.push_back(second);
+    auto withSecond=duplicate.roster.channels();
+    for(auto& channel:withSecond)
+        if(channel.id.value==6)
+            channel.insertCatalogIds={"fixture.vst3.power"};
+    assert(duplicate.roster.restoreExact(duplicate.acceptedRevision,withSecond));
+    assert(!Codec::decode(Codec::encode(duplicate),reopened));
+
+    // Older .smix files containing vendor blobs but no native FX token decode
+    // normally; adding durable identity does not force a schema bump.
+    auto legacy=doc;
+    legacy.inserts[0].instanceId.clear();
+    legacy.hotkeys.clear();
+    const auto old=Codec::encode(legacy);
+    assert(Codec::decode(old,reopened));
+    assert(reopened.inserts[0].instanceId.isEmpty());
+}
+
+static void verifyHotkeyDocumentIdentityAndMigration() {
+    auto doc=makeSession();
+    const auto legacy=Codec::encode(doc);
+    MixerSessionDocument decoded;
+    assert(Codec::decode(legacy,decoded) && decoded.hotkeys.empty());
+    const juce::String session=doc.id;
+    armix::hotkey::Mapping first{"native-ch05","SESSION",session,"5","SET_MUTE",0x77,6};
+    armix::hotkey::Mapping second{"native-bus","SESSION",session,"16","SET_SOLO",0x78,6};
+    armix::hotkey::Mapping rack{"fx-rack-05","SESSION",session,"5",
+        "SET_FX_RACK_BYPASS",0x76,6};
+    armix::hotkey::Mapping slot{"fx-slot-05","SESSION",session,"5",
+        "SET_FX_SLOT_BYPASS",0x75,6,1,"plugin-instance-original"};
+    doc.hotkeys={first,second,rack,slot};
+    const auto stable=Codec::encode(doc);
+    assert(Codec::decode(stable,decoded));
+    assert(decoded.hotkeys.size()==4);
+    assert(decoded.hotkeys[2].operation=="SET_FX_RACK_BYPASS");
+    assert(decoded.hotkeys[3].slot==1 &&
+           decoded.hotkeys[3].insertId=="plugin-instance-original");
+    assert(decoded.hotkeys[0].channelId=="5"&&decoded.hotkeys[1].channelId=="16");
+    // Rename or visual channel reorder cannot retarget numeric ChannelId.
+    auto renamed=decoded.roster.channels();
+    for(auto& row:renamed)if(row.id.value==5)row.name="New Singer Name";
+    assert(decoded.roster.restoreExact(decoded.acceptedRevision,renamed));
+    assert(Codec::decode(Codec::encode(decoded),doc));
+    assert(doc.hotkeys[0].channelId=="5");
+    auto damaged=juce::JSON::parse(stable);
+    auto hotkeys=damaged.getProperty("hotkeys",{});
+    auto* rows=hotkeys.getArray();
+    assert(rows&&rows->size()==4);
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","999999");
+    // Deleting a track does not make the entire mixer unsaveable. The
+    // orphan shortcut remains visible but can never fire for another ID.
+    assert(Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    assert(decoded.hotkeys[0].channelId=="999999");
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("channelId","05");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(1).getDynamicObject()->setProperty("vk",0x77);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    rows=hotkeys.getArray();
+    rows->getReference(0).getDynamicObject()->setProperty("sessionId","other");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("slot",8);
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+    damaged=juce::JSON::parse(stable);
+    hotkeys=damaged.getProperty("hotkeys",{});
+    hotkeys.getArray()->getReference(3).getDynamicObject()->setProperty("insertId","");
+    assert(!Codec::decode(juce::JSON::toString(damaged,false),decoded));
+
+    // H2 .smix preserves the exact vendor parameter ID and class identity,
+    // even if FX slot order changes. Missing host parameter -> inert mapping.
+    auto withParam=doc;
+    withParam.hotkeys.push_back({"p-vendor-1","SESSION",session,"5",
+        "SET_FX_PARAM_TOGGLE",0x73,6,1,"g5c-724",
+        "verified-vst3-class-id","vendor-param-203","Stereo Width"});
+    const auto saved=Codec::encode(withParam);
+    assert(Codec::decode(saved,decoded));
+    assert(decoded.hotkeys.size()==5);
+    assert(decoded.hotkeys.back().paramId=="vendor-param-203");
+    assert(decoded.hotkeys.back().catalogId=="verified-vst3-class-id");
+    assert(Codec::encode(decoded)==saved);
+    auto unsafe=juce::JSON::parse(saved);
+    auto entries=unsafe.getProperty("hotkeys",{}).getArray();
+    assert(entries&&entries->size()==5);
+    entries->getReference(4).getDynamicObject()->setProperty("paramId","");
+    assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
+    unsafe=juce::JSON::parse(saved);
+    unsafe.getProperty("hotkeys",{}).getArray()->getReference(4)
+        .getDynamicObject()->setProperty("catalogId","");
+    assert(!Codec::decode(juce::JSON::toString(unsafe,false),decoded));
+}
+
 int main(){
+    verifyDurableNativeFxPowerIdentity();
+    verifyHotkeyDocumentIdentityAndMigration();
+    verifyLogicalControlTransactions();
     verifyLegacyHarmoniceSessionName();
     verifyOfflineLogicalSessionAndFile();
     verifyProductionPlayerFirstSoundWithSourceOnly();

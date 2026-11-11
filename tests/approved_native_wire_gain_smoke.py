@@ -52,6 +52,96 @@ def ack(page, state, intent):
         "graphRevision": state["graph"]["revision"], "rosterRevision": state["graph"]["rosterRevision"]})
 
 
+def verify_socket_impact(page, out):
+    page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+        window.__JUCE__={backend:{
+          emitEvent(name,payload){if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
+          addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+    page.goto((out / "index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state = snapshot()
+    accepted_edge = state["graph"]["edges"].pop(1)
+    emit(page, "arMixConsoleSnapshot", state)
+    if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
+        page.locator('.section-rail [data-section="send"]').click()
+    source = page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+    receiver = page.locator('#tracks .strip[data-id="2"] .wire-node-in')
+    def center(jack):
+        box = jack.bounding_box()
+        assert box
+        return box["x"] + box["width"]/2, box["y"] + box["height"]/2
+    selector = '#wireLayer path.wire-outgoing-line[data-cable-key="1-2"]'
+    page.evaluate("""selector=>{
+      window.__wireImpact=[];
+      new MutationObserver(records=>{
+        for(const {target} of records){
+          const d=target.getAttribute('d');
+          if(target.matches(selector)&&d?.includes(' L ')&&window.__wireImpact.at(-1)!==d)
+            window.__wireImpact.push(d);
+        }
+      }).observe(document.getElementById('wireLayer'),
+          {attributes:true,attributeFilter:['d'],subtree:true});
+    }""", selector)
+    def drag():
+        x0, y0 = center(source)
+        x1, y1 = center(receiver)
+        page.mouse.move(x0, y0)
+        page.mouse.down()
+        page.mouse.move(x1, y1, steps=8)
+        assert "is-snap-target" in receiver.get_attribute("class")
+        page.mouse.up()
+        page.mouse.move(x1, y1+65)
+
+    drag()
+    page.wait_for_function("()=>window.__nativeIntents.length===1")
+    intent = page.evaluate("()=>window.__nativeIntents.at(-1)")
+    assert intent["operation"] == "APPLY_WIRE_TRANSACTION"
+    rejected = {"requestId": intent["requestId"], "status": "REJECTED",
+        "errorCode": "TEST_REJECTION", "deviceEpoch": state["device"]["epoch"],
+        "graphRevision": "2", "rosterRevision": "2"}
+    emit(page, "arMixConsoleAck", rejected)
+    emit(page, "arMixConsoleSnapshot", state)
+    assert page.locator(selector).count() == 0
+    assert page.evaluate("()=>window.__wireImpact.length") == 0
+
+    drag()
+    page.wait_for_function("()=>window.__nativeIntents.length===2")
+    intent = page.evaluate("()=>window.__nativeIntents.at(-1)")
+    change = intent["payload"]["changes"][0]
+    assert change["from"] == SOURCE and change["to"] == RECEIVER
+    after = copy.deepcopy(state)
+    after["graph"]["revision"] = "3"
+    after["mixerSession"]["routeRevision"] = "3"
+    if change["op"] == "ROUTE_ONLY":
+        after["graph"]["edges"].pop(0)
+        after["graph"]["channels"][0]["primaryOutId"] = RECEIVER
+        accepted_edge.update(primaryOutput=True, gainLinear=1)
+    else:
+        assert change["op"] == "CONNECT"
+        accepted_edge["gainLinear"] = change["gainLinear"]
+    after["graph"]["edges"].append(accepted_edge)
+    ack(page, after, intent)
+    assert page.locator(selector).count() == 0, "ACK alone drew a cable"
+    emit(page, "arMixConsoleSnapshot", after)
+    page.wait_for_function("()=>window.__wireImpact.length>=6", timeout=3500)
+    cable = page.locator(selector)
+    page.wait_for_function("selector=>document.querySelector(selector)?.getAttribute('d')?.includes(' C ')",arg=selector)
+    settled = cable.get_attribute("d")
+    # The settled cubic hangs below the jacks. The impact moves the path,
+    # while its endpoints stay identical through all sampled animation frames.
+    geometry = cable.evaluate("""path=>{
+      const length=path.getTotalLength();
+      return [path.getPointAtLength(0).y,path.getPointAtLength(length).y,
+        path.getPointAtLength(length/2).y];
+    }""")
+    assert geometry[2] > max(geometry[:2]) + 5, geometry
+    frames = page.evaluate("()=>window.__wireImpact")
+    assert all(d.split()[:3] == settled.split()[:3] and
+               d.split()[-2:] == settled.split()[-2:] for d in frames)
+    emit(page, "arMixConsoleSnapshot", after)
+    assert cable.get_attribute("d") == settled, "telemetry replay retriggered impact"
+
+
 def main():
     spec = importlib.util.spec_from_file_location("native_bundle", ROOT / "scripts/build_approved_native_gui.py")
     bundle = importlib.util.module_from_spec(spec)
@@ -61,6 +151,9 @@ def main():
         bundle.stage(out)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
+            impact = browser.new_page(viewport={"width": 1366, "height": 768})
+            verify_socket_impact(impact, out)
+            impact.close()
             for width, height in [(1366, 768), (1680, 900), (1920, 1080)]:
                 page = browser.new_page(viewport={"width": width, "height": height})
                 errors = []
@@ -147,7 +240,7 @@ def main():
                 page.screenshot(path=f"native-wire-gain-{width}.png")
                 page.close()
             browser.close()
-    print("PASS native WIRE gain: real keyboard, coalesced ACK/readback, stable DOM, INPUT OUT, 3 viewports (UI only)")
+    print("PASS native WIRE socket impact and gain: real drag and keyboard, coalesced ACK/readback, stable DOM, INPUT OUT, 3 viewports (UI only)")
 
 
 if __name__ == "__main__":
