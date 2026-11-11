@@ -123,7 +123,7 @@ jobs:
       - name: Configure native application and CTest
         shell: pwsh
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" -DARMIX_RELEASE_TAG="$env:ARMIX_RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

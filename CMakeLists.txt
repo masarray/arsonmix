@@ -97,13 +97,42 @@ execute_process(COMMAND git rev-parse --verify HEAD
 if(NOT ARMIX_BUILD_SOURCE_STATUS EQUAL 0 OR NOT ARMIX_BUILD_SOURCE_SHA MATCHES "^[0-9a-f]+$")
   set(ARMIX_BUILD_SOURCE_SHA "unavailable")
 endif()
+# Keep the native caption / About version aligned with the exact release
+# artifact. The release controller validates and passes ARMIX_RELEASE_TAG
+# BEFORE the tag is published; an existing checkout of a release tag is also
+# supported. All other builds are visibly marked dev, never as a release.
+set(ARMIX_RELEASE_TAG "" CACHE STRING "Verified release tag (vX.Y.Z-alpha.N)")
+string(REPLACE "." "\\." ARMIX_ESCAPED_PROJECT_VERSION "${PROJECT_VERSION}")
+set(ARMIX_RELEASE_TAG_PATTERN "^v${ARMIX_ESCAPED_PROJECT_VERSION}-alpha\\.[0-9]+$")
+set(ARMIX_APP_VERSION "${PROJECT_VERSION}-dev")
+if(ARMIX_RELEASE_TAG)
+  if(NOT ARMIX_RELEASE_TAG MATCHES "${ARMIX_RELEASE_TAG_PATTERN}")
+    message(FATAL_ERROR "ARMIX_RELEASE_TAG must match v${PROJECT_VERSION}-alpha.N")
+  endif()
+  string(SUBSTRING "${ARMIX_RELEASE_TAG}" 1 -1 ARMIX_APP_VERSION)
+else()
+  execute_process(
+    COMMAND git describe --tags --exact-match --match "v${PROJECT_VERSION}-alpha.*" HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE ARMIX_EXACT_SOURCE_TAG
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE ARMIX_EXACT_TAG_STATUS ERROR_QUIET)
+  if(ARMIX_EXACT_TAG_STATUS EQUAL 0 AND
+     ARMIX_EXACT_SOURCE_TAG MATCHES "${ARMIX_RELEASE_TAG_PATTERN}")
+    string(SUBSTRING "${ARMIX_EXACT_SOURCE_TAG}" 1 -1 ARMIX_APP_VERSION)
+  elseif(ARMIX_BUILD_SOURCE_SHA MATCHES "^[0-9a-f]+$")
+    string(SUBSTRING "${ARMIX_BUILD_SOURCE_SHA}" 0 8 ARMIX_BUILD_SHORT_SHA)
+    set(ARMIX_APP_VERSION "${PROJECT_VERSION}-dev+g${ARMIX_BUILD_SHORT_SHA}")
+  endif()
+endif()
+message(STATUS "ArSonMix executable version: ${ARMIX_APP_VERSION}")
 # One JUCE mixer/PCM host on all three desktops. Device backends are OS owned.
 target_compile_definitions(ARMixConsole PRIVATE
     JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
-    JUCE_APPLICATION_VERSION_STRING="0.5.0-p2"
+    JUCE_APPLICATION_VERSION_STRING="${ARMIX_APP_VERSION}"
     ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}")
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
