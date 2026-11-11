@@ -1882,3 +1882,10 @@ test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
  assert.match(css,/external-out-state\[data-status="MUTED"\]/);
 });
+
+test("O2 SHARED output means two or more ChannelIds, not one",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
+ assert.match(bridge,/const shared=Array\.isArray\(hardware\?\.raw\?\.externalOutputs\)/);
+ assert.doesNotMatch(bridge,/shared\?" · SHARED "\+shared/);
+});
