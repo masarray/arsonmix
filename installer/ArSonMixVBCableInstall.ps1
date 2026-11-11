@@ -38,8 +38,10 @@ try {
   $all=@(Get-PnpDevice -ErrorAction Stop | Where-Object $isCable)
   $present=@(Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object $isCable)
   if($null -ne $previous -and $previous.state -eq 'PENDING_REBOOT'){
-    if([string]::IsNullOrWhiteSpace($previous.bootUtc) -or
-       $previous.bootUtc -eq $script:bootUtc){
+    $bootProperty=$previous.PSObject.Properties['bootUtc']
+    if($null -eq $bootProperty -or
+       [string]::IsNullOrWhiteSpace([string]$bootProperty.Value) -or
+       [string]$bootProperty.Value -eq $script:bootUtc){
       Record "PENDING_REBOOT" "Restart Windows to complete the already-launched VB-CABLE installation"
       exit 0
     }
