@@ -309,6 +309,45 @@ static void renderAb(const Wave& input,const fs::path& folder){
     writeWave(folder/"14_low_backing_only.wav",lowStem);
     writeWave(folder/"15_mid_backing_only.wav",midStem);
     writeWave(folder/"16_high_backing_only.wav",highStem);
+    // Product P1 audition: true harmonic DUO vs a separate SAME-MELODY
+    // unison DOUBLER. Both use the identical original vocal and exact dry/PDC.
+    // No new audio graph or hidden GUI playback path is involved.
+    auto duoSettings=settings;
+    duoSettings.voices=2;
+    duoSettings.voiceMode=0;
+    auto doubleSettings=duoSettings;
+    doubleSettings.voiceMode=1;
+    auto duoDrySettings=duoSettings;
+    duoDrySettings.wet=0.f;
+    auto doublerDrySettings=doubleSettings;
+    doublerDrySettings.wet=0.f;
+    if(!same(process(input,duoDrySettings,true),dry)||
+       !same(process(input,doublerDrySettings,true),dry))
+        throw std::runtime_error("Duo/Doubler Wet0 changed source lead or PDC");
+    const Wave duoMix=process(input,duoSettings,true);
+    const Wave doublerMix=process(input,doubleSettings,true);
+    const Wave duoBacking=subtract(duoMix,dry);
+    const Wave doublerBacking=subtract(doublerMix,dry);
+    writeWave(folder/"17_duo_mix.wav",duoMix);
+    writeWave(folder/"18_duo_backing_only.wav",duoBacking);
+    writeWave(folder/"19_doubler_mix.wav",doublerMix);
+    writeWave(folder/"20_doubler_backing_only.wav",doublerBacking);
+    {
+        std::ofstream metrics(folder/"m7_duo_doubler_comparison.json");
+        if(!metrics)throw std::runtime_error("Duo/Doubler report open failed");
+        metrics<<"{\n  \"sampleRate\": "<<input.rate
+               <<",\n  \"frames\": "<<input.left.size()
+               <<",\n  \"duoBackingRms\": "<<rms(duoBacking)
+               <<",\n  \"doublerBackingRms\": "<<rms(doublerBacking)
+               <<",\n  \"modeDifferenceRms\": "
+               <<rms(subtract(duoBacking,doublerBacking))
+               <<",\n  \"leadPitchTuneEnabled\": false"
+               <<",\n  \"duoVoiceCount\": 2"
+               <<",\n  \"doublerUnisonTakeCount\": 1"
+               <<",\n  \"realSingerQualified\": false"
+               <<",\n  \"physicalAsioQualified\": false\n}\n";
+        if(!metrics)throw std::runtime_error("Duo/Doubler report write failed");
+    }
     writeWave(folder/"05_new_mono_fold.wav",fold(modern));
     writeWave(folder/"08_previous_depth_space_060.wav",previousDepth);
     writeWave(folder/"09_previous_backing_only.wav",subtract(previousDepth,dry));
@@ -374,6 +413,19 @@ int main(int argc,char** argv){
                 parts+=std::abs(highRole.left[i])+std::abs(highRole.right[i]);
             }
             if(!(parts>10.))return 7;
+            // Native PCM proves 2 pitched DUO and 1 unison DOUBLER
+            // are genuinely different; Wet0 remains exact delayed dry.
+            Settings duo=s;duo.voices=2;duo.voiceMode=0;duo.wet=.75f;
+            Settings doubler=duo;doubler.voiceMode=1;
+            const auto duoMix=process(v,duo,true);
+            const auto doubleMix=process(v,doubler,true);
+            auto modeDry=duo;modeDry.wet=0.f;
+            const auto modeReference=process(v,modeDry,true);
+            auto doublerDry=doubler;doublerDry.wet=0.f;
+            if(!same(modeReference,process(v,doublerDry,true)))return 12;
+            if(!(rms(subtract(duoMix,modeReference))>.0001&&
+                 rms(subtract(doubleMix,modeReference))>.0001&&
+                 rms(subtract(duoMix,doubleMix))>.0001))return 13;
             s.wet=1.f;s.space=.6f;s.voices=4;
             const auto baseline=process(v,s,true,127,true,true,false);
             const auto boosted=process(v,s,true,127,true,true,true);
