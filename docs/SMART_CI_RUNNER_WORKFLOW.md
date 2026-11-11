@@ -2,6 +2,24 @@
 
 **Binding fast-delivery update (2026-11-09):** [Autonomous Fast Delivery Contract](AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md) is the operative agent behavior. Develop independently while quick CI runs; do not convert the M0 source audit into a separate PR/reviewer gate; one product PR and meaningful revisions; first working ArSon Player MVP gets one exact-SHA `ui + fat` (fat already includes native) for an early testable installer. No repeated Windows/Chromium on each push. Preserve current secure owner-only dispatcher, exact SHA/required tests, release and physical FAT safety. **No changes to Actions workflow code are necessary unless a measured bottleneck is found.**
 
+
+## 2026-11-12: single paid Windows milestone and fail-closed artifact economy
+
+**Incident:** two owner-dispatched full MSVC/CTest Windows jobs (one `native`, one `fat`) overlapped on ArSonMix PR #579. Both rebuilt the complete JUCE application from scratch, and the FAT job then re-compressed already-compressed Inno/ZIP archives for GitHub upload. This cost time without independent qualification value. Source: [native run 43093641494](https://github.com/masarray/arsonmix/actions/runs/43093641494) and [FAT run 43094957798](https://github.com/masarray/arsonmix/actions/runs/43094957798).
+
+**Binding practice / no redundant Windows runner:**
+
+1. For any feature that requires an installer or field-test executable, send **`fat` only**, never `native` followed by `fat`. `fat` includes **full Windows MSVC, full CTest, source/artifact exact-SHA verification, official VB-CABLE verification, Inno installation/upgrade and upload**. GUI requires its own one-time `ui` visual gate where appropriate.
+2. For device/DSP fixes **without** any consumer artifact requirement, send **`native` only**, using the same full native tests but without installer packaging. Draft/PR pushes always get cheap Linux source-contract CI first.
+3. All Windows owner comments dispatch the **reviewed main workflow** with `inputs.expected_sha` set to the authentic PR head and `inputs.request_pr_number` set by the owner-verified dispatcher. The checkout/verifier uses expected source SHA, **not** main's `github.sha`. The public run title contains `ArSonMix FAT/NATIVE PR# SHA` to distinguish two independent runs from identical workflow-ref SHA.
+4. The dispatcher deduplicates one native/FAT lane per exact PR+source SHA. If a FAT is active for the PR, no other expensive Windows lane may start. If a FAT is requested while native is still active for **that same verified PR**, the dispatcher cancels only the obsolete native build through the GitHub Actions API before dispatching FAT. It never cancels a FAT or another PR's worker.
+5. FAT/manual runs are immutable even if a PR receives new commits; a new source SHA requires new qualification and is not mislabeled as the old artifact. Native-only runs of the same PR may supersede older native runs. Failed same-SHA FAT is **not automatically rebuilt**; repair code on a new commit or use GitHub's *failed-jobs retry* after diagnosing a transient external failure.
+6. Installer EXE, Inno setup and FAT ZIP are already compressed. Upload with `compression-level: 0`; retain complete artifact bytes, manifest, SHA256 checks and 14-day artifact retention. This is a packaging overhead optimization, **not** a skipped verification step. No expensive Windows worker runs on a prose-only change.
+
+**Source of truth for gate:** `scripts/chat_ci_dispatch.mjs` and `tests/chat_ci_dispatch_contract.test.mjs` must pass together. `p1-windows.yml` retains `Build executable and native RT tests`, `Test realtime control primitives`, `verify_native_windows_artifact.ps1`, `build_verify_windows_installer.ps1` and two real artifact uploads. Do not claim field ASIO listening or public RC release on CI evidence alone.
+
+**Backward compatibility:** Run names from workflows predating this rule may not contain the verified PR number and checkout SHA. They are *not* treated as evidence for another source commit. Do not re-dispatch the still-active legacy run while it is producing an exact-SHA FAT ZIP; inspect its actual run and artifact status first.
+
 ## Mandatory start for a new ChatGPT / Codex thread
 
 1. Open [root AGENTS.md](../AGENTS.md) and this runbook from **current
