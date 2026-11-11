@@ -799,7 +799,7 @@
       t.externalOutput=value;
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
-      if(!select)continue;
+      if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
       const labels=choices.map(p=>p.label);
       if(!labels.includes(value))labels.push(value);
       const signature=labels.join("|");
