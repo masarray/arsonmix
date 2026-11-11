@@ -2,7 +2,7 @@
 
 Status: CURRENT ORIENTATION (audit 2026-11-11). This document describes verified repository source and the proposed ownership model; it does NOT certify the installed Windows application or physical audio. Refresh current main/PR HEAD before changing code.
 
-**Feature implementation:** [Hotkey Register + FL Studio External OUT execution contract](FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md) · [Hotkey/output next-thread prompt](HOTKEY_OUTPUT_NEXT_THREAD_PROMPT_20261111.md). These are research-backed implementation workpacks; neither feature is shipped until native/audio/FAT evidence proves it.
+**Feature milestone status:** H1 hotkeys [MERGED #536](https://github.com/masarray/arsonmix/pull/536), H2 VST3 parameter hotkeys [MERGED #551](https://github.com/masarray/arsonmix/pull/551), exact integrated Windows native **86/86 CTest PASS**; independent physical/vendor field FAT remains pending. O1/O2 FL-style physical multi-output is **NOT IMPLEMENTED**. Use the [O-only execution handoff](MILESTONE_O_MULTIOUTPUT_NEW_THREAD_20261111.md) and [complete technical contract](FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md).
 
 **Entry points:** [Execution blueprint](MAINTAINABILITY_EXECUTION_V1_20261111.md) · [Fast feature playbook](FEATURE_EXTENSION_PLAYBOOK.md) · [Next-thread prompt](NEXT_THREAD_EXECUTION_PROMPT.md) · [Issue #527](https://github.com/masarray/arsonmix/issues/527).
 

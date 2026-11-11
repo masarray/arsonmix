@@ -1,7 +1,7 @@
 # ArSonMix — Hotkey Register & FL Studio External OUT
 ## Verified UX Research + Engineering Execution Blueprint — 2026-11-11
 
-**Status: USER-APPROVED DIRECTION / NOT IMPLEMENTED / PHYSICAL FAT PENDING.**
+**Status update 2026-11-11: H1 MERGED (#536), H2 MERGED (#551), H2 integration Windows 86/86 CTest PASS; O1/O2 PHYSICAL MULTI-OUTPUT NOT IMPLEMENTED, REAL ASIO FAT PENDING.** For O-only work use [new-thread execution handoff](MILESTONE_O_MULTIOUTPUT_NEW_THREAD_20261111.md). The original research/acceptance contract remains binding.
 **Audited source:** main a07b16e1c6f04473d328ddd1deab607774375ee3; refresh main and PRs before coding.
 **Authority:** AGENTS.md, architecture/README.md, MAINTAINABILITY_EXECUTION_V1_20261111.md, FEATURE_EXTENSION_PLAYBOOK.md. Preserve exactly one assembled /preview/ GUI, one installed ChannelId/EdgeId native PCM graph and JUCE callback, one native ACK/readback truth. This document is a product feature workpack, not a new engine proposal or an additional approval gate.
 
