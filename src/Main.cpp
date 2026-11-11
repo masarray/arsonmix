@@ -1699,6 +1699,13 @@ private:
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
                 live.getProperty("dryRoutingLab",{}).getProperty("externalOutputs",{}));
+            obj->setProperty("externalRevision",
+                live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
+                    .getProperty("graphRevision",{}));
+            obj->setProperty("physicalMainOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+            obj->setProperty("physicalMonitorOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("monitorOutputs",{}));
         }
         return accepted;
     }
