@@ -316,6 +316,8 @@ def main():
                 assert float(after["offset"])<float(before["offset"]),(before,after)
                 assert after["transform"]!=before["transform"]
                 assert after["bg"]==before["bg"],"knob chassis must not rotate"
+                # Wheel burst sends one bounded native intent after 95ms.
+                page.wait_for_timeout(140)
                 rotary=last(page,"nativeThrowSet")
                 assert rotary["settings"]["wet"]>.42 and rotary["settings"]["wet"]<=.44
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":rotary["requestId"],"status":"QUEUED"})
