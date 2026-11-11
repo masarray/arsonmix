@@ -195,6 +195,14 @@ if(BUILD_TESTING)
   add_test(NAME BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen
       COMMAND ARMixBuiltInFxAcceptedSnapshotTests)
 
+  # Pure control-plane first-run routing selection: no JUCE, drivers,
+  # WASAPI activation or callback dependencies. Full Windows CTest gate.
+  add_executable(ARMixFirstRunEndpointPolicyTests
+      tests/first_run_endpoint_policy_test.cpp
+      engine/device/FirstRunEndpointPolicy.h)
+  target_compile_features(ARMixFirstRunEndpointPolicyTests PRIVATE cxx_std_20)
+  add_test(NAME NativeFirstRunVBCAblePhysicalOutputIdentityAndASIOPreservation
+      COMMAND ARMixFirstRunEndpointPolicyTests)
   add_executable(ARMixFxStructuralHandoffTests tests/live_fx_structural_handoff_test.cpp)
   target_compile_features(ARMixFxStructuralHandoffTests PRIVATE cxx_std_20)
   add_test(NAME R0BStructuralFxAckAndControlThreadRetirement COMMAND ARMixFxStructuralHandoffTests)
