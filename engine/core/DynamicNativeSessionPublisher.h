@@ -166,7 +166,9 @@ public:
                 float* monitorL=nullptr,float* monitorR=nullptr,
                 std::span<float> channelPeaksL={},
                 std::span<float> channelPeaksR={},
-                std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
+                std::span<const DynamicPlayerPcmBlock> playerPcm={},
+                float* const* hardwareOutputs=nullptr,
+                int hardwareOutputCount=0) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -225,7 +227,8 @@ public:
         };
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
-             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm);
+             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
+              hardwareOutputs,hardwareOutputCount);
         if(!ok)clearOutputs();
         return ok;
     }
@@ -256,6 +259,21 @@ public:
         std::uint64_t epoch,std::uint64_t revision) const noexcept {
         const auto* current=publisher_.controlPrepared(epoch,revision);
         return current?&current->routing:nullptr;
+    }
+
+    // O1 CONTROL only: one epoch/revision-guarded target in the same PCM graph.
+    // Caller validates actual driver pins and MAIN/MONITOR collision first.
+    bool setExternalOutput(std::uint64_t epoch,std::uint64_t revision,
+                           ChannelId id,int left,int right,int outputCount) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setExternalOutput(id,left,right,outputCount);
+            });
+    }
+    std::pair<int,int> externalOutput(std::uint64_t epoch,
+                std::uint64_t revision,ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.externalOutput(id):std::pair<int,int>{-1,-1};
     }
 
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
