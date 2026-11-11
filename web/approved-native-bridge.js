@@ -518,8 +518,9 @@
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
       const pair=direct && hardwareOutputPairs().find(p=>
         p.left===direct.physicalLeft&&p.right===direct.physicalRight);
-      t.externalOutput=direct?(direct.status==="LIVE"&&pair?
-        pair.label:"Needs Remap · OUT "+(direct.physicalLeft+1)+"/"+(direct.physicalRight+1)):"None";
+      t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
+        (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
+        "OUT "+(direct.physicalLeft+1)+"/"+(direct.physicalRight+1)):"None";
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
@@ -793,9 +794,11 @@
       const match=row&&choices.find(p=>p.left===row.physicalLeft &&
         p.right===row.physicalRight);
       const state=row?.status==="LIVE"&&match?"LIVE":
+        row?.status==="PENDING"&&match?"PENDING":
         row?"NEEDS_REMAP":"NONE";
       const value=row?(state==="LIVE"?match.label:
-        "Needs Remap · OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
+        (state==="PENDING"?"Pending · ":"Needs Remap · ")+
+         "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
       t.externalOutput=value;
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
@@ -812,7 +815,8 @@
       }
       if(select.value!==value)select.value=value;
       select.dataset.status=state;
-      select.title=state==="NEEDS_REMAP"?
+      select.title=state==="PENDING"?"Native PCM pending · wait for audio callback":
+        state==="NEEDS_REMAP"?
         "Saved physical output disarmed; choose a verified ASIO pair":
         state==="LIVE"?"LIVE · independent native post-fader PCM":
         "None · internal WIRE remains unchanged";
