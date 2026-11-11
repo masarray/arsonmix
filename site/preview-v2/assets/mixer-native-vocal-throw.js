@@ -138,8 +138,8 @@ function syncPower(){
  btn.setAttribute("aria-pressed",String(value==="on"));
  btn.setAttribute("aria-label",btn.title);
  // A wheel-driven SET must never toggle the performance disc's grayscale.
- // The native trigger path already refuses simultaneous requests.
- $("vtThrow").disabled=value!=="on";
+ // Only a real trigger waits for its AUDIO ACK. A wheel SET may not dim this disc.
+ $("vtThrow").disabled=value!=="on"||pending?.command==="nativeThrowTrigger";
  $("vtThrow").setAttribute("aria-busy",String(!!pending));
  $("vtStatus").textContent=value==="on"?
   ($("vtThrow").dataset.tail==="true"?"TAIL":"LIVE"):
