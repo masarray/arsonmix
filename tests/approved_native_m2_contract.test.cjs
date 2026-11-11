@@ -27,6 +27,39 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("M5 rejected FX intents update observable native status without emitting or repainting PCM",()=>{
+ const s=acceptedFixture();
+ const ch=s.graph.channels[0];
+ ch.inserts=[{id:"fx-stable-instance-1",catalogId:"armix.builtin.channel-eq.v1"}];
+ s.graph.capabilities.supportedOps.push("REMOVE_INSERT","MOVE_INSERT");
+ const emitted=[],notifications=[];
+ const control=protocol.createController({
+  emit:(name,payload)=>emitted.push({name,payload}),
+  onStatus:value=>notifications.push(value)
+ });
+ assert.equal(control.onSnapshot(s),true);
+ const before=control.state().current;
+ assert.ok(before?.admitted);
+ const check=(result,expected)=>{
+  assert.deepEqual(result,{ok:false,error:expected});
+  assert.equal(control.state().lastError,expected);
+  assert.equal(notifications.at(-1).lastError,expected);
+  assert.equal(control.state().pending,null);
+  assert.equal(control.state().current,before);
+  assert.equal(emitted.length,0,"rejected edit must never reach native dispatcher");
+ };
+ check(control.intent("REMOVE_INSERT",ch.id,{slot:0,instanceId:"wrong-instance"}),
+       "STALE_FX_INSTANCE");
+ check(control.intent("MOVE_INSERT",ch.id,{
+  slot:0,instanceId:"fx-stable-instance-1",toChannelId:s.graph.mainChannelId,toSlot:9
+ }),"INVALID_FX_DESTINATION");
+ check(control.intent("MOVE_INSERT",ch.id,{
+  slot:0,instanceId:"fx-stable-instance-1",toChannelId:"0",toSlot:0
+ }),"INVALID_FX_DESTINATION");
+ check(control.intent("SET_FADER",ch.id,[]),"INVALID_PAYLOAD");
+ check(control.intent("UNSUPPORTED_OP",ch.id,{}),"UNSUPPORTED_OR_UNADMITTED");
+ assert.ok(notifications.length>=6,"all refusals are published to the existing UI");
+});
 test("G0 current JUCE device snapshot is valid, never ChannelId PCM LIVE",()=>{
  const s=protocol.normalizeSnapshot(fixtures.g0);
  assert.ok(s);assert.equal(s.admitted,false);

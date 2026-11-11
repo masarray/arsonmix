@@ -331,21 +331,28 @@
       }
       notify();return true;
     }
+    // One negative-intent path: a rejected UI command MUST update the same
+    // observable controller status as a native rejection, without emitting
+    // an intent, changing the accepted graph, or stranding a pending request.
+    const refuseIntent = error => {
+      lastError=error;notify();
+      return {ok:false,error};
+    };
     function intent(operation,targetChannelId,payload={}) {
       if (!current || !current.admitted || !current.graph.capabilities.supportedOps.includes(operation)) {
-        lastError="UNSUPPORTED_OR_UNADMITTED";notify();return {ok:false,error:lastError};
+        return refuseIntent("UNSUPPORTED_OR_UNADMITTED");
       }
-      if (pending) {lastError="PENDING_NATIVE_ACK";notify();return {ok:false,error:lastError};}
+      if (pending) return refuseIntent("PENDING_NATIVE_ACK");
       if (decimal(targetChannelId) === null || !current.graph.channels.some(ch => ch.id === targetChannelId)) {
-        lastError="UNKNOWN_CHANNEL_ID";notify();return {ok:false,error:lastError};
+        return refuseIntent("UNKNOWN_CHANNEL_ID");
       }
-      if (!object(payload)) {lastError="INVALID_PAYLOAD";notify();return {ok:false,error:lastError};}
+      if (!object(payload)) return refuseIntent("INVALID_PAYLOAD");
       let fxExpected=null;
       if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
         const source=current.graph.channels.find(c=>c.id===targetChannelId);
         const slot=payload.slot,token=payload.instanceId;
         if(!Number.isInteger(slot)||slot<0||source?.inserts?.[slot]?.id!==token)
-          return {ok:false,error:"STALE_FX_INSTANCE"};
+          return refuseIntent("STALE_FX_INSTANCE");
         const ids=source.inserts.map(x=>x.id);ids.splice(slot,1);
         fxExpected={source:ids};
         if(operation==="MOVE_INSERT") {
@@ -354,7 +361,7 @@
           const list=same?ids:dest?.inserts?.map(x=>x.id);
           if(!dest||!["INPUT","GROUP","FX_RETURN","MAIN"].includes(dest.role)||
              !list||list.length>=8||!Number.isInteger(pos)||pos<0||pos>list.length)
-            return {ok:false,error:"INVALID_FX_DESTINATION"};
+            return refuseIntent("INVALID_FX_DESTINATION");
           list.splice(pos,0,token);
           if(!same){fxExpected.to=dest.id;fxExpected.destination=list;}
         }
@@ -364,7 +371,7 @@
         const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
         if(!edge||edge.primaryOutput!==false||!Number.isFinite(payload.gainLinear)||
            payload.gainLinear<0||payload.gainLinear>4) {
-          lastError="INVALID_WIRE_GAIN_TARGET";notify();return {ok:false,error:lastError};
+          return refuseIntent("INVALID_WIRE_GAIN_TARGET");
         }
         wireIdentity={to:edge.to,tap:edge.tap};
       }
