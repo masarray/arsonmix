@@ -1666,8 +1666,17 @@ test("native FX remove/reorder/transfer requires exact token, ACK and ordered re
  c.onAck({requestId:request.requestId,status:'ACCEPTED',errorCode:'NONE',deviceEpoch:t.base.device.epoch,graphRevision:'6',rosterRevision:'8'});
  const wrong=clone(t.base);wrong.graph.revision='6';wrong.graph.rosterRevision='8';
  wrong.graph.channels[1].inserts.push(clone(wrong.graph.channels[0].inserts[0]));
- assert.equal(c.onSnapshot(wrong),false,'name/token copy cannot masquerade as MOVE');
+ assert.equal(c.onSnapshot(wrong),false,'duplicate live token is invalid native schema');
+ assert.equal(c.state().lastError,'INVALID_NATIVE_SNAPSHOT');
+ assert.equal(c.state().pending?.requestId,request.requestId,
+   'invalid transport snapshot must not consume the accepted native ACK');
+ const wrongEffect=clone(t.base);
+ wrongEffect.graph.revision='6';wrongEffect.graph.rosterRevision='8';
+ wrongEffect.graph.channels[0].inserts.reverse();
+ assert.equal(c.onSnapshot(wrongEffect),false,
+   'valid but wrong FX order cannot masquerade as MOVE');
  assert.equal(c.state().lastError,'ACK_READBACK_EFFECT_MISMATCH');
+ assert.equal(c.state().pending,null);
 });
 
 test("native vendor editor retention follows current PCM ownership, not inactive M4 slots",()=>{
