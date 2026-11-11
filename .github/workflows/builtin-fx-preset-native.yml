@@ -7,6 +7,11 @@ on:
       - 'tests/builtin_fx_user_preset_store_test.cpp'
       - 'src/BuiltInFxAcceptedSnapshot.h'
       - 'tests/builtin_fx_accepted_snapshot_test.cpp'
+      - 'engine/builtin_fx/ChannelEq.h'
+      - 'engine/builtin_fx/ChannelEqProcessor.h'
+      - 'engine/builtin_fx/ChannelCompressorProcessor.h'
+      - 'engine/builtin_fx/ChannelHarmonyProcessor.h'
+      - 'engine/builtin_fx/VocalThrowProcessor.h'
       - '.github/workflows/builtin-fx-preset-native.yml'
       - 'CMakeLists.txt'
 
@@ -18,8 +23,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Verify tip commit actually changed native preset sources
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.diff.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - name: Check current tip delta, not entire historical PR
+        id: diff
+        shell: bash
+        env:
+          PR_ACTION: ${{ github.event.action }}
+        run: |
+          if [[ "$PR_ACTION" != "synchronize" ]] || ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD^ HEAD -- \
+             CMakeLists.txt src/BuiltInFxUserPresetStore.h \
+             src/BuiltInFxAcceptedSnapshot.h \
+             tests/builtin_fx_user_preset_store_test.cpp \
+             tests/builtin_fx_accepted_snapshot_test.cpp \
+             engine/builtin_fx/ChannelEq.h \
+             engine/builtin_fx/ChannelEqProcessor.h \
+             engine/builtin_fx/ChannelCompressorProcessor.h \
+             engine/builtin_fx/ChannelHarmonyProcessor.h \
+             engine/builtin_fx/VocalThrowProcessor.h \
+             .github/workflows/builtin-fx-preset-native.yml | grep -q .; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo 'No native preset target changes at HEAD; Windows CTest already qualified earlier'
+          fi
+
   native-preset:
     name: Windows MSVC two-target disk + accepted DSP CTest (Release)
+    needs: scope
+    if: ${{ needs.scope.outputs.build == 'true' }}
     runs-on: windows-2022
     timeout-minutes: 22
     steps:
