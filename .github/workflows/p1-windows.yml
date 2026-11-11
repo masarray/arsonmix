@@ -430,6 +430,9 @@ jobs:
       - name: Prove two authentic historical Inno releases upgrade and roll back
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
+        env:
+          # Per-job contents:read; do not forward to asset redirect URLs.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           & ./scripts/test_two_genuine_inno_releases_windows.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -166,15 +166,24 @@ public:
                 float* monitorL=nullptr,float* monitorR=nullptr,
                 std::span<float> channelPeaksL={},
                 std::span<float> channelPeaksR={},
-                std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
+                std::span<const DynamicPlayerPcmBlock> playerPcm={},
+                float* const* hardwareOutputs=nullptr,
+                int hardwareOutputCount=0) noexcept {
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
-            if(frames>0 && mainL)std::fill_n(mainL,frames,0.f);
-            if(frames>0 && mainR && mainR!=mainL)std::fill_n(mainR,frames,0.f);
-            if(frames>0 && monitorL)std::fill_n(monitorL,frames,0.f);
-            if(frames>0 && monitorR && monitorR!=monitorL)
-                std::fill_n(monitorR,frames,0.f);
+            // A rejected/stale/muted native render must silence *every*
+            // ASIO destination, not only MAIN/MONITOR. Otherwise a previous
+            // external tap can remain in a driver-provided output buffer.
+            // Bounded callback-ordinal traversal; no allocations or locks.
+            if(frames<=0 || frames>8192)return;
+            if(hardwareOutputs && hardwareOutputCount>0 && hardwareOutputCount<=256)
+                for(int c=0;c<hardwareOutputCount;++c)
+                    if(hardwareOutputs[c])std::fill_n(hardwareOutputs[c],frames,0.f);
+            if(mainL)std::fill_n(mainL,frames,0.f);
+            if(mainR && mainR!=mainL)std::fill_n(mainR,frames,0.f);
+            if(monitorL)std::fill_n(monitorL,frames,0.f);
+            if(monitorR && monitorR!=monitorL)std::fill_n(monitorR,frames,0.f);
         };
         if(frames<=0 || frames>8192 || !mainL || !mainR ||
            mainL==mainR || physicalCount<0 || physicalCount>256 ||
@@ -196,6 +205,11 @@ public:
            physicalCount!=snap->prepared->physicalInputs ||
            (snap->prepared->monitor && !monitorL) ||
            frames>snap->prepared->graph.capacity()) {
+            // A real, current-epoch callback with a changed input count or
+            // unsafe quantum must not retain last block's EXTERNAL LIVE
+            // readback after every hardware buffer was silenced.
+            if(snap && snap->prepared)
+                snap->prepared->graph.invalidateAppliedExternalOutputs();
             clearOutputs();return false;
         }
         // A single callback producer owns the prepared scratch. In case a
@@ -225,8 +239,16 @@ public:
         };
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
-             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm);
-        if(!ok)clearOutputs();
+             dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
+              hardwareOutputs,hardwareOutputCount);
+        if(!ok) {
+            // A rejected physical callback (including aliased independent
+            // amplifier buffers) emits silence, not a stale LIVE snapshot.
+            // The approved GUI will report PENDING until a later successful
+            // PCM callback re-publishes APPLIED on the same ChannelId graph.
+            snap->prepared->graph.invalidateAppliedExternalOutputs();
+            clearOutputs();
+        }
         return ok;
     }
 
@@ -256,6 +278,27 @@ public:
         std::uint64_t epoch,std::uint64_t revision) const noexcept {
         const auto* current=publisher_.controlPrepared(epoch,revision);
         return current?&current->routing:nullptr;
+    }
+
+    // O1 CONTROL only: one epoch/revision-guarded target in the same PCM graph.
+    // Caller validates actual driver pins and MAIN/MONITOR collision first.
+    bool setExternalOutput(std::uint64_t epoch,std::uint64_t revision,
+                           ChannelId id,int left,int right,int outputCount) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setExternalOutput(id,left,right,outputCount);
+            });
+    }
+    std::pair<int,int> externalOutput(std::uint64_t epoch,
+                std::uint64_t revision,ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.externalOutput(id):std::pair<int,int>{-1,-1};
+    }
+
+    std::pair<int,int> appliedExternalOutput(std::uint64_t epoch,
+                std::uint64_t revision,ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.appliedExternalOutput(id):std::pair<int,int>{-1,-1};
     }
 
     // M3C realtime parameters on the accepted ChannelId graph ONLY.

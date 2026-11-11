@@ -801,7 +801,8 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
  assert.match(bridge,/const virtualCableFeedbackPair=/);
  const native=read("src/Main.cpp");
- assert.match(native,/if\(engine_\.liveOutputArmFault\(autoMainRequiresInput_\)\.isNotEmpty\(\)\)return;/);
+ assert.match(native,/const bool requireInput=autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
+ assert.match(native,/if\(engine_\.liveOutputArmFault\(requireInput\)\.isNotEmpty\(\)\)return;/);
  assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
@@ -1834,4 +1835,124 @@ test("M5 native operator status renders useful actions without exposing internal
  f("Native routing rejected");f("PENDING_NATIVE_ACK");
  assert.deepEqual(state,before);
  assert.ok(protocol.normalizeSnapshot(state).admitted);
+});
+
+
+test("O2 independent per-track external ASIO transactions and clear rejected ACK",()=>{
+ const src=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(src,/const pendingExternal=new Map\(\)/);
+ assert.match(src,/pendingExternal\.has\(id\)/);
+ assert.match(src,/pendingExternal\.set\(id,/);
+ assert.match(src,/pendingExternal\.delete\(id\)/);
+ assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/SHARED with /);
+ assert.match(src,/signals SUM/);
+ assert.match(builder,/external-out-state/);
+});
+
+test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Monitor click",()=>{
+ const native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
+ const routing=read("src/LiveDryRoutingLab.h");
+ const start=native.indexOf('if(action=="routingExternalOutput")');
+ const end=native.indexOf('if(action=="routingChannelPatch")',start);
+ assert.ok(start>=0&&end>start,"real native external-output action is present");
+ const control=native.slice(start,end);
+ assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
+ assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
+ assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
+ assert.match(native,/operatorOutputMuted_=!arm; \/\/ an explicit user control/);
+ assert.match(native,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(native,/autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
+ assert.match(engine,/bool hasVerifiedExternalOutputIntent\(\) const noexcept/);
+ assert.match(routing,/externalOutputEpoch_!=epoch\(\)/);
+ assert.match(routing,/externalOutputVerified_\.empty\(\)/);
+ assert.doesNotMatch(control,/setMonitorEnabled\(true\)|setOutputMuted\(false\)/,
+     "Control delegates one-shot automatic output acceptance, not blind arm");
+});
+
+test("O2 external OUT never reports LIVE while driver output is muted",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const css=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/const pcmInstalled=row\?\.status==="LIVE"&&match/);
+ assert.match(bridge,/next\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
+ assert.match(bridge,/state==="MUTED"\?"ASIO pair connected/);
+ assert.match(bridge,/state==="LIVE"\|\|state==="MUTED"/);
+ assert.match(bridge,/EXTERNAL OUT patched · hardware output muted/);
+ assert.match(css,/external-out-state\[data-status="MUTED"\]/);
+});
+
+test("O2 SHARED output means two or more ChannelIds, not one",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/shared>1\?" · SHARED "\+shared\+" SOURCES"/);
+ assert.match(bridge,/const shared=Array\.isArray\(hardware\?\.raw\?\.externalOutputs\)/);
+ assert.doesNotMatch(bridge,/shared\?" · SHARED "\+shared/);
+});
+
+test("O3 OUTPUTS overview reflects real ASIO 8-pin ownership and callback status",()=>{
+  const state=acceptedFixture(),voice=state.graph.channels[0].id;
+  state.device.backend="ASIO";
+  state.device.outputArmed=true;
+  state.device.enabledOutputs=[0,1,2,3,4,5,6,7];
+  state.device.outputEndpoints=state.device.enabledOutputs.map(n=>({
+    id:"out:"+n,port:n,callback:n,label:"ASIO "+(n+1),active:true
+  }));
+  const group=(id,name)=>({id,name,role:"GROUP",processingFormat:"STEREO",
+    controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]});
+  state.graph.channels.splice(1,0,group("9007199254740994","Music Bus"),
+    group("9007199254740995","Monitor Bus"));
+  state.physicalMainOutputs=[0,1];
+  state.physicalMonitorOutputs=[2,3];
+  state.externalOutputs=[
+    {channelId:voice,physicalLeft:4,physicalRight:5,status:"LIVE"},
+    {channelId:"9007199254740994",physicalLeft:6,physicalRight:7,status:"LIVE"},
+    {channelId:"9007199254740995",physicalLeft:6,physicalRight:7,status:"LIVE"}
+  ];
+  const read=()=>protocol.physicalOutputOverview(protocol.normalizeSnapshot(state));
+  let out=read();
+  assert.equal(out.length,4);
+  assert.deepEqual(out.map(row=>row.pair),["OUT 1/2","OUT 3/4","OUT 5/6","OUT 7/8"]);
+  assert.equal(out[0].role,"MAIN");
+  assert.equal(out[1].role,"MONITOR");
+  assert.equal(out[2].status,"LIVE");
+  assert.equal(out[2].owners,"Vocal");
+  assert.equal(out[2].shared,1,"single source must never be called SHARED");
+  assert.equal(out[3].status,"LIVE");
+  assert.equal(out[3].shared,2);
+  assert.match(out[3].owners,/Music Bus \+ Monitor Bus/);
+  state.device.outputArmed=false;
+  out=read();
+  assert.equal(out[0].status,"MUTED");
+  assert.equal(out[2].status,"MUTED");
+  assert.equal(out[3].status,"MUTED");
+  assert.equal(out[3].shared,2,"verified patch ownership persists through mute");
+  state.device.outputArmed=true;
+  state.externalOutputs[2].status="PENDING";
+  out=read();
+  assert.equal(out[3].shared,1,"pending patch is not already installed PCM");
+  state.externalOutputs[1].status="NEEDS_REMAP";
+  out=read();
+  assert.equal(out[3].status,"PENDING");
+  assert.equal(out[3].shared,0);
+  state.device.outputEndpoints[7].active=false;
+  out=read();
+  assert.equal(out.find(row=>row.role==="EXTERNAL"&&row.pair==="OUT 7/8").status,
+    "NEEDS_REMAP","disabled physical pin can never be LIVE");
+  state.device.backend="WASAPI";
+  assert.deepEqual(read(),[],"ASIO patch view must not invent WASAPI pairs");
+});
+
+test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/protocol\.physicalOutputOverview\(next\)/);
+  assert.match(bridge,/paintPhysicalOutputs\(next\)/);
+  assert.match(bridge,/paintPhysicalOutputs\(hardware\)/);
+  assert.match(bridge,/class="armix-output-overview" data-audio-output-overview/);
+  assert.match(bridge,/class="armix-output-heading"/);
+  assert.doesNotMatch(bridge,/<details data-audio-output-overview/,
+    "read-only OUTPUTS must not create a second Advanced disclosure");
+  assert.match(bridge,/data-audio-output-matrix role="list"/);
+  assert.match(bridge,/owner\.textContent=patch\.role/);
+  assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);
 });

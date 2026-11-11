@@ -453,6 +453,13 @@
       const target=out&&nativeOutputTargets(t,accepted.channels).find(x=>x.id===out.id);
       if(ch.role!=="MAIN")t.output=out?.role==="MAIN"?"Master":
         (target?.label||"SOURCE ONLY (No Main)");
+      const direct=Array.isArray(native.raw?.externalOutputs)?
+        native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
+      const pair=direct && hardwareOutputPairs().find(p=>
+        p.left===direct.physicalLeft&&p.right===direct.physicalRight);
+      t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
+        (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
+        "OUT "+(direct.physicalLeft+1)+"/"+(direct.physicalRight+1)):"None";
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
@@ -570,6 +577,7 @@
       next.graph.edges.map(e=>[e.edgeId,e.from,e.to,e.tap,e.enabled,e.primaryOutput])]);
     if(structure!==lastNativeTopologySignature){
       if(!projection(next))return false;
+      paintExternalReadback(next);
       lastNativeTopologySignature=structure;
       return true;
     }
@@ -664,6 +672,8 @@
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
   let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let externalSerial=0;
+  const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
   const safeNativeCounter=x=>{
     if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
@@ -690,6 +700,94 @@
   const NEEDS_REMAP="Audio connection lost";
   const monoLabel=p=>"Mono · "+p.label+" [IN "+(p.port+1)+"]";
   const stereoLabel=(a,b)=>"Stereo · IN "+(a.port+1)+" + "+(b.port+1);
+  // Only driver-verified even/odd physical pin pairs (not packed ordinals).
+  // MAIN and MONITOR retain exclusive ownership of their actual pins.
+  const hardwareOutputPairs=()=>{
+    const d=hardware?.device,choices=[{label:"None",left:-1,right:-1}];
+    if(d?.backend!=="ASIO" || !Array.isArray(d.outputEndpoints) ||
+       !Array.isArray(d.enabledOutputs))return choices;
+    const map=new Map(d.outputEndpoints.filter(p=>
+      p.active===true&&Number.isInteger(p.port)&&
+      d.enabledOutputs.includes(p.port)&&
+      typeof p.label==="string"&&p.label.length>0).map(p=>[p.port,p]));
+    const main=Array.isArray(hardware?.raw?.physicalMainOutputs)?
+      hardware.raw.physicalMainOutputs:[];
+    const monitor=Array.isArray(hardware?.raw?.physicalMonitorOutputs)?
+      hardware.raw.physicalMonitorOutputs:[];
+    for(const [left,a] of map) {
+      if(left%2!==0 || !map.has(left+1))continue;
+      const b=map.get(left+1);
+      if(main.includes(left)||main.includes(left+1)||
+         monitor.includes(left)||monitor.includes(left+1))continue;
+      const shared=Array.isArray(hardware?.raw?.externalOutputs)?
+        hardware.raw.externalOutputs.filter(row=>
+          row.physicalLeft===left && row.physicalRight===left+1).length:0;
+      choices.push({label:"OUT "+(left+1)+"/"+(left+2)+" · "+
+        a.label+" + "+b.label+(shared>1?" · SHARED "+shared+" SOURCES":""),
+        left,right:left+1});
+    }
+    return choices;
+  };
+  const paintExternalReadback=(next)=>{
+    const assignments=Array.isArray(next?.raw?.externalOutputs)?
+      next.raw.externalOutputs:[];
+    const choices=hardwareOutputPairs();
+    for(const t of scope?.tracks||[]) {
+      const id=nativeIdFor(t);
+      const row=assignments.find(p=>p.channelId===id);
+      const match=row&&choices.find(p=>p.left===row.physicalLeft &&
+        p.right===row.physicalRight);
+      // Control ACK/applied graph is not audible LIVE while the verified
+      // hardware output is MUTED. Keep patch identity without ghost meters.
+      const pcmInstalled=row?.status==="LIVE"&&match;
+      const state=pcmInstalled?(next?.device?.outputArmed===true?"LIVE":"MUTED"):
+        row?.status==="PENDING"&&match?"PENDING":
+        row?"NEEDS_REMAP":"NONE";
+      const value=row?((state==="LIVE"||state==="MUTED")?match.label:
+        (state==="PENDING"?"Pending · ":"Needs Remap · ")+
+         "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
+      t.externalOutput=value;
+      const select=document.querySelector('.strip[data-id="'+t.id+
+        '"] select[data-field="external"]');
+      if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
+      const labels=choices.map(p=>p.label);
+      if(!labels.includes(value))labels.push(value);
+      const signature=labels.join("|");
+      if(select.dataset.choices!==signature){
+        select.replaceChildren(...labels.map(s=>{
+          const op=document.createElement("option");
+          op.value=op.textContent=s;return op;
+        }));
+        select.dataset.choices=signature;
+      }
+      if(select.value!==value)select.value=value;
+      select.dataset.status=state;
+      const marker=select.parentElement?.querySelector(".external-out-state");
+      if(marker){
+        marker.textContent=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state;
+        marker.dataset.status=state;
+      }
+      select.title=state==="PENDING"?"Native PCM pending · wait for audio callback":
+        state==="NEEDS_REMAP"?
+        "Saved physical output disarmed; choose a verified ASIO pair":
+        state==="MUTED"?"ASIO pair connected · output muted, settings retained":
+        state==="LIVE"?"LIVE · independent native post-fader PCM":
+        "None · internal WIRE remains unchanged";
+      const pending=pendingExternal.get(id);
+      if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
+        pendingExternal.delete(id); // stale device: release only this strip
+      else if(pending?.acked &&
+        (((state==="LIVE"||state==="MUTED") &&
+          row.physicalLeft===pending.left &&
+          row.physicalRight===pending.right) ||
+         (pending.left===-1 && !row))){
+        pendingExternal.delete(id);
+        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
+          "EXTERNAL OUT verified · "+t.name+" → "+value);
+      }
+      if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
+    }
+  };
   const inputChoicesFor=()=>{
     const pins=hardwarePins(),entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
     for(const p of pins)entries.push({
@@ -1627,6 +1725,39 @@
       monitorButton.dataset.armed=String(!!d?.outputArmed);
     }
   }
+  // Output patching is rendered from physical native readback, never a
+  // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
+  function paintPhysicalOutputs(next) {
+    const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
+    if(!view || devicePanel.hidden)return;
+    const patches=protocol.physicalOutputOverview(next);
+    const signature=JSON.stringify(patches);
+    if(devicePanel.dataset.outputSignature===signature)return;
+    devicePanel.dataset.outputSignature=signature;
+    const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
+    if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
+    view.replaceChildren();
+    if(!patches.length){
+      view.textContent="No verified ASIO output pins · choose an ASIO device.";
+      return;
+    }
+    for(const patch of patches){
+      const line=document.createElement("div");
+      line.className="armix-output-row";line.setAttribute("role","listitem");
+      const dest=document.createElement("span");
+      dest.className="armix-output-pair";dest.textContent=patch.pair;
+      const owner=document.createElement("span");
+      owner.className="armix-output-owner";
+      owner.textContent=patch.role+" · "+patch.pins+" · "+patch.owners;
+      const state=document.createElement("span");
+      state.className="armix-output-status";
+      state.dataset.state=patch.status;
+      state.textContent=patch.status.replace("_"," ")+
+        (patch.shared>1?" · SHARED "+patch.shared:"");
+      line.append(dest,owner,state);
+      view.appendChild(line);
+    }
+  }
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -1637,6 +1768,7 @@
     const playback=String(d?.playbackDevice||"unknown output");
     const virtualOut=/VB-Audio Virtual Cable|CABLE Input/i.test(playback);
     syncMonitorButton(d);
+    paintPhysicalOutputs(next);
     const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
       scope.master.output=mainOutput;
@@ -1756,6 +1888,21 @@
         .armix-device-progress span{display:block;margin-top:2px;color:#f2e0bf}
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
+        .armix-audio-dialog{max-height:90vh;overflow:auto}
+        .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
+        .armix-output-heading{color:#c5e1ed;font-weight:500}
+        .armix-output-matrix{max-height:175px;overflow:auto;display:grid;gap:3px;margin:7px 0}
+        .armix-output-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;
+          align-items:center;gap:8px;padding:5px 7px;border-radius:4px;background:#0c202b;
+          font-size:11px;min-height:28px}
+        .armix-output-pair{color:#b9dce8;font-variant-numeric:tabular-nums}
+        .armix-output-owner{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+          color:#ccdce3}
+        .armix-output-status{font-size:10px;color:#b6c9d1;white-space:nowrap}
+        .armix-output-status[data-state="LIVE"],
+        .armix-output-status[data-state="ENABLED"]{color:#9bd3b8}
+        .armix-output-status[data-state="PENDING"]{color:#e5c17d}
+        .armix-output-status[data-state="NEEDS_REMAP"]{color:#e0a18b}
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
           max-height:135px;overflow:auto;padding:5px 0}
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
@@ -1794,6 +1941,11 @@
           <div><strong>Applying audio device…</strong>
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
+        <section class="armix-output-overview" data-audio-output-overview>
+          <div class="armix-output-heading">OUTPUTS · physical routing</div>
+          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
+          <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
+        </section>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
@@ -1865,6 +2017,7 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    paintPhysicalOutputs(hardware);
     if(deviceBusy)return;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceResult="";
@@ -2275,6 +2428,22 @@
       }
     });
 
+    backend.addEventListener("arMixExternalOutputAck",ack=>{
+      const found=[...pendingExternal].find(([,p])=>p.requestId===ack?.requestId);
+      if(!found)return;
+      const [id,transaction]=found;
+      if(ack.ok!==true){
+        const error=String(ack.error||"Physical output assignment rejected");
+        pendingExternal.delete(id);
+        const track=(scope?.tracks||[]).find(t=>nativeIdFor(t)===id);
+        const select=track&&document.querySelector('.strip[data-id="'+track.id+
+          '"] select[data-field="external"]');
+        select?.removeAttribute("aria-busy");
+        nativeToast(error);status(error);controller?.subscribe();return;
+      }
+      transaction.acked=true;
+      controller?.subscribe(); // ACK alone cannot claim LIVE audio
+    });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
       if(!save&&ack?.operation!=="OPEN")return;
@@ -2393,6 +2562,7 @@
     scope?.syncNativeWireGains?.([]); // flush accepted paint after pointer release
     appearanceFromNative(next);
     updateHardwarePanel(next);
+    paintExternalReadback(next);
     // The installed native SessionSnapshot selects exactly one UI authority.
     const session=next?.raw?.mixerSession;
     const offline=next?.raw?.logicalMixer;
@@ -2422,9 +2592,7 @@
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
         if(protocol.cmp(offline.revision,p.ackRevision)<0)return;
-        // A newer unrelated revision cannot prove THIS ACK's exact edit.
-        // Preserve the accepted document, then resubscribe rather than
-        // falsely animating a WIRE or confirming a different FX instance.
+        // A later unrelated revision cannot prove THIS request's exact edit.
         if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
           status("Mixer change not verified · refreshing saved session");
@@ -2917,6 +3085,13 @@
       if(t.input===INTERNAL_BUS)choices.push(INTERNAL_BUS);
       return choices;
     },
+    externalChoices(t) {
+      if(t?.kind==="master")return ["None"];
+      const labels=hardwareOutputPairs().map(p=>p.label);
+      if(t?.externalOutput && !labels.includes(t.externalOutput))
+        labels.push(t.externalOutput);
+      return labels;
+    },
     outputChoices(t) {
       if(logicalView&&t?.kind==="master")return ["Choose audio output"];
       if(t?.kind==="master")
@@ -2995,6 +3170,50 @@
         if(nativeUiSourcePending)
           status("CH "+(channel+1)+" input queued behind native route ACK");
         else dispatchQueuedSource();
+        return true;
+      }
+      if(field==="external"){
+        if(event.type!=="change")return true;
+        const previous=t.externalOutput||"None";
+        const id=nativeIdFor(t),ch=controller?.state()?.current?.graph?.channels
+          ?.find(row=>row.id===id),d=hardware?.device;
+        const pair=hardwareOutputPairs().find(row=>row.label===el.value);
+        const revision=hardware?.raw?.externalRevision;
+        const epoch=hardware?.device?.epoch;
+        if(pendingExternal.has(id)||!pair||!ch ||
+           !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
+           !controller?.state()?.current?.admitted ||
+           d?.backend!=="ASIO" || safeNativeCounter(epoch)===null ||
+           safeNativeCounter(revision)===null){
+          el.value=previous;
+          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          return true;
+        }
+        if(pair.label===previous){el.value=previous;return true;}
+        const occupied=(Array.isArray(hardware?.raw?.externalOutputs)?
+          hardware.raw.externalOutputs:[]).filter(p=>p.physicalLeft===pair.left &&
+          p.physicalRight===pair.right && p.channelId!==id);
+        const sharedNote=occupied.length?
+          " SHARED with "+occupied.length+" other source(s); signals SUM. Check gains.":"";
+        const confirmed=pair.left<0 || window.confirm(
+          "Enable ASIO OUT "+(pair.left+1)+"/"+(pair.right+1)+
+          " for "+t.name+"?"+sharedNote+" Check amplifier/speakers. "+
+          "INTERNAL OUT stays unchanged.");
+        if(!confirmed){el.value=previous;return true;}
+        const requestId="out-o-"+(++externalSerial);
+        pendingExternal.set(id,{requestId,channelId:id,left:pair.left,right:pair.right,
+          epoch,revision,acked:false});
+        el.value=previous;el.setAttribute("aria-busy","true");
+        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
+          requestId,channelId:id,deviceEpoch:epoch,revision,
+          left:pair.left,right:pair.right,confirmed:true});
+        window.setTimeout(()=>{
+          if(pendingExternal.get(id)?.requestId!==requestId)return;
+          pendingExternal.delete(id);el.removeAttribute("aria-busy");
+          nativeToast("EXTERNAL OUT timed out · last PCM retained");
+          controller?.subscribe();
+        },8000);
+        status("EXTERNAL OUT pending · native validation and readback");
         return true;
       }
       if(field==="output"){

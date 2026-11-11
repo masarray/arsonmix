@@ -1701,6 +1701,15 @@ private:
         if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
+            obj->setProperty("externalOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("externalOutputs",{}));
+            obj->setProperty("externalRevision",
+                live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
+                    .getProperty("graphRevision",{}));
+            obj->setProperty("physicalMainOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
+            obj->setProperty("physicalMonitorOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("monitorOutputs",{}));
         }
         return accepted;
     }
@@ -1995,9 +2004,13 @@ private:
     // patch. A later device epoch or a user MUTE cancels the pending arm.
     std::uint64_t autoMainEpoch_=0;
     bool autoMainRequiresInput_=true;
+    // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
+    // This control-thread intent is NOT a new callback gate or device lock.
+    bool operatorOutputMuted_=false;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
+        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
@@ -2011,7 +2024,12 @@ private:
         // A transient native graph/FX ACK must not permanently consume
         // the only automatic MAIN attempt for this control revision.
         // Retry only the cheap CONTROL preflight until it is genuinely safe.
-        if(engine_.liveOutputArmFault(autoMainRequiresInput_).isNotEmpty())return;
+        // SOURCE ONLY/PLAYER -> confirmed EXTERNAL OUT is a complete hardware
+        // route. Requiring a microphone as well would strand it at MONITOR OFF.
+        // Only same-epoch, driver-verified pins qualify (not stale .smix text).
+        const bool requireInput=autoMainRequiresInput_ &&
+            !engine_.hasVerifiedExternalOutputIntent();
+        if(engine_.liveOutputArmFault(requireInput).isNotEmpty())return;
         autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
@@ -2019,6 +2037,7 @@ private:
     }
 
     void requestAutomaticMain(bool requireInput=true) {
+        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
         autoMainCheckedRevision_.reset();
@@ -4547,6 +4566,56 @@ private:
             // ACK is not PCM proof; the bridge requires a LATER snapshot.
             return;
         }
+        // O1: native CONTROL intent, exact verified ASIO physical pair.
+        // Never reinterpret an external destination as internal WIRE/M4 OUT.
+        if(action=="routingExternalOutput") {
+            const auto requestId=args.getProperty("requestId",{}).toString();
+            const auto channelText=args.getProperty("channelId",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const int left=static_cast<int>(args.getProperty("left",-2));
+            const int right=static_cast<int>(args.getProperty("right",-2));
+            const auto nativeStatus=engine_.status().getProperty("dryRoutingLab",{});
+            const auto bus=nativeStatus.getProperty("nativeBus",{});
+            const bool tokens=
+                armix::console::nativeSessionTokenMatches(
+                    ep,nativeStatus.getProperty("epoch",{})) &&
+                armix::console::nativeSessionTokenMatches(
+                    rv,bus.getProperty("graphRevision",{}));
+            std::uint64_t rawId=0;
+            const bool idOk=armix::session::parseDecimal(juce::var(channelText),rawId);
+            juce::String error="EXTERNAL OUT: invalid or stale native request";
+            if(requestId.startsWith("out-o-") && requestId.length()<=64 &&
+               tokens && idOk && confirmed.isBool() &&
+               ((left==-1 && right==-1) || (left>=0 && right>=0)) &&
+               !nativeShowBusy_ && !studioBackupBusy_)
+                error=engine_.setPhysicalExternalOutput(
+                    armix::mixer::ChannelId{rawId},
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
+                    left,right,static_cast<bool>(confirmed));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channelId",channelText);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("deviceEpoch",ep);
+            ack->setProperty("graphRevision",rv);
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixExternalOutputAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            else {
+                // The operator has already confirmed this exact ASIO pair.
+                // Complete first-sound automatically; never force MONITOR/ARM
+                // again, and never override a deliberate OUTPUT MUTE.
+                if(left>=0 && !operatorOutputMuted_ && !engine_.isMonitorEnabled())
+                    requestAutomaticMain(false);
+                emitApprovedNativeSnapshot(); // callback readback proves LIVE
+            }
+            return;
+        }
         // A visible /preview/ channel OUT changes this same installed M4
         // topology. Only actual MAIN / NONE semantics are supported here.
         if(action=="routingChannelPatch"){
@@ -6218,6 +6287,7 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
+                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
                 autoMainEpoch_=0;
                 if(!arm)engine_.cancelAsioResetMonitorIntent();
                 engine_.setMonitorEnabled(arm);
