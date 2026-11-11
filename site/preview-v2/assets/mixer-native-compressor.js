@@ -229,7 +229,9 @@ const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
  // Only the existing COMP SPSC -> AUDIO ACK -> snapshot may apply audio.
  apply:values=>{
   if(!valid(values)||pending||!context())return null;
-  draft={...values};paint();send();
+  // Keep the LAST ACCEPTED preset and controls visible during recall.
+  // Only the matching audio ACK + snapshot may repaint the new sound.
+  draft={...values};send();
   return pending?.id||null;
  }
 });

@@ -72,9 +72,6 @@ jobs:
         shell: pwsh
         run: |
           ctest --test-dir build -C Release --output-on-failure `
-            -R '^BuiltInFxUserPreset(NativePortableSaveAndRecovery|FourRealJuceAdaptersAndColdReopen)
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host 'PRESET_NATIVE_TWO_TARGETS_STORE_AND_ACCEPTED_PCM_SNAPSHOT=PASS'
-
+            -R '^BuiltInFxUserPreset(NativePortableSaveAndRecovery|FourRealJuceAdaptersAndColdReopen)$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host 'PRESET_NATIVE_TWO_TARGETS_STORE_AND_ACCEPTED_PCM_SNAPSHOT=PASS'
