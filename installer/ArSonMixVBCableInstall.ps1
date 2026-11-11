@@ -55,7 +55,7 @@ try {
   if($setups.Count -ne 1){throw "Vendor setup missing or ambiguous"}
   $sig=Get-AuthenticodeSignature -LiteralPath $setups[0].FullName
   if($sig.Status -ne "Valid" -or $null -eq $sig.SignerCertificate -or
-     $sig.SignerCertificate.Subject -notmatch '(?i)VB-Audio|Vincent Burel'){
+     $sig.SignerCertificate.Subject -notmatch '(?i)VB[- ]Audio|Vincent\s+Burel|Burel\s+Vincent'){
     throw "VB-Audio Authenticode signature unavailable or invalid"
   }
   Record "AWAITING_UAC" "Approving vendor driver installation is optional"
