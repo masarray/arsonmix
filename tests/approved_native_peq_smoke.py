@@ -331,6 +331,52 @@ def main():
                 assert values==saved,(values,saved)
                 assert select.input_value()==user_value
                 assert "AUDIO-VERIFIED" in editor.locator(".mx-peq-status").inner_text()
+                # Inject a late failure AFTER one verified band. With a
+                # one-band native mailbox the previously applied band remains
+                # effective; the editor MUST NOT falsely claim atomic recall
+                # or continue dispatching the remaining band edits.
+                for index in (2,3):
+                    editor.locator(".mx-peq-band").nth(index).locator(
+                        ".mx-peq-band-power").click()
+                    flush_edits(page,state,values,handled)
+                assert select.input_value()=="CUSTOM"
+                select.select_option(user_value)
+                assert form.is_visible()
+                form.locator(".mx-fxp-confirm").click()
+                read=last_action(page,"nativeBuiltinFxUserPreset")
+                assert read["operation"]=="read" and read["presetId"]==preset_id
+                preset_result(page,state,read,presetId=preset_id,
+                              name="Live Vocal EQ",settings={"bands":saved})
+                edits=page.evaluate("""seen=>window.__actions.filter(x=>
+                    x.action==='nativeEqSetBand'&&!seen.includes(x.requestId))""",
+                    list(handled))
+                assert len(edits)==1,edits
+                first=edits[0];handled.add(first["requestId"])
+                emit(page,"arMixBuiltinEqQueue",{
+                    "requestId":first["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinEqAck",{
+                    "requestId":first["requestId"],"status":"APPLIED"})
+                values[first["bandIndex"]]=copy.deepcopy(first["band"])
+                emit_snapshot(page,state,values,applied=first["requestId"])
+                edits=page.evaluate("""seen=>window.__actions.filter(x=>
+                    x.action==='nativeEqSetBand'&&!seen.includes(x.requestId))""",
+                    list(handled))
+                assert len(edits)==1 and edits[0]["bandIndex"]!=first["bandIndex"]
+                rejected=edits[0];handled.add(rejected["requestId"])
+                emit(page,"arMixBuiltinEqAck",{
+                    "requestId":rejected["requestId"],"status":"REJECTED",
+                    "errorCode":"TEST_REJECTED"})
+                assert "PARTIAL AUDIO" in editor.locator(".mx-peq-status").inner_text()
+                # A later accepted snapshot must NOT overwrite the failure
+                # with generic "DSP ACCEPTED": earlier applied audio is real,
+                # and the recall is still incomplete.
+                emit_snapshot(page,state,values)
+                assert "PARTIAL AUDIO" in editor.locator(".mx-peq-status").inner_text()
+                assert select.input_value()!="user:"+preset_id
+                assert editor.locator(".mx-fxp-save-as").is_enabled()
+                assert page.evaluate("""seen=>window.__actions.filter(x=>
+                    x.action==='nativeEqSetBand'&&!seen.includes(x.requestId)).length""",
+                    list(handled))==0, "Failed recall dispatched an extra edit"
                 # Delete is disk-only: no new EQ band edit and no DSP mutation.
                 editor.locator(".mx-fxp-manage").click()
                 editor.locator('.mx-fxp-action[data-operation="delete"]').click()
@@ -346,7 +392,7 @@ def main():
                 assert select.locator("option[value^='user:']").count()==0
                 assert editor.locator(".mx-fxp-manage").is_disabled()
                 assert last_action(page,"nativeEqSetBand")["requestId"]==(
-                    new_commands[-1]["requestId"])
+                    rejected["requestId"])
                 # Modeless window can move and reopening reads real accepted snapshot.
                 bar=page.locator(".mx-peq-title");rect=bar.bounding_box();assert rect
                 page.mouse.move(rect["x"]+100,rect["y"]+15);page.mouse.down()

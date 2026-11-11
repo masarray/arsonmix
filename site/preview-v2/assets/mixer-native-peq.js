@@ -133,7 +133,7 @@ const context=()=>{
 const effective=()=>draft?.list||bands;
 // One native EQ SPSC edit per callback. Multi-band Recall is ordered,
 // never optimistically painted or written to another audio renderer.
-let presetBatch=null;
+let presetBatch=null,presetFailure="";
 const sameBand=(a,b)=>Boolean(a&&b&&a.enabled===b.enabled&&
  a.slope===b.slope&&Number.isFinite(a.frequencyHz)&&
  Number.isFinite(b.frequencyHz)&&
@@ -147,6 +147,7 @@ function abortPresetBatch(reason){
  if(!presetBatch)return;
  const token=presetBatch.token;
  presetBatch=null;latest.clear();draft=null;
+ presetFailure=reason; // retain warning across later native snapshots
  presetBar.rejectRecall(token,reason);
  hint(reason);draw();
 }
@@ -166,6 +167,7 @@ function beginPresetRecall(settings){
  const indices=target.map((b,i)=>sameBand(bands[i],b)?-1:i).filter(i=>i>=0);
  if(!indices.length)return null;
  const token="eq-batch-"+Date.now()+"-"+(++seq);
+ presetFailure="";
  presetBatch={token,target,indices,at:0,inFlight:"",started:Date.now()};
  if(!nextPresetBand()){presetBatch=null;return null;}
  return token; // Final receipt only after every exact AUDIO ACK + band readback.
@@ -175,7 +177,10 @@ const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
  context,stable:()=>!pending&&!latest.size&&!draft&&!gesture&&!presetBatch,
  readAccepted:()=>({bands:bands.map(b=>({...b}))}),
  validate:presetValid,sameSettings:samePreset,
- factoryValue:()=>"CUSTOM",notice:hint,apply:beginPresetRecall
+ factoryValue:()=>"CUSTOM",notice:hint,apply:beginPresetRecall,
+ // Control-thread batch can span multiple accepted audio callbacks.
+ // The EQ batch itself fails at 12s; generic single-ACK 5.5s is too short.
+ recallTimeoutMs:15000
 });
 if(!presetBar)throw Error("Shared built-in FX preset bar missing");
 presetSelect.addEventListener("change",()=>presetBar.selectUser(presetSelect.value));
@@ -277,6 +282,8 @@ function send(i,value,fromPreset=false){
 }
 function change(i,patch,preview=false){
  if(presetBatch)return;
+ // A deliberate new edit dismisses the previous partial-recall warning.
+ presetFailure="";
  const arr=effective().map(b=>({...b}));const old=arr[i];
  const next={...old,...patch};
  next.frequencyHz=clamp(next.frequencyHz,20,cap());
@@ -420,7 +427,7 @@ const api={
  },
  open(track,slot){
   current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest.clear();draft=null;
-  presetBatch=null;presetBar.reset();
+  presetBatch=null;presetFailure="";presetBar.reset();
   const n=state();const nativeId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===nativeId);
   if(native()&&(n?.admitted||n?.logical)&&ch?.inserts?.[slot]?.catalogId===ID){
@@ -440,17 +447,21 @@ window.ArSonMixNativeEq=Object.freeze(api);
 backend()?.addEventListener?.("arMixBuiltinEqQueue",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
  if(ack.status==="REJECTED"){
+  const wasRecall=!!presetBatch;
   pending=null;latest.clear();draft=null;
-  abortPresetBatch("EQ PRESET REJECTED · CHECK PARTIAL AUDIO STATE");
-  hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();
+  if(wasRecall)abortPresetBatch("EQ PRESET REJECTED · PARTIAL AUDIO STATE POSSIBLE");
+  else hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));
+  requestSnapshot();
  }
 });
 backend()?.addEventListener?.("arMixBuiltinEqAck",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
  if(ack.status!=="APPLIED"){
+  const wasRecall=!!presetBatch;
   pending=null;latest.clear();draft=null;
-  abortPresetBatch("EQ PRESET AUDIO ACK REJECTED · CHECK PARTIAL AUDIO STATE");
-  hint("DSP DID NOT APPLY · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();return;
+  if(wasRecall)abortPresetBatch("EQ PRESET AUDIO ACK REJECTED · PARTIAL AUDIO STATE POSSIBLE");
+  else hint("DSP DID NOT APPLY · "+(ack.errorCode||"UNKNOWN"));
+  requestSnapshot();return;
  }
  pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot();
 });
@@ -497,7 +508,7 @@ backend()?.addEventListener?.("arMixBuiltinEqSnapshot",s=>{
   latest.delete(index);send(index,value);
  }else draft=null;
  presetBar.onAccepted({bands:bands.map(b=>({...b}))},applied?.id||"");
- hint("NATIVE DSP ACCEPTED · "+c.instanceId);
+ hint(presetFailure||("NATIVE DSP ACCEPTED · "+c.instanceId));
  draw();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{

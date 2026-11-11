@@ -21,6 +21,10 @@ function create(adapter){
         validate,apply,notice}=adapter;
  const sameSettings=typeof adapter.sameSettings==="function"?
      adapter.sameSettings:equal;
+ // Most built-ins publish one parameter-set ACK. EQ publishes eight
+ // sequential band ACKs; its deadline must outlast the owned batch.
+ const recallTimeoutMs=Number.isFinite(adapter.recallTimeoutMs)?
+     Math.max(5500,Math.min(60000,adapter.recallTimeoutMs)):5500;
  if(!host||!select||!catalogId||typeof context!=="function"||
     typeof apply!=="function")throw Error("Built-in FX preset adapter invalid");
  const saveAs=make("button","mx-fxp-button mx-fxp-save-as","+ Save As");
@@ -193,8 +197,13 @@ function create(adapter){
    }else if(validate(accepted)&&sameSettings(accepted,recall.settings)){
     selectedId=recall.presetId;saved=clone(recall.settings);dirty=false;
     notice("MY PRESET APPLIED · VERIFIED");
-   }else notice("MY PRESET READBACK MISMATCH · AUDIO UNCHANGED");
-   recall=null;
+    }else {
+     // The accepted DSP may already be different from the old sound.
+     // Never report "audio unchanged" after an acknowledged write.
+     if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
+     notice("MY PRESET READBACK MISMATCH · REVIEW ACCEPTED AUDIO");
+    }
+    recall=null;
   }else if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
   paint();refresh();
  }
@@ -251,13 +260,15 @@ function create(adapter){
  // pretending the audio was unchanged or clearing native audio history.
  function rejectRecall(requestId,reason){
   if(!recall||recall.requestId!==requestId)return;
-  recall=null;notice(reason);paint();
+  recall=null;
+  if(selectedId&&saved)dirty=!sameSettings(readAccepted(),saved);
+  notice(reason);paint();
  }
  function tick(){
   if(task&&Date.now()-task.started>5000){
    task=null;notice("MY PRESET REQUEST TIMEOUT");paint();
   }
-  if(recall&&Date.now()-recall.started>5500){
+  if(recall&&Date.now()-recall.started>recallTimeoutMs){
    recall=null;notice("MY PRESET DSP ACK TIMEOUT");paint();
   }
  }
