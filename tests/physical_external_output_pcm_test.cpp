@@ -183,6 +183,17 @@ static void verifyFailClosedAllPhysicalOutputBuffers() {
     for(const auto& output:h.output)
         for(float sample:output)assert(near(sample,0.f));
 }
+// Invalid ASIO callback alias must not borrow a MAIN or MONITOR pin.
+// All physical buffers are cleared on the failed render.
+static void verifyAliasedCallbackPinFailsClosed() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    h.outputPointers[2]=h.output[0].data(); // same buffer at another ordinal
+    for(auto& output:h.output)output.fill(.625f);
+    assert(!h.render(8));
+    for(const auto& output:h.output)
+        for(float sample:output)assert(near(sample,0.f));
+}
 static void verifyLiveFaderMuteAnd2PortBounds() {
     Harness h;
     // A 2-output device has no third/fourth callback ordinal. A driver-level
@@ -206,6 +217,7 @@ int main() {
     verifyEightPinIsolationAndAppliedReadback();
     verifyFourPinMainAndOneBus();
     verifyFailClosedAllPhysicalOutputBuffers();
+    verifyAliasedCallbackPinFailsClosed();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();
     std::puts("O1 physical external OUT: independent PCM, SRC ONLY, gain/mute, shared sum and stale target PASS");

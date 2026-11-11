@@ -49,6 +49,20 @@ int main(){
     assert(!JuceActivePortSnapshot::fromMasks(13,in,out,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::emptyOutput);
     assert(snap.inputs.callbackIndex(9)==-1); // failed 0-OUT preserves accepted zero-input snapshot
+    // Sparse ASIO mask: physical OUT 5/6 are callback ordinals 2/3.
+    juce::BigInteger sparse;
+    for(const int pin: {0,1,4,5})sparse.setBit(pin);
+    assert(JuceActivePortSnapshot::fromMasks(14,in,sparse,snap,fault));
+    assert(snap.outputCount==4);
+    assert(snap.outputPhysicalPort(0)==0);
+    assert(snap.outputPhysicalPort(1)==1);
+    assert(snap.outputPhysicalPort(2)==4);
+    assert(snap.outputPhysicalPort(3)==5);
+    assert(snap.matchesCallback(14,0,4));
+    sparse.clearBit(5); // no fabricated partner for physical OUT 5
+    assert(JuceActivePortSnapshot::fromMasks(15,in,sparse,snap,fault));
+    assert(snap.outputCount==3 && snap.outputPhysicalPort(2)==4);
+    assert(snap.outputPhysicalPort(3)==-1);
     assert(!JuceActivePortSnapshot::capture(nullptr,12,snap,fault));
     assert(fault==JuceActivePortSnapshot::Fault::nullDevice);
 }
