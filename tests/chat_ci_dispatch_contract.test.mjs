@@ -169,7 +169,7 @@ const checkedApi=(runs,calls)=>async(path,method,data)=>{
     workflow_runs:[{id:7,head_sha:sha,event:'pull_request'}]
   };
   if(path==='/actions/runs/7/jobs?per_page=100')
-    return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout',
+    return {jobs:[{name:'Fast native contracts (no Windows / JUCE checkout)',
                    conclusion:'success'}]};
   if(path.includes('event=workflow_dispatch'))return {workflow_runs:runs};
   if(path.endsWith('/dispatches')||path.endsWith('/cancel'))return null;
