@@ -229,9 +229,12 @@ static void testPeriodContinuityOnLoudOctaveErrors(){
 // renderer halfway through its envelope on loud consonants / long vibrato.
 // Full silence must eventually retire grains; no endless pitched gate.
 static void testUnvoicedGapPreservesWetTail(){
-  constexpr int rate=48000, first=rate*35/100,gap=rate*55/1000;
-  constexpr int reprise=rate*25/100,ending=rate*25/100;
-  constexpr int total=first+gap+reprise+ending;
+  // The exact same DSP must retain wet-tail epochs at both supported
+  // singing rates. Callback sizes are deliberately mismatched (64/257).
+  for(const int rate:{48000,96000}){
+  const int first=rate*35/100,gap=rate*55/1000;
+  const int reprise=rate*25/100,ending=rate*25/100;
+  const int total=first+gap+reprise+ending;
   constexpr double tau=6.283185307179586;
   std::vector<float> inputL(total),inputR(total);
   double phase=0.;
@@ -256,7 +259,8 @@ static void testUnvoicedGapPreservesWetTail(){
   };
   const auto render=[&](int block){
     auto e=std::make_unique<Engine>();
-    need(e->prepare(rate)&&e->latencySamples()==1536,
+    need(e->prepare(rate)&&
+         e->latencySamples()==2*std::lround(.016*rate),
          "wet-tail engine PDC changed");
     Settings wet;wet.voices=5;wet.wet=.74f;wet.space=.82f;
     need(e->setSettings(wet),"wet-tail test settings invalid");
@@ -302,6 +306,7 @@ static void testUnvoicedGapPreservesWetTail(){
          std::abs(fine.r[a]-fine.r[a-1])<.45f,
          "wet-tail gap caused an unbounded micro-sample discontinuity");
   }
+  } // sample-rate qualification: 48k and 96k
 }
 
 // Stress the USER failure shape: a long 5Hz/70-cent vibrato under
