@@ -34,12 +34,13 @@ assert.match(chrome, /const auto advance = juce::GlyphArrangement::getStringWidt
 assert.match(chrome, /2026 SonKuPik/);
 assert.doesNotMatch(chrome, /NATIVE SESSION/);
 assert.ok(bridge.includes('classList?.add?.("armix-native-desktop")'));
-assert.match(bridge, /const operatorMessage = message =>/);
+const operatorCopy=require('../web/approved-native-contract.js').operatorMessage;
+assert.match(bridge, /const operatorMessage=protocol\.operatorMessage/);
 assert.match(bridge, /const NEEDS_REMAP="Audio connection lost"/);
 assert.match(bridge, /MutationObserver\(sanitize\)/);
 assert.match(bridge, /const nodes=\[transport,info,warning\]\.filter\(Boolean\)/);
 assert.match(bridge, /const operatorTransport=operatorMessage\(transport\)/);
-assert.match(bridge, /return "Mixer ready"/);
+assert.equal(operatorCopy('HARDWARE FAT PENDING'),'Mixer ready');
 assert.doesNotMatch(bridge, /FAT PENDING/);
 assert.doesNotMatch(bridge, /HARDWARE FAT PENDING/);
 assert.match(bridge, /"OUTPUT ENABLED"/);
@@ -77,12 +78,7 @@ console.log('Native titlebar + supplied SVG + WIRE geometry contract PASS');
 const vm = require('node:vm');
 // User-visible status copy must never expose internal admission/QA or revision
 // codes even if the preview or native error path emits one later.
-const messageStart=bridge.indexOf('const operatorMessage = message => {');
-const messageEnd=bridge.indexOf('\n  const status = message => {',messageStart);
-assert.ok(messageStart>0&&messageEnd>messageStart,'operator copy adapter missing');
-const operatorCopy=vm.runInNewContext(
-  bridge.slice(messageStart,messageEnd).replace('const operatorMessage','var operatorMessage')+
-  '\noperatorMessage;',{}, {filename:'native-operator-copy.js'});
+assert.equal(typeof operatorCopy,'function','native presentation helper must be exported');
 for(const raw of [
   'NATIVE PCM · HARDWARE FAT PENDING',
   'NATIVE PCM GRAPH ACCEPTED · FAT PENDING · device 3 · graph 3 · roster 94',
