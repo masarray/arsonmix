@@ -94,6 +94,8 @@ NATIVE_EVENT_HOOKS = (
     # Public /preview/ continues to show its labeled simulated reference.
     ("const channelOptions=(t,type)=>{\n",
      "const channelOptions=(t,type)=>{\n"
+     " if(type==='external'&&window.__JUCE__?.backend)\n"
+     "  return window.__ARMIX_NATIVE_M2__?.externalChoices?.(t)||['None'];\n"
      " if(type==='input'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
