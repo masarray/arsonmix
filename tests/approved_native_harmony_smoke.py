@@ -107,6 +107,54 @@ def main():
                 switch=page.get_by_role("switch",name="PITCH TUNE")
                 assert switch.is_disabled() and switch.get_attribute("aria-busy")=="true"
                 readback(page,state,DEFAULT,0,0,observed=57)
+                # A native library list is a file query, not a DSP mutation.
+                library=last_action(page,"nativeHarmonyUserPreset")
+                assert library["operation"]=="list" and library["instanceId"]==INSTANCE
+                def preset_result(action,op,**payload):
+                    emit(page,"arMixBuiltinHarmonyPresetResult",{
+                        "requestId":action["requestId"],"operation":op,
+                        "status":"OK","instanceId":INSTANCE,
+                        "channelId":SOURCE,
+                        "deviceEpoch":state["device"]["epoch"],
+                        "graphRevision":state["graph"]["revision"],
+                        **payload})
+                preset_result(library,"list",items=[])
+                page.locator("#mxHSaveAs").click()
+                form=page.locator("#mxHPresetForm")
+                assert form.is_visible()
+                form.locator("#mxHPresetName").fill("Singer Wide")
+                form.locator("#mxHPresetConfirm").click()
+                saving=last_action(page,"nativeHarmonyUserPreset")
+                assert saving["operation"]=="saveAs" and saving["name"]=="Singer Wide"
+                assert saving["instanceId"]==INSTANCE
+                assert page.locator("#mxHPreset option[value^='user:']").count()==0
+                saved_id="f4c0109b-54b9-4bb4-baa5-34cd52f7e413"
+                preset_result(saving,"saveAs",presetId=saved_id,name="Singer Wide")
+                library=last_action(page,"nativeHarmonyUserPreset")
+                assert library["operation"]=="list"
+                preset_result(library,"list",items=[{
+                    "id":saved_id,"name":"Singer Wide","category":"My Presets"}])
+                user_option="user:"+saved_id
+                assert page.locator('#mxHPreset option[value="'+user_option+'"]').count()==1
+                page.locator("#mxHPreset").select_option("custom")
+                page.locator("#mxHPreset").select_option(user_option)
+                loading=last_action(page,"nativeHarmonyUserPreset")
+                assert loading["operation"]=="read" and loading["presetId"]==saved_id
+                assert page.locator("#mxHPreset").input_value()=="custom"
+                portable={k:v for k,v in DEFAULT.items()
+                          if k not in ("guideMode","guideChannelId")}
+                preset_result(loading,"read",presetId=saved_id,
+                              name="Singer Wide",settings=portable)
+                applying=last_action(page,"nativeHarmonySetSettings")
+                assert applying["settings"]["guideChannelId"]=="0"
+                assert applying["settings"]["voiceMode"]==0
+                assert page.locator("#mxHPreset").input_value()=="custom"
+                emit(page,"arMixBuiltinHarmonyQueue",
+                     {"requestId":applying["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinHarmonyAck",
+                     {"requestId":applying["requestId"],"status":"APPLIED"})
+                readback(page,state,DEFAULT,0,0,applied=applying["requestId"])
+                assert page.locator("#mxHPreset").input_value()==user_option
                 assert switch.get_attribute("aria-checked")=="false"
                 track=switch.locator(".mx-harm-switch-track").bounding_box()
                 label=switch.get_by_text("PITCH TUNE").bounding_box()

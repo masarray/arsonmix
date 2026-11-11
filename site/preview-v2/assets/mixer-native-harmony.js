@@ -23,9 +23,19 @@ root.innerHTML=`
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
    </select>
+   <button type="button" id="mxHSaveAs" class="mx-harm-preset-tool"
+     title="Save As · My Presets" aria-label="Save As user preset" disabled>＋ Save As</button>
    <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmonice state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
    <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmonice" title="Close Harmonice"></button>
   </header>
+  <div id="mxHPresetForm" class="mx-harm-preset-form" hidden role="group"
+       aria-label="Save Harmonice user preset">
+   <label for="mxHPresetName">MY PRESET</label>
+   <input id="mxHPresetName" aria-label="My preset name" maxlength="80"
+     autocomplete="off" spellcheck="false">
+   <button type="button" id="mxHPresetConfirm">Save</button>
+   <button type="button" id="mxHPresetCancel">Cancel</button>
+  </div>
   <main class="mx-harm-body">
    <aside class="mx-harm-left" aria-label="Harmonice voice settings">
     <div class="mx-harm-signature"><span class="mx-harm-mark">ARSONMIX</span>
@@ -118,6 +128,8 @@ const demos=new Map();
 let current=null,settings=fresh(),pending=null,latest=null,seq=0,readbackRequest="";
 let readbackSentAt=0,verified=false,heldPatch=null;
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
+const myPresets=new Map();
+let myPresetAction=null,myPresetBinding="",myPresetRecall=null;
 let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
 const noteButtons=[...root.querySelectorAll("[data-key]")];
@@ -173,6 +185,7 @@ function reconcileBinding(){
  if(!c){
    if(verified||pending||readbackRequest){
      holdUnfinishedEdit();verified=false;pending=null;latest=null;
+     myPresetAction=null;myPresetRecall=null;myPresetBinding="";
      readbackRequest="";effectiveKey=-1;effectiveScale=-1;
      hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");paint();
    }
@@ -188,6 +201,7 @@ function reconcileBinding(){
    current.slot=c.slot;current.boundEpoch=c.deviceEpoch;
    current.boundRevision=c.graphRevision;
    pending=null;latest=null;verified=false;
+   myPresetAction=null;myPresetRecall=null;myPresetBinding="";
    readbackRequest="";readbackSentAt=0;
    effectiveKey=-1;effectiveScale=-1;
    detectedKey=-1;detectedScale=-1;detectedConfidence=0;
@@ -318,6 +332,10 @@ function paint(){
  showText(el("mxHGuideStatus"),status);
  el("mxHGuideStatus").dataset.state=status.toLowerCase();
  if(el("mxHPreset").value!==preset)el("mxHPreset").value=preset;
+ const pc=context();
+ el("mxHSaveAs").disabled=!native()||!verified||Boolean(pending)||
+   Boolean(latest)||Boolean(heldPatch)||Boolean(myPresetAction)||
+   !pc||Boolean(pc.workspaceToken)||pc.deviceEpoch==="0";
  for(const {key,input,output} of sliders){
   const value=key==="gainDb"?v[key]:v[key]*100;
   const setting=String(value);
@@ -417,8 +435,67 @@ sliders.forEach(({input})=>input.addEventListener("input",()=>{
  const k=input.dataset.field,x=Number(input.value);
  edit({[k]:k==="gainDb"?x:x/100});
 }));
+
+ // All library I/O is native; a read is NOT an audio-accepted recall.
+ function myPresetCommand(operation,payload={}){
+  const c=context();
+  if(!native()||!verified||pending||latest||heldPatch||myPresetAction||
+     !c||c.workspaceToken||c.deviceEpoch==="0"){
+   hint("MY PRESET · WAIT FOR ACCEPTED NATIVE DSP");return false;
+  }
+  const requestId="hpres-"+Date.now()+"-"+(++seq);
+  myPresetAction={requestId,operation,started:Date.now()};
+  backend().emitEvent("arMixAction",{action:"nativeHarmonyUserPreset",
+     operation,requestId,...c,...payload});
+  hint("MY PRESET · "+operation.toUpperCase()+" PENDING");paint();
+  return true;
+ }
+ function showMyPresets(items){
+  const select=el("mxHPreset");
+  select.querySelector('optgroup[data-my-presets]')?.remove();
+  myPresets.clear();
+  const group=document.createElement("optgroup");
+  group.label="MY PRESETS";group.dataset.myPresets="1";
+  for(const item of items){
+   if(typeof item?.id!=="string"||typeof item?.name!=="string"||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.id))continue;
+   myPresets.set(item.id,item);
+   const option=document.createElement("option");
+   option.value="user:"+item.id;option.textContent=item.name;group.append(option);
+  }
+  if(group.children.length)select.append(group);
+  if(preset.startsWith("user:")&&!myPresets.has(preset.slice(5)))preset="custom";
+  paint();
+ }
+ function closeMyPresetForm(){el("mxHPresetForm").hidden=true;}
+ el("mxHSaveAs").addEventListener("click",()=>{
+  const c=context();
+  if(!native()||!verified||pending||myPresetAction||!c||c.workspaceToken)return;
+  el("mxHPresetName").value=el("mxHPreset").selectedOptions[0]?.textContent||"My Harmony";
+  el("mxHPresetForm").hidden=false;
+  el("mxHPresetName").focus();el("mxHPresetName").select();
+ });
+ el("mxHPresetCancel").addEventListener("click",closeMyPresetForm);
+ function saveMyPreset(){
+  const name=el("mxHPresetName").value;
+  if(!name||name.length>80||name.trim()!==name){
+   hint("MY PRESET NAME INVALID · AUDIO UNCHANGED");return;
+  }
+  if(myPresetCommand("saveAs",{name}))closeMyPresetForm();
+ }
+ el("mxHPresetConfirm").addEventListener("click",saveMyPreset);
+ el("mxHPresetName").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){e.preventDefault();saveMyPreset();}
+  if(e.key==="Escape"){e.preventDefault();closeMyPresetForm();}
+ });
 el("mxHPreset").addEventListener("change",e=>{
- preset=e.target.value;
+ const selected=e.target.value;
+ if(selected.startsWith("user:")){
+  // Do not claim this preset active until native AUDIO ACK and readback.
+  myPresetCommand("read",{presetId:selected.slice(5)});
+  el("mxHPreset").value=preset;return;
+ }
+ preset=selected;
  const change=presets[preset];if(change){
   const next={...(latest||pending?.settings||settings),...change};
   if(!native()){settings=next;demos.set(current?.track?.id+":"+current?.slot,{...next});
@@ -470,6 +547,10 @@ window.ArSonMixNativeHarmony=Object.freeze({
   effectiveKey=-1;effectiveScale=-1;sourceSignature="";availableSources=[];
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
+  myPresetAction=null;myPresetRecall=null;myPresetBinding="";myPresets.clear();
+  closeMyPresetForm();
+  el("mxHPreset").querySelector('optgroup[data-my-presets]')?.remove();
+  preset="custom";
   current={track,slot,channelId:id,instanceId:null,
     boundEpoch:null,boundRevision:null};
   showText(el("mxHChannel"),track.name+" · FX "+(slot+1));
@@ -485,16 +566,51 @@ window.ArSonMixNativeHarmony=Object.freeze({
   }
   root.hidden=false;refreshGuideSources();paint();
  },
- close(){root.hidden=true;}
+ close(){root.hidden=true;closeMyPresetForm();}
+});
+backend()?.addEventListener?.("arMixBuiltinHarmonyPresetResult",reply=>{
+ if(!myPresetAction||reply?.requestId!==myPresetAction.requestId)return;
+ const task=myPresetAction,c=context();myPresetAction=null;
+ if(!c||reply.instanceId!==c.instanceId||reply.channelId!==c.channelId||
+    reply.deviceEpoch!==c.deviceEpoch||reply.graphRevision!==c.graphRevision){
+  hint("MY PRESET · STALE INSTANCE · AUDIO UNCHANGED");paint();return;
+ }
+ if(reply.status!=="OK"){
+  hint("MY PRESET REJECTED · "+(reply.errorCode||"UNKNOWN"));paint();return;
+ }
+ if(task.operation==="list"){
+  myPresetBinding=c.instanceId+"@"+c.deviceEpoch+"/"+c.graphRevision;
+  showMyPresets(Array.isArray(reply.items)?reply.items:[]);return;
+ }
+ if(task.operation==="read"){
+  if(!myPresets.has(reply.presetId)||!reply.settings||
+     typeof reply.settings!=="object"){
+   hint("MY PRESET INVALID · AUDIO UNCHANGED");paint();return;
+  }
+  // Portable preset never inherits another session's Music ChannelId.
+  const next={...settings,...reply.settings,guideMode:0,guideChannelId:"0"};
+  if(!valid(next)||pending||!verified){
+   hint("MY PRESET PARAMETERS REJECTED · AUDIO UNCHANGED");paint();return;
+  }
+  send(next);
+  if(pending)myPresetRecall={requestId:pending.id,presetId:reply.presetId,
+                              name:reply.name};
+  return;
+ }
+ if(task.operation==="saveAs"){
+  preset="user:"+reply.presetId;myPresetBinding="";
+  hint("MY PRESET SAVED TO DISK · "+reply.name);
+  myPresetCommand("list");
+ }
 });
 backend()?.addEventListener?.("arMixBuiltinHarmonyQueue",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status!=="QUEUED"){pending=null;latest=null;
+ if(ack.status!=="QUEUED"){pending=null;latest=null;myPresetRecall=null;
   hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));snapshot();paint();}
 });
 backend()?.addEventListener?.("arMixBuiltinHarmonyAck",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status!=="APPLIED"){pending=null;latest=null;
+ if(ack.status!=="APPLIED"){pending=null;latest=null;myPresetRecall=null;
   hint("DSP NOT APPLIED · "+(ack.errorCode||"UNKNOWN"));snapshot(true);paint();return;}
  pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");snapshot(true);
 });
@@ -517,6 +633,7 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
    if(pending.ack)hint("DSP APPLIED · WAITING READBACK");
    return;
  }
+ const acceptedEditId=pending?.id||"";
  settings={...snap.settings};verified=true;
  effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale;
  detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
@@ -525,7 +642,16 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  observedNote=Number.isInteger(snap.observedNote)?snap.observedNote:-1;
  readbackLatency=Number.isInteger(snap.latencySamples)?snap.latencySamples:0;
  pending=null;
+ if(myPresetRecall&&myPresetRecall.requestId===acceptedEditId){
+  preset="user:"+myPresetRecall.presetId;
+  hint("MY PRESET APPLIED & VERIFIED · "+myPresetRecall.name);
+  myPresetRecall=null;
+ }
  refreshGuideSources();
+ const cPreset=context();
+ if(!myPresetAction&&cPreset&&!cPreset.workspaceToken&&cPreset.deviceEpoch!=="0"&&
+    myPresetBinding!==cPreset.instanceId+"@"+cPreset.deviceEpoch+"/"+cPreset.graphRevision)
+  myPresetCommand("list");
  if(latest){const next=latest;latest=null;send(next);}
  else if(heldPatch){
    const patch=heldPatch;heldPatch=null;
@@ -543,6 +669,9 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current)return;
  queueMicrotask(()=>{
+   if(myPresetAction&&Date.now()-myPresetAction.started>5000){
+     myPresetAction=null;hint("MY PRESET REQUEST TIMED OUT · AUDIO UNCHANGED");
+   }
    if(!reconcileBinding()){
      hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");
      return;

@@ -32,6 +32,7 @@
 #include "PluginCatalog.h"
 #include "StartupVst3RecoveryGuard.h"
 #include "PortableWorkspace.h"
+#include "BuiltInFxUserPresetStore.h"
 #include "StudioBackup.h"
 #include "NativeLiveShowCapture.h"
 #include "NativeDryShowRecall.h"
@@ -414,6 +415,7 @@ private:
     DiagnosticsRecorder diagnostics_;
     armix::appearance::Store channelAppearance_{settingsDirectory()};
     armix::storage::NativePresetArchive presets_;
+    armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
     Browser browser_;
     armix::hotkey::Registry hotkeys_{settingsDirectory()};
@@ -3887,6 +3889,121 @@ private:
         // F0: independently acknowledged existing M4 PCM controls during
         // G0, before ChannelId admission. Do not send GUI demo parameters
         // or mutate a second DSP. One control-thread atomic update only.
+
+        // P1: portable Harmonice user preset library. All operations are on
+        // the message/control thread; no disk access, parsing, processor
+        // lifetime or allocation is introduced in the audio callback.
+        // The exact accepted native ChannelId/slot/instance/epoch lease is
+        // required EVEN for list/read, to prevent wrong-editor cross-talk.
+        if(action=="nativeHarmonyUserPreset") {
+            const auto request=args.getProperty("requestId",{}).toString();
+            const auto operation=args.getProperty("operation",{}).toString();
+            const auto rawChannel=args.getProperty("channelId",{});
+            const auto rawEpoch=args.getProperty("deviceEpoch",{});
+            const auto rawRevision=args.getProperty("graphRevision",{});
+            const auto rawInstance=args.getProperty("instanceId",{});
+            const auto instance=rawInstance.toString();
+            const int slot=static_cast<int>(args.getProperty("slot",-1));
+            std::uint64_t channel=0,epoch=0,revision=0;
+            const bool identity=request.startsWith("hpres-")&&request.length()<=72&&
+                rawInstance.isString()&&instance.isNotEmpty()&&
+                armix::console::approvedNativeId(rawChannel,channel)&&
+                armix::console::approvedNativeId(rawEpoch,epoch)&&
+                armix::console::approvedNativeId(rawRevision,revision)&&
+                epoch!=0&&slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
+                args.getProperty("workspaceToken","").toString().isEmpty();
+            auto lease=identity?engine_.leaseNativeVst3Editor(
+                epoch,revision,armix::mixer::ChannelId{channel},
+                static_cast<std::size_t>(slot),instance):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* processor=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
+                lease?lease->processor.get():nullptr);
+            auto result=std::make_unique<juce::DynamicObject>();
+            result->setProperty("requestId",request);
+            result->setProperty("operation",operation);
+            result->setProperty("channelId",rawChannel);
+            result->setProperty("deviceEpoch",rawEpoch);
+            result->setProperty("graphRevision",rawRevision);
+            result->setProperty("instanceId",instance);
+            const juce::String catalog=
+                armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity;
+            const auto presetId=args.getProperty("presetId","").toString();
+            juce::String error;
+            if(!identity||!processor||!processor->isReady()||
+               nativeShowBusy_||studioBackupBusy_||engine_.independentClockActive())
+                error="STALE_OR_UNAVAILABLE_HARMONY_INSTANCE";
+            else if(operation=="list") {
+                juce::var items(juce::Array<juce::var>{});
+                for(const auto& item:builtinFxUserPresets_.enumerate(catalog)) {
+                    auto data=std::make_unique<juce::DynamicObject>();
+                    data->setProperty("id",item.id);
+                    data->setProperty("name",item.name);
+                    data->setProperty("category",item.category);
+                    items.append(juce::var(data.release()));
+                }
+                result->setProperty("items",items);
+            }else if(operation=="read") {
+                armix::storage::BuiltInFxUserPreset entry;
+                error=builtinFxUserPresets_.read(catalog,presetId,entry);
+                if(error.isEmpty()){
+                    // Read is never DSP-applied. JS must send the existing
+                    // nativeHarmonySetSettings request and wait for its
+                    // audio ACK plus matching accepted snapshot.
+                    result->setProperty("presetId",entry.id);
+                    result->setProperty("name",entry.name);
+                    result->setProperty("settings",entry.settings);
+                }
+            }else if(operation=="saveAs"||operation=="save") {
+                if(pendingNativeHarmony_.owner||
+                   !processor->stateSnapshotQuiescent())
+                    error="HARMONY_DSP_EDIT_PENDING";
+                else {
+                    const auto accepted=processor->acceptedSettings();
+                    auto data=std::make_unique<juce::DynamicObject>();
+                    data->setProperty("key",accepted.key);
+                    data->setProperty("scale",accepted.scale);
+                    data->setProperty("voices",accepted.voices);
+                    data->setProperty("voiceMode",accepted.voiceMode);
+                    data->setProperty("correction",accepted.correction);
+                    data->setProperty("wet",accepted.wet);
+                    data->setProperty("space",accepted.space);
+                    data->setProperty("color",accepted.color);
+                    data->setProperty("gainDb",accepted.gainDb);
+                    // Music source ChannelId is deliberately NOT portable.
+                    armix::storage::BuiltInFxUserPreset entry;
+                    entry.catalogId=catalog;
+                    entry.category="My Presets";
+                    const juce::var portableSettings(data.release());
+                    entry.settings=portableSettings;
+                    if(operation=="saveAs"){
+                        entry.name=args.getProperty("name","").toString();
+                        error=builtinFxUserPresets_.saveNew(entry);
+                    }else{
+                        error=builtinFxUserPresets_.read(catalog,presetId,entry);
+                        if(error.isEmpty()){
+                            // Preserve immutable ID/name/category of the
+                            // exact user-owned record being overwritten.
+                            entry.settings=portableSettings;
+                            error=builtinFxUserPresets_.overwrite(entry);
+                        }
+                    }
+                    if(error.isEmpty()){
+                        result->setProperty("presetId",entry.id);
+                        result->setProperty("name",entry.name);
+                    }
+                }
+            }else if(operation=="rename")
+                error=builtinFxUserPresets_.rename(catalog,presetId,
+                        args.getProperty("name","").toString());
+            else if(operation=="delete")
+                error=builtinFxUserPresets_.remove(catalog,presetId);
+            else error="UNSUPPORTED_HARMONY_PRESET_ACTION";
+            result->setProperty("status",error.isEmpty()?"OK":"REJECTED");
+            if(error.isNotEmpty())result->setProperty("errorCode",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinHarmonyPresetResult",juce::var(result.release()));
+            return;
+        }
 
         // Exact native instance lease; queued != audio-applied.
         if(action=="nativeHarmonySnapshot"||action=="nativeHarmonySetSettings") {

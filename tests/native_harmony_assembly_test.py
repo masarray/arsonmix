@@ -185,6 +185,26 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertNotIn(".mx-harm-close:hover{",self.css)
         self.assertIn('id="mxHClose"',self.ui)
 
+    def test_native_portable_harmony_preset_save_as_and_audio_ack_contract(self):
+        native=(ROOT/"src/Main.cpp").read_text("utf-8")
+        store=(ROOT/"src/BuiltInFxUserPresetStore.h").read_text("utf-8")
+        self.assertIn('#include "BuiltInFxUserPresetStore.h"',native)
+        self.assertIn('action=="nativeHarmonyUserPreset"',native)
+        self.assertIn('processor->stateSnapshotQuiescent()',native)
+        self.assertIn('builtinFxUserPresets_.saveNew(entry)',native)
+        self.assertIn('builtinFxUserPresets_.read(catalog,presetId,entry)',native)
+        self.assertIn('entry.settings=portableSettings;',native)
+        self.assertIn('"arMixBuiltinHarmonyPresetResult"',native)
+        self.assertIn('source or falls safely back to Manual Key',store)
+        self.assertIn('id="mxHSaveAs"',self.ui)
+        self.assertIn('id="mxHPresetForm"',self.ui)
+        self.assertIn('action:"nativeHarmonyUserPreset"',self.ui)
+        self.assertIn('myPresetCommand("read",{presetId:selected.slice(5)})',self.ui)
+        self.assertIn('myPresetRecall.requestId===acceptedEditId',self.ui)
+        self.assertIn('if(pending&&(!pending.ack||snap.appliedRequestId!==pending.id)){',self.ui)
+        self.assertNotIn('localStorage',self.ui)
+        self.assertIn('.mx-harm [hidden]{display:none}',self.css)
+
     def test_no_fabricated_native_pcm(self):
         self.assertIn("BROWSER PREVIEW · VISUAL ONLY · NO AUDIO",self.ui)
         self.assertIn("if(!native())",self.ui)
