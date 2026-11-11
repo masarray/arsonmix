@@ -3,6 +3,14 @@
    excluded. Existing components own geometry, hit areas, labels and behavior.
    This owner changes MATERIAL only: no padding/height/width/layout/transform. */
 :root{
+  --armix-floating-action-bg:linear-gradient(180deg,#375564,#243b49);
+  --armix-floating-action-hover:linear-gradient(180deg,#466b7b,#2c5060);
+  --armix-floating-action-border:#638896;
+  --armix-floating-action-ink:#e3f3f7;
+  --armix-floating-action-focus:#9bdde9;
+  --armix-floating-close-face:linear-gradient(#3e5866,#293e4b);
+  --armix-floating-close-ink:#e0edf2;
+
   --ari-other-metal:linear-gradient(180deg,#ffffff0a,transparent 14%,transparent 86%,#00000012),
     radial-gradient(ellipse 42% 45% at 50% 47%,#ffffff24,transparent 85%),
     repeating-linear-gradient(180deg,#ffffff02 0 1px,#00000001 1px 2px),
@@ -202,13 +210,13 @@
    All cards: same 24px hit box, same icon, same pressed-red interaction.
    Green ON, muted red insert bypass, amber rack bypass, grey unavailable.
    FX state is assigned exclusively from accepted DSP graph readback. */
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close){display:inline-flex!important;align-items:center!important;justify-content:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 24px!important;width:24px!important;min-width:24px!important;max-width:24px!important;height:24px!important;min-height:24px!important;max-height:24px!important;padding:0!important;margin:0!important;font-size:0!important;line-height:1!important;color:#e0edf2!important;cursor:pointer!important;border:1px solid #607d8c!important;border-radius:4px!important;background:linear-gradient(#3e5866,#293e4b)!important;box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75!important;transform:none!important;text-shadow:none!important;transition:background-color .10s,border-color .10s,color .10s!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close) svg{display:none!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::before{content:none!important;display:none!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::after,:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):active::after{content:""!important;display:block!important;position:relative!important;flex:0 0 12px!important;inset:auto!important;width:12px!important;height:12px!important;opacity:1!important;border:0!important;border-radius:0!important;transform:none!important;box-shadow:none!important;pointer-events:none!important;background:linear-gradient(45deg,transparent 43%,currentColor 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,currentColor 43% 57%,transparent 57%)!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):hover:not(:disabled){color:#fff!important;border-color:#b27078!important;background:linear-gradient(#64424f,#4d343f)!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):active:not(:disabled){color:#fff!important;border-color:#ee8b93!important;background:linear-gradient(#cc4753,#982a36)!important;box-shadow:inset 0 2px 4px #4c0c1790,0 0 0 1px #ef698069!important;transition:none!important}
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):focus-visible{outline:2px solid #a2dce9!important;outline-offset:2px!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close){display:inline-flex!important;align-items:center!important;justify-content:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 24px!important;width:24px!important;min-width:24px!important;max-width:24px!important;height:24px!important;min-height:24px!important;max-height:24px!important;padding:0!important;margin:0!important;font-size:0!important;line-height:1!important;color:var(--armix-floating-close-ink)!important;cursor:pointer!important;border:1px solid #607d8c!important;border-radius:4px!important;background:var(--armix-floating-close-face)!important;box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75!important;transform:none!important;text-shadow:none!important;transition:background-color .10s,border-color .10s,color .10s!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close) svg{display:none!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::before{content:none!important;display:none!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::after,:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):active::after{content:""!important;display:block!important;position:relative!important;flex:0 0 12px!important;inset:auto!important;width:12px!important;height:12px!important;opacity:1!important;border:0!important;border-radius:0!important;transform:none!important;box-shadow:none!important;pointer-events:none!important;background:linear-gradient(45deg,transparent 43%,currentColor 43% 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,currentColor 43% 57%,transparent 57%)!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):hover:not(:disabled){color:#fff!important;border-color:#b27078!important;background:linear-gradient(#64424f,#4d343f)!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):active:not(:disabled){color:#fff!important;border-color:#ee8b93!important;background:linear-gradient(#cc4753,#982a36)!important;box-shadow:inset 0 2px 4px #4c0c1790,0 0 0 1px #ef698069!important;transition:none!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):focus-visible{outline:2px solid #a2dce9!important;outline-offset:2px!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power){display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;flex:0 0 26px!important;width:26px!important;height:24px!important;opacity:1!important;padding:0!important;border:1px solid #4b6572!important;border-radius:4px!important;background:linear-gradient(#384b56,#243846)!important;box-shadow:inset 0 1px #ffffff20!important;font-size:18px!important;transition:none!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power)[data-fx-state="on"]{color:#76f0b9!important;border-color:#428969!important;background:linear-gradient(#335c51,#204539)!important;text-shadow:0 0 5px #7df0b85c!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power)[data-fx-state="off"]{color:#e99b9f!important;border-color:#83525a!important;background:linear-gradient(#533b42,#3a3039)!important;text-shadow:none!important}
@@ -339,3 +347,62 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer #playerRelink[hidden]{display:none!important}
 #arsonPlayer #playerAdd:disabled,
 #arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}
+
+
+/* Shared modeless window workspace.
+   Header-only drag: underlying FX knobs, faders, routing wires, search,
+   buttons and scroll panes are never gesture targets. Viewport coordinates
+   are clamped by one pointer controller in mixer-contextual-buttons.js. */
+:is(#fastPicker .fast-head,#wireWorkspace .wire-ws-head,
+    #wireConfigWindow .wire-config-head,#routeChoice .route-choice-head,
+    .armix-audio-dialog .armix-audio-top,#arIOOverlay .arIOWindow > header,
+    #arSendEditor > header,.arSourceChooser .arSourceChooserTop,
+    #arRoutingLabPanel .arPatchTop,
+    #nativeFxSelector .native-dialog-header,
+    #nativePluginManager .native-dialog-header,
+    #nativeMySounds .native-dialog-header,
+    #nativeOrbit .native-dialog-header){
+  cursor:grab;touch-action:none;user-select:none;
+}
+:is(#fastPicker .fast-head,#wireWorkspace .wire-ws-head,
+    #wireConfigWindow .wire-config-head,#routeChoice .route-choice-head,
+    .armix-audio-dialog .armix-audio-top,#arIOOverlay .arIOWindow > header,
+    #arSendEditor > header,.arSourceChooser .arSourceChooserTop,
+    #arRoutingLabPanel .arPatchTop,
+    #nativeFxSelector .native-dialog-header,
+    #nativePluginManager .native-dialog-header,
+    #nativeMySounds .native-dialog-header,
+    #nativeOrbit .native-dialog-header):active{cursor:grabbing}
+.armix-floating-moved{will-change:auto}
+
+/* One compact, legible action face across the FX picker, manager footer and
+   search-folder row. Neither tiny naked links nor full-width flattened bars. */
+:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath){
+  box-sizing:border-box!important;
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  flex:0 0 auto!important;width:auto!important;
+  min-height:28px!important;padding:4px 10px!important;
+  border:1px solid var(--armix-floating-action-border)!important;
+  border-radius:4px!important;background:var(--armix-floating-action-bg)!important;
+  color:var(--armix-floating-action-ink)!important;
+  font:500 10px/1.25 "ArSonMix Inter","Segoe UI",sans-serif!important;
+  white-space:nowrap!important;box-shadow:inset 0 1px #ffffff15!important;cursor:pointer!important;
+}
+:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):hover:not(:disabled){
+  background:var(--armix-floating-action-hover)!important;border-color:#8ac3d2!important;
+}
+:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):active:not(:disabled){
+  background:#1d485b!important;border-color:#64bdd2!important;
+}
+:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):focus-visible{
+  outline:2px solid var(--armix-floating-action-focus)!important;outline-offset:2px!important;
+}
+:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):disabled{
+  opacity:.44!important;cursor:not-allowed!important;
+}
+.fast-foot{height:auto!important;min-height:38px!important;box-sizing:border-box!important}
+.plugin-footer{min-height:40px!important;height:auto!important;box-sizing:border-box!important}
+@media(max-width:420px){
+  .plugin-footer{flex-wrap:wrap!important;padding:6px 7px!important}
+  .fast-foot{flex-wrap:wrap!important;padding:5px 8px!important}
+}
