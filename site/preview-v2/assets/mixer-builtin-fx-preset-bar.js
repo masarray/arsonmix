@@ -19,6 +19,8 @@ const make=(tag,cls,text)=>{
 function create(adapter){
  const {host,select,catalogId,context,stable,readAccepted,
         validate,apply,notice}=adapter;
+ const sameSettings=typeof adapter.sameSettings==="function"?
+     adapter.sameSettings:equal;
  if(!host||!select||!catalogId||typeof context!=="function"||
     typeof apply!=="function")throw Error("Built-in FX preset adapter invalid");
  const saveAs=make("button","mx-fxp-button mx-fxp-save-as","+ Save As");
@@ -71,6 +73,12 @@ function create(adapter){
   if(selectedId&&!dirty&&originals.has(selectedId)){
    const value="user:"+selectedId;
    if(select.value!==value)select.value=value;
+  }else if(selectedId&&dirty&&select.value==="user:"+selectedId){
+   // A modified sound is not the selected saved file. Show the current
+   // state so reselecting the user preset emits a genuine change event.
+   const fallback=adapter.factoryValue(readAccepted());
+   select.value=[...select.options].some(x=>x.value===fallback)?
+     fallback:"CUSTOM";
   }
  }
  function closeForm(){form.hidden=true;operation="";targetId="";}
@@ -182,12 +190,12 @@ function create(adapter){
   if(recall&&recall.requestId===appliedId){
    if(recall.factory){
     selectedId="";saved=null;dirty=false;
-   }else if(validate(accepted)&&equal(accepted,recall.settings)){
+   }else if(validate(accepted)&&sameSettings(accepted,recall.settings)){
     selectedId=recall.presetId;saved=clone(recall.settings);dirty=false;
     notice("MY PRESET APPLIED · VERIFIED");
    }else notice("MY PRESET READBACK MISMATCH · AUDIO UNCHANGED");
    recall=null;
-  }else if(selectedId&&saved)dirty=!equal(accepted,saved);
+  }else if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
   paint();refresh();
  }
  backend()?.addEventListener?.("arMixBuiltinFxPresetResult",reply=>{
@@ -211,7 +219,7 @@ function create(adapter){
     notice("MY PRESET FILE INVALID · AUDIO UNCHANGED");paint();return;
    }
    const values=clone(reply.settings),accepted=readAccepted();
-   if(equal(values,accepted)){
+   if(sameSettings(values,accepted)){
     selectedId=sent.presetId;saved=values;dirty=false;paint();return;
    }
    const applied=apply(values);
@@ -232,13 +240,19 @@ function create(adapter){
     notice("USER PRESET RENAMED · AUDIO UNCHANGED");
    }else{
     selectedId=id;saved=sent.acceptedBefore;
-    dirty=!equal(readAccepted(),saved);
+    dirty=!sameSettings(readAccepted(),saved);
     notice(dirty?"MY PRESET SAVED · SOUND HAS CHANGED":
                  "MY PRESET SAVED TO DISK");
    }
    readyForList="";paint();refresh();
   }
  });
+ // Multi-edit effects can fail midway: release Recall truthfully, without
+ // pretending the audio was unchanged or clearing native audio history.
+ function rejectRecall(requestId,reason){
+  if(!recall||recall.requestId!==requestId)return;
+  recall=null;notice(reason);paint();
+ }
  function tick(){
   if(task&&Date.now()-task.started>5000){
    task=null;notice("MY PRESET REQUEST TIMEOUT");paint();
@@ -248,7 +262,7 @@ function create(adapter){
   }
  }
  return Object.freeze({reset,paint,refresh,selectUser,factoryIntent,
-                       onAccepted,tick,close:closeAll});
+                       onAccepted,rejectRecall,tick,close:closeAll});
 }
 window.ArSonMixBuiltinFxPresetBar=Object.freeze({create});
 })();

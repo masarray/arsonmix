@@ -62,6 +62,13 @@ def emit_snapshot(page,state,bands,applied=None):
     if applied:payload["appliedRequestId"]=applied
     emit(page,"arMixBuiltinEqSnapshot",payload)
 
+def preset_result(page,state,command,**details):
+    # The native preset library is a controlled disk service, NOT DSP.
+    emit(page,"arMixBuiltinFxPresetResult",{
+        **eq_context(state),"requestId":command["requestId"],
+        "operation":command["operation"],"status":"OK",
+        "catalogId":EQ_ID,**details})
+
 def flush_edits(page,state,bands,handled):
     # Coalesced gestures may queue one last edit AFTER an audio readback.
     for _ in range(8):
@@ -149,6 +156,12 @@ def main():
             values=bands_initial()
             handled=set()
             emit_snapshot(page,state,values)
+            listing=last_action(page,"nativeBuiltinFxUserPreset")
+            assert listing["operation"]=="list" and listing["catalogId"]==EQ_ID
+            assert listing["instanceId"]==INSTANCE
+            preset_result(page,state,listing,items=[])
+            assert page.locator(".mx-peq .mx-fxp-save-as").is_enabled()
+            assert page.locator(".mx-peq .mx-fxp-manage").is_disabled()
             page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
                 ?.dataset.fxState==='on'&&getComputedStyle(
                 document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
@@ -238,6 +251,102 @@ def main():
                 assert values[2]["frequencyHz"]>250,values[2]
                 assert values[2]["q"]>1,values[2]
                 page.screenshot(path="native-peq-06-drag-wheel-q.png")
+                # M4: one native library across built-in FX. EQ has eight
+                # independent AUDIO-applied SPSC band edits: its Recall must
+                # await EVERY matching ACK and sample-rate-valid readback.
+                saved=copy.deepcopy(values)
+                editor.locator(".mx-fxp-save-as").click()
+                form=editor.locator(".mx-fxp-form")
+                assert form.is_visible()
+                form.locator(".mx-fxp-name").fill("Live Vocal EQ")
+                form.locator(".mx-fxp-confirm").click()
+                command=last_action(page,"nativeBuiltinFxUserPreset")
+                assert command["operation"]=="saveAs"
+                assert command["catalogId"]==EQ_ID
+                assert command["instanceId"]==INSTANCE
+                preset_id="ebda8d9a-192b-4102-9b0c-8c5169cf3f55"
+                preset_result(page,state,command,presetId=preset_id,name="Live Vocal EQ")
+                command=last_action(page,"nativeBuiltinFxUserPreset")
+                assert command["operation"]=="list"
+                preset_result(page,state,command,items=[
+                    {"id":preset_id,"name":"Live Vocal EQ","category":"My Presets"}])
+                user_value="user:"+preset_id
+                select=editor.locator(".mx-peq-preset-select")
+                assert select.input_value()==user_value
+                assert editor.locator(".mx-fxp-manage").is_enabled()
+                # Three independent deliberate changes after saving. User
+                # selection is no longer misrepresented as the saved sound.
+                for index in (2,3,4):
+                    editor.locator(".mx-peq-band").nth(index).locator(
+                        ".mx-peq-band-power").click()
+                    flush_edits(page,state,values,handled)
+                assert any(values[i]!=saved[i] for i in (2,3,4))
+                assert select.input_value()=="CUSTOM"
+                select.select_option(user_value)
+                assert form.is_visible(), "modified sound must be confirmed"
+                assert "DISCARD" in form.locator(".mx-fxp-prompt").inner_text()
+                form.locator(".mx-fxp-confirm").click()
+                read=last_action(page,"nativeBuiltinFxUserPreset")
+                assert read["operation"]=="read" and read["presetId"]==preset_id
+                old_count=page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeEqSetBand').length""")
+                # A wrong catalog must NOT release the exact-instance read.
+                emit(page,"arMixBuiltinFxPresetResult",{
+                    **eq_context(state),"requestId":read["requestId"],
+                    "operation":"read","status":"OK",
+                    "catalogId":"armix.builtin.channel-compressor.v1",
+                    "presetId":preset_id,"settings":{"bands":saved}})
+                assert page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeEqSetBand').length""")==old_count
+                preset_result(page,state,read,presetId=preset_id,
+                              name="Live Vocal EQ",settings={"bands":saved})
+                assert select.input_value()!="user:"+preset_id
+                # Each subsequent nativeEqSetBand must appear only AFTER the
+                # previous exact AUDIO ACK and accepted DSP readback. No
+                # browser optimistic 'preset applied' before the last band.
+                new_commands=[]
+                for step in range(8):
+                    unseen=page.evaluate("""seen=>window.__actions.filter(x=>
+                        x.action==='nativeEqSetBand'&&!seen.includes(x.requestId))""",
+                        list(handled))
+                    if not unseen:break
+                    assert len(unseen)==1,(step,unseen)
+                    edit=unseen[0]
+                    assert edit["bandIndex"] in (2,3,4)
+                    handled.add(edit["requestId"])
+                    new_commands.append(edit)
+                    emit(page,"arMixBuiltinEqQueue",{
+                        "requestId":edit["requestId"],"status":"QUEUED"})
+                    emit(page,"arMixBuiltinEqAck",{
+                        "requestId":edit["requestId"],"status":"APPLIED"})
+                    if step==0:
+                        emit_snapshot(page,state,values,applied="wrong-audio-id")
+                        assert page.evaluate("""()=>window.__actions.filter(x=>
+                            x.action==='nativeEqSetBand').length""")==old_count+1
+                    values[edit["bandIndex"]]=copy.deepcopy(edit["band"])
+                    emit_snapshot(page,state,values,applied=edit["requestId"])
+                    if step<2:
+                        assert select.input_value()!=user_value
+                assert len(new_commands)==3,new_commands
+                assert values==saved,(values,saved)
+                assert select.input_value()==user_value
+                assert "AUDIO-VERIFIED" in editor.locator(".mx-peq-status").inner_text()
+                # Delete is disk-only: no new EQ band edit and no DSP mutation.
+                editor.locator(".mx-fxp-manage").click()
+                editor.locator('.mx-fxp-action[data-operation="delete"]').click()
+                assert form.is_visible()
+                form.locator(".mx-fxp-confirm").click()
+                command=last_action(page,"nativeBuiltinFxUserPreset")
+                assert command["operation"]=="delete"
+                assert command["presetId"]==preset_id
+                preset_result(page,state,command,presetId=preset_id)
+                command=last_action(page,"nativeBuiltinFxUserPreset")
+                assert command["operation"]=="list"
+                preset_result(page,state,command,items=[])
+                assert select.locator("option[value^='user:']").count()==0
+                assert editor.locator(".mx-fxp-manage").is_disabled()
+                assert last_action(page,"nativeEqSetBand")["requestId"]==(
+                    new_commands[-1]["requestId"])
                 # Modeless window can move and reopening reads real accepted snapshot.
                 bar=page.locator(".mx-peq-title");rect=bar.bounding_box();assert rect
                 page.mouse.move(rect["x"]+100,rect["y"]+15);page.mouse.down()

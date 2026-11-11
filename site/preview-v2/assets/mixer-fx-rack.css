@@ -1128,3 +1128,31 @@
  .mx-vthrow .mx-fxp-save-as::before{content:"+";font-size:14px}
  .mx-vthrow .mx-fxp-manage{width:23px;min-width:23px;padding:0}
 }
+
+
+/* M4 EQ My Presets: keep all rules inside the sole FX rack CSS owner. */
+.mx-peq-title .mx-peq-preset-select{
+ flex:0 1 125px;min-width:68px;max-width:125px;margin-left:auto;
+ height:24px;padding:0 5px;border:1px solid #527580;border-radius:4px;
+ background:#243e4a;color:#d9eff3;font:400 10px Inter,'Segoe UI',sans-serif;
+ cursor:pointer
+}
+.mx-peq-title .mx-peq-global{margin-left:0}
+.mx-peq .mx-fxp-button{background:#305763;border:1px solid #5d8790;border-radius:4px}
+.mx-peq .mx-fxp-button:hover:not(:disabled){background:#447873}
+.mx-peq .mx-fxp-form button,.mx-peq .mx-fxp-menu button{
+ background:#d4e7e4;border:1px solid #829fa4;color:#274b51
+}
+.mx-peq .mx-fxp-form .mx-fxp-confirm{background:#367b73;color:#fff}
+.mx-peq .mx-fxp-menu{right:8px}
+.mx-peq .mx-fxp-form{right:8px;top:36px}
+@media(max-width:650px){
+ .mx-peq-title{gap:4px;padding:0 5px}
+ .mx-peq-brand{font-size:0}
+ .mx-peq-brand::after{content:"EQ";font-size:11px}
+ .mx-peq-channel{max-width:74px}
+ .mx-peq-title .mx-peq-preset-select{max-width:80px;font-size:9px}
+ .mx-peq .mx-fxp-save-as{min-width:24px;max-width:24px;font-size:0;padding:0}
+ .mx-peq .mx-fxp-save-as::before{content:"+";font-size:14px}
+ .mx-peq .mx-fxp-manage{min-width:23px;padding:0}
+}
