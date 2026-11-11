@@ -723,7 +723,7 @@
         hardware.raw.externalOutputs.filter(row=>
           row.physicalLeft===left && row.physicalRight===left+1).length:0;
       choices.push({label:"OUT "+(left+1)+"/"+(left+2)+" · "+
-        a.label+" + "+b.label+(shared?" · SHARED "+shared:""),
+        a.label+" + "+b.label+(shared>1?" · SHARED "+shared+" SOURCES":""),
         left,right:left+1});
     }
     return choices;
