@@ -2410,6 +2410,16 @@
       }
     });
 
+    backend.addEventListener("arMixExternalOutputAck",ack=>{
+      if(!pendingExternal || pendingExternal.requestId!==ack?.requestId)return;
+      if(ack.ok!==true){
+        const error=String(ack.error||"Physical output assignment rejected");
+        pendingExternal=null;
+        nativeToast(error);status(error);controller?.subscribe();return;
+      }
+      pendingExternal.acked=true;
+      controller?.subscribe(); // Native ACK does NOT establish LIVE readback
+    });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
       if(!save&&ack?.operation!=="OPEN")return;
@@ -3135,6 +3145,45 @@
         if(nativeUiSourcePending)
           status("CH "+(channel+1)+" input queued behind native route ACK");
         else dispatchQueuedSource();
+        return true;
+      }
+      if(field==="external"){
+        if(event.type!=="change")return true;
+        const previous=t.externalOutput||"None";
+        const id=nativeIdFor(t),ch=controller?.state()?.current?.graph?.channels
+          ?.find(row=>row.id===id),d=hardware?.device;
+        const pair=hardwareOutputPairs().find(row=>row.label===el.value);
+        const revision=hardware?.raw?.externalRevision;
+        const epoch=hardware?.device?.epoch;
+        if(pendingExternal||!pair||!ch ||
+           !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
+           !controller?.state()?.current?.admitted ||
+           d?.backend!=="ASIO" || safeNativeCounter(epoch)===null ||
+           safeNativeCounter(revision)===null){
+          el.value=previous;
+          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          return true;
+        }
+        if(pair.label===previous){el.value=previous;return true;}
+        const confirmed=pair.left<0 || window.confirm(
+          "Enable ASIO OUT "+(pair.left+1)+"/"+(pair.right+1)+
+          " for "+t.name+"? Verify the amplifier/speakers first. "+
+          "INTERNAL OUT will stay unchanged.");
+        if(!confirmed){el.value=previous;return true;}
+        const requestId="out-o-"+(++externalSerial);
+        pendingExternal={requestId,channelId:id,left:pair.left,right:pair.right,
+          epoch,revision,acked:false};
+        el.value=previous;el.setAttribute("aria-busy","true");
+        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
+          requestId,channelId:id,deviceEpoch:epoch,revision,
+          left:pair.left,right:pair.right,confirmed:true});
+        window.setTimeout(()=>{
+          if(pendingExternal?.requestId!==requestId)return;
+          pendingExternal=null;el.removeAttribute("aria-busy");
+          nativeToast("EXTERNAL OUT timed out · last PCM retained");
+          controller?.subscribe();
+        },8000);
+        status("EXTERNAL OUT pending · native validation and readback");
         return true;
       }
       if(field==="output"){
