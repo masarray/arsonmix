@@ -28,8 +28,8 @@
 .console-body{
   --strip-w:150px;--master-w:152px;
 }
-.console-body[data-density="standard"]{--strip-w:125px;--master-w:132px;--switch-h:39px;--pan-h:36px;--trim-h:27px;--route-h:91px}
-.console-body[data-density="compact"]{--strip-w:105px;--master-w:116px;--switch-h:32px;--route-h:81px;--pan-h:30px;--trim-h:23px}
+.console-body[data-density="standard"]{--strip-w:125px;--master-w:132px;--switch-h:39px;--pan-h:36px;--trim-h:27px;--route-h:70px}
+.console-body[data-density="compact"]{--strip-w:105px;--master-w:116px;--switch-h:32px;--route-h:58px;--pan-h:30px;--trim-h:23px}
 
 .console-body .strip,.console-body.narrow .strip:not(.master){
   width:var(--strip-w);min-width:var(--strip-w);flex:0 0 var(--strip-w);
@@ -143,11 +143,3 @@
 .console-body .switch:focus-visible,.console-body .route-select:focus-visible{outline:2px solid #7ecae3;outline-offset:0}
 .console-body .rail-cell.fader{min-height:118px}
 @media(max-height:610px){.console-body .rail-cell.fader{min-height:86px}}
-
-/* O1 physical OUT: same official strip, one extra compact native pair row. */
-.console-body:not([data-density="standard"]):not([data-density="compact"]){--route-h:94px}
-.console-body .external-out-field .route-caption{color:#a8d0dd}
-.console-body .external-out-field .route-select{border-color:#547685;background-color:#192a32}
-.console-body .external-out-field .route-select[aria-busy="true"]{border-color:#ddb576}
-.console-body .external-out-field .route-select[data-status="NEEDS_REMAP"]{color:#d5aa8b}
-.console-body[data-density="compact"] .external-out-field .route-caption{font-size:9px}
