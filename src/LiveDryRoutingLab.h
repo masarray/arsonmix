@@ -2359,10 +2359,17 @@ public:
         amended.erase(std::remove_if(amended.begin(),amended.end(),
             [channel](const auto& p){return p.channel==channel;}),amended.end());
         if(!none)amended.push_back(candidate);
+        // Per-ChannelId authorization: remapping ONE channel on a new device
+        // never re-arms other saved amplifiers at matching old port numbers.
+        auto verified=externalOutputEpoch_==expectedEpoch?
+            externalOutputVerified_:std::vector<std::uint64_t>{};
+        std::erase(verified,channel.value);
+        if(!none)verified.push_back(channel.value);
         if(!nativePublisher_.setExternalOutput(expectedEpoch,expectedRevision,
                 channel,left,right,pins.outputCount))
             return "EXTERNAL OUT: native graph rejected; previous sound retained";
         externalOutputAssignments_=std::move(amended);
+        externalOutputVerified_=std::move(verified);
         externalOutputEpoch_=expectedEpoch;
         return {};
     }
@@ -2371,8 +2378,18 @@ public:
     // verified epoch. Reinstall only existing known pins: never auto-arm
     // stale destinations after a device restart or a different ASIO device.
     void reapplyExternalOutputsSameEpoch() noexcept {
+        // Remove deleted ChannelIds BEFORE saving an updated .smix.
+        std::erase_if(externalOutputAssignments_,[&](const auto& p){
+            return nativeAccepted_.graph.roster.find(p.channel)==nullptr;
+        });
+        std::erase_if(externalOutputVerified_,[&](const auto id){
+            return nativeAccepted_.graph.roster.find(armix::mixer::ChannelId{id})==nullptr;
+        });
         if(externalOutputEpoch_!=nativeAccepted_.deviceEpoch)return;
         for(const auto& p:externalOutputAssignments_) {
+            if(std::find(externalOutputVerified_.begin(),
+                 externalOutputVerified_.end(),p.channel.value)==
+                 externalOutputVerified_.end())continue;
             int left=-1,right=-1;
             const int count=callbackOutputCount_.load(std::memory_order_acquire);
             for(int i=0;i<count;++i) {
@@ -2484,6 +2501,7 @@ public:
             // Restored physical intentions are inert until exact ASIO identity,
             // both labeled pins and current MAIN/MONITOR ownership match.
             externalOutputAssignments_=std::move(document.externalOutputs);
+            externalOutputVerified_.clear();
             externalOutputEpoch_=0;
             if(pins.typeName=="ASIO" && pins.deviceName==document.binding.playback) {
                 bool exact=true;
@@ -2491,7 +2509,12 @@ public:
                     exact=exact && patch.right<pins.outputNames.size() &&
                         pins.outputNames[patch.left]==patch.leftName &&
                         pins.outputNames[patch.right]==patch.rightName;
-                if(exact)externalOutputEpoch_=generation;
+                if(exact){
+                    externalOutputEpoch_=generation;
+                    externalOutputVerified_.reserve(externalOutputAssignments_.size());
+                    for(const auto& patch:externalOutputAssignments_)
+                        externalOutputVerified_.push_back(patch.channel.value);
+                }
             }
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;
@@ -3362,6 +3385,7 @@ public:
 private:
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
+    std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state
     // Four 9-bit callback indices (0 means absent) and the prepared quantum.
     // One atomic read gives AUDIO a coherent destination/quantum contract.
