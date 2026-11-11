@@ -136,16 +136,31 @@ public:
         const auto remaining = juce::jmax (0, titleX + titleW - x - 9);
         if (remaining > 80)
         {
-            // Explicit Unicode code point prevents mojibake in MSVC builds.
+            // The installed executable owns its version. It is stamped from
+            // the verified release tag at build time, never a UI placeholder.
+            // Show it first so narrowing the window clips the description,
+            // not the operator's release identity.
+            const auto subtitleFont = juce::Font (juce::FontOptions { 11.0f });
+            g.setFont (subtitleFont);
+            auto paintSubtitle = [&] (const juce::String& label, juce::Colour colour)
+            {
+                const auto available = juce::jmax (0, titleX + titleW - x - 9);
+                if (available == 0)
+                    return;
+                const auto width = juce::jmin (available,
+                    juce::GlyphArrangement::getStringWidthInt (subtitleFont, label) + 4);
+                g.setColour (colour.withMultipliedAlpha (alpha));
+                g.drawText (label, x, 0, width, h, juce::Justification::centredLeft, true);
+                x += width;
+            };
+            paintSubtitle (juce::String ("v") + JUCE_APPLICATION_VERSION_STRING,
+                           juce::Colour (0xffe8f6fc));
+            // Explicit Unicode code points prevent mojibake in MSVC builds.
             const auto separator = juce::String ("  ") +
                 juce::String::charToString ((juce::juce_wchar) 0x00b7) + "  ";
-            const auto subtitle = juce::String ("Open Source Premium Digital Mixer")
-                + separator + "Version 01.00" + separator
-                + juce::String::charToString ((juce::juce_wchar) 0x00a9) + " 2026 SonKuPik";
-            g.setColour (juce::Colour (0xff96b3bf).withMultipliedAlpha (alpha));
-            g.setFont (juce::Font (juce::FontOptions { 10.5f }));
-            g.drawText (subtitle, x, 0, remaining, h,
-                        juce::Justification::centredLeft, true);
+            paintSubtitle (separator + "Open Source Premium Digital Mixer" + separator
+                + juce::String::charToString ((juce::juce_wchar) 0x00a9) + " 2026 SonKuPik",
+                juce::Colour (0xffc9e1e9));
         }
     }
 };
