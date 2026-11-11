@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const e=readFileSync('src/LiveAudioEngine.h','utf8');
+const externalTransition=readFileSync('engine/core/NativeOutputTransition.h','utf8');
 const h=readFileSync('src/LiveGraphHandoff.h','utf8');
 const m=readFileSync('src/Main.cpp','utf8');
 const b=readFileSync('web/bridge.js','utf8');
@@ -87,11 +88,16 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   const begin=e.indexOf('if (renderOwner ==',e.indexOf('callbackCount_.fetch_add'));
   const end=e.indexOf('const bool enabled = monitor_',begin);
   const routed=e.slice(begin,end);
-  assert.match(routed,/FxMoveRamp::gain\(\s*routedFxMove,i,samples\)/);
+  // The same FX MOVE envelope now runs across ALL native physical ASIO pins,
+  // in a shared output-only helper after the single authoritative DSP pass.
+  assert.match(routed,/NativeOutputTransition::apply\(/);
+  assert.match(routed,/outputs,outputChannels,samples,routedFxMove/);
+  assert.match(externalTransition,/for\(int c=0;c<count;\+\+c\)/);
+  assert.match(externalTransition,/FxMoveRamp::gain\(moveStage,i,frames\)/);
   assert.match(routed,/fxMovePhase_\.store\(2,std::memory_order_release\)/);
   assert.match(routed,/fxMovePhase_\.store\(0,std::memory_order_release\)/);
   assert.match(routed,/cycle\.graph->orderPacked\.store/);
-  assert.ok(routed.indexOf('FxMoveRamp::gain')<routed.indexOf('masterLoudness_.process'));
+  assert.ok(routed.indexOf('NativeOutputTransition::apply')<routed.indexOf('masterLoudness_.process'));
   assert.match(routed,/audibleLeft=\(routedFxMove!=0\|\|cycle\.fadeOut\|\|cycle\.fadeIn\)\?movedPeakL:left/);
   assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
 });
