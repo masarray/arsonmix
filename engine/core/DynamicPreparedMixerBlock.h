@@ -590,6 +590,7 @@ public:
         next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalAppliedTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalFades_=std::make_unique<ExternalFade[]>(rows.size());
+        next.externalBlockTargets_.assign(rows.size(),noExternal);
         for(std::size_t i=0;i<rows.size();++i) {
             next.externalTargets_[i].store(noExternal,std::memory_order_relaxed);
             next.externalAppliedTargets_[i].store(noExternal,std::memory_order_relaxed);
@@ -859,6 +860,7 @@ public:
             // exposing aliased hardware pointers fails closed as a whole.
             for(const auto i:renderOrder_) {
                 const auto pair=externalTargets_[i].load(std::memory_order_acquire);
+                externalBlockTargets_[i]=pair; // validate exactly this block's immutable choice
                 const auto& fading=externalFades_[i];
                 const std::uint32_t targets[3]={pair,fading.current,fading.next};
                 for(const auto target:targets) {
@@ -882,7 +884,7 @@ public:
                    lane.role!=ChannelRole::group &&
                    lane.role!=ChannelRole::fxReturn)continue;
                 auto& fade=externalFades_[i];
-                const auto wanted=externalTargets_[i].load(std::memory_order_acquire);
+                const auto wanted=externalBlockTargets_[i]; // same preflighted target
                 if(fade.remaining==0 && fade.current!=wanted) {
                     fade.next=wanted;
                     fade.remaining=armix::dsp::RealtimeSlew64::samples;
@@ -926,6 +928,7 @@ private:
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
+    std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
