@@ -474,6 +474,18 @@
 }
 .mx-harm-head button.mx-harm-preset-tool:hover:not(:disabled){background:#417873}
 .mx-harm-head button.mx-harm-preset-tool:disabled{opacity:.42;cursor:default}
+.mx-harm-preset-menu{
+ position:absolute;right:62px;top:32px;z-index:5;display:flex;
+ flex-direction:column;gap:4px;min-width:145px;max-width:calc(100% - 12px);
+ padding:6px;background:#e5edef;border:1px solid #8ba8ac;
+ border-radius:0 0 5px 5px;box-shadow:0 8px 15px #06192452
+}
+.mx-harm-preset-menu button{
+ display:block;text-align:left;min-height:24px;padding:3px 8px;
+ color:#24474e;background:#d5e7e3;border:1px solid #73949a;
+ border-radius:3px;font-size:10px
+}
+.mx-harm-preset-menu button:hover{background:#bddcd5}
 .mx-harm-preset-form{
  position:absolute;right:58px;top:32px;z-index:5;
  display:flex;align-items:center;gap:6px;max-width:calc(100% - 12px);
@@ -493,6 +505,7 @@
 @media(max-width:580px){
  .mx-harm-head{gap:4px;padding-left:6px}
  .mx-harm-preset-form{left:6px;right:6px;flex-wrap:wrap}
+ .mx-harm-preset-menu{right:37px}
  .mx-harm-head button.mx-harm-preset-tool{padding:2px 3px;font-size:8px}
 }
 /* The header Close/Power material, geometry, icon and semantic states are

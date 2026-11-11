@@ -25,12 +25,19 @@ root.innerHTML=`
    </select>
    <button type="button" id="mxHSaveAs" class="mx-harm-preset-tool"
      title="Save As · My Presets" aria-label="Save As user preset" disabled>＋ Save As</button>
+   <button type="button" id="mxHManage" class="mx-harm-preset-tool"
+     aria-label="Manage selected user preset" title="Manage My Preset" disabled>···</button>
    <button type="button" class="mx-harm-power" id="mxHPower" aria-label="Harmonice state unavailable" aria-pressed="false" data-fx-state="unknown" title="FX STATE UNAVAILABLE" disabled>⏻</button>
    <button type="button" class="mx-harm-close" id="mxHClose" aria-label="Close Harmonice" title="Close Harmonice"></button>
   </header>
+  <div id="mxHPresetMenu" class="mx-harm-preset-menu" hidden aria-label="My Presets actions">
+   <button type="button" id="mxHSaveExisting">Save / Overwrite…</button>
+   <button type="button" id="mxHRenameExisting">Rename…</button>
+   <button type="button" id="mxHDeleteExisting">Delete…</button>
+  </div>
   <div id="mxHPresetForm" class="mx-harm-preset-form" hidden role="group"
        aria-label="Save Harmonice user preset">
-   <label for="mxHPresetName">MY PRESET</label>
+   <label id="mxHPresetPrompt" for="mxHPresetName">MY PRESET</label>
    <input id="mxHPresetName" aria-label="My preset name" maxlength="80"
      autocomplete="off" spellcheck="false">
    <button type="button" id="mxHPresetConfirm">Save</button>
@@ -130,6 +137,8 @@ let readbackSentAt=0,verified=false,heldPatch=null;
 let mode="DEMO",readbackLatency=0,observedNote=-1,preset="trio";
 const myPresets=new Map();
 let myPresetAction=null,myPresetBinding="",myPresetRecall=null;
+let workingUserId="",userPresetDirty=false,myPresetFormMode="";
+let myPresetFormTarget="";
 let detectedKey=-1,detectedScale=-1,detectedConfidence=0,lastGuideRead=0;
 let effectiveKey=-1,effectiveScale=-1,sourceSignature="",availableSources=[];
 const noteButtons=[...root.querySelectorAll("[data-key]")];
@@ -186,6 +195,8 @@ function reconcileBinding(){
    if(verified||pending||readbackRequest){
      holdUnfinishedEdit();verified=false;pending=null;latest=null;
      myPresetAction=null;myPresetRecall=null;myPresetBinding="";
+     workingUserId="";userPresetDirty=false;closeMyPresetForm();
+     el("mxHPresetMenu").hidden=true;
      readbackRequest="";effectiveKey=-1;effectiveScale=-1;
      hint("HARMONY RECONNECTING · WAITING FOR ACCEPTED FX");paint();
    }
@@ -202,6 +213,8 @@ function reconcileBinding(){
    current.boundRevision=c.graphRevision;
    pending=null;latest=null;verified=false;
    myPresetAction=null;myPresetRecall=null;myPresetBinding="";
+   workingUserId="";userPresetDirty=false;closeMyPresetForm();
+   el("mxHPresetMenu").hidden=true;
    readbackRequest="";readbackSentAt=0;
    effectiveKey=-1;effectiveScale=-1;
    detectedKey=-1;detectedScale=-1;detectedConfidence=0;
@@ -331,11 +344,15 @@ function paint(){
    !auto?"MANUAL":!inGraph?"SAFE":detected?"AUTO":"LISTEN";
  showText(el("mxHGuideStatus"),status);
  el("mxHGuideStatus").dataset.state=status.toLowerCase();
+ showText(el("mxHPreset").querySelector('option[value="custom"]'),
+  userPresetDirty?"Custom · Modified":"Custom");
  if(el("mxHPreset").value!==preset)el("mxHPreset").value=preset;
  const pc=context();
- el("mxHSaveAs").disabled=!native()||!verified||Boolean(pending)||
-   Boolean(latest)||Boolean(heldPatch)||Boolean(myPresetAction)||
-   !pc||Boolean(pc.workspaceToken)||pc.deviceEpoch==="0";
+ const canPreset=native()&&verified&&!pending&&!latest&&!heldPatch&&
+   !myPresetAction&&Boolean(pc)&&!pc.workspaceToken&&pc.deviceEpoch!=="0";
+ el("mxHSaveAs").disabled=!canPreset;
+ el("mxHManage").disabled=!canPreset||!workingUserId||
+    !myPresets.has(workingUserId);
  for(const {key,input,output} of sliders){
   const value=key==="gainDb"?v[key]:v[key]*100;
   const setting=String(value);
@@ -444,7 +461,8 @@ sliders.forEach(({input})=>input.addEventListener("input",()=>{
    hint("MY PRESET · WAIT FOR ACCEPTED NATIVE DSP");return false;
   }
   const requestId="hpres-"+Date.now()+"-"+(++seq);
-  myPresetAction={requestId,operation,started:Date.now()};
+  myPresetAction={requestId,operation,started:Date.now(),
+   acceptedBefore:JSON.stringify(settings),...payload};
   backend().emitEvent("arMixAction",{action:"nativeHarmonyUserPreset",
      operation,requestId,...c,...payload});
   hint("MY PRESET · "+operation.toUpperCase()+" PENDING");paint();
@@ -464,38 +482,93 @@ sliders.forEach(({input})=>input.addEventListener("input",()=>{
    option.value="user:"+item.id;option.textContent=item.name;group.append(option);
   }
   if(group.children.length)select.append(group);
+  if(workingUserId&&!myPresets.has(workingUserId)){
+   workingUserId="";userPresetDirty=false;preset="custom";
+  }
   if(preset.startsWith("user:")&&!myPresets.has(preset.slice(5)))preset="custom";
   paint();
  }
- function closeMyPresetForm(){el("mxHPresetForm").hidden=true;}
- el("mxHSaveAs").addEventListener("click",()=>{
-  const c=context();
-  if(!native()||!verified||pending||myPresetAction||!c||c.workspaceToken)return;
-  el("mxHPresetName").value=el("mxHPreset").selectedOptions[0]?.textContent||"My Harmony";
-  el("mxHPresetForm").hidden=false;
-  el("mxHPresetName").focus();el("mxHPresetName").select();
- });
- el("mxHPresetCancel").addEventListener("click",closeMyPresetForm);
- function saveMyPreset(){
-  const name=el("mxHPresetName").value;
-  if(!name||name.length>80||name.trim()!==name){
-   hint("MY PRESET NAME INVALID · AUDIO UNCHANGED");return;
-  }
-  if(myPresetCommand("saveAs",{name}))closeMyPresetForm();
+ function closeMyPresetForm(){
+  myPresetFormMode="";myPresetFormTarget="";
+  el("mxHPresetForm").hidden=true;
  }
- el("mxHPresetConfirm").addEventListener("click",saveMyPreset);
+ function openMyPresetForm(operation,target=""){
+  const c=context();
+  if(!native()||!verified||pending||latest||myPresetAction||!c||
+     c.workspaceToken||c.deviceEpoch==="0"){
+   hint("MY PRESETS · WAIT FOR ACCEPTED NATIVE DSP");return;
+  }
+  const user=myPresets.get(workingUserId);
+  if(operation!=="saveAs"&&operation!=="recall"&&!user){
+   hint("MY PRESETS · SELECT A USER PRESET FIRST");return;
+  }
+  el("mxHPresetMenu").hidden=true;
+  myPresetFormMode=operation;myPresetFormTarget=target;
+  const requiresName=operation==="saveAs"||operation==="rename";
+  const input=el("mxHPresetName");
+  input.hidden=!requiresName;
+  showText(el("mxHPresetPrompt"),{
+   saveAs:"SAVE AS · MY PRESETS",save:"OVERWRITE USER PRESET?",
+   rename:"RENAME MY PRESET",delete:"DELETE PRESET? · AUDIO STAYS",
+   recall:"DISCARD MODIFIED SOUND?"
+  }[operation]);
+  input.value=operation==="saveAs"?
+     (user?user.name+" Copy":"My Harmony"):user?.name||"";
+  showText(el("mxHPresetConfirm"),{
+   saveAs:"Save As",save:"Overwrite",rename:"Rename",
+   delete:"Delete",recall:"Recall"
+  }[operation]);
+  el("mxHPresetForm").hidden=false;
+  if(requiresName){input.focus();input.select();}
+  else el("mxHPresetConfirm").focus();
+ }
+ function submitMyPresetForm(){
+  const operation=myPresetFormMode;
+  if(!operation)return;
+  const name=el("mxHPresetName").value;
+  if((operation==="saveAs"||operation==="rename")&&
+     (!name||name.length>80||name.trim()!==name)){
+   hint("PRESET NAME INVALID · AUDIO UNCHANGED");return;
+  }
+  const args=operation==="saveAs"?{name}:
+     operation==="rename"?{presetId:workingUserId,name}:
+     operation==="recall"?{presetId:myPresetFormTarget}:
+     {presetId:workingUserId};
+  if(myPresetCommand(operation==="recall"?"read":operation,args))
+   closeMyPresetForm();
+ }
+ el("mxHSaveAs").addEventListener("click",()=>openMyPresetForm("saveAs"));
+ el("mxHManage").addEventListener("click",()=>{
+  if(!el("mxHManage").disabled)
+   el("mxHPresetMenu").hidden=!el("mxHPresetMenu").hidden;
+ });
+ for(const [id,operation] of [
+   ["mxHSaveExisting","save"],["mxHRenameExisting","rename"],
+   ["mxHDeleteExisting","delete"]]){
+  el(id).addEventListener("click",()=>openMyPresetForm(operation));
+ }
+ el("mxHPresetConfirm").addEventListener("click",submitMyPresetForm);
+ el("mxHPresetCancel").addEventListener("click",closeMyPresetForm);
  el("mxHPresetName").addEventListener("keydown",e=>{
-  if(e.key==="Enter"){e.preventDefault();saveMyPreset();}
+  if(e.key==="Enter"){e.preventDefault();submitMyPresetForm();}
   if(e.key==="Escape"){e.preventDefault();closeMyPresetForm();}
  });
 el("mxHPreset").addEventListener("change",e=>{
  const selected=e.target.value;
  if(selected.startsWith("user:")){
   // Do not claim this preset active until native AUDIO ACK and readback.
-  myPresetCommand("read",{presetId:selected.slice(5)});
+  const requestedId=selected.slice(5);
+  // A dirty user sound is never discarded by a dropdown selection alone.
+  if(userPresetDirty&&workingUserId)
+   openMyPresetForm("recall",requestedId);
+  else myPresetCommand("read",{presetId:requestedId});
   el("mxHPreset").value=preset;return;
  }
  preset=selected;
+ if(selected==="custom"||presets[selected]){
+  workingUserId="";userPresetDirty=false;
+  el("mxHPresetMenu").hidden=true;
+ }
  const change=presets[preset];if(change){
   const next={...(latest||pending?.settings||settings),...change};
   if(!native()){settings=next;demos.set(current?.track?.id+":"+current?.slot,{...next});
@@ -515,7 +588,9 @@ el("mxHPower").addEventListener("click",()=>{
  else current.track.slotBypass[current.slot]=!current.track.slotBypass[current.slot];
  paint();
 });
-el("mxHClose").addEventListener("click",()=>{root.hidden=true;});
+el("mxHClose").addEventListener("click",()=>{
+ root.hidden=true;closeMyPresetForm();el("mxHPresetMenu").hidden=true;
+});
 let drag=null;
 const head=root.querySelector(".mx-harm-head");
 head.addEventListener("pointerdown",e=>{
@@ -548,6 +623,8 @@ window.ArSonMixNativeHarmony=Object.freeze({
   const n=state(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===id),insert=ch?.inserts?.[slot];
   myPresetAction=null;myPresetRecall=null;myPresetBinding="";myPresets.clear();
+  workingUserId="";userPresetDirty=false;
+  el("mxHPresetMenu").hidden=true;
   closeMyPresetForm();
   el("mxHPreset").querySelector('optgroup[data-my-presets]')?.remove();
   preset="custom";
@@ -566,15 +643,19 @@ window.ArSonMixNativeHarmony=Object.freeze({
   }
   root.hidden=false;refreshGuideSources();paint();
  },
- close(){root.hidden=true;closeMyPresetForm();}
+ close(){root.hidden=true;closeMyPresetForm();el("mxHPresetMenu").hidden=true;}
 });
 backend()?.addEventListener?.("arMixBuiltinHarmonyPresetResult",reply=>{
- if(!myPresetAction||reply?.requestId!==myPresetAction.requestId)return;
- const task=myPresetAction,c=context();myPresetAction=null;
+ if(!myPresetAction||reply?.requestId!==myPresetAction.requestId||
+    reply.operation!==myPresetAction.operation)return;
+ const task=myPresetAction,c=context();
  if(!c||reply.instanceId!==c.instanceId||reply.channelId!==c.channelId||
     reply.deviceEpoch!==c.deviceEpoch||reply.graphRevision!==c.graphRevision){
-  hint("MY PRESET · STALE INSTANCE · AUDIO UNCHANGED");paint();return;
+  // Never consume a legitimate in-flight request on a stale/wrong
+  // instance response. A matching reply or timeout remains possible.
+  hint("MY PRESET · STALE RESPONSE IGNORED");return;
  }
+ myPresetAction=null;
  if(reply.status!=="OK"){
   hint("MY PRESET REJECTED · "+(reply.errorCode||"UNKNOWN"));paint();return;
  }
@@ -583,8 +664,8 @@ backend()?.addEventListener?.("arMixBuiltinHarmonyPresetResult",reply=>{
   showMyPresets(Array.isArray(reply.items)?reply.items:[]);return;
  }
  if(task.operation==="read"){
-  if(!myPresets.has(reply.presetId)||!reply.settings||
-     typeof reply.settings!=="object"){
+  if(reply.presetId!==task.presetId||!myPresets.has(reply.presetId)||
+     !reply.settings||typeof reply.settings!=="object"){
    hint("MY PRESET INVALID · AUDIO UNCHANGED");paint();return;
   }
   // Portable preset never inherits another session's Music ChannelId.
@@ -597,10 +678,32 @@ backend()?.addEventListener?.("arMixBuiltinHarmonyPresetResult",reply=>{
                               name:reply.name};
   return;
  }
- if(task.operation==="saveAs"){
-  preset="user:"+reply.presetId;myPresetBinding="";
-  hint("MY PRESET SAVED TO DISK · "+reply.name);
-  myPresetCommand("list");
+ if(["saveAs","save","rename","delete"].includes(task.operation)){
+  const recordId=task.operation==="saveAs"?reply.presetId:task.presetId;
+  if(typeof recordId!=="string"||
+     !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(recordId)){
+   hint("MY PRESET RESPONSE INVALID · AUDIO UNCHANGED");paint();return;
+  }
+  if(task.operation==="delete"){
+   if(workingUserId===recordId)workingUserId="";
+   userPresetDirty=false;preset="custom";
+   hint("USER PRESET DELETED · AUDIO UNCHANGED");
+  }else{
+   if(typeof recordId!=="string"||!myPresets.has(recordId)&&
+      task.operation!=="saveAs"){
+    hint("MY PRESET RESPONSE INVALID · AUDIO UNCHANGED");paint();return;
+   }
+   workingUserId=recordId;
+   const changedSinceFileRequest=pending||latest||heldPatch||
+     JSON.stringify(settings)!==task.acceptedBefore;
+   userPresetDirty=Boolean(changedSinceFileRequest);
+   preset=userPresetDirty?"custom":"user:"+recordId;
+   hint(task.operation==="saveAs"?"MY PRESET SAVED TO DISK":
+     task.operation==="save"?"USER PRESET OVERWRITTEN":
+       "USER PRESET RENAMED");
+  }
+  // Return a fresh, validated list only after native atomic disk success.
+  myPresetBinding="";myPresetCommand("list");
  }
 });
 backend()?.addEventListener?.("arMixBuiltinHarmonyQueue",ack=>{
@@ -634,6 +737,11 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
    return;
  }
  const acceptedEditId=pending?.id||"";
+ // 'Modified' becomes true only AFTER audio-owner ACK + readback,
+ // not on a speculative slider click or failed native control request.
+ if(pending?.ack&&workingUserId&&!myPresetRecall){
+  userPresetDirty=true;preset="custom";
+ }
  settings={...snap.settings};verified=true;
  effectiveKey=snap.effectiveKey;effectiveScale=snap.effectiveScale;
  detectedKey=Number.isInteger(snap.guideDetectedKey)?snap.guideDetectedKey:-1;
@@ -644,6 +752,7 @@ backend()?.addEventListener?.("arMixBuiltinHarmonySnapshot",snap=>{
  pending=null;
  if(myPresetRecall&&myPresetRecall.requestId===acceptedEditId){
   preset="user:"+myPresetRecall.presetId;
+  workingUserId=myPresetRecall.presetId;userPresetDirty=false;
   hint("MY PRESET APPLIED & VERIFIED · "+myPresetRecall.name);
   myPresetRecall=null;
  }

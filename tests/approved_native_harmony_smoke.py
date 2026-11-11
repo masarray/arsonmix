@@ -175,6 +175,88 @@ def main():
                          applied=pitch_edit["requestId"],observed=57)
                 assert switch.get_attribute("aria-checked")=="true"
                 assert switch.get_attribute("aria-busy")=="false"
+                # P1: A changed user preset is Modified ONLY after DSP ACK +
+                # accepted readback. Manager may Save a changed working sound.
+                assert page.locator("#mxHPreset").input_value()=="custom"
+                assert "Modified" in page.locator(
+                    '#mxHPreset option[value="custom"]').inner_text()
+                manager=page.locator("#mxHManage")
+                assert not manager.is_disabled()
+                manager.click()
+                assert page.locator("#mxHPresetMenu").is_visible()
+                page.locator("#mxHSaveExisting").click()
+                assert form.is_visible()
+                assert form.locator("#mxHPresetName").is_hidden()
+                # Cancel must never send any native preset/disk operation.
+                before=len(page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonyUserPreset').length"""))
+                form.locator("#mxHPresetCancel").click()
+                after=len(page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonyUserPreset').length"""))
+                assert after==before
+                manager.click()
+                page.locator("#mxHSaveExisting").click()
+                assert "OVERWRITE" in page.locator("#mxHPresetPrompt").inner_text()
+                form.locator("#mxHPresetConfirm").click()
+                overwrite=last_action(page,"nativeHarmonyUserPreset")
+                assert overwrite["operation"]=="save" and overwrite["presetId"]==saved_id
+                assert manager.is_disabled()
+                # Wrong-instance response using correct requestId is ignored,
+                # never consumes or falsely completes the genuine request.
+                emit(page,"arMixBuiltinHarmonyPresetResult",{
+                    "requestId":overwrite["requestId"],"operation":"save",
+                    "status":"OK","channelId":SOURCE,
+                    "deviceEpoch":state["device"]["epoch"],
+                    "graphRevision":state["graph"]["revision"],
+                    "instanceId":"WRONG-INSTANCE"})
+                assert manager.is_disabled()
+                preset_result(overwrite,"save",presetId=saved_id,name="Singer Wide")
+                library=last_action(page,"nativeHarmonyUserPreset")
+                assert library["operation"]=="list"
+                preset_result(library,"list",items=[{
+                    "id":saved_id,"name":"Singer Wide","category":"My Presets"}])
+                assert page.locator("#mxHPreset").input_value()==user_option
+                assert not manager.is_disabled()
+                # Rename preserves stable user ID, does not touch audio.
+                editor_count=len(page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonySetSettings').length"""))
+                manager.click()
+                page.locator("#mxHRenameExisting").click()
+                name=page.locator("#mxHPresetName")
+                assert name.is_visible()
+                name.fill("Singer Wide 2")
+                name.press("Enter")
+                renaming=last_action(page,"nativeHarmonyUserPreset")
+                assert renaming["operation"]=="rename"
+                assert renaming["presetId"]==saved_id and renaming["name"]=="Singer Wide 2"
+                preset_result(renaming,"rename")
+                library=last_action(page,"nativeHarmonyUserPreset")
+                assert library["operation"]=="list"
+                preset_result(library,"list",items=[{
+                    "id":saved_id,"name":"Singer Wide 2","category":"My Presets"}])
+                assert page.locator("#mxHPreset").input_value()==user_option
+                assert page.locator('#mxHPreset option[value="'+user_option+'"]').inner_text()=="Singer Wide 2"
+                # Delete requires explicit confirmation. The accepted PCM
+                # is retained; the disk user record alone is removed.
+                manager.click()
+                page.locator("#mxHDeleteExisting").click()
+                assert "DELETE" in page.locator("#mxHPresetPrompt").inner_text()
+                form.locator("#mxHPresetCancel").click()
+                assert page.locator("#mxHPreset").input_value()==user_option
+                manager.click()
+                page.locator("#mxHDeleteExisting").click()
+                form.locator("#mxHPresetConfirm").click()
+                deletion=last_action(page,"nativeHarmonyUserPreset")
+                assert deletion["operation"]=="delete" and deletion["presetId"]==saved_id
+                preset_result(deletion,"delete")
+                library=last_action(page,"nativeHarmonyUserPreset")
+                assert library["operation"]=="list"
+                preset_result(library,"list",items=[])
+                assert page.locator("#mxHPreset option[value^='user:']").count()==0
+                assert page.locator("#mxHPreset").input_value()=="custom"
+                assert manager.is_disabled()
+                assert len(page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonySetSettings').length"""))==editor_count
                 switch.evaluate("el=>el.blur()")
                 if width==1366:
                     page.wait_for_timeout(160)
