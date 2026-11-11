@@ -85,20 +85,31 @@ public:
         }
         if (speakers.empty()) return { Outcome::noVerifiedPlayback };
 
-        const auto preferred = [&] (bool Endpoint::*flag) -> const Endpoint*
+        // Ambiguous default metadata must never silently downgrade to a
+        // different default or whichever device was listed first. A single
+        // pre-install speaker is more trustworthy after VB-CABLE installation,
+        // because Windows may replace the current default with CABLE Input.
+        const Endpoint* historical = nullptr;
+        const Endpoint* current = nullptr;
+        std::size_t historicalCount = 0, currentCount = 0;
+        for (const auto* candidate : speakers)
         {
-            const Endpoint* found = nullptr;
-            for (const auto* candidate : speakers)
-                if (candidate->*flag)
-                {
-                    if (found != nullptr) return nullptr;
-                    found = candidate;
-                }
-            return found;
-        };
-        const Endpoint* render = preferred (&Endpoint::preInstallDefaultRender);
-        if (!render) render = preferred (&Endpoint::currentDefaultRender);
-        if (!render && speakers.size() == 1) render = speakers.front();
+            if (candidate->preInstallDefaultRender)
+            {
+                historical = candidate;
+                ++historicalCount;
+            }
+            if (candidate->currentDefaultRender)
+            {
+                current = candidate;
+                ++currentCount;
+            }
+        }
+        if (historicalCount > 1 || (historicalCount == 0 && currentCount > 1))
+            return { Outcome::chooseSpeakers };
+        const Endpoint* render = historicalCount == 1 ? historical :
+                                 currentCount == 1 ? current :
+                                 speakers.size() == 1 ? speakers.front() : nullptr;
         if (!render) return { Outcome::chooseSpeakers };
 
         Decision result;
