@@ -47,6 +47,23 @@ test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and do
   assert.match(notes,/Orbit/);
 });
 
+test('Verified release tag is stamped into the native window, not a fake version',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  const cmake=readFileSync(new URL('../CMakeLists.txt',import.meta.url),'utf8');
+  const chrome=readFileSync(new URL('../src/ArSonWindowChrome.h',import.meta.url),'utf8');
+  const configure=workflow.split('      - name: Configure native application and CTest')[1]
+    ?.split('      - name: Build native GUI and all registered tests')[0]||'';
+  assert.match(configure, /-DARMIX_RELEASE_TAG="\$env:ARMIX_RELEASE_TAG"/);
+  assert.match(cmake, /set\(ARMIX_RELEASE_TAG "" CACHE STRING/);
+  assert.match(cmake, /if\(NOT ARMIX_RELEASE_TAG MATCHES/);
+  assert.match(cmake, /ARMIX_RELEASE_TAG_PATTERN/);
+  assert.match(cmake, /ARMIX_APP_VERSION "\$\{PROJECT_VERSION\}-dev"/);
+  assert.match(cmake, /JUCE_APPLICATION_VERSION_STRING="\$\{ARMIX_APP_VERSION\}"/);
+  assert.match(chrome, /juce::String \("v"\) \+ JUCE_APPLICATION_VERSION_STRING/);
+  assert.doesNotMatch(chrome, /Version 01\.00/);
+  assert.doesNotMatch(cmake, /0\.5\.0-p2/);
+});
+
 test('Published Windows alpha may dispatch exactly one authorized Pages refresh',()=>{
   const release=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const pages=readFileSync(new URL('../.github/workflows/pages-publish.yml',import.meta.url),'utf8');
