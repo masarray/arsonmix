@@ -1855,8 +1855,10 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
 test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Monitor click",()=>{
  const native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
  const routing=read("src/LiveDryRoutingLab.h");
- const control=native.slice(native.indexOf('if(action==="routingExternalOutput")'),
-     native.indexOf('if(action==="routingChannelPatch")'));
+ const start=native.indexOf('if(action=="routingExternalOutput")');
+ const end=native.indexOf('if(action=="routingChannelPatch")',start);
+ assert.ok(start>=0&&end>start,"real native external-output action is present");
+ const control=native.slice(start,end);
  assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
  assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
  assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
