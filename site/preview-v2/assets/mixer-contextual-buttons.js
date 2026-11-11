@@ -98,6 +98,7 @@
   'use strict';
   const windows=[
     ['#fastPicker','.fast-head'],
+    ['#arsonPlayer','.ap-top'],
     ['#wireConfigWindow','.wire-config-head'],
     ['#wireWorkspace','.wire-ws-head'],
     ['#routeChoice','.route-choice-head'],
