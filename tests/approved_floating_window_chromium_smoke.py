@@ -57,10 +57,10 @@ def run(page,width,height):
     close=page.locator("#wireConfigClose")
     geometry=close.evaluate("""e=>({
       width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,
-      symbol:getComputedStyle(e,'::after').backgroundImage
+      symbol:getComputedStyle(e,'::after').content
     })""")
     assert geometry["width"]==24 and geometry["height"]==24,geometry
-    assert "gradient" in geometry["symbol"],geometry
+    assert "×" in geometry["symbol"],geometry
     close.click()
     assert page.locator("#wireConfigWindow").is_hidden()
     # Quick FX entry: existing source slot activation must still be clickable.
