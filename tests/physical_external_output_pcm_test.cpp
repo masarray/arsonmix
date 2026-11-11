@@ -4,6 +4,8 @@
 #endif
 // O1: deterministic buffer-level proof. This does not certify physical FAT.
 #include "../engine/core/DynamicNativeSessionPublisher.h"
+#include "../engine/core/LiveOutputRouteGate.h"
+#include "../engine/core/NativeOutputTransition.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -197,6 +199,58 @@ static void verifyAliasedCallbackPinFailsClosed() {
         for(int frame=0;frame<Harness::frames;++frame)
             assert(near(h.outputPointers[c][frame],0.f));
 }
+// Main MUTE is not a device/global STOP. The native callback stays active,
+// while 64-sample MAIN attenuation leaves distinct ASIO BUS taps unchanged.
+static void verifyMainOnlyMuteAndAllOutputFxTransitions() {
+    using Gate=armix::mixer::LiveOutputRouteGate;
+    const auto live=Gate::evaluate(true,true,true,true,false,true,false,true);
+    assert(live.renderMain && live.hardware);
+    // Legacy behavior is unchanged; global ARM/device shutdown still wins.
+    assert(!Gate::evaluate(true,true,true,true,false,true,false).renderMain);
+    assert(!Gate::evaluate(true,true,true,false,false,true,false,true).renderMain);
+    assert(!Gate::evaluate(true,true,true,true,false,false,false,true).renderMain);
+    armix::mixer::MainOnlyMuteSlew mute;
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.voice,6,7,8));
+    assert(h.render(8));
+    for(int f=0;f<Harness::frames;++f) {
+        const float g=mute.next(true);
+        h.output[0][f]*=g;
+        h.output[1][f]*=g;
+    }
+    assert(near(h.output[0][63],0.f)&&near(h.output[1][63],0.f));
+    assert(near(h.output[2][63],.50f)&&near(h.output[4][63],.21f));
+    assert(near(h.output[6][63],.25f)&&near(h.output[7][63],.10f));
+    for(int f=0;f<Harness::frames;++f)
+        assert(near(mute.next(false),static_cast<float>(f+1)/64.f));
+    mute.reset(true); // global disarm primes 0, preventing restart bleed
+    assert(near(mute.next(true),0.f));
+    assert(h.render(8));
+    float mainPeakL=0.f,mainPeakR=0.f;
+    armix::mixer::NativeOutputTransition::apply(h.outputPointers.data(),8,
+        Harness::frames,1,false,false,h.output[0].data(),
+        h.output[1].data(),mainPeakL,mainPeakR);
+    assert(mainPeakL>0.f&&mainPeakR>0.f);
+    for(const auto& pair:h.output)
+        assert(near(pair[63],0.f)); // ALL physical pins fade out
+    assert(h.callsA==2&&h.callsB==2); // effects executed ONCE per render
+    assert(h.render(8));
+    armix::mixer::NativeOutputTransition::apply(h.outputPointers.data(),8,
+        Harness::frames,2,false,false,h.output[0].data(),
+        h.output[1].data(),mainPeakL,mainPeakR);
+    assert(near(h.output[2][0],0.f)&&near(h.output[2][63],.50f));
+    assert(near(h.output[4][63],.21f)&&near(h.output[6][63],.25f));
+    assert(h.callsA==3&&h.callsB==3);
+    // Global graph handoff declick also reaches every independent physical pin.
+    assert(h.render(8));
+    armix::mixer::NativeOutputTransition::apply(h.outputPointers.data(),8,
+        Harness::frames,0,true,false,h.output[0].data(),
+        h.output[1].data(),mainPeakL,mainPeakR);
+    for(const auto& pair:h.output)assert(near(pair[63],0.f));
+    assert(h.callsA==4&&h.callsB==4);
+}
 static void verifyLiveFaderMuteAnd2PortBounds() {
     Harness h;
     // A 2-output device has no third/fourth callback ordinal. A driver-level
@@ -221,6 +275,7 @@ int main() {
     verifyFourPinMainAndOneBus();
     verifyFailClosedAllPhysicalOutputBuffers();
     verifyAliasedCallbackPinFailsClosed();
+    verifyMainOnlyMuteAndAllOutputFxTransitions();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();
     std::puts("O1 physical external OUT: independent PCM, SRC ONLY, gain/mute, shared sum and stale target PASS");
