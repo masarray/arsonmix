@@ -125,6 +125,19 @@
   };
   const isVisible=panel=>!panel.hidden && !panel.closest('[hidden]') &&
     panel.getClientRects().length>0;
+  // Matrix/Routes can change width without a viewport resize. Track only
+  // panels the operator actually moved, not every mixer DOM mutation.
+  const observed=new WeakSet();
+  const sizeObserver=typeof ResizeObserver==='function'
+    ?new ResizeObserver(entries=>{
+      for(const entry of entries){
+        const panel=entry.target;
+        if(panel.classList.contains('armix-floating-moved')&&isVisible(panel)){
+          const rect=panel.getBoundingClientRect();
+          place(panel,rect.left,rect.top);
+        }
+      }
+    }):null;
   document.addEventListener('pointerdown',event=>{
     if(event.button!==0||event.isPrimary===false||event.target.closest?.(blocked))return;
     const item=windows.find(([selector,handle])=>{
@@ -136,6 +149,9 @@
     const rect=panel.getBoundingClientRect();
     if(!rect.width||!rect.height)return;
     panel.classList.add('armix-floating-moved');
+    if(sizeObserver&&!observed.has(panel)){
+      observed.add(panel);sizeObserver.observe(panel);
+    }
     panel.style.setProperty('position','fixed','important');
     panel.style.setProperty('right','auto','important');
     panel.style.setProperty('bottom','auto','important');
