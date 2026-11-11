@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/BuiltInFxUserPresetStore.h'
       - 'tests/builtin_fx_user_preset_store_test.cpp'
+      - 'src/BuiltInFxAcceptedSnapshot.h'
+      - 'tests/builtin_fx_accepted_snapshot_test.cpp'
       - '.github/workflows/builtin-fx-preset-native.yml'
       - 'CMakeLists.txt'
 
@@ -17,7 +19,7 @@ concurrency:
 
 jobs:
   native-preset:
-    name: Windows MSVC single-target actual disk CTest (Release)
+    name: Windows MSVC two-target disk + accepted DSP CTest (Release)
     runs-on: windows-2022
     timeout-minutes: 22
     steps:
@@ -56,19 +58,23 @@ jobs:
           $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $catalog = ($catalogText | Out-String | ConvertFrom-Json)
-          if ('BuiltInFxUserPresetNativePortableSaveAndRecovery' -notin
-              @($catalog.tests | ForEach-Object { $_.name })) {
-            throw 'PRESET_CTEST_MISSING_EXACT_SOURCE'
+          $names = @($catalog.tests | ForEach-Object { $_.name })
+          foreach ($required in @('BuiltInFxUserPresetNativePortableSaveAndRecovery',
+                                   'BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen')) {
+            if ($required -notin $names) { throw "PRESET_CTEST_MISSING:$required" }
           }
-      - name: Compile only native preset store test (not the whole mixer)
+      - name: Compile only two native preset targets (not the mixer)
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixBuiltInFxPresetStoreTests
+          cmake --build build --config Release --parallel 2 --target ARMixBuiltInFxPresetStoreTests ARMixBuiltInFxAcceptedSnapshotTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run immutable-source Release CTest (assertions always enabled)
         shell: pwsh
         run: |
           ctest --test-dir build -C Release --output-on-failure `
-            -R '^BuiltInFxUserPresetNativePortableSaveAndRecovery$'
+            -R '^BuiltInFxUserPreset(NativePortableSaveAndRecovery|FourRealJuceAdaptersAndColdReopen)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host 'PRESET_NATIVE_MSVC_TARGET_AND_DISK_ROUNDTRIP=PASS'
+          Write-Host 'PRESET_NATIVE_TWO_TARGETS_STORE_AND_ACCEPTED_PCM_SNAPSHOT=PASS'
+
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'PRESET_NATIVE_TWO_TARGETS_STORE_AND_ACCEPTED_PCM_SNAPSHOT=PASS'
