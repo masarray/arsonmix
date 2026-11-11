@@ -1,6 +1,6 @@
 # ArSonMix Hotkey + FL Studio External OUT — Next Execution Thread Prompt
 
-**Status: READABLE EXECUTION HANDOFF.** The technical UX/native contract is [FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md](FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md). This file authorizes NO unqualified release or unsafe output reassignment.
+**HISTORICAL combined H+O mission. H1/H2 are already MERGED (#536/#551). New work should use the [O-ONLY implementation prompt](MILESTONE_O_MULTIOUTPUT_NEW_THREAD_20261111.md); do not reimplement H.** The technical UX/native contract is [FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md](FEATURE_HOTKEY_FL_OUTPUT_EXECUTION_20261111.md). This file authorizes NO unqualified release or unsafe output reassignment.
 
 Copy the following mission into the next thread (or follow it directly):
 
