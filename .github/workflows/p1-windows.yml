@@ -133,10 +133,40 @@ jobs:
     name: Fast native contracts (no Windows / JUCE checkout)
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    outputs:
+      native_required: ${{ steps.native_scope.outputs.native_required }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Scope main CI-only changes without bypassing real native changes
+        id: native_scope
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          required=true
+          # Manual FAT/native is ALWAYS full. On a main push, only this exact
+          # reviewed CI-control file allowlist may skip the expensive compiler.
+          # Unknown/invalid/incomplete git history fails closed to full MSVC.
+          if [[ "$GITHUB_EVENT_NAME" == 'push' &&
+                "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            if git fetch --no-tags --depth=2 origin "$BEFORE_SHA" >/dev/null 2>&1; then
+              mapfile -t changed < <(git diff --name-only "$BEFORE_SHA" HEAD)
+              if (( ${#changed[@]} > 0 )); then
+                required=false
+                for file in "${changed[@]}"; do
+                  case "$file" in
+                    .github/workflows/p1-windows.yml|scripts/chat_ci_dispatch.mjs|tests/chat_ci_dispatch_contract.test.mjs|tests/ci_workflow_efficiency_test.mjs|docs/SMART_CI_RUNNER_WORKFLOW.md) ;;
+                    *) required=true; break ;;
+                  esac
+                done
+              fi
+            fi
+          fi
+          echo "native_required=$required" >> "$GITHUB_OUTPUT"
+          echo "MAIN_NATIVE_GATE=$required"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -195,7 +225,10 @@ jobs:
     needs: quick
     # Draft commits never reserve expensive Windows runners. Non-draft PR
     # synchronizations re-test latest HEAD. Main push and manual always run.
-    if: ${{ github.event_name != 'pull_request' }}
+    # A main push containing ONLY CI policy/contract files was already
+    # checked by the Linux native gate. Any runtime/native or unknown diff
+    # still performs full MSVC/CTest. Owner-dispatched runs always compile.
+    if: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || needs.quick.outputs.native_required == 'true') }}
     runs-on: windows-2022
     timeout-minutes: 50
     env:
