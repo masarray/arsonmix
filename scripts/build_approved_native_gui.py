@@ -32,6 +32,10 @@ ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></scri
                   '.armix-native-desktop .external-out-field .route-select{border-color:#547685;background:#192a32}\n'
                   '.armix-native-desktop .external-out-field .route-select[aria-busy="true"]{border-color:#ddb576}\n'
                   '.armix-native-desktop .external-out-field .route-select[data-status="NEEDS_REMAP"]{color:#d5aa8b}\n'
+                  '.armix-native-desktop .external-out-state{font:500 9px/1.2 system-ui,sans-serif;letter-spacing:.025em;color:#aabdc3}\\n'
+                  '.armix-native-desktop .external-out-state[data-status="LIVE"]{color:#9bd3b8}\\n'
+                  '.armix-native-desktop .external-out-state[data-status="PENDING"]{color:#e7c081}\\n'
+                  '.armix-native-desktop .external-out-state[data-status="NEEDS_REMAP"]{color:#e0a18b}\\n'
                   '</style>')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
@@ -114,7 +118,7 @@ NATIVE_EVENT_HOOKS = (
      "  if(!code.endsWith('</div></div>'))throw Error('Native O1 route anchor drift');\n"
      "  const extRow='<div class=\"route-field external-out-field\"><span class=\"route-caption\">EXT</span>'+\n"
      "   '<select class=\"route-select\" data-field=\"external\" title=\"Separate post-FX physical ASIO output, internal WIRE unchanged\" aria-label=\"'+escapeHtml(t.name)+' external output\">'+\n"
-     "   option(channelOptions(t,'external'),t.externalOutput||'None')+'</select></div>';\n"
+     "   option(channelOptions(t,'external'),t.externalOutput||'None')+'</select><span class=\"external-out-state\" aria-label=\"External output status\"></span></div>';\n"
      "  code=code.slice(0,-6)+extRow+'</div>';\n"
      " }\n"
      " code+=sectionFx(t)+sectionSend(t);\n"),

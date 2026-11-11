@@ -1780,3 +1780,17 @@ test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effe
  assert.match(bridge,/beforeInsertCatalogs:/);
  assert.match(bridge,/beforeEdges:/);
 });
+
+test("O2 independent per-track external ASIO transactions and clear rejected ACK",()=>{
+ const src=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(src,/const pendingExternal=new Map\(\)/);
+ assert.match(src,/pendingExternal\.has\(id\)/);
+ assert.match(src,/pendingExternal\.set\(id,/);
+ assert.match(src,/pendingExternal\.delete\(id\)/);
+ assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/SHARED with /);
+ assert.match(src,/signals SUM/);
+ assert.match(builder,/external-out-state/);
+});

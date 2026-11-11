@@ -709,7 +709,8 @@
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
   let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
-  let externalSerial=0,pendingExternal=null;
+  let externalSerial=0;
+  const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
   const safeNativeCounter=x=>{
     if(typeof x!=="string" || !/^[1-9]\d*$/.test(x))return null;
@@ -755,8 +756,12 @@
       const b=map.get(left+1);
       if(main.includes(left)||main.includes(left+1)||
          monitor.includes(left)||monitor.includes(left+1))continue;
+      const shared=Array.isArray(hardware?.raw?.externalOutputs)?
+        hardware.raw.externalOutputs.filter(row=>
+          row.physicalLeft===left && row.physicalRight===left+1).length:0;
       choices.push({label:"OUT "+(left+1)+"/"+(left+2)+" · "+
-        a.label+" + "+b.label,left,right:left+1});
+        a.label+" + "+b.label+(shared?" · SHARED "+shared:""),
+        left,right:left+1});
     }
     return choices;
   };
@@ -791,18 +796,27 @@
       }
       if(select.value!==value)select.value=value;
       select.dataset.status=state;
+      const marker=select.parentElement?.querySelector(".external-out-state");
+      if(marker){
+        marker.textContent=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state;
+        marker.dataset.status=state;
+      }
       select.title=state==="PENDING"?"Native PCM pending · wait for audio callback":
         state==="NEEDS_REMAP"?
         "Saved physical output disarmed; choose a verified ASIO pair":
         state==="LIVE"?"LIVE · independent native post-fader PCM":
         "None · internal WIRE remains unchanged";
-      if(pendingExternal?.channelId===id && pendingExternal.acked &&
-         ((state==="LIVE" && row.physicalLeft===pendingExternal.left &&
-           row.physicalRight===pendingExternal.right) ||
-          (pendingExternal.left===-1 && !row))){
-        pendingExternal=null;select.removeAttribute("aria-busy");
+      const pending=pendingExternal.get(id);
+      if(pending && next?.device?.epoch && next.device.epoch!==pending.epoch)
+        pendingExternal.delete(id); // stale device: release only this strip
+      else if(pending?.acked &&
+        ((state==="LIVE" && row.physicalLeft===pending.left &&
+          row.physicalRight===pending.right) ||
+         (pending.left===-1 && !row))){
+        pendingExternal.delete(id);
         status("EXTERNAL OUT verified · "+t.name+" → "+value);
       }
+      if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
     }
   };
   const inputChoicesFor=()=>{
@@ -2391,14 +2405,20 @@
     });
 
     backend.addEventListener("arMixExternalOutputAck",ack=>{
-      if(!pendingExternal || pendingExternal.requestId!==ack?.requestId)return;
+      const found=[...pendingExternal].find(([,p])=>p.requestId===ack?.requestId);
+      if(!found)return;
+      const [id,transaction]=found;
       if(ack.ok!==true){
         const error=String(ack.error||"Physical output assignment rejected");
-        pendingExternal=null;
+        pendingExternal.delete(id);
+        const track=(scope?.tracks||[]).find(t=>nativeIdFor(t)===id);
+        const select=track&&document.querySelector('.strip[data-id="'+track.id+
+          '"] select[data-field="external"]');
+        select?.removeAttribute("aria-busy");
         nativeToast(error);status(error);controller?.subscribe();return;
       }
-      pendingExternal.acked=true;
-      controller?.subscribe(); // Native ACK does NOT establish LIVE readback
+      transaction.acked=true;
+      controller?.subscribe(); // ACK alone cannot claim LIVE audio
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
@@ -3136,7 +3156,7 @@
         const pair=hardwareOutputPairs().find(row=>row.label===el.value);
         const revision=hardware?.raw?.externalRevision;
         const epoch=hardware?.device?.epoch;
-        if(pendingExternal||!pair||!ch ||
+        if(pendingExternal.has(id)||!pair||!ch ||
            !["INPUT","GROUP","FX_RETURN"].includes(ch.role) ||
            !controller?.state()?.current?.admitted ||
            d?.backend!=="ASIO" || safeNativeCounter(epoch)===null ||
@@ -3146,21 +3166,26 @@
           return true;
         }
         if(pair.label===previous){el.value=previous;return true;}
+        const occupied=(Array.isArray(hardware?.raw?.externalOutputs)?
+          hardware.raw.externalOutputs:[]).filter(p=>p.physicalLeft===pair.left &&
+          p.physicalRight===pair.right && p.channelId!==id);
+        const sharedNote=occupied.length?
+          " SHARED with "+occupied.length+" other source(s); signals SUM. Check gains.":"";
         const confirmed=pair.left<0 || window.confirm(
           "Enable ASIO OUT "+(pair.left+1)+"/"+(pair.right+1)+
-          " for "+t.name+"? Verify the amplifier/speakers first. "+
-          "INTERNAL OUT will stay unchanged.");
+          " for "+t.name+"?"+sharedNote+" Check amplifier/speakers. "+
+          "INTERNAL OUT stays unchanged.");
         if(!confirmed){el.value=previous;return true;}
         const requestId="out-o-"+(++externalSerial);
-        pendingExternal={requestId,channelId:id,left:pair.left,right:pair.right,
-          epoch,revision,acked:false};
+        pendingExternal.set(id,{requestId,channelId:id,left:pair.left,right:pair.right,
+          epoch,revision,acked:false});
         el.value=previous;el.setAttribute("aria-busy","true");
         backend.emitEvent("arMixAction",{action:"routingExternalOutput",
           requestId,channelId:id,deviceEpoch:epoch,revision,
           left:pair.left,right:pair.right,confirmed:true});
         window.setTimeout(()=>{
-          if(pendingExternal?.requestId!==requestId)return;
-          pendingExternal=null;el.removeAttribute("aria-busy");
+          if(pendingExternal.get(id)?.requestId!==requestId)return;
+          pendingExternal.delete(id);el.removeAttribute("aria-busy");
           nativeToast("EXTERNAL OUT timed out · last PCM retained");
           controller?.subscribe();
         },8000);
