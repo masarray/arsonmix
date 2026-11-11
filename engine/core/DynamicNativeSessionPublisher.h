@@ -276,6 +276,12 @@ public:
         return p?p->graph.externalOutput(id):std::pair<int,int>{-1,-1};
     }
 
+    std::pair<int,int> appliedExternalOutput(std::uint64_t epoch,
+                std::uint64_t revision,ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.appliedExternalOutput(id):std::pair<int,int>{-1,-1};
+    }
+
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
     // Caller must propagate the real device epoch and native ACK revision.
     // Rejected/stale edits leave the last accepted PCM unchanged.
