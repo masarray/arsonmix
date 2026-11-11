@@ -141,6 +141,9 @@ if(WIN32)
       JUCE_USE_WIN_WEBVIEW2=1
       JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
       JUCE_ASIO=1 JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
+  # Dedicated INITGUID TU supplies PKEY_AudioEndpoint_FormFactor and
+  # PKEY_AudioEngine_DeviceFormat to the Windows MMDevice discovery path.
+  target_sources(ARMixConsole PRIVATE engine/device/WindowsAudioPropertyKeys.cpp)
   target_link_libraries(ARMixConsole PRIVATE ole32 uuid advapi32)
 endif()
 
@@ -206,7 +209,8 @@ if(BUILD_TESTING)
   if(WIN32)
     add_executable(ARMixWindowsFirstRunReadOnlyTests
         tests/windows_first_run_endpoint_discovery_test.cpp
-        engine/device/WindowsFirstRunEndpointDiscovery.h)
+        engine/device/WindowsFirstRunEndpointDiscovery.h
+        engine/device/WindowsAudioPropertyKeys.cpp)
     target_compile_features(ARMixWindowsFirstRunReadOnlyTests PRIVATE cxx_std_20)
     target_link_libraries(ARMixWindowsFirstRunReadOnlyTests PRIVATE ole32 uuid)
     add_test(NAME NativeWindowsFirstRunReadOnlyMMDeviceIdentityNoGuess
