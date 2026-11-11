@@ -290,3 +290,17 @@ test('WaveShell preflight fails closed but accepts historical pre-patch source',
   assert.ok(section.includes('WAVESHELL_CHECK_NOT_IN_EXACT_SOURCE'));
   assert.ok(section.includes('python -m unittest discover -s tests -p test_waveshell_juce_patch.py -v'));
 });
+
+
+test('CI-only main promotion avoids native rebuild but any runtime change fails closed to MSVC',()=>{
+  assert.match(native,/native_required: \$\{\{ steps\.native_scope\.outputs\.native_required \}\}/);
+  assert.match(native,/if \[\[ "\$GITHUB_EVENT_NAME" == 'push'/);
+  assert.match(native,/required=true/);
+  assert.match(native,/git fetch --no-tags --depth=2 origin "\$BEFORE_SHA"/);
+  assert.match(native,/git diff --name-only "\$BEFORE_SHA" HEAD/);
+  assert.match(native,/\.github\/workflows\/p1-windows\.yml\|scripts\/chat_ci_dispatch\.mjs/);
+  assert.match(native,/\*\) required=true; break/);
+  assert.match(native,/needs\.quick\.outputs\.native_required == 'true'/);
+  assert.match(native,/github\.event_name != 'push' \|\| needs\.quick\.outputs\.native_required/);
+  assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
+});
