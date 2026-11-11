@@ -27,7 +27,18 @@ assert.match(chrome, /paintPart \("Ar", juce::Colour/);
 assert.match(chrome, /paintPart \("Son", juce::Colour/);
 assert.match(chrome, /paintPart \("MiX", juce::Colour/);
 assert.match(chrome, /Open Source Premium Digital Mixer/);
-assert.match(chrome, /Version 01\.00/);
+// The caption must expose the binary's actual version, not a copied release
+// string or the historical fake 01.00. Narrow desktop widths keep the
+// version ahead of the lower-priority description.
+assert.match(chrome, /JUCE_APPLICATION_VERSION_STRING/);
+assert.doesNotMatch(chrome, /Version 01\.00/);
+assert.match(chrome, /0xffe8f6fc/);
+assert.match(chrome, /getStringWidthInt \(subtitleFont, label\)/);
+const cmake = read('CMakeLists.txt');
+assert.match(cmake, /set\(ARMIX_RELEASE_TAG/);
+assert.match(cmake, /ARMIX_EXACT_SOURCE_TAG/);
+assert.match(cmake, /\$\{ARMIX_APP_VERSION\}/);
+assert.doesNotMatch(cmake, /0\.5\.0-p2/);
 assert.match(chrome, /charToString \(\(juce::juce_wchar\) 0x00a9\)/);
 assert.match(chrome, /charToString \(\(juce::juce_wchar\) 0x00b7\)/);
 assert.match(chrome, /const auto advance = juce::GlyphArrangement::getStringWidthInt/);
