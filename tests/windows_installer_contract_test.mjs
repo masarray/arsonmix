@@ -49,6 +49,12 @@ test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSo
   assert.match(pack, /Get-FileHash[\s\S]*?-cne \$m\.sha256/);
   assert.match(pack, /OFFICIAL_VBCABLE_BUNDLE_VERIFIED/);
   assert.match(bootstrap, /Get-AuthenticodeSignature/);
+  assert.match(bootstrap, /\$sig\.Status -ne "Valid"/);
+  // Official 2024 Pack45 signs as "BUREL VINCENT Entrepreneur individuel",
+  // while older VB-Audio signatures used "Vincent Burel". Both must be
+  // recognized, but an unsigned or invalid executable is NEVER accepted.
+  assert.match(bootstrap, /Vincent\\s\+Burel/);
+  assert.match(bootstrap, /Burel\\s\+Vincent/);
   assert.match(bootstrap, /Get-PnpDevice -PresentOnly/);
   assert.match(bootstrap, /-Verb RunAs/);
   assert.match(bootstrap, /PENDING_REBOOT/);
