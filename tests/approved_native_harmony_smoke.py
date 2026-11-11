@@ -188,11 +188,11 @@ def main():
                 assert form.is_visible()
                 assert form.locator("#mxHPresetName").is_hidden()
                 # Cancel must never send any native preset/disk operation.
-                before=len(page.evaluate("""()=>window.__actions.filter(
-                    x=>x.action==='nativeHarmonyUserPreset').length"""))
+                before=page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonyUserPreset').length""")
                 form.locator("#mxHPresetCancel").click()
-                after=len(page.evaluate("""()=>window.__actions.filter(
-                    x=>x.action==='nativeHarmonyUserPreset').length"""))
+                after=page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonyUserPreset').length""")
                 assert after==before
                 manager.click()
                 page.locator("#mxHSaveExisting").click()
@@ -218,8 +218,8 @@ def main():
                 assert page.locator("#mxHPreset").input_value()==user_option
                 assert not manager.is_disabled()
                 # Rename preserves stable user ID, does not touch audio.
-                editor_count=len(page.evaluate("""()=>window.__actions.filter(
-                    x=>x.action==='nativeHarmonySetSettings').length"""))
+                editor_count=page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonySetSettings').length""")
                 manager.click()
                 page.locator("#mxHRenameExisting").click()
                 name=page.locator("#mxHPresetName")
@@ -255,8 +255,8 @@ def main():
                 assert page.locator("#mxHPreset option[value^='user:']").count()==0
                 assert page.locator("#mxHPreset").input_value()=="custom"
                 assert manager.is_disabled()
-                assert len(page.evaluate("""()=>window.__actions.filter(
-                    x=>x.action==='nativeHarmonySetSettings').length"""))==editor_count
+                assert page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeHarmonySetSettings').length""")==editor_count
                 switch.evaluate("el=>el.blur()")
                 if width==1366:
                     page.wait_for_timeout(160)
