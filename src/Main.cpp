@@ -1697,6 +1697,8 @@ private:
         if(auto* obj=accepted.getDynamicObject()) {
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
+            obj->setProperty("externalOutputs",
+                live.getProperty("dryRoutingLab",{}).getProperty("externalOutputs",{}));
         }
         return accepted;
     }
@@ -4448,6 +4450,49 @@ private:
                 browser_.emitEventIfBrowserIsVisible("arMixM4ControlAck",
                     juce::var(ack.release()));
             // ACK is not PCM proof; the bridge requires a LATER snapshot.
+            return;
+        }
+        // O1: native CONTROL intent, exact verified ASIO physical pair.
+        // Never reinterpret an external destination as internal WIRE/M4 OUT.
+        if(action=="routingExternalOutput") {
+            const auto requestId=args.getProperty("requestId",{}).toString();
+            const auto channelText=args.getProperty("channelId",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{});
+            const auto rv=args.getProperty("revision",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const int left=static_cast<int>(args.getProperty("left",-2));
+            const int right=static_cast<int>(args.getProperty("right",-2));
+            const auto nativeStatus=engine_.status().getProperty("dryRoutingLab",{});
+            const auto bus=nativeStatus.getProperty("nativeBus",{});
+            const bool tokens=
+                armix::console::nativeSessionTokenMatches(
+                    ep,nativeStatus.getProperty("epoch",{})) &&
+                armix::console::nativeSessionTokenMatches(
+                    rv,bus.getProperty("graphRevision",{}));
+            std::uint64_t rawId=0;
+            const bool idOk=armix::session::parseDecimal(juce::var(channelText),rawId);
+            juce::String error="EXTERNAL OUT: invalid or stale native request";
+            if(requestId.startsWith("out-o-") && requestId.length()<=64 &&
+               tokens && idOk && confirmed.isBool() &&
+               ((left==-1 && right==-1) || (left>=0 && right>=0)) &&
+               !nativeShowBusy_ && !studioBackupBusy_)
+                error=engine_.setPhysicalExternalOutput(
+                    armix::mixer::ChannelId{rawId},
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
+                    left,right,static_cast<bool>(confirmed));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",requestId);
+            ack->setProperty("channelId",channelText);
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("deviceEpoch",ep);
+            ack->setProperty("graphRevision",rv);
+            if(browser_.loaded)
+                browser_.emitEventIfBrowserIsVisible(
+                    "arMixExternalOutputAck",juce::var(ack.release()));
+            if(error.isNotEmpty())emitNotice(error,true);
+            else emitApprovedNativeSnapshot(); // next independent subscription verifies LIVE
             return;
         }
         // A visible /preview/ channel OUT changes this same installed M4
