@@ -172,11 +172,18 @@ public:
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
-            if(frames>0 && mainL)std::fill_n(mainL,frames,0.f);
-            if(frames>0 && mainR && mainR!=mainL)std::fill_n(mainR,frames,0.f);
-            if(frames>0 && monitorL)std::fill_n(monitorL,frames,0.f);
-            if(frames>0 && monitorR && monitorR!=monitorL)
-                std::fill_n(monitorR,frames,0.f);
+            // A rejected/stale/muted native render must silence *every*
+            // ASIO destination, not only MAIN/MONITOR. Otherwise a previous
+            // external tap can remain in a driver-provided output buffer.
+            // Bounded callback-ordinal traversal; no allocations or locks.
+            if(frames<=0 || frames>8192)return;
+            if(hardwareOutputs && hardwareOutputCount>0 && hardwareOutputCount<=256)
+                for(int c=0;c<hardwareOutputCount;++c)
+                    if(hardwareOutputs[c])std::fill_n(hardwareOutputs[c],frames,0.f);
+            if(mainL)std::fill_n(mainL,frames,0.f);
+            if(mainR && mainR!=mainL)std::fill_n(mainR,frames,0.f);
+            if(monitorL)std::fill_n(monitorL,frames,0.f);
+            if(monitorR && monitorR!=monitorL)std::fill_n(monitorR,frames,0.f);
         };
         if(frames<=0 || frames>8192 || !mainL || !mainR ||
            mainL==mainR || physicalCount<0 || physicalCount>256 ||
