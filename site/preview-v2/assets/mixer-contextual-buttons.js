@@ -86,3 +86,106 @@
   }));
   logo.setAttribute('aria-label','ArSonMiX');
 })();
+
+
+/* ArSonMiX shared floating-window movement.
+   One pointer controller for the modeless tools that did not have a drag
+   owner. The existing EQ/Compressor/Harmonice/Vocal Throw, identity editor
+   and Plugin Manager keep their proven gesture handlers.
+   This controller changes presentation geometry only: never mixer state,
+   native control intent, audio routing, or plugin instance lifecycle. */
+(()=>{
+  'use strict';
+  const windows=[
+    ['#fastPicker','.fast-head'],
+    ['#wireConfigWindow','.wire-config-head'],
+    ['#wireWorkspace','.wire-ws-head'],
+    ['#routeChoice','.route-choice-head'],
+    ['.armix-audio-dialog','.armix-audio-top'],
+    ['#arIOOverlay .arIOWindow',':scope > header'],
+    ['#arSendEditor',':scope > header'],
+    ['.arSourceChooser','.arSourceChooserTop'],
+    ['#arRoutingLabPanel','.arPatchTop'],
+    ['#nativeFxSelector .native-dialog','.native-dialog-header'],
+    ['#nativePluginManager .native-dialog','.native-dialog-header'],
+    ['#nativeMySounds .native-dialog','.native-dialog-header'],
+    ['#nativeOrbit .native-dialog','.native-dialog-header']
+  ];
+  const gap=8, blocked='button,input,textarea,select,a,summary,[contenteditable="true"],[role="button"]';
+  let moving=null,layer=1000;
+  const clamp=(value,min,max)=>Math.max(min,Math.min(Math.max(min,max),value));
+  const viewport=()=>({
+    width:document.documentElement.clientWidth||window.innerWidth,
+    height:document.documentElement.clientHeight||window.innerHeight
+  });
+  const place=(panel,left,top)=>{
+    const size=viewport(),width=panel.offsetWidth,height=panel.offsetHeight;
+    panel.style.setProperty('left',clamp(left,gap,Math.max(gap,size.width-width-gap))+'px','important');
+    panel.style.setProperty('top',clamp(top,gap,Math.max(gap,size.height-height-gap))+'px','important');
+  };
+  const isVisible=panel=>!panel.hidden && !panel.closest('[hidden]') &&
+    panel.getClientRects().length>0;
+  // Matrix/Routes can change width without a viewport resize. Track only
+  // panels the operator actually moved, not every mixer DOM mutation.
+  const observed=new WeakSet();
+  const sizeObserver=typeof ResizeObserver==='function'
+    ?new ResizeObserver(entries=>{
+      for(const entry of entries){
+        const panel=entry.target;
+        if(panel.classList.contains('armix-floating-moved')&&isVisible(panel)){
+          const rect=panel.getBoundingClientRect();
+          place(panel,rect.left,rect.top);
+        }
+      }
+    }):null;
+  document.addEventListener('pointerdown',event=>{
+    if(event.button!==0||event.isPrimary===false||event.target.closest?.(blocked))return;
+    const item=windows.find(([selector,handle])=>{
+      const panel=event.target.closest?.(selector);
+      return panel&&isVisible(panel)&&panel.querySelector(handle)?.contains(event.target);
+    });
+    if(!item)return;
+    const panel=event.target.closest(item[0]),handle=panel.querySelector(item[1]);
+    const rect=panel.getBoundingClientRect();
+    if(!rect.width||!rect.height)return;
+    panel.classList.add('armix-floating-moved');
+    if(sizeObserver&&!observed.has(panel)){
+      observed.add(panel);sizeObserver.observe(panel);
+    }
+    panel.style.setProperty('position','fixed','important');
+    panel.style.setProperty('right','auto','important');
+    panel.style.setProperty('bottom','auto','important');
+    panel.style.setProperty('transform','none','important');
+    panel.style.setProperty('margin','0','important');
+    panel.style.setProperty('z-index',String(++layer),'important');
+    place(panel,rect.left,rect.top);
+    moving={panel,handle,id:event.pointerId,dx:event.clientX-rect.left,dy:event.clientY-rect.top};
+    try{handle.setPointerCapture?.(event.pointerId);}catch{}
+    event.preventDefault(); // no text selection; do not cancel controls
+  });
+  window.addEventListener('pointermove',event=>{
+    const drag=moving;
+    if(!drag||drag.id!==event.pointerId)return;
+    place(drag.panel,event.clientX-drag.dx,event.clientY-drag.dy);
+  },{passive:true});
+  const finish=event=>{
+    const drag=moving;
+    if(!drag||(event&&event.pointerId!==drag.id))return;
+    moving=null;
+    try{
+      if(drag.handle.hasPointerCapture?.(drag.id))
+        drag.handle.releasePointerCapture?.(drag.id);
+    }catch{}
+  };
+  window.addEventListener('pointerup',finish);
+  window.addEventListener('pointercancel',finish);
+  window.addEventListener('blur',()=>finish());
+  window.addEventListener('resize',()=>{
+    document.querySelectorAll('.armix-floating-moved').forEach(panel=>{
+      if(isVisible(panel)){
+        const rect=panel.getBoundingClientRect();
+        place(panel,rect.left,rect.top);
+      }
+    });
+  },{passive:true});
+})();
