@@ -206,12 +206,20 @@ static void verifyCrossExternalAliasFailsClosedAndRecovers() {
     assert(h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,8));
     assert(h.render(8));
     assert(near(h.output[2][63],.50f)&&near(h.output[4][63],.21f));
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==2);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busB).first==4);
     // These two callback ordinals are distinct physical ASIO pins, but a
     // broken backend supplies one shared float* for their destination.
     // Previously the two BUS PCM paths were SUMMED into the same buffer.
     h.outputPointers[4]=h.output[2].data();
     for(auto& output:h.output)output.fill(.875f);
     assert(!h.render(8));
+    // Readback must reflect the actual rejected callback, never keep
+    // claiming the last accepted physical OUT A/B was still LIVE.
+    assert(h.publisher.externalOutput(h.epoch,1,h.busA).first==2);
+    assert(h.publisher.externalOutput(h.epoch,1,h.busB).first==4);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busB).first==-1);
     // A native failure must silence even MAIN and untouched external pairs,
     // not leave stale samples driving an amplifier.
     for(int c=0;c<8;++c)
@@ -222,9 +230,29 @@ static void verifyCrossExternalAliasFailsClosedAndRecovers() {
     // legitimate, uniquely-backed JUCE block without re-ARM or re-WIRE.
     h.outputPointers[4]=h.output[4].data();
     assert(h.render(8));
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==2);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busB).first==4);
     assert(near(h.output[2][63],.50f)&&near(h.output[3][63],.20f));
     assert(near(h.output[4][63],.21f)&&near(h.output[5][63],.12f));
     assert(near(h.output[0][63],.71f)&&near(h.output[1][63],.32f));
+}
+static void verifyCurrentEpochRejectedQuantumRevokesPhysicalReadback() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.render(8));
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==2);
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    // A mismatch in live physical callback count is not an accepted render
+    // even though the already-applied ASIO patch is still in CONTROL.
+    assert(!h.publisher.render(h.epoch,h.inputPointers.data(),3,
+        h.output[0].data(),h.output[1].data(),Harness::frames,false,fx,
+        nullptr,nullptr,{},{},{},h.outputPointers.data(),8));
+    assert(h.publisher.externalOutput(h.epoch,1,h.busA).first==2);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+    for(const auto& output:h.output)
+        for(float sample:output)assert(near(sample,0.f));
+    assert(h.render(8));
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==2);
 }
 // Main MUTE is not a device/global STOP. The native callback stays active,
 // while 64-sample MAIN attenuation leaves distinct ASIO BUS taps unchanged.
@@ -303,6 +331,7 @@ int main() {
     verifyFailClosedAllPhysicalOutputBuffers();
     verifyAliasedCallbackPinFailsClosed();
     verifyCrossExternalAliasFailsClosedAndRecovers();
+    verifyCurrentEpochRejectedQuantumRevokesPhysicalReadback();
     verifyMainOnlyMuteAndAllOutputFxTransitions();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();

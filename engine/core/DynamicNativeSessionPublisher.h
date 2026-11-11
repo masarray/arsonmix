@@ -205,6 +205,11 @@ public:
            physicalCount!=snap->prepared->physicalInputs ||
            (snap->prepared->monitor && !monitorL) ||
            frames>snap->prepared->graph.capacity()) {
+            // A real, current-epoch callback with a changed input count or
+            // unsafe quantum must not retain last block's EXTERNAL LIVE
+            // readback after every hardware buffer was silenced.
+            if(snap && snap->prepared)
+                snap->prepared->graph.invalidateAppliedExternalOutputs();
             clearOutputs();return false;
         }
         // A single callback producer owns the prepared scratch. In case a
@@ -236,7 +241,14 @@ public:
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
               hardwareOutputs,hardwareOutputCount);
-        if(!ok)clearOutputs();
+        if(!ok) {
+            // A rejected physical callback (including aliased independent
+            // amplifier buffers) emits silence, not a stale LIVE snapshot.
+            // The approved GUI will report PENDING until a later successful
+            // PCM callback re-publishes APPLIED on the same ChannelId graph.
+            snap->prepared->graph.invalidateAppliedExternalOutputs();
+            clearOutputs();
+        }
         return ok;
     }
 

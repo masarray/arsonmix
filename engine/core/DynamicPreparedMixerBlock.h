@@ -288,6 +288,15 @@ public:
             std::memory_order_acquire);
         return {externalLeft(pair),externalRight(pair)};
     }
+    // AUDIO only: an attempted native PCM render that fails must revoke
+    // callback-APPLIED evidence. Keep the requested CONTROL patch intact:
+    // the next valid block can recover it without operator re-ARM/re-WIRE.
+    // This is bounded to prepared atomic slots and never builds a graph,
+    // reallocates buffers, or touches the control-only ChannelId hash map.
+    void invalidateAppliedExternalOutputs() noexcept {
+        for(const auto i:renderOrder_)
+            externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
+    }
 
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
