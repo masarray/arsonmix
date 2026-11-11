@@ -35,6 +35,8 @@ struct Mapping final {
     // Preserve the exact plugin instance, not merely the positional slot.
     int slot=-1;
     juce::String insertId;
+    // H2: real hosted VST3 identity. Index/slot are discovery hints only.
+    juce::String catalogId,paramId,paramName;
 };
 class Registry final {
 public:
@@ -52,13 +54,22 @@ public:
         const bool chord=(m.modifiers&~7)==0 &&
                          (m.modifiers&3)!=0; // global chords need Ctrl or Alt
         const bool fxSlot=m.operation=="SET_FX_SLOT_BYPASS";
+        const bool fxParam=m.operation=="SET_FX_PARAM_TOGGLE"||
+                           m.operation=="SET_FX_PARAM_UP"||
+                           m.operation=="SET_FX_PARAM_DOWN";
         const bool command=m.operation=="PANIC_MUTE" ||
                            m.operation=="SET_MUTE"||m.operation=="SET_SOLO"||
-                           m.operation=="SET_FX_RACK_BYPASS"||fxSlot;
-        const bool target=fxSlot?
-            m.slot>=0 && m.slot<8 && m.insertId.isNotEmpty() &&
-            m.insertId.length()<=128:
-            m.slot==-1 && m.insertId.isEmpty();
+                           m.operation=="SET_FX_RACK_BYPASS"||fxSlot||fxParam;
+        const bool hasInsert=m.slot>=0 && m.slot<8 && m.insertId.isNotEmpty() &&
+                             m.insertId.length()<=128;
+        const bool paramTarget=fxParam && hasInsert &&
+            m.catalogId.isNotEmpty() && m.catalogId.length()<=512 &&
+            m.paramId.isNotEmpty() && m.paramId.length()<=96 &&
+            m.paramName.length()<=100 && !m.paramId.containsAnyOf("\r\n\t");
+        const bool target=fxParam?paramTarget:
+            fxSlot?(hasInsert&&m.catalogId.isEmpty()&&m.paramId.isEmpty()&&m.paramName.isEmpty()):
+            (m.slot==-1&&m.insertId.isEmpty()&&
+             m.catalogId.isEmpty()&&m.paramId.isEmpty()&&m.paramName.isEmpty());
         const bool app=m.scope=="APP" && m.operation=="PANIC_MUTE" &&
                        m.channelId.isEmpty() && m.sessionId.isEmpty();
         const bool session=m.scope=="SESSION" && m.operation!="PANIC_MUTE" &&
@@ -76,9 +87,15 @@ public:
         o->setProperty("channelId",m.channelId);
         o->setProperty("operation",m.operation);
         o->setProperty("vk",m.vk);o->setProperty("modifiers",m.modifiers);
-        if(m.operation=="SET_FX_SLOT_BYPASS") {
+        if(m.operation=="SET_FX_SLOT_BYPASS"||
+           m.operation.startsWith("SET_FX_PARAM_")) {
             o->setProperty("slot",m.slot);
             o->setProperty("insertId",m.insertId);
+            if(m.operation.startsWith("SET_FX_PARAM_")) {
+                o->setProperty("catalogId",m.catalogId);
+                o->setProperty("paramId",m.paramId);
+                if(m.paramName.isNotEmpty())o->setProperty("paramName",m.paramName);
+            }
         }
         return out;
     }
@@ -94,14 +111,34 @@ public:
            !field("sessionId",m.sessionId)||!field("channelId",m.channelId)||
            !field("operation",m.operation)||!vk.isInt()||!mods.isInt())return false;
         m.vk=static_cast<int>(vk);m.modifiers=static_cast<int>(mods);
-        m.slot=-1;m.insertId.clear(); // old H1 documents remain readable
-        if(m.operation=="SET_FX_SLOT_BYPASS") {
+        m.slot=-1;m.insertId.clear();m.catalogId.clear();
+        m.paramId.clear();m.paramName.clear();
+        const bool fxParam=m.operation.startsWith("SET_FX_PARAM_");
+        if(m.operation=="SET_FX_SLOT_BYPASS"||fxParam) {
             const auto slot=v.getProperty("slot",{}),token=v.getProperty("insertId",{});
             if(!slot.isInt()||!token.isString()||token.toString().length()>128)
                 return false;
             m.slot=static_cast<int>(slot);m.insertId=token.toString();
+            if(fxParam) {
+                const auto catalog=v.getProperty("catalogId",{});
+                const auto parameter=v.getProperty("paramId",{});
+                if(!catalog.isString()||!parameter.isString() ||
+                   catalog.toString().length()>512||
+                   parameter.toString().length()>96)return false;
+                m.catalogId=catalog.toString();m.paramId=parameter.toString();
+                const auto label=v.getProperty("paramName",{});
+                if(!label.isVoid()){
+                    if(!label.isString()||label.toString().length()>100)return false;
+                    m.paramName=label.toString();
+                }
+            }else if(!v.getProperty("catalogId",{}).isVoid() ||
+                     !v.getProperty("paramId",{}).isVoid()||
+                     !v.getProperty("paramName",{}).isVoid())return false;
         } else if(!v.getProperty("slot",{}).isVoid() ||
-                  !v.getProperty("insertId",{}).isVoid())return false;
+                  !v.getProperty("insertId",{}).isVoid()||
+                  !v.getProperty("catalogId",{}).isVoid()||
+                  !v.getProperty("paramId",{}).isVoid()||
+                  !v.getProperty("paramName",{}).isVoid())return false;
         return valid(m);
     }
     void setHandler(std::function<void(const Mapping&)> handler) {

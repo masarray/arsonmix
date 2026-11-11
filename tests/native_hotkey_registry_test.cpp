@@ -21,6 +21,39 @@ int main() {
     Mapping slot{"fx-slot","SESSION",session,"5","SET_FX_SLOT_BYPASS",0x75,6,2,"original-instance"};
     assert(Registry::valid(mute)&&Registry::valid(solo)&&Registry::valid(panic));
     assert(Registry::valid(rack)&&Registry::valid(slot));
+    Mapping param{"fx-param","SESSION",session,"5","SET_FX_PARAM_UP",
+        0x74,6,2,"original-instance","vendor-vst3-class|uid",
+        "vst3-param-id-27","Stereo Width"};
+    assert(Registry::valid(param));
+    Mapping decodedParam;
+    assert(Registry::decode(Registry::encode(param),decodedParam));
+    assert(decodedParam.catalogId==param.catalogId);
+    assert(decodedParam.paramId==param.paramId);
+    assert(decodedParam.paramName=="Stereo Width");
+    auto invalidParam=param;
+    invalidParam.paramId.clear();assert(!Registry::valid(invalidParam));
+    invalidParam=param;invalidParam.catalogId.clear();assert(!Registry::valid(invalidParam));
+    invalidParam=param;invalidParam.slot=8;assert(!Registry::valid(invalidParam));
+    invalidParam=param;invalidParam.operation="SET_FX_PARAM_EXEC";
+    assert(!Registry::valid(invalidParam));
+    auto damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->removeProperty("paramId");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    // A literal backslash+n is a valid string, NOT a newline. The old test
+    // accidentally passed "wrong\\nid" and asserted it was unsafe.
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\nid");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\rid");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId","wrong\tid");
+    assert(!Registry::decode(damagedParam,decodedParam));
+    damagedParam=Registry::encode(param);
+    damagedParam.getDynamicObject()->setProperty("paramId",juce::String("wrong\\nid"));
+    assert(Registry::decode(damagedParam,decodedParam));
+
     Mapping restoredSlot;
     assert(Registry::decode(Registry::encode(slot),restoredSlot));
     assert(restoredSlot.slot==2&&restoredSlot.insertId=="original-instance");
