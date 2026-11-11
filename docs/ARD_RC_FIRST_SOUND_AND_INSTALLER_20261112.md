@@ -132,3 +132,21 @@ Use process-safe install sentinel/manifest so repeated setup doesn't relaunch ve
 - [Harmony DSP fast](https://github.com/masarray/arsonmix/actions/runs/43077080903) — success
 
 This milestone must remain a **draft** until real sound path and third-party driver packaging criteria are implemented. Do not merge it as an RC or claim a verified audible default route.
+
+
+## 9. Reconciliation update — source-level implementation, not yet RC (2026-11-12)
+
+The older checkpoint §8 describes the *first* policy-only milestone. Its unimplemented rows are superseded here only where actual code was subsequently committed:
+
+| Requirement | Implemented source | Qualification / remaining risk |
+| --- | --- | --- |
+| Windows first-run endpoint discovery | `engine/device/WindowsFirstRunEndpointDiscovery.h`: read-only IMMDevice IDs, `PKEY_AudioEndpoint_FormFactor`, shared-mode stereo format, default render ID, exact JUCE selectable name matching, conservative VB-Audio classifier | Same native API availability/device-specific labels must be proven by MSVC and user feedback; no universal device claim |
+| One-shot guarded first-run apply | `src/Main.cpp::inspectFirstRunAudio` only when no `audio-devices.xml`, no saved mixer and no startup error; uses one existing `applyCustomAudioDevice` transaction, checks real opened device/pins, pre/post endpoint IDs, then SOURCE CH01 and original auto MAIN gate | No vendor device needed for software gate; audible audio requires actual content fed into CABLE Input; never bypass output arm fault |
+| Native Windows PropertyKeys | `engine/device/WindowsAudioPropertyKeys.cpp` defines public SDK property keys once through `initguid.h` as required by Microsoft's DEFINE_PROPERTYKEY convention; CMake links this source into actual JUCE EXE and MMDevice test | Repairs the observed MSVC `LNK2019 PKEY_AudioEndpoint_FormFactor/PKEY_AudioEngine_DeviceFormat` from [failing evidence](https://github.com/masarray/arsonmix/actions/runs/43082706895) |
+| Official standard VB-CABLE | `config/vbcable-official-package.json` pins original `VBCABLE_Driver_Pack45.zip` source and SHA256; `scripts/prepare_vbcable_package.ps1` enforces original archive hash, fixed extraction bounds and allowed standard contents | Read-only official intake passed; no A+B/C+D; install requires user approval and standard license/attribution |
+| User-friendly native driver installer | Inno task `vbcable_driver` optional by default, per-user app stays nonadmin; PowerShell authenticates official signed EXE including updated BUREL VINCENT subject, then requests *separate UAC*. Existing/broken/nonpresent PnP devices are detected; persisted boot marker prevents automatically launching vendor Remove mode during pending reboot | Windows FAT must compile real installer with verified vendor archive; no interactive vendor GUI/UAC/physical reboot can be claimed from a headless runner |
+| FX UI | PR #579 offline user preset disk ACK, editor on accepted Add FX, wheel controls, Vocal Throw stable button and dark dropdown, compact moved/centered utilities and shared close X | Fast and scoped Chromium tests; no presumed quality beyond test inventory |
+
+**Software RC gates still pending:** newest final PR SHA complete Windows MSVC/CTest, all scoped Chromium/native/installer tests, official vendor ZIP installed in real FAT-created installer, SHA-provenance/upgrade validation, reviewed merge into `main`, and verified landing direct-download sync. Do not publish a transient branch or old artifact as an RC. Physical ASIO output is not demanded of a user without matching hardware, but it remains unverified and clearly documented.
+
+**Important limitation:** The VB-Audio vendor setup is GUI-interactive. The ArSonMix install step must never claim it can silently click Install Driver or bypass UAC. After driver setup, Windows reboot and endpoint validation are required before native auto-first-run audio may become eligible. Silent `/VERYSILENT` enterprise testing *never* executes the driver step.
