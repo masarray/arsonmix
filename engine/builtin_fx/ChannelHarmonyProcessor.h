@@ -165,7 +165,7 @@ public:
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream stream(out,false);
         stream.writeInt(0x41484d31); // AHM1
-        stream.writeInt(2);
+        stream.writeInt(3);
         stream.writeInt(accepted_.key);
         stream.writeInt(accepted_.scale);
         stream.writeInt(accepted_.voices);
@@ -176,29 +176,32 @@ public:
         stream.writeFloat(accepted_.gainDb);
         stream.writeInt(accepted_.guideMode);
         stream.writeInt64(static_cast<juce::int64>(accepted_.guideChannelId));
+        stream.writeInt(accepted_.voiceMode);
     }
     bool restoreUnpublishedState(const void* bytes,int len) {
         if(published_||!bytes||len<=0||len>128)return false;
         juce::MemoryInputStream stream(bytes,static_cast<std::size_t>(len),false);
         if(stream.readInt()!=0x41484d31)return false;
         const int version=stream.readInt();
-        if(version!=1&&version!=2)return false;
+        if(version!=1&&version!=2&&version!=3)return false;
         armix::harmony::Settings incoming{};
         incoming.key=stream.readInt();incoming.scale=stream.readInt();
         incoming.voices=stream.readInt();incoming.correction=stream.readBool();
         incoming.wet=stream.readFloat();incoming.space=stream.readFloat();
         incoming.color=stream.readFloat();incoming.gainDb=stream.readFloat();
-        if(version==2){
+        if(version>=2){
             incoming.guideMode=stream.readInt();
             const auto guide=stream.readInt64();
             if(guide<0)return false;
             incoming.guideChannelId=static_cast<std::uint64_t>(guide);
         }
+        if(version==3)incoming.voiceMode=stream.readInt();
+        // v1/v2 lacked an explicit Doubler; they stay pitched Harmony.
         if(stream.getPosition()!=stream.getTotalLength()||
            !armix::harmony::valid(incoming))return false;
         if(ready_&&!dsp_.setSettings(incoming))return false;
         // NativeMixerSessionFxRestore restores AFTER prepareToPlay. An accepted
-        // v2 ChannelId must become the actual AUDIO guide source, not merely a
+        // v2/v3 ChannelId must become the actual AUDIO guide source, not merely a
         // saved GUI value. This is unpublished/control-thread only.
         if(ready_) {
             guide_.reset();

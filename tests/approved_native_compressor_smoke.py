@@ -135,6 +135,21 @@ def main():
                 emit_snapshot(page,state,DEFAULTS)
             page.wait_for_function("""()=>document.querySelector('.mx-comp-status')?.textContent
                 ?.includes('NATIVE DSP ACCEPTED')""",timeout=3000)
+            # Native library listing on the exact accepted Compressor lease:
+            # no browser-only fake disk records or extra PCM graph mutation.
+            def fx_result(action,operation,**extra):
+                emit(page,"arMixBuiltinFxPresetResult",{
+                    "requestId":action["requestId"],"operation":operation,
+                    "status":"OK","catalogId":ID,"channelId":SOURCE,
+                    "instanceId":INSTANCE,
+                    "deviceEpoch":state["device"]["epoch"],
+                    "graphRevision":state["graph"]["revision"],**extra})
+            listing=last_action(page,"nativeBuiltinFxUserPreset")
+            assert listing["operation"]=="list" and listing["catalogId"]==ID
+            assert listing["instanceId"]==INSTANCE
+            fx_result(listing,"list",items=[])
+            assert page.locator("#mxNativeComp .mx-fxp-save-as").is_enabled()
+            assert page.locator("#mxNativeComp .mx-fxp-manage").is_disabled()
             assert page.locator(".mx-comp-plot svg").count()==1
             assert page.locator(".mx-comp-curve").count()==1
             assert page.locator(".mx-comp-brand").inner_text()=="Compressor"
@@ -464,6 +479,89 @@ def main():
                 page.locator(".mx-comp-preset-select").dispatch_event("change")
                 assert page.evaluate("""()=>window.__actions.filter(x=>
                     x.action==='nativeCompSet').length""")==before_count
+
+            if width==1366:
+                # Cross-FX generic bar: Save As is a NATIVE disk request only.
+                page.locator("#mxNativeComp .mx-fxp-save-as").click()
+                form=page.locator("#mxNativeComp .mx-fxp-form")
+                assert form.is_visible()
+                form.locator(".mx-fxp-name").fill("Stage Voice")
+                form.locator(".mx-fxp-confirm").click()
+                saving=last_action(page,"nativeBuiltinFxUserPreset")
+                assert saving["operation"]=="saveAs" and saving["catalogId"]==ID
+                assert saving["name"]=="Stage Voice"
+                assert saving["channelId"]==SOURCE and saving["instanceId"]==INSTANCE
+                saved_id="552b98cc-92f1-4b1e-b69d-df28491fb808"
+                assert page.locator(".mx-comp-preset-select option[value^='user:']").count()==0
+                fx_result(saving,"saveAs",presetId=saved_id,name="Stage Voice")
+                listing=last_action(page,"nativeBuiltinFxUserPreset")
+                assert listing["operation"]=="list"
+                fx_result(listing,"list",items=[
+                    {"id":saved_id,"name":"Stage Voice","category":"My Presets"}])
+                user_value="user:"+saved_id
+                assert page.locator('.mx-comp-preset-select option[value="'+user_value+'"]').count()==1
+                assert page.locator(".mx-comp-preset-select").input_value()==user_value
+                # Change DSP to a factory setting first, then read the user
+                # file. Merely reading a file must NEVER claim audio changed.
+                page.locator(".mx-comp-preset-select").select_option("GENTLE")
+                factory=last_action(page,"nativeCompSet")
+                assert factory["settings"]["ratio"]==2
+                emit(page,"arMixBuiltinCompQueue",
+                     {"requestId":factory["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinCompAck",
+                     {"requestId":factory["requestId"],"status":"APPLIED"})
+                emit_snapshot(page,state,factory["settings"],applied=factory["requestId"])
+                assert page.locator(".mx-comp-preset-select").input_value()=="GENTLE"
+                page.locator(".mx-comp-preset-select").select_option(user_value)
+                read=last_action(page,"nativeBuiltinFxUserPreset")
+                assert read["operation"]=="read" and read["presetId"]==saved_id
+                assert page.locator(".mx-comp-preset-select").input_value()=="GENTLE"
+                # A wrong-catalog response with the correct request ID must
+                # not consume the valid pending read or activate the preset.
+                emit(page,"arMixBuiltinFxPresetResult",{
+                    "requestId":read["requestId"],"operation":"read",
+                    "status":"OK","catalogId":"armix.builtin.vocal-throw.v1",
+                    "channelId":SOURCE,"instanceId":INSTANCE,
+                    "deviceEpoch":state["device"]["epoch"],
+                    "graphRevision":state["graph"]["revision"],
+                    "presetId":saved_id,"settings":DEFAULTS})
+                assert page.locator(".mx-comp-preset-select").input_value()=="GENTLE"
+                user_settings={"thresholdDb":-24,"ratio":3,"attackMs":5,
+                   "releaseMs":110,"kneeDb":8,"makeupDb":3,"mix":1}
+                fx_result(read,"read",presetId=saved_id,name="Stage Voice",
+                          settings=user_settings)
+                control=last_action(page,"nativeCompSet")
+                assert control["settings"]==user_settings
+                assert page.locator(".mx-comp-preset-select").input_value()=="GENTLE"
+                emit(page,"arMixBuiltinCompQueue",
+                     {"requestId":control["requestId"],"status":"QUEUED"})
+                emit(page,"arMixBuiltinCompAck",
+                     {"requestId":control["requestId"],"status":"APPLIED"})
+                emit_snapshot(page,state,user_settings,applied=control["requestId"])
+                assert page.locator(".mx-comp-preset-select").input_value()==user_value
+                # A user Delete is disk-only; cancel does not emit anything.
+                page.locator("#mxNativeComp .mx-fxp-manage").click()
+                page.locator('#mxNativeComp .mx-fxp-action[data-operation="delete"]').click()
+                assert form.is_visible()
+                actions_before=page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeBuiltinFxUserPreset').length""")
+                form.locator(".mx-fxp-cancel").click()
+                assert page.evaluate("""()=>window.__actions.filter(
+                    x=>x.action==='nativeBuiltinFxUserPreset').length""")==actions_before
+                page.locator("#mxNativeComp .mx-fxp-manage").click()
+                page.locator('#mxNativeComp .mx-fxp-action[data-operation="delete"]').click()
+                form.locator(".mx-fxp-confirm").click()
+                deleting=last_action(page,"nativeBuiltinFxUserPreset")
+                assert deleting["operation"]=="delete" and deleting["presetId"]==saved_id
+                fx_result(deleting,"delete",presetId=saved_id)
+                listing=last_action(page,"nativeBuiltinFxUserPreset")
+                assert listing["operation"]=="list"
+                fx_result(listing,"list",items=[])
+                assert page.locator(".mx-comp-preset-select option[value^='user:']").count()==0
+                assert page.locator("#mxNativeComp .mx-fxp-manage").is_disabled()
+                # Deleting the record MUST leave accepted Compressor PCM
+                # unchanged (no new nativeCompSet dispatched).
+                assert last_action(page,"nativeCompSet")["requestId"]==control["requestId"]
 
             if width==1366:
                 # Press Close (not hover): global button must visibly turn red

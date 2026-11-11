@@ -18,6 +18,15 @@ public:
         const float s=std::clamp(space,0.f,1.f);
         return {1.f-.62f*s,.49f*s,1.08f*s};
     }
+    // Hard-side backing singers lose direct presence against a dense lead
+    // when the global Space direct/reverb ratio recedes. Restore HIGH
+    // intelligibility only in its directional direct field; the shared
+    // diffuse room and lead signal remain unchanged. No extra compressor,
+    // reverb instance, latency or dynamic loudness pump.
+    static float directionalPresence(int singer,float space) noexcept {
+        const float s=std::clamp(space,0.f,1.f);
+        return 1.f+s*(singer==2?.32f:singer==4?.10f:0.f);
+    }
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.)return false;
         const auto delay=static_cast<std::size_t>(std::lround(rate*.00022));

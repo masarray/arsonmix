@@ -71,13 +71,18 @@ root.setAttribute("aria-label","ArSonMix Parametric EQ");root.setAttribute("aria
 const head=dom("header","mx-peq-title"),brand=dom("span","mx-peq-brand","ArSonMix  /  PARAMETRIC EQ"),
  channel=dom("span","mx-peq-channel"),power=dom("button","mx-peq-global","⏻"),
  close=dom("button","mx-peq-close");power.type=close.type="button";
+const presetSelect=dom("select","mx-peq-preset-select");
+presetSelect.setAttribute("aria-label","Parametric EQ My Presets");
+presetSelect.title="Parametric EQ user presets";
+const currentOption=dom("option","","Current");
+currentOption.value="CUSTOM";presetSelect.append(currentOption);
 close.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg>';close.setAttribute("aria-label","Close Parametric EQ");
  power.title="FX STATE UNAVAILABLE";power.dataset.fxState="unknown";
  power.setAttribute("aria-pressed","false");power.disabled=true;
  power.setAttribute("aria-label","EQ state unavailable");
  close.title="Close EQ";close.setAttribute("aria-label","Close EQ");
  power.classList.add("armix-builtin-fx-power");close.classList.add("armix-builtin-fx-close");
-head.append(brand,channel,power,close);
+head.append(brand,channel,presetSelect,power,close);
 const body=dom("div","mx-peq-body"),graph=dom("div","mx-peq-graph");
 const svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 676 330");
 svg.setAttribute("preserveAspectRatio","none");svg.setAttribute("role","group");
@@ -126,6 +131,59 @@ const context=()=>{
   instanceId:insert.id,slot:current.slot};
 };
 const effective=()=>draft?.list||bands;
+// One native EQ SPSC edit per callback. Multi-band Recall is ordered,
+// never optimistically painted or written to another audio renderer.
+let presetBatch=null,presetFailure="";
+const sameBand=(a,b)=>Boolean(a&&b&&a.enabled===b.enabled&&
+ a.slope===b.slope&&Number.isFinite(a.frequencyHz)&&
+ Number.isFinite(b.frequencyHz)&&
+ Math.abs(a.frequencyHz-b.frequencyHz)<=Math.max(.02,b.frequencyHz*.000002)&&
+ Math.abs(a.gainDb-b.gainDb)<=.0005&&Math.abs(a.q-b.q)<=.00005);
+const presetValid=s=>Boolean(s&&Array.isArray(s.bands)&&s.bands.length===8&&
+ s.bands.every((b,i)=>valid(i,b)));
+const samePreset=(a,b)=>presetValid(a)&&presetValid(b)&&
+ a.bands.every((band,i)=>sameBand(band,b.bands[i]));
+function abortPresetBatch(reason){
+ if(!presetBatch)return;
+ const token=presetBatch.token;
+ presetBatch=null;latest.clear();draft=null;
+ presetFailure=reason; // retain warning across later native snapshots
+ presetBar.rejectRecall(token,reason);
+ hint(reason);draw();
+}
+function nextPresetBand(){
+ if(!presetBatch||pending||presetBatch.at>=presetBatch.indices.length)return false;
+ const index=presetBatch.indices[presetBatch.at++];
+ const id=send(index,presetBatch.target[index],true);
+ if(!id)return false;
+ presetBatch.inFlight=id;
+ hint("EQ PRESET · APPLYING BAND "+presetBatch.at+"/"+presetBatch.indices.length);
+ return true;
+}
+function beginPresetRecall(settings){
+ if(!native()||!context()||pending||latest.size||draft||gesture||presetBatch||
+    !presetValid(settings))return null;
+ const target=settings.bands.map(b=>({...b}));
+ const indices=target.map((b,i)=>sameBand(bands[i],b)?-1:i).filter(i=>i>=0);
+ if(!indices.length)return null;
+ const token="eq-batch-"+Date.now()+"-"+(++seq);
+ presetFailure="";
+ presetBatch={token,target,indices,at:0,inFlight:"",started:Date.now()};
+ if(!nextPresetBand()){presetBatch=null;return null;}
+ return token; // Final receipt only after every exact AUDIO ACK + band readback.
+}
+const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
+ host:root,select:presetSelect,label:"Parametric EQ",catalogId:ID,
+ context,stable:()=>!pending&&!latest.size&&!draft&&!gesture&&!presetBatch,
+ readAccepted:()=>({bands:bands.map(b=>({...b}))}),
+ validate:presetValid,sameSettings:samePreset,
+ factoryValue:()=>"CUSTOM",notice:hint,apply:beginPresetRecall,
+ // Control-thread batch can span multiple accepted audio callbacks.
+ // The EQ batch itself fails at 12s; generic single-ACK 5.5s is too short.
+ recallTimeoutMs:15000
+});
+if(!presetBar)throw Error("Shared built-in FX preset bar missing");
+presetSelect.addEventListener("change",()=>presetBar.selectUser(presetSelect.value));
 function updateKnobs(){
  const b=effective()[selected],c=context(),enabled=Boolean(c||!native());
  const ch=c?state()?.graph?.channels?.find(x=>x.id===c.channelId):null;
@@ -209,16 +267,23 @@ function requestSnapshot(){
  readbackRequest=requestId;
  backend().emitEvent("arMixAction",{action:"nativeEqSnapshot",requestId,...c});
 }
-function send(i,value){
- const c=context();if(!c)return;
- if(pending){latest.set(i,value);hint("DSP · APPLYING · EDITS HELD UNTIL ACK");return;}
+function send(i,value,fromPreset=false){
+ const c=context();if(!c||(presetBatch&&!fromPreset))return null;
+ if(pending){
+  if(!fromPreset)latest.set(i,value);
+  hint("DSP · APPLYING · EDITS HELD UNTIL ACK");return null;
+ }
  const id="eq-"+String(Date.now()*1000+(seq++%1000));
  pending={id,index:i,band:value,context:c,ack:false};
  backend().emitEvent("arMixAction",{action:"nativeEqSetBand",requestId:id, ...c,
   bandIndex:i,band:value});
- hint("DSP · QUEUED — AWAITING AUDIO ACK");
+ if(!presetBatch)hint("DSP · QUEUED — AWAITING AUDIO ACK");
+ return id;
 }
 function change(i,patch,preview=false){
+ if(presetBatch)return;
+ // A deliberate new edit dismisses the previous partial-recall warning.
+ presetFailure="";
  const arr=effective().map(b=>({...b}));const old=arr[i];
  const next={...old,...patch};
  next.frequencyHz=clamp(next.frequencyHz,20,cap());
@@ -237,7 +302,7 @@ function movePoint(e){
  return {x:(e.clientX-r.left)*676/r.width,y:(e.clientY-r.top)*330/r.height};
 }
 svg.addEventListener("pointerdown",e=>{
- const hit=e.target.closest?.("[data-eq-node]");if(!hit||e.button!==0)return;
+ const hit=e.target.closest?.("[data-eq-node]");if(!hit||e.button!==0||presetBatch)return;
  const i=Number(hit.dataset.eqNode);if(!Number.isInteger(i)||i<0||i>=8)return;
  selected=i;const p=movePoint(e),b=effective()[i];
  gesture={id:e.pointerId,kind:"node",index:i,from:p,band:{...b}};
@@ -326,7 +391,7 @@ for(const [key,k] of Object.entries(knobs)){
 }
 let windowGesture=null;
 head.addEventListener("pointerdown",e=>{
- if(e.button!==0||e.target.closest("button"))return;
+ if(e.button!==0||e.target.closest("button,select"))return;
  const r=root.getBoundingClientRect();
  windowGesture={id:e.pointerId,x:e.clientX-r.left,y:e.clientY-r.top};
  head.setPointerCapture(e.pointerId);e.preventDefault();
@@ -340,7 +405,7 @@ head.addEventListener("pointermove",e=>{
 });
 head.addEventListener("pointerup",e=>{windowGesture=null;head.releasePointerCapture?.(e.pointerId)});
 head.addEventListener("pointercancel",()=>{windowGesture=null});
-close.addEventListener("click",()=>{root.hidden=true;gesture=null});
+close.addEventListener("click",()=>{root.hidden=true;gesture=null;presetBar.close()});
 power.addEventListener("click",()=>{
  if(!current)return;
  if(native())window.__ARMIX_NATIVE_M2__?.consumeAction?.(current.track,"slotPower",{dataset:{slot:String(current.slot)}});
@@ -362,6 +427,7 @@ const api={
  },
  open(track,slot){
   current={track,slot,channelId:null,instanceId:null};selected=2;pending=null;latest.clear();draft=null;
+  presetBatch=null;presetFailure="";presetBar.reset();
   const n=state();const nativeId=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const ch=n?.graph?.channels?.find(x=>x.id===nativeId);
   if(native()&&(n?.admitted||n?.logical)&&ch?.inserts?.[slot]?.catalogId===ID){
@@ -375,18 +441,28 @@ const api={
   channel.textContent=track.name+" · FX "+(slot+1);
   root.hidden=false;draw();
  },
- close(){root.hidden=true;}
+ close(){root.hidden=true;presetBar.close();}
 };
 window.ArSonMixNativeEq=Object.freeze(api);
 backend()?.addEventListener?.("arMixBuiltinEqQueue",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status==="REJECTED"){pending=null;latest.clear();draft=null;
-  hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();}
+ if(ack.status==="REJECTED"){
+  const wasRecall=!!presetBatch;
+  pending=null;latest.clear();draft=null;
+  if(wasRecall)abortPresetBatch("EQ PRESET REJECTED · PARTIAL AUDIO STATE POSSIBLE");
+  else hint("NATIVE REJECTED · "+(ack.errorCode||"UNKNOWN"));
+  requestSnapshot();
+ }
 });
 backend()?.addEventListener?.("arMixBuiltinEqAck",ack=>{
  if(!pending||ack?.requestId!==pending.id)return;
- if(ack.status!=="APPLIED"){pending=null;latest.clear();draft=null;
-  hint("DSP DID NOT APPLY · "+(ack.errorCode||"UNKNOWN"));requestSnapshot();return;}
+ if(ack.status!=="APPLIED"){
+  const wasRecall=!!presetBatch;
+  pending=null;latest.clear();draft=null;
+  if(wasRecall)abortPresetBatch("EQ PRESET AUDIO ACK REJECTED · PARTIAL AUDIO STATE POSSIBLE");
+  else hint("DSP DID NOT APPLY · "+(ack.errorCode||"UNKNOWN"));
+  requestSnapshot();return;
+ }
  pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot();
 });
 backend()?.addEventListener?.("arMixBuiltinEqSnapshot",s=>{
@@ -401,20 +477,56 @@ backend()?.addEventListener?.("arMixBuiltinEqSnapshot",s=>{
  const rate=sampleRate;sampleRate=s.sampleRate;
  if(!s.bands.every((b,i)=>valid(i,b))){sampleRate=rate;hint("NATIVE EQ PARAMETER READBACK INVALID");return;}
  if(pending&&(!pending.ack||s.appliedRequestId!==pending.id))return;
+ const applied=pending;
  bands=s.bands.map(b=>({...b}));pending=null;
+ if(presetBatch){
+  const batch=presetBatch;
+  const validStep=applied&&applied.id===batch.inFlight&&
+    sameBand(bands[applied.index],batch.target[applied.index]);
+  if(!validStep){
+   abortPresetBatch("EQ PRESET READBACK MISMATCH · CHECK PARTIAL AUDIO STATE");
+   return;
+  }
+  if(batch.at<batch.indices.length){
+   if(!nextPresetBand())
+    abortPresetBatch("EQ PRESET INTERRUPTED · CHECK PARTIAL AUDIO STATE");
+  }else{
+   const token=batch.token;
+   presetBatch=null;draft=null;
+   if(samePreset({bands},{bands:batch.target})){
+    presetBar.onAccepted({bands:bands.map(b=>({...b}))},token);
+    hint("EQ MY PRESET · ALL BANDS AUDIO-VERIFIED");
+   }else{
+    presetBar.rejectRecall(token,"EQ PRESET PARTIALLY APPLIED · REVIEW 8 BANDS");
+    hint("EQ PRESET PARTIALLY APPLIED · REVIEW 8 BANDS");
+   }
+  }
+  draw();return;
+ }
  if(latest.size){
   const [index,value]=latest.entries().next().value;
   latest.delete(index);send(index,value);
  }else draft=null;
- hint("NATIVE DSP ACCEPTED · "+c.instanceId);
+ presetBar.onAccepted({bands:bands.map(b=>({...b}))},applied?.id||"");
+ hint(presetFailure||("NATIVE DSP ACCEPTED · "+c.instanceId));
  draw();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(root.hidden||!native()||!current?.instanceId)return;
  queueMicrotask(()=>{
-  if(!context()){pending=null;latest.clear();draft=null;
-   hint("DEVICE/GRAPH CHANGED · REOPEN ACCEPTED FX");draw();}
+  if(!context()){
+   pending=null;latest.clear();draft=null;
+   abortPresetBatch("DEVICE/GRAPH CHANGED · PARTIAL EQ PRESET POSSIBLE");
+   presetBar.reset();
+   hint("DEVICE/GRAPH CHANGED · REOPEN ACCEPTED FX");draw();
+  }
   else updateKnobs(); // authoritative scalar readback, no EQ curve rebuild
  });
 });
+window.setInterval(()=>{
+ if(root.hidden)return;
+ presetBar.tick();
+ if(presetBatch&&Date.now()-presetBatch.started>12000)
+  abortPresetBatch("EQ PRESET ACK TIMEOUT · CHECK PARTIAL AUDIO STATE");
+},250);
 })();

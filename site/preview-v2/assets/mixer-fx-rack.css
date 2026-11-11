@@ -445,7 +445,7 @@
  box-shadow:0 16px 38px #030e16c0,0 1px 0 #ffffff6c inset;
  font:400 10px/1.3 Inter,'Segoe UI',Arial,sans-serif
 }
-.mx-harm[hidden],.mx-harm-source-picker[hidden]{display:none}
+.mx-harm[hidden],.mx-harm-source-picker[hidden],.mx-harm [hidden]{display:none}
 .mx-harm *{box-sizing:border-box}
 .mx-harm button,.mx-harm select,.mx-harm input{font:inherit}
 .mx-harm button{cursor:pointer}
@@ -467,6 +467,47 @@
  color:#e4f2f4;background:#304b58;border:1px solid #597483;border-radius:4px;
  font-size:10px;cursor:pointer
 }
+.mx-harm-head button.mx-harm-preset-tool{
+ flex:0 0 auto;min-height:23px;padding:2px 5px;border:1px solid #648b91;
+ border-radius:4px;background:#305766;color:#e2f4f2;font-size:9px;
+ letter-spacing:.1px;white-space:nowrap
+}
+.mx-harm-head button.mx-harm-preset-tool:hover:not(:disabled){background:#417873}
+.mx-harm-head button.mx-harm-preset-tool:disabled{opacity:.42;cursor:default}
+.mx-harm-preset-menu{
+ position:absolute;right:62px;top:32px;z-index:5;display:flex;
+ flex-direction:column;gap:4px;min-width:145px;max-width:calc(100% - 12px);
+ padding:6px;background:#e5edef;border:1px solid #8ba8ac;
+ border-radius:0 0 5px 5px;box-shadow:0 8px 15px #06192452
+}
+.mx-harm-preset-menu button{
+ display:block;text-align:left;min-height:24px;padding:3px 8px;
+ color:#24474e;background:#d5e7e3;border:1px solid #73949a;
+ border-radius:3px;font-size:10px
+}
+.mx-harm-preset-menu button:hover{background:#bddcd5}
+.mx-harm-preset-form{
+ position:absolute;right:58px;top:32px;z-index:5;
+ display:flex;align-items:center;gap:6px;max-width:calc(100% - 12px);
+ padding:7px;background:#e5edef;border:1px solid #8ba8ac;
+ border-radius:0 0 5px 5px;box-shadow:0 8px 15px #06192452;
+ font-size:10px;color:#24474e
+}
+.mx-harm-preset-form input{
+ min-width:80px;width:min(170px,28vw);height:24px;padding:2px 6px;
+ border:1px solid #9bafb2;background:#fff;color:#203b42;border-radius:3px
+}
+.mx-harm-preset-form button{
+ min-height:24px;padding:3px 8px;border-radius:3px;
+ border:1px solid #73949a;background:#d5e7e3;color:#24474e;font-size:10px
+}
+.mx-harm-preset-form button#mxHPresetConfirm{background:#367a75;color:#fff}
+@media(max-width:580px){
+ .mx-harm-head{gap:4px;padding-left:6px}
+ .mx-harm-preset-form{left:6px;right:6px;flex-wrap:wrap}
+ .mx-harm-preset-menu{right:37px}
+ .mx-harm-head button.mx-harm-preset-tool{padding:2px 3px;font-size:8px}
+}
 /* The header Close/Power material, geometry, icon and semantic states are
    owned EXCLUSIVELY by mixer-contextual-buttons.css. No scoped overrides. */
 .mx-harm-body{
@@ -484,10 +525,10 @@
 .mx-harm-signature strong{font-size:17px;font-weight:500;letter-spacing:-.35px;color:#d1ebec}
 .mx-harm-signature small{font-size:8px;letter-spacing:1.1px;color:#86a8b2}
 .mx-harm-label{font-size:9px;letter-spacing:.9px;color:#a3c0c8;font-weight:500}
-.mx-harm-voices{display:flex;gap:4px;width:100%}
+.mx-harm-voices{display:flex;gap:3px;width:100%}
 .mx-harm-voices button{
  appearance:none;display:flex;align-items:center;justify-content:center;
- gap:3px;flex:1;min-width:0;height:30px;padding:0 3px;border-radius:5px;
+ gap:2px;flex:1;min-width:0;height:30px;padding:0 2px;border-radius:5px;
  border:1px solid #557784;line-height:1;
  background:linear-gradient(180deg,#365b67,#294953);
  color:#cfe5e7;font-size:11px;font-weight:500;
@@ -495,8 +536,24 @@
   0 1px 0 #132d38,0 2px 4px #0618223f;
  transition:background .13s ease,box-shadow .13s ease,color .13s ease
 }
-.mx-harm-voice-glyph{display:block;flex:0 0 13px;width:13px;height:13px}
+.mx-harm-voice-glyph{display:block;flex:0 0 11px;width:11px;height:11px}
 .mx-harm-voices button span{display:block;font-variant-numeric:tabular-nums}
+.mx-harm-type{display:flex;gap:3px;width:100%;margin-top:2px}
+.mx-harm-type button{
+ appearance:none;flex:1;min-width:0;height:23px;padding:0 2px;
+ border:1px solid #486673;border-radius:4px;
+ background:linear-gradient(#1b3540,#142c37);
+ color:#9bbac3;font-size:8px;font-weight:500;letter-spacing:.25px;
+ box-shadow:inset 0 1px 3px #081c264f;
+ cursor:pointer
+}
+.mx-harm-type button.active{
+ background:linear-gradient(#3d7a72,#285d59);
+ border-color:#69b6a5;color:#f3fcf9
+}
+.mx-harm-type button.queued:not(.active){outline:1px solid #d8ae64;outline-offset:1px}
+.mx-harm-type button:focus-visible{outline:2px solid #a5dfde;outline-offset:1px}
+.mx-harm-voices button:disabled{opacity:.5;cursor:default}
 .mx-harm-voices button.active{
  background:linear-gradient(180deg,#438d7d,#326c63);
  color:#f6fffb;border-color:#77bdac;
@@ -505,11 +562,35 @@
 }
 .mx-harm-voices button:hover:not(.active){background:linear-gradient(#406c74,#30555e)}
 .mx-harm-voices button:active:not(:disabled){box-shadow:inset 0 3px 6px #09252fb8,0 1px 0 #132d38}
-.mx-harm-correction{
- display:flex;align-items:center;gap:8px;color:#b8d9df;font-size:9px;
- letter-spacing:.45px;white-space:nowrap;cursor:pointer;margin-top:auto
+.mx-harm button.mx-harm-correction{
+ appearance:none;display:flex;align-items:center;align-self:flex-start;gap:7px;
+ min-height:24px;padding:0;border:0;background:none;border-radius:4px;
+ color:#b8d9df;font-size:9px;line-height:1;letter-spacing:.45px;
+ white-space:nowrap;margin-top:auto
 }
-.mx-harm-correction input{accent-color:#57bba4;width:14px;height:14px;margin:0}
+.mx-harm-switch-track{
+ display:block;position:relative;flex:0 0 32px;width:32px;height:16px;
+ border:1px solid #64828b;border-radius:9px;background:#142c36;
+ box-shadow:inset 0 1px 3px #081b23;
+ transition:background .14s ease,border-color .14s ease
+}
+.mx-harm-switch-track::before{
+ content:"";position:absolute;left:2px;top:2px;width:10px;height:10px;
+ border-radius:50%;background:#b6ced1;box-shadow:0 1px 2px #0a242f9c;
+ transition:transform .14s ease,background .14s ease
+}
+.mx-harm-correction[aria-checked="true"] .mx-harm-switch-track{
+ background:#39786c;border-color:#77bdac
+}
+.mx-harm-correction[aria-checked="true"] .mx-harm-switch-track::before{
+ transform:translateX(16px);background:#e2f6ec
+}
+.mx-harm-correction[aria-busy="true"] .mx-harm-switch-track{border-style:dashed}
+.mx-harm button.mx-harm-correction:disabled{cursor:wait}
+.mx-harm-correction:disabled .mx-harm-switch-track::before{visibility:hidden}
+@media(prefers-reduced-motion:reduce){
+ .mx-harm-switch-track,.mx-harm-switch-track::before{transition:none}
+}
 .mx-harm-control-deck{
  display:flex;align-items:center;justify-content:center;min-width:0;
  border-right:1px solid #a7b9bf;
@@ -743,7 +824,8 @@
  .mx-harm-signature{min-height:71px}
  .mx-harm-voices{gap:2px}
  .mx-harm-voices button{height:28px;padding:0 2px;gap:2px}
- .mx-harm-voice-glyph{width:11px;height:11px;flex-basis:11px}
+ /* Four counts remain legible in the narrow 112px left rail. */
+ .mx-harm-voice-glyph{display:none}
  .mx-harm-source{flex-wrap:wrap;gap:5px;padding:5px 8px}
  .mx-harm-source-picker{flex:1}
  .mx-harm-guide-status{font-size:8px}
@@ -993,4 +1075,84 @@
 }
 @media(prefers-reduced-motion:reduce){
  .mx-vthrow .vt-throw-button,.mx-vthrow .vt-throw-aura{transition:none}
+}
+
+/* Shared native My Presets controls — existing FX Rack CSS owner. */
+/* Single compact built-in FX My Presets control surface.
+   The same classes apply to EQ, Compressor, Harmonice and Vocal Throw.
+   This is intentionally a small anchored tool, never a bulky modal card. */
+.mx-fxp-button{
+ flex:0 0 auto;height:23px;padding:1px 5px;min-width:22px;
+ background:#305763;color:#e1f3f2;border:1px solid #5d8790;
+ border-radius:4px;font-size:9px;font-weight:400;white-space:nowrap;
+ cursor:pointer
+}
+.mx-fxp-button:hover:not(:disabled){background:#447873}
+.mx-fxp-button:disabled{opacity:.4;cursor:default}
+.mx-fxp-menu,.mx-fxp-form{
+ position:absolute;top:33px;right:48px;z-index:18;
+ background:#e4edef;border:1px solid #8da5aa;border-radius:0 0 5px 5px;
+ box-shadow:0 8px 16px #081e285c;color:#253e44;
+ font:400 10px/1.35 Inter,'Segoe UI',Arial,sans-serif;
+ padding:7px;max-width:calc(100% - 12px)
+}
+.mx-fxp-menu{display:flex;flex-direction:column;gap:5px;min-width:145px}
+.mx-fxp-form{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mx-fxp-menu[hidden],.mx-fxp-form[hidden],.mx-fxp-form [hidden]{display:none}
+.mx-fxp-name{
+ width:140px;max-width:45vw;height:24px;border:1px solid #9aafb3;
+ border-radius:3px;background:#fff;color:#273b41;padding:2px 6px;
+ font-size:10px
+}
+.mx-fxp-form button,.mx-fxp-menu button{
+ min-height:24px;background:#d4e7e4;border:1px solid #829fa4;
+ border-radius:3px;padding:2px 7px;font-size:10px;font-weight:400;
+ color:#274b51;cursor:pointer
+}
+.mx-fxp-form .mx-fxp-confirm{background:#367b73;color:#fff}
+.mx-fxp-menu button{text-align:left}
+.mx-fxp-menu button:hover,.mx-fxp-form button:hover{filter:brightness(.94)}
+.mx-fxp-prompt{font-size:10px;font-weight:500;letter-spacing:.1px}
+@media(max-width:560px){
+ .mx-fxp-menu{right:29px}
+ .mx-fxp-form{left:7px;right:7px}
+ .mx-fxp-button{padding:1px 3px;font-size:8px}
+}
+
+/* Preset toolbar: the compact Vocal Throw header must retain its owner
+   brand and the stage transport at narrow Chromium/WebView viewports. */
+@media(max-width:600px){
+ .mx-vthrow .vt-face-header{gap:4px}
+ .mx-vthrow .vt-face-header .channel{display:none}
+ .mx-vthrow .mx-fxp-save-as{width:24px;min-width:24px;font-size:0;overflow:hidden;padding:0}
+ .mx-vthrow .mx-fxp-save-as::before{content:"+";font-size:14px}
+ .mx-vthrow .mx-fxp-manage{width:23px;min-width:23px;padding:0}
+}
+
+
+/* M4 EQ My Presets: keep all rules inside the sole FX rack CSS owner. */
+.mx-peq-title .mx-peq-preset-select{
+ flex:0 1 125px;min-width:68px;max-width:125px;margin-left:auto;
+ height:24px;padding:0 5px;border:1px solid #527580;border-radius:4px;
+ background:#243e4a;color:#d9eff3;font:400 10px Inter,'Segoe UI',sans-serif;
+ cursor:pointer
+}
+.mx-peq-title .mx-peq-global{margin-left:0}
+.mx-peq .mx-fxp-button{background:#305763;border:1px solid #5d8790;border-radius:4px}
+.mx-peq .mx-fxp-button:hover:not(:disabled){background:#447873}
+.mx-peq .mx-fxp-form button,.mx-peq .mx-fxp-menu button{
+ background:#d4e7e4;border:1px solid #829fa4;color:#274b51
+}
+.mx-peq .mx-fxp-form .mx-fxp-confirm{background:#367b73;color:#fff}
+.mx-peq .mx-fxp-menu{right:8px}
+.mx-peq .mx-fxp-form{right:8px;top:36px}
+@media(max-width:650px){
+ .mx-peq-title{gap:4px;padding:0 5px}
+ .mx-peq-brand{font-size:0}
+ .mx-peq-brand::after{content:"EQ";font-size:11px}
+ .mx-peq-channel{max-width:74px}
+ .mx-peq-title .mx-peq-preset-select{max-width:80px;font-size:9px}
+ .mx-peq .mx-fxp-save-as{min-width:24px;max-width:24px;font-size:0;padding:0}
+ .mx-peq .mx-fxp-save-as::before{content:"+";font-size:14px}
+ .mx-peq .mx-fxp-manage{min-width:23px;padding:0}
 }
