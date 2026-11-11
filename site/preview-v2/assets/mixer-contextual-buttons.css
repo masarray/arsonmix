@@ -413,3 +413,17 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
    Only raise the toolbar while the menu is open; native modal overlays retain
    their own higher blocking layer. No persistent topbar reordering. */
 .app .command-bar:has(.more-tools[open]){z-index:1200!important}
+
+/* Native FX-style unmistakable X glyph on every modeless close key.
+   The shared 24px face/hover/pressed design token above remains authoritative.
+   Earlier gradient-mask crosses could render as a solid red blank button in
+   some WebView2/Windows scaling and compositor combinations. */
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,
+#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],
+[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,
+.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::after{
+ content:"×"!important;background:none!important;
+ font:500 19px/12px 'Segoe UI',sans-serif!important;
+ display:grid!important;place-items:center!important;
+ color:inherit!important;text-align:center!important;
+}
