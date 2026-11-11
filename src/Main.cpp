@@ -3937,14 +3937,30 @@ private:
                 (requestedCatalog.isString()&&
                  armix::storage::BuiltInFxUserPresetStore::effectFolder(catalog)
                     .isNotEmpty());
-            const bool identity=fxRequest.valid&&!fxRequest.unbound&&epoch!=0&&
-                catalogValid&&request.startsWith(
-                    harmonyLegacy?"hpres-":"fxpres-");
-            auto lease=identity?engine_.leaseNativeVst3Editor(
+            // Presets are portable CONTROL data, not physical output
+            // authorization. A logical mixer has an exact accepted FX token
+            // and persisted .smix DSP state even before AUDIO SETUP. Rehydrate
+            // that state for disk-only presets; never ask for/arm a device.
+            std::uint64_t logicalChannel=0;
+            std::size_t logicalSlot=0;
+            const bool logicalPreset=fxRequest.valid&&fxRequest.unbound&&
+                epoch==0&&catalogValid&&!logicalMixer_.readOnly()&&
+                !mixerSessionWorker_.busy()&&!deviceApply_.busy()&&
+                logicalFxTarget(args,logicalChannel,logicalSlot)&&
+                logicalChannel==channel&&logicalSlot==static_cast<std::size_t>(slot);
+            const bool physicalPreset=fxRequest.valid&&!fxRequest.unbound&&
+                epoch!=0&&catalogValid;
+            const bool identity=(logicalPreset||physicalPreset)&&
+                request.startsWith(harmonyLegacy?"hpres-":"fxpres-");
+            armix::session::StoredInsert offlineInsert;
+            auto offline=logicalPreset?openLogicalBuiltinFx(
+                args,offlineInsert,catalog.toRawUTF8()):nullptr;
+            auto lease=physicalPreset?engine_.leaseNativeVst3Editor(
                 epoch,revision,armix::mixer::ChannelId{channel},
                 static_cast<std::size_t>(slot),instance):
                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
-            auto* processor=lease?lease->processor.get():nullptr;
+            auto* processor=logicalPreset?offline.get():
+                lease?lease->processor.get():nullptr;
             const bool exactReady=armix::storage::BuiltInFxAcceptedSnapshot
                 ::matchesReady(processor,catalog);
             auto result=std::make_unique<juce::DynamicObject>();
@@ -3954,6 +3970,7 @@ private:
             result->setProperty("channelId",rawChannel);
             result->setProperty("deviceEpoch",rawEpoch);
             result->setProperty("graphRevision",rawRevision);
+            result->setProperty("workspaceToken",args.getProperty("workspaceToken",{}));
             result->setProperty("instanceId",instance);
             const auto presetId=args.getProperty("presetId","").toString();
             juce::String error;
@@ -3991,7 +4008,12 @@ private:
                     (catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeThrow_.owner));
                 auto* realtime=dynamic_cast<armix::mixer::RealtimeNativeFxControl*>(processor);
-                if(busy||!realtime||!realtime->stateSnapshotQuiescent())
+                // Logical processor is a detached, rehydrated CONTROL
+                // snapshot. Its settings were committed to .smix already;
+                // no callback exists and no audio packet can be pending.
+                // Physical processors still require quiescent live DSP.
+                if(busy||!realtime||(!logicalPreset&&
+                    !realtime->stateSnapshotQuiescent()))
                     error="BUILTIN_FX_AUDIO_EDIT_PENDING";
                 else {
                     const auto portable=armix::storage::BuiltInFxAcceptedSnapshot
