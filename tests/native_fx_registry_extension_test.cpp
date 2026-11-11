@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 #include "../src/NativeBuiltInFx.h"
+#include "../src/NativeFxControlRequest.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -74,7 +75,56 @@ static_assert(!validNativeBuiltInFxCatalog(duplicate));
 static_assert(validNativeBuiltInFxCatalog(armix::builtin_fx::nativeBuiltInFx));
 static_assert(std::is_same_v<Entry::Prepare,std::remove_cv_t<decltype(fixture.prepare)>>);
 
+static void verifySharedNativeFxControlRequest() {
+    // Same lease/epoch/revision envelope across all four built-in FX editors.
+    auto request=std::make_unique<juce::DynamicObject>();
+    request->setProperty("channelId","9007199254740993"); // exact >JS-safe uint64
+    request->setProperty("deviceEpoch","12");
+    request->setProperty("graphRevision","19");
+    request->setProperty("instanceId","g5c-707");
+    request->setProperty("slot",3);
+    request->setProperty("requestId","comp-1844674407370955161");
+    juce::var source(request.release());
+    using Target=armix::builtin_fx::NativeFxControlRequest;
+    const auto good=Target::parse(source,8);
+    assert(good.valid && !good.unbound && good.channel==9007199254740993ULL);
+    assert(good.epoch==12 && good.revision==19 && good.slot==3);
+    assert(good.sequence("comp-")==1844674407370955161ULL);
+    assert(good.sequence("harm-")==0 && good.sequence("throw-")==0);
+    auto alter=[](const juce::var& before,const char* name,juce::var value) {
+        auto copy=juce::JSON::parse(juce::JSON::toString(before));
+        copy.getDynamicObject()->setProperty(name,value);
+        return copy;
+    };
+    assert(!Target::parse(alter(source,"channelId",juce::var(9007199254740993.0)),8).valid);
+    assert(!Target::parse(alter(source,"channelId",juce::var("00")),8).valid);
+    assert(!Target::parse(alter(source,"deviceEpoch",juce::var("0")),8).valid);
+    assert(!Target::parse(alter(source,"graphRevision",juce::var("18446744073709551616")),8).valid);
+    assert(!Target::parse(alter(source,"instanceId",juce::var("")),8).valid);
+    assert(!Target::parse(alter(source,"instanceId",juce::var(1)),8).valid);
+    assert(!Target::parse(alter(source,"slot",juce::var(8)),8).valid);
+    assert(!Target::parse(alter(source,"slot",juce::var(-1)),8).valid);
+    assert(!Target::parse(alter(source,"requestId",juce::var("")),8).valid);
+    assert(!Target::parse(alter(source,"requestId",juce::var(juce::String::repeatedString("a",73))),8).valid);
+    const auto logical=Target::parse(alter(source,"workspaceToken",juce::var("persisted-mixer")),8);
+    assert(logical.valid && logical.unbound && logical.sequence("comp-")==good.sequence("comp-"));
+    for(const auto& id:{"eq-1","harm-17","throw-99","comp-0008"}) {
+        const auto candidate=Target::parse(alter(source,"requestId",juce::var(id)),8);
+        assert(candidate.valid);
+        assert(candidate.sequence(juce::String(id).upToFirstOccurrenceOf("-",true,false).toRawUTF8())>0);
+    }
+    for(const auto& id:{"comp-","comp--1","comp-1x","comp-1.0",
+                          "comp-12345678901234567890","comp-0000000000000000000"}) {
+        const auto candidate=Target::parse(alter(source,"requestId",juce::var(id)),8);
+        assert(candidate.sequence("comp-")==0);
+    }
+    const auto max19=Target::parse(alter(source,"requestId",
+        juce::var("comp-9999999999999999999")),8);
+    assert(max19.valid && max19.sequence("comp-")==9999999999999999999ULL);
+}
+
 int main() {
+    verifySharedNativeFxControlRequest();
     const auto* found=findNativeBuiltInFxIn(injected,"armix.test.fixture-gain.v1");
     assert(found==&injected[0]);
     assert(!findNativeBuiltInFxIn(injected,""));

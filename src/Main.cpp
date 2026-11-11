@@ -41,6 +41,7 @@
 #include "NativeLogicalMixerControl.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeFxParameterHotkey.h"
+#include "NativeFxControlRequest.h"
 #include "NativeDeviceApplyCoordinator.h"
 #include <algorithm>
 #include <cstring>
@@ -3889,20 +3890,16 @@ private:
 
         // Exact native instance lease; queued != audio-applied.
         if(action=="nativeHarmonySnapshot"||action=="nativeHarmonySetSettings") {
-            const auto rawChannel=args.getProperty("channelId",{});
-            const auto rawEpoch=args.getProperty("deviceEpoch",{});
-            const auto rawRevision=args.getProperty("graphRevision",{});
-            const auto rawInstance=args.getProperty("instanceId",{});
-            const auto request=args.getProperty("requestId",{}).toString();
-            const int slot=static_cast<int>(args.getProperty("slot",-1));
-            std::uint64_t ch=0,ep=0,rev=0;
-            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
-                armix::console::approvedNativeId(rawEpoch,ep)&&
-                armix::console::approvedNativeId(rawRevision,rev)&&
-                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
-                slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane &&
-                request.isNotEmpty()&&request.length()<=72;
-            const bool unbound=args.getProperty("workspaceToken","").toString().isNotEmpty();
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int slot=fxRequest.slot;
+            const auto ch=fxRequest.channel,ep=fxRequest.epoch,rev=fxRequest.revision;
+            const bool valid=fxRequest.valid,unbound=fxRequest.unbound;
             armix::session::StoredInsert offlineInsert;
             auto offline=unbound?openLogicalBuiltinFx(args,offlineInsert,
                 armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity):nullptr;
@@ -3971,12 +3968,7 @@ private:
             if(typed&&guideValid&&processor&&!pendingNativeHarmony_.owner&&!nativeShowBusy_&&
                !studioBackupBusy_&&!engine_.independentClockActive()&&
                armix::harmony::valid(settings)&&request.startsWith("harm-")) {
-                const auto digits=request.substring(5).toStdString();
-                std::uint64_t numeric=0;
-                if(!digits.empty()&&digits.size()<=19&&
-                   digits.find_first_not_of("0123456789")==std::string::npos) {
-                    try{numeric=std::stoull(digits);}catch(...){numeric=0;}
-                }
+            const auto numeric=fxRequest.sequence("harm-");
                 queued=numeric>0&&processor->queueAccepted(settings,numeric);
                 if(queued && !unbound) {
                     pendingNativeHarmony_.owner=owner;
@@ -4006,20 +3998,16 @@ private:
         // Real built-in rack node, not a GUI-only pre-VST channel EQ.
         // All identity fields are validated by the accepted native lease.
         if(action=="nativeEqSnapshot"||action=="nativeEqSetBand") {
-            const auto rawChannel=args.getProperty("channelId",{});
-            const auto rawEpoch=args.getProperty("deviceEpoch",{});
-            const auto rawRevision=args.getProperty("graphRevision",{});
-            const auto rawInstance=args.getProperty("instanceId",{});
-            const auto request=args.getProperty("requestId",{}).toString();
-            const int eqSlot=static_cast<int>(args.getProperty("slot",-1));
-            std::uint64_t ch=0,ep=0,rev=0;
-            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
-                armix::console::approvedNativeId(rawEpoch,ep)&&
-                armix::console::approvedNativeId(rawRevision,rev)&&
-                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
-                eqSlot>=0&&eqSlot<LiveDryRoutingLab::maxFxPerLane &&
-                request.isNotEmpty()&&request.length()<=72;
-            const bool unbound=args.getProperty("workspaceToken","").toString().isNotEmpty();
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int eqSlot=fxRequest.slot;
+            const auto ch=fxRequest.channel,ep=fxRequest.epoch,rev=fxRequest.revision;
+            const bool valid=fxRequest.valid,unbound=fxRequest.unbound;
             armix::session::StoredInsert offlineInsert;
             auto offline=unbound?openLogicalBuiltinFx(args,offlineInsert,
                 armix::builtin_fx::ChannelEqProcessor::catalogIdentity):nullptr;
@@ -4061,14 +4049,7 @@ private:
                 b.q=static_cast<float>(quality);
                 b.slope=static_cast<int>(slope)==24?
                     armix::builtin_fx::Slope::db24:armix::builtin_fx::Slope::db12;
-                // Id strings are decimal after "eq-", unlike canonical
-                // ChannelIds; never convert 64-bit ChannelId to JS Number.
-                const auto wire=request.substring(3).toStdString();
-                std::uint64_t numeric=0;
-                if(!wire.empty()&&wire.size()<=19&&
-                   wire.find_first_not_of("0123456789")==std::string::npos) {
-                    try{numeric=std::stoull(wire);}catch(...){numeric=0;}
-                }
+            const auto numeric=fxRequest.sequence("eq-");
                 queued=numeric>0&&processor->queueBand(
                     static_cast<std::size_t>(index),b,numeric);
                 if(queued && !unbound) {
@@ -4101,20 +4082,16 @@ private:
         // Each accepted compressor edit stays on this ChannelId's ordered
         // native insert. No GUI mutation until callback ACK + graph readback.
         if(action=="nativeCompSnapshot"||action=="nativeCompSet") {
-            const auto rawChannel=args.getProperty("channelId",{});
-            const auto rawEpoch=args.getProperty("deviceEpoch",{});
-            const auto rawRevision=args.getProperty("graphRevision",{});
-            const auto rawInstance=args.getProperty("instanceId",{});
-            const auto request=args.getProperty("requestId",{}).toString();
-            const int compSlot=static_cast<int>(args.getProperty("slot",-1));
-            std::uint64_t ch=0,ep=0,rev=0;
-            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
-                armix::console::approvedNativeId(rawEpoch,ep)&&
-                armix::console::approvedNativeId(rawRevision,rev)&&
-                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
-                compSlot>=0&&compSlot<LiveDryRoutingLab::maxFxPerLane &&
-                request.isNotEmpty()&&request.length()<=72;
-            const bool unbound=args.getProperty("workspaceToken","").toString().isNotEmpty();
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int compSlot=fxRequest.slot;
+            const auto ch=fxRequest.channel,ep=fxRequest.epoch,rev=fxRequest.revision;
+            const bool valid=fxRequest.valid,unbound=fxRequest.unbound;
             armix::session::StoredInsert offlineInsert;
             auto offline=unbound?openLogicalBuiltinFx(args,offlineInsert,
                 armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity):nullptr;
@@ -4140,13 +4117,7 @@ private:
                 out=static_cast<float>(n);
                 return std::isfinite(out);
             };
-            const auto wire=request.startsWith("comp-")?
-                request.substring(5).toStdString():std::string();
-            std::uint64_t numeric=0;
-            if(!wire.empty()&&wire.size()<=19&&
-               wire.find_first_not_of("0123456789")==std::string::npos) {
-                try{numeric=std::stoull(wire);}catch(...){numeric=0;}
-            }
+            const auto numeric=fxRequest.sequence("comp-");
             const bool parameters=values.isObject()&&
                 number("thresholdDb",settings.thresholdDb)&&
                 number("ratio",settings.ratio)&&
@@ -4187,20 +4158,16 @@ private:
         // ChannelId + device epoch + graph revision + insert instance.
         if(action=="nativeThrowSnapshot"||action=="nativeThrowSet"||
            action=="nativeThrowTrigger"||action=="nativeThrowTempoSource") {
-            const auto rawChannel=args.getProperty("channelId",{});
-            const auto rawEpoch=args.getProperty("deviceEpoch",{});
-            const auto rawRevision=args.getProperty("graphRevision",{});
-            const auto rawInstance=args.getProperty("instanceId",{});
-            const auto request=args.getProperty("requestId",{}).toString();
-            const int throwSlot=static_cast<int>(args.getProperty("slot",-1));
-            std::uint64_t ch=0,ep=0,rev=0;
-            const bool valid=armix::console::approvedNativeId(rawChannel,ch)&&
-                armix::console::approvedNativeId(rawEpoch,ep)&&
-                armix::console::approvedNativeId(rawRevision,rev)&&
-                rawInstance.isString()&&rawInstance.toString().isNotEmpty()&&
-                throwSlot>=0&&throwSlot<LiveDryRoutingLab::maxFxPerLane&&
-                request.isNotEmpty()&&request.length()<=72;
-            const bool unbound=args.getProperty("workspaceToken","").toString().isNotEmpty();
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int throwSlot=fxRequest.slot;
+            const auto ch=fxRequest.channel,ep=fxRequest.epoch,rev=fxRequest.revision;
+            const bool valid=fxRequest.valid,unbound=fxRequest.unbound;
             armix::session::StoredInsert offlineInsert;
             auto offline=unbound?openLogicalBuiltinFx(args,offlineInsert,
                 armix::builtin_fx::VocalThrowProcessor::catalogIdentity):nullptr;
@@ -4239,13 +4206,7 @@ private:
                     "arMixBuiltinThrowTempoAck",juce::var(reply.release()));
                 return;
             }
-            const auto wire=request.startsWith("throw-")?
-                request.substring(6).toStdString():std::string();
-            std::uint64_t numeric=0;
-            if(!wire.empty()&&wire.size()<=19&&
-               wire.find_first_not_of("0123456789")==std::string::npos) {
-                try{numeric=std::stoull(wire);}catch(...){numeric=0;}
-            }
+            const auto numeric=fxRequest.sequence("throw-");
             const bool isSettings=action=="nativeThrowSet";
             const auto values=args.getProperty("settings",{});
             armix::builtin_fx::VocalThrowSettings settings{};
