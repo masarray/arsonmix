@@ -133,13 +133,19 @@ public:
         peakPitchLagWork_=0;completedPitchAnalyses_=0;abandonedPitchAnalyses_=0;
         noteHold_=0;currentNote_=-1;candidateNote_=-1;
         guideKey_=-1;guideScale_=-1;tonalTransitionPending_=false;
-        voiced_=false;voicedGain_=0.f;settings_=Settings{};
+        voiced_=false;voicedGain_=0.f;renderersReleased_=true;
+        settings_=Settings{};
         smoothingAlpha_=static_cast<float>(1.-std::exp(-1./(rate*0.005))); // 5 ms control ramp
         // Preserve the established 48k envelope while keeping durations
         // constant at 32-192k. Exponents computed off the callback.
         // Sustain a noisy, vibrato-heavy sung vowel without 2ms square-like
         // envelope edges; real silence is still detected immediately.
         voicedGateAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.008)));
+        // A released pitch estimate must not gate the wet singer with the
+        // same 8ms attack constant. 18ms release covers transient uncertainty
+        // without sustaining unvoiced backing indefinitely. Dry lead is
+        // unaffected; this is a release envelope, not a voice generator.
+        voicedReleaseAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
         ratioAlpha_=static_cast<float>(1.-std::pow(1.-0.00045,48000./rate));
         processed_=false;settings_=Settings{};
         return setSettings(settings_);
@@ -344,7 +350,24 @@ public:
             }
             const float dryL=tap(left_,static_cast<float>(latency_));
             const float dryR=tap(right_,static_cast<float>(latency_));
-            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*voicedGateAlpha_;
+            const float gateAlpha=voiced_?voicedGateAlpha_:voicedReleaseAlpha_;
+            voicedGain_+=((voiced_?1.f:0.f)-voicedGain_)*gateAlpha;
+            if(voiced_)renderersReleased_=false;
+            // A note can lose F0 at an unvoiced consonant while its last
+            // synthesized 18ms envelope remains audible. Do not erase
+            // that singer's grain/period until the wet gain is effectively
+            // silent: doing so switches to an unrelated granular phase
+            // mid-release and sounds like a rapid micro-stutter.
+            if(!voiced_&&!renderersReleased_&&voicedGain_<.001f){
+                pitchSync_.reset();
+                pitchSyncBlend_.fill(0.f);
+                pitchSyncValid_.fill(0.f);
+                pitchSyncFiltered_.fill(0.f);
+                periodContinuity_.reset();
+                sourcePeriodSamples_=0.f;
+                sourceConfidence_=0.f;
+                renderersReleased_=true;
+            }
             // Compute the device-rate-correct filter coefficient once per
             // active sample, not once for each backing shifter.
             const float filterCoef=voicedGain_>0.00001f?
@@ -467,8 +490,15 @@ private:
         // Avoid 150Hz switching between two synthesis algorithms.
         const bool confident=pitchSyncReferenceEnabled_&&voiced_&&pitchSyncStable_&&
                              sourcePeriodSamples_>=8.f;
+        // Detector confidence controls the 30ms render BLEND, not the
+        // renderer's clock. Continue advancing source epochs during weak
+        // voiced evidence and the final wet tail; otherwise skipped samples
+        // force a fresh epoch schedule when confidence returns and produce
+        // an audible PSOLA/granular phase discontinuity.
+        const bool carryEpochs=pitchSyncReferenceEnabled_&&
+            sourcePeriodSamples_>=8.f&&(voiced_||voicedGain_>.01f);
         PitchSynchronousVoice<capacity,maxVoices>::Output sync{};
-        if(confident)
+        if(carryEpochs)
             sync=pitchSync_.process(voice,sampleClock_,write_,mono_,
                 sourcePeriodSamples_,effectiveRatio,
                 static_cast<float>(latency_)+arrival);
@@ -555,7 +585,10 @@ private:
         sourceConfidence_=0.f;voiced_=false;noteHold_=0;
         candidateNote_=-1;currentNote_=-1;
         uncertainPitchHops_=0;weakSyncHops_=0;pitchSyncStable_=false;
-        periodContinuity_.reset();sourcePeriodSamples_=0.f;
+        // This invalidates the detector immediately, but the AUDIO-owned
+        // render tail retains sourcePeriodSamples_ and live overlap-add
+        // grains until its wet envelope crosses the silent threshold.
+        // A new note arriving during the release can reuse valid epochs.
         leadTune_.release();voicePlanner_.reset();
     }
     // Keep the last known voiced note through at most five energetic but
@@ -689,8 +722,9 @@ private:
     int guideKey_=-1,guideScale_=-1;
     bool tonalTransitionPending_=false; // retune note, never mute voiced singer
     bool voiced_=false;float voicedGain_=0.f;
-    bool processed_=false;
-    float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f,ratioAlpha_=0.00045f;
+    bool renderersReleased_=true,processed_=false;
+    float smoothingAlpha_=1.f,voicedGateAlpha_=0.002f;
+    float voicedReleaseAlpha_=0.001f,ratioAlpha_=0.00045f;
     float wet_=0.f,targetWet_=0.f,color_=0.f,targetColor_=0.f;
     float sourcePeriodSamples_=0.f,sourceConfidence_=0.f,pitchSyncAlpha_=0.f;
     float pitchSyncValidAlpha_=0.f;
