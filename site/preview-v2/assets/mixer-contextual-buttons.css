@@ -406,3 +406,10 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
   .plugin-footer{flex-wrap:wrap!important;padding:6px 7px!important}
   .fast-foot{flex-wrap:wrap!important;padding:5px 8px!important}
 }
+
+
+/* A user-opened More menu must outrank modeless tool windows, otherwise a
+   moved Matrix/Routes card can intercept its Wire Setup/Routes commands.
+   Only raise the toolbar while the menu is open; native modal overlays retain
+   their own higher blocking layer. No persistent topbar reordering. */
+.app .command-bar:has(.more-tools[open]){z-index:1200!important}
