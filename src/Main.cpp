@@ -1996,6 +1996,101 @@ private:
         if (browser_.loaded)
             browser_.emitEventIfBrowserIsVisible(
                 "arMixFirstRunAudioProposal", juce::var(proposal.release()));
+
+        // Auto-select only for an untouched, no-profile, SOURCE NONE startup.
+        // Hardware must have a provably unique MMDevice identity AND an exact
+        // selectable JUCE label; the existing native device coordinator is
+        // the sole backend-switch owner. No OS default changes or WebAudio.
+        if (!result.inspected || !d.mayAttemptApply() ||
+            !engine_.allOutputsDisarmed() || !engine_.hasPristineStartupMixer() ||
+            operatorOutputMuted_ || deviceApply_.busy() ||
+            nativeShowBusy_ || mixerSessionWorker_.busy()) return;
+        const juce::String input (d.captureName.c_str());
+        const juce::String output (d.renderName.c_str());
+        auto binding = armix::device::WasapiEndpointIdentityGuard::Selection {
+            d.captureName, d.renderName, d.captureId, d.renderId
+        };
+        auto renderBinding = armix::device::WasapiEndpointIdentityGuard::RenderSelection {
+            d.renderName, d.renderId
+        };
+        juce::AudioDeviceManager::AudioDeviceSetup before;
+        manager.getAudioDeviceSetup (before);
+        auto* current = manager.getCurrentAudioDevice();
+        const bool existing = manager.getCurrentAudioDeviceType() == "Windows Audio"
+            && before.inputDeviceName == input && before.outputDeviceName == output
+            && current != nullptr && current->isOpen();
+        if (!existing)
+        {
+            auto cfg = std::make_unique<juce::DynamicObject>();
+            cfg->setProperty ("backend", "Windows Audio");
+            cfg->setProperty ("captureDevice", input);
+            cfg->setProperty ("playbackDevice", output);
+            cfg->setProperty ("sampleRate", 0.0);
+            cfg->setProperty ("bufferSize", 0.0);
+            cfg->setProperty ("assignSelectedPlaybackPinsToMain", false);
+            cfg->setProperty ("confirmRetainedPinMapping", false);
+            auto args = std::make_unique<juce::DynamicObject>();
+            args->setProperty ("requestId", "AUTO_FIRST_RUN_MMDEVICE");
+            args->setProperty ("expectedDeviceGeneration",
+                engine_.status().getProperty ("deviceGeneration", 0));
+            args->setProperty ("config", juce::var (cfg.release()));
+            applyCustomAudioDevice (juce::var (args.release()));
+        }
+        juce::AudioDeviceManager::AudioDeviceSetup actual;
+        manager.getAudioDeviceSetup (actual);
+        auto* opened = manager.getCurrentAudioDevice();
+        const bool active = manager.getCurrentAudioDeviceType() == "Windows Audio"
+            && opened != nullptr && opened->isOpen()
+            && actual.inputDeviceName == input && actual.outputDeviceName == output
+            && opened->getActiveOutputChannels().countNumberOfSetBits() >= 2
+            && engine_.directRouteAuthorized();
+        if (!active)
+        {
+            diagnostics_.record ("FIRST_RUN_AUTO_DEVICE_REJECTED",
+                "Native device transaction or full-duplex readback did not accept the proposed endpoint");
+            return;
+        }
+        const auto idFault = d.hasCapture()
+            ? armix::device::WasapiEndpointIdentityGuard::verify (
+                binding, actual.inputDeviceName, actual.outputDeviceName)
+            : armix::device::WasapiEndpointIdentityGuard::verifyRender (
+                renderBinding, actual.outputDeviceName);
+        if (idFault.isNotEmpty())
+        {
+            engine_.setOutputMuted (true);
+            diagnostics_.record ("FIRST_RUN_ENDPOINT_ID_CHANGED", idFault);
+            emitNotice ("Audio endpoint changed during setup; please choose speakers in AUDIO I/O.", true);
+            return;
+        }
+        diagnostics_.record ("FIRST_RUN_AUDIO_DEVICE_ACCEPTED",
+            input + " -> " + output + " | readback=VERIFIED");
+        if (d.hasCapture() && engine_.hasPristineStartupMixer())
+        {
+            // One unedited CH01 can receive the actual two reported VB-CABLE
+            // input pins. All other channels remain SOURCE NONE, and any
+            // existing user-authored SOURCE ONLY/MAIN WIRE is untouched.
+            const auto pins = opened->getActiveInputChannels();
+            const int left = pins.findNextSetBit (0);
+            const int right = left < 0 ? -1 : pins.findNextSetBit (left + 1);
+            if (right < 0)
+            {
+                diagnostics_.record ("FIRST_RUN_SOURCE_DEFERRED",
+                    "Expected 2 verified CABLE capture pins; existing graph retained silent");
+                return;
+            }
+            const auto sourceError = engine_.switchDryRoutingLabSource (
+                0, engine_.dryRoutingLabEpoch(), engine_.dryRoutingLabRevision(),
+                "STEREO", left, right);
+            if (sourceError.isNotEmpty())
+            {
+                diagnostics_.record ("FIRST_RUN_SOURCE_DEFERRED", sourceError);
+                return;
+            }
+            requestAutomaticMain (true); // native real graph, output gate checks
+            diagnostics_.record ("FIRST_RUN_SOURCE_CONNECTED",
+                "Verified CABLE Output capture -> CH01 -> original MAIN, no test tone");
+            emitApprovedNativeSnapshot();
+        }
 #endif
     }
 

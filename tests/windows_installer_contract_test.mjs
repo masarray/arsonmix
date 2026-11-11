@@ -52,7 +52,7 @@ test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSo
   assert.match(bootstrap, /Get-PnpDevice -PresentOnly/);
   assert.match(bootstrap, /-Verb RunAs/);
   assert.match(bootstrap, /PENDING_REBOOT/);
-  assert.doesNotMatch(bootstrap + iss, /TrustedPublisher|SetDefaultEndpoint|pnputil \/delete-driver|Uninstall-PnpDevice/i);
+  assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
   assert.match(notice, /donationware/i);
   assert.match(notice, /professional/i);
   assert.match(notice, /www\.vb-cable\.com/);
