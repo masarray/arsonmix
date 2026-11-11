@@ -25,6 +25,7 @@ struct JuceActivePortSnapshot final {
     int outputCount=0;
     std::uint64_t epoch=0;
     juce::String deviceName, typeName;
+    juce::StringArray outputNames; // physical pin indices, not packed callback ordinals
 
     // Accept a frozen copy of masks to exercise sparse numbering and real
     // output-only devices with zero capture pins. No fake input is created.
@@ -83,6 +84,12 @@ struct JuceActivePortSnapshot final {
         }
         candidate.deviceName=device->getName();
         candidate.typeName=device->getTypeName();
+        candidate.outputNames=device->getOutputChannelNames();
+        if(candidate.outputNames!=device->getOutputChannelNames() ||
+           in!=device->getActiveInputChannels() ||
+           out!=device->getActiveOutputChannels()) {
+            error=Fault::deviceChangedDuringRead;return false;
+        }
         destination=std::move(candidate);
         return true;
     }
