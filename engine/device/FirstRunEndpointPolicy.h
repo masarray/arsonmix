@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
+#include <cstddef>
 #include <span>
 #include <string>
 #include <vector>
@@ -34,6 +35,10 @@ public:
     };
     struct Decision
     {
+        Decision() = default;
+        // Non-aggregate constructor avoids C++20 -Wmissing-field-initializers
+        // while value-initializing all identity fields to empty.
+        Decision (Outcome status) noexcept : outcome (status) {}
         Outcome outcome = Outcome::noVerifiedPlayback;
         std::wstring captureId, renderId;
         std::wstring captureName, renderName;
