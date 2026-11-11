@@ -18,6 +18,7 @@
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/core/ProductionRenderAudit.h"
+#include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/device/LiveInputPortRegistry.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <algorithm>
@@ -2904,7 +2905,8 @@ public:
                  std::array<int,2>* actualOutputPair=nullptr,
                  std::array<int,2>* actualMonitorPair=nullptr,
                  bool allowMutedMetering=false,
-                 std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={}) noexcept {
+                 std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
+                 bool mainOnlyMuted=false) noexcept {
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3024,6 +3026,8 @@ public:
         // Muted native metering uses scratch and keeps the output ramp at zero.
         const bool meterOnly=masterMuted && allowMutedMetering && channelIdRender;
         if(masterMuted) {
+            // True device disarm primes the next MAIN state without output blips.
+            mainOnlyMuteSlew_.reset(mainOnlyMuted);
             masterMonoPolicy_.primeWhileMuted(masterMono);
             fadeRemaining_=rampFrames;
             fadeFromL_=fadeFromR_=0.f;
@@ -3146,6 +3150,12 @@ public:
                     l=fadeFromL_+(l-fadeFromL_)*busRamp;
                     r=fadeFromR_+(r-fadeFromR_)*busRamp;
                     --fadeRemaining_;
+                }
+                // Mute only MAIN: BUS/EXTERNAL PCM remains live post-FX.
+                if(channelIdRender) {
+                    const float mainGain=mainOnlyMuteSlew_.next(mainOnlyMuted);
+                    l*=mainGain;
+                    r*=mainGain;
                 }
                 // Sample-smoothed, zero-heap dual-mono MASTER output policy.
                 masterMonoPolicy_.process(masterMono,l,r);
@@ -3457,4 +3467,5 @@ private:
     std::uint64_t audioRevision_=0,audioEpoch_=0;
     float fadeFromL_=0.f,fadeFromR_=0.f;
     float lastOutputL_=0.f,lastOutputR_=0.f;
+    armix::mixer::MainOnlyMuteSlew mainOnlyMuteSlew_{};
 };
