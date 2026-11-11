@@ -164,8 +164,12 @@ test('uint64 identities remain exact strings; malformed ids and stale capability
     'NATIVE_WIRE_OPERATION_UNAVAILABLE');
 });
 test('sidechain is NEVER an audible WIRE edge and cannot claim a missing VST3 bus',()=>{
+  // Public installed schema uses exact live lease token 'id' plus the
+  // independent catalog identity. The old instanceId-only fixture was not
+  // a valid native M2 snapshot and masked malformed-insert admission.
   const s=base();s.graph.channels[0].inserts.push({
-    instanceId:'native-vst-1',name:'Compressor',bypassed:false});
+    id:'native-vst-1',catalogId:'vendor.compressor',
+    name:'Compressor',bypassed:false});
   let p=planM4OperatorIntent(accepted(s),{kind:'SIDECHAIN',
     sourceId:ids.kick,destinationId:ids.v,pluginInstanceId:'native-vst-1'});
   assert.equal(p.error,'VST3_AUX_DETECTOR_BUS_NOT_NEGOTIATED');
