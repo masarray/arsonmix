@@ -211,7 +211,7 @@
     const ticks=Math.trunc(residue/100);
     residues.set(input,residue-ticks*100);
     if(!ticks)return;
-    const amount=ticks*(event.shiftKey?1:1);
+    const amount=ticks;
     const quantized=Math.round((value-min-amount*step)/step)*step+min;
     const next=Math.max(min,Math.min(max,Number(quantized.toFixed(5))));
     if(next===value)return;
