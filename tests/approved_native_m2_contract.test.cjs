@@ -1948,7 +1948,10 @@ test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
   assert.match(bridge,/protocol\.physicalOutputOverview\(next\)/);
   assert.match(bridge,/paintPhysicalOutputs\(next\)/);
   assert.match(bridge,/paintPhysicalOutputs\(hardware\)/);
-  assert.match(bridge,/data-audio-output-overview open/);
+  assert.match(bridge,/class="armix-output-overview" data-audio-output-overview/);
+  assert.match(bridge,/class="armix-output-heading"/);
+  assert.doesNotMatch(bridge,/<details data-audio-output-overview/,
+    "read-only OUTPUTS must not create a second Advanced disclosure");
   assert.match(bridge,/data-audio-output-matrix role="list"/);
   assert.match(bridge,/owner\.textContent=patch\.role/);
   assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);

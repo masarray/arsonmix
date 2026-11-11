@@ -1734,7 +1734,7 @@
     const signature=JSON.stringify(patches);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
-    const summary=devicePanel.querySelector("[data-audio-output-overview] summary");
+    const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
     if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
     view.replaceChildren();
     if(!patches.length){
@@ -1889,6 +1889,8 @@
         .armix-audio-dialog details{border-top:1px solid #345666;padding-top:8px}
         .armix-audio-dialog summary{cursor:pointer;color:#c5e1ed}
         .armix-audio-dialog{max-height:90vh;overflow:auto}
+        .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
+        .armix-output-heading{color:#c5e1ed;font-weight:500}
         .armix-output-matrix{max-height:175px;overflow:auto;display:grid;gap:3px;margin:7px 0}
         .armix-output-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;
           align-items:center;gap:8px;padding:5px 7px;border-radius:4px;background:#0c202b;
@@ -1939,11 +1941,11 @@
           <div><strong>Applying audio device…</strong>
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
-        <details data-audio-output-overview open>
-          <summary>OUTPUTS · physical routing</summary>
+        <section class="armix-output-overview" data-audio-output-overview>
+          <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
-        </details>
+        </section>
         <details><summary>Advanced · rate, buffer and channel pins</summary>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
