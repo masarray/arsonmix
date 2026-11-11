@@ -2335,6 +2335,11 @@ public:
     }
     bool dryRoutingLabActive() const noexcept {return dryRoutingLab_.active();}
     bool hasBoundMixerRoute() const noexcept {return dryRoutingLab_.hasExplicitRoute();}
+    // Existing verified ASIO external-pair intent is a valid output user
+    // selection even with SOURCE ONLY / PLAYER A and no microphone INPUT.
+    bool hasVerifiedExternalOutputIntent() const noexcept {
+        return dryRoutingLab_.hasVerifiedExternalOutputIntent();
+    }
     void pollDryRoutingLab() noexcept {dryRoutingLab_.poll();}
 
     juce::var status()

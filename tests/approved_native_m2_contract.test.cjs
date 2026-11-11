@@ -801,7 +801,8 @@ test("P0 same-VB-Cable feedback is blocked before native MAIN arm",()=>{
  assert.match(engine,/MONITOR OFF: VB-Cable capture\/playback self-loop/);
  assert.match(bridge,/const virtualCableFeedbackPair=/);
  const native=read("src/Main.cpp");
- assert.match(native,/if\(engine_\.liveOutputArmFault\(autoMainRequiresInput_\)\.isNotEmpty\(\)\)return;/);
+ assert.match(native,/const bool requireInput=autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
+ assert.match(native,/if\(engine_\.liveOutputArmFault\(requireInput\)\.isNotEmpty\(\)\)return;/);
  assert.match(native,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
 });
 test("single /preview/ GUI: channel IN, actual OUT and correlated device safety ACK",()=>{
@@ -1849,4 +1850,22 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/SHARED with /);
  assert.match(src,/signals SUM/);
  assert.match(builder,/external-out-state/);
+});
+
+test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Monitor click",()=>{
+ const native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
+ const routing=read("src/LiveDryRoutingLab.h");
+ const control=native.slice(native.indexOf('if(action==="routingExternalOutput")'),
+     native.indexOf('if(action==="routingChannelPatch")'));
+ assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
+ assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
+ assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
+ assert.match(native,/operatorOutputMuted_=!arm; \/\/ an explicit user control/);
+ assert.match(native,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(native,/autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
+ assert.match(engine,/bool hasVerifiedExternalOutputIntent\(\) const noexcept/);
+ assert.match(routing,/externalOutputEpoch_!=epoch\(\)/);
+ assert.match(routing,/externalOutputVerified_\.empty\(\)/);
+ assert.doesNotMatch(control,/setMonitorEnabled\(true\)|setOutputMuted\(false\)/,
+     "Control delegates one-shot automatic output acceptance, not blind arm");
 });

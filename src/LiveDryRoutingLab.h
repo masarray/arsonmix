@@ -2877,6 +2877,20 @@ public:
     bool hasExplicitRoute() const noexcept {
         return channelIdPhysicalPcmActive() || (ready() && acceptedRoute_.isObject());
     }
+    // CONTROL thread: authorization intent for at least one external ASIO
+    // pair on THIS device epoch. Do not demand applied PCM here: the first
+    // callback/readback needs output enabled before it can prove LIVE.
+    bool hasVerifiedExternalOutputIntent() const noexcept {
+        if(!channelIdPhysicalPcmActive() ||
+           externalOutputEpoch_!=epoch() || externalOutputVerified_.empty())
+            return false;
+        return std::any_of(externalOutputAssignments_.begin(),
+                           externalOutputAssignments_.end(),[this](const auto& patch) {
+            return std::find(externalOutputVerified_.begin(),
+                             externalOutputVerified_.end(),patch.channel.value)
+                   !=externalOutputVerified_.end();
+        });
+    }
     std::uint64_t epoch() const noexcept {
         return deviceEpoch_.load(std::memory_order_acquire);
     }

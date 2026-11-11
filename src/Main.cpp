@@ -2001,9 +2001,13 @@ private:
     // patch. A later device epoch or a user MUTE cancels the pending arm.
     std::uint64_t autoMainEpoch_=0;
     bool autoMainRequiresInput_=true;
+    // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
+    // This control-thread intent is NOT a new callback gate or device lock.
+    bool operatorOutputMuted_=false;
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
+        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
             autoMainEpoch_=0;
@@ -2017,7 +2021,12 @@ private:
         // A transient native graph/FX ACK must not permanently consume
         // the only automatic MAIN attempt for this control revision.
         // Retry only the cheap CONTROL preflight until it is genuinely safe.
-        if(engine_.liveOutputArmFault(autoMainRequiresInput_).isNotEmpty())return;
+        // SOURCE ONLY/PLAYER -> confirmed EXTERNAL OUT is a complete hardware
+        // route. Requiring a microphone as well would strand it at MONITOR OFF.
+        // Only same-epoch, driver-verified pins qualify (not stale .smix text).
+        const bool requireInput=autoMainRequiresInput_ &&
+            !engine_.hasVerifiedExternalOutputIntent();
+        if(engine_.liveOutputArmFault(requireInput).isNotEmpty())return;
         autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
@@ -2025,6 +2034,7 @@ private:
     }
 
     void requestAutomaticMain(bool requireInput=true) {
+        if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
         autoMainCheckedRevision_.reset();
@@ -4460,7 +4470,14 @@ private:
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixExternalOutputAck",juce::var(ack.release()));
             if(error.isNotEmpty())emitNotice(error,true);
-            else emitApprovedNativeSnapshot(); // next independent subscription verifies LIVE
+            else {
+                // The operator has already confirmed this exact ASIO pair.
+                // Complete first-sound automatically; never force MONITOR/ARM
+                // again, and never override a deliberate OUTPUT MUTE.
+                if(left>=0 && !operatorOutputMuted_ && !engine_.isMonitorEnabled())
+                    requestAutomaticMain(false);
+                emitApprovedNativeSnapshot(); // callback readback proves LIVE
+            }
             return;
         }
         // A visible /preview/ channel OUT changes this same installed M4
@@ -6134,6 +6151,7 @@ private:
                 engine_.diagnosticRoute()==armix::diagnostics::Route::normal)
                 fault=engine_.liveOutputArmFault();
             if (fault.isEmpty()) {
+                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
                 autoMainEpoch_=0;
                 if(!arm)engine_.cancelAsioResetMonitorIntent();
                 engine_.setMonitorEnabled(arm);
