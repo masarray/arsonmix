@@ -3,9 +3,8 @@
 </p>
 <p align="center"><strong>ArSonMix — Professional Live Mixing Studio</strong></p>
 <p align="center">
-  <a href="https://masarray.github.io/arsonmix/">Website & downloads</a> ·
+  <a href="https://masarray.github.io/arsonmix/">Official downloads</a> ·
   <a href="https://masarray.github.io/arsonmix/preview/">Explore the mixer</a> ·
-  <a href="https://github.com/masarray/arsonmix/releases">All releases</a> ·
   <a href="https://github.com/masarray/arsonmix/issues">Feedback</a>
 </p>
 
@@ -13,43 +12,24 @@
 
 **A native live digital mixer for singers, karaoke, streaming and live sound.** Route audio through channels and WIRE connections, work with FX and music, and keep your settings in a `.smix` session. ArSonMix is a live mixing console, **not** a timeline/recording DAW or a browser-based audio mixer.
 
-## Download — current public preview
+## Download ArSonMix
 
-**Latest published release: [v0.5.0-alpha.10](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.10), 10 November 2026.** It is an **alpha field-test build**, not a stable production release.
+**[Open the official download page](https://masarray.github.io/arsonmix/#download)** and choose your operating system. For Windows 10/11 x64, select **Download installer ZIP**, extract it, then run Setup. The link downloads the published file directly from the landing page.
 
-| System | Official package | Release |
-| --- | --- | --- |
-| **Windows 10/11 x64** | **[Download Setup EXE](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/ArSonMix-v0.5.0-alpha.10-Windows-x64-Setup.exe)** | **alpha.10 — current** |
-| Windows x64, portable | [Download Portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/ArSonMix-v0.5.0-alpha.10-Windows-x64-Portable.zip) | alpha.10 |
-| Linux x86_64 | [Download tar.gz](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-Linux-x86_64.tar.gz) | **alpha.5 — older build** |
-| macOS universal | [Download DMG](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.5/ArSonMix-v0.5.0-alpha.5-macOS-universal.dmg) | **alpha.5 — older build** |
+The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
-These are actual uploaded release assets, not CI-only artifacts. **Windows Setup EXE is the recommended one-click download**; the installer ZIP is a fallback. The [website download selector](https://masarray.github.io/arsonmix/#download) checks GitHub Releases and verified SHA-256/provenance metadata and chooses the newest *available package for each operating system*. A newer Windows-only release does not imply that Linux/macOS have been updated. Download and compare [alpha.10 SHA256SUMS.txt](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.10/SHA256SUMS.txt) before installation.
-
-## What's in Windows alpha.10
-
-This build aligns the shipped native logical mixer milestone with its now-merged [PR #513](https://github.com/masarray/arsonmix/pull/513). The previous preview had shipped early from a separate release branch; alpha.10 is freshly compiled and tested from merged `main`.
-
-- **Native logical mixer sessions:** add, rename and edit channels and buses, WIRE / SOURCE ONLY routing, and rack configuration even before an audio device is connected. The app preserves `.smix` Save/Open with native revision checks and durable readback. **Offline edit does not generate or certify live PCM.**
-- **Live engine recovery:** a previously bound ASIO mixer can recover when the registered driver and playback pins are verified. Saved capture-patch choices are preserved if pins are missing; there is no claim that arbitrary hardware remapping is automatic.
-- **Harmonice FX:** consistent plugin name in picker/editor and legacy session restore, an 8 ms bypass fade, and reacquisition of a Music guide after source loss. The released processing latency is still **32 ms**; experimental 24/16 ms work is *not* shipped.
-- **ArSon Player:** relink missing songs through a completed folder scan using a unique *full filename*, retaining song identity, KEY and TEMPO.
-- **Desktop workflow:** updated native titlebar and operator-facing status. The approved mixer UI is available as a read-only/simulated browser preview.
-
-See the [alpha.10 release notes](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.10) for detailed scope and test limitations. A green build is **not** proof of physical hardware performance.
+Recent Windows previews add global mixer and supported VST3 parameter hotkeys, Harmonice stereo lead Pitch Tune and ensemble improvements, and native user presets for EQ, Compressor, Harmonice, and Vocal Throw. For the scope of an installed build, match its version to the [release notes](https://github.com/masarray/arsonmix/releases).
 
 ## Get started
 
-1. Install the Windows Setup EXE (or extract the portable ZIP), then start ArSonMix. A supported audio driver and Windows WebView2 runtime may be required.
+1. Download the Windows installer ZIP from the [official landing page](https://masarray.github.io/arsonmix/#download), extract it, run Setup, and start ArSonMix. A supported audio driver and Windows WebView2 runtime may be required.
 2. Open the audio setup and choose the actual device/pins for listening. The mixer can be edited without hardware, but it can only output sound through a valid live audio device graph.
 3. Use channel controls, FX and WIRE in the [approved console](https://masarray.github.io/arsonmix/preview/). Save/Open `.smix` sessions for your work. Start testing at safe headphone/speaker volume.
 4. Report reproducible driver, WIRE, VST3, session or dropout problems in [GitHub Issues](https://github.com/masarray/arsonmix/issues), with device type, channel graph, sample rate, buffer size and steps.
 
 ### Field-test limitations
 
-**Not yet certified for unattended or production-critical audio.** Physical ASIO/ASIO4ALL timing, real singer listening, vendor VST3 state, full device-loss behavior and uninterrupted performance still need hardware qualification. Initial hardware binding from a purely offline-created session and continued editing of a previously bound graph after unplugging are limited in alpha.10. If audio is disconnected, reconnect the verified device to resume its previously bound graph. Experimental Harmonice latency changes and Vocal Throw M15 remain outside this release.
-
-Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.10 features.
+Windows alpha builds are intended for field testing. If you have a 4–8-output ASIO interface and your release includes Multi Out, report your driver version, sample rate, buffer size, and results for routing, mute, and device restart.
 
 ## Preview vs real audio
 
@@ -57,7 +37,7 @@ Do not assume the older Linux/macOS alpha.5 builds contain Windows alpha.10 feat
 
 ## Source, builds and contribution
 
-The release tag **[v0.5.0-alpha.10](https://github.com/masarray/arsonmix/tree/v0.5.0-alpha.10)** is the authoritative source for that published binary. **Alpha.10 rebuilds the merged `main` baseline at [`4aabea90`](https://github.com/masarray/arsonmix/commit/4aabea90263c96014a514c3c42669b6fc0328482)** plus its release-notes commit. Open draft PRs and later `main` commits are not part of this immutable release.
+Each [published release](https://github.com/masarray/arsonmix/releases) provides its source tag, release notes, and SHA-256 checksums. The version displayed on the landing page identifies the package being downloaded.
 
 Contributors and development agents must read **[AGENTS.md](AGENTS.md)** and the **[Smart CI workflow](docs/SMART_CI_RUNNER_WORKFLOW.md)**, inspect live `main` plus open PRs, preserve one native JUCE PCM callback and native ChannelId/EdgeId authority, and qualify changes using selective exact-SHA tests. Hardware ASIO testing is separate from automated CI. Website deployment uses one `site/` landing and one assembled `/preview/` on GitHub Pages and Cloudflare Pages, with platform downloads resolved from verified GitHub Release assets. See [Pages publishing](docs/GITHUB_PAGES_PREVIEW.md) and [Cloudflare](docs/CLOUDFLARE_PAGES_BUILD.md).
 

@@ -19,9 +19,8 @@ TAG = re.compile(r"^v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$")
 DIGEST = re.compile(r"^sha256:([a-f0-9]{64})$")
 SHA = re.compile(r"^[a-f0-9]{40}$")
 SUFFIXES = {
-    # A direct Setup EXE is the least confusing Windows download; verified
-    # installer ZIP remains a fallback when the EXE asset is absent.
-    "windows": ("Windows-x64-Setup.exe", "Windows-x64-Setup.zip"),
+    # Prefer the verified installer ZIP, with Setup EXE for older releases.
+    "windows": ("Windows-x64-Setup.zip", "Windows-x64-Setup.exe"),
     "linux": ("Linux-x86_64.AppImage", "Linux-x86_64.tar.gz"),
     "macos": ("macOS-universal.dmg", "macOS-arm64.dmg", "macOS-x64.dmg"),
 }

@@ -63,10 +63,10 @@ async function render(staticCatalog, releases, failLive=false, failStatic=false)
   await new Promise(resolve=>setImmediate(resolve));
   return {cards,summary,hero,calls};
 }
-test('current direct Windows installer replaces stale Pages version without redeploy',async()=>{
+test('current Windows installer ZIP replaces stale Pages version without redeploy',async()=>{
   const result=await render(local(4),[release(5,['Windows-x64-Setup.exe','Windows-x64-Setup.zip'])]);
-  assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.exe$/);
-  assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download Windows installer');
+  assert.match(result.cards[0].nodes['[data-release-link]'].href,/alpha\.5-Windows-x64-Setup\.zip$/);
+  assert.equal(result.cards[0].nodes['[data-link-label]'].textContent,'Download installer ZIP');
   assert.match(result.summary.textContent,/Ready to download/);
   assert.equal(result.hero.href,'#download');
   assert.equal(result.calls.length,2);
