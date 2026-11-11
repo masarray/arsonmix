@@ -125,6 +125,42 @@ static void verifySourceOnlyAndSharedSums() {
     assert(near(h.output[3][63],.04f));
     assert(h.publisher.externalOutput(h.epoch,1,h.voice).first==-1);
 }
+// Full eight-pin fixture: each destination receives a distinct accepted
+// ChannelId post-FX PCM signal. This is NOT a physical-device FAT.
+static void verifyEightPinIsolationAndAppliedReadback() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.voice,6,7,8));
+    // A CONTROL target is not evidence that the callback has installed PCM.
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+    assert(h.render(8));
+    assert(h.callsA==1 && h.callsB==1);
+    assert(near(h.output[0][63],.71f));
+    assert(near(h.output[1][63],.32f));
+    assert(near(h.output[2][63],.50f));
+    assert(near(h.output[3][63],.20f));
+    assert(near(h.output[4][63],.21f));
+    assert(near(h.output[5][63],.12f));
+    assert(near(h.output[6][63],.25f));
+    assert(near(h.output[7][63],.10f));
+    const auto applied=h.publisher.appliedExternalOutput(h.epoch,1,h.busA);
+    assert(applied.first==2 && applied.second==3);
+    // Only physically supplied callback destinations may be targeted.
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.busB,6,7,4));
+    assert(h.render(8));
+    assert(near(h.output[4][63],.21f));
+}
+static void verifyFourPinMainAndOneBus() {
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,4));
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,4));
+    assert(h.render(4));
+    assert(h.callsA==1 && h.callsB==1);
+    assert(near(h.output[0][63],.71f));
+    assert(near(h.output[2][63],.50f));
+    assert(near(h.output[3][63],.20f));
+}
 static void verifyLiveFaderMuteAnd2PortBounds() {
     Harness h;
     // A 2-output device has no third/fourth callback ordinal. A driver-level
@@ -145,6 +181,8 @@ static void verifyLiveFaderMuteAnd2PortBounds() {
 }
 int main() {
     verifyIndependentBusPcmAndOncePerFx();
+    verifyEightPinIsolationAndAppliedReadback();
+    verifyFourPinMainAndOneBus();
     verifySourceOnlyAndSharedSums();
     verifyLiveFaderMuteAnd2PortBounds();
     std::puts("O1 physical external OUT: independent PCM, SRC ONLY, gain/mute, shared sum and stale target PASS");
