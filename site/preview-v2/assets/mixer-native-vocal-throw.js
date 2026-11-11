@@ -79,6 +79,22 @@ const context=()=>{
   ...(state.logical?{workspaceToken:state.workspaceToken}:{}),graphRevision:state.graph.revision};
 };
 const hint=text=>{$("vtHint").textContent=text;};
+const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
+ host:panel,select:$("vtPreset"),label:"Vocal Throw",catalogId:ID,
+ context,stable:()=>!pending&&!tempoPending,
+ readAccepted:()=>({...accepted}),validate:valid,
+ factoryValue:settings=>Object.entries(presets)
+   .find(([,v])=>same(v,settings))?.[0]||"Custom",
+ notice:hint,
+ // Typed portable data enters ONLY the existing native Throw SETTINGS SPSC.
+ // No cue, live tempo source, echo history, or native callback file IO.
+ apply:values=>{
+  if(!valid(values)||pending||tempoPending||!context())return null;
+  draft={...values};
+  return send("nativeThrowSet")?pending?.requestId||null:null;
+ }
+});
+if(!presetBar)throw Error("Shared native built-in preset bar not installed");
 function refreshMusicChannels(){
  const state=snapshot(),ctx=context(),selector=$("vtMusicSource");
  const selected=tempoPending?.source||musicSource;
@@ -159,6 +175,7 @@ function paint(){
  for(const b of panel.querySelectorAll(".vt-division-buttons button"))
   b.setAttribute("aria-pressed",String(Number(b.dataset.division)===draft.division));
  $("vtPreset").value=Object.entries(presets).find(([,v])=>same(v,draft))?.[0]||"Custom";
+ presetBar.paint();
  const rhythmic=["1/4","1/8","DOTTED 1/8","1/2"][accepted.division];
  const modes=["MANUAL","AUTO","HYBRID"];
  $("vtRhythm").textContent=rhythmic+" · "+modes[accepted.mode];
@@ -281,8 +298,11 @@ $("vtMusicSource").addEventListener("change",()=>{
  renderMusicStatus();refreshMusicChannels();
 });
 $("vtPreset").addEventListener("change",()=>{
- const p=presets[$("vtPreset").value];if(!p)return;
- draft={...p};paint();send("nativeThrowSet");
+ const chosen=$("vtPreset").value;
+ if(presetBar.selectUser(chosen))return;
+ const p=presets[chosen];if(!p)return;
+ draft={...p};paint();
+ if(send("nativeThrowSet"))presetBar.factoryIntent(pending?.requestId);
 });
 $("vtThrow").addEventListener("click",()=>send("nativeThrowTrigger"));
 $("vtTap").addEventListener("click",()=>{
@@ -301,9 +321,14 @@ $("vtPower").addEventListener("click",()=>{
  if(current&&context())window.__ARMIX_NATIVE_M2__?.consumeAction?.(
   current.track,"slotPower",{dataset:{slot:String(current.slot)}});
 });
-$("vtClose").addEventListener("click",()=>{panel.hidden=true;pending=null;tempoPending=null;readId="";});
+$("vtClose").addEventListener("click",()=>{
+ panel.hidden=true;pending=null;tempoPending=null;readId="";presetBar.close();
+});
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){panel.hidden=true;pending=null;readId="";}
+ if(e.key==="Escape"&&!panel.hidden){
+ if(e.target.closest?.(".mx-fxp-form"))return;
+ panel.hidden=true;pending=null;readId="";presetBar.close();
+}
 });
 const head=panel.querySelector("header");
 head.addEventListener("pointerdown",e=>{
@@ -323,6 +348,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
+  presetBar.reset();
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
   if(native()&&(state?.admitted||state?.logical)&&insert?.catalogId===ID&&insert.id){
@@ -334,7 +360,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   $("vtChannel").textContent=track.name||"CH";
   panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
- close(){panel.hidden=true;}
+ close(){panel.hidden=true;presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
  if(!tempoPending||reply?.requestId!==tempoPending.requestId)return;
@@ -376,11 +402,13 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
  $("vtBeatRail").dataset.playing=String(reply.tailActive===true);
  $("vtThrow").dataset.tail=String(reply.tailActive===true);
  $("vtStatus").textContent=reply.tailActive?"TAIL":"LIVE";
+ const confirmedSettingsId=pending?.command==="nativeThrowSet"?pending.requestId:"";
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.requestId)return;
   accepted={...reply.settings};draft={...accepted};pending=null;
   hint("");
  }else{accepted={...reply.settings};draft={...accepted};}
+ presetBar.onAccepted(accepted,confirmedSettingsId);
  paint();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
@@ -393,6 +421,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 });
 window.setInterval(()=>{
  if(panel.hidden)return;
+ presetBar.tick();
  if(pending&&Date.now()-pending.created>3500){hint("DSP ACK timeout");pending=null;}
  if(tempoPending&&Date.now()-tempoPending.created>3500){
   hint("Tempo source ACK timeout");tempoPending=null;refreshMusicChannels();
