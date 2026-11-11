@@ -71,6 +71,70 @@ export function hasPriorDispatch(runs,sha) {
   return runs.some(r=>r.head_sha===sha && r.event==='workflow_dispatch' &&
     (r.status!=='completed'||r.conclusion==='success'));
 }
+// Workflow dispatch defaults to the workflow-ref SHA, NOT inputs.expected_sha.
+// Therefore only a run-name containing the verified PR id + source SHA can
+// deduplicate native/FAT builds dispatched from the protected main workflow.
+// Never infer provenance from head_sha or an unstructured display title.
+export function parseWindowsMilestoneRun(run) {
+  if(run?.event!=='workflow_dispatch')return null;
+  const m=/^ArSonMix (NATIVE|FAT) PR([1-9][0-9]*) ([0-9a-f]{40})$/
+    .exec(run.display_title||'');
+  return m?{lane:m[1].toLowerCase(),number:Number(m[2]),sha:m[3]}:null;
+}
+export function isActiveWindowsRun(run) {
+  return ['queued','in_progress','waiting','pending','requested'].includes(run?.status);
+}
+async function recentWindowsMilestones(api) {
+  // Explicitly paginate: when several engineers work concurrently, one
+  // page can hide an existing FAT and accidentally request another.
+  const result=[];
+  for(let page=1;page<=5;page++){
+    const response=await api('/actions/workflows/p1-windows.yml/runs?event=workflow_dispatch&per_page=100&page='+page);
+    if(!Array.isArray(response?.workflow_runs))
+      throw Error('CI_DISPATCH_RUNS_INVALID');
+    result.push(...response.workflow_runs);
+    if(response.workflow_runs.length<100)return result;
+  }
+  throw Error('CI_DISPATCH_RUNS_PAGINATION_LIMIT');
+}
+export async function guardWindowsMilestone({target,api}) {
+  const runs=(await recentWindowsMilestones(api)).map(run=>({
+    run,identity:parseWindowsMilestoneRun(run)
+  })).filter(x=>x.identity?.number===target.number);
+  const same=runs.filter(x=>x.identity.sha===target.sha);
+  const activeFat=runs.find(x=>x.identity.lane==='fat'&&isActiveWindowsRun(x.run));
+  // Never cancel an RC package build even after later PR edits: it is
+  // immutable field-test evidence. A new request can be made after it ends.
+  if(activeFat)return {kind:'skipped',reason:'fat-already-running',target};
+  const sameFat=same.find(x=>x.identity.lane==='fat');
+  if(sameFat) {
+    if(sameFat.run.conclusion==='success'||isActiveWindowsRun(sameFat.run))
+      return {kind:'skipped',reason:'fat-already-qualified-or-scheduled',target};
+    if(target.lane==='fat')throw Error('CI_FAT_FAILED_FIX_SOURCE_BEFORE_REDISPATCH');
+  }
+  if(target.lane==='native') {
+    const native=same.find(x=>x.identity.lane==='native');
+    if(native) {
+      if(native.run.conclusion==='success'||isActiveWindowsRun(native.run))
+        return {kind:'skipped',reason:'native-already-qualified-or-scheduled',target};
+      throw Error('CI_NATIVE_FAILED_FIX_SOURCE_BEFORE_REDISPATCH');
+    }
+    return null;
+  }
+  // FAT supersedes *still running* native qualification of this PR.
+  // The owner-signed dispatcher has actions:write permission; cancellation
+  // uses the documented workflow-run API and costs no extra compile.
+  // Never cancel anything belonging to another PR or a FAT run.
+  for(const candidate of runs) {
+    if(candidate.identity.lane!=='native'||!isActiveWindowsRun(candidate.run))
+      continue;
+    if(!Number.isSafeInteger(candidate.run.id))
+      throw Error('CI_NATIVE_RUN_ID_INVALID');
+    await api('/actions/runs/'+candidate.run.id+'/cancel','POST');
+  }
+  return null;
+}
+
 export function quickResult(jobs,lane) {
   const name=lane==='ui'?'Fast UI contracts (every relevant PR commit)':
     'Fast native contracts (no Windows / JUCE checkout)';
@@ -99,11 +163,14 @@ export async function performMilestone({event,repo,api}) {
       throw Error('CI_QUICK_FAILED: fix lightweight regression before milestone');
     if(status!=='success')throw Error('CI_QUICK_PENDING');
   }
-  if(target.lane!=='fat'){
+  if(target.lane==='ui'){
     const q='/actions/workflows/'+target.workflow+
       '/runs?event=workflow_dispatch&branch='+encodeURIComponent(target.branch)+'&per_page=100';
     if(hasPriorDispatch((await api(q)).workflow_runs,target.sha))
       return {kind:'skipped',reason:'already-qualified-or-scheduled',target};
+  }else{
+    const gate=await guardWindowsMilestone({target,api});
+    if(gate)return gate;
   }
   // Focused FAT saves compilation of unrelated CTest executables for
   // audibly-qualified Harmonice-only candidate PRs. A branch name alone
@@ -116,12 +183,13 @@ export async function performMilestone({event,repo,api}) {
   }
   const inputs=target.lane==='ui'?{expected_sha:target.sha}:
     {expected_sha:target.sha,package_fat:target.lane==='fat',
+     request_pr_number:String(target.number),
      ...(focusedHarmony?{focused_harmony_fat:true}:{})};
-  // An old, still-open PR may predate the new focused-FAT workflow input.
-  // Execute the reviewed latest workflow FROM main, but the native job
-  // checks out inputs.expected_sha and verifies its exact 40-hex identity.
-  // This avoids silently running stale all-target YAML from a long-lived PR.
-  const workflowRef=focusedHarmony?'main':target.branch;
+  // Windows always uses the reviewed CI definition from main, and checks
+  // out the exact PR source SHA. Run-name also carries the verified PR/SHA
+  // so a main-ref workflow_dispatch cannot conceal a duplicate compile.
+  // Chromium continues to use the PR-specific UI workflow.
+  const workflowRef=target.lane==='ui'?target.branch:'main';
   await api('/actions/workflows/'+target.workflow+'/dispatches','POST',
     {ref:workflowRef,inputs});
   return {kind:'dispatched',target};
