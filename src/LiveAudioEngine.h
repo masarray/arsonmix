@@ -1473,6 +1473,31 @@ public:
             return "SOURCE: native prepare failed; prior audio kept";
         }
     }
+    // O1 physical External OUT: solely CONTROL, on the already-approved
+    // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
+    // are read atomically with the current device lifecycle generation.
+    juce::String setPhysicalExternalOutput(armix::mixer::ChannelId channel,
+            std::uint64_t expectedEpoch,std::uint64_t expectedRevision,
+            int physicalLeft,int physicalRight,bool confirmed) {
+        if(independent_.active() || !directFence_.permitted() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           handoff_.busy() || savedDirectSetup_ || savedLiveSetup_ ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)
+            return "EXTERNAL OUT: DIRECT ASIO output is not available";
+        if(deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "EXTERNAL OUT: active audio backend must be ASIO";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!armix::device::JuceActivePortSnapshot::capture(
+                device,expectedEpoch,pins,fault) ||
+           !device || !device->isOpen())
+            return "EXTERNAL OUT: device pin inventory not verified";
+        return dryRoutingLab_.setExternalOutput(channel,expectedEpoch,
+            expectedRevision,physicalLeft,physicalRight,confirmed,pins);
+    }
+
     // Direct compact OUT / MONO-STEREO operator edits. One existing M4
     // prepared graph is republished; original VST3 instances/Orbit remain
     // owned by the same native callback. Never touched on RT.
