@@ -324,7 +324,7 @@
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
-    const value=operation==="SET_FADER"?payload.valueDb:
+    const value=["SET_FADER","SET_INPUT_GAIN"].includes(operation)?payload.valueDb:
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
@@ -435,6 +435,10 @@
       if(appearance?.icon)t.icon=appearance.icon;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
+      t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
+      t.nativeGainAvailable=native.admitted===true && kind==="audio" &&
+        native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
+        Number.isFinite(ch.controls.inputGainDb);
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
@@ -515,7 +519,9 @@
       return true; // never synthesize missing DSP readback
     const enabled=!ch.fxRackBypassed;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
-    const rack=strip?.querySelector(".fx-section");
+    // GAIN/SOF are alternate views of the FX area; power readback still
+    // updates the model but must not rebuild the rack or steal knob focus.
+    const rack=strip?.querySelector(".fx-section:not(.is-gain-view):not(.is-sof-view)");
     // Virtualized mobile banks may have no mounted strip. The model still
     // receives verified state; normal bank render creates the right buttons.
     if(rack){
@@ -599,6 +605,23 @@
         return true;
       }
       const c=ch.controls;
+      const gainAdmitted=next.admitted===true&&ch.role==="INPUT"&&
+        next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN")&&
+        Number.isFinite(c.inputGainDb);
+      const gainChanged=gainAdmitted&&Math.abs((t.trim??0)-c.inputGainDb)>.011;
+      t.nativeGainAvailable=gainAdmitted;
+      if(gainChanged){
+        t.trim=c.inputGainDb;
+        const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+        const slider=root?.querySelector('input[data-field="trim"]');
+        if(slider&&document.activeElement!==slider){
+          slider.value=String(t.trim);
+          slider.closest(".gain-dial")?.style.setProperty("--gain-rotation",
+            (t.trim*5.625).toFixed(2)+"deg");
+          const readout=root.querySelector(".gain-readout");
+          if(readout)readout.textContent=(t.trim>=0?"+":"")+t.trim.toFixed(1)+" dB";
+        }
+      }
       const db=c.faderDb,pan=c.pan*100;
       const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
@@ -3174,6 +3197,31 @@
           el.value=String(t[field]);
         return true;
       }
+      if(field==="trim"){
+        const accepted=t.kind==="audio"&&t.nativeGainAvailable===true&&
+          (logicalView||controller?.state()?.current?.admitted===true);
+        const n=Number(el.value);
+        if(!accepted||!Number.isFinite(n)||n< -24||n>24){
+          el.value=String(Number.isFinite(t.trim)?t.trim:0);
+          status("INPUT GAIN unavailable · native PCM admission required");
+          return true;
+        }
+        // Gesture preview stays inside the knob; no browser-local t.trim
+        // audio authority and no phantom native ACK. Commit once on release.
+        if(event.type!=="change"){
+          el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
+            (n*5.625).toFixed(2)+"deg");
+          const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
+          if(lcd)lcd.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
+          return true;
+        }
+        if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
+          el.value=String(t.trim);
+          status("INPUT GAIN rejected · restoring accepted PCM readback");
+          controller?.subscribe?.();
+        }
+        return true;
+      }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
@@ -3814,7 +3862,6 @@
   // shortcuts instead of silently intercepting and leaving broken buttons.
   const nativeReferenceOnly=Object.freeze({
     sceneSelect:"Native full-session Show is not yet available",
-    gainView:"Digital input gain requires acknowledged native ChannelId gain and PCM",
     sofToggle:"Sends on Faders requires acknowledged native send-gain routing",
     sofTarget:"Sends on Faders requires acknowledged native send-gain routing",
     saveScene:"Native full-session Show is not yet available",
