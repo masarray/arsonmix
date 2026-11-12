@@ -31,7 +31,7 @@ Hardware realism uses original *decorative* multi-resolution raster PNG layers i
 |---|---|---|
 | Amp shell | `amp-head-class-a.png` | Original tolex and brushed faceplate. Model name, knobs, power and mode are overlays; future amp variants are skin entries, not new host controls. |
 | Cabinet shell | `cabinet-dual-12.png` | Grill/speaker drawing, mic position is a separate interactive overlay and **not** a claim that a real mic image changes DSP. |
-| Pedal chassis | `pedal-overdrive.png`, `pedal-delay.png`, `pedal-modulation.png` | Shared chassis geometry. Gate, compressor and additional flavors may use themed skins; parameter schema is separate. |
+| Pedal chassis | `pedal-gate.png`, `pedal-compressor.png`, `pedal-overdrive.png`, `pedal-delay.png`, `pedal-modulation.png`, `pedal-chorus.png`, `pedal-reverb.png` | Shared chassis geometry. Gate, compressor, chorus and reverb each have original themed PNG skins; parameter schema is separate. |
 | Shared control | `knob-brushed-metal.png` | Rotate the same original asset based on parameter value; visible value and keyboard accessible input are separate. |
 | Status lamps | `led-active.png`, `led-bypassed.png` | Visual state after accepted snapshot, never optimistic mock PCM. |
 

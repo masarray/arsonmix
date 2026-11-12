@@ -12,8 +12,8 @@ const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
 const assetDir=resolve(root,"design-references/guitar-fx/assets");
 const expected=[
  ["amp-head-class-a.png",920,340,400000],["cabinet-dual-12.png",720,360,340000],
- ["pedal-overdrive.png",260,360,130000],["pedal-delay.png",260,360,130000],
- ["pedal-modulation.png",260,360,130000],["knob-brushed-metal.png",148,148,45000],
+ ["pedal-gate.png",260,360,130000],["pedal-compressor.png",260,360,130000],["pedal-overdrive.png",260,360,130000],["pedal-delay.png",260,360,130000],
+ ["pedal-modulation.png",260,360,130000],["pedal-chorus.png",260,360,130000],["pedal-reverb.png",260,360,130000],["knob-brushed-metal.png",148,148,45000],
  ["led-active.png",48,48,10000],["led-bypassed.png",48,48,10000]
 ];
 const sha256=b=>createHash("sha256").update(b).digest("hex");
