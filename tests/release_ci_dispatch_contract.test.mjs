@@ -296,6 +296,18 @@ test('Public port workflow includes no commercial signing or push-triggered buil
   assert.match(workflow,/SHA256SUMS-Linux.txt/);
 });
 
+test('Windows release publisher checks latest main again at promotion, not just at start',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  const publish=workflow.split('      - name: Publish verified GitHub prerelease and its Windows binaries')[1]
+    ?.split('      - name: Refresh official landing catalog')[0]||'';
+  assert.match(publish,/git ls-remote origin 'refs\/heads\/main'/);
+  assert.match(publish,/git fetch --no-tags origin \$mainSha/);
+  assert.match(publish,/git merge-base --is-ancestor \$mainSha \$env:GITHUB_SHA/);
+  assert.match(publish,/RELEASE_MISSING_LATEST_MAIN_PROGRESS/);
+  assert.ok(publish.indexOf('git merge-base --is-ancestor') < publish.indexOf('gh release create'),
+    'main ancestry must fail closed before the public release API call');
+});
+
 test('Windows public release ZIP is a verifiable wrapper of the same exact Inno EXE',()=>{
   const publish=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   assert.match(publish,/Windows-x64-Setup\.zip/);
