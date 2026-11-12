@@ -108,6 +108,9 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-harmony.js
           python tests/native_harmony_assembly_test.py
           node --check site/preview-v2/assets/mixer-native-vocal-throw.js
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_spatial_core_test.cpp -o /tmp/armix-sonku-core-smoke
+          /tmp/armix-sonku-core-smoke
           python tests/native_peq_assembly_test.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
@@ -176,6 +179,32 @@ jobs:
         with:
           name: ArSonMix-Floating-UX-${{ github.run_id }}
           path: arsonmix-floating-ux-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sonku-preview:
+    name: 8D-SonKu native insert/editor Chromium FAT (desktop and narrow)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/8d-sonku-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scoped Chromium only
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Actual native picker insert, ACK/readback, editor open, UI controls
+        run: python tests/approved_native_sonku_smoke.py
+      - name: Keep verified 8D-SonKu editor screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Editor-${{ github.run_id }}
+          path: arsonmix-sonku-editor-*.png
           if-no-files-found: ignore
           retention-days: 7
 
