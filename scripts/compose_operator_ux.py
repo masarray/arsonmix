@@ -242,11 +242,15 @@ function openChannelIdentity(t,anchor){""",
   dialog.style.setProperty('left',Math.max(8,Math.min(p.width-302,a.left-p.left+a.width/2-148))+'px');
   dialog.style.setProperty('top',Math.max(8,Math.min(p.height-295,a.top-p.top+18))+'px');
  }
- document.getElementById('identityName').focus?.();""",
+ const renameInput=document.getElementById('identityName');
+ renameInput.focus?.();
+ // A rename should replace the existing title immediately, not append to it.
+ // This is the actual editor input, not a temporary overlay or fake label.
+ renameInput.select?.();""",
         """ positionChannelIdentity(dialog,anchor);
- const name=document.getElementById('identityName');
- name.focus({preventScroll:true});
- name.select();""",
+ const renameInput=document.getElementById('identityName');
+ renameInput.focus({preventScroll:true});
+ renameInput.select();""",
         "remove mixer-relative geometry and focus scroll")
     targets = ("identityClose","pluginClose","fastClose",
                "wireConfigClose","wireWsClose","routeChoiceClose")
