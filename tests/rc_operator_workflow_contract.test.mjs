@@ -20,6 +20,9 @@ test('operator Add Audio and rename preselection share original GUI/native owner
   assert.match(html,/<details class="more-tools"[\s\S]*?id="addTrack"/);
   assert.match(controller,/add\.closest\('#moreTools'\)/);
   assert.match(controller,/bankNext\.insertAdjacentElement\('afterend',add\)/);
+  assert.match(controller,/window\.innerWidth<=900/);
+  assert.match(controller,/originalMenu\.insertBefore\(add,originalNext\)/);
+  assert.match(controller,/window\.addEventListener\('resize',place/);
   assert.doesNotMatch(controller,/add\.cloneNode\(/);
   assert.match(controller,/body\?\.addEventListener\('dblclick'/);
   assert.match(controller,/input\.focus\(\{preventScroll:true\}\)/);
