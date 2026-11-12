@@ -91,6 +91,18 @@ canonical_html=apply_authoritative_fx_power(canonical_html)
 canonical_html=apply_fx_rack_interaction(canonical_html,buttons_dest/'assets')
 canonical_html=apply_native_peq(canonical_html)
 canonical_html=apply_operator_ux(canonical_html,buttons_dest/'assets')
+# The shipped UI is composed from inline JS as well as owner assets. Check all
+# inline code BEFORE packaging or deployment: a single unterminated string
+# otherwise leaves an empty mixer despite green source/PNG contract tests.
+# This check is common to GitHub Pages and the exact native WebView2 assembly.
+inline_blocks=re.findall(r'<script[^>]*>(.*?)</script>',canonical_html,re.I|re.S)
+if not inline_blocks: raise SystemExit('Approved mixer has no inline scripts to verify')
+for index,script in enumerate(inline_blocks,1):
+    if not script.strip(): continue
+    result=subprocess.run(['node','--check'],input=script,text=True,capture_output=True)
+    if result.returncode:
+        raise SystemExit('Invalid approved mixer inline JavaScript block '+
+                         str(index)+': '+result.stderr[-1800:])
 # Stage C: compile only DEPLOYED copies, never modify locked V28 source
 # owners or approved PNG artwork. No new CSS/override or second renderer.
 canonical_html,css_compilation=optimize_assets(canonical_html,buttons_dest/'assets',runtime_bundle=True)

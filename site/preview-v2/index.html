@@ -2473,7 +2473,7 @@ document.getElementById('wireWsInspector').addEventListener('change',e=>{
   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);
   if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,
    mode:tap.value==='split'?'split':'send'}],{record:false}))return;
-  const owner=wireSourceTrack(edge.sourceId);if(owner)owner.wireTapMode=tap.value==='split'?'split':'send;
+  const owner=wireSourceTrack(edge.sourceId);if(owner)owner.wireTapMode=tap.value==='split'?'split':'send';
  }
  if(gain||tap){
   wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();
