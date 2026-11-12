@@ -1,9 +1,10 @@
-"""Harmonice v8 approved PNG button integration — fast source/asset guard.
+"""Harmonice v9 approved PNG button integration — fast source/asset guard.
 
 Tests one owner, physical PNG, PFL hidden (not deleted), atomic reference tap
 transactions and native fail-closed behavior. This is NOT hardware PCM proof.
 """
 from pathlib import Path
+import hashlib
 import struct
 import unittest
 
@@ -13,7 +14,7 @@ HTML = (ROOT / "site/preview-v2/index.html").read_text(encoding="utf-8")
 CSS = (OWNER / "mixer-control-keys.css").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build_pages.py").read_text(encoding="utf-8")
 BRIDGE = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
-ASSET = "harmonice-thin-flat-v8-57x30.png"
+ASSET = "harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
 
 
 class HarmoniceV7KeysTests(unittest.TestCase):
@@ -21,12 +22,18 @@ class HarmoniceV7KeysTests(unittest.TestCase):
         png = (OWNER / ASSET).read_bytes()
         self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(struct.unpack(">II", png[16:24]), (228, 90))
+        self.assertEqual(hashlib.sha256(png).hexdigest(), "3a7b179fd9cc028f988215ea7f3b9e4a73a68031a7051d6e670df01aea940a6a", "PNG must match approved v9 raster, byte for byte")
         self.assertIn(png[25], (3, 6))
         if png[25] == 3:
             self.assertIn(b"tRNS", png)
         self.assertIn('background-image:url("' + ASSET + '")', CSS)
         self.assertIn("aspect-ratio:57/30", CSS)
         self.assertIn("background-size:400% 300%", CSS)
+        self.assertIn('drop-shadow(0 .8px 1.15px rgba(0,0,0,.42))', CSS)
+        self.assertIn('drop-shadow(0 1.7px 2.1px rgba(0,0,0,.32))', CSS)
+        self.assertIn('[data-hw-kind="tap"][data-tap-visual="pre"]::before', CSS)
+        self.assertIn('[data-hw-kind="mute"][aria-pressed="false"]::before', CSS)
+        self.assertIn('[data-hw-kind="solo"][aria-pressed="false"]::before', CSS)
         for kind, pos in (("tap", "0%"), ("mute", "50%"), ("solo", "100%")):
             self.assertIn('data-hw-kind="' + kind + '"]{--mx-native-y:' + pos + '}', CSS)
         self.assertIn("sprite='" + ASSET + "'", BUILD)

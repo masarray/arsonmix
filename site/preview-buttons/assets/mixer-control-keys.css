@@ -1,7 +1,8 @@
-/* Harmonice Thin Flat Bezel v8 — approved v7 physical material preserved.
-   ONE 4-column x 3-row transparent PNG, 57x30px per cell.
-   MUTE/SOLO v7 pixels and PRE are immutable. Four PRE/POST PNG states:
-   PRE, POST idle, POST send, MIX. CSS solely selects the raster frame. */
+/* Harmonice Thin Flat Bezel v9 — pixel-exact 1x raster frames extracted
+   from the user-approved v9 Refined OFF Shadow Interactive A/B HTML.
+   ONE 4x3 transparent RGBA PNG, 57x30 per cell. No new cap/bezel/font.
+   OFF receives only the approved soft alpha drop-shadow below the cap;
+   ON uses the original v9 pixels with NO added shadow or transform. */
 .app .console-body .strip .switch-section.mx-hw-row{
   display:grid!important;
   grid-template-columns:repeat(3,minmax(0,1fr))!important;
@@ -68,7 +69,7 @@
   box-shadow:none!important;
   filter:none!important;
   background-color:transparent!important;
-  background-image:url("harmonice-thin-flat-v8-57x30.png")!important;
+  background-image:url("harmonice-thin-flat-v9-approved-off-shadow-57x30.png")!important;
   background-repeat:no-repeat!important;
   background-size:400% 300%!important;
   background-position:var(--mx-native-x,0%) var(--mx-native-y,0%)!important;
@@ -88,6 +89,18 @@
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="tap"][data-tap-visual="idle"]{--mx-native-x:33.333333%}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="tap"][data-tap-visual="post"]{--mx-native-x:66.666667%}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="tap"][data-tap-visual="mixed"]{--mx-native-x:100%}
+/* Approved v9 HTML, physical 1x: --shadow-u:1px.
+   Exactly the two OFF-only alpha drop-shadow layers from the signed-off
+   Harmonice_Thin_Flat_Bezel_v9_Refined_OFF_Shadow_Interactive_AB.html.
+   Shadow lives on the raster pseudo-element (alpha contour); never on
+   the clickable box or ON face. No artwork repaint or geometry change. */
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="false"]::before,
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="solo"][aria-pressed="false"]::before,
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="tap"][data-tap-visual="pre"]::before{
+  filter:
+    drop-shadow(0 .8px 1.15px rgba(0,0,0,.42))
+    drop-shadow(0 1.7px 2.1px rgba(0,0,0,.32))!important;
+}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key .mx-hw-fallback{display:none!important}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key:focus-visible{
   outline:2px solid #9eddec!important;

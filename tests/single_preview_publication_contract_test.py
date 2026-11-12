@@ -106,7 +106,7 @@ require(len(shipped)==1 and shipped[0].group(2)==RUNTIME_CSS,
 require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + one runtime CSS + nonvisual profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
-require((gui/'assets/harmonice-thin-flat-v8-57x30.png').read_bytes()==(ROOT/'site/preview-buttons/assets/harmonice-thin-flat-v8-57x30.png').read_bytes(),'approved PNG sprite mismatch')
+require((gui/'assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png').read_bytes()==(ROOT/'site/preview-buttons/assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png').read_bytes(),'approved PNG sprite mismatch')
 require(not (gui/'candidate.json').exists(),'legacy preview candidate metadata still published')
 require('http-equiv="refresh"' in (gui/'mixer.html').read_text(encoding='utf-8'),'old mixer.html must redirect, never be another GUI')
 for old in ('preview-v2','preview-buttons','preview-v33','preview-v34'):
