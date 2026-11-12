@@ -36,7 +36,7 @@ class HarmoniceV7KeysTests(unittest.TestCase):
             self.assertIn('data-action="' + action + '"', HTML)
         self.assertNotIn('data-hw-kind="cue"', HTML)
         self.assertIn('id="clearCue" hidden disabled', HTML)
-        self.assertIn('style="display:none!important"', HTML)\n        self.assertNotIn('<button class="tool" id="clearCue"', HTML)
+        self.assertIn('style="display:none"', HTML)\n        self.assertNotIn('<button class="tool" id="clearCue"', HTML)
         self.assertIn("master.cue=false", HTML)
         self.assertIn("cue:false", HTML)
 
