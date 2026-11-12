@@ -35,9 +35,13 @@ def check_page(browser,path,label):
     assert not legacy.evaluate("""e=>{
       return e.matches('.command-bar button.tool,.console-body .strip button.mx-util-key');
     }"""),label
-    # Compare the non-audio action at rest, held down and released.
-    action=page.locator('#clearCue')
-    assert action.is_visible(),(label,'clearCue hidden')
+    # CLEAR CUE was retired from the approved GUI. Do not revive a
+    # disabled/hidden PFL control merely to satisfy this historic material test.
+    assert page.locator('#clearCue').is_hidden(),(label,'retired PFL button reappeared')
+    # Use the real current momentary Save Scene action instead; it is
+    # visible and preserves the same pressed/released material contract.
+    action=page.locator('#saveScene')
+    assert action.is_visible(),(label,'Save Scene hidden')
     before=css_for(action)
     assert 'gradient' in before['background'],(label,before)
     position=page.evaluate("""()=>({
