@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 REFERENCE=ROOT/"site/preview-v2"
 OWNER=ROOT/"site/preview-buttons/assets"
 SPECIAL=("mixer-control-keys.css","mixer-control-keys.js")
-SPRITE="harmonice-thin-flat-v7-57x30.png"
+SPRITE="harmonice-thin-flat-v8-57x30.png"
 
 
 def verify_bundle(dist):
@@ -64,10 +64,10 @@ def verify_bundle(dist):
 
     png=(generated/"assets"/SPRITE).read_bytes()
     assert png[:8]==bytes.fromhex("89504e470d0a1a0a")
-    assert struct.unpack(">II",png[16:24])==(114,90)
+    assert struct.unpack(">II",png[16:24])==(228,90)
     assert png[25] in (3,6),"Sprite must preserve transparent alpha (palette tRNS or RGBA)"
     if png[25]==3: assert b"tRNS" in png,"Palette sprite must preserve transparency"
-    assert "background-size:200% 300%" in (OWNER/SPECIAL[0]).read_text()
+    assert "background-size:400% 300%" in (OWNER/SPECIAL[0]).read_text()
     assert "aria-pressed=\"true\"" in (OWNER/SPECIAL[0]).read_text()
     return generated
 
@@ -118,7 +118,11 @@ def verify_browser(dist):
             off=states()
             assert [b["action"] for b in off]==["mute","solo","tapMode"],off
             assert [b["kind"] for b in off]==["mute","solo","tap"],off
-            assert [b["pos"] for b in off]==["0% 50%","0% 100%","100% 0%"],off
+            assert [b["pos"] for b in off[:2]]==["0% 50%","0% 100%"],off
+            assert abs(float(off[2]["pos"].split("%")[0])-33.333333)<.05,off
+            assert row.locator('button[data-tap-visual="idle"]').count()==1
+            assert page.locator('#clearCue').is_visible() is False
+            assert page.locator('#tracks .strip.master .mx-hw-row button').count()==2
             for b in off:
                 assert SPRITE in b["bg"],b
                 assert b["body"]=="rgba(0, 0, 0, 0)" and b["shadow"]=="none",b
@@ -128,7 +132,9 @@ def verify_browser(dist):
             for i in range(3): keys.nth(i).click()
             on=states()
             assert [b["state"] for b in on]==["true","true","false"],on
-            assert [b["pos"] for b in on]==["100% 50%","100% 100%","0% 0%"],on
+            assert all(abs(float(b["pos"].split("%")[0])-33.333333)<.05 for b in on[:2]),on
+            assert on[2]["pos"]=="0% 0%",on
+            assert row.locator('button[data-tap-visual="pre"]').count()==1
             for a,b in zip(off,on):
                 assert all(abs(a[k]-b[k])<.1 for k in ("x","y","w","h","faceW","faceH")),(a,b)
             keys.nth(0).click()
@@ -154,7 +160,7 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         verify_bundle(dist)
         verify_browser(dist)
-    print("PASS: Harmonice PRE/POST MUTE SOLO PNG tracks canonical WIRE; hidden PFL, pixel-stable assets and 3 viewports")
+    print("PASS: Harmonice v8 truthful idle PRE/POST PNG, hidden PFL, no MASTER tap, stable MUTE/SOLO and WIRE")
 
 if __name__=="__main__":
     main()
