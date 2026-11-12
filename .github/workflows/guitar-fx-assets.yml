@@ -1,0 +1,33 @@
+name: Guitar FX assets — fast, path-scoped
+# No Chromium, MSVC, audio device, installer, npm packages or external downloads.
+# Only this feature's own asset and UX-study paths trigger the contract.
+on:
+  pull_request:
+    paths:
+      - 'design-references/guitar-fx/**'
+      - 'docs/guitar-fx/**'
+      - 'scripts/build_guitar_fx_assets.mjs'
+      - 'tests/guitar_fx_assets_contract.test.mjs'
+      - '.github/workflows/guitar-fx-assets.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'design-references/guitar-fx/**'
+      - 'docs/guitar-fx/**'
+      - 'scripts/build_guitar_fx_assets.mjs'
+      - 'tests/guitar_fx_assets_contract.test.mjs'
+      - '.github/workflows/guitar-fx-assets.yml'
+permissions:
+  contents: read
+concurrency:
+  group: guitar-fx-assets-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  original-hardware-assets:
+    name: Validate reproducible PNGs and truthful editor study
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original PNG structure, bounds and deterministic output
+        run: node --test tests/guitar_fx_assets_contract.test.mjs
