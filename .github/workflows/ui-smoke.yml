@@ -190,6 +190,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -300,7 +302,9 @@ jobs:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
     needs: quick
-    if: ${{ github.event_name != 'pull_request' }}
+    # Scoped SonKu exact-SHA milestone gets its own shorter visual + pointer FAT.
+    # Do not also run the full generic Chromium suite for the same manual SHA.
+    if: ${{ github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
