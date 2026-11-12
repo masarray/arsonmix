@@ -95,7 +95,7 @@ canonical_html=apply_operator_ux(canonical_html,buttons_dest/'assets')
 # inline code BEFORE packaging or deployment: a single unterminated string
 # otherwise leaves an empty mixer despite green source/PNG contract tests.
 # This check is common to GitHub Pages and the exact native WebView2 assembly.
-inline_blocks=re.findall(r'<script\\b[^>]*>([\\s\\S]*?)</script>',canonical_html,re.I)
+inline_blocks=re.findall(r'<script[^>]*>(.*?)</script>',canonical_html,re.I|re.S)
 if not inline_blocks: raise SystemExit('Approved mixer has no inline scripts to verify')
 for index,script in enumerate(inline_blocks,1):
     if not script.strip(): continue
