@@ -1077,7 +1077,77 @@ static void verifyNativeInputGainBeforeFx() {
     assert(!roster.edit(roster.revision(),std::span<const ChannelEdit>(&bad,1)).ok());
 }
 
+// A real post-insert PRE tap is independent of the source fader, whereas
+// POST follows it. ON/OFF changes no WIRE topology, stored level or EdgeId.
+static void verifyNativePrePostAndSendEnablePcm() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,3> add{};
+    for(int i=0;i<3;++i){
+        add[i].kind=Kind::add;add[i].position=static_cast<std::size_t>(i);
+        add[i].role=i==0?ChannelRole::input:i==1?ChannelRole::fxReturn:ChannelRole::main;
+        add[i].text=i==0?"Mic":i==1?"Wet":"MAIN";
+    }
+    const auto created=roster.edit(0,add);
+    assert(created.ok());
+    const auto mic=created.createdIds[0],wet=created.createdIds[1],main=created.createdIds[2];
+    ChannelEdit primary{};primary.kind=Kind::setPrimaryOutput;
+    primary.id=wet;primary.target=main;
+    ChannelEdit send{};send.kind=Kind::addSendReference;send.id=mic;
+    send.target=wet;send.value=.5f;send.preFader=false;
+    std::array<ChannelEdit,2> patch{primary,send};
+    assert(roster.edit(roster.revision(),patch).ok());
+    const auto* row=roster.find(mic);assert(row&&row->sends.size()==1);
+    const auto edgeId=row->sends[0].edgeId;
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    req.sources={{mic,0,-1,false}};
+    DynamicNativeSessionPublisher host;
+    assert(host.commit(roster,req,0,874,874,true).ok());
+    std::array<float,64> input{},left{},right{};input.fill(.25f);
+    const float* physical[]={input.data()};
+    int fxCalls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int n) noexcept {
+        if(id!=mic)return;
+        ++fxCalls;
+        for(int k=0;k<n;++k){l[k]*=2.f;r[k]*=2.f;}
+    };
+    const auto render=[&](){return host.render(874,physical,1,
+                        left.data(),right.data(),64,false,fx);};
+    constexpr float mono=.7071067811865475f;
+    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    assert(host.setChannelMix(874,1,mic,0.f,0.f));
+    assert(roster.rememberLiveMix(mic,0.f,0.f));
+    assert(render()&&close(left[63],0.f));
+    WireChange tap{};tap.kind=WireChange::Kind::setTap;
+    tap.from=mic;tap.edgeId=edgeId;tap.preFader=true;
+    assert(roster.wireTransaction(roster.revision(),std::span<const WireChange>(&tap,1)).ok());
+    assert(roster.find(mic)->sends[0].edgeId==edgeId);
+    assert(roster.find(mic)->sends[0].gain==.5f);
+    assert(host.commit(roster,req,1,874,874,true).ok());
+    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    assert(fxCalls==3); // one nonlinear FX pass per callback, no parallel duplicate
+    assert(host.setWireEnabled(874,2,mic,edgeId,false));
+    assert(roster.rememberLiveSendEnabled(mic,edgeId,false));
+    assert(render()&&close(left[63],0.f));
+    assert(roster.find(mic)->sends[0].edgeId==edgeId &&
+           roster.find(mic)->sends[0].gain==.5f &&
+           roster.find(mic)->sends[0].preFader && !roster.find(mic)->sends[0].enabled);
+    assert(!host.setWireEnabled(874,2,wet,edgeId,true));
+    assert(!host.setWireEnabled(875,2,mic,edgeId,true));
+    assert(!host.setWireEnabled(874,1,mic,edgeId,true));
+    assert(host.setWireEnabled(874,2,mic,edgeId,true));
+    assert(roster.rememberLiveSendEnabled(mic,edgeId,true));
+    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    tap.preFader=false;
+    assert(roster.wireTransaction(roster.revision(),std::span<const WireChange>(&tap,1)).ok());
+    assert(host.commit(roster,req,2,874,874,true).ok());
+    assert(render()&&close(left[63],0.f));
+    tap.from=wet;
+    assert(!roster.wireTransaction(roster.revision(),std::span<const WireChange>(&tap,1)).ok());
+}
+
 int main() {
+    verifyNativePrePostAndSendEnablePcm();
     verifyNativeInputGainBeforeFx();
     verifyDynamicInPlacePhysicalIOBuffers();
     verifyDynamicChannelIdLiveControls();
