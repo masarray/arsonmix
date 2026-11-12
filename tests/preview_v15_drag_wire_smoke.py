@@ -170,9 +170,16 @@ def main():
         assert_true(page.locator('#pluginBrowser').is_visible(),
                     'Focus inside manager must not dismiss it')
         page.locator('.mixer-title .panel-name').click()
+        # The Manager is modeless and must not block mixer interactions.
+        # Shared transient-utility policy now dismisses it on outside click.
+        assert_true(page.locator('#pluginBrowser').is_hidden(),
+                    'Outside mixer interaction must dismiss transient Plugin Manager')
+        page.locator('#pluginsButton').click()
         assert_true(page.locator('#pluginBrowser').is_visible(),
-                    'Plugin Manager must stay modeless while mixing')
+                    'Plugin Manager must reopen after modeless outside dismiss')
         page.locator('#pluginClose').click()
+        assert_true(page.locator('#pluginBrowser').is_hidden(),
+                    'Visible Close must dismiss reopened Plugin Manager')
         # 17px utility power retains the compact Material icon, not a cramped keycap.
         svg=page.locator('#tracks .strip[data-id="1"] .fx-section .mx-util-key[data-util-kind="fx-main"] .mi-svg').first
         assert_true(svg.count()==1 and svg.locator('path').count()==1,
