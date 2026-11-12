@@ -95,7 +95,7 @@
  color:#eff9fa;background:#365765;box-shadow:inset 0 -2px #7ec5d4;
 }
 .command-bar .strip-view-switch .tool:disabled{opacity:.65;cursor:default}
-.mixer-title .mix-context{
+.command-bar .mix-context{
  display:inline-flex;align-items:center;min-width:0;margin-left:9px;
  padding:2px 7px;border:1px solid #435c69;border-radius:2px;
  color:#9acbd9;background:#182c37;font-size:10px;font-weight:500;
@@ -158,7 +158,7 @@
 .console-body.sends-mode .strip.audio .fader:disabled{opacity:.42;cursor:not-allowed}
 @media(max-width:900px){
  .command-bar .strip-view-switch .tool{padding:3px 5px;font-size:9px}
- .mixer-title .mix-context{padding:2px 4px}
+ .command-bar .mix-context{padding:2px 4px}
 }
 @media(max-height:610px){
  .console-body .strip .gain-dial{flex-basis:28px;width:28px;height:28px}
