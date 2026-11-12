@@ -145,11 +145,16 @@ def main():
             row=strip.locator('.fxslot-row[data-insert-id="eq-native-1"]')
             row.wait_for(state="visible")
             assert strip.locator(".fxslot-row:not(.is-empty)").count()==1
-            page.keyboard.press("Escape")
+            # The verified graph ACK now opens the newly inserted editor.
+            # Close it through its real visible control, then prove the rack
+            # opens the same instance again (no hidden/forced pointer click).
+            editor=page.locator("#mxNativePeq")
+            editor.wait_for(state="visible")
+            editor.locator(".mx-peq-close").click()
+            assert editor.is_hidden()
             if width==1366:
                 page.screenshot(path="native-peq-01-accepted-rack.png")
             row.locator('[data-action="openPlugin"]').click()
-            editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
             # The plugin editor may appear one frame before its first native
             # DSP snapshot. Prove ON from accepted readback, not a DOM race.

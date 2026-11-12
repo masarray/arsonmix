@@ -104,9 +104,13 @@ def main():
             ack(page,state,intents[0]);emit(page,"arMixConsoleSnapshot",state)
             row=strip.locator('.fxslot-row[data-insert-id="'+INSTANCE+'"]')
             row.wait_for(state="visible")
-            page.keyboard.press("Escape")
-            row.locator('[data-action="openPlugin"]').click()
+            # Picker closes and Vocal Throw opens only after verified graph
+            # readback. Test its real Close then reopen through the rack.
             editor=page.locator("#mxNativeVocalThrow")
+            editor.wait_for(state="visible")
+            editor.locator("#vtClose").click()
+            assert editor.is_hidden()
+            row.locator('[data-action="openPlugin"]').click()
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
             assert editor.locator("#vtClose.vt-close.armix-floating-close").count()==1
