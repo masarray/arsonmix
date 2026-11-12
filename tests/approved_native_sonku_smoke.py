@@ -95,6 +95,14 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
     assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
+    # 250ms visualization timer must not overwrite an unacknowledged
+    # snapshot request (real JUCE message thread can be temporarily busy).
+    count=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
+    page.wait_for_timeout(700)
+    after=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
+    assert after==count, "Unanswered SonKu readback was overwritten"
     accepted_snapshot(page,state,SETTINGS)
     # Close/reopen must use the installed FX rack click, never a private open().
     editor.locator("#skClose").click()
