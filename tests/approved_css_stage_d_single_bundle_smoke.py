@@ -51,6 +51,27 @@ async def main():
                 assert stats["kinds"] == ["mute","solo","tap"], (size,stats)
                 tap=page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']")
                 assert await tap.get_attribute("data-tap-visual")=="idle", "No-send POST must be unlit"
+                # Visual parity with the approved v9 HTML at physical 1x:
+                # only raised OFF PNG faces receive lower alpha drop-shadow.
+                off_filters=await page.evaluate("""() => {
+                    const f=(selector)=>getComputedStyle(
+                        document.querySelector(selector),"::before").filter;
+                    const row="#tracks .strip[data-id='1'] .mx-hw-row ";
+                    return {
+                        mute:f(row+'[data-hw-kind="mute"]'),
+                        solo:f(row+'[data-hw-kind="solo"]'),
+                        idle:f(row+'[data-hw-kind="tap"]')
+                    };
+                }""")
+                assert "drop-shadow(" in off_filters["mute"],off_filters
+                assert "drop-shadow(" in off_filters["solo"],off_filters
+                assert off_filters["idle"]=="none",off_filters
+                await tap.click()
+                assert await tap.get_attribute("data-tap-visual")=="pre"
+                pre_filter=await tap.evaluate("(e)=>getComputedStyle(e,'::before').filter")
+                assert "drop-shadow(" in pre_filter,pre_filter
+                await tap.click()  # restore neutral no-SEND POST for WIRE tests
+                assert await tap.get_attribute("data-tap-visual")=="idle"
                 assert await page.locator("#master .mx-hw-row .mx-hw-key").count()==2
                 assert await page.locator("#clearCue").is_hidden(), "PFL toolbar must stay hidden"
                 if size[0]==1680:
@@ -81,6 +102,8 @@ async def main():
                 key=page.locator("#tracks .strip[data-id='1'] .mx-hw-key[data-hw-kind='mute']")
                 await key.click()
                 assert await key.get_attribute("aria-pressed") == "true"
+                on_filter=await key.evaluate("(e)=>getComputedStyle(e,'::before').filter")
+                assert on_filter=="none","MUTE ON must not inherit raised OFF shadow: "+on_filter
                 assert len(css_requests) == 1, (size,css_requests)
                 await page.close()
                 print("PASS Stage D one stylesheet / 17 requests eliminated:",
