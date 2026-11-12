@@ -2304,6 +2304,14 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeInputMix(epoch,rev,id,gain,pan);
     }
+    bool setNativeInputGain(std::uint64_t epoch,std::uint64_t rev,
+                            armix::mixer::ChannelId id,float gain) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeInputGain(epoch,rev,id,gain);
+    }
     bool setNativeInputMuteSolo(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,bool mute,bool solo) noexcept {
         if(independent_.active()||!directFence_.permitted()||
