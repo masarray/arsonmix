@@ -3324,6 +3324,13 @@
     },
     consumeAction(t,action,btn) {
       if (!connected)return false;
+      // The PNG PRE/POST control is visible for layout consistency, but a
+      // per-SEND tap mode change must be acknowledged by the native PCM graph.
+      // Until MODE is admitted, NEVER let the browser pretend the tap changed.
+      if(action==="tapMode"){
+        status("PRE/POST requires native WIRE tap capability; routing unchanged");
+        return true;
+      }
       // Selection, WIRE inspection and section presentation are UI-only.
       if(action==="editIdentity"||action==="rename"){
         // DAW convention: one click only selects/focuses this channel.

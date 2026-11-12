@@ -99,7 +99,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             for asset in (source / "assets").iterdir():
                 self.assertEqual((out / "assets" / asset.name).read_bytes(), asset.read_bytes(),
                                  "Native /preview/ asset differs: " + asset.name)
-            for name in ("mixer-control-keys.css", "mixer-control-keys.js", "mute-solo-pfl-56x37.png"):
+            for name in ("mixer-control-keys.css", "mixer-control-keys.js", "harmonice-thin-flat-v7-57x30.png"):
                 button = (ROOT / "site/preview-buttons/assets" / name).read_bytes()
                 self.assertEqual((out / "assets" / name).read_bytes(), button)
             # Stage D uses ONE compiled CSSOM for both Pages and WebView2.
@@ -121,7 +121,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("BinaryData::mixercontrolkeys_css", header)
             self.assertIn("BinaryData::arsonmixapprovedruntime_css", header)
             self.assertIn("BinaryData::mixercontrolkeys_js", header)
-            self.assertIn('"/assets/mute-solo-pfl-56x37.png"', header)
+            self.assertIn('"/assets/harmonice-thin-flat-v7-57x30.png"', header)
             for entry in first["files"]:
                 self.assertEqual(bundle.sha256((a / entry["path"]).read_bytes()), entry["sha256"])
             (a / "index.html").write_text("WRONG GUI", encoding="utf-8")

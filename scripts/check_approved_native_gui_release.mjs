@@ -50,7 +50,7 @@ try {
                       'assets/approved-native-bridge.js',
                       'assets/mixer-control-keys.css',
                       'assets/mixer-control-keys.js',
-                      'assets/mute-solo-pfl-56x37.png','assets/mixer-wire-dots.css'])
+                      'assets/harmonice-thin-flat-v7-57x30.png','assets/mixer-wire-dots.css'])
     if(!paths.has(name))block('Mandatory approved GUI/V8 transport resource missing: '+name);
   const cmake=requireFile(join(root,'CMakeLists.txt'),'Missing native CMake').toString('utf8');
   const host=requireFile(join(root,'src/Main.cpp'),'Missing JUCE host').toString('utf8');
