@@ -1201,6 +1201,10 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  function openRoutedFxEditor(lane,slot,instanceId,deviceEpoch,revision){
+    backend.emitEvent("arMixAction",{action:"routingFxEditor",
+      channel:lane,slot,instanceId,deviceEpoch,revision});
+  }
   // One verified post-insert navigation: never open an unaccepted slot and
   // never infer an instance from a catalog name. Reuse the installed editor
   // action for both native DSP and vendor VST3s, after exact graph readback.
@@ -2775,7 +2779,9 @@
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
     finishNativeTrack(next);finishNativeTrackDelete(next);
-    if(pendingFxInsert?.authority==="CHANNEL_ID"){
+    if(pendingFxInsert?.authority==="CHANNEL_ID" &&
+       confirmed?.operation==="LOAD_INSERT" &&
+       confirmed.requestId===pendingFxInsert.requestId){
       const p=pendingFxInsert;
       const inserted=next.graph.channels.find(ch=>ch.id===p.channelId)
         ?.inserts?.[p.slot];
@@ -3047,12 +3053,23 @@
       if(!pendingFxInsert||pendingFxInsert.authority==="CHANNEL_ID"||
          ack?.requestId!==pendingFxInsert.requestId)return;
       const p=pendingFxInsert;pendingFxInsert=null;
-      const actual=ack?.state?.fxInstances?.[p.channel]?.[p.slot];
-      if(ack?.ok===true && actual?.catalogId===p.id &&
+      const state=ack?.state;
+      const epoch=safeNativeCounter(state?.epoch);
+      const revision=safeNativeCounter(state?.revision);
+      const actual=state?.fxInstances?.[p.channel]?.[p.slot];
+      if(ack?.ok===true && ack.channel===p.channel && ack.slot===p.slot &&
+         !logicalView && mixerSession()?.authority!=="CHANNEL_ID" &&
+         state?.active===true && state.hasAcceptedRoute===true &&
+         epoch===p.epoch && epoch===safeNativeCounter(hardware?.device?.epoch) &&
+         revision!==null && revision>=p.revision &&
+         revision>=safeNativeCounter(legacy()?.routingRevision) &&
+         actual?.catalogId===p.id &&
          typeof actual?.instanceId==="string"&&actual.instanceId.length){
         status("CH "+(p.channel+1)+" FX loaded · verified native VST3");
-        scope?.closeNativePicker?.();
         presentFxCatalog();
+        paintM4FxInstances(state);
+        scope?.closeNativePicker?.();
+        openRoutedFxEditor(p.channel,p.slot,actual.instanceId,epoch,revision);
         controller.subscribe();
       }else {
         const reason=ack?.error||"native FX instance missing from accepted PCM";
@@ -3389,9 +3406,7 @@
           const ep=safeNativeCounter(hardware?.device?.epoch),
             rev=safeNativeCounter(legacy()?.routingRevision);
           if(ep!==null&&rev!==null)
-            backend.emitEvent("arMixAction",{action:"routingFxEditor",
-              channel:instance.lane,slot,
-              instanceId:instance.live.instanceId,deviceEpoch:ep,revision:rev});
+            openRoutedFxEditor(instance.lane,slot,instance.live.instanceId,ep,rev);
           else nativeToast("VST3 editor · refresh native device and FX instance");
         }else {
           discoverFxOnFirstPickerOpen();
@@ -3669,7 +3684,7 @@
         return true;
       }
       const requestId="fx-"+(++fxRequestSerial);
-      pendingFxInsert={requestId,id,channel,slot};
+      pendingFxInsert={requestId,id,channel,slot,epoch:ep,revision:rev};
       backend.emitEvent("arMixAction",{action:"routingFxInsert",
         requestId,id,channel,slot,deviceEpoch:ep,revision:rev});
       status("CH "+(channel+1)+" · preparing real VST3, awaiting native ACK");

@@ -36,8 +36,8 @@ def check_page(browser,path,label):
       return e.matches('.command-bar button.tool,.console-body .strip button.mx-util-key');
     }"""),label
     # Compare the non-audio action at rest, held down and released.
-    action=page.locator('#clearCue')
-    assert action.is_visible(),(label,'clearCue hidden')
+    action=page.locator('#saveScene')
+    assert action.is_visible(),(label,'Save Scene hidden')
     before=css_for(action)
     assert 'gradient' in before['background'],(label,before)
     position=page.evaluate("""()=>({
