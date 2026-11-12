@@ -55,7 +55,7 @@ for name in ('favicon.ico','favicon-16x16.png','favicon-32x32.png'):
     shutil.copy2(dst/name,buttons_dest/'assets'/name)
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
-sprite='harmonice-thin-flat-v7-57x30.png'
+sprite='harmonice-thin-flat-v8-57x30.png'
 for src in sorted((canonical/'assets').iterdir()):
     if not src.is_file(): raise SystemExit('Unexpected nested preview-v2 asset: '+str(src))
     if src.name not in special:
