@@ -44,6 +44,30 @@ def run(page,width,height):
     page.on("pageerror",lambda err:errors.append(str(err)))
     page.goto(HTML.as_uri())
     page.wait_for_selector("#tracks .strip[data-id='1']")
+    # A core mixer operation must be discoverable without opening More or
+    # affecting playback: add a channel, then rename in place by typing once.
+    add=page.locator("#addTrack")
+    assert add.count()==1 and add.is_visible(),(width,"Add Audio is hidden")
+    assert page.locator("#moreTools #addTrack").count()==0,"Add Audio must not be buried"
+    add.click()
+    assert "11 audio" in page.locator("#trackCount").inner_text(),(width,"channel not added")
+    new_track=page.locator("#tracks .strip[data-id='13']")
+    assert new_track.is_visible(),(width,"new channel not revealed in its bank")
+    new_track.locator(".strip-identity-top").dblclick()
+    editor=page.locator("#channelIdentity")
+    assert editor.is_visible(),(width,"rename editor not opened")
+    name=page.locator("#identityName")
+    selection=name.evaluate("""e=>({value:e.value,start:e.selectionStart,end:e.selectionEnd,
+      focused:document.activeElement===e})""")
+    assert selection["focused"] and selection["start"]==0 and \\
+      selection["end"]==len(selection["value"]),selection
+    name.fill("Lead Vocal")
+    name.press("Enter")
+    assert editor.is_hidden(),(width,"Enter did not close accepted rename")
+    assert new_track.locator(".identity-name").inner_text()=="Lead Vocal"
+    # Restore the starting bank so subsequent WIRE/FX smoke uses CH01.
+    page.locator("#bankSelect").select_option("0")
+    page.wait_for_selector("#tracks .strip[data-id='1']")
     # Real operator command path, not synthetic DOM positioning.
     open_wire(page,"routes")
     move_panel(page,"#wireWorkspace","#wireWorkspace .wire-ws-head")
