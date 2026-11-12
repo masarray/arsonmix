@@ -214,6 +214,8 @@ NATIVE_EVENT_HOOKS = (
      "window.__ARMIX_NATIVE_SCOPE__=Object.freeze({\n"
      " get tracks(){return tracks;},get master(){return master;},\n"
      " get wireEdges(){return wireEdges;}, // native read-only UI edge identity\n"
+     " get sofEnabled(){return sofEnabled;},get sofTarget(){return sofTarget;},toggleSof,\n"
+     " get selectedWireEdgeId(){return selectedWireEdgeId;},\n"
      " get wireGainDragging(){return !!sendKnobDrag;},paintWireKnob,\n"
      " syncNativeWireGains(rows){\n"
      "  for(const row of rows){\n"

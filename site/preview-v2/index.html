@@ -342,20 +342,35 @@ function sectionGain(t){
 }
 /* SOF is a contextual UI view of an explicit existing EdgeId, not a new graph. */
 function sectionSof(t){
- const dest=tracks.find(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ // SOF is a view of ONE selected target WIRE, not a parallel audio graph.
+ const options=tracks.filter(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ const dest=options.length===1?options[0]:null;
  const edge=dest?wireFor(t.id,dest.id):null;
- const editable=!!edge&&edge.kind==='send'&&!window.__JUCE__?.backend;
- const visual=!edge||edge.kind!=='send'?'idle':edge.mode==='split'?'pre':'post';
- const badge=!edge?'NOT PATCHED':edge.kind!=='send'?'PRIMARY ROUTE':
-   edge.mode==='split'?'PRE-FX':'POST-FADER';
- const status=!edge?'Patch with WIRE first':edge.kind!=='send'?'Not a parallel SEND':
-   'SEND LEVEL '+wireDbText(edge.levelDb);
+ const send=edge&&edge.kind==='send'?edge:null;
+ const native=!!window.__JUCE__?.backend;
+ const tap=send?.nativeTap==='PRE_FADER'?'preFader':
+   send?.nativeTap==='POST_FADER'?'postFader':
+   send?.mode==='split'?'preFx':'postFader';
+ const visual=!send?'idle':tap==='preFader'||tap==='preFx'?'pre':'post';
+ const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
+   tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
+ const status=!dest?'Select one unique BUS/FX':!edge?'Patch with WIRE':
+   !send?'Not an independent SEND':'LEVEL '+wireDbText(send.levelDb);
+ const editable=!!send&&(!native||t.nativeTapAvailable===true);
+ const onEditable=!!send&&(!native||t.nativeSendAvailable===true);
+ const enabled=send?.sendEnabled!==false;
  return '<div class="section fx-section is-sof-view" data-sof-target="'+(dest?.id||'')+'">'+
   '<div class="subhead"><span class="sym">↗</span><span class="hint">SEND TO '+escapeHtml(sofTarget||'—')+'</span></div>'+
   '<div class="sof-view-body"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
   '<small>'+escapeHtml(status)+'</small></div>'+
-  '<button type="button" class="mx-sof-tap-key" data-action="sofTap" data-tap-visual="'+visual+'" '+(editable?'':'disabled')+
-  ' aria-label="'+escapeHtml(t.name+' '+(edge?'tap mode '+badge:'no WIRE send'))+'" title="'+escapeHtml('Tap for '+t.name+' → '+(sofTarget||'Bus')+'; PRE is pre-FX in this reference graph')+'"><span>'+ (edge?.mode==='split'?'PRE':'POST')+'</span></button></div></div>';
+  '<div class="sof-actions"><button type="button" class="mx-sof-on-key" data-action="sofOn"'+
+  ' aria-label="'+escapeHtml(t.name+' send '+(enabled?'on':'off')+' to '+sofTarget)+'"'+
+  ' title="'+escapeHtml('Send '+(enabled?'ON':'OFF')+' · '+sofTarget)+'" aria-pressed="'+enabled+'"'+
+  (onEditable?'':' disabled')+'>'+(enabled?'ON':'OFF')+'</button>'+
+  '<button type="button" class="mx-sof-tap-key" data-action="sofTap" data-tap-visual="'+visual+'"'+
+  (editable?'':' disabled')+' aria-label="'+escapeHtml(t.name+' '+(edge?'tap mode '+badge:'no WIRE send'))+'"'+
+  ' title="'+escapeHtml('Tap '+t.name+' → '+(sofTarget||'Bus')+' · '+badge)+'"><span>'+
+  (tap==='preFader'||tap==='preFx'?'PRE':'POST')+'</span></button></div></div></div>';
 }
 function sectionFx(t){
  if(sofEnabled&&t.kind==='audio')return sectionSof(t);
@@ -742,7 +757,7 @@ function strip(t){
  const allSendPost=parallelSends.length>0&&parallelSends.every(e=>e.mode==='send');
  const allSendPre=parallelSends.length>0&&parallelSends.every(e=>e.mode==='split');
  const tapMode=allSendPost?'send':allSendPre?'split':parallelSends.length?'mixed':t.wireTapMode==='split'?'split':'send';
- const nativeTapUnavailable=!!window.__JUCE__?.backend;
+ const nativeTapUnavailable=!!window.__JUCE__?.backend&&!t.nativeTapAvailable;
  // An unpatched channel has a future WIRE default, not an illuminated send.
  // Four dedicated PNG frames avoid CSS-faked lighting: PRE, POST idle, POST
  // routed, MIX (several outgoing SEND edges with different tap positions).
@@ -860,7 +875,8 @@ function updateSofTargets(){
 }
 function getSofIndex(t){return t.sendSlots.findIndex((slot,i)=>(i===t.activeSend?t.send:slot.send)===sofTarget);}
 function getSofEdge(t){
- const dest=tracks.find(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ const options=tracks.filter(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ const dest=options.length===1?options[0]:null;
  const edge=dest&&wireFor(t.id,dest.id);
  return edge&&edge.kind==='send'?edge:null;
 }
@@ -2088,6 +2104,15 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
+ if(a==='sofOn'){
+  if(!sofEnabled||t.kind!=='audio')return;
+  if(window.__JUCE__?.backend)return; // native bridge owns accepted send gate
+  const edge=getSofEdge(t);
+  if(!edge)return;
+  edge.sendEnabled=edge.sendEnabled===false;
+  refreshStrip(t);say(t.name+' → '+sofTarget+' send '+(edge.sendEnabled?'ON':'OFF')+' · GUI reference only');
+  return;
+ }
  if(a==='sofTap'){
   if(!sofEnabled||t.kind!=='audio')return;
   if(window.__JUCE__?.backend){say('Native WIRE tap change requires PCM ACK');return;}

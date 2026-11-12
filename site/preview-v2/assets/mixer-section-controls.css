@@ -151,6 +151,17 @@
  font-size:9px;color:#91b3c0;max-width:100%;white-space:nowrap;
  overflow:hidden;text-overflow:ellipsis;
 }
+.console-body .strip .sof-actions{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+.console-body .strip .mx-sof-on-key{
+ flex:0 0 27px;width:27px;height:23px;padding:0 1px;
+ border:1px solid #58727c;border-radius:2px;background:#27353d;
+ font-size:9px;font-weight:500;color:#a9bbc4;cursor:pointer;
+}
+.console-body .strip .mx-sof-on-key[aria-pressed="true"]{
+ border-color:#598d8f;background:#2e6461;color:#e6f6ed;
+}
+.console-body .strip .mx-sof-on-key:disabled{opacity:.48;cursor:default}
+.console-body .strip .mx-sof-on-key:focus-visible{outline:2px solid #91d5e5;outline-offset:1px}
 .console-body.sends-mode .strip.audio .fader-head{
  background:#173844;border-bottom:1px solid #507481;
 }
