@@ -24,6 +24,21 @@ def main_button(page, channel):
     return control
 
 
+def click_main(page, control):
+    """Operate the real MAIN key only while modeless Wire Setup is visible.
+
+    The approved GUI dismisses transient Wire Setup when the operator clicks
+    a mixer section, Scene control or Navigator. A stale locator stays attached
+    to the DOM but is not visible; reopening is a real UI interaction.
+    """
+    setup=page.locator("#wireConfigWindow")
+    if setup.is_hidden():
+        page.locator("#wireConfigToggle").click()
+    assert setup.is_visible(), "Wire Setup failed to reopen after mixer interaction"
+    assert control.is_visible() and control.is_enabled(), "MAIN control not operable"
+    control.click()
+
+
 def physical_main_plug(page):
     """Exercise the actual pinned MAIN jack pointer gesture, not a toggle button."""
     page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
@@ -173,7 +188,7 @@ def run():
             assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').get_attribute('data-wire-main-edge')==initial
 
             # Distinct disconnect is reversible and only affects this channel.
-            control.click()
+            click_main(page, control)
             assert edge(page,5,"out") is None,(width,"MAIN disconnect not real")
             assert edge(page,6,"out"),(width,"neighbor MAIN edge removed")
             assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge") is None
@@ -254,17 +269,17 @@ def run():
         page=browser.new_page(viewport={"width":1680,"height":900})
         page.goto(PAGE.as_uri())
         control=main_button(page,5)
-        control.click()
+        click_main(page, control)
         page.locator("#saveScene").click()
         assert edge(page,5,"out") is None
-        control.click()
+        click_main(page, control)
         assert edge(page,5,"out")
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Scene recreated an intentionally unplugged MAIN"
         # Snapshot SAFE preserves the current unpatched source against old scene.
-        control.click()
+        click_main(page, control)
         page.locator("#saveScene").click()
-        control.click()
+        click_main(page, control)
         page.locator("#moreTools summary").click()
         page.locator("#sceneSafe").click()
         page.locator("#moreTools summary").click()
