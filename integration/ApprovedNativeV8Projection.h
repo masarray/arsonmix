@@ -79,6 +79,18 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
         auto controls=std::make_unique<juce::DynamicObject>();
         const double db=linear>0.?20.*std::log10(linear):-60.;
         controls->setProperty("faderDb",juce::jlimit(-60.,12.,db));
+        // Source-owned native digital trim is not the hardware preamp.
+        // Missing field on legacy snapshots remains unadmitted, never 0 dB guessed.
+        const auto trim=row.getProperty("inputGain",{});
+        double inputLinear=0.;
+        if(trim.isVoid()) {
+            // Historical/retained snapshots may predate digital gain.
+        } else {
+            if(!nativeV8Number(trim,inputLinear)||inputLinear<0.||inputLinear>16.||
+               (role!="INPUT"&&inputLinear!=1.))return false;
+            if(role=="INPUT")controls->setProperty("inputGainDb",
+                inputLinear>0.?20.*std::log10(inputLinear):-144.);
+        }
         controls->setProperty("pan",p);
         controls->setProperty("mute",mute);controls->setProperty("solo",solo);
         ch->setProperty("controls",juce::var(controls.release()));
