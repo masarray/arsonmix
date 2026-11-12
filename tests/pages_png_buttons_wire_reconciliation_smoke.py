@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 REFERENCE=ROOT/"site/preview-v2"
 OWNER=ROOT/"site/preview-buttons/assets"
 SPECIAL=("mixer-control-keys.css","mixer-control-keys.js")
-SPRITE="harmonice-thin-flat-v8-57x30.png"
+SPRITE="harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
 
 
 def verify_bundle(dist):
