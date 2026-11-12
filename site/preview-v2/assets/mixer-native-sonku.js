@@ -17,6 +17,15 @@ const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
  window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const angle=(v)=>((v%360)+360)%360;
+// Listener faces the BOTTOM of this top-down stage.
+// Acoustic coordinates stay fixed: FRONT=0°, RIGHT=+90°, REAR=180°,
+// LEFT=-90°. When facing down, anatomical RIGHT appears screen-left.
+const stagePoint=(azimuthDegrees,radius=120)=>{
+ const rad=angle(azimuthDegrees)*Math.PI/180;
+ return {x:200-radius*Math.sin(rad),y:165+radius*Math.cos(rad)};
+};
+const stageAzimuth=(screenX,screenY)=>
+ Math.atan2(200-screenX,screenY-165)*180/Math.PI;
 const root=document.createElement("section");
 root.id="mxNativeSonKu";root.className="mx-sonku";root.hidden=true;
 root.setAttribute("role","dialog");root.setAttribute("aria-modal","false");
@@ -33,14 +42,14 @@ root.innerHTML=[
  '<path d="M200 12V316M12 165H388" stroke="#3f5667" stroke-dasharray="3 7" opacity=".65"/>',
  '<circle cx="200" cy="165" r="120" stroke="#75c2ce" stroke-width="1.4" stroke-dasharray="5 5" fill="none"/>',
  '<circle cx="200" cy="165" r="66" stroke="#344f61" fill="none"/>',
- '<text x="200" y="22" text-anchor="middle">FRONT</text>',
- '<text x="200" y="323" text-anchor="middle">REAR</text>',
- '<text x="16" y="160">LEFT</text><text x="353" y="160">RIGHT</text>',
- '<path d="M180 112 Q200 95 220 112" fill="none" stroke="#b1cbd8" stroke-width="7" stroke-linecap="round"/>',
- '<ellipse cx="200" cy="165" rx="30" ry="39" fill="#435c70" stroke="#8eacb9" stroke-width="1.5"/>',
- '<rect x="167" y="150" width="11" height="30" rx="5" fill="#8da8b7"/>',
- '<rect x="222" y="150" width="11" height="30" rx="5" fill="#8da8b7"/>',
- '<path d="M200 141 L195 161 L205 161 Z" fill="#92adbd"/>',
+ '<text class="sk-direction" x="200" y="22" text-anchor="middle">REAR</text>',
+ '<text class="sk-direction sk-front" x="200" y="320" text-anchor="middle">FRONT</text>',
+ '<text class="sk-direction" x="16" y="163">RIGHT</text><text class="sk-direction" x="354" y="163">LEFT</text>',
+ '<circle cx="200" cy="165" r="86" fill="#4dd4eb" opacity=".025"/>',
+ // Measured top-down blue bust PNG. The visible face points toward bottom FRONT.
+ // SVG image stays passive and cannot steal pointer capture from source dots.
+ '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="111" y="78" width="178" height="182" preserveAspectRatio="xMidYMid meet" aria-label="Listener facing bottom"/>',
+ '<path d="M194 299L200 306L206 299" fill="none" stroke="#69d4e4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>',
  '<g class="sk-src" data-index="0" tabindex="0" role="slider" aria-label="Left virtual source position" aria-valuemin="-180" aria-valuemax="180">',
  '<circle class="sk-source-bg" cx="200" cy="45" r="16"/><circle class="sk-source-core" cx="200" cy="45" r="5"/>',
  '<text class="sk-source-label" x="200" y="20" text-anchor="middle">L</text></g>',
@@ -54,7 +63,7 @@ root.innerHTML=[
  '<label>STEREO SPREAD <output id="skSpreadValue">60°</output><input id="skSpread" type="range" min="0" max="180" step="1" value="60"></label>',
  '<label>SPATIAL MIX <output id="skMixValue">100%</output><input id="skMix" type="range" min="0" max="100" step="1" value="100"></label>',
  '<label>OUTPUT TRIM <output id="skTrimValue">75%</output><input id="skTrim" type="range" min="0" max="100" step="1" value="75"></label>',
- '<div class="sk-guide">Drag L or R around the head to set start angle. Static mode tests front and rear localization.</div>',
+ '<div class="sk-guide">Drag a source around the listener. Front is below the face; ear-right appears on the left of this top view.</div>',
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
@@ -92,12 +101,13 @@ function render(){
      (s.clockwise?1:-1)*360/s.revolutionSeconds:liveMotion;
  for(let source=0;source<2;++source){
   const deg=angle(phase+(source?1:-1)*s.stereoSpreadDegrees/2);
-  const rad=deg*Math.PI/180;
-  const x=200+120*Math.sin(rad),y=165-120*Math.cos(rad);
+  const {x,y}=stagePoint(deg);
   const g=root.querySelector('.sk-src[data-index="'+source+'"]');
   const bg=g.querySelector(".sk-source-bg"),dot=g.querySelector(".sk-source-core"),label=g.querySelector(".sk-source-label");
   for(const c of [bg,dot]){c.setAttribute("cx",x.toFixed(2));c.setAttribute("cy",y.toFixed(2));}
-  label.setAttribute("x",x.toFixed(2));label.setAttribute("y",(y-22).toFixed(2));
+  // Keep source captions readable, including directly behind the head.
+  label.setAttribute("x",x.toFixed(2));
+  label.setAttribute("y",(y<95?y+28:y-22).toFixed(2));
   g.setAttribute("aria-valuenow",String(Math.round(deg>180?deg-360:deg)));
  }
  $("skMode").textContent=native()?(context()?"NATIVE HRTF":"NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
@@ -176,9 +186,9 @@ for(const [id,key,convert] of [
 const map=$("skMap");
 function toAzimuth(e) {
  const rect=map.getBoundingClientRect();
- const x=(e.clientX-rect.left)*400/rect.width-200;
- const y=165-(e.clientY-rect.top)*330/rect.height;
- return Math.atan2(x,y)*180/Math.PI;
+ const x=(e.clientX-rect.left)*400/rect.width;
+ const y=(e.clientY-rect.top)*330/rect.height;
+ return stageAzimuth(x,y);
 }
 map.addEventListener("pointerdown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
@@ -200,8 +210,13 @@ map.addEventListener("keydown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
  if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
  e.preventDefault();
- const step=(e.key==="ArrowLeft"||e.key==="ArrowDown"?-5:5);
- send({...draft,startAzimuthDegrees:Math.max(-360,Math.min(360,draft.startAzimuthDegrees+step)),moving:false});
+ // Screen-space arrow nudges preserve anatomical orientation on every quadrant.
+ const source=Number(g.dataset.index),offset=(source?1:-1)*draft.stereoSpreadDegrees/2;
+ const point=stagePoint(draft.startAzimuthDegrees+offset);
+ const deltaX=e.key==="ArrowLeft"?-7:e.key==="ArrowRight"?7:0;
+ const deltaY=e.key==="ArrowUp"?-7:e.key==="ArrowDown"?7:0;
+ const next=stageAzimuth(point.x+deltaX,point.y+deltaY)-offset;
+ send({...draft,startAzimuthDegrees:Math.max(-360,Math.min(360,next)),moving:false});
 });
 const api={
  id:ID,

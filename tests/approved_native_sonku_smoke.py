@@ -92,6 +92,17 @@ def exercise(browser,out,width,height):
     editor=page.locator("#mxNativeSonKu")
     editor.wait_for(state="visible",timeout=5000)
     assert editor.locator("#skMap .sk-src").count()==2
+    art=editor.locator("#skListenerArt")
+    assert art.count()==1 and art.get_attribute("href")=="assets/sonku-listener-top.png"
+    # Image is actually available inside the assembled native GUI bundle.
+    assert page.evaluate("""async () => new Promise(resolve => {
+      const image=new Image();
+      image.onload=()=>resolve(image.naturalWidth>=180 && image.naturalHeight>=180);
+      image.onerror=()=>resolve(false);
+      image.src='assets/sonku-listener-top.png';
+    })"""), "Listener PNG did not load"
+    labels=editor.locator("#skMap .sk-direction").all_inner_texts()
+    assert labels==["REAR","FRONT","RIGHT","LEFT"],labels
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
     assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
@@ -124,6 +135,22 @@ def exercise(browser,out,width,height):
         applied=command["requestId"])
     assert editor.locator("#skMotion").inner_text()=="STATIC"
     assert "ACCEPTED" in editor.locator("#skHint").inner_text()
+    # Verify all four acoustic directions against the human figure:
+    # face points DOWN; anatomical RIGHT appears screen LEFT.
+    def pose(degrees):
+        page.wait_for_timeout(270)
+        settings={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
+                  "startAzimuthDegrees":float(degrees)}
+        accepted_snapshot(page,state,settings)
+        return (
+            float(editor.locator('.sk-src[data-index="0"] .sk-source-bg').get_attribute("cx")),
+            float(editor.locator('.sk-src[data-index="0"] .sk-source-bg').get_attribute("cy"))
+        )
+    x,y=pose(0);assert abs(x-200)<1 and y>270,("FRONT",x,y)
+    x,y=pose(90);assert x<90 and abs(y-165)<1,("RIGHT",x,y)
+    x,y=pose(180);assert abs(x-200)<1 and y<60,("REAR",x,y)
+    x,y=pose(-90);assert x>310 and abs(y-165)<1,("LEFT",x,y)
+    pose(0)
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.

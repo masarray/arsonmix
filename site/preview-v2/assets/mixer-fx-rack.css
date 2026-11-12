@@ -1206,3 +1206,12 @@
  .mx-sonku .sk-stage svg{max-height:38vh}
  .mx-sonku .sk-controls{gap:8px}
 }
+
+/* 8D-SonKu top-view graphic. ONE approved FX Rack CSS owner; no new CSS file. */
+.mx-sonku .sk-listener-art{
+ pointer-events:none;opacity:.96;
+ filter:drop-shadow(0 7px 12px rgba(42,154,198,.26));
+}
+.mx-sonku .sk-stage .sk-direction{fill:#a7c0cc;letter-spacing:1.1px;font-size:10px;font-weight:600}
+.mx-sonku .sk-stage .sk-front{fill:#78d9e6;font-size:11px}
+.mx-sonku .sk-stage .sk-src{touch-action:none}
