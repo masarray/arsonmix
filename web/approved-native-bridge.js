@@ -380,7 +380,8 @@
        !Number.isFinite(db)||db< -60||db>6)return false;
     const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===source);
     if(!edge||edge.primaryOutput!==false)return false;
-    pendingWireGains.set(edgeId,{source,gain:Math.pow(10,db/20),identity:current.identity});
+    // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
+    pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
@@ -403,6 +404,30 @@
     else window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return result.ok;
   };
+  function selectedNativeSofEdge(t) {
+    if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
+    const current=controller?.state()?.current,source=nativeIdFor(t);
+    const matches=scope?.tracks?.filter(x=>x.name===scope.sofTarget&&
+      (x.kind==="bus"||x.kind==="fx"))||[];
+    if(!current?.admitted||!source||matches.length!==1)return null;
+    const dest=nativeIdFor(matches[0]);
+    const edges=current.graph.edges.filter(e=>e.enabled&&
+      e.from===source&&e.to===dest&&e.primaryOutput===false);
+    return edges.length===1?edges[0]:null;
+  }
+  function syncNativeSofAvailability(next=controller?.state()?.current) {
+    const admitted=!!next?.admitted&&!!scope?.toggleSof&&
+      ["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"].every(op=>
+        next.graph.capabilities.supportedOps.includes(op));
+    const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
+    for(const el of [toggle,target])if(el){
+      el.style?.setProperty?.("display",admitted?"":"none","important");
+      el.disabled=!admitted;
+      el.title=admitted?"Flip channel faders to selected SEND levels":
+        "Sends on Faders requires installed PCM WIRE gain, enable and tap ACK";
+    }
+    if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
+  }
   function projection(native) {
     if ((!native?.admitted && !native?.retained && !native?.logical) ||
         !Array.isArray(native.graph.edges) ||
@@ -439,6 +464,10 @@
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
         Number.isFinite(ch.controls.inputGainDb);
+      t.nativeTapAvailable=native.admitted===true&&kind==="audio"&&
+        native.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION");
+      t.nativeSendAvailable=native.admitted===true&&kind==="audio"&&
+        native.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED");
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
@@ -487,7 +516,8 @@
       // An independent SEND to MAIN is not the source's primary OUT.
       const kind=isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
       const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
-        kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
+        kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):
+        edge.tap==="PRE_FADER"?"split":"send";
       if (isPrimary && edge.gainLinear!==1) return false;
       const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
         edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
@@ -496,6 +526,7 @@
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
       edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
+        nativeTap:edge.tap,sendEnabled:edge.sendEnabled!==false,
         enabled:true,levelDb:gainDb});
     }
     if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
@@ -508,6 +539,7 @@
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     scope.installGraph(nextTracks,nextMaster,edges);
+    syncNativeSofAvailability(native);
     return true;
   }
   // Rack and individual FX power are scalar native DSP controls, NOT a
@@ -592,6 +624,27 @@
     scope?.syncNativeWireGains?.(next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)
       .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
         e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10})));
+    // A SEND OFF is a scalar, NOT a disconnected WIRE. Update just the
+    // affected selected SOF strip; preserve fader focus and all plugin state.
+    for(const edge of next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)){
+      const uiId=uiByWireId.get(edge.edgeId),tId=uiByNativeId.get(edge.from);
+      const local=scope?.wireEdges?.find(e=>e.id===uiId);
+      if(!local)continue;
+      if(local.sendEnabled!==(edge.sendEnabled!==false)){
+        local.sendEnabled=edge.sendEnabled!==false;
+        const t=scope?.tracks?.find(x=>x.id===tId);
+        if(t&&scope?.sofEnabled)scope.refreshStrip?.(t);
+      }
+      if(scope?.sofEnabled && local.destId===scope?.tracks?.find(x=>x.name===scope.sofTarget)?.id){
+        const t=scope?.tracks?.find(x=>x.id===tId);
+        const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
+        if(t&&slider&&document.activeElement!==slider){
+          slider.value=String(local.levelDb);
+          scope.syncFaderVisual?.(t);
+        }
+      }
+    }
+    syncNativeSofAvailability(next);
     // Immutable graph topology is identical: update actual scalar controls
     // only. Never detach the active HTML select or the captured fader pointer.
     for(const ch of next.graph.channels){
@@ -3224,6 +3277,20 @@
         }
         return true;
       }
+      if(field==="level"&&scope?.sofEnabled&&t.kind==="audio"){
+        const edge=selectedNativeSofEdge(t),db=Number(el.value);
+        const uiId=edge&&uiByWireId.get(edge.edgeId);
+        if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
+          status("SENDS ON FADERS · patch a selected WIRE destination first");
+          scope?.syncFaderVisual?.(t);return true;
+        }
+        if(event.type!=="change"){
+          previewFaderWithoutModelMutation(t,db);return true;
+        }
+        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))
+          status("SEND LEVEL rejected · accepted WIRE identity changed");
+        return true;
+      }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
@@ -3393,11 +3460,35 @@
     },
     consumeAction(t,action,btn) {
       if (!connected)return false;
-      // The PNG PRE/POST control is visible for layout consistency, but a
-      // per-SEND tap mode change must be acknowledged by the native PCM graph.
-      // Until MODE is admitted, NEVER let the browser pretend the tap changed.
-      if(action==="tapMode"){
-        status("PRE/POST requires native WIRE tap capability; routing unchanged");
+      // PRE/POST is an exact EdgeId structural graph transaction, not a
+      // cosmetic browser mode nor a channel-wide batch change.
+      if(action==="tapMode"||action==="sofTap"){
+        const current=controller?.state()?.current,id=nativeIdFor(t);
+        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||!id){
+          status("PRE/POST unavailable · native PCM graph not admitted");return true;
+        }
+        const sends=current.graph.edges.filter(e=>e.enabled&&
+          e.from===id&&e.primaryOutput===false&&e.to!==current.graph.mainChannelId);
+        let target=action==="sofTap"?selectedNativeSofEdge(t):
+          sends.find(e=>uiByWireId.get(e.edgeId)===scope?.selectedWireEdgeId)||
+          (sends.length===1?sends[0]:null);
+        if(!target||!["PRE_FADER","POST_FADER"].includes(target.tap)){
+          status("Select one outgoing parallel SEND WIRE to change PRE/POST");
+          return true;
+        }
+        const next=target.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
+        intent("APPLY_WIRE_TRANSACTION",t,{changes:[{
+          op:"SET_TAP",from:id,edgeId:target.edgeId,tap:next
+        }]});
+        return true;
+      }
+      if(action==="sofOn"){
+        const current=controller?.state()?.current,edge=selectedNativeSofEdge(t);
+        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED")||
+           !edge||typeof edge.sendEnabled!=="boolean"){
+          status("SEND ON/OFF unavailable · select an admitted WIRE send");return true;
+        }
+        intent("SET_SEND_ENABLED",t,{edgeId:edge.edgeId,enabled:!edge.sendEnabled});
         return true;
       }
       // Selection, WIRE inspection and section presentation are UI-only.
@@ -3864,8 +3955,6 @@
   // shortcuts instead of silently intercepting and leaving broken buttons.
   const nativeReferenceOnly=Object.freeze({
     sceneSelect:"Native full-session Show is not yet available",
-    sofToggle:"Sends on Faders requires acknowledged native send-gain routing",
-    sofTarget:"Sends on Faders requires acknowledged native send-gain routing",
     saveScene:"Native full-session Show is not yet available",
     recallScene:"Native full-session Show is not yet available",
     sceneSafe:"Show safe requires native session snapshots",
@@ -3906,6 +3995,7 @@
   }
   const ready=()=>{
     presentNativeOnlyTools();
+    syncNativeSofAvailability(); // hidden unless all installed native SEND controls exist
     installFirstSoundMenu();
     presentFxCatalog(); // compiled native FX, never demo or vendor placeholders
     updateHardwarePanel(null);
