@@ -17,10 +17,13 @@ const controller=read('site/preview-v2/assets/mixer-contextual-buttons.js');
 test('operator can add a visible channel then replace a preselected name in the movable editor',()=>{
   const html=read('site/preview-v2/index.html');
   assert.equal((html.match(/id="addTrack"/g)||[]).length,1);
-  assert.match(html,/<div class="mixer-title">[\s\S]*?<button type="button" class="wire-v34-tool" id="addTrack"/);
+  assert.match(html,/<div class="command-bar"[\s\S]*?<button type="button" class="tool" id="addTrack"/);
   const menu=html.match(/<details class="more-tools"[\s\S]*?<\/details>/)?.[0]||'';
   assert.ok(menu,'More menu should remain available');
   assert.doesNotMatch(menu,/id="addTrack"/);
+  const composer=read('scripts/compose_operator_ux.py');
+  assert.match(composer,/renameInput\.focus\(\{preventScroll:true\}\);/);
+  assert.match(composer,/renameInput\.select\(\);/);
   assert.match(html,/renameInput\.focus\?\.\(\);[\s\S]*?renameInput\.select\?\.\(\);/);
   assert.match(html,/if\(e\.key==='Enter'\)\{e\.preventDefault\(\);applyChannelIdentity\(\);\}/);
 });
