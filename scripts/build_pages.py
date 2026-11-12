@@ -56,11 +56,12 @@ for name in ('favicon.ico','favicon-16x16.png','favicon-32x32.png'):
 canonical_html=(canonical/'index.html').read_text(encoding='utf-8')
 special=('mixer-control-keys.css','mixer-control-keys.js')
 sprite='harmonice-thin-flat-v9-approved-off-shadow-57x30.png'
+pfl_sprite='harmonice-thin-flat-v9-pfl-font-matched-57x30.png'
 for src in sorted((canonical/'assets').iterdir()):
     if not src.is_file(): raise SystemExit('Unexpected nested preview-v2 asset: '+str(src))
     if src.name not in special:
         shutil.copy2(src,buttons_dest/'assets'/src.name)
-for name in (*special,sprite):
+for name in (*special,sprite,pfl_sprite):
     src=buttons_source/name
     if not src.is_file(): raise SystemExit('Approved PNG asset missing: '+str(src))
     shutil.copy2(src,buttons_dest/'assets'/name)
