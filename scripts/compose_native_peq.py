@@ -8,7 +8,6 @@ COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-1"></sc
 HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony1"></script>'
 THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-1"></script>'
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-1"></script>'
-SONKU_STYLE='<link rel="stylesheet" href="assets/mixer-native-sonku.css?v=sonku-1">'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
@@ -170,12 +169,11 @@ def apply_native_peq(html: str)->str:
              (PICKER_ENTER,PICKER_ENTER_NEW),
              (OPEN,OPEN_NEW))
     if html.count('</head>')!=1 or html.count('</body>')!=1 or \
-       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or SONKU_STYLE in html or 'insertChosenNativeEq' in html:
+       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or 'insertChosenNativeEq' in html:
         raise ValueError("Parametric EQ requires one pristine approved compiled GUI")
     for before,after in anchors:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</head>',SONKU_STYLE+'\n</head>',1)
     html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n</body>',1)
     return html
