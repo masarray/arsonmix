@@ -122,7 +122,7 @@ def verify_browser(dist):
             assert abs(float(off[2]["pos"].split("%")[0])-33.333333)<.05,off
             assert row.locator('button[data-tap-visual="idle"]').count()==1
             assert page.locator('#clearCue').is_visible() is False
-            assert page.locator('#tracks .strip.master .mx-hw-row button').count()==2
+            assert page.locator('#master .strip.master .mx-hw-row button').count()==2
             for b in off:
                 assert SPRITE in b["bg"],b
                 assert b["body"]=="rgba(0, 0, 0, 0)" and b["shadow"]=="none",b
