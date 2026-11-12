@@ -47,12 +47,15 @@ def sha256(data: bytes) -> str:
 
 def build_public_pages(destination: Path) -> Path:
     """Call the ONE authoritative Pages assembler; never duplicate its CSS/JS rules."""
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_pages.py"),
+    result = subprocess.run(
+        [sys.executable, "-X", "utf8", str(ROOT / "scripts" / "build_pages.py"),
          "--out", str(destination), "--sha", "native-source-check",
          "--branch", "native-approved-gui"],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace",
     )
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"Pages assembler exited with status {result.returncode}: {detail}")
     public = destination / "preview"
     data = json.loads((public / "build.json").read_text("utf-8"))
     if data.get("kind") != "APPROVED_SINGLE_GUI" or data.get("canonical_url") != "/preview/":
