@@ -156,7 +156,7 @@ def verify_browser(dist):
                     page.locator('.section-rail [data-section="send"]').click()
                 page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                 page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
-                assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="post"]').count()==1
+                assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="mixed"]').count()==1, "Ambiguous MIX click must not overwrite independent sends"
                 page.locator('#wireConfigToggle').click()
                 page.locator('#wireMode').select_option('split')
                 page.locator('#wireConfigClose').click()
@@ -180,7 +180,7 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         verify_bundle(dist)
         verify_browser(dist)
-    print("PASS: Harmonice v8 truthful idle PRE/POST PNG, hidden PFL, no MASTER tap, stable MUTE/SOLO and WIRE")
+    print("PASS: Harmonice v9 truthful idle PRE/POST PNG, hidden PFL, no MASTER tap, stable MUTE/SOLO and WIRE")
 
 if __name__=="__main__":
     main()

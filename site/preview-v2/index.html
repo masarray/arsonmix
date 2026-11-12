@@ -42,6 +42,12 @@
     <button class="tool bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
+    <span class="toolbar-label">STRIP</span>
+    <div class="strip-view-switch" role="group" aria-label="Channel processing view">
+      <button class="tool" type="button" id="gainView" aria-pressed="false" title="Show digital input gain knobs in the FX rack area">GAIN</button>
+      <button class="tool active" type="button" id="fxView" aria-pressed="true" title="Show original channel FX rack">FX RACK</button>
+    </div>
+    <span class="sep"></span>
     <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
     <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
     <button type="button" id="clearCue" hidden disabled aria-hidden="true" tabindex="-1" style="display:none"></button>
@@ -76,7 +82,7 @@
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="mix-context" id="mixContext">MAIN MIX</span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -201,7 +207,7 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,selectedWireEdgeId=null,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],stripView="fx",sofEnabled=false,sofTarget="Bus A",wireSourceId=1,wireEdges=[],nextWireId=1,selectedWireEdgeId=null,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
@@ -321,7 +327,38 @@ function undoReferenceFx(t){
  say(t.name+' · FX reorder undone · GUI reference');
  return true;
 }
+
+/* UI context only; FX/DSP slots remain in the session when the rack is hidden. */
+function sectionGain(t){
+ const value=Math.max(-24,Math.min(24,Number(t.trim)||0));
+ const nativeUnavailable=!!window.__JUCE__?.backend;
+ return '<div class="section fx-section is-gain-view"><div class="subhead">'+
+  '<span class="sym">G</span><span class="hint">INPUT GAIN</span></div>'+
+  '<div class="gain-view-body"><label class="gain-dial" style="--gain-rotation:'+(value*5.625).toFixed(2)+'deg" title="Digital input trim · reference UI only">'+
+  '<span class="gain-dial-face" aria-hidden="true"></span>'+
+  '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></label>'+
+  '<output class="gain-readout" aria-label="Gain in decibels">'+(nativeUnavailable?'NATIVE PENDING':formatDb(value)+' dB')+'</output></div></div>';
+}
+/* SOF is a contextual UI view of an explicit existing EdgeId, not a new graph. */
+function sectionSof(t){
+ const dest=tracks.find(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ const edge=dest?wireFor(t.id,dest.id):null;
+ const editable=!!edge&&edge.kind==='send'&&!window.__JUCE__?.backend;
+ const visual=!edge||edge.kind!=='send'?'idle':edge.mode==='split'?'pre':'post';
+ const badge=!edge?'NOT PATCHED':edge.kind!=='send'?'PRIMARY ROUTE':
+   edge.mode==='split'?'PRE-FX':'POST-FADER';
+ const status=!edge?'Patch with WIRE first':edge.kind!=='send'?'Not a parallel SEND':
+   'SEND LEVEL '+wireDbText(edge.levelDb);
+ return '<div class="section fx-section is-sof-view" data-sof-target="'+(dest?.id||'')+'">'+
+  '<div class="subhead"><span class="sym">↗</span><span class="hint">SEND TO '+escapeHtml(sofTarget||'—')+'</span></div>'+
+  '<div class="sof-view-body"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
+  '<small>'+escapeHtml(status)+'</small></div>'+
+  '<button type="button" class="mx-sof-tap-key" data-action="sofTap" data-tap-visual="'+visual+'" '+(editable?'':'disabled')+
+  ' aria-label="'+escapeHtml(t.name+' '+(edge?'tap mode '+badge:'no WIRE send'))+'" title="'+escapeHtml('Tap for '+t.name+' → '+(sofTarget||'Bus')+'; PRE is pre-FX in this reference graph')+'"><span>'+ (edge?.mode==='split'?'PRE':'POST')+'</span></button></div></div>';
+}
 function sectionFx(t){
+ if(sofEnabled&&t.kind==='audio')return sectionSof(t);
+ if(stripView==='gain'&&t.kind==='audio')return sectionGain(t);
  ensureFxInsertIds(t);
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
@@ -684,7 +721,7 @@ function sectionFader(t){
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><button type="button" class="clip-indicator '+(t.clip?'clipping':'')+'" data-action="resetClip" aria-label="Reset '+escapeHtml(t.name)+' clip latch" title="Reset latched peak indication (demo)">CLIP</button></div>'
  +'<div class="fader-workspace">'
  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'" aria-hidden="true"><span class="peak-led"></span>'+(t.format==='mono'?'':'<span class="peak-led"></span>')+'</div></div>'
- +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+' volume"></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+(isSend?' send level':' channel level')+'"'+(isSend&&!getSofEdge(t)?' disabled':'')+'></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
@@ -718,10 +755,10 @@ function strip(t){
    tapMode==='mixed'?'Mixed PRE and POST parallel WIRE sends · click to set all POST':
    (tapMode==='send'?'POST follows channel fader':'PRE independent before FX')+
    ' · '+parallelSends.length+' outgoing parallel SEND(s), primary MAIN unchanged';
- code+='<div class="section switch-section mx-hw-row" role="group" data-tap-applicable="'+(t.kind!=='master')+'" aria-label="Channel Mute Solo'+(t.kind==='master'?'':' and PRE/POST')+'">'
+ code+='<div class="section switch-section mx-hw-row" role="group" data-tap-applicable="'+(t.kind!=='master'&&!sofEnabled)+'" aria-label="Channel Mute Solo'+(t.kind==='master'||sofEnabled?'':' and PRE/POST')+'">'
    +'<button type="button" class="mx-hw-key" data-hw-kind="mute" data-action="mute" title="Mute channel" aria-label="Mute channel" aria-pressed="'+t.mute+'"><span class="mx-hw-fallback">MUTE</span></button>'
    +'<button type="button" class="mx-hw-key" data-hw-kind="solo" data-action="solo" title="Solo channel" aria-label="Solo channel" aria-pressed="'+t.solo+'"><span class="mx-hw-fallback">SOLO</span></button>';
- if(t.kind!=='master')code+='<button type="button" class="mx-hw-key" data-hw-kind="tap" data-action="tapMode" data-tap-visual="'+tapVisual+'" title="'+escapeHtml(tapTitle)+'" aria-label="'+escapeHtml(t.name+' '+tapTitle)+'" aria-pressed="'+(tapMode==='mixed'&&!nativeTapUnavailable?'mixed':Boolean(parallelSends.length&&tapMode==='send'&&!nativeTapUnavailable))+'" '+(nativeTapUnavailable?'disabled':'')+'><span class="mx-hw-fallback">'+tapText+'</span></button>';
+ if(t.kind!=='master'&&!sofEnabled)code+='<button type="button" class="mx-hw-key" data-hw-kind="tap" data-action="tapMode" data-tap-visual="'+tapVisual+'" title="'+escapeHtml(tapTitle)+'" aria-label="'+escapeHtml(t.name+' '+tapTitle)+'" aria-pressed="'+(tapMode==='mixed'&&!nativeTapUnavailable?'mixed':Boolean(parallelSends.length&&tapMode==='send'&&!nativeTapUnavailable))+'" '+(nativeTapUnavailable?'disabled':'')+'><span class="mx-hw-fallback">'+tapText+'</span></button>';
  code+='</div>';
   code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
@@ -768,6 +805,14 @@ function render(pageOverride){
  meterObserver?.disconnect();meterGeometry=new WeakMap();
  tracksEl.innerHTML=bankTracks.map(strip).join('');
  updateSofTargets();
+ const gainBtn=document.getElementById('gainView'),fxBtn=document.getElementById('fxView');
+ for(const [button,value] of [[gainBtn,'gain'],[fxBtn,'fx']]){
+  button.disabled=sofEnabled;
+  button.setAttribute('aria-pressed',String(stripView===value&&!sofEnabled));
+  button.classList.toggle('active',stripView===value&&!sofEnabled);
+ }
+ const context=document.getElementById('mixContext');
+ if(context)context.textContent=sofEnabled?'SEND MIX → '+sofTarget:'MAIN MIX';
  masterEl.innerHTML=strip(master);
  document.getElementById('viewport').scrollLeft=0;
  document.getElementById('bankPrev').disabled=count<=1;
@@ -813,19 +858,20 @@ function updateSofTargets(){
  if(el.innerHTML!==html)el.innerHTML=html;el.value=sofTarget;
 }
 function getSofIndex(t){return t.sendSlots.findIndex((slot,i)=>(i===t.activeSend?t.send:slot.send)===sofTarget);}
-function getSofLevel(t){const dest=tracks.find(x=>x.name===sofTarget);
- const edge=dest&&wireFor(t.id,dest.id);return edge?edge.levelDb:-60;}
+function getSofEdge(t){
+ const dest=tracks.find(x=>x.name===sofTarget&&(x.kind==='bus'||x.kind==='fx'));
+ const edge=dest&&wireFor(t.id,dest.id);
+ return edge&&edge.kind==='send'?edge:null;
+}
+function getSofLevel(t){const edge=getSofEdge(t);return edge?edge.levelDb:-60;}
 function setSofLevel(t,newLevel){
  const dest=tracks.find(x=>x.name===sofTarget&&x.id!==t.id);
  if(!dest||t.kind==='master')return false;
  const level=Math.round(Math.max(-60,Math.min(6,newLevel))*10)/10;
- const edge=wireFor(t.id,dest.id);
- if(!edge&&level<=-60)return true;
- const ops=level<=-60?[{type:'REMOVE',sourceId:t.id,edgeId:edge.id}]:
-  edge?[{type:'GAIN',sourceId:t.id,edgeId:edge.id,levelDb:level}]:
-  [{type:'CONNECT',sourceId:t.id,destId:dest.id},
-   {type:'GAIN',sourceId:t.id,edgeId:nextWireId,levelDb:level}];
- return wireGraphCommit(ops,{record:false});
+ const edge=getSofEdge(t);
+ // Never auto-patch or remove a WIRE at minimum send level.
+ if(!edge)return false;
+ return wireGraphCommit([{type:'GAIN',sourceId:t.id,edgeId:edge.id,levelDb:level}],{record:false});
 }
 function toggleSof(force){
  sofEnabled=typeof force==='boolean'?force:!sofEnabled;
@@ -1794,7 +1840,16 @@ function handleField(event){
   if(label)label.textContent=panLabel(value);
   if(event.type==='change')say(t.name+' pan '+panLabel(value));
 }
- else if(field==='trim'){t.trim=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');const readout=el.closest('.trim-section')?.querySelector('.trim-value');if(readout)readout.textContent=formatDb(t.trim);if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB');}
+ else if(field==='trim'){
+  if(window.__JUCE__?.backend){say('Native digital gain not admitted');return;}
+  t.trim=Math.max(-24,Math.min(24,Math.round(Number(el.value)*10)/10));
+  if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.trim,-24,24)+'%');
+  const section=el.closest('.gain-view-body,.trim-section');
+  const readout=section?.querySelector('.gain-readout,.trim-value');
+  if(readout)readout.textContent=formatDb(t.trim)+' dB';
+  section?.querySelector('.gain-dial')?.style.setProperty('--gain-rotation',(t.trim*5.625).toFixed(2)+'deg');
+  if(event.type==='change')say(t.name+' digital trim '+formatDb(t.trim)+' dB · reference only');
+ }
  else if(field==='sendLevel'){t.sendLevel=Number(el.value);if(el.style?.setProperty)el.style.setProperty('--range-pct',rangePct(t.sendLevel,-60,6)+'%');el.nextElementSibling.textContent=formatDb(t.sendLevel);}
  else if(field==='sendPan'){t.sendPan=Number(el.value);el.nextElementSibling.textContent=t.sendPan===0?'C':t.sendPan<0?'L'+Math.abs(t.sendPan):'R'+t.sendPan;}
  else if(field==='activeSend'){const slot=Number(el.value.slice(1))-1;if(slot<0||slot>=16)return;openSendSlot(t,slot);refreshStrip(t);say(t.name+' · selected Send '+(slot+1));return;}
@@ -2032,6 +2087,17 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
+ if(a==='sofTap'){
+  if(!sofEnabled||t.kind!=='audio')return;
+  if(window.__JUCE__?.backend){say('Native WIRE tap change requires PCM ACK');return;}
+  const edge=getSofEdge(t);
+  if(!edge){say('Connect a parallel WIRE to '+sofTarget+' before changing its tap');return;}
+  const next=edge.mode==='split'?'send':'split';
+  if(!wireGraphCommit([{type:'MODE',sourceId:t.id,edgeId:edge.id,mode:next}]))return;
+  refreshStrip(t);
+  say(t.name+' → '+sofTarget+' · '+(next==='split'?'PRE-FX':'POST-FADER')+' · reference graph');
+  return;
+ }
  if(a==='tapMode'){
   if(t.kind==='master')return;
   // PRE/POST is a structural native DSP tap change, NOT a cosmetic button.
@@ -2042,10 +2108,11 @@ document.querySelector('.console-body').addEventListener('click',e=>{
    return;
   }
   const sends=wireEdges.filter(edge=>edge.enabled&&edge.sourceId===t.id&&edge.kind==='send'&&edge.destId!==master.id);
-  // Mixed taps resolve predictably to POST on first click; next click selects PRE.
-  const allPost=sends.length>0&&sends.every(edge=>edge.mode==='send');
-  const next=sends.length?(allPost?'split':'send'):(t.wireTapMode==='split'?'send':'split');
-  if(sends.length&&!wireGraphCommit(sends.map(edge=>({type:'MODE',sourceId:t.id,edgeId:edge.id,mode:next}))))return;
+  // MIX status is not permission to rewrite all parallel connections.
+  const selected=sends.find(edge=>edge.id===selectedWireEdgeId)||(sends.length===1?sends[0]:null);
+  if(sends.length>1&&!selected){say('Select a specific WIRE before changing its tap');return;}
+  const next=selected?(selected.mode==='send'?'split':'send'):(t.wireTapMode==='split'?'send':'split');
+  if(selected&&!wireGraphCommit([{type:'MODE',sourceId:t.id,edgeId:selected.id,mode:next}]))return;
   t.wireTapMode=next;
   if(wireSourceId===t.id){wireMode=next;document.getElementById('wireMode').value=next;}
   refreshStrip(t);selectTrack(t);
@@ -2549,6 +2616,14 @@ document.getElementById('routeOnly').addEventListener('click',()=>commitRouteCho
 document.getElementById('routeParallel').addEventListener('click',()=>commitRouteChoice('parallel'));
 document.getElementById('routeChoiceClose').addEventListener('click',closeRouteChoice);
 document.getElementById('wireMaster').addEventListener('click',toggleDirectMain);
+for(const [id,value] of [['gainView','gain'],['fxView','fx']]){
+ document.getElementById(id).addEventListener('click',()=>{
+  if(sofEnabled)return;
+  if(value==='gain'&&window.__JUCE__?.backend){say('Native input gain requires accepted DSP control');return;}
+  stripView=value;render();
+  say(value==='gain'?'Digital INPUT GAIN view · preview trim only':'FX RACK view · existing inserts preserved');
+ });
+}
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{sofTarget=document.getElementById('sofTarget').value;render();say('Sends target: '+sofTarget);});
 document.getElementById('addTrack').addEventListener('click',()=>{

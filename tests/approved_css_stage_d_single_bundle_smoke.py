@@ -94,7 +94,7 @@ async def main():
                     assert await tap.get_attribute("data-tap-visual")=="mixed", "Mixed sends must have honest MIX artwork"
                     assert await tap.get_attribute("aria-pressed")=="mixed"
                     await tap.click()
-                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").get_attribute("data-tap-visual")=="post", "MIX click must retarget sends to POST"
+                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").get_attribute("data-tap-visual")=="mixed", "MIX click with ambiguous sends must preserve distinct EdgeId tap settings"
                 assert "arsonmix-approved-runtime.css?sha=" in stats["links"][0]
                 assert len(css_requests) == 1, (size,css_requests)
                 assert not errors, errors

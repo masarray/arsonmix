@@ -359,6 +359,8 @@ jobs:
         run: python tests/approved_native_wire_gain_smoke.py
       - name: Stage D one runtime CSSOM and actual stylesheet network count
         run: python tests/approved_css_stage_d_single_bundle_smoke.py
+      - name: Contextual GAIN/FX and Sends-on-Faders browser workflow
+        run: python tests/sof_contextual_console_smoke.py
       - name: Stage C rendered CSS parity (original vs compiled, three viewports + hover)
         run: python tests/approved_css_stage_c_computed_parity_smoke.py
       - name: WIRE A main edge and safe graph integration in real Chromium DOM

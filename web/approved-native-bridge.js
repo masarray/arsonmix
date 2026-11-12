@@ -3793,6 +3793,7 @@
   // shortcuts instead of silently intercepting and leaving broken buttons.
   const nativeReferenceOnly=Object.freeze({
     sceneSelect:"Native full-session Show is not yet available",
+    gainView:"Digital input gain requires acknowledged native ChannelId gain and PCM",
     sofToggle:"Sends on Faders requires acknowledged native send-gain routing",
     sofTarget:"Sends on Faders requires acknowledged native send-gain routing",
     saveScene:"Native full-session Show is not yet available",
