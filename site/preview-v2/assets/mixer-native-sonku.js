@@ -62,7 +62,7 @@ const $=id=>root.querySelector("#"+id);
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- readId="",seq=1,clock=null,observed=0,observedAt=0,drag=null;
+ readId="",readSentAt=0,seq=1,clock=null,observed=0,observedAt=0,drag=null;
 const context=()=>{
  if(!current||!native())return null;
  const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -103,9 +103,13 @@ function render(){
  $("skMode").textContent=native()?(context()?"NATIVE HRTF":"NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
 }
 function hint(s){$("skHint").textContent=s;}
-function requestSnapshot(){
+function requestSnapshot(force=false){
  const c=context();if(!c)return;
+ const now=performance.now();
+ // Avoid replacing an unanswered request at each 250ms render tick.
+ if(!force && readId && now-readSentAt<1500)return;
  readId="sk-read-"+String(Date.now())+"-"+(++seq);
+ readSentAt=now;
  backend().emitEvent("arMixAction",{action:"nativeSonKuSnapshot",requestId:readId,...c});
 }
 function send(next){
@@ -123,7 +127,7 @@ function flushLatest(){
  if(latest){const next=latest;latest=null;send(next);}
 }
 function finishFailure(reason){
- pending=null;latest=null;draft={...accepted};hint(reason);render();requestSnapshot();
+ pending=null;latest=null;draft={...accepted};hint(reason);render();requestSnapshot(true);
 }
 backend()?.addEventListener?.("arMixBuiltinSonKuQueue",r=>{
  if(!pending||r?.requestId!==pending.requestId)return;
@@ -132,15 +136,19 @@ backend()?.addEventListener?.("arMixBuiltinSonKuQueue",r=>{
 backend()?.addEventListener?.("arMixBuiltinSonKuAck",r=>{
  if(!pending||r?.requestId!==pending.requestId)return;
  if(r.status!=="APPLIED")return finishFailure("DSP NOT APPLIED · "+(r.errorCode||"STALE"));
- pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot();
+ pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot(true);
 });
 backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
  const c=context();if(!c||r.status!=="ACCEPTED"||
    r.channelId!==c.channelId||r.instanceId!==c.instanceId)return;
  if(!valid(r.settings))return;
+ readId="";readSentAt=0;
  if(pending) {
-  if(!pending.ack || r.appliedRequestId!==pending.requestId)return;
+  if(!pending.ack || r.appliedRequestId!==pending.requestId){
+   if(pending.ack)requestSnapshot();
+   return;
+  }
   accepted={...r.settings};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
  }else if(!drag){
   accepted={...r.settings};draft={...r.settings};
@@ -151,7 +159,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  render();
 });
 $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
- pending=null;latest=null;if(clock!==null){clearInterval(clock);clock=null;}});
+ pending=null;latest=null;readId="";readSentAt=0;
+ if(clock!==null){clearInterval(clock);clock=null;}});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 for(const [id,key,convert] of [
@@ -198,7 +207,8 @@ const api={
  id:ID,
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
-  pending=null;latest=null;accepted=defaults();draft=defaults();
+  pending=null;latest=null;readId="";readSentAt=0;
+  observedAt=0;accepted=defaults();draft=defaults();
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
