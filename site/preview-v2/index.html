@@ -332,7 +332,7 @@ function undoReferenceFx(t){
 /* UI context only; FX/DSP slots remain in the session when the rack is hidden. */
 function sectionGain(t){
  const value=Math.max(-24,Math.min(24,Number(t.trim)||0));
- const nativeUnavailable=!!window.__JUCE__?.backend;
+ const nativeUnavailable=!!window.__JUCE__?.backend&&!t.nativeGainAvailable;
  return '<div class="section fx-section is-gain-view"><div class="subhead">'+
   '<span class="sym">G</span><span class="hint">INPUT GAIN</span></div>'+
   '<div class="gain-view-body"><label class="gain-dial" style="--gain-rotation:'+(value*5.625).toFixed(2)+'deg" title="Digital input trim · reference UI only">'+
