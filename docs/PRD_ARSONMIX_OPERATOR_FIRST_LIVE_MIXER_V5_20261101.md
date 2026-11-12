@@ -1,3 +1,5 @@
+> **OWNER-APPROVED 2026-11-13 CONTEXTUAL-CONSOLE PRD ADDENDUM:** For the current GAIN/FX RACK interlock, Sends on Faders, PRE/POST per EdgeId, SEND ON/OFF and user workflow, read [Contextual Console PRD](PRD_CONTEXTUAL_CONSOLE_GAIN_SOF_20261113.md) and its [ARD](ARD_CONTEXTUAL_CONSOLE_GAIN_SOF_20261113.md) first. Those scoped requirements override conflicting historical descriptions below, without replacing native/audio/WIRE safety rules. Status = specification, **not** native implementation proof.
+
 > **FINAL 2026-11-04 GUI REPLACEMENT:** All GUI authority in this historical document is superseded by **https://masarray.github.io/arsonmix/preview/** (the only approved GUI, including its approved PNG button variant). Bare `/preview-v2/` is rejected. Only one public preview (redirect old URLs), one JUCE GUI, one native PCM graph. Read [single handoff](workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) and root AGENTS.md. Older native DSP/safety/ABI/Show/FAT constraints remain valid. GUI work #389, engine #266/#387, FAT #270.
 
 # ArSonMix PRD v5.2 — Operator-First Live Mixer Console
