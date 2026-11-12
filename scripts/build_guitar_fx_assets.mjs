@@ -6,9 +6,13 @@
 const GUITAR_ASSETS = [
   {name:"amp-head-class-a.png", w:920,h:340, kind:"amp",theme:"copper"},
   {name:"cabinet-dual-12.png", w:720,h:360,kind:"cab",theme:"copper"},
+  {name:"pedal-gate.png",w:260,h:360,kind:"pedal",theme:"silver"},
+  {name:"pedal-compressor.png",w:260,h:360,kind:"pedal",theme:"green"},
   {name:"pedal-overdrive.png",w:260,h:360,kind:"pedal",theme:"copper"},
   {name:"pedal-delay.png",w:260,h:360,kind:"pedal",theme:"blue"},
   {name:"pedal-modulation.png",w:260,h:360,kind:"pedal",theme:"green"},
+  {name:"pedal-chorus.png",w:260,h:360,kind:"pedal",theme:"blue"},
+  {name:"pedal-reverb.png",w:260,h:360,kind:"pedal",theme:"violet"},
   {name:"knob-brushed-metal.png",w:148,h:148,kind:"knob",theme:"copper"},
   {name:"led-active.png",w:48,h:48,kind:"ledOn",theme:"green"},
   {name:"led-bypassed.png",w:48,h:48,kind:"ledOff",theme:"copper"}
@@ -25,7 +29,7 @@ function fxInside(x,y,a,b,c,d,r){
 }
 function fxPalette(theme){
   const bytes=new Uint8Array(768);
-  const themeRGB=theme==="blue"?[47,99,137]:theme==="green"?[56,103,77]:[143,85,46];
+  const themeRGB=theme==="blue"?[47,99,137]:theme==="green"?[56,103,77]:theme==="violet"?[104,76,124]:theme==="silver"?[102,110,119]:[143,85,46];
   const put=(i,r,g,b)=>{bytes[i*3]=fxClamp(r,0,255);bytes[i*3+1]=fxClamp(g,0,255);bytes[i*3+2]=fxClamp(b,0,255);};
   for(let j=0;j<64;j++){
     const v=j/63;
