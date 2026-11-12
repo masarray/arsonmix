@@ -2024,9 +2024,17 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='tapMode'){
   if(t.kind==='master')return;
+  // PRE/POST is a structural native DSP tap change, NOT a cosmetic button.
+  // The current native bridge rejects MODE without verified PCM ACK. Never
+  // alter the local presentation in native mode until that capability exists.
+  if(window.__JUCE__?.backend){
+   say('PRE/POST is unavailable for this native graph · routing unchanged');
+   return;
+  }
   const sends=wireEdges.filter(edge=>edge.enabled&&edge.sourceId===t.id&&edge.kind==='send'&&edge.destId!==master.id);
-  const allPre=sends.length>0&&sends.every(edge=>edge.mode==='split');
-  const next=allPre||(!sends.length&&t.wireTapMode==='split')?'send':'split';
+  // Mixed taps resolve predictably to POST on first click; next click selects PRE.
+  const allPost=sends.length>0&&sends.every(edge=>edge.mode==='send');
+  const next=sends.length?(allPost?'split':'send'):(t.wireTapMode==='split'?'send':'split');
   if(sends.length&&!wireGraphCommit(sends.map(edge=>({type:'MODE',sourceId:t.id,edgeId:edge.id,mode:next}))))return;
   t.wireTapMode=next;
   if(wireSourceId===t.id){wireMode=next;document.getElementById('wireMode').value=next;}
