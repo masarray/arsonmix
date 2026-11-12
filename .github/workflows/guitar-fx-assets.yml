@@ -9,8 +9,6 @@ on:
       - 'scripts/build_guitar_fx_assets.mjs'
       - 'engine/builtin_fx/guitar/**'
       - 'tests/guitar_fx_program_model_test.cpp'
-      - 'engine/builtin_fx/guitar/**'
-      - 'tests/guitar_fx_program_model_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
   push:
@@ -19,6 +17,8 @@ on:
       - 'design-references/guitar-fx/**'
       - 'docs/guitar-fx/**'
       - 'scripts/build_guitar_fx_assets.mjs'
+      - 'engine/builtin_fx/guitar/**'
+      - 'tests/guitar_fx_program_model_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
 permissions:
