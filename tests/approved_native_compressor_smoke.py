@@ -575,7 +575,7 @@ def main():
                 x,y=box["x"]+box["width"]/2,box["y"]+box["height"]/2
                 page.mouse.move(x,y);page.mouse.down()
                 red=closer.evaluate("(el)=>getComputedStyle(el).backgroundImage")
-                assert "rgb(204, 71, 83)" in red,red
+                assert "rgb(239, 62, 80)" in red,red
                 page.screenshot(path="arsonmix-close-pressed-red.png")
                 page.mouse.up()
                 assert editor.is_hidden(), "native Compressor Close did not dismiss"

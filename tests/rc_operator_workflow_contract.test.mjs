@@ -73,5 +73,8 @@ test('modeless utility windows are centered/dismissible without dismissing FX ed
   assert.match(controller,/close\.click\(\)/);
   assert.match(controller,/\.mx-comp-slider,\.mx-harm-slider input\[type="range"\]/);
   assert.match(controller,/input\.dispatchEvent\(new Event\('input'/);
-  assert.match(closeCss,/content:"×"!important;background:none!important/);
+  assert.match(closeCss,/--armix-floating-close-icon:url\("data:image\/svg\+xml/);
+  assert.match(closeCss,/M6\.4,19L5,17\.6L10\.6,12L5,6\.4/);
+  assert.match(closeCss,/margin-inline-start:auto!important/);
+  assert.doesNotMatch(closeCss,/content:"×"!important/);
 });

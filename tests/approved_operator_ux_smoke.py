@@ -56,7 +56,7 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertIn("Single authoritative modal Close",shared)
             self.assertIn("#pluginClose,#fastClose,#wireConfigClose",shared)
             self.assertIn("flex:0 0 24px!important",shared)
-            self.assertIn("background:linear-gradient(#cc4753,#982a36)",shared)
+            self.assertIn("background:linear-gradient(#ef3e50,#c52d40)",shared)
             # No extra CSS file, one canonical assembler, source history untouched.
             self.assertEqual((source/"index.html").read_text(encoding="utf-8"),html_before)
             self.assertEqual((source/"assets/mixer-chrome-material.css").read_bytes(),chrome_before)
@@ -74,7 +74,7 @@ class OperatorConsoleTests(unittest.TestCase):
         for state in ("on","off","rack-off","unknown"):
             self.assertIn('data-fx-state="'+state+'"',shared)
         self.assertIn("flex:0 0 24px!important",shared)
-        self.assertIn("linear-gradient(#cc4753,#982a36)",shared)
+        self.assertIn("linear-gradient(#ef3e50,#c52d40)",shared)
         self.assertNotIn(".mx-peq .mx-peq-close:active",fx)
         self.assertNotIn(".mx-comp-power.bypassed",fx)
         self.assertIn('power.dataset.fxState=fxState;',eq)
