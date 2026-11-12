@@ -521,7 +521,9 @@
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
     // GAIN/SOF are alternate views of the FX area; power readback still
     // updates the model but must not rebuild the rack or steal knob focus.
-    const rack=strip?.querySelector(".fx-section:not(.is-gain-view):not(.is-sof-view)");
+    const rackArea=strip?.querySelector(".fx-section");
+    const rack=rackArea?.classList?.contains?.("is-gain-view") ||
+      rackArea?.classList?.contains?.("is-sof-view")?null:rackArea;
     // Virtualized mobile banks may have no mounted strip. The model still
     // receives verified state; normal bank render creates the right buttons.
     if(rack){
