@@ -1,8 +1,9 @@
-/* User-approved MUTE / SOLO / PFL PNG keys — V45 full mixer preview.
-   One owner for three channel latches. Exact 112x111 RGBA atlas (2 columns:
-   OFF/ON; 3 rows: MUTE/SOLO/PFL), each frame 56x37. CSS reads the existing
-   aria-pressed from the mixer; no JavaScript redraw, scaling on toggle, DSP,
-   router changes or competing cap/shadow layers. */
+/* Harmonice Thin Flat Bezel v7 — owner-approved physical PNG material.
+   ONE 2-column x 3-row RGBA sprite: PRE-OFF/POST-ON, MUTE-OFF/ON,
+   SOLO-OFF/ON. Each cell is 57x30 px, original artist-approved raster.
+   Only existing aria-pressed selects frames; no CSS-generated cap, glow,
+   scaling/translation on press, resize observer or separate event owner.
+   PFL is hidden at the strip DOM level; its model/native hook is retained. */
 .app .console-body .strip .switch-section.mx-hw-row{
   display:grid!important;
   grid-template-columns:repeat(3,minmax(0,1fr))!important;
@@ -53,9 +54,9 @@
   position:absolute!important;
   left:50%!important;
   top:50%!important;
-  width:min(100%,43.8919px)!important;
+  width:min(100%,55.1px)!important;
   height:auto!important;
-  aspect-ratio:56/37!important;
+  aspect-ratio:57/30!important;
   transform:translate(-50%,-50%)!important;
   border:0!important;
   border-radius:0!important;
@@ -65,7 +66,7 @@
   box-shadow:none!important;
   filter:none!important;
   background-color:transparent!important;
-  background-image:url("mute-solo-pfl-56x37.png")!important;
+  background-image:url("harmonice-thin-flat-v7-57x30.png")!important;
   background-repeat:no-repeat!important;
   background-size:200% 300%!important;
   background-position:var(--mx-native-x,0%) var(--mx-native-y,0%)!important;
@@ -77,9 +78,9 @@
   content:none!important;
   display:none!important;
 }
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{--mx-native-y:0%}
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="solo"]{--mx-native-y:50%}
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="cue"]{--mx-native-y:100%}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="tap"]{--mx-native-y:0%}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{--mx-native-y:50%}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="solo"]{--mx-native-y:100%}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[aria-pressed="true"]{--mx-native-x:100%}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key .mx-hw-fallback{display:none!important}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key:focus-visible{
