@@ -42,6 +42,9 @@ struct ChannelStripDefinition final {
     // The existing audio control thread owns independent VST instance creation.
     std::vector<std::string> insertCatalogIds;
     std::vector<ChannelSendRef> sends;
+    // Digital INPUT gain is independent of the channel fader and physical preamp.
+    // Append to retain positional aggregate compatibility with older fixtures.
+    float inputGainLinear=1.f;
 };
 
 struct ChannelRosterBudget final {
@@ -62,7 +65,8 @@ struct ChannelEdit final {
         removeInsertReference, moveInsertReference,
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
-        touchDocumentRevision
+        touchDocumentRevision,
+        setInputGain
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -117,6 +121,14 @@ public:
         if(it==index_.end())return false;
         auto& row=channels_[it->second];
         row.faderLinear=gain;row.pan=pan;
+        return true;
+    }
+    // No graph revision change for realtime input trim; native PCM must ACK first.
+    bool rememberLiveInputGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
+        const auto it=index_.find(id.value);
+        if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
+        channels_[it->second].inputGainLinear=gain;
         return true;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
@@ -224,6 +236,12 @@ public:
                 case ChannelEdit::Kind::setFormat:
                     if(!validFormat(op.format))result.fault=ChannelEditFault::invalidValue;
                     else it->format=op.format;
+                    break;
+                case ChannelEdit::Kind::setInputGain:
+                    if(it->role!=ChannelRole::input || !std::isfinite(op.value) ||
+                       op.value<0.f || op.value>16.f)
+                        result.fault=ChannelEditFault::invalidValue;
+                    else it->inputGainLinear=op.value;
                     break;
                 case ChannelEdit::Kind::setFader:
                     if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f)
@@ -750,7 +768,10 @@ public:
             if(!ch.id.value || ch.id.value==std::numeric_limits<std::uint64_t>::max() ||
                !ids.insert(ch.id.value).second ||
                !std::isfinite(ch.faderLinear) || ch.faderLinear<0.f ||
-               ch.faderLinear>4.f || !std::isfinite(ch.pan) ||
+               ch.faderLinear>4.f || !std::isfinite(ch.inputGainLinear) ||
+               ch.inputGainLinear<0.f || ch.inputGainLinear>16.f ||
+               (ch.role!=ChannelRole::input && ch.inputGainLinear!=1.f) ||
+               !std::isfinite(ch.pan) ||
                ch.pan< -1.f || ch.pan>1.f)return false;
             maxId=std::max(maxId,ch.id.value);
             mains+=ch.role==ChannelRole::main;
