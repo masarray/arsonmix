@@ -54,7 +54,7 @@
       <summary class="tool" title="Less-frequent mixer operations">More ···</summary>
       <div class="more-tools-panel">
         <span class="more-tools-caption">CHANNEL SETUP</span>
-        <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
+
         <button class="tool" id="addBus" title="Use a universal receiving channel" hidden>+ Bus</button>
         <button class="tool" id="addFx" title="Use a universal channel with FX insert" hidden>+ FX Return</button>
         <span class="more-tools-caption">VIEW & SELECTION</span>
@@ -76,7 +76,7 @@
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><button type="button" class="wire-v34-tool" id="addTrack" title="Add audio channel · available in every mixer bank" aria-label="Add audio channel">+ Audio</button><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
@@ -2545,7 +2545,11 @@ function openChannelIdentity(t,anchor){
   dialog.style.setProperty('left',Math.max(8,Math.min(p.width-302,a.left-p.left+a.width/2-148))+'px');
   dialog.style.setProperty('top',Math.max(8,Math.min(p.height-295,a.top-p.top+18))+'px');
  }
- document.getElementById('identityName').focus?.();
+ const renameInput=document.getElementById('identityName');
+ renameInput.focus?.();
+ // A rename should replace the existing title immediately, not append to it.
+ // This is the actual editor input, not a temporary overlay or fake label.
+ renameInput.select?.();
 }
 function applyChannelIdentity(){
  const t=tracks.concat(master).find(x=>x.id===identityTrackId);
