@@ -14,7 +14,7 @@ from pathlib import Path
 PINNED_SHA = "09022ef0f227ca2a40a0c2f62c619a31395c8dac"
 ARCHIVE_ROUTE = "/preview-prod/"
 OLD_SPRITE = "mute-solo-pfl-56x37.png"
-NEW_SPRITE = "harmonice-thin-flat-v8-57x30.png"
+NEW_SPRITE = "harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
 
 
 def publish(frozen_preview: Path, pages_root: Path) -> Path:
