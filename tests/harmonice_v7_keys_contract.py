@@ -1,6 +1,6 @@
 """Harmonice v9 approved PNG button integration — fast source/asset guard.
 
-Tests one owner, physical PNG, PFL hidden (not deleted), atomic reference tap
+Tests one owner, physical PNG, PFL only in SOF (not main), atomic reference tap
 transactions and native fail-closed behavior. This is NOT hardware PCM proof.
 """
 from pathlib import Path
@@ -54,6 +54,30 @@ class HarmoniceV7KeysTests(unittest.TestCase):
         self.assertIn("'primary MAIN unchanged", HTML)
         self.assertIn("if(t.kind!=='master')code+='<button", HTML)
         self.assertIn("const next=sends.length?(allPost?'split':'send')", HTML)\n        self.assertIn("data-tap-visual", HTML)\n        self.assertIn("tapVisual=nativeTapUnavailable?'idle'", HTML)\n        self.assertIn("parallelSends.length===0?(tapMode==='split'?'pre':'idle')", HTML)\n        self.assertIn("tapMode==='mixed'?'mixed'", HTML)\n        self.assertIn('data-tap-applicable="', HTML)
+
+    def test_approved_pfl_fontmatched_png_and_sof_scope(self):
+        pfl = "harmonice-thin-flat-v9-pfl-font-matched-57x30.png"
+        png = (OWNER / pfl).read_bytes()
+        self.assertEqual(png[:8], b"\\x89PNG\\r\\n\\x1a\\n")
+        self.assertEqual(struct.unpack(">II", png[16:24]), (114, 30))
+        self.assertEqual(png[25], 6, "PFL must retain the approved true RGBA transparency")
+        self.assertEqual(hashlib.sha256(png).hexdigest(),
+            "1ede18534fa678461ebcb1a100a61170700d75048b11607600cf09d9de8872fd",
+            "PFL-ON glyph and alpha must stay byte-for-byte user-approved")
+        self.assertIn("pfl_sprite='" + pfl + "'", BUILD)
+        self.assertIn("for name in (*special,sprite,pfl_sprite):", BUILD)
+        self.assertIn('background-image:url("' + pfl + '")', CSS)
+        self.assertIn("background-size:200% 100%", CSS)
+        self.assertIn('[data-hw-kind="pfl"][aria-pressed="true"]', CSS)
+        self.assertIn('[data-hw-kind="pfl"][aria-pressed="false"]::before', CSS)
+        self.assertIn("const sofPfl=sofEnabled&&t.kind==='audio'", HTML)
+        self.assertIn("const hasTap=t.kind!=='master'&&!sofEnabled", HTML)
+        self.assertIn('if(sofPfl)code+=', HTML)
+        self.assertIn('data-action="cue"', HTML)
+        self.assertIn("t.cue=!t.cue", HTML)
+        self.assertIn("if(!sofEnabled){tracks.forEach(channel=>{channel.cue=false;});master.cue=false;}", HTML)
+        self.assertIn("PFL requires a separate MONITOR L/R pair", BRIDGE)
+        self.assertIn("if(!sofEnabled||t.kind!=='audio'||window.__JUCE__?.backend)", HTML)
 
     def test_native_pcm_never_fakes_prepost_state(self):
         self.assertIn('if(action==="tapMode"){', BRIDGE)
