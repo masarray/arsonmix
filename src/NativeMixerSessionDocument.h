@@ -541,6 +541,7 @@ public:
                 set(e,"to",decimal(s.destination.value));
                 set(e,"gain",s.gain);set(e,"pan",s.pan);
                 set(e,"pre",s.preFader);set(e,"primary",s.primaryOutput);
+                set(e,"enabled",s.enabled);
                 sends.add(e);
             }
             set(ch,"catalogs",juce::var(catalogs));
@@ -711,6 +712,8 @@ public:
                 edge.pan=static_cast<float>(n);
                 if(!strictBool(get(send,"pre"),edge.preFader)||
                    !strictBool(get(send,"primary"),edge.primaryOutput))return false;
+                const auto enabled=get(send,"enabled");
+                if(!enabled.isVoid()&&!strictBool(enabled,edge.enabled))return false;
                 row.sends.push_back(edge);
             }
             entries.push_back(std::move(row));

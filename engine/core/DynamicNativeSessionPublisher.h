@@ -360,6 +360,40 @@ public:
                 return true;
             });
     }
+    bool setParallelSendEnabled(std::uint64_t epoch,std::uint64_t revision,
+                                ChannelId source,ChannelId destination,
+                                bool preFader,bool enabled) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                const bool admitted=std::any_of(active.routing.edges.begin(),
+                    active.routing.edges.end(),[&](const auto& edge){
+                        return edge.from==source&&edge.to==destination&&
+                          edge.preFader==preFader&&!edge.primaryOutput;
+                    });
+                if(!admitted)return false;
+                if(active.graph.channelScheduled(source)&&
+                   !active.graph.setParallelSendEnabled(source,destination,preFader,enabled))
+                    return false;
+                for(auto& edge:active.routing.edges)
+                    if(edge.from==source&&edge.to==destination&&
+                       edge.preFader==preFader&&!edge.primaryOutput)edge.enabled=enabled;
+                for(auto& row:active.routing.channels)if(row.id==source)
+                    for(auto& edge:row.parallelSends)
+                        if(edge.destination==destination&&edge.preFader==preFader)
+                            edge.enabled=enabled;
+                return true;
+            });
+    }
+    bool setWireEnabled(std::uint64_t epoch,std::uint64_t revision,
+                        ChannelId source,std::uint64_t edgeId,bool enabled) noexcept {
+        const auto* routing=acceptedRouting(epoch,revision);
+        if(!routing||!edgeId)return false;
+        for(const auto& edge:routing->edges)
+            if(edge.edgeId==edgeId&&edge.from==source&&!edge.primaryOutput)
+                return setParallelSendEnabled(epoch,revision,source,edge.to,
+                                               edge.preFader,enabled);
+        return false;
+    }
     bool setWireGain(std::uint64_t epoch,std::uint64_t revision,
                      ChannelId source,std::uint64_t edgeId,float gain) noexcept {
         const auto* routing=acceptedRouting(epoch,revision);

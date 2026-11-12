@@ -64,7 +64,7 @@ class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
-        bool pre=false,primary=false;
+        bool pre=false,primary=false,enabled=true;
     };
     struct Lane final {
         ChannelId id{};
@@ -122,6 +122,7 @@ class DynamicPreparedMixerBlock final {
         static_assert(std::atomic<float>::is_always_lock_free,
             "Realtime SEND must never enter a hidden blocking atomic path");
         std::atomic<float> gain{1.f};
+        std::atomic<bool> enabled{true};
         armix::dsp::RealtimeSlew64 applied{};
     };
     // O1: immutable lane roster + one lock-free control target per lane.
@@ -251,6 +252,22 @@ public:
             if(lanes_[edge.destination].id==destination &&
                edge.pre==preFader && !edge.primary) {
                 sendTargets_[e].gain.store(gain,std::memory_order_release);
+                return true;
+            }
+        }
+        return false;
+    }
+    bool setParallelSendEnabled(ChannelId source,ChannelId destination,
+                                bool preFader,bool enabled) noexcept {
+        if(!source.value||!destination.value)return false;
+        const auto found=controlIndex_.find(source.value);
+        if(found==controlIndex_.end())return false;
+        const auto& lane=lanes_[found->second];
+        for(std::size_t e=lane.first;e<lane.last;++e){
+            const auto& edge=edges_[e];
+            if(lanes_[edge.destination].id==destination&&
+               edge.pre==preFader&&!edge.primary){
+                sendTargets_[e].enabled.store(enabled,std::memory_order_release);
                 return true;
             }
         }
@@ -497,8 +514,11 @@ public:
                     (send.pan>0.f?1.f-send.pan:1.f);
                 const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
                     (send.pan<0.f?1.f+send.pan:1.f);
+                if(send.primaryOutput&&!send.enabled){
+                    error={DynamicGraphFault::invalidSendDestination,rows[i].id};return false;
+                }
                 outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
-                                       send.primaryOutput});
+                                       send.primaryOutput,send.enabled});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
@@ -624,7 +644,8 @@ public:
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
             next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
-            next.sendTargets_[e].applied.reset(initial);
+            next.sendTargets_[e].enabled.store(next.edges_[e].enabled,std::memory_order_relaxed);
+            next.sendTargets_[e].applied.reset(next.edges_[e].enabled?initial:0.f);
         }
         // Recycle the CONTROL compiler's verified stable-ID index instead
         // of allocating a second runtime lookup or scanning all channels.
@@ -801,7 +822,8 @@ public:
                 float* const dl=scratch_.data()+receiver.slot*2*block;
                 float* const dr=dl+block;
                 auto& target=sendTargets_[e];
-                const float goal=target.gain.load(std::memory_order_acquire);
+                const float stored=target.gain.load(std::memory_order_acquire);
+                const float goal=target.enabled.load(std::memory_order_acquire)?stored:0.f;
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
@@ -837,7 +859,8 @@ public:
                 float* const dl=scratch_.data()+receiver.slot*2*block;
                 float* const dr=dl+block;
                 auto& target=sendTargets_[e];
-                const float goal=target.gain.load(std::memory_order_acquire);
+                const float stored=target.gain.load(std::memory_order_acquire);
+                const float goal=target.enabled.load(std::memory_order_acquire)?stored:0.f;
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);

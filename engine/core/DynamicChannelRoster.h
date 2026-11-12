@@ -30,6 +30,7 @@ struct ChannelSendRef final {
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
     std::uint64_t edgeId=0; // stable native identity; CONTROL-only assignment
+    bool enabled=true; // independent SEND ON/OFF retains gain/tap/EdgeId
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -131,6 +132,13 @@ public:
         if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
         channels_[it->second].inputGainLinear=gain;
         return true;
+    }
+    bool rememberLiveSendEnabled(ChannelId id,std::uint64_t edgeId,bool enabled) noexcept {
+        const auto it=index_.find(id.value);
+        if(!id.value||!edgeId||it==index_.end())return false;
+        for(auto& edge:channels_[it->second].sends)
+            if(edge.edgeId==edgeId&&!edge.primaryOutput){edge.enabled=enabled;return true;}
+        return false;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
@@ -796,6 +804,7 @@ public:
                    !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
                    !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
                     return false;
+                if(send.primaryOutput&&!send.enabled)return false;
                 primary+=send.primaryOutput;
                 maxEdge=std::max(maxEdge,send.edgeId);
             }
