@@ -530,6 +530,7 @@ public:
             set(ch,"format",static_cast<int>(row.format));
             set(ch,"name",juce::String::fromUTF8(row.name.c_str()));
             set(ch,"gain",row.faderLinear);
+            set(ch,"inputGain",row.inputGainLinear);
             set(ch,"pan",row.pan);set(ch,"mute",row.mute);set(ch,"solo",row.solo);
             juce::Array<juce::var> catalogs,sends;
             for(const auto& c:row.insertCatalogIds)
@@ -679,6 +680,13 @@ public:
             if(!textField(get(ch,"name"),name,96)||
                !real(get(ch,"gain"),n,0.,4.))return false;
             row.name=name.toStdString();row.faderLinear=static_cast<float>(n);
+            // Optional since v1 .smix predates independent input gain.
+            // Absent means unity; malformed/present values fail closed.
+            const auto inputGain=get(ch,"inputGain");
+            if(!inputGain.isVoid()) {
+                if(!real(inputGain,n,0.,16.))return false;
+                row.inputGainLinear=static_cast<float>(n);
+            }
             if(!real(get(ch,"pan"),n,-1.,1.))return false;
             row.pan=static_cast<float>(n);
             if(!strictBool(get(ch,"mute"),row.mute)||
