@@ -7,8 +7,10 @@ Professional or organisational use requires suitable paid licences.
 ArSonMix distributes the ORIGINAL standard cable package AS IS.
 Extra packages VB-CABLE A+B and C+D are NOT included or redistributed.
 
-The optional driver installation needs separate Windows administrator consent
-and a reboot. You may decline and still use ArSonMix with other sources.
+Interactive Setup checks whether the standard driver is already present.
+When missing, Setup opens the vendor installer with Windows administrator
+approval. If a restart is needed, restart Windows to complete driver setup.
+You may decline Windows approval and still use ArSonMix with other sources.
 VB-CABLE installation may change Windows' default playback device.
 ArSonMix never changes the Windows default device programmatically.
 ArSonMix uninstall does NOT remove a shared VB-Audio driver.

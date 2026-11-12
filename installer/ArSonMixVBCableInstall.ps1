@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Explicitly opted-in driver install; no certificate trust-store mutations,
+# Interactive Setup checks for the standard cable before requesting elevation.
+# No certificate trust-store mutations,
 # endpoint default changes, silent UAC bypass or driver uninstall.
 [CmdletBinding()]param(
   [Parameter(Mandatory=$true)][string]$Archive,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256
+  [Parameter(Mandatory=$true)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256,
+  [Parameter(Mandatory=$true)][string]$RestartMarker
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference="Stop"
@@ -19,6 +21,9 @@ function Record([string]$stateName,[string]$reason) {
     rebootRequired=($stateName -eq 'PENDING_REBOOT')} |
       ConvertTo-Json | Set-Content -LiteralPath $temp -Encoding UTF8
   Move-Item -LiteralPath $temp -Destination $statusPath -Force
+  if($stateName -eq 'PENDING_REBOOT'){
+    New-Item -ItemType File -Path $RestartMarker -Force | Out-Null
+  }
 }
 $dir=Join-Path $env:TEMP ("armix-cable-"+[guid]::NewGuid().ToString("N"))
 try {
@@ -53,7 +58,7 @@ try {
     exit 0
   }
   if($all.Count -gt 0){
-    if($present.Count -eq 0 -or @($all | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
+    if($present.Count -eq 0 -or @($present | Where-Object {$_.Status -ne 'OK'}).Count -gt 0){
       Record "REPAIR_REQUIRED" "VB-CABLE installed but missing or unhealthy; inspect Windows Device Manager"
       exit 3
     }
@@ -85,7 +90,7 @@ try {
      $sig.SignerCertificate.Subject -notmatch '(?i)VB[- ]Audio|Vincent\s+Burel|Burel\s+Vincent'){
     throw "VB-Audio Authenticode signature unavailable or invalid"
   }
-  Record "AWAITING_UAC" "Approving vendor driver installation is optional"
+  Record "AWAITING_UAC" "Windows may request approval to install the missing VB-Audio driver"
   # Official reference manual requires the vendor GUI, admin and reboot.
   # No undocumented silent switches and no TrustedPublisher modification.
   $process=Start-Process -FilePath $setups[0].FullName -WorkingDirectory $setups[0].DirectoryName -Verb RunAs -Wait -PassThru

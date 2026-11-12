@@ -51,7 +51,7 @@ try {
     "Test-only installer mechanics fixture" | Set-Content -LiteralPath (Join-Path $stage "README.md")
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
     # Contract fixture, NEVER vendor bytes: /VERYSILENT has the optional
-    # vbcable_driver task unchecked. This proves ordinary repair/upgrade can
+    # vendor step skipped in silent mode. This proves ordinary repair/upgrade can
     # run without administrator UAC or third-party device side effects.
     # Only the production FAT path downloads and SHA-verifies official ZIP.
     [IO.File]::WriteAllBytes((Join-Path $stage "VBCABLE_Driver_Pack45.zip"),
