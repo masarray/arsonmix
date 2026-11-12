@@ -2296,6 +2296,15 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeWireGain(epoch,rev,roster,source,edge,gain);
     }
+    bool setNativeWireEnabled(std::uint64_t epoch,std::uint64_t rev,
+                              std::uint64_t roster,armix::mixer::ChannelId source,
+                              std::uint64_t edge,bool enabled) noexcept {
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeWireEnabled(epoch,rev,roster,source,edge,enabled);
+    }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
         if(independent_.active()||!directFence_.permitted()||
