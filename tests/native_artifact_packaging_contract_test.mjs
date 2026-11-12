@@ -80,7 +80,16 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   assert.match(nativeMain,/withResourceProvider \(assetFor\)/);
   assert.match(generator,/approvedPagesHtmlSha256/);
   assert.match(generator,/authoritativePagesOutput/);
-  assert.match(read('scripts/build_pages.py'),/mute-solo-pfl-56x37\.png/);
+  // The approved PNG button sprite was updated after this historic FAT
+  // assertion. Verify the CURRENT production asset, source ownership and
+  // fail-closed copy path instead of pinning a retired image filename.
+  const pages=read('scripts/build_pages.py');
+  const sprite=pages.match(/sprite='([^']+\.png)'/)?.[1];
+  assert.equal(sprite,'harmonice-thin-flat-v8-57x30.png');
+  assert.ok(readFileSync('site/preview-buttons/assets/'+sprite).byteLength>500);
+  assert.match(pages,/for name in \(\*special,sprite\):/);
+  assert.match(pages,/src=buttons_source\/name/);
+  assert.match(pages,/Approved PNG asset missing:/);
 });
 
 test('independent release gate rejects old self-consistent web hash artifact',()=>{
