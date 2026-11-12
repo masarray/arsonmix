@@ -108,6 +108,7 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-harmony.js
           python tests/native_harmony_assembly_test.py
           node --check site/preview-v2/assets/mixer-native-vocal-throw.js
+          node --check site/preview-v2/assets/mixer-native-sonku.js
           python tests/native_peq_assembly_test.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check

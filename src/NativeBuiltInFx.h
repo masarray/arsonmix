@@ -5,6 +5,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/SonKuSpatialProcessor.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
 #include <cmath>
@@ -75,7 +76,12 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_THROW_HOST_UNAVAILABLE","NATIVE_THROW_DEVICE_CHANGED",
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
         "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Throw state rejected; graph unchanged",
-        prepareNativeBuiltInFx<VocalThrowProcessor>}
+        prepareNativeBuiltInFx<VocalThrowProcessor>},
+    NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
+        "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",
+        "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
+        "NATIVE_SONKU_PREPARE_EXCEPTION","Saved 8D-SonKu state rejected; graph unchanged",
+        prepareNativeBuiltInFx<SonKuSpatialProcessor>}
 };
 
 // Compile-time registration contract: one stable catalog identity per FX,
