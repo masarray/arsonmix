@@ -163,6 +163,16 @@ public:
                 armix::mixer::ProcessingFormat::mono:
                 armix::mixer::ProcessingFormat::stereo;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_INPUT_GAIN") {
+            if(!(number.isDouble() || number.isInt() || number.isInt64()))
+                return bad("INVALID_INPUT_GAIN");
+            const auto n=static_cast<double>(number);
+            const auto* owner=editor_.roster().find(id);
+            if(!owner || owner->role!=Role::input || !std::isfinite(n) ||
+               n< -24. || n>24.)return bad("INVALID_INPUT_GAIN");
+            edit.kind=ChannelEdit::Kind::setInputGain;
+            edit.value=static_cast<float>(std::pow(10.,n/20.));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FADER" || operation=="SET_PAN") {
             if(!(number.isDouble() || number.isInt() || number.isInt64()))
                 return bad("INVALID_CONTROL_VALUE");
@@ -339,7 +349,7 @@ public:
         set(cap,"callbackOwnsChannelIds",false);
         juce::Array<juce::var> operations;
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
-            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
+            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
@@ -358,6 +368,8 @@ public:
             set(channel,"role",role);
             set(channel,"processingFormat",row.format==armix::mixer::ProcessingFormat::stereo?
                 "STEREO":"MONO");
+            if(row.role==Role::input)set(controls,"inputGainDb",row.inputGainLinear>0.f?
+                20.*std::log10(static_cast<double>(row.inputGainLinear)):-144.);
             set(controls,"faderDb",row.faderLinear>0.f?
                 std::max(-60.,20.*std::log10(static_cast<double>(row.faderLinear))):-60.);
             set(controls,"pan",static_cast<double>(row.pan));
