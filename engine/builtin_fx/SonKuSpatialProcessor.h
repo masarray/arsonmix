@@ -37,6 +37,7 @@ public:
     }
     void prepareToPlay(double rate,int) override {
         ready_=core_.prepare(rate);
+        observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
         if(ready_)ready_=core_.setSettings(accepted_);
     }
     void releaseResources() override {ready_=false;}
@@ -45,6 +46,8 @@ public:
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
         consumeRealtimeEdits();
         core_.process(pcm.getWritePointer(0),pcm.getWritePointer(1),pcm.getNumSamples());
+        observedAzimuthDegrees_.store(static_cast<float>(core_.azimuthDegrees()),
+            std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     void consumeRealtimeEdits() noexcept override {
@@ -66,6 +69,9 @@ public:
     }
     armix::sonku::Settings acceptedSettings() const noexcept {return accepted_;}
     bool isReady() const noexcept {return ready_;}
+    float observedAzimuthDegrees() const noexcept {
+        return observedAzimuthDegrees_.load(std::memory_order_relaxed);
+    }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
         return queue_.empty()&&complete_.empty();
@@ -111,6 +117,7 @@ private:
     FxSpsc<Edit,32> queue_{};
     FxSpsc<Completion,32> complete_{};
     armix::sonku::Settings accepted_{};
+    std::atomic<float> observedAzimuthDegrees_{0.f};
     bool ready_=false;
     bool published_=false;
 };

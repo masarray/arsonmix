@@ -60,7 +60,8 @@ public:
         if(!valid(s))return false;
         // Keep phase continuous for live speed/spread adjustments; changing start
         // position while static is an intentional absolute reposition.
-        if(!s.moving || !settings_.moving)
+        if(!s.moving || !settings_.moving ||
+           s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
         settings_=s;
         remaining_=0;
