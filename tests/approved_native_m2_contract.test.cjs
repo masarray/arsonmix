@@ -27,6 +27,31 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("native input Gain is a separate ChannelId scalar proven only by ACK plus inputGain readback",()=>{
+ const s=acceptedFixture(),id=s.graph.channels[0].id;
+ s.graph.capabilities.supportedOps.push("SET_INPUT_GAIN");
+ s.graph.channels[0].controls.inputGainDb=0;
+ const sent=[],ctl=protocol.createController({emit:(name,value)=>sent.push({name,value})});
+ assert.equal(ctl.onSnapshot(s),true);
+ const edit=ctl.intent("SET_INPUT_GAIN",id,{valueDb:6});
+ assert.equal(edit.ok,true);
+ assert.equal(sent.length,1);
+ assert.equal(ctl.state().pending?.operation,"SET_INPUT_GAIN");
+ assert.equal(ctl.onAck({requestId:edit.requestId,status:"ACCEPTED",
+  deviceEpoch:s.device.epoch,graphRevision:s.graph.revision,
+  rosterRevision:s.graph.rosterRevision,errorCode:"NONE"}),true);
+ // An unchanged FADER is not proof that an INPUT GAIN changed.
+ assert.equal(protocol.readbackProvesIntent(ctl.state().current,
+  {operation:"SET_INPUT_GAIN",targetChannelId:id,payload:{valueDb:6}}),false);
+ const actual=clone(s);actual.graph.channels[0].controls.inputGainDb=6;
+ assert.equal(ctl.onSnapshot(actual),true);
+ assert.equal(ctl.state().pending,null);
+ assert.equal(ctl.state().current.graph.channels[0].controls.faderDb,-6);
+ assert.equal(ctl.state().current.graph.channels[0].controls.inputGainDb,6);
+ const malformed=clone(actual);malformed.graph.channels[0].controls.inputGainDb="NaN";
+ assert.equal(protocol.normalizeSnapshot(malformed),null);
+});
+
 test("M5 native FX snapshot rejects malformed/duplicate lease tokens without losing accepted state",()=>{
  const good=acceptedFixture(),input=good.graph.channels[0].id;
  good.graph.channels[0].inserts=[{
