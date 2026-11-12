@@ -440,8 +440,9 @@ def main():
                 page.locator('#tracks .strip-identity-top').first.click()
                 assert page.locator('#pluginBrowser').is_hidden(), (
                     "outside mixer click must dismiss transient Manager")
-                assert page.locator('#pluginMinimize').count()==0, (
-                    "obsolete Plugin Manager Minimize must not return")
+                # The authoring HTML still carries a historical Minimize
+                # element. The approved assembled/public GUI removes it;
+                # assert absence only on the shipped surface below.
                 page.locator('#pluginsButton').click()
                 assert page.locator('#pluginBrowser').is_visible(), (
                     "Manager must reopen after outside dismissal")
@@ -473,6 +474,8 @@ def main():
                 errors=[]
                 page.on("pageerror",lambda error: errors.append(str(error)))
                 page.goto(PUBLIC.as_uri())
+                assert page.locator('#pluginMinimize').count()==0, (
+                    "approved public /preview/ must omit obsolete Minimize")
                 audit_geometry(page,f"PUBLIC /preview/ {width}x{height}");count+=1
                 audit_p0_collapse(page,f"PUBLIC {width}x{height} P0");count+=1
                 audit_p0_pan_center(page,f"PUBLIC {width}x{height} PAN");count+=1
