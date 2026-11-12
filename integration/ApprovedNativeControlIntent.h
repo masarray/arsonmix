@@ -73,6 +73,51 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
     // A true ChannelId processing M/ST edit is structural PCM, never an
     // M4 ordinal patch. Check both independent producer and public contracts
     // before passing device/graph/roster-fenced native identities.
+    // GAIN is a REAL pre-insert PCM scalar; never alias SET_FADER, the ASIO
+    // microphone preamp or an unadmitted browser-only `trim` variable.
+    if(op=="SET_INPUT_GAIN") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"SET_INPUT_GAIN")||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_SET_INPUT_GAIN"))
+            return reject("NATIVE_INPUT_GAIN_NOT_ADMITTED");
+        juce::var owner,producer;
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())owner=row;
+        for(const auto& row:*nativeRows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())producer=row;
+        if(!owner.isObject()||!producer.isObject()||
+           owner.getProperty("role","").toString()!="INPUT" ||
+           producer.getProperty("role","").toString()!="INPUT")
+            return reject("INPUT_GAIN_SOURCE_NOT_ADMITTED");
+        double acceptedDb=0.,nativeGain=0.,requestedDb=0.;
+        const auto ownerControls=owner.getProperty("controls",{});
+        if(!ownerControls.isObject()||
+           !nativeV8Number(ownerControls.getProperty("inputGainDb",{}),acceptedDb)||
+           !nativeV8Number(producer.getProperty("inputGain",{}),nativeGain)||
+           nativeGain<0.||nativeGain>16.)
+            return reject("INPUT_GAIN_READBACK_UNAVAILABLE");
+        const double nativeDb=nativeGain>0.?20.*std::log10(nativeGain):-144.;
+        if(std::abs(nativeDb-acceptedDb)>0.12)
+            return reject("STALE_INPUT_GAIN_READBACK");
+        const auto payload=publicIntent.getProperty("payload",{});
+        if(!payload.isObject()||
+           !nativeV8Number(payload.getProperty("valueDb",{}),requestedDb)||
+           requestedDb< -24.||requestedDb>24.)
+            return reject("INVALID_INPUT_GAIN_VALUE");
+        const double linear=std::pow(10.,requestedDb/20.);
+        if(!std::isfinite(linear)||linear>16.)return reject("INPUT_GAIN_UNREPRESENTABLE");
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("gain",linear);
+        auto translated=std::make_unique<juce::DynamicObject>();
+        translated->setProperty("requestId",request);
+        translated->setProperty("deviceEpoch",epoch);
+        translated->setProperty("baseGraphRevision",revision);
+        translated->setProperty("baseRosterRevision",roster);
+        translated->setProperty("targetChannelId",ids);
+        translated->setProperty("operation","NATIVE_SET_INPUT_GAIN");
+        translated->setProperty("payload",juce::var(args.release()));
+        return {juce::var(translated.release()),{}};
+    }
     if(op=="SET_PROCESSING_FORMAT") {
         if(!approvedHasOperation(caps.getProperty("supportedOps",{}),
                                  "SET_PROCESSING_FORMAT") ||
@@ -504,6 +549,14 @@ inline bool executeApprovedNativeControl(Engine& engine,
             if(nativeError&&!result.accepted)*nativeError=result.error;
             return result.accepted&&result.error&&result.error[0]==0;
         }else return false;
+    }
+    if(operation=="NATIVE_SET_INPUT_GAIN") {
+        double gain=0.;
+        if(!nativeV8Number(payload.getProperty("gain",{}),gain)||
+           gain<0.f||gain>16.f)return false;
+        if constexpr(requires(Engine& e){e.setNativeInputGain(epoch,revision,channel,0.f);})
+            return engine.setNativeInputGain(epoch,revision,channel,static_cast<float>(gain));
+        return false;
     }
     if(operation=="NATIVE_SET_WIRE_GAIN") {
         std::uint64_t edge=0;double gain=0.;
