@@ -58,7 +58,7 @@ class HarmoniceV7KeysTests(unittest.TestCase):
     def test_approved_pfl_fontmatched_png_and_sof_scope(self):
         pfl = "harmonice-thin-flat-v9-pfl-font-matched-57x30.png"
         png = (OWNER / pfl).read_bytes()
-        self.assertEqual(png[:8], b"\\x89PNG\\r\\n\\x1a\\n")
+        self.assertEqual(png[:8], bytes.fromhex("89504e470d0a1a0a"))
         self.assertEqual(struct.unpack(">II", png[16:24]), (114, 30))
         self.assertEqual(png[25], 6, "PFL must retain the approved true RGBA transparency")
         self.assertEqual(hashlib.sha256(png).hexdigest(),
