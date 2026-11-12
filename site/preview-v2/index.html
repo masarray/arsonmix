@@ -39,7 +39,7 @@
     <span class="sep"></span>
     <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
     <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
-    <button class="tool bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
+    <button class="tool bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button><button type="button" class="tool" id="addTrack" title="Add an audio channel in the current mixer" aria-label="Add audio channel">+ Audio</button>
     <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
     <span class="sep"></span>
     <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
@@ -76,7 +76,7 @@
     </details>
   </div>
   <main class="console-pane">
-    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><button type="button" class="wire-v34-tool" id="addTrack" title="Add audio channel · available in every mixer bank" aria-label="Add audio channel">+ Audio</button><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
+    <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
     <section class="console-body collapsed-send wire-routing-v13 wire-routing-v15" data-density="comfort" aria-label="Live mixing console">
       <aside class="section-rail" aria-label="Mixer section icons">
         <div class="rail-cell identity" title="Channel identity">CH</div>
