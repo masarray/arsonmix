@@ -146,29 +146,26 @@ def verify_browser(dist):
             assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').is_visible()
             assert page.locator('#tracks .strip[data-id="3"] .wire-node-in').is_visible()
             if width==1680:
-                # Real reference WIRE graph, no fabricated visual states:
-                # zero sends = neutral POST, one POST send = dim-green lit,
-                # conflicting send taps = MIX, atomic retarget all = POST.
+                # Test through the actual operator WIRE gestures, not private
+                # IIFE functions. This is the same browser path as production.
                 zero=page.locator('#tracks .strip[data-id="1"] [data-hw-kind="tap"]')
-                zero.click()  # PRE default -> neutral POST default
+                zero.click()  # PRE future default -> POST idle
                 assert zero.get_attribute('data-tap-visual')=='idle'
-                assert page.evaluate("""() => wireGraphCommit([{
-                    type:'CONNECT',sourceId:1,destId:3,mode:'send'
-                }])"""),"POST WIRE connect failed"
-                page.evaluate("render()")
-                active=page.locator('#tracks .strip[data-id="1"] [data-hw-kind="tap"]')
-                assert active.get_attribute('data-tap-visual')=='post',"A real POST SEND must illuminate"
-                assert page.evaluate("""() => wireGraphCommit([{
-                    type:'CONNECT',sourceId:1,destId:4,mode:'split'
-                }])"""),"PRE WIRE connect failed"
-                page.evaluate("render()")
+                body=page.locator('.console-body')
+                if 'collapsed-send' in (body.get_attribute('class') or ''):
+                    page.locator('.section-rail [data-section="send"]').click()
+                page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
+                page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
+                assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="post"]').count()==1
+                page.locator('#wireConfigToggle').click()
+                page.locator('#wireMode').select_option('split')
+                page.locator('#wireConfigClose').click()
+                page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
+                page.locator('#tracks .strip[data-id="4"] .wire-node-in').click()
                 mixed=page.locator('#tracks .strip[data-id="1"] [data-hw-kind="tap"]')
-                assert mixed.get_attribute('data-tap-visual')=='mixed',"Mixed sends must not lie as POST"
-                assert mixed.get_attribute('aria-pressed')=='mixed'
+                assert mixed.get_attribute('data-tap-visual')=='mixed'
                 mixed.click()
                 assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="post"]').count()==1
-                assert page.evaluate("""() => wireEdges.filter(e=>
-                    e.enabled&&e.sourceId===1&&e.kind==='send').every(e=>e.mode==='send')""")
                 page.screenshot(path="png-buttons-reconciled-wire-1680.png")
             assert not errors,(width,errors)
             page.close()

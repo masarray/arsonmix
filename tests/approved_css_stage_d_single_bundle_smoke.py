@@ -54,22 +54,26 @@ async def main():
                 assert await page.locator("#master .mx-hw-row .mx-hw-key").count()==2
                 assert await page.locator("#clearCue").is_hidden(), "PFL toolbar must stay hidden"
                 if size[0]==1680:
-                    # Piggyback the existing browser session: no additional CI job.
-                    assert await page.evaluate("""() => wireGraphCommit([{
-                        type:'CONNECT',sourceId:1,destId:3,mode:'send'
-                    }])"""), "A real POST parallel send must connect"
-                    await page.evaluate("render()")
-                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").get_attribute("data-tap-visual")=="post"
-                    assert await page.evaluate("""() => wireGraphCommit([{
-                        type:'CONNECT',sourceId:1,destId:4,mode:'split'
-                    }])"""), "A real PRE parallel send must connect"
-                    await page.evaluate("render()")
+                    # UI-only regression: no private closure APIs or test
+                    # injection. A real source OUT and destination IN must
+                    # determine the physical POST/MIX artwork.
+                    body=page.locator(".console-body")
+                    if "collapsed-send" in (await body.get_attribute("class") or ""):
+                        await page.locator('.section-rail [data-section="send"]').click()
+                    await page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
+                    await page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
                     tap=page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']")
-                    assert await tap.get_attribute("data-tap-visual")=="mixed", "Do not mislabel mixed send taps"
+                    assert await tap.get_attribute("data-tap-visual")=="post", "Real POST send must illuminate"
+                    await page.locator("#wireConfigToggle").click()
+                    await page.locator("#wireMode").select_option("split")
+                    await page.locator("#wireConfigClose").click()
+                    await page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
+                    await page.locator('#tracks .strip[data-id="4"] .wire-node-in').click()
+                    tap=page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']")
+                    assert await tap.get_attribute("data-tap-visual")=="mixed", "Mixed sends must have honest MIX artwork"
+                    assert await tap.get_attribute("aria-pressed")=="mixed"
                     await tap.click()
-                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").get_attribute("data-tap-visual")=="post"
-                    assert await page.evaluate("""() => wireEdges.filter(e=>
-                        e.enabled&&e.sourceId===1&&e.kind==='send').every(e=>e.mode==='send')""")
+                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").get_attribute("data-tap-visual")=="post", "MIX click must retarget sends to POST"
                 assert "arsonmix-approved-runtime.css?sha=" in stats["links"][0]
                 assert len(css_requests) == 1, (size,css_requests)
                 assert not errors, errors
