@@ -434,19 +434,30 @@ def main():
                 count+=1
                 page.locator('#pluginsButton').click()
                 assert page.locator('#pluginBrowser').is_visible(), "modeless manager absent"
-                # Mouse can interact with live strip while plugin window is open.
+                # The modeless manager never blocks mixer interactions. New
+                # shared transient utility policy dismisses on an outside
+                # mixer click, without stealing selection or track control.
                 page.locator('#tracks .strip-identity-top').first.click()
-                assert page.locator('#pluginBrowser').is_visible(), "manager incorrectly modal"
-                page.locator('#pluginMinimize').click()
-                assert 'minimized' in page.locator('#pluginBrowser').get_attribute('class')
-                page.locator('#pluginMinimize').click()
+                assert page.locator('#pluginBrowser').is_hidden(), (
+                    "outside mixer click must dismiss transient Manager")
+                assert page.locator('#pluginMinimize').count()==0, (
+                    "obsolete Plugin Manager Minimize must not return")
+                page.locator('#pluginsButton').click()
+                assert page.locator('#pluginBrowser').is_visible(), (
+                    "Manager must reopen after outside dismissal")
                 count+=1
-                # FX quick select does NOT terminate the modeless manager.
+                # Add FX is a different transient utility: it supersedes the
+                # Manager after an actual mixer click, without modal blocking.
                 page.locator('#tracks .fx-pick.empty').first.click()
                 assert page.locator('#fastPicker').is_visible(), "Add FX quick picker absent"
-                assert page.locator('#pluginBrowser').is_visible(), "Add FX closed manager"
+                assert page.locator('#pluginBrowser').is_hidden(), (
+                    "outside Add FX click must dismiss previous Manager")
                 page.locator('#fastClose').click()
+                page.locator('#pluginsButton').click()
+                assert page.locator('#pluginBrowser').is_visible(), (
+                    "Manager cannot reopen after quick FX close")
                 page.locator('#pluginClose').click()
+                assert page.locator('#pluginBrowser').is_hidden()
                 count+=1
                 # The last partially populated page must NOT become a giant bus fader.
                 page.locator('#bankNext').click()
@@ -475,9 +486,13 @@ def main():
                 assert page.locator('#pluginBrowser').is_visible()
                 page.locator('#tracks .fx-pick.empty').first.click()
                 assert page.locator('#fastPicker').is_visible()
-                assert page.locator('#pluginBrowser').is_visible()
+                assert page.locator('#pluginBrowser').is_hidden(), (
+                    "public preview outside-click must dismiss prior Manager")
                 page.locator('#fastClose').click()
+                page.locator('#pluginsButton').click()
+                assert page.locator('#pluginBrowser').is_visible()
                 page.locator('#pluginClose').click()
+                assert page.locator('#pluginBrowser').is_hidden()
                 page.locator('#bankNext').click()
                 audit_geometry(page,f"PUBLIC bank paging {width}x{height}");count+=1
                 assert not errors, f"PUBLIC {width}x{height}: {errors}"
