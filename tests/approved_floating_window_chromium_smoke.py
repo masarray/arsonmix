@@ -69,22 +69,42 @@ def run(page,width,height):
     page.locator("#bankSelect").select_option("0")
     page.wait_for_selector("#tracks .strip[data-id='1']")
     # Real operator command path, not synthetic DOM positioning.
+    page.locator("#playerToggle").click()
+    player=bounds(page,"#arsonPlayer")
+    player_close=bounds(page,"#playerClose")
+    assert 0 <= player["x"]+player["width"]-player_close["x"]-player_close["width"] <= 16,(
+        "Player Close must align with right edge",player,player_close)
+    page.locator("#playerClose").click()
     open_wire(page,"routes")
     move_panel(page,"#wireWorkspace","#wireWorkspace .wire-ws-head")
     # Changing from Routes to wider Matrix must not strand the window.
     open_wire(page,"matrix")
     box=bounds(page,"#wireWorkspace")
     assert box["x"]>=7 and box["x"]+box["width"]<=width+1,("matrix viewport",box)
+    matrix_close=page.locator("#wireWsClose")
+    icon=matrix_close.evaluate("e=>getComputedStyle(e,'::after').backgroundImage")
+    assert "M6.4,19L5,17.6" in icon,icon
+    matrix_close.hover()
+    assert "rgb(99, 56, 64)" in matrix_close.evaluate("e=>getComputedStyle(e).backgroundImage")
+    page.mouse.down()
+    pressed=matrix_close.evaluate("""e=>({
+        icon:getComputedStyle(e,'::after').backgroundImage,
+        height:getComputedStyle(e,'::after').height,
+        face:getComputedStyle(e).backgroundImage
+    })""")
+    assert pressed["icon"]==icon and pressed["height"]=="22px",pressed
+    assert "rgb(239, 62, 80)" in pressed["face"],pressed
+    page.mouse.up()
     open_wire(page,"config")
     assert page.locator("#wireWorkspace").is_hidden()
     move_panel(page,"#wireConfigWindow","#wireConfigWindow .wire-config-head")
     close=page.locator("#wireConfigClose")
     geometry=close.evaluate("""e=>({
       width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,
-      symbol:getComputedStyle(e,'::after').content
+      symbol:getComputedStyle(e,'::after').backgroundImage
     })""")
     assert geometry["width"]==24 and geometry["height"]==24,geometry
-    assert "×" in geometry["symbol"],geometry
+    assert "M6.4,19L5,17.6" in geometry["symbol"],geometry
     close.click()
     assert page.locator("#wireConfigWindow").is_hidden()
     # Quick FX entry: existing source slot activation must still be clickable.

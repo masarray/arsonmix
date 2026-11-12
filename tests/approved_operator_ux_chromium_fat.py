@@ -42,27 +42,31 @@ def metrics(page):
 def assert_key(page, selector):
     button=page.locator(selector)
     # Every modeless window uses the ONE 24px Close chrome owner; historical
-    # SVG and text markup may differ but the visible 12px CSS X must not.
+    # SVG and text markup may differ but the visible shared SVG must not.
     base=button.evaluate("""e=>{
       const s=getComputedStyle(e),x=getComputedStyle(e,'::after');
       const r=e.getBoundingClientRect();
       return {width:r.width,height:r.height,radius:s.borderRadius,
-        iconWidth:x.width,icon:x.backgroundImage,glyph:x.content,
+        iconHeight:x.height,icon:x.backgroundImage,glyph:x.content,
         atRest:s.backgroundImage};
     }""")
     assert base["width"]==24 and base["height"]==24,(selector,base)
-    # RC uses a visible compositor-stable text X, not the old gradient mask.
-    assert base["iconWidth"]=="12px" and base["icon"]=="none" and "×" in base["glyph"],(selector,base)
+    assert "M6.4,19L5,17.6" in base["icon"],(selector,base)
     box=button.bounding_box();assert box
     page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
+    hover=button.evaluate("e=>getComputedStyle(e).backgroundImage")
+    assert "rgb(99, 56, 64)" in hover,(selector,hover)
     page.mouse.down()
     pressed=button.evaluate("""e=>({
        active:e.matches(':active'),fill:getComputedStyle(e).backgroundImage,
+       icon:getComputedStyle(e,'::after').backgroundImage,
+       iconHeight:getComputedStyle(e,'::after').height,
        width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height
     })""")
     print("UX_CLOSE_PRESSED",selector,pressed,flush=True)
-    assert pressed["active"] and "rgb(204, 71, 83)" in pressed["fill"],(
+    assert pressed["active"] and "rgb(239, 62, 80)" in pressed["fill"],(
         selector,"pressed Close is not visually red",pressed)
+    assert pressed["icon"]==base["icon"] and pressed["iconHeight"]==base["iconHeight"],(selector,pressed)
     assert (pressed["width"],pressed["height"])==(24,24),(
         selector,"Close reflowed on press",pressed)
     page.mouse.up()
@@ -178,7 +182,7 @@ def inspect_page(page, width, height, scale, label):
             image:x.backgroundImage,glyph:x.content};
         }""")
         assert info["width"]==info["height"]=="24px",(id,info)
-        assert info["icon"]=="12px" and info["image"]=="none" and "×" in info["glyph"],(id,info)
+        assert "M6.4,19L5,17.6" in info["image"],(id,info)
     page.screenshot(path=str(ROOT / f'operator-ux-{width}x{height}-{scale}.png'),
                     full_page=True)
     return m
