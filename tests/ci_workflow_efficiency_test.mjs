@@ -236,6 +236,9 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(pages, /git ls-remote origin refs\/heads\/main/);
   assert.match(pages, /fetch-depth: 2/);
+  assert.match(pages,/git merge-base --is-ancestor "\$SOURCE_SHA" "\$CURRENT_MAIN"/);
+  assert.match(pages,/git diff --quiet "\$SOURCE_SHA" "\$CURRENT_MAIN" -- \. ':\(exclude\)docs\/\*\*' ':\(exclude\)README\.md'/);
+  assert.match(pages,/Reusing qualified Pages SHA/);
   // The old first-parent only diff gate was unsafe: a docs/CI commit after
   // the GUI commit could suppress the final qualified /preview/ deployment.
   assert.doesNotMatch(pages, /git diff --quiet HEAD\^ HEAD --/);
