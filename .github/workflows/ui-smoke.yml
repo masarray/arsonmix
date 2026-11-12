@@ -132,7 +132,7 @@ jobs:
   floating-window-preview:
     name: Modeless floating cards actual Chromium interactions (2 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/floating-window-ux-unification-20261111' || github.head_ref == 'fix/rc-ux-audio-first-run-20261112') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/floating-window-ux-unification-20261111' || github.head_ref == 'fix/rc-ux-audio-first-run-20261112' || startsWith(github.head_ref, 'fix/gui-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

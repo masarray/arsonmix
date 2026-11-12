@@ -283,3 +283,37 @@
  document.addEventListener('pointerdown',e=>dismissOutside(e.target),true);
  document.addEventListener('focusin',e=>dismissOutside(e.target),true);
 })();
+
+
+/* Operator-first Add Audio and immediate replace-name, shared by public
+   /preview/ and the native-composed WebView. Keep immutable HTML/CSS/PNG
+   ownership unchanged: MOVE the one existing bound button, never clone it. */
+(()=>{
+  'use strict';
+  const add=document.getElementById('addTrack');
+  const bankNext=document.getElementById('bankNext');
+  if(add && bankNext && add.closest('#moreTools')){
+    add.type='button';
+    add.setAttribute('aria-label','Add audio channel');
+    add.title='Add audio channel · available from every mixer bank';
+    bankNext.insertAdjacentElement('afterend',add);
+  }
+  // The native composer already preselects on open. The original public
+  // preview uses the same identity editor but only focused its text field.
+  // Delegated events run AFTER the existing editor-open handlers and do not
+  // change mixer state, channel IDs, routes, or the audio/FX graph.
+  const body=document.querySelector('.app .console-body');
+  const selectName=target=>{
+    if(!target?.closest?.('.strip-identity-top,.footer-label .name'))return;
+    const panel=document.getElementById('channelIdentity');
+    const input=document.getElementById('identityName');
+    if(!panel || panel.hidden || !input)return;
+    if(input.selectionStart===0 && input.selectionEnd===input.value.length)return;
+    input.focus({preventScroll:true});
+    input.select();
+  };
+  body?.addEventListener('dblclick',e=>selectName(e.target));
+  body?.addEventListener('keydown',e=>{
+    if(e.key==='F2' || e.key==='Enter')selectName(e.target);
+  });
+})();

@@ -14,6 +14,22 @@ const closeCss=read('site/preview-v2/assets/mixer-contextual-buttons.css');
 const rackCss=read('site/preview-v2/assets/mixer-fx-rack.css');
 const controller=read('site/preview-v2/assets/mixer-contextual-buttons.js');
 
+test('operator Add Audio and rename preselection share original GUI/native owners',()=>{
+  const html=read('site/preview-v2/index.html');
+  assert.equal((html.match(/id="addTrack"/g)||[]).length,1);
+  assert.match(html,/<details class="more-tools"[\s\S]*?id="addTrack"/);
+  assert.match(controller,/add\.closest\('#moreTools'\)/);
+  assert.match(controller,/bankNext\.insertAdjacentElement\('afterend',add\)/);
+  assert.doesNotMatch(controller,/add\.cloneNode\(/);
+  assert.match(controller,/body\?\.addEventListener\('dblclick'/);
+  assert.match(controller,/input\.focus\(\{preventScroll:true\}\)/);
+  assert.match(controller,/input\.select\(\)/);
+  assert.match(html,/if\(e\.key==='Enter'\)\{e\.preventDefault\(\);applyChannelIdentity\(\);\}/);
+  const composer=read('scripts/compose_operator_ux.py');
+  assert.match(composer,/name\.focus\(\{preventScroll:true\}\);/);
+  assert.match(composer,/name\.select\(\);/);
+});
+
 test('built-in FX preset store works with verified offline logical workspace',()=>{
   assert.match(host,/logicalPreset=fxRequest\.valid&&fxRequest\.unbound/);
   assert.match(host,/logicalFxTarget\(args,logicalChannel,logicalSlot\)/);
