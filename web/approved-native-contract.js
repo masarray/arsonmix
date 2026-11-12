@@ -103,6 +103,7 @@
       if (ch.controls !== undefined &&
           (!object(ch.controls) ||
             (ch.controls.faderDb !== undefined && !Number.isFinite(ch.controls.faderDb)) ||
+            (ch.controls.inputGainDb !== undefined && !Number.isFinite(ch.controls.inputGainDb)) ||
             (ch.controls.pan !== undefined && !Number.isFinite(ch.controls.pan)) ||
             (ch.controls.mute !== undefined && !isBool(ch.controls.mute)) ||
             (ch.controls.solo !== undefined && !isBool(ch.controls.solo)))) return null;
@@ -254,6 +255,10 @@
     const {operation,targetChannelId,payload} = pending;
     const ch = next.graph.channels.find(c=>c.id===targetChannelId);
     if (!ch) return false;
+    if (operation === "SET_INPUT_GAIN")
+      return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
+        Number.isFinite(ch.controls?.inputGainDb) &&
+        Math.abs(ch.controls.inputGainDb-payload.valueDb)<=0.12;
     if (operation === "SET_FADER")
       return Number.isFinite(payload.valueDb) &&
         Math.abs(ch.controls.faderDb-payload.valueDb)<=0.11;
@@ -436,6 +441,10 @@
       case "SET_PROCESSING_FORMAT":
         return !!row && ["MONO","STEREO"].includes(v.format) &&
           row.processingFormat===v.format;
+      case "SET_INPUT_GAIN":
+        return !!row && row.role==="INPUT" && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.inputGainDb) &&
+          Math.abs(row.controls.inputGainDb-v.valueDb)<0.12;
       case "SET_FADER":
         return !!row && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.faderDb) &&
