@@ -129,8 +129,8 @@ def reconstruct():
     # cascade fixture is immutable. Require strict lossless inverse CSS patch
     # against the identical modern HTML instead of a stale whole-page FNV.
     restored=original_html
-    restored=restored.replace('<style></style>\\n','',2)
-    restored=restored.replace('<style>'+moved+'</style>\\n','',1)
+    restored=restored.replace('<style></style>'+chr(10),'',2)
+    restored=restored.replace('<style>'+moved+'</style>'+chr(10),'',1)
     restored=restored.replace(d["oldHref"],d["newHref"],1)
     assert restored==html,"V28 CSS roundtrip touched modern DOM, JS or event handlers"
     assert len(re.findall(r"<style>",original_html))==3
