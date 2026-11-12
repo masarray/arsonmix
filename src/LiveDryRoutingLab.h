@@ -2143,6 +2143,24 @@ public:
         nativeControlDirty_=true;
         return true;
     }
+    // Real ChannelId pre-insert digital input trim. Safe 64-sample DSP ramp;
+    // no new graph, callback, plugin instance or WIRE edit.
+    bool setNativeInputGain(std::uint64_t epochValue,std::uint64_t revision,
+                            armix::mixer::ChannelId id,float gain) noexcept {
+        if(!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epochValue||epochValue!=epoch()||
+           revision!=nativeAccepted_.pcmRevision||
+           !std::isfinite(gain)||gain<0.f||gain>16.f)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
+        if(!nativePublisher_.setChannelInputGain(epochValue,revision,id,gain))return false;
+        if(!nativeAccepted_.graph.roster.rememberLiveInputGain(id,gain)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false;
+        }
+        nativeControlDirty_=true;
+        return true;
+    }
     bool setNativeInputMuteSolo(std::uint64_t epochValue,std::uint64_t revision,
                                 armix::mixer::ChannelId id,
                                 bool mute,bool solo) noexcept {
@@ -2577,6 +2595,7 @@ public:
                              "NATIVE_SET_WIRE_GAIN",
                              "NATIVE_SET_PROCESSING_FORMAT",
                              "NATIVE_SET_CHANNEL_MIX",
+                             "NATIVE_SET_INPUT_GAIN",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
@@ -2609,6 +2628,7 @@ public:
                 ?"STEREO":"MONO");
             if(const auto* accepted=nativeAccepted_.graph.roster.find(ch.id)) {
                 row->setProperty("fader",static_cast<double>(accepted->faderLinear));
+                row->setProperty("inputGain",static_cast<double>(accepted->inputGainLinear));
                 row->setProperty("pan",static_cast<double>(accepted->pan));
                 row->setProperty("mute",accepted->mute);
                 row->setProperty("solo",accepted->solo);
