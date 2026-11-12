@@ -1,3 +1,5 @@
+> **OWNER-APPROVED 2026-11-13 CONTEXTUAL-CONSOLE ARD ADDENDUM:** For GAIN/FX RACK, SOF, post-insert PRE_FADER (distinct from PRE_FX), per-send EdgeId/tap/level/ON and PCM/ACK requirements, read [Contextual Console ARD](ARD_CONTEXTUAL_CONSOLE_GAIN_SOF_20261113.md) and [PRD](PRD_CONTEXTUAL_CONSOLE_GAIN_SOF_20261113.md) first. Those scoped requirements override conflicting historical sections below; single callback, real PCM, existing WIRE/device/VST3 safety remain binding. Specification **does not** establish native qualification.
+
 > **FINAL 2026-11-04 GUI REPLACEMENT:** All GUI authority in this historical document is superseded by **https://masarray.github.io/arsonmix/preview/** (the only approved GUI, including its approved PNG button variant). Bare `/preview-v2/` is rejected. Only one public preview (redirect old URLs), one JUCE GUI, one native PCM graph. Read [single handoff](workstreams/HANDOFF_APPROVED_PREVIEW_V2_NATIVE_20261104.md) and root AGENTS.md. Older native DSP/safety/ABI/Show/FAT constraints remain valid. GUI work #389, engine #266/#387, FAT #270.
 
 # ArSonMix ARD v5.2 — Universal Realtime Mixer Graph + Operator-First Console
