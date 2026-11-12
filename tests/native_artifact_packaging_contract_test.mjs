@@ -84,7 +84,7 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   // long-retired MUTE/SOLO/PFL asset name in the native installer gate.
   // Native CMake must embed the same approved sprite selected by Pages CSS.
   const builder=read('scripts/build_pages.py');
-  const sprite=builder.match(/^sprite='([^']+\\.png)'$/m)?.[1];
+  const sprite=builder.match(/^sprite='([^']+\.png)'$/m)?.[1];
   assert.ok(sprite?.startsWith('harmonice-thin-flat-'), 'approved PNG atlas missing from Pages');
   assert.ok(read('site/preview-buttons/assets/mixer-control-keys.css')
     .includes('background-image:url("'+sprite+'")'),
