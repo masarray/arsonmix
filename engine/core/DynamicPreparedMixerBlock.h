@@ -98,7 +98,8 @@ class DynamicPreparedMixerBlock final {
     }
     struct ChannelTarget final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
-        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{}; // AUDIO only
+        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{}; // AUDIO only
+        std::atomic<float> inputGain{1.f}; // CONTROL writes, AUDIO reads
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -170,6 +171,16 @@ public:
         // with this fader/PAN target, never four separately loaded controls.
         target.state.store(Word::encode(gains.left,gains.right,old.mute,old.solo),
                            std::memory_order_release);
+        return true;
+    }
+    // CONTROL only: input DIGITAL trim, before FX, separate from FADER/PAN.
+    // 64-sample dezipper is owned by the existing native callback.
+    bool setChannelInputGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end() || lanes_[found->second].role!=ChannelRole::input)
+            return false;
+        channelTargets_[found->second].inputGain.store(gain,std::memory_order_release);
         return true;
     }
     // Canonical physical-pin validation shared by structural preflight and
@@ -390,6 +401,9 @@ public:
             const auto& row=rows[i];
             if(row.id.value==0 || !std::isfinite(row.faderLinear) ||
                row.faderLinear<0.f || row.faderLinear>4.f ||
+               !std::isfinite(row.inputGainLinear) || row.inputGainLinear<0.f ||
+               row.inputGainLinear>16.f ||
+               (row.role!=ChannelRole::input && row.inputGainLinear!=1.f) ||
                !std::isfinite(row.pan) || row.pan< -1.f || row.pan>1.f ||
                (row.format!=ProcessingFormat::mono &&
                 row.format!=ProcessingFormat::stereo) ||
@@ -595,6 +609,8 @@ public:
             target.appliedL.reset(next.lanes_[i].gainL);
             target.appliedR.reset(next.lanes_[i].gainR);
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
+            target.inputGain.store(rows[i].inputGainLinear,std::memory_order_relaxed);
+            target.inputApplied.reset(rows[i].inputGainLinear);
         }
         next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalAppliedTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
@@ -761,6 +777,16 @@ public:
                 for(int f=0;f<frames;++f){
                     const float v=.5f*(l[f]+r[f]);l[f]=v;r[f]=v;
                 }
+            // Digital input GAIN belongs *before* all channel FX and does
+            // not modify either PRE or POST send topology. One bounded pass
+            // over existing scratch; no heap, lock, graph rebuild or extra FX.
+            if(lane.role==ChannelRole::input){
+                auto& trim=channelTargets_[i];
+                trim.inputApplied.retarget(trim.inputGain.load(std::memory_order_acquire));
+                for(int f=0;f<frames;++f){
+                    const float g=trim.inputApplied.next();l[f]*=g;r[f]*=g;
+                }
+            }
             processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
