@@ -107,8 +107,9 @@ jobs:
           python scripts/build_landing_assets.py dist-pages
           python tests/test_release_catalog.py
           python scripts/build_release_catalog.py --output dist-pages/release-catalog.json
-          # The ONLY public mixer is /preview/, generated with the approved
-          # PNG controls. Old links redirect to it; they never show other GUI.
+          # The current approved mixer remains /preview/ and is single-owner.
+          # /preview-prod/ is separately pinned read-only historical evidence;
+          # no extra native GUI or competing mutable source is introduced.
           python tests/single_preview_publication_contract_test.py dist-pages
           python tests/landing_page_download_contract_test.py dist-pages
           python tests/test_pages_public_origin.py dist-pages
@@ -116,6 +117,33 @@ jobs:
           python tests/button_asset_test.py
           python tests/fader_asset_test.py
           python tests/pan_button_asset_test.py
+      # Explicit user-requested read-only comparison route. This is a frozen
+      # historical build, NOT a second development GUI or native resource.
+      # Checkout only during Pages publishing, never during the regular UI
+      # smoke or Windows installer workflows.
+      - name: Checkout pinned PRE-v7 snapshot source for /preview-prod/
+        if: ${{ steps.guard.outputs.fresh == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: 09022ef0f227ca2a40a0c2f62c619a31395c8dac
+          path: .preview-prod-source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Assemble and verify frozen former /preview/ at /preview-prod/
+        if: ${{ steps.guard.outputs.fresh == 'true' }}
+        env:
+          ARSONMIX_PUBLIC_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          PIN=09022ef0f227ca2a40a0c2f62c619a31395c8dac
+          python -m unittest discover -s tests -p preview_prod_publication_contract_test.py -v
+          python .preview-prod-source/scripts/build_pages.py \
+            --out "$RUNNER_TEMP/arsonmix-pre-v7-pages" --sha "$PIN" --branch archived-pre-v7
+          python .preview-prod-source/tests/single_preview_publication_contract_test.py \
+            "$RUNNER_TEMP/arsonmix-pre-v7-pages"
+          python scripts/publish_preview_prod.py \
+            --old-preview "$RUNNER_TEMP/arsonmix-pre-v7-pages/preview" \
+            --pages-root dist-pages
+          python tests/preview_prod_publication_contract_test.py dist-pages
       - name: Browser-qualify landing-only release at desktop and mobile
         if: ${{ steps.guard.outputs.fresh == 'true' && github.event_name == 'push' }}
         run: |
