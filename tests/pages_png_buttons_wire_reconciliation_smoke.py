@@ -2,7 +2,7 @@
 
 Checks generated GitHub Pages, not an obsolete copied HTML snapshot. WIRE
 source, structure, CSS, JavaScript and knob mask must remain exactly identical
-to the canonical source; only the physical MUTE/SOLO/PRE-POST visual renderer differs.
+to the canonical source; the physical MUTE/SOLO/PFL renderer uses the approved PNG artwork.
 This is reference GUI evidence, never proof of native Windows PCM.
 """
 import hashlib
@@ -116,56 +116,50 @@ def verify_browser(dist):
                 })""")
 
             off=states()
-            assert [b["action"] for b in off]==["mute","solo","tapMode"],off
-            assert [b["kind"] for b in off]==["mute","solo","tap"],off
+            assert [b["action"] for b in off]==["mute","solo","cue"],off
+            assert [b["kind"] for b in off]==["mute","solo","pfl"],off
             assert [b["pos"] for b in off[:2]]==["0% 50%","0% 100%"],off
-            assert abs(float(off[2]["pos"].split("%")[0])-33.333333)<.05,off
-            assert row.locator('button[data-tap-visual="idle"]').count()==1
-            assert page.locator('#clearCue').is_visible() is False
-            assert page.locator('#master .strip.master .mx-hw-row button').count()==2
+            assert off[2]["pos"]=="0% 0%",off
+            assert row.locator('[data-hw-kind="tap"]').count()==0
+            assert page.locator("#clearCue").is_hidden()
+            assert page.locator("#master .strip.master .mx-hw-row button").count()==2
             for b in off:
-                assert SPRITE in b["bg"],b
+                asset="harmonice-thin-flat-v9-pfl-font-matched-57x30.png" if b["kind"]=="pfl" else SPRITE
+                assert asset in b["bg"],b
                 assert b["body"]=="rgba(0, 0, 0, 0)" and b["shadow"]=="none",b
                 assert b["transform"]=="none",b
                 assert abs(b["h"]-29)<.3,b
                 assert abs(b["faceW"]/b["faceH"]-57/30)<.02,b
             for i in range(3): keys.nth(i).click()
             on=states()
-            assert [b["state"] for b in on]==["true","true","false"],on
+            assert [b["state"] for b in on]==["true","true","true"],on
             assert all(abs(float(b["pos"].split("%")[0])-33.333333)<.05 for b in on[:2]),on
-            assert on[2]["pos"]=="0% 0%",on
-            assert row.locator('button[data-tap-visual="pre"]').count()==1
+            assert on[2]["pos"]=="100% 0%",on
             for a,b in zip(off,on):
                 assert all(abs(a[k]-b[k])<.1 for k in ("x","y","w","h","faceW","faceH")),(a,b)
-            keys.nth(0).click()
-            assert [b["state"] for b in states()]==["false","true","false"]
-            # WIRE widgets remain operable independently of button latches.
+            # PFL stays in MAIN MIX on every ordinary audio/bus/FX strip.
+            assert page.locator('#tracks .strip[data-id="1"] [data-hw-kind="pfl"]').count()==1
+            keys.nth(2).click()
+            assert keys.nth(2).get_attribute("aria-pressed")=="false"
+            # Existing WIRE remains operable, and owns PRE/POST per edge.
             body=page.locator(".console-body")
             if body.evaluate("el=>el.classList.contains('collapsed-send')"):
                 page.locator('.section-rail [data-section="send"]').click()
             assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').is_visible()
             assert page.locator('#tracks .strip[data-id="3"] .wire-node-in').is_visible()
             if width==1680:
-                # Test through the actual operator WIRE gestures, not private
-                # IIFE functions. This is the same browser path as production.
-                zero=page.locator('#tracks .strip[data-id="1"] [data-hw-kind="tap"]')
-                zero.click()  # PRE future default -> POST idle
-                assert zero.get_attribute('data-tap-visual')=='idle'
-                body=page.locator('.console-body')
-                if 'collapsed-send' in (body.get_attribute('class') or ''):
-                    page.locator('.section-rail [data-section="send"]').click()
                 page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                 page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
-                assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="post"]').count()==1
-                page.locator('#wireConfigToggle').click()
-                page.locator('#wireMode').select_option('split')
-                page.locator('#wireConfigClose').click()
+                page.locator("#wireConfigToggle").click()
+                page.locator("#wireMode").select_option("split")
+                page.locator("#wireConfigClose").click()
                 page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                 page.locator('#tracks .strip[data-id="4"] .wire-node-in').click()
-                mixed=page.locator('#tracks .strip[data-id="1"] [data-hw-kind="tap"]')
-                assert mixed.get_attribute('data-tap-visual')=='mixed'
-                mixed.click()
-                assert page.locator('#tracks .strip[data-id="1"] [data-tap-visual="post"]').count()==1
+                assert page.locator('#tracks .strip[data-id="1"] [data-hw-kind="pfl"]').count()==1
+                assert page.locator('[data-hw-kind="tap"]').count()==0
+                page.locator("#sofToggle").click()
+                assert page.locator('#tracks .strip[data-id="1"] [data-hw-kind="pfl"]').count()==1
+                page.locator("#sofToggle").click()
                 page.screenshot(path="png-buttons-reconciled-wire-1680.png")
             assert not errors,(width,errors)
             page.close()
@@ -180,7 +174,7 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         verify_bundle(dist)
         verify_browser(dist)
-    print("PASS: Harmonice v8 truthful idle PRE/POST PNG, hidden PFL, no MASTER tap, stable MUTE/SOLO and WIRE")
+    print("PASS: Harmonice v9 MAIN/SOF MUTE-SOLO-PFL PNG, no MASTER PFL, preserved WIRE")
 
 if __name__=="__main__":
     main()
