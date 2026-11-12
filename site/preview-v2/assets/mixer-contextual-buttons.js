@@ -293,10 +293,24 @@
   const add=document.getElementById('addTrack');
   const bankNext=document.getElementById('bankNext');
   if(add && bankNext && add.closest('#moreTools')){
+    const originalMenu=add.parentElement, originalNext=add.nextSibling;
+    const toolbar=bankNext.parentElement;
     add.type='button';
     add.setAttribute('aria-label','Add audio channel');
-    add.title='Add audio channel · available from every mixer bank';
-    bankNext.insertAdjacentElement('afterend',add);
+    add.title='Add audio channel';
+    const place=()=>{
+      // Desktop: always visible beside BANK. Phone: retain the original
+      // More-panel action so a 360px toolbar can scroll without hiding it.
+      // The *same bound node* moves; channel creation never gains an owner.
+      if(window.innerWidth<=900){
+        if(add.parentElement!==originalMenu)
+          originalMenu.insertBefore(add,originalNext);
+      }else if(add.parentElement!==toolbar){
+        bankNext.insertAdjacentElement('afterend',add);
+      }
+    };
+    window.addEventListener('resize',place,{passive:true});
+    place();
   }
   // The native composer already preselects on open. The original public
   // preview uses the same identity editor but only focused its text field.
