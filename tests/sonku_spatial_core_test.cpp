@@ -44,6 +44,15 @@ int main() {
         double lrDelta=0.;
         for(int i=0;i<frames;++i)lrDelta+=std::abs(rightL[i]-rightR[i]);
         assert(lrDelta>.01); // genuine differing HRIR ear filters
+        // MIT KEMAR +90 degrees is RIGHT, not left: the physical right-ear
+        // measured impulse arrives earlier and carries substantially more
+        // early energy. This catches coordinate/ear-swapping mistakes.
+        double earlyLeft=0.,earlyRight=0.;
+        for(int i=0;i<32;++i) {
+            earlyLeft+=rightL[i]*rightL[i];
+            earlyRight+=rightR[i]*rightR[i];
+        }
+        assert(earlyRight>earlyLeft*4.);
         Settings moving{};
         moving.revolutionSeconds=0.5f;
         moving.stereoSpreadDegrees=50.f;
