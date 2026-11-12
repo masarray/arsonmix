@@ -436,7 +436,7 @@
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
       t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
-      t.nativeGainAvailable=native.admitted===true && kind==="audio" &&
+      t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
         Number.isFinite(ch.controls.inputGainDb);
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
