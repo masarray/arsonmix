@@ -8,12 +8,13 @@ const ev=(body='/arsonmix-release '+TAG+' '+SHA)=>({
   repository:{full_name:'masarray/arsonmix'},issue:{number:450},
   comment:{id:100,body,author_association:'OWNER',user:{login:'masarray'}}
 });
-function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,notesSize=200,nativeVersion='0.5.0'}={}) {
+function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,notesSize=200,nativeVersion='0.5.0',compareStatus='ahead',compareBehind=0,compareAhead=1}={}) {
   const calls=[];
   const api=async(path,method='GET',data)=>{
     calls.push({path,method,data});
     if(path==='/git/ref/heads/'+BRANCH)
       return {ref:'refs/heads/'+BRANCH,object:{sha:refSha}};
+    if(path==='/compare/main...'+SHA) return {status:compareStatus,behind_by:compareBehind,ahead_by:compareAhead};
     if(path.startsWith('/issues/450/comments'))return comments;
     if(path==='/releases/tags/'+TAG){
       if(released)return {tag_name:TAG};
@@ -105,6 +106,25 @@ test('Stale SHA rejects without costly workflow dispatch',async()=>{
   await assert.rejects(releaseDispatch({event:ev(),api:x.api}),/RELEASE_STALE_SHA/);
   assert.equal(x.calls.filter(c=>c.method==='POST').length,0);
 });
+test('Release must include all of current main, not just match a valid release-branch SHA',async()=>{
+  // The old public alpha had a valid tag/SHA but omitted newly merged GUI/audio.
+  for(const stale of [
+    {compareStatus:'behind',compareBehind:63,compareAhead:0},
+    {compareStatus:'diverged',compareBehind:2,compareAhead:1},
+    {compareStatus:'ahead',compareBehind:1,compareAhead:1},
+    {compareStatus:'unknown',compareBehind:0,compareAhead:0}
+  ]) {
+    const x=fakeApi(stale);
+    await assert.rejects(releaseDispatch({event:ev(),api:x.api}),
+      /RELEASE_CANDIDATE_MISSING_MAIN_PROGRESS/);
+    assert.equal(x.calls.some(t=>t.method==='POST'),false,
+      'stale candidate must not allocate the Windows builder');
+  }
+  const current=fakeApi({compareStatus:'identical',compareBehind:0,compareAhead:0});
+  assert.equal((await releaseDispatch({event:ev(),api:current.api})).kind,'dispatched');
+  assert.equal(current.calls.filter(t=>t.method==='POST').length,1);
+});
+
 test('Duplicate owner comment and already-published tag are no-op',async()=>{
   const comments=[{id:88,body:ev().comment.body,user:{login:'masarray'},author_association:'OWNER'}];
   for(const input of [{comments},{released:true}]){
