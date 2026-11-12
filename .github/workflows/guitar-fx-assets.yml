@@ -9,6 +9,7 @@ on:
       - 'scripts/build_guitar_fx_assets.mjs'
       - 'engine/builtin_fx/guitar/**'
       - 'tests/guitar_fx_program_model_test.cpp'
+      - 'tests/guitar_fx_core_pcm_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
   push:
@@ -19,6 +20,7 @@ on:
       - 'scripts/build_guitar_fx_assets.mjs'
       - 'engine/builtin_fx/guitar/**'
       - 'tests/guitar_fx_program_model_test.cpp'
+      - 'tests/guitar_fx_core_pcm_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
 permissions:
@@ -39,3 +41,7 @@ jobs:
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_program_model_test.cpp -o /tmp/guitar-fx-program-model-test
           /tmp/guitar-fx-program-model-test
+      - name: Verify actual wet guitar PCM and 32-sample FIR latency without JUCE
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_core_pcm_test.cpp -o /tmp/guitar-fx-core-pcm-test
+          /tmp/guitar-fx-core-pcm-test
