@@ -44,8 +44,6 @@ SetupMutex=ArSonMix.PerUserInstaller.SingleInstance
 ; WM_CLOSE followed by full process exit is required before replacing EXE.
 CloseApplications=no
 RestartApplications=no
-[Tasks]
-Name: "vbcable_driver"; Description: "Install VB-CABLE driver (VB-Audio donationware, administrator approval and reboot required)"; Flags: unchecked
 [Files]
 ; The vendor standard cable ZIP is kept AS IS, with mandatory attribution.
 ; Do not redistribute extra A+B / C+D driver packages.
@@ -71,10 +69,11 @@ Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\
 ; one new executable only after a successful interactive install/update.
 ; Silent enterprise/FAT installs deliberately do not launch desktop audio.
 [Run]
-; Explicit opt-in only; the per-user Setup never obtains blanket admin rights.
-; This script requests UAC only for the independently verified vendor EXE.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"""; WorkingDir: "{app}"; Description: "Optional VB-Audio VB-CABLE driver installation"; Tasks: vbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated
-Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
+; Check on interactive Setup before opening the mixer. Only a missing driver
+; can reach the independently verified vendor EXE and its Windows approval.
+; Silent updates and enterprise installs retain their noninteractive behavior.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"" -RestartMarker ""{tmp}\ArSonMixVBCableRestart"""; WorkingDir: "{app}"; StatusMsg: "Checking VB-Audio VB-CABLE for automatic audio setup..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
+Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent; Check: CanLaunchMixer
 
 ; Never delete private Studio data on install/update/uninstall; never install
 ; portable_mode.txt or silently ARM an audio output.
@@ -83,6 +82,16 @@ Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginal
 ; legacy versions with no shutdown handshake, verify the EXE is replaceable.
 ; Never force-terminate, never skip an occupied file, and never erase Studio.
 [Code]
+function NeedRestart(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{tmp}\ArSonMixVBCableRestart'));
+end;
+
+function CanLaunchMixer(): Boolean;
+begin
+  Result := not NeedRestart();
+end;
+
 function OpenEventW(Access: LongWord; InheritHandle: Boolean; Name: string): THandle;
   external 'OpenEventW@kernel32.dll stdcall';
 function SignalEvent(EventHandle: THandle): Boolean;

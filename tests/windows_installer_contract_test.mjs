@@ -29,7 +29,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /FactoryFX\\\*.*skipifsourcedoesntexist/);
 });
 
-test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSonMix', () => {
+test('official standard VB-CABLE ZIP is pinned and checked automatically without elevating ArSonMix', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -39,10 +39,15 @@ test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSo
   assert.match(m.sha256, /^[a-f0-9]{64}$/);
   assert.match(m.proof, /actions\/runs\/43079930924/);
   assert.match(iss, /^PrivilegesRequired=lowest$/m);
-  assert.match(iss, /Name: "vbcable_driver";.*Flags: unchecked/);
+  assert.doesNotMatch(iss, /^\[Tasks\]$|Tasks: vbcable_driver/m);
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   assert.match(iss, /ArSonMixVBCableInstall\.ps1/);
-  assert.match(iss, /Tasks: vbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated/);
+  const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
+  assert.match(run, /StatusMsg: "Checking VB-Audio VB-CABLE[^"]*"; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
+  assert.ok(run.indexOf('ArSonMixVBCableInstall.ps1') < run.indexOf('Filename: "{app}\\ArSonMix.exe"'));
+  assert.match(iss, /Check: CanLaunchMixer/);
+  assert.match(iss, /function NeedRestart\(\): Boolean;[\s\S]*?FileExists/);
+  assert.match(bootstrap, /if\(\$stateName -eq 'PENDING_REBOOT'\)\{[\s\S]*?New-Item -ItemType File -Path \$RestartMarker/);
   assert.match(iss, /-ExpectedSha256 ""\{#VBCableSha256\}""/);
   assert.match(ps, /prepare_vbcable_package\.ps1/);
   assert.match(ps, /DVBCableSha256=/);
@@ -62,6 +67,7 @@ test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSo
   assert.match(bootstrap, /previous\.PSObject\.Properties\['bootUtc'\]/);
   assert.match(bootstrap, /PENDING_REBOOT.*Restart Windows|Record "PENDING_REBOOT"/);
   assert.match(bootstrap, /Record "REPAIR_REQUIRED"/);
+  assert.match(bootstrap, /if\(\$all.Count -gt 0\)\{[\s\S]*?\$present \| Where-Object[\s\S]*?Record "ALREADY_PRESENT"[\s\S]*?exit 0/);
   assert.ok(bootstrap.indexOf("previous.state -eq 'PENDING_REBOOT'") <
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
             'pending reboot must be checked before launching a setup that can remove installed cable');

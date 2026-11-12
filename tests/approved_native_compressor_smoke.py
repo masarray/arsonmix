@@ -271,18 +271,19 @@ def main():
                 visual=page.locator(selector).evaluate("""el=>{
                   const s=getComputedStyle(el),icon=getComputedStyle(el,'::after');
                   return {width:s.width,height:s.height,rounded:s.borderRadius,
-                    glyph:s.fontSize,icon:icon.width,iconContent:icon.content};
+                    glyph:s.fontSize,icon:icon.backgroundImage};
                 }""")
                 assert visual["width"]=="24px" and visual["height"]=="24px", (selector,visual)
-                assert visual["glyph"]=="0px" and visual["icon"]=="12px",(selector,visual)
+                assert visual["glyph"]=="0px" and "M6.4,19L5,17.6" in visual["icon"],(selector,visual)
             audio_close=page.evaluate("""()=>{
               const b=document.createElement('button');
               b.className='armix-floating-close';b.setAttribute('aria-label','Close Audio I/O');
               document.body.appendChild(b);const s=getComputedStyle(b);
-              const out={width:s.width,height:s.height,icon:getComputedStyle(b,'::after').width};
+              const out={width:s.width,height:s.height,icon:getComputedStyle(b,'::after').backgroundImage};
               b.remove();return out;
             }""")
-            assert audio_close=={"width":"24px","height":"24px","icon":"12px"},audio_close
+            assert audio_close["width"]==audio_close["height"]=="24px",audio_close
+            assert "M6.4,19L5,17.6" in audio_close["icon"],audio_close
             power=page.locator(".mx-comp-power")
             assert power.get_attribute("data-fx-state")=="on"
             assert power.get_attribute("aria-pressed")=="true"
