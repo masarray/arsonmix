@@ -59,8 +59,8 @@ def run(page,width,height):
     name=page.locator("#identityName")
     selection=name.evaluate("""e=>({value:e.value,start:e.selectionStart,end:e.selectionEnd,
       focused:document.activeElement===e})""")
-    assert selection["focused"] and selection["start"]==0 and \\
-      selection["end"]==len(selection["value"]),selection
+    assert (selection["focused"] and selection["start"]==0 and
+            selection["end"]==len(selection["value"])),selection
     name.fill("Lead Vocal")
     name.press("Enter")
     assert editor.is_hidden(),(width,"Enter did not close accepted rename")
