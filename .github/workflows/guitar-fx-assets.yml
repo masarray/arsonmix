@@ -7,6 +7,10 @@ on:
       - 'design-references/guitar-fx/**'
       - 'docs/guitar-fx/**'
       - 'scripts/build_guitar_fx_assets.mjs'
+      - 'engine/builtin_fx/guitar/**'
+      - 'tests/guitar_fx_program_model_test.cpp'
+      - 'engine/builtin_fx/guitar/**'
+      - 'tests/guitar_fx_program_model_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
   push:
@@ -31,3 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify original PNG structure, bounds and deterministic output
         run: node --test tests/guitar_fx_assets_contract.test.mjs
+      - name: Verify bounded C++ program model without JUCE or Windows
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_program_model_test.cpp -o /tmp/guitar-fx-program-model-test
+          /tmp/guitar-fx-program-model-test
