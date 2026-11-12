@@ -99,7 +99,7 @@ inline_blocks=re.findall(r'<script[^>]*>(.*?)</script>',canonical_html,re.I|re.S
 if not inline_blocks: raise SystemExit('Approved mixer has no inline scripts to verify')
 for index,script in enumerate(inline_blocks,1):
     if not script.strip(): continue
-    result=subprocess.run(['node','--check'],input=script,text=True,capture_output=True)
+    result=subprocess.run(['node','--check'],input=script,encoding='utf-8',capture_output=True)
     if result.returncode:
         raise SystemExit('Invalid approved mixer inline JavaScript block '+
                          str(index)+': '+result.stderr[-1800:])
