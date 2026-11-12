@@ -47,7 +47,7 @@ async def main():
                 assert len(stats["links"]) == stats["count"] == 1, (size,stats)
                 if stats["cssRules"] is not None:
                     assert stats["cssRules"] > 100, (size,stats)
-                assert stats["keys"] >= 3 and "harmonice-thin-flat-v8-57x30.png" in stats["image"], (size,stats)
+                assert stats["keys"] >= 3 and "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in stats["image"], (size,stats)
                 assert stats["kinds"] == ["mute","solo","tap"], (size,stats)
                 tap=page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']")
                 assert await tap.get_attribute("data-tap-visual")=="idle", "No-send POST must be unlit"
@@ -87,7 +87,7 @@ async def main():
                       size,"CSS rules",stats["cssRules"])
         finally:
             await browser.close()
-    print("PASS one approved runtime CSS, Harmonice v8 PNG MUTE/SOLO/PRE-POST, zero late CSS link")
+    print("PASS one approved runtime CSS, Harmonice v9 PNG MUTE/SOLO/PRE-POST, zero late CSS link")
 
 if __name__ == "__main__":
     asyncio.run(main())
