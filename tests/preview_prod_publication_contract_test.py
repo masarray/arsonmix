@@ -32,7 +32,9 @@ def verify(pages_root: Path) -> None:
     latest_html = (latest / "index.html").read_text("utf-8")
     assert 'data-hw-kind="cue"' in historic_html
     assert 'data-hw-kind="tap"' not in historic_html
-    assert 'data-hw-kind="tap"' in latest_html
+    assert 'data-hw-kind="pfl"' in latest_html
+    assert 'data-hw-kind="tap"' not in latest_html
+    assert "const showPfl=t.kind!=='master'" in latest_html
     assert 'data-hw-kind="cue"' not in latest_html
     assert (archive / "assets" / "arsonmix-approved-runtime.css").is_file()
     assert (archive / "assets" / "mixer-control-keys.js").is_file()
