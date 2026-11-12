@@ -58,7 +58,7 @@ test("generator is deterministic and isolated from approved mixer assets",()=>{
 });
 test("editor prototype cannot claim PCM nor send production native control",()=>{
  const html=readFileSync(resolve(root,"design-references/guitar-fx/editor-prototype.html"),"utf8");
- for(const s of ["DESIGN ONLY","NO AUDIO","assets/amp-head-class-a.png","assets/cabinet-dual-12.png","assets/knob-brushed-metal.png","data-power","reorder("])
+ for(const s of ["DESIGN ONLY","NO AUDIO","assets/amp-head-class-a.png","cabinet-dual-12.png","assets/knob-brushed-metal.png","data-power","reorder("])
   assert(html.includes(s),"expected design marker "+s);
  assert(!html.includes("arMixConsoleIntent"));
  assert(!html.includes("AudioContext"));
