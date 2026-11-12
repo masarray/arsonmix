@@ -37,6 +37,13 @@ export async function releaseDispatch({event,api}) {
   const ref=await api('/git/ref/heads/'+cmd.branch);
   if (ref?.ref!=='refs/heads/'+cmd.branch || ref?.object?.sha!==cmd.sha)
     throw Error('RELEASE_STALE_SHA_OR_BRANCH');
+  // A correct release-branch SHA can still omit recent merged GUI/audio fixes.
+  // Fail BEFORE allocating Windows runners unless this immutable commit contains
+  // the complete current main history. Never treat an old release branch as RC.
+  const ancestry=await api('/compare/main...'+cmd.sha);
+  if (!ancestry || !['identical','ahead'].includes(ancestry.status) ||
+      ancestry.behind_by!==0 || !Number.isSafeInteger(ancestry.ahead_by))
+    throw Error('RELEASE_CANDIDATE_MISSING_MAIN_PROGRESS');
   const older=[];
   for(let page=1;page<=10;page++) {
     const chunk=await api('/issues/'+CONTROL_ISSUE+'/comments?per_page=100&page='+page);
