@@ -27,6 +27,9 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count("function insertChosenNativeThrow(){"),1)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-throw="1"'),1)
+        self.assertEqual(self.assembled.count('data-fast-native-sonku="1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-sonku.js?v=sonku-1"'),1)
+        self.assertEqual(self.assembled.count("function insertChosenNativeSonKu(){"),1)
 
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
@@ -46,6 +49,12 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertNotIn('href="assets/mixer-native-peq.css',self.assembled)
         css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text("utf-8")
         self.assertIn(".mx-peq[hidden]{display:none}",css)
+        self.assertIn(".mx-sonku[hidden]{display:none!important}",css)
+        self.assertNotIn("mixer-native-sonku.css",self.assembled)
+        sonku=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        self.assertIn('arMixBuiltinSonKuAck',sonku)
+        self.assertIn('nativeSonKuSet',sonku)
+        self.assertNotIn("new AudioContext",sonku)
         self.assertIn("grid-template-columns:minmax(0,1fr) 143px",css)
         script=(ROOT/"site/preview-v2/assets/mixer-native-peq.js").read_text("utf-8")
         self.assertIn('const LOG=Math.log(1000)',script)

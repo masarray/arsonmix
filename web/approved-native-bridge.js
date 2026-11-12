@@ -1228,7 +1228,9 @@
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"ArSon Vocal Throw",
-      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false})
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false}),
+    Object.freeze({id:"armix.builtin.8d-sonku.v1",name:"8D-SonKu",
+      vendor:"ArSonMix",category:"Spatial",format:"Native",source:"builtin",showInPicker:false})
   ]);
   const presentFxCatalog=()=>scope?.setNativeCatalog?.(
     [...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]);
@@ -3369,6 +3371,10 @@
               window.ArSonMixNativeHarmony?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.vocal-throw.v1') {
               window.ArSonMixNativeVocalThrow?.open(t,slot);
+            } else if(insert.catalogId==='armix.builtin.8d-sonku.v1') {
+              if(window.ArSonMixNativeSonKu?.open)
+                window.ArSonMixNativeSonKu.open(t,slot);
+              else nativeToast("8D-SonKu editor unavailable · refresh the approved GUI bundle");
             } else if(current.logical) {
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",channelId:id,
                 slot,instanceId:insert.id,workspaceToken:current.workspaceToken,
