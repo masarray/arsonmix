@@ -3,6 +3,7 @@
 #include "guitar/GuitarRigCore.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
