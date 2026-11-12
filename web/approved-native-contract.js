@@ -314,6 +314,13 @@
       if (edit.op==="REMOVE")
         return decimal(edit.edgeId)!==null &&
           !edges.some(e=>e.edgeId===edit.edgeId);
+      if (edit.op==="SET_TAP") {
+        const edge=edges.find(e=>e.edgeId===edit.edgeId&&e.from===targetChannelId);
+        return decimal(edit.edgeId)!==null && !!edge &&
+          edge.primaryOutput===false &&
+          (edit.tap==="PRE_FADER"||edit.tap==="POST_FADER") &&
+          edge.tap===edit.tap;
+      }
       if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY") {
         if (decimal(edit.to)===null) return false;
         // A cable painted at the requested destination is not proof that

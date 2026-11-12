@@ -226,12 +226,12 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
             const auto from=edit.getProperty("from",{});
             if(from.toString()!=ids.toString()||
                (kind!="CONNECT" && kind!="REMOVE" &&
-                kind!="RETARGET" && kind!="ROUTE_ONLY"))
+                kind!="RETARGET" && kind!="ROUTE_ONLY" && kind!="SET_TAP"))
                 return reject("WIRE_SOURCE_OR_OPERATION_INVALID");
             auto item=std::make_unique<juce::DynamicObject>();
             item->setProperty("op",kind);
             item->setProperty("from",ids);
-            if(kind=="REMOVE" || kind=="RETARGET") {
+            if(kind=="REMOVE" || kind=="RETARGET" || kind=="SET_TAP") {
                 const auto edgeId=edit.getProperty("edgeId",{});
                 if(!nativeV8Decimal(edgeId))return reject("WIRE_EDGE_ID_INVALID");
                 bool pubFound=false,nativeFound=false;
@@ -244,6 +244,27 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
                        e.getProperty("from","").toString()==ids.toString())
                         nativeFound=true;
                 if(!pubFound||!nativeFound)return reject("WIRE_STALE_EDGE");
+                if(kind=="SET_TAP") {
+                    juce::var pub,native;
+                    for(const auto& e:*pubEdges.getArray())
+                        if(e.getProperty("edgeId",{})==edgeId &&
+                           e.getProperty("from",{})==ids)pub=e;
+                    for(const auto& e:*nativeEdges.getArray())
+                        if(e.getProperty("edgeId",{})==edgeId &&
+                           e.getProperty("from",{})==ids)native=e;
+                    const auto expectedTap=edit.getProperty("tap","").toString();
+                    const auto currentTap=pub.getProperty("tap","").toString();
+                    const auto nativeTap=native.getProperty("tap","").toString();
+                    if(!pub.isObject()||!native.isObject()||
+                       pub.getProperty("primaryOutput",{})!=juce::var(false)||
+                       native.getProperty("primaryOutput",{})!=juce::var(false)||
+                       pub.getProperty("to",{})!=native.getProperty("to",{})||
+                       currentTap!=nativeTap ||
+                       (expectedTap!="PRE_FADER"&&expectedTap!="POST_FADER")||
+                       currentTap==expectedTap)
+                        return reject("WIRE_TAP_NOT_ADMITTED");
+                    item->setProperty("tap",expectedTap);
+                }
                 item->setProperty("edgeId",edgeId);
             }
             if(kind=="CONNECT" || kind=="RETARGET" || kind=="ROUTE_ONLY") {
@@ -584,16 +605,22 @@ inline bool executeApprovedNativeControl(Engine& engine,
             else if(op=="REMOVE")change.kind=armix::mixer::WireChange::Kind::remove;
             else if(op=="RETARGET")change.kind=armix::mixer::WireChange::Kind::retarget;
             else if(op=="ROUTE_ONLY")change.kind=armix::mixer::WireChange::Kind::routeOnly;
+            else if(op=="SET_TAP")change.kind=armix::mixer::WireChange::Kind::setTap;
             else return false;
             if(op=="CONNECT"||op=="RETARGET"||op=="ROUTE_ONLY") {
                 if(!approvedNativeId(edit.getProperty("to",{}),to)||to==from)
                     return false;
                 change.to=armix::mixer::ChannelId{to};
             }
-            if(op=="REMOVE"||op=="RETARGET") {
+            if(op=="REMOVE"||op=="RETARGET"||op=="SET_TAP") {
                 if(!approvedNativeId(edit.getProperty("edgeId",{}),edgeId))
                     return false;
                 change.edgeId=edgeId;
+                if(op=="SET_TAP") {
+                    const auto tap=edit.getProperty("tap","").toString();
+                    if(tap!="PRE_FADER"&&tap!="POST_FADER")return false;
+                    change.preFader=tap=="PRE_FADER";
+                }
             }
             if(op=="CONNECT"||op=="ROUTE_ONLY") {
                 double gain=0.;

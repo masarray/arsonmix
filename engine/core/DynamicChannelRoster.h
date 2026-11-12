@@ -92,11 +92,12 @@ struct ChannelEditResult final {
 };
 
 struct WireChange final {
-    enum class Kind : std::uint8_t {connect,remove,retarget,routeOnly};
+    enum class Kind : std::uint8_t {connect,remove,retarget,routeOnly,setTap};
     Kind kind=Kind::connect;
     ChannelId from{},to{};
     std::uint64_t edgeId=0;
     float gain=1.f;
+    bool preFader=false; // SET_TAP only: true = post-FX / pre-channel-fader
 };
 
 class DynamicChannelRoster final {
@@ -415,13 +416,23 @@ public:
             }
             auto& sends=source->sends;
             if(op.kind==WireChange::Kind::remove ||
-               op.kind==WireChange::Kind::retarget) {
+               op.kind==WireChange::Kind::retarget ||
+               op.kind==WireChange::Kind::setTap) {
                 const auto edge=std::find_if(sends.begin(),sends.end(),
                     [&](const auto& s){return s.edgeId==op.edgeId;});
                 if(!op.edgeId || edge==sends.end()) {
                     result.fault=ChannelEditFault::missingEdge;break;
                 }
                 if(op.kind==WireChange::Kind::remove){sends.erase(edge);continue;}
+                if(op.kind==WireChange::Kind::setTap) {
+                    // One exact parallel EdgeId. Never alter PRIMARY_OUT,
+                    // other sends, their levels, destination or PAN.
+                    if(edge->primaryOutput || edge->preFader==op.preFader) {
+                        result.fault=ChannelEditFault::invalidValue;break;
+                    }
+                    edge->preFader=op.preFader;
+                    continue;
+                }
                 if(!op.to.value || op.to==op.from || edge->destination==op.to){
                     result.fault=ChannelEditFault::invalidValue;break;
                 }
