@@ -1015,7 +1015,70 @@ static void verifyDynamicInPlacePhysicalIOBuffers() {
     assert(host.acceptedRevision()==1);
 }
 
+// The native graph must apply DIGITAL INPUT GAIN before the real FX callback,
+// not after FX, and never alias the channel fader or rebuild WIRE topology.
+static void verifyNativeInputGainBeforeFx() {
+    using Kind=ChannelEdit::Kind;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,2> create{};
+    create[0].kind=Kind::add;create[0].position=0;
+    create[0].role=ChannelRole::input;create[0].text="Mic";
+    create[1].kind=Kind::add;create[1].position=1;
+    create[1].role=ChannelRole::main;create[1].text="MAIN";
+    const auto added=roster.edit(0,create);
+    assert(added.ok());
+    const auto mic=added.createdIds[0],main=added.createdIds[1];
+    ChannelEdit out{};out.kind=Kind::setPrimaryOutput;out.id=mic;out.target=main;
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&out,1)).ok());
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    req.sources={{mic,0,-1,false}};
+    DynamicNativeSessionPublisher host;
+    const auto committed=host.commit(roster,req,0,777,777,true);
+    assert(committed.ok()&&committed.revision==1);
+    std::array<float,64> input{},left{},right{};input.fill(.25f);
+    const float* physical[]={input.data()};
+    // A genuine nonlinear processor distinguishes input-before-FX from
+    // gain-after-FX. FX runs once regardless of the extra gain stage.
+    int calls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int frames) noexcept {
+        if(id!=mic)return;
+        ++calls;
+        for(int i=0;i<frames;++i) {
+            const float v=l[i]>.4f?1.f:0.f;l[i]=v;r[i]=v;
+        }
+    };
+    const auto render=[&](){return host.render(777,physical,1,
+                      left.data(),right.data(),64,false,fx);};
+    assert(render()&&close(left[63],0.f));
+    assert(host.setChannelInputGain(777,1,mic,2.f));
+    assert(!host.setChannelInputGain(778,1,mic,1.f));
+    assert(!host.setChannelInputGain(777,0,mic,1.f));
+    assert(!host.setChannelInputGain(777,1,main,2.f));
+    assert(!host.setChannelInputGain(777,1,mic,-1.f));
+    assert(!host.setChannelInputGain(777,1,mic,
+           std::numeric_limits<float>::quiet_NaN()));
+    assert(render());
+    constexpr float center=.7071067811865475f;
+    assert(close(left[63],center,1.e-4f));
+    assert(host.acceptedRevision()==1 && calls==2);
+    assert(host.setChannelInputGain(777,1,mic,1.f));
+    assert(render()&&close(left[63],0.f));
+    // The accepted roster retains the same ChannelId, fader and WIRE after
+    // a control-thread digital gain edit; restore/recompile seeds it.
+    ChannelEdit gain{};gain.kind=Kind::setInputGain;gain.id=mic;gain.value=2.f;
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&gain,1)).ok());
+    assert(close(roster.find(mic)->inputGainLinear,2.f));
+    assert(close(roster.find(mic)->faderLinear,1.f));
+    assert(roster.find(mic)->sends.size()==1 &&
+           roster.find(mic)->sends[0].destination==main);
+    assert(host.commit(roster,req,1,777,777,true).ok());
+    assert(render()&&close(left[0],center,1.e-4f));
+    ChannelEdit bad=gain;bad.id=main;
+    assert(!roster.edit(roster.revision(),std::span<const ChannelEdit>(&bad,1)).ok());
+}
+
 int main() {
+    verifyNativeInputGainBeforeFx();
     verifyDynamicInPlacePhysicalIOBuffers();
     verifyDynamicChannelIdLiveControls();
     verifyDynamicNativeSessionPublication();
