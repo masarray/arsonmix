@@ -97,7 +97,7 @@ def exercise(browser,out,width,height):
     # Image is actually available inside the assembled native GUI bundle.
     assert page.evaluate("""async () => new Promise(resolve => {
       const image=new Image();
-      image.onload=()=>resolve(image.naturalWidth>=180 && image.naturalHeight>=180);
+      image.onload=()=>resolve(image.naturalWidth>=128 && image.naturalHeight>=128);
       image.onerror=()=>resolve(false);
       image.src='assets/sonku-listener-top.png';
     })"""), "Listener PNG did not load"

@@ -51,7 +51,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn(".mx-peq[hidden]{display:none}",css)
         self.assertIn(".mx-sonku[hidden]{display:none!important}",css)
         self.assertIn(".mx-sonku .sk-listener-art",css)
-        self.assertIn("assets/sonku-listener-top.png",sonku if False else (ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8"))
+        self.assertIn("assets/sonku-listener-top.png",sonku)
         png=(ROOT/"site/preview-v2/assets/sonku-listener-top.png").read_bytes()
         self.assertEqual(png[:8],bytes([137,80,78,71,13,10,26,10]))
         self.assertLess(len(png),45000)
