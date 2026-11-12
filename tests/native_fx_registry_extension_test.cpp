@@ -155,8 +155,65 @@ static void verifySharedNativeFxControlRequest() {
     assert(max19.valid && max19.sequence("comp-")==9999999999999999999ULL);
 }
 
+static void verifyFirstSoundGuitarProcessor() {
+    // This is the REAL production native registry path, not a fixture
+    // or browser mock. The resulting processor is inserted as one FxInstance.
+    const auto* guitar=armix::builtin_fx::findNativeBuiltInFx(
+        armix::builtin_fx::GuitarRigProcessor::catalogIdentity);
+    assert(guitar && guitar->showInPicker);
+    assert(juce::String(guitar->category)=="Guitar");
+    assert(!guitar->prepare(16000.,128,nullptr,0));
+    auto live=guitar->prepare(48000.,128,nullptr,0);
+    assert(live && live->getName()=="Guitar FX Rig");
+    assert(live->getLatencySamples()==32);
+    auto* guitarTyped=dynamic_cast<armix::builtin_fx::GuitarRigProcessor*>(live.get());
+    assert(guitarTyped && guitarTyped->isReady());
+    juce::MemoryBlock snapshot;
+    live->getStateInformation(snapshot);
+    assert(snapshot.getSize()==12u+4u*44u);
+    auto restored=guitar->prepare(44100.,128,
+        snapshot.getData(),static_cast<int>(snapshot.getSize()));
+    assert(restored && restored->getLatencySamples()==32);
+    auto broken=snapshot;
+    broken[8]=0;broken[9]=0;broken[10]=0;broken[11]=0;
+    assert(!guitar->prepare(48000.,128,broken.getData(),
+        static_cast<int>(broken.getSize())));
+    assert(!guitar->prepare(48000.,128,
+        snapshot.getData(),static_cast<int>(snapshot.getSize())-1));
+    juce::AudioBuffer<float> pcm(2,1024);
+    for(int i=0;i<pcm.getNumSamples();++i) {
+        const float source=0.12f*std::sin(2.f*3.14159265358979323846f*
+                                         330.f*static_cast<float>(i)/48000.f);
+        pcm.setSample(0,i,source);
+        pcm.setSample(1,i,source);
+    }
+    juce::MidiBuffer midi;
+    live->processBlock(pcm,midi);
+    double outputEnergy=0.,difference=0.;
+    for(int i=0;i<pcm.getNumSamples();++i){
+        const float source=0.12f*std::sin(2.f*3.14159265358979323846f*
+                                         330.f*static_cast<float>(i)/48000.f);
+        const float result=pcm.getSample(0,i);
+        assert(std::isfinite(result));
+        assert(std::fabs(result-pcm.getSample(1,i))<0.00001f);
+        outputEnergy+=static_cast<double>(result)*result;
+        difference+=std::fabs(result-source);
+    }
+    assert(outputEnergy>0.00001 && difference>0.01);
+    assert(guitarTyped->observedBlockSerial()==1);
+    assert(guitarTyped->observedOutputPeak()>0.f);
+    // State captured before publication is a reliable round-trip.
+    juce::MemoryBlock roundtrip;
+    restored->getStateInformation(roundtrip);
+    assert(roundtrip==snapshot);
+    guitarTyped->sealForRealtime();
+    assert(!guitarTyped->restoreUnpublishedState(snapshot.getData(),
+        static_cast<int>(snapshot.getSize())));
+}
+
 int main() {
-    verifySharedNativeFxControlRequest();
+    verifySharedNativeFxControlRequest(); 
+    verifyFirstSoundGuitarProcessor();
     const auto* found=findNativeBuiltInFxIn(injected,"armix.test.fixture-gain.v1");
     assert(found==&injected[0]);
     assert(!findNativeBuiltInFxIn(injected,""));
