@@ -104,6 +104,43 @@ async def main():
                 assert await key.get_attribute("aria-pressed") == "true"
                 on_filter=await key.evaluate("(e)=>getComputedStyle(e,'::before').filter")
                 assert on_filter=="none","MUTE ON must not inherit raised OFF shadow: "+on_filter
+                if size[0]==1680:
+                    # Real SOF toolbar workflow; no private graph API or
+                    # alternate renderer. Verify the exact user-approved PFL
+                    # raster, OFF alpha shadow, ON image and workspace isolation.
+                    await page.locator("#sofToggle").click()
+                    row=page.locator("#tracks .strip[data-id='1'] .mx-hw-row")
+                    assert await row.locator("button.mx-hw-key").count()==3
+                    assert await row.locator("[data-hw-kind='mute']").count()==1
+                    assert await row.locator("[data-hw-kind='solo']").count()==1
+                    assert await row.locator("[data-hw-kind='tap']").count()==0
+                    pfl=row.locator("[data-hw-kind='pfl']")
+                    assert await pfl.count()==1
+                    assert await pfl.get_attribute("aria-pressed")=="false"
+                    off_pfl=await pfl.evaluate("""el=>({
+                        image:getComputedStyle(el,'::before').backgroundImage,
+                        position:getComputedStyle(el,'::before').backgroundPosition,
+                        shadow:getComputedStyle(el,'::before').filter
+                    })""")
+                    assert "harmonice-thin-flat-v9-pfl-font-matched-57x30.png" in off_pfl["image"]
+                    assert off_pfl["position"].startswith("0%"),off_pfl
+                    assert "drop-shadow(" in off_pfl["shadow"],off_pfl
+                    assert await page.locator("#master [data-hw-kind='pfl']").count()==0
+                    await pfl.click()
+                    assert await pfl.get_attribute("aria-pressed")=="true"
+                    on_pfl=await pfl.evaluate("""el=>({
+                        position:getComputedStyle(el,'::before').backgroundPosition,
+                        shadow:getComputedStyle(el,'::before').filter
+                    })""")
+                    assert on_pfl["position"].startswith("100%"),on_pfl
+                    assert on_pfl["shadow"]=="none",on_pfl
+                    # Hidden PFL requests cannot survive leaving SOF.
+                    await page.locator("#sofToggle").click()
+                    assert await page.locator("#tracks [data-hw-kind='pfl']").count()==0
+                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='tap']").count()==1
+                    await page.locator("#sofToggle").click()
+                    assert await page.locator("#tracks .strip[data-id='1'] [data-hw-kind='pfl']").get_attribute("aria-pressed")=="false"
+                    await page.locator("#sofToggle").click()
                 assert len(css_requests) == 1, (size,css_requests)
                 await page.close()
                 print("PASS Stage D one stylesheet / 17 requests eliminated:",

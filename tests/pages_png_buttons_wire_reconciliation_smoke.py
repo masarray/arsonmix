@@ -52,7 +52,7 @@ def verify_bundle(dist):
     # byte identity against this build's generated public root, not unrelated
     # developer-local files or an older locked GUI reference.
     favicons={"favicon.ico","favicon-16x16.png","favicon-32x32.png"}
-    expected=canonical|{SPRITE,"arsonmix-approved-runtime.css"}|favicons
+    expected=canonical|{SPRITE,"harmonice-thin-flat-v9-pfl-font-matched-57x30.png","arsonmix-approved-runtime.css"}|favicons
     assert published==expected,("asset set drift",published^expected)
     for name in favicons:
         assert (generated/"assets"/name).read_bytes()==(dist/name).read_bytes(),name
