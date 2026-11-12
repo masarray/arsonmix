@@ -146,6 +146,9 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Drag Routes, Matrix, Wire Setup and FX; verify close geometry
         run: python tests/approved_floating_window_chromium_smoke.py
+      - name: Assemble exact-source official Pages preview for touch Chromium test
+        if: ${{ startsWith(github.head_ref, 'fix/gui-') }}
+        run: python scripts/build_pages.py --out dist-pages --sha "${{ github.event.pull_request.head.sha }}" --branch main
       - name: Verify touch toolbar More keeps Add Audio available at 360/390/430px
         if: ${{ startsWith(github.head_ref, 'fix/gui-') }}
         run: python tests/approved_preview_mobile_navigation_smoke.py
