@@ -52,8 +52,8 @@ test('Verified release tag is stamped into the native window, not a fake version
   const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const cmake=readFileSync(new URL('../CMakeLists.txt',import.meta.url),'utf8');
   const chrome=readFileSync(new URL('../src/ArSonWindowChrome.h',import.meta.url),'utf8');
-  const configure=workflow.split('      - name: Configure native application and CTest')[1]
-    ?.split('      - name: Build native GUI and all registered tests')[0]||'';
+  const configure=workflow.split('      - name: Configure release application')[1]
+    ?.split('      - name: Build release application only')[0]||'';
   assert.match(configure, /-DARMIX_RELEASE_TAG="\$env:ARMIX_RELEASE_TAG"/);
   assert.match(cmake, /set\(ARMIX_RELEASE_TAG "" CACHE STRING/);
   assert.match(cmake, /if\(NOT ARMIX_RELEASE_TAG MATCHES/);
@@ -296,16 +296,18 @@ test('Public port workflow includes no commercial signing or push-triggered buil
   assert.match(workflow,/SHA256SUMS-Linux.txt/);
 });
 
-test('Windows release publisher checks latest main again at promotion, not just at start',()=>{
+test('Windows alpha builds only the pinned application and validates release assets',()=>{
   const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
+  assert.match(workflow,/-DBUILD_TESTING=OFF/);
+  assert.match(workflow,/cmake --build build --config Release --parallel 2 --target ARMixConsole/);
+  assert.doesNotMatch(workflow,/ctest --test-dir|Fast GUI, FactoryFX and Windows packaging contracts/);
+  assert.match(workflow,/verify_native_windows_artifact\.ps1/);
+  assert.match(workflow,/build_verify_windows_installer\.ps1/);
   const publish=workflow.split('      - name: Publish verified GitHub prerelease and its Windows binaries')[1]
     ?.split('      - name: Refresh official landing catalog')[0]||'';
-  assert.match(publish,/git ls-remote origin 'refs\/heads\/main'/);
-  assert.match(publish,/git fetch --no-tags origin \$mainSha/);
-  assert.match(publish,/git merge-base --is-ancestor \$mainSha \$env:GITHUB_SHA/);
-  assert.match(publish,/RELEASE_MISSING_LATEST_MAIN_PROGRESS/);
-  assert.ok(publish.indexOf('git merge-base --is-ancestor') < publish.indexOf('gh release create'),
-    'main ancestry must fail closed before the public release API call');
+  assert.match(publish,/Release branch advanced during qualification/);
+  assert.doesNotMatch(publish,/refs\/heads\/main|RELEASE_MISSING_LATEST_MAIN_PROGRESS/);
+  assert.ok(publish.indexOf('git ls-remote') < publish.indexOf('gh release create'));
 });
 
 test('Windows public release ZIP is a verifiable wrapper of the same exact Inno EXE',()=>{

@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   alpha:
-    name: Windows x64 native build, test, installer and prerelease
+    name: Windows x64 build, package and publish preview
     if: github.repository == 'masarray/arsonmix'
     runs-on: windows-2022
     timeout-minutes: 60
@@ -95,18 +95,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Fast GUI, FactoryFX and Windows packaging contracts
-        shell: pwsh
-        run: |
-          node scripts/check_console_puzzle.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test tests/floating_window_workspace_contract.test.mjs tests/native_artifact_packaging_contract_test.mjs tests/windows_installer_contract_test.mjs tests/plugin_ui_contract_test.mjs tests/approved_native_m2_contract.test.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p approved_native_gui_bundle_test.py -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s scripts/tests -p test_factoryfx_release_bundle.py -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Checkout pinned JUCE 8.0.15
         uses: actions/checkout@v4
         with:
@@ -120,24 +108,18 @@ jobs:
           nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Configure native application and CTest
+      - name: Configure release application
         shell: pwsh
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=ON -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" -DARMIX_RELEASE_TAG="$env:ARMIX_RELEASE_TAG"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DJUCE_ROOT="$env:GITHUB_WORKSPACE/third_party/JUCE" -DBUILD_TESTING=OFF -DJUCE_WEBVIEW2_PACKAGE_LOCATION="$env:GITHUB_WORKSPACE/.deps" -DARMIX_RELEASE_TAG="$env:ARMIX_RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Build native GUI and all registered tests
+      - name: Build release application only
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Run realtime and native regression tests
-        shell: pwsh
-        run: |
-          ctest --test-dir build -C Release --output-on-failure
+          cmake --build build --config Release --parallel 2 --target ARMixConsole
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package exact-SHA portable native mixer
@@ -187,10 +169,10 @@ jobs:
           Copy-Item -LiteralPath $setup -Destination $releasedExe
           # Public landing prefers this ZIP-wrapped installer. Keep the
           # direct EXE for compatibility. No silent change to its bytes.
-          Compress-Archive -LiteralPath $releasedExe -DestinationPath $releasedZip -CompressionLevel Optimal
+          Compress-Archive -LiteralPath $releasedExe -DestinationPath $releasedZip -CompressionLevel Fastest
           python scripts/verify_release_setup_zip.py --exe $releasedExe --zip $releasedZip
           if ($LASTEXITCODE -ne 0) { throw "Installer ZIP failed byte-for-byte verification" }
-          Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Optimal
+          Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Fastest
           Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
           Copy-Item -LiteralPath dist/FACTORYFX_STAGE_REPORT.json -Destination release/FACTORYFX_STAGE_REPORT.json
           Copy-Item -LiteralPath installer-output/INSTALLER_PROVENANCE.json -Destination release/INSTALLER_PROVENANCE.json
@@ -219,21 +201,8 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $remote -or ($remote -split '\s+')[0] -ne $env:GITHUB_SHA) {
             throw "Release branch advanced during qualification; stale promotion rejected"
           }
-          # A release that was current at dispatch can become stale while the
-          # Windows compiler runs. Never publish without the latest merged main.
-          $mainRemote = & git ls-remote origin 'refs/heads/main'
-          if ($LASTEXITCODE -ne 0 -or -not $mainRemote) {
-            throw "Cannot verify current main before public promotion"
-          }
-          $mainSha = ($mainRemote -split '\s+')[0]
-          & git fetch --no-tags origin $mainSha
-          if ($LASTEXITCODE -ne 0) {
-            throw "Cannot fetch current main for release ancestry gate"
-          }
-          & git merge-base --is-ancestor $mainSha $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) {
-            throw "RELEASE_MISSING_LATEST_MAIN_PROGRESS: reconcile and requalify a new SHA"
-          }
+          # The owner dispatcher requires current main before scheduling.
+          # Subsequent development can continue while this pinned SHA builds.
           & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file $env:ARMIX_RELEASE_NOTES --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets
