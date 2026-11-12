@@ -153,6 +153,45 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         converted->setProperty("payload",juce::var(checked.release()));
         return {juce::var(converted.release()),{}};
     }
+    if(op=="SET_SEND_ENABLED") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"SET_SEND_ENABLED")||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_SET_SEND_ENABLED"))
+            return reject("NATIVE_SEND_ENABLE_NOT_ADMITTED");
+        const auto payload=publicIntent.getProperty("payload",{});
+        const auto edgeId=payload.getProperty("edgeId",{});
+        const auto enabled=payload.getProperty("enabled",{});
+        if(!nativeV8Decimal(edgeId)||!enabled.isBool())
+            return reject("INVALID_SEND_ENABLE_PAYLOAD");
+        juce::var pub,native;
+        const auto p=graph.getProperty("edges",{}),n=installedBus.getProperty("edges",{});
+        if(!p.isArray()||!n.isArray())return reject("WIRE_EDGE_INVENTORY_UNAVAILABLE");
+        for(const auto& e:*p.getArray())
+            if(e.getProperty("edgeId",{})==edgeId&&e.getProperty("from",{})==ids)pub=e;
+        for(const auto& e:*n.getArray())
+            if(e.getProperty("edgeId",{})==edgeId&&e.getProperty("from",{})==ids)native=e;
+        if(!pub.isObject()||!native.isObject()||
+           pub.getProperty("primaryOutput",{})!=juce::var(false)||
+           native.getProperty("primaryOutput",{})!=juce::var(false)||
+           pub.getProperty("to",{})!=native.getProperty("to",{})||
+           pub.getProperty("tap",{})!=native.getProperty("tap",{})||
+           !pub.getProperty("sendEnabled",{}).isBool()||
+           !native.getProperty("enabled",{}).isBool()||
+           pub.getProperty("sendEnabled",{})!=native.getProperty("enabled",{})||
+           pub.getProperty("sendEnabled",{})==enabled)
+            return reject("SEND_ENABLE_STALE_OR_UNCHANGED");
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("edgeId",edgeId);args->setProperty("enabled",enabled);
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);
+        converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);
+        converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);
+        converted->setProperty("operation","NATIVE_SET_SEND_ENABLED");
+        converted->setProperty("payload",juce::var(args.release()));
+        return {juce::var(converted.release()),{}};
+    }
     if(op=="SET_WIRE_GAIN") {
         if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"SET_WIRE_GAIN")||
            !approvedHasOperation(installedBus.getProperty("supportedOps",{}),"NATIVE_SET_WIRE_GAIN"))
@@ -577,6 +616,16 @@ inline bool executeApprovedNativeControl(Engine& engine,
            gain<0.f||gain>16.f)return false;
         if constexpr(requires(Engine& e){e.setNativeInputGain(epoch,revision,channel,0.f);})
             return engine.setNativeInputGain(epoch,revision,channel,static_cast<float>(gain));
+        return false;
+    }
+    if(operation=="NATIVE_SET_SEND_ENABLED") {
+        std::uint64_t edge=0;
+        const auto enabled=payload.getProperty("enabled",{});
+        if(!approvedNativeId(payload.getProperty("edgeId",{}),edge)||
+           !enabled.isBool())return false;
+        if constexpr(requires(Engine& e){e.setNativeWireEnabled(epoch,revision,roster,channel,edge,true);})
+            return engine.setNativeWireEnabled(epoch,revision,roster,channel,edge,
+                                               static_cast<bool>(enabled));
         return false;
     }
     if(operation=="NATIVE_SET_WIRE_GAIN") {

@@ -117,7 +117,8 @@
         decimal(e.from) === null || decimal(e.to) === null ||
         !ids.includes(e.from) || !ids.includes(e.to) || e.from === e.to ||
         e.signalKind !== "AUDIO" || !isBool(e.enabled) ||
-        !Number.isFinite(e.gainLinear) || e.gainLinear < 0)) return null;
+        !Number.isFinite(e.gainLinear) || e.gainLinear < 0 ||
+        (e.sendEnabled!==undefined && !isBool(e.sendEnabled)))) return null;
     if (!unique(edges.map(e => e.edgeId))) return null;
     if (g.mainChannelId !== undefined &&
         (decimal(g.mainChannelId) === null || !ids.includes(g.mainChannelId))) return null;
@@ -294,6 +295,13 @@
       if(expected.to&&!equal(ids(expected.to),expected.destination))return false;
       const copies=next.graph.channels.reduce((n,c)=>n+c.inserts.filter(x=>x.id===payload.instanceId).length,0);
       return copies===(operation==="REMOVE_INSERT"?0:1);
+    }
+    if (operation === "SET_SEND_ENABLED") {
+      const before=pending.wireIdentity;
+      const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+      return !!before && !!edge && edge.primaryOutput===false &&
+        edge.to===before.to && edge.tap===before.tap &&
+        typeof payload.enabled==="boolean" && edge.sendEnabled===payload.enabled;
     }
     if (operation === "SET_WIRE_GAIN") {
       const before=pending.wireIdentity;
@@ -621,10 +629,12 @@
         }
       }
       let wireIdentity=null;
-      if(operation==="SET_WIRE_GAIN") {
+      if(operation==="SET_WIRE_GAIN"||operation==="SET_SEND_ENABLED") {
         const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
-        if(!edge||edge.primaryOutput!==false||!Number.isFinite(payload.gainLinear)||
-           payload.gainLinear<0||payload.gainLinear>4) {
+        if(!edge||edge.primaryOutput!==false||
+           (operation==="SET_WIRE_GAIN"&&(!Number.isFinite(payload.gainLinear)||
+            payload.gainLinear<0||payload.gainLinear>4))||
+           (operation==="SET_SEND_ENABLED"&&typeof payload.enabled!=="boolean")) {
           return refuseIntent("INVALID_WIRE_GAIN_TARGET");
         }
         wireIdentity={to:edge.to,tap:edge.tap};
