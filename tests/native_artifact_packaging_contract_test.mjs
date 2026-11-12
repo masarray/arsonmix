@@ -80,7 +80,17 @@ test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button var
   assert.match(nativeMain,/withResourceProvider \(assetFor\)/);
   assert.match(generator,/approvedPagesHtmlSha256/);
   assert.match(generator,/authoritativePagesOutput/);
-  assert.match(read('scripts/build_pages.py'),/mute-solo-pfl-56x37\.png/);
+  // Read the one authoritative Pages sprite, rather than pinning a
+  // long-retired MUTE/SOLO/PFL asset name in the native installer gate.
+  // Native CMake must embed the same approved sprite selected by Pages CSS.
+  const builder=read('scripts/build_pages.py');
+  const sprite=builder.match(/^sprite='([^']+\\.png)'$/m)?.[1];
+  assert.ok(sprite?.startsWith('harmonice-thin-flat-'), 'approved PNG atlas missing from Pages');
+  assert.ok(read('site/preview-buttons/assets/mixer-control-keys.css')
+    .includes('background-image:url("'+sprite+'")'),
+    'native and Pages must use one approved physical PNG atlas');
+  assert.ok(readFileSync('site/preview-buttons/assets/'+sprite).byteLength>1000,
+    'approved PNG atlas must exist and have non-empty raster bytes');
 });
 
 test('independent release gate rejects old self-consistent web hash artifact',()=>{
