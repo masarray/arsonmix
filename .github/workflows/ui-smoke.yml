@@ -149,6 +149,21 @@ jobs:
       - name: Check Vocal Throw editor, picker and plugin native UI at two viewport widths
         if: ${{ github.head_ref == 'fix/rc-ux-audio-first-run-20261112' }}
         run: python tests/approved_native_vocal_throw_smoke.py
+      # RC branch only: run the current downstream GUI/WIRE/FX regressions
+      # before any manual full-browser milestone to avoid repeatedly paying
+      # for the entire 60+ step visual qualification on stale UI fixtures.
+      # This is additive: the full manual gate remains mandatory before merge.
+      - name: RC downstream current-preview visual and interaction preflight
+        if: ${{ github.head_ref == 'fix/rc-ux-audio-first-run-20261112' }}
+        run: |
+          python tests/preview_v2_v7_visual_smoke.py
+          python tests/pages_wire_focus_v40_smoke.py
+          python tests/pages_wire_dot_v42_smoke.py
+          python tests/pages_wire_v44_finish_smoke.py
+          python tests/pages_wire_v45_socket_layout_smoke.py
+          python tests/pages_wire_v46_precision_smoke.py
+          python tests/mixer_io_smoke.py
+          python tests/native_orbit_ui_smoke.py
       - name: Keep compact desktop and narrow viewport evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
