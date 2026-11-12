@@ -311,13 +311,14 @@ def main():
                 assert page.locator("#mxHSourcePicker").is_hidden()
                 close=page.locator("#mxHClose")
                 power=page.locator("#mxHPower")
-                # This is the EXACT same shared CSS, SVG-less X and header
+                # This is the EXACT same shared CSS, SVG Close and header
                 # Power material used by both native EQ and Compressor.
                 closeSkin=close.evaluate("""el=>{
                   const s=getComputedStyle(el),x=getComputedStyle(el,'::after');
-                  return {w:s.width,h:s.height,icon:x.width,glyph:s.fontSize};
+                  return {w:s.width,h:s.height,icon:x.backgroundImage,glyph:s.fontSize};
                 }""")
-                assert closeSkin=={"w":"24px","h":"24px","icon":"12px","glyph":"0px"},closeSkin
+                assert closeSkin["w"]==closeSkin["h"]=="24px",closeSkin
+                assert closeSkin["glyph"]=="0px" and "M6.4,19L5,17.6" in closeSkin["icon"],closeSkin
                 assert power.evaluate("(el)=>getComputedStyle(el).width")=="26px"
                 assert power.get_attribute("data-fx-state")=="on"
                 assert power.get_attribute("aria-pressed")=="true"
