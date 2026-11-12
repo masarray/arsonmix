@@ -38,6 +38,7 @@ async def main():
                         image,
                         display:root.display,
                         keys:document.querySelectorAll(".mx-hw-key").length,
+                        kinds:[...document.querySelectorAll("#tracks .strip[data-id=\'1\'] .mx-hw-row .mx-hw-key")].map(x=>x.dataset.hwKind),
                         // file:// Playwright may block CSSOM rule inspection;
                         // stylesheet count and computed visuals remain valid.
                         cssRules:(() => {try{return sheets[0]?.cssRules.length??0}
@@ -46,7 +47,8 @@ async def main():
                 assert len(stats["links"]) == stats["count"] == 1, (size,stats)
                 if stats["cssRules"] is not None:
                     assert stats["cssRules"] > 100, (size,stats)
-                assert stats["keys"] >= 3 and "mute-solo-pfl" in stats["image"], (size,stats)
+                assert stats["keys"] >= 3 and "harmonice-thin-flat-v7-57x30.png" in stats["image"], (size,stats)
+                assert stats["kinds"] == ["mute","solo","tap"], (size,stats)
                 assert "arsonmix-approved-runtime.css?sha=" in stats["links"][0]
                 assert len(css_requests) == 1, (size,css_requests)
                 assert not errors, errors
@@ -60,7 +62,7 @@ async def main():
                       size,"CSS rules",stats["cssRules"])
         finally:
             await browser.close()
-    print("PASS one approved runtime CSS, original PNG key and zero late CSS link")
+    print("PASS one approved runtime CSS, Harmonice v7 PNG MUTE/SOLO/PRE-POST, zero late CSS link")
 
 if __name__ == "__main__":
     asyncio.run(main())
