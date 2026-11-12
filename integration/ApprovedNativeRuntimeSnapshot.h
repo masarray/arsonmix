@@ -295,6 +295,7 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("SET_FADER"));
         available.add(juce::String("SET_PAN"));
     }
+    if(has("NATIVE_SET_INPUT_GAIN"))available.add(juce::String("SET_INPUT_GAIN"));
     if(has("NATIVE_SET_CHANNEL_MUTE_SOLO")) {
         available.add(juce::String("SET_MUTE"));
         available.add(juce::String("SET_SOLO"));
