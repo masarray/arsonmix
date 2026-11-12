@@ -45,6 +45,9 @@
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
 #include "NativeDeviceApplyCoordinator.h"
+#if defined(_WIN32)
+#include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
+#endif
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -1951,6 +1954,144 @@ private:
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible("arMixAudioDeviceInventory",
                 juce::var(inventory.release()));
+    }
+
+
+    // One-shot OS + JUCE native first-run preflight. This is observation,
+    // not a device replacement or output-arm authority. The decision is
+    // sourced from both Core Audio IDs and JUCE exact selectable names;
+    // it never guesses "speakers" from a JavaScript label. No vendor scans.
+    bool firstRunInventoryInspected_ = false;
+    void inspectFirstRunAudio()
+    {
+#if defined(_WIN32)
+        if (firstRunInventoryInspected_) return;
+        firstRunInventoryInspected_ = true;
+        auto& manager = engine_.devices();
+        std::vector<std::wstring> captures, renders;
+        for (auto* type : manager.getAvailableDeviceTypes())
+        {
+            if (type == nullptr || type->getTypeName() != "Windows Audio") continue;
+            for (const auto& label : type->getDeviceNames(true))
+                captures.emplace_back(label.toWideCharPointer());
+            for (const auto& label : type->getDeviceNames(false))
+                renders.emplace_back(label.toWideCharPointer());
+            break;
+        }
+        const auto result = armix::device::WindowsFirstRunEndpointDiscovery::inspect(
+            captures, renders);
+        const auto& d = result.decision;
+        auto proposal = std::make_unique<juce::DynamicObject>();
+        proposal->setProperty("inspected", result.inspected);
+        proposal->setProperty("state", static_cast<int>(d.outcome));
+        // A proposed candidate is not an open stream or an audible route.
+        proposal->setProperty("captureName", juce::String(d.captureName.c_str()));
+        proposal->setProperty("renderName", juce::String(d.renderName.c_str()));
+        proposal->setProperty("mayAttemptApply", result.inspected && d.mayAttemptApply());
+        proposal->setProperty("message", juce::String(result.diagnostic.c_str()));
+        diagnostics_.record("FIRST_RUN_MMDEVICE_PROPOSAL",
+            juce::String(result.diagnostic.c_str()) + " | state=" +
+            juce::String(static_cast<int>(d.outcome)) + " | apply=" +
+            (d.mayAttemptApply() ? "candidate-only" : "unsafe"));
+        if (browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible(
+                "arMixFirstRunAudioProposal", juce::var(proposal.release()));
+
+        // Auto-select only for an untouched, no-profile, SOURCE NONE startup.
+        // Hardware must have a provably unique MMDevice identity AND an exact
+        // selectable JUCE label; the existing native device coordinator is
+        // the sole backend-switch owner. No OS default changes or WebAudio.
+        if (!result.inspected || !d.mayAttemptApply() ||
+            !engine_.allOutputsDisarmed() || !engine_.hasPristineStartupMixer() ||
+            operatorOutputMuted_ || deviceApply_.busy() ||
+            nativeShowBusy_ || mixerSessionWorker_.busy()) return;
+        const juce::String input (d.captureName.c_str());
+        const juce::String output (d.renderName.c_str());
+        auto binding = armix::device::WasapiEndpointIdentityGuard::Selection {
+            d.captureName, d.renderName, d.captureId, d.renderId
+        };
+        auto renderBinding = armix::device::WasapiEndpointIdentityGuard::RenderSelection {
+            d.renderName, d.renderId
+        };
+        juce::AudioDeviceManager::AudioDeviceSetup before;
+        manager.getAudioDeviceSetup (before);
+        auto* current = manager.getCurrentAudioDevice();
+        const bool existing = manager.getCurrentAudioDeviceType() == "Windows Audio"
+            && before.inputDeviceName == input && before.outputDeviceName == output
+            && current != nullptr && current->isOpen();
+        if (!existing)
+        {
+            auto cfg = std::make_unique<juce::DynamicObject>();
+            cfg->setProperty ("backend", "Windows Audio");
+            cfg->setProperty ("captureDevice", input);
+            cfg->setProperty ("playbackDevice", output);
+            cfg->setProperty ("sampleRate", 0.0);
+            cfg->setProperty ("bufferSize", 0.0);
+            cfg->setProperty ("assignSelectedPlaybackPinsToMain", false);
+            cfg->setProperty ("confirmRetainedPinMapping", false);
+            auto args = std::make_unique<juce::DynamicObject>();
+            args->setProperty ("requestId", "AUTO_FIRST_RUN_MMDEVICE");
+            args->setProperty ("expectedDeviceGeneration",
+                engine_.status().getProperty ("deviceGeneration", 0));
+            args->setProperty ("config", juce::var (cfg.release()));
+            applyCustomAudioDevice (juce::var (args.release()));
+        }
+        juce::AudioDeviceManager::AudioDeviceSetup actual;
+        manager.getAudioDeviceSetup (actual);
+        auto* opened = manager.getCurrentAudioDevice();
+        const bool active = manager.getCurrentAudioDeviceType() == "Windows Audio"
+            && opened != nullptr && opened->isOpen()
+            && actual.inputDeviceName == input && actual.outputDeviceName == output
+            && opened->getActiveOutputChannels().countNumberOfSetBits() >= 2
+            && engine_.directRouteAuthorized();
+        if (!active)
+        {
+            diagnostics_.record ("FIRST_RUN_AUTO_DEVICE_REJECTED",
+                "Native device transaction or full-duplex readback did not accept the proposed endpoint");
+            return;
+        }
+        const auto idFault = d.hasCapture()
+            ? armix::device::WasapiEndpointIdentityGuard::verify (
+                binding, actual.inputDeviceName, actual.outputDeviceName)
+            : armix::device::WasapiEndpointIdentityGuard::verifyRender (
+                renderBinding, actual.outputDeviceName);
+        if (idFault.isNotEmpty())
+        {
+            engine_.setOutputMuted (true);
+            diagnostics_.record ("FIRST_RUN_ENDPOINT_ID_CHANGED", idFault);
+            emitNotice ("Audio endpoint changed during setup; please choose speakers in AUDIO I/O.", true);
+            return;
+        }
+        diagnostics_.record ("FIRST_RUN_AUDIO_DEVICE_ACCEPTED",
+            input + " -> " + output + " | readback=VERIFIED");
+        if (d.hasCapture() && engine_.hasPristineStartupMixer())
+        {
+            // One unedited CH01 can receive the actual two reported VB-CABLE
+            // input pins. All other channels remain SOURCE NONE, and any
+            // existing user-authored SOURCE ONLY/MAIN WIRE is untouched.
+            const auto pins = opened->getActiveInputChannels();
+            const int left = pins.findNextSetBit (0);
+            const int right = left < 0 ? -1 : pins.findNextSetBit (left + 1);
+            if (right < 0)
+            {
+                diagnostics_.record ("FIRST_RUN_SOURCE_DEFERRED",
+                    "Expected 2 verified CABLE capture pins; existing graph retained silent");
+                return;
+            }
+            const auto sourceError = engine_.switchDryRoutingLabSource (
+                0, engine_.dryRoutingLabEpoch(), engine_.dryRoutingLabRevision(),
+                "STEREO", left, right);
+            if (sourceError.isNotEmpty())
+            {
+                diagnostics_.record ("FIRST_RUN_SOURCE_DEFERRED", sourceError);
+                return;
+            }
+            requestAutomaticMain (true); // native real graph, output gate checks
+            diagnostics_.record ("FIRST_RUN_SOURCE_CONNECTED",
+                "Verified CABLE Output capture -> CH01 -> original MAIN, no test tone");
+            emitApprovedNativeSnapshot();
+        }
+#endif
     }
 
     juce::var currentDeviceSnapshot()
@@ -3937,14 +4078,30 @@ private:
                 (requestedCatalog.isString()&&
                  armix::storage::BuiltInFxUserPresetStore::effectFolder(catalog)
                     .isNotEmpty());
-            const bool identity=fxRequest.valid&&!fxRequest.unbound&&epoch!=0&&
-                catalogValid&&request.startsWith(
-                    harmonyLegacy?"hpres-":"fxpres-");
-            auto lease=identity?engine_.leaseNativeVst3Editor(
+            // Presets are portable CONTROL data, not physical output
+            // authorization. A logical mixer has an exact accepted FX token
+            // and persisted .smix DSP state even before AUDIO SETUP. Rehydrate
+            // that state for disk-only presets; never ask for/arm a device.
+            std::uint64_t logicalChannel=0;
+            std::size_t logicalSlot=0;
+            const bool logicalPreset=fxRequest.valid&&fxRequest.unbound&&
+                epoch==0&&catalogValid&&!logicalMixer_.readOnly()&&
+                !mixerSessionWorker_.busy()&&!deviceApply_.busy()&&
+                logicalFxTarget(args,logicalChannel,logicalSlot)&&
+                logicalChannel==channel&&logicalSlot==static_cast<std::size_t>(slot);
+            const bool physicalPreset=fxRequest.valid&&!fxRequest.unbound&&
+                epoch!=0&&catalogValid;
+            const bool identity=(logicalPreset||physicalPreset)&&
+                request.startsWith(harmonyLegacy?"hpres-":"fxpres-");
+            armix::session::StoredInsert offlineInsert;
+            auto offline=logicalPreset?openLogicalBuiltinFx(
+                args,offlineInsert,catalog.toRawUTF8()):nullptr;
+            auto lease=physicalPreset?engine_.leaseNativeVst3Editor(
                 epoch,revision,armix::mixer::ChannelId{channel},
                 static_cast<std::size_t>(slot),instance):
                 armix::mixer::LiveChannelFxGraph::InstanceLease{};
-            auto* processor=lease?lease->processor.get():nullptr;
+            auto* processor=logicalPreset?offline.get():
+                lease?lease->processor.get():nullptr;
             const bool exactReady=armix::storage::BuiltInFxAcceptedSnapshot
                 ::matchesReady(processor,catalog);
             auto result=std::make_unique<juce::DynamicObject>();
@@ -3954,6 +4111,7 @@ private:
             result->setProperty("channelId",rawChannel);
             result->setProperty("deviceEpoch",rawEpoch);
             result->setProperty("graphRevision",rawRevision);
+            result->setProperty("workspaceToken",args.getProperty("workspaceToken",{}));
             result->setProperty("instanceId",instance);
             const auto presetId=args.getProperty("presetId","").toString();
             juce::String error;
@@ -3991,7 +4149,12 @@ private:
                     (catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeThrow_.owner));
                 auto* realtime=dynamic_cast<armix::mixer::RealtimeNativeFxControl*>(processor);
-                if(busy||!realtime||!realtime->stateSnapshotQuiescent())
+                // Logical processor is a detached, rehydrated CONTROL
+                // snapshot. Its settings were committed to .smix already;
+                // no callback exists and no audio packet can be pending.
+                // Physical processors still require quiescent live DSP.
+                if(busy||!realtime||(!logicalPreset&&
+                    !realtime->stateSnapshotQuiescent()))
                     error="BUILTIN_FX_AUDIO_EDIT_PENDING";
                 else {
                     const auto portable=armix::storage::BuiltInFxAcceptedSnapshot
@@ -6558,6 +6721,12 @@ private:
             engine_.devices().addChangeListener (this);
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
+            // Only pristine Windows first runs are candidates. Saved sessions,
+            // explicit ASIO/WASAPI profiles and recovered mixers are excluded.
+            if (saved == nullptr &&
+                !armix::session::NativeMixerSessionStore(settingsDirectory()).exists() &&
+                startupError_.isEmpty())
+                inspectFirstRunAudio();
             if (onStartupStage_) onStartupStage_ (2);
         }
         // Factory entries are published only after asynchronous manifest

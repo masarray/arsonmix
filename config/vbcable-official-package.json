@@ -1,0 +1,19 @@
+{
+  "schema": "arsonmix.third-party-archive.v1",
+  "name": "VB-CABLE standard",
+  "publisher": "VB-Audio Software / Vincent Burel",
+  "version": "Driver Pack45 (October 2024)",
+  "filename": "VBCABLE_Driver_Pack45.zip",
+  "url": "https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip",
+  "sha256": "b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb",
+  "proof": "https://github.com/masarray/arsonmix/actions/runs/43079930924",
+  "terms": "https://vb-audio.com/Services/licensing.htm",
+  "manual": "https://vb-audio.com/Cable/VBCABLE_ReferenceManual.pdf",
+  "consent": true,
+  "administrator": true,
+  "reboot": true,
+  "nonredistributable": [
+    "A+B",
+    "C+D"
+  ]
+}

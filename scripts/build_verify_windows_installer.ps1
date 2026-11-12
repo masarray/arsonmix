@@ -46,7 +46,11 @@ try {
     if(Test-Path -LiteralPath $factory -PathType Container){
         Copy-Item -LiteralPath $factory -Destination (Join-Path $stage "FactoryFX") -Recurse
     }
-    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "installer/ArSonMix.iss"
+    # Official standard VB-CABLE archive must be downloaded, exact-SHA
+    # verified and staged BEFORE compiling Setup. Fatal if it changed.
+    & ./scripts/prepare_vbcable_package.ps1 -StageDirectory $stage
+    $vendor=Get-Content -LiteralPath "config/vbcable-official-package.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "/DVBCableSha256=$($vendor.sha256)" "installer/ArSonMix.iss"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
        (Get-Item -LiteralPath $setup).Length -lt 2MB){throw "ISCC failed to build installer RC"}

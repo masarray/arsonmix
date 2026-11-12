@@ -1201,6 +1201,23 @@
     return true;
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
+  // One verified post-insert navigation: never open an unaccepted slot and
+  // never infer an instance from a catalog name. Reuse the installed editor
+  // action for both native DSP and vendor VST3s, after exact graph readback.
+  function openVerifiedInsertedFx(channelId,slot,catalogId,instanceId) {
+    window.queueMicrotask(()=>{
+      const view=activeView();
+      const effect=view?.graph?.channels?.find(ch=>ch.id===channelId)
+        ?.inserts?.[slot];
+      if(!effect||effect.id!==instanceId||effect.catalogId!==catalogId)return;
+      const local=uiByNativeId.get(channelId);
+      const track=[...(scope?.tracks||[]),scope?.master]
+        .find(item=>item?.id===local);
+      if(track)
+        window.__ARMIX_NATIVE_M2__?.consumeAction?.(track,"openPlugin",
+          {dataset:{slot:String(slot)}});
+    });
+  }
   // Native JUCE processors: these are real compiled DSP, not demo effects,
   // scanned VST binaries, a JS renderer or placeholder library entries.
   let nativeBuiltins=Object.freeze([
@@ -2588,6 +2605,7 @@
       let revealCreatedId=null,wireImpact=null;
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
+      let justInsertedLogicalFx=null;
       if(pendingLogical) {
         const p=pendingLogical;
         if(!p.ackRevision)return; // no optimistic pre-ACK projection
@@ -2600,6 +2618,10 @@
           return;
         }
         pendingLogical=null;
+        if(p.operation==="ADD_FX_REFERENCE"&&p.beforeInsertCatalogs){
+          justInsertedLogicalFx={channelId:p.channelId,
+            slot:p.beforeInsertCatalogs.length,catalogId:p.payload.catalogId};
+        }
         if(p.operation==="WIRE_TRANSACTION"&&offline.revision===p.ackRevision)
           wireImpact=p.payload.changes;
         if((p.operation==="CREATE_CHANNEL"||p.operation==="CREATE_GROUP") &&
@@ -2622,6 +2644,15 @@
           return;
         }
         lastPaintedSignature=signature;
+      }
+      if(justInsertedLogicalFx){
+        const p=justInsertedLogicalFx;
+        const inserted=staged.graph.channels.find(ch=>ch.id===p.channelId)
+          ?.inserts?.[p.slot];
+        if(inserted?.catalogId===p.catalogId&&inserted.id){
+          scope?.closeNativePicker?.();
+          openVerifiedInsertedFx(p.channelId,p.slot,p.catalogId,inserted.id);
+        }
       }
       if(wireImpact)playAcceptedWireImpact(wireImpact);
       if(revealCreatedId) {
@@ -2752,6 +2783,7 @@
          typeof inserted.id==="string" && inserted.id.length>0){
         pendingFxInsert=null;
         scope?.closeNativePicker?.();
+        openVerifiedInsertedFx(p.channelId,p.slot,p.id,inserted.id);
         status("VST3 loaded · "+inserted.name+" · native PCM readback verified");
       }
     }

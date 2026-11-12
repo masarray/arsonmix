@@ -50,10 +50,17 @@ try {
     Copy-Item -LiteralPath (Join-Path $root "assets/icon/arsonmix-app.ico") -Destination (Join-Path $stage "arsonmix-app.ico")
     "Test-only installer mechanics fixture" | Set-Content -LiteralPath (Join-Path $stage "README.md")
     '{"sourceCommit":"TEST_FIXTURE_ONLY","fatStatus":"NOT_A_PRODUCT"}' | Set-Content -LiteralPath (Join-Path $stage "BUILD_PROVENANCE.json")
+    # Contract fixture, NEVER vendor bytes: /VERYSILENT has the optional
+    # vbcable_driver task unchecked. This proves ordinary repair/upgrade can
+    # run without administrator UAC or third-party device side effects.
+    # Only the production FAT path downloads and SHA-verifies official ZIP.
+    [IO.File]::WriteAllBytes((Join-Path $stage "VBCABLE_Driver_Pack45.zip"),
+        [Text.Encoding]::ASCII.GetBytes("TEST_FIXTURE_ONLY_NOT_A_VB_AUDIO_DRIVER"))
+    Copy-Item -LiteralPath (Join-Path $root "installer/VB-CABLE-NOTICE.txt") -Destination (Join-Path $stage "VB-CABLE-NOTICE.txt")
     $found=Get-Command ISCC.exe -ErrorAction SilentlyContinue
     $iscc=if($found){$found.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
     Assert-Condition (Test-Path -LiteralPath $iscc -PathType Leaf) "ISCC.exe missing"
-    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=0.5.0" (Join-Path $root "installer/ArSonMix.iss")
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=0.5.0" "/DVBCableSha256=$('0'*64)" (Join-Path $root "installer/ArSonMix.iss")
     Assert-Condition ($LASTEXITCODE -eq 0) "Cannot compile Inno fixture setup"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
     Assert-Condition (Test-Path -LiteralPath $setup -PathType Leaf) "Compiled Inno test installer missing"

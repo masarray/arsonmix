@@ -137,7 +137,10 @@ function syncPower(){
   value==="rack-off"?"FX rack bypassed":"Native FX unavailable";
  btn.setAttribute("aria-pressed",String(value==="on"));
  btn.setAttribute("aria-label",btn.title);
- $("vtThrow").disabled=value!=="on"||!!pending;
+ // A wheel-driven SET must never toggle the performance disc's grayscale.
+ // Only a real trigger waits for its AUDIO ACK. A wheel SET may not dim this disc.
+ $("vtThrow").disabled=value!=="on"||pending?.command==="nativeThrowTrigger";
+ $("vtThrow").setAttribute("aria-busy",String(!!pending));
  $("vtStatus").textContent=value==="on"?
   ($("vtThrow").dataset.tail==="true"?"TAIL":"LIVE"):
   value==="off"?"BYPASS":value==="rack-off"?"RACK OFF":"OFFLINE";
@@ -230,6 +233,7 @@ for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  });
 }
 // Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
+let wheelFlush=null; // one timer for all Vocal Throw encoders, never PCM
 // Update visual locally during movement; issue exactly ONE accepted native
 // settings intent at drag release. No DOM/audio DSP loops are introduced.
 function bindRotary(face,key,step){
@@ -257,9 +261,13 @@ function bindRotary(face,key,step){
  face.addEventListener("pointerup",finish);
  face.addEventListener("pointercancel",()=>{gesture=null;paint();});
  face.addEventListener("wheel",e=>{
-  if(pending)return;
-  e.preventDefault();update(draft[key]+(e.deltaY<0?step:-step));
-  send("nativeThrowSet");
+  if(e.ctrlKey||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
+  e.preventDefault();
+  if(pending)return; // at most one native DSP edit in flight
+  update(draft[key]+(e.deltaY<0?step:-step));
+  // Batch rapid mouse-wheel and high-resolution trackpad changes.
+  clearTimeout(wheelFlush);
+  wheelFlush=setTimeout(()=>{wheelFlush=null;send("nativeThrowSet");},95);
  },{passive:false});
  face.addEventListener("keydown",e=>{
   const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:5,PageDown:-5}[e.key];
@@ -322,6 +330,7 @@ $("vtPower").addEventListener("click",()=>{
   current.track,"slotPower",{dataset:{slot:String(current.slot)}});
 });
 $("vtClose").addEventListener("click",()=>{
+ clearTimeout(wheelFlush);wheelFlush=null;
  panel.hidden=true;pending=null;tempoPending=null;readId="";presetBar.close();
 });
 window.addEventListener("keydown",e=>{
@@ -348,6 +357,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
+  clearTimeout(wheelFlush);wheelFlush=null;
   presetBar.reset();
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];

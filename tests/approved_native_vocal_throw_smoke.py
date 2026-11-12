@@ -104,9 +104,13 @@ def main():
             ack(page,state,intents[0]);emit(page,"arMixConsoleSnapshot",state)
             row=strip.locator('.fxslot-row[data-insert-id="'+INSTANCE+'"]')
             row.wait_for(state="visible")
-            page.keyboard.press("Escape")
-            row.locator('[data-action="openPlugin"]').click()
+            # Picker closes and Vocal Throw opens only after verified graph
+            # readback. Test its real Close then reopen through the rack.
             editor=page.locator("#mxNativeVocalThrow")
+            editor.wait_for(state="visible")
+            editor.locator("#vtClose").click()
+            assert editor.is_hidden()
+            row.locator('[data-action="openPlugin"]').click()
             editor.wait_for(state="visible")
             assert editor.locator("#vtPreset").count()==1
             assert editor.locator("#vtClose.vt-close.armix-floating-close").count()==1
@@ -316,6 +320,8 @@ def main():
                 assert float(after["offset"])<float(before["offset"]),(before,after)
                 assert after["transform"]!=before["transform"]
                 assert after["bg"]==before["bg"],"knob chassis must not rotate"
+                # Wheel burst sends one bounded native intent after 95ms.
+                page.wait_for_timeout(140)
                 rotary=last(page,"nativeThrowSet")
                 assert rotary["settings"]["wet"]>.42 and rotary["settings"]["wet"]<=.44
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":rotary["requestId"],"status":"QUEUED"})

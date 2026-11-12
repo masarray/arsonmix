@@ -47,10 +47,12 @@ def assert_key(page, selector):
       const s=getComputedStyle(e),x=getComputedStyle(e,'::after');
       const r=e.getBoundingClientRect();
       return {width:r.width,height:r.height,radius:s.borderRadius,
-        iconWidth:x.width,icon:x.backgroundImage,atRest:s.backgroundImage};
+        iconWidth:x.width,icon:x.backgroundImage,glyph:x.content,
+        atRest:s.backgroundImage};
     }""")
     assert base["width"]==24 and base["height"]==24,(selector,base)
-    assert base["iconWidth"]=="12px" and "gradient" in base["icon"],(selector,base)
+    # RC uses a visible compositor-stable text X, not the old gradient mask.
+    assert base["iconWidth"]=="12px" and base["icon"]=="none" and "×" in base["glyph"],(selector,base)
     box=button.bounding_box();assert box
     page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
     page.mouse.down()
@@ -152,7 +154,12 @@ def inspect_page(page, width, height, scale, label):
     assert moved['x']>=-2 and moved['y']>=-2 and moved['x']+moved['width']<=width+4,(
         "plugin escaped viewport",width,height,moved)
     page.screenshot(path=str(ROOT/f'operator-ux-drag-{width}x{height}-{scale}.png'))
-    check_identity_zero_reflow(page,width,height,scale,1)  # plugin open/dragged
+    # Outside-click on the mixer is now an intentional transient utility
+    # dismissal. Verify it, reopen, then verify the actual visible Close key.
+    check_identity_zero_reflow(page,width,height,scale,1)
+    assert win.is_hidden(),("plugin manager should dismiss on outside mixer click",width,height)
+    page.locator('#pluginsButton').click()
+    assert win.is_visible()
     assert_key(page,'#pluginClose')
     assert win.is_hidden()
     # Identity window and the other modeless tool share the exact square key.
@@ -168,10 +175,10 @@ def inspect_page(page, width, height, scale, label):
         info=el.evaluate("""e=>{
           const s=getComputedStyle(e),x=getComputedStyle(e,'::after');
           return {width:s.width,height:s.height,icon:x.width,
-            image:x.backgroundImage};
+            image:x.backgroundImage,glyph:x.content};
         }""")
         assert info["width"]==info["height"]=="24px",(id,info)
-        assert info["icon"]=="12px" and "gradient" in info["image"],(id,info)
+        assert info["icon"]=="12px" and info["image"]=="none" and "×" in info["glyph"],(id,info)
     page.screenshot(path=str(ROOT / f'operator-ux-{width}x{height}-{scale}.png'),
                     full_page=True)
     return m

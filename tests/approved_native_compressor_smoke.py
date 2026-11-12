@@ -108,9 +108,13 @@ def main():
             emit(page,"arMixConsoleSnapshot",state)
             row=strip.locator('.fxslot-row[data-insert-id="compressor-native-1"]')
             row.wait_for(state="visible")
-            page.keyboard.press("Escape")
-            row.locator('[data-action="openPlugin"]').click()
+            # Readback accepted the insert: validate auto-open and actual
+            # modeless Close/reopen before DSP and rack gesture checks.
             editor=page.locator("#mxNativeComp")
+            editor.wait_for(state="visible")
+            editor.locator(".mx-comp-close").click()
+            assert editor.is_hidden()
+            row.locator('[data-action="openPlugin"]').click()
             editor.wait_for(state="visible")
             # A pending native snapshot must survive multiple meter-poll ticks.
             # Previously each 160ms tick changed readId, starving slower DSP

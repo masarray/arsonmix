@@ -29,6 +29,52 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /FactoryFX\\\*.*skipifsourcedoesntexist/);
 });
 
+test('official standard VB-CABLE ZIP is pinned and opt-in without elevating ArSonMix', () => {
+  const m = JSON.parse(read('config/vbcable-official-package.json'));
+  const pack = read('scripts/prepare_vbcable_package.ps1');
+  const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
+  const notice = read('installer/VB-CABLE-NOTICE.txt');
+  assert.equal(m.filename, 'VBCABLE_Driver_Pack45.zip');
+  assert.match(m.url, /^https:\/\/download\.vb-audio\.com\/Download_CABLE\//);
+  assert.match(m.sha256, /^[a-f0-9]{64}$/);
+  assert.match(m.proof, /actions\/runs\/43079930924/);
+  assert.match(iss, /^PrivilegesRequired=lowest$/m);
+  assert.match(iss, /Name: "vbcable_driver";.*Flags: unchecked/);
+  assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
+  assert.match(iss, /ArSonMixVBCableInstall\.ps1/);
+  assert.match(iss, /Tasks: vbcable_driver; Flags: runasoriginaluser skipifsilent waituntilterminated/);
+  assert.match(iss, /-ExpectedSha256 ""\{#VBCableSha256\}""/);
+  assert.match(ps, /prepare_vbcable_package\.ps1/);
+  assert.match(ps, /DVBCableSha256=/);
+  assert.match(pack, /Get-FileHash[\s\S]*?-cne \$m\.sha256/);
+  assert.match(pack, /OFFICIAL_VBCABLE_BUNDLE_VERIFIED/);
+  assert.match(bootstrap, /Get-AuthenticodeSignature/);
+  assert.match(bootstrap, /\$sig\.Status -ne "Valid"/);
+  // Official 2024 Pack45 signs as "BUREL VINCENT Entrepreneur individuel",
+  // while older VB-Audio signatures used "Vincent Burel". Both must be
+  // recognized, but an unsigned or invalid executable is NEVER accepted.
+  assert.match(bootstrap, /Vincent\\s\+Burel/);
+  assert.match(bootstrap, /Burel\\s\+Vincent/);
+  assert.match(bootstrap, /Get-PnpDevice -PresentOnly/);
+  assert.match(bootstrap, /Get-PnpDevice -ErrorAction Stop/);
+  assert.match(bootstrap, /Get-CimInstance Win32_OperatingSystem/);
+  assert.match(bootstrap, /previous\.state -eq 'PENDING_REBOOT'/);
+  assert.match(bootstrap, /previous\.PSObject\.Properties\['bootUtc'\]/);
+  assert.match(bootstrap, /PENDING_REBOOT.*Restart Windows|Record "PENDING_REBOOT"/);
+  assert.match(bootstrap, /Record "REPAIR_REQUIRED"/);
+  assert.ok(bootstrap.indexOf("previous.state -eq 'PENDING_REBOOT'") <
+            bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
+            'pending reboot must be checked before launching a setup that can remove installed cable');
+  assert.match(bootstrap, /-Verb RunAs/);
+  assert.match(bootstrap, /PENDING_REBOOT/);
+  assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
+  assert.match(notice, /donationware/i);
+  assert.match(notice, /professional/i);
+  assert.match(notice, /www\.vb-cable\.com/);
+  assert.match(notice, /A\+B and C\+D/);
+  assert.match(iss, /Flags: runasoriginaluser skipifsilent waituntilterminated/);
+});
+
 test('single installer preflight requests graceful shutdown; Restart Manager cannot force old mixer', () => {
   assert.match(iss, /^CloseApplications=no$/m);
   assert.doesNotMatch(iss, /^CloseApplicationsFilter=/m);

@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: VB-CABLE official source intake (read only)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/vbcable-package-intake.yml'
+      - 'scripts/prepare_vbcable_package.ps1'
+      - 'config/vbcable-official-package.json'
+      - 'installer/ArSonMixVBCableInstall.ps1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vendor-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect official VB-Audio *standard* cable package without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip"
+          curl --fail --location --retry 2 --connect-timeout 10 --max-time 65 --proto '=https' --tlsv1.2 --output "$RUNNER_TEMP/VBCABLE_Driver_Pack45.zip" "$url"
+          printf 'OFFICIAL_VBCABLE_SOURCE_URL=%s\n' "$url"
+          printf 'OFFICIAL_VBCABLE_SOURCE_SHA256='
+          sha256sum "$RUNNER_TEMP/VBCABLE_Driver_Pack45.zip"
+          python - "$RUNNER_TEMP/VBCABLE_Driver_Pack45.zip" <<'PY'
+          import sys,zipfile
+          p=sys.argv[1]
+          with zipfile.ZipFile(p) as z:
+              names=z.namelist()
+              assert 5<=len(names)<=100,'Unexpected zip file count'
+              assert any(n.lower().endswith('vbcable_setup_x64.exe') for n in names),'No official x64 setup'
+              assert any(n.lower().endswith('.inf') for n in names),'No driver INF'
+              assert not any('vbcable_a_b_' in n.lower() or 'vbcable_cd_' in n.lower() for n in names),'Nonredistributable secondary cable in package'
+              assert all(not n.startswith(('/', '\\')) and '..' not in n.replace('\\','/').split('/') for n in names),'Archive path traversal'
+              print('OFFICIAL_VBCABLE_ARCHIVE_MEMBERS',len(names))
+              print('SETUP_PATHS',[n for n in names if n.lower().endswith('vbcable_setup_x64.exe')])
+          PY

@@ -861,9 +861,10 @@
  white-space:nowrap;font-size:9px;color:#aeb1ba}
 .mx-vthrow .vt-preset{display:flex;align-items:center;gap:4px;margin-left:auto;min-width:0}
 .mx-vthrow .vt-preset select{width:112px;height:25px;min-width:0;max-width:112px;padding:0 7px;
- border:1px solid #525c68;border-radius:4px;background:linear-gradient(#2a3039,#1f252e);
- color:#dce1e9;font:500 10px Inter,'Segoe UI',sans-serif}
-.mx-vthrow option{color:#e8eaf1;background:#272b34}
+  border:1px solid #525c68;border-radius:4px;background:linear-gradient(#2a3039,#1f252e);
+  color:#dce1e9;font:500 10px Inter,'Segoe UI',sans-serif;color-scheme:dark}
+.mx-vthrow .vt-preset :is(option,optgroup){background-color:#272b34;color:#e8eaf1;color-scheme:dark}
+.mx-vthrow .vt-preset optgroup{font-weight:550}
 .mx-vthrow .vt-hardware{min-height:0;overflow:auto;overscroll-behavior:contain;display:grid;
  padding:0;scrollbar-width:thin;scrollbar-color:#565563 #22272e}
 .mx-vthrow .vt-console{padding:13px 16px 12px;border-bottom:1px solid #515660;

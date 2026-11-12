@@ -1,0 +1,18 @@
+VB-CABLE — VB-Audio Software (Vincent Burel)
+Official website: https://www.vb-cable.com/
+Licence/redistribution: https://vb-audio.com/Services/licensing.htm
+
+VB-CABLE STANDARD IS DONATIONWARE. Donations are welcome.
+Professional or organisational use requires suitable paid licences.
+ArSonMix distributes the ORIGINAL standard cable package AS IS.
+Extra packages VB-CABLE A+B and C+D are NOT included or redistributed.
+
+The optional driver installation needs separate Windows administrator consent
+and a reboot. You may decline and still use ArSonMix with other sources.
+VB-CABLE installation may change Windows' default playback device.
+ArSonMix never changes the Windows default device programmatically.
+ArSonMix uninstall does NOT remove a shared VB-Audio driver.
+
+Source: https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip
+SHA256: b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb
+Manual: https://vb-audio.com/Cable/VBCABLE_ReferenceManual.pdf

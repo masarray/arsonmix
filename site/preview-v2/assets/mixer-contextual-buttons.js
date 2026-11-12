@@ -98,6 +98,7 @@
   'use strict';
   const windows=[
     ['#fastPicker','.fast-head'],
+    ['#arsonPlayer','.ap-top'],
     ['#wireConfigWindow','.wire-config-head'],
     ['#wireWorkspace','.wire-ws-head'],
     ['#routeChoice','.route-choice-head'],
@@ -188,4 +189,97 @@
       }
     });
   },{passive:true});
+})();
+
+/* DAW-standard wheel adjust for native built-in compressor/Harmonice dials.
+   EQ and Vocal Throw already own their wheel controls; console faders and
+   SEND levels have separate handlers. Do not intercept preset-list scrolling.
+   This never writes native PCM directly: original input listeners own edits,
+   ACK and readback. */
+(()=>{
+  'use strict';
+  const residues=new WeakMap();
+  document.addEventListener('wheel',event=>{
+    if(event.ctrlKey||!Number.isFinite(event.deltaY)||event.deltaY===0)return;
+    const input=event.target.closest?.('.mx-comp-slider,.mx-harm-slider input[type="range"]');
+    if(!input||input.disabled||input.closest?.('[hidden]'))return;
+    const min=Number(input.min),max=Number(input.max),value=Number(input.value);
+    const step=Number(input.step)||1;
+    if(![min,max,value,step].every(Number.isFinite)||step<=0||max<=min)return;
+    event.preventDefault();
+    const pixels=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?240:1);
+    const residue=(residues.get(input)||0)+pixels;
+    const ticks=Math.trunc(residue/100);
+    residues.set(input,residue-ticks*100);
+    if(!ticks)return;
+    const amount=ticks;
+    const quantized=Math.round((value-min-amount*step)/step)*step+min;
+    const next=Math.max(min,Math.min(max,Number(quantized.toFixed(5))));
+    if(next===value)return;
+    input.value=String(next);
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  },{passive:false});
+})();
+
+/* One owner for short-lived UTILITY panels, not FX editors. First open is
+   centred in the app; subsequent opens retain the user's moved location.
+   Outside pointer or focus transfer invokes the EXISTING close button, so
+   navigator toggles, Player transport and plugin-manager state stay coherent. */
+(()=>{
+ 'use strict';
+ const list=[
+  ['pluginBrowser','pluginClose','pluginsButton'],
+  ['arsonPlayer','playerClose','playerToggle'],
+  ['wireWorkspace','wireWsClose','wireNavigatorToggle'],
+  ['wireConfigWindow','wireConfigClose','wireConfigToggle']
+ ];
+ const panels=()=>list.map(([id,close,trigger])=>({
+  panel:document.getElementById(id),close:document.getElementById(close),
+  trigger:document.getElementById(trigger)
+ })).filter(x=>x.panel&&x.close);
+ const visible=panel=>!panel.hidden&&panel.getClientRects().length>0;
+ const margin=12;
+ function centerFirst(panel){
+  if(panel.dataset.armixCenteredOnce==='true'||!visible(panel))return;
+  const rect=panel.getBoundingClientRect();
+  if(rect.width<1||rect.height<1)return;
+  const fixed=getComputedStyle(panel).position==='fixed';
+  const parent=fixed?null:(panel.offsetParent||document.documentElement);
+  const area=parent?.getBoundingClientRect?.()||{
+   left:0,top:0,width:document.documentElement.clientWidth,
+   height:document.documentElement.clientHeight};
+  const x=Math.max(margin,Math.round((area.width-rect.width)/2));
+  const y=Math.max(margin,Math.round((area.height-rect.height)/2));
+  panel.style.setProperty('left',x+'px','important');
+  panel.style.setProperty('top',y+'px','important');
+  panel.style.setProperty('right','auto','important');
+  if(fixed){
+   // The Player originally fills a top/bottom-anchored drawer. Freeze the
+   // measured height when converting it to a centred movable utility card.
+   if(panel.id==='arsonPlayer')
+    panel.style.setProperty('height',Math.min(rect.height,area.height-2*margin)+'px','important');
+   panel.style.setProperty('bottom','auto','important');
+  }
+  panel.dataset.armixCenteredOnce='true';
+ }
+ function observe(panel){
+  const observer=new MutationObserver(()=>centerFirst(panel));
+  observer.observe(panel,{attributes:true,attributeFilter:['hidden']});
+  centerFirst(panel);
+ }
+ for(const {panel} of panels())observe(panel);
+ function dismissOutside(target){
+  if(!target?.closest)return;
+  if(target.closest('#routeChoice,#fastPicker,.mx-fxp-form'))return;
+  for(const {panel,close,trigger} of panels()){
+   if(!visible(panel)||panel.contains(target)||trigger?.contains(target))continue;
+   if(panel.id==='wireWorkspace'&&
+      target.closest('#wireMatrixToggle,#wireNavigatorToggle,[data-wire-open]'))continue;
+   if(panel.id==='wireConfigWindow'&&
+      target.closest('#wireConfigToggle,[data-wire-open="config"]'))continue;
+   close.click();
+  }
+ }
+ document.addEventListener('pointerdown',e=>dismissOutside(e.target),true);
+ document.addEventListener('focusin',e=>dismissOutside(e.target),true);
 })();
