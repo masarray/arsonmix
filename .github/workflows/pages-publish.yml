@@ -57,8 +57,20 @@ jobs:
           SOURCE_SHA="$(git rev-parse HEAD)"
           CURRENT_MAIN="$(git ls-remote origin refs/heads/main | cut -f1)"
           if [ "$SOURCE_SHA" != "$CURRENT_MAIN" ]; then
-            echo "fresh=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
+            # Reuse the exact qualified GUI when main advanced only in docs.
+            # Fetch bounded history and fail closed for rewrites, missing refs
+            # and every path outside the documentation allowlist.
+            if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] &&
+               [[ "$CURRENT_MAIN" =~ ^[0-9a-f]{40}$ ]] &&
+               git fetch --no-tags --depth=64 origin "$CURRENT_MAIN" &&
+               git merge-base --is-ancestor "$SOURCE_SHA" "$CURRENT_MAIN" &&
+               git diff --quiet "$SOURCE_SHA" "$CURRENT_MAIN" -- . ':(exclude)docs/**' ':(exclude)README.md'; then
+              echo "fresh=true" >> "$GITHUB_OUTPUT"
+              echo "Reusing qualified Pages SHA $SOURCE_SHA; main advanced only in docs"
+            else
+              echo "fresh=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping obsolete qualified Pages SHA $SOURCE_SHA; main is $CURRENT_MAIN"
+            fi
           elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # Marketing only: any mixer, engine, preview/DOM/CSS/build change
             # immediately fails closed to the full Chromium workflow_run gate.

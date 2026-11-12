@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // GitHub connector -> owner PR comment -> exact-SHA milestone. Runs on main.
 import {readFileSync} from 'node:fs';
+import {setTimeout as sleep} from 'node:timers/promises';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
@@ -140,7 +141,7 @@ export function quickResult(jobs,lane) {
     'Fast native contracts (no Windows / JUCE checkout)';
   return jobs.find(j=>j.name===name)?.conclusion??null;
 }
-export async function performMilestone({event,repo,api}) {
+export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(5000)}) {
   if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
   const target=validateMilestone(event,repo,await api('/pulls/'+event.issue.number));
   const older=[];
@@ -157,11 +158,15 @@ export async function performMilestone({event,repo,api}) {
   const prior=(await api(qs)).workflow_runs.filter(r=>r.head_sha===target.sha)
     .sort((a,b)=>b.id-a.id)[0];
   if(prior){
-    const jobs=(await api('/actions/runs/'+prior.id+'/jobs?per_page=100')).jobs;
-    const status=quickResult(jobs,target.lane);
-    if(['failure','cancelled','timed_out'].includes(status))
-      throw Error('CI_QUICK_FAILED: fix lightweight regression before milestone');
-    if(status!=='success')throw Error('CI_QUICK_PENDING');
+    for(let attempt=0;;attempt++){
+      const jobs=(await api('/actions/runs/'+prior.id+'/jobs?per_page=100')).jobs;
+      const status=quickResult(jobs,target.lane);
+      if(status==='success')break;
+      if(status)throw Error('CI_QUICK_FAILED: '+status+'; fix lightweight regression before milestone');
+      if(attempt===12)throw Error('CI_QUICK_PENDING: timed out waiting for lightweight checks');
+      await waitForQuick();
+      validateMilestone(event,repo,await api('/pulls/'+target.number));
+    }
   }
   if(target.lane==='ui'){
     const q='/actions/workflows/'+target.workflow+
