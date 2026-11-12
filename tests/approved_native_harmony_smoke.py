@@ -670,7 +670,7 @@ def main():
                     page.mouse.move(rectClose["x"]+12,rectClose["y"]+12)
                     page.mouse.down()
                     bg=close.evaluate("(el)=>getComputedStyle(el).backgroundImage")
-                    assert "204, 71, 83" in bg or "152, 42, 54" in bg,bg
+                    assert "rgb(239, 62, 80)" in bg and "rgb(197, 45, 64)" in bg,bg
                     page.mouse.up()
                     assert editor.is_hidden(),"Harmony Close button failed"
                 page.close()
