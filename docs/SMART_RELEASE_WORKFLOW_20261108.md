@@ -36,11 +36,14 @@ to other workflows via release.published).
    The owner-only dispatcher checks issue, identity, branch/SHA, earlier
    comment, already-published tags and same-SHA runs before dispatching
    the release workflow ONE TIME. No manual Actions UI.
-4. Windows release job: exact checkout -> quick checks -> MSVC/61 CTest ->
+4. Windows release job: exact checkout -> compile the MSVC application target ->
    executable and /preview/ GUI hashes -> optional legal FactoryFX subset ->
    portable ZIP checks -> actual Inno install/upgrade/uninstall and private
    Show preservation -> checksum/provenance -> immutable GitHub pre-release.
-   Only then request one cheap Pages catalog refresh.
+   Only then request one cheap Pages catalog refresh. Full CTest and GUI suites
+   run in their existing development and FAT workflows. The dispatcher checks
+   current main at submission. After that, normal main advances can proceed
+   while the unchanged release branch SHA builds and publishes.
 5. Independent Linux/macOS port qualification is also agent-comment driven:
    `/arsonmix-port linux <branch> <full 40-character SHA>` or
    `/arsonmix-port macos <branch> <full 40-character SHA>` to issue #450.
