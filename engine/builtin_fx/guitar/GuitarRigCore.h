@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "GuitarFactoryTones.h"
+#include "GuitarOversampling2x.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -16,14 +17,19 @@ class GuitarRigCore final {
 public:
     static constexpr int cabinetTaps=65;
     static constexpr int cabinetLatencySamples=(cabinetTaps-1)/2;
+    static constexpr int oversamplingLatencySamples=
+        GuitarOversampling2x::latencySamples;
+    static constexpr int processingLatencySamples=
+        cabinetLatencySamples+oversamplingLatencySamples;
     struct Coefficients {
         float gateThreshold=0.001f;
         float gateCloseThreshold=0.0007f;
         float gateAttack=0.5f,gateRelease=0.999f;
         float gateOpenSmooth=0.995f,gateCloseSmooth=0.999f;
         int gateHoldSamples=0;
-        float driveGain=2.f;
-        float ampGain=4.f,ampTonePole=0.5f,ampVolume=0.7f;
+        float driveGain=2.f,driveHighPass=0.993f;
+        float ampGain=4.f,ampHighPass=0.997f;
+        float ampTonePole=0.5f,ampVolume=0.7f;
     };
 
     static constexpr Program startingProgram() noexcept {
@@ -52,6 +58,9 @@ public:
                 return false;
         std::array<float,cabinetTaps> nextIR{};
         if(!makeCabinetIR(rate,nextIR))return false;
+        std::array<GuitarOversampling2x,2> nextOversampling{};
+        for(auto& o:nextOversampling)
+            if(!o.prepare(rate))return false;
         std::array<Coefficients,maxBlocks> nextCoeff{};
         for(std::size_t i=0;i<program.count;++i){
             const Block& block=program.blocks[i];
@@ -75,23 +84,31 @@ public:
                     std::exp(-1./(closeSeconds*rate)));
             } else if(block.module==Module::overdrive){
                 c.driveGain=1.f+18.f*param*param;
+                c.driveHighPass=static_cast<float>(
+                    std::exp(-2.*pi*54./(rate*2.)));
             } else if(block.module==Module::amplifier) {
                 c.ampGain=1.f+22.f*param*param;
+                c.ampHighPass=static_cast<float>(
+                    std::exp(-2.*pi*23./(rate*2.)));
                 const float cutoff=3200.f+4600.f*block.values[1];
                 c.ampTonePole=static_cast<float>(
-                    std::exp(-2.*pi*cutoff/rate));
+                    std::exp(-2.*pi*cutoff/(rate*2.)));
                 c.ampVolume=0.3f+0.9f*block.values[2];
             }
         }
         program_=program;
         coeff_=nextCoeff;
         ir_=nextIR;
+        oversampling_=nextOversampling;
         lane_={};
         sampleRate_=rate;
         ready_=true;
         return true;
     }
-    void reset() noexcept {lane_={};}
+    void reset() noexcept {
+        lane_={};
+        for(auto& o:oversampling_)o.reset();
+    }
     bool isReady() const noexcept {return ready_;}
     // AUDIO-only; the prepared program owns its new coefficients/IR, but
     // compatible running delay/filter/envelope state is inherited from the
@@ -110,6 +127,9 @@ public:
                 return false;
         }
         lane_=previous.lane_;
+        for(std::size_t i=0;i<oversampling_.size();++i)
+            if(!oversampling_[i].inheritHistory(previous.oversampling_[i]))
+                return false;
         return true;
     }
     const Program& program() const noexcept {return program_;}
@@ -134,8 +154,8 @@ public:
                 leftIn*=gain;
                 rightIn*=gain;
             }
-            left[i]=render(0,leftIn);
-            right[i]=render(1,rightIn);
+            left[i]=processCabinet(0,processPreamp(0,leftIn));
+            right[i]=processCabinet(1,processPreamp(1,rightIn));
         }
     }
 private:
@@ -212,78 +232,79 @@ private:
         history.gateGain=k*history.gateGain+(1.f-k)*target;
         return history.gateGain;
     }
-    float render(std::size_t channel,float input) noexcept {
+    // Two nonlinear stages run at twice the device rate, while the
+    // linked gate and 65-tap cabinet operate at native rate. Polyphase FIR
+    // filtering attenuates nonlinear products above native Nyquist before
+    // they can fold into the monitored guitar signal.
+    float processPreamp(std::size_t ch,float input) noexcept {
+        const bool drive=program_.blocks[1].enabled;
+        const bool amp=program_.blocks[2].enabled;
+        if(!drive&&!amp)
+            return oversampling_[ch].bypassDelay(input);
+        float even=0.f,odd=0.f;
+        oversampling_[ch].upsamplePair(input,even,odd);
+        even=shapeDriveAmp(ch,even);
+        odd=shapeDriveAmp(ch,odd);
+        return oversampling_[ch].decimateEven(even,odd);
+    }
+    float shapeDriveAmp(std::size_t channel,float sample) noexcept {
         auto& lane=lane_[channel];
-        float sample=std::isfinite(input)?input:0.f;
-        for(std::size_t index=0;index<program_.count;++index){
-            const Block& block=program_.blocks[index];
-            if(!block.enabled && block.module!=Module::cabinet)continue;
-            auto& history=lane.modules[index];
-            const Coefficients& c=coeff_[index];
-            switch(block.module){
-                case Module::gate:
-                    // Already applied by the stereo-linked detector above.
-                    break;
-                case Module::overdrive: {
-                    // One-pole DC-bounded brightening before asymmetrical softclip.
-                    const float hp=sample-history.driveIn+0.993f*history.driveOut;
-                    history.driveIn=sample;history.driveOut=hp;
-                    const float driven=c.driveGain*hp;
-                    sample=1.65f*(saturate(driven+0.08f)-saturate(0.08f));
-                    break;
-                }
-                case Module::amplifier: {
-                    const float hp=sample-history.ampIn+0.997f*history.ampOut;
-                    history.ampIn=sample;history.ampOut=hp;
-                    const float bias=0.08f;
-                    const float driven=c.ampGain*hp;
-                    const float shaped=2.2f*
-                        (saturate(driven+bias)-saturate(bias));
-                    history.ampTone=c.ampTonePole*history.ampTone+
-                                    (1.f-c.ampTonePole)*shaped;
-                    sample=history.ampTone*c.ampVolume;
-                    break;
-                }
-                case Module::cabinet: {
-                    lane.cabDelay[lane.cabCursor]=sample;
-                    if(block.enabled){
-                        // The generated 65-tap linear-phase FIR is
-                        // EXACTLY symmetric. Pair mirrored samples:
-                        // 33 multiplies instead of 65 per sample, with
-                        // identical 32-sample group delay and no heap.
-                        float result=0.f;
-                        std::size_t lo=lane.cabCursor;
-                        std::size_t hi=lane.cabCursor+1;
-                        if(hi==cabinetTaps)hi=0;
-                        for(std::size_t tap=0;
-                            tap<static_cast<std::size_t>(cabinetLatencySamples);
-                            ++tap) {
-                            result+=ir_[tap]*(
-                                lane.cabDelay[lo]+lane.cabDelay[hi]);
-                            lo=lo==0?cabinetTaps-1:lo-1;
-                            hi=hi+1==cabinetTaps?0:hi+1;
-                        }
-                        result+=ir_[cabinetLatencySamples]*lane.cabDelay[lo];
-                        sample=result;
-                    }else{
-                        // Same fixed PDC when CAB bypass is changed offline.
-                        const auto delayed=(lane.cabCursor+
-                            cabinetTaps-cabinetLatencySamples)%cabinetTaps;
-                        sample=lane.cabDelay[delayed];
-                    }
-                    lane.cabCursor=(lane.cabCursor+1)%cabinetTaps;
-                    break;
-                }
-                default: break; // Unsupported enabled modules fail preparation.
-            }
+        if(program_.blocks[1].enabled){
+            auto& h=lane.modules[1];
+            const auto& c=coeff_[1];
+            const float hp=sample-h.driveIn+c.driveHighPass*h.driveOut;
+            h.driveIn=sample;h.driveOut=hp;
+            const float driven=c.driveGain*hp;
+            sample=1.65f*(saturate(driven+0.08f)-saturate(0.08f));
         }
+        if(program_.blocks[2].enabled){
+            auto& h=lane.modules[2];
+            const auto& c=coeff_[2];
+            const float hp=sample-h.ampIn+c.ampHighPass*h.ampOut;
+            h.ampIn=sample;h.ampOut=hp;
+            const float shaped=2.2f*(
+                saturate(c.ampGain*hp+0.08f)-saturate(0.08f));
+            h.ampTone=c.ampTonePole*h.ampTone+
+                       (1.f-c.ampTonePole)*shaped;
+            sample=h.ampTone*c.ampVolume;
+        }
+        return std::isfinite(sample)?sample:0.f;
+    }
+    float processCabinet(std::size_t channel,float sample) noexcept {
+        auto& lane=lane_[channel];
+        const bool cabEnabled=program_.blocks[3].enabled;
+        lane.cabDelay[lane.cabCursor]=sample;
+        if(cabEnabled){
+            // Exact symmetric 65-tap cabinet FIR: 33 multiplies; its
+            // original 32-frame group delay combines with 16 from 2x.
+            float result=0.f;
+            std::size_t lo=lane.cabCursor;
+            std::size_t hi=lane.cabCursor+1;
+            if(hi==cabinetTaps)hi=0;
+            for(std::size_t tap=0;
+                tap<static_cast<std::size_t>(cabinetLatencySamples);
+                ++tap) {
+                result+=ir_[tap]*(
+                    lane.cabDelay[lo]+lane.cabDelay[hi]);
+                lo=lo==0?cabinetTaps-1:lo-1;
+                hi=hi+1==cabinetTaps?0:hi+1;
+            }
+            result+=ir_[cabinetLatencySamples]*lane.cabDelay[lo];
+            sample=result;
+        } else {
+            // CAB OFF is PDC-compatible even if Drive/Amp are bypassed.
+            const auto delayed=(lane.cabCursor+cabinetTaps-
+                cabinetLatencySamples)%cabinetTaps;
+            sample=lane.cabDelay[delayed];
+        }
+        lane.cabCursor=(lane.cabCursor+1)%cabinetTaps;
         if(!std::isfinite(sample))return 0.f;
-        // Prevent a malformed input transient from blasting output.
         return sample>1.25f?1.25f:sample< -1.25f?-1.25f:sample;
     }
     Program program_{};
     std::array<Coefficients,maxBlocks> coeff_{};
     std::array<float,cabinetTaps> ir_{};
+    std::array<GuitarOversampling2x,2> oversampling_{};
     std::array<ChannelState,2> lane_{};
     double sampleRate_=0.;
     bool ready_=false;
