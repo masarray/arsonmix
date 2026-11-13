@@ -83,14 +83,14 @@ int main() {
         // history before and immediately after reposition.
         SonKuSpatialCore teleport,stationary;
         assert(teleport.prepare(rate)&&stationary.prepare(rate));
-        Settings front=s;front.startAzimuthDegrees=0.f;
-        assert(teleport.setSettings(front)&&stationary.setSettings(front));
+        Settings frontPose=s;frontPose.startAzimuthDegrees=0.f;
+        assert(teleport.setSettings(frontPose)&&stationary.setSettings(frontPose));
         std::array<float,512> preL{},preR{},sameL{},sameR{};
         preL.fill(.12f);preR.fill(-.10f);sameL=preL;sameR=preR;
         teleport.process(preL.data(),preR.data(),512);
         stationary.process(sameL.data(),sameR.data(),512);
-        Settings rear=front;rear.startAzimuthDegrees=180.f;
-        assert(teleport.setSettings(rear));
+        Settings rearPose=frontPose;rearPose.startAzimuthDegrees=180.f;
+        assert(teleport.setSettings(rearPose));
         std::array<float,1024> stepL{},stepR{},refL{},refR{};
         stepL.fill(.12f);stepR.fill(-.10f);refL=stepL;refR=stepR;
         teleport.process(stepL.data(),stepR.data(),1024);
@@ -104,7 +104,7 @@ int main() {
         // MIX/trim changes are smoothed on the same audio clock.
         SonKuSpatialCore mixCore;
         assert(mixCore.prepare(rate));
-        Settings dry=front;dry.spatialMix=0.f;
+        Settings dry=frontPose;dry.spatialMix=0.f;
         assert(mixCore.setSettings(dry));
         std::array<float,2048> warmL{},warmR{};
         warmL.fill(.19f);warmR.fill(-.13f);
