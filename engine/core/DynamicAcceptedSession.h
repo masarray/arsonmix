@@ -359,6 +359,20 @@ public:
             source,destination,preFader,linear);
     }
 
+    // Real-time per-EdgeId SEND ON/OFF uses the same prepared PCM graph,
+    // retains remembered gain, and never tears down/recreates its WIRE.
+    bool setLiveSendEnabled(std::uint64_t epoch,std::uint64_t graphRevision,
+                            ChannelId source,std::uint64_t edgeId,bool enabled) noexcept {
+        const auto* row=accepted_.find(source);
+        if(!row || !edgeId)return false;
+        for(const auto& edge:row->sends)
+            if(edge.edgeId==edgeId && !edge.primaryOutput){
+                if(!publisher_.setSendEnabled(epoch,graphRevision,
+                    source,edgeId,enabled,edge.gain))return false;
+                return accepted_.rememberLiveSendEnabled(source,edgeId,enabled);
+            }
+        return false;
+    }
     bool setLiveWireGain(std::uint64_t epoch,std::uint64_t revision,
                          ChannelId source,std::uint64_t edgeId,float gain) noexcept {
         const auto* row=accepted_.find(source);
