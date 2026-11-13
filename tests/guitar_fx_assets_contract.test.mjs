@@ -74,11 +74,11 @@ test("native JUCE editor uses the generated binary resource identifiers",()=>{
  assert(cmake.includes("ARMIX_GUITAR_SKIN_PNGS"),"GFX images are embedded");
  assert(cmake.includes("juce_add_binary_data(ARMixAssets"),"one existing app resource target");
  for(const name of [
-   "amp-head-class-a.png",
-   "cabinet-dual-12.png",
-   "pedal-gate.png",
-   "pedal-overdrive.png",
-   "knob-brushed-metal.png"
+   "gfx-amp-head.png","gfx-cabinet.png",
+   "gfx-pedal-gate-body.png","gfx-pedal-drive-body.png",
+   "gfx-knob.png","gfx-switch-off.png","gfx-switch-on.png",
+   "gfx-button-off.png","gfx-button-on.png","gfx-panel.png",
+   "gfx-stomp-off.png","gfx-stomp-on.png"
  ]){
    const id=name.replace(/\.png$/,"").replace(/[^A-Za-z0-9_]/g,"")+"_png";
    assert(editor.includes("BinaryData::"+id),name+" correct generated JUCE identifier");
@@ -116,9 +116,11 @@ test("bypassed Guitar FX editor may enqueue tone without a live wet meter",()=>{
 
 test("native hardware PNG decoding is cached across editor close/reopen",()=>{
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
- assert(editor.includes("static const std::array<juce::Image,5> skins"),
-        "native editor must not decode all five PNG resources for every window");
- for(const key of ["amp_","cab_","gate_","pedal_","knob_"])
+ assert(editor.includes("static const std::array<juce::Image,12> skins"),
+        "native editor must cache all 12 layered PNG resources per app");
+ for(const key of ["amp_","cab_","gate_","pedal_","knob_","switchOff_",
+                   "switchOn_","buttonOff_","buttonOn_","panel_",
+                   "stompOff_","stompOn_"])
   assert(editor.includes(key+"=skins["),key+" shares cached image resource");
 });
 
@@ -151,4 +153,67 @@ test("Guitar FX 2x polyphase processing preserves an authoritative fixed PDC",()
         "clean path must have same fixed PDC and warm dry history");
  assert(portable.includes("assert(aliasedThirdDb < -35.0)"),
         "folded 21kHz alias must remain a hard regression gate");
+});
+
+test("production guitar hardware is layered and old prototype art is not embedded",()=>{
+ const cmake=readFileSync(resolve(root,"CMakeLists.txt"),"utf8");
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ assert(cmake.includes("build_guitar_fx_layered_assets.mjs"));
+ assert(cmake.includes("assets/gfx-*.png"),
+        "production binary must exclude deprecated old baked-footpedal PNGs");
+ assert(editor.includes("juce::Rectangle<int> knobBounds("),
+        "independent physical knob hit targets must follow artwork anchors");
+ assert(editor.includes("stomp_.onClick=")&&editor.includes("power_[focus_].triggerClick()"),
+        "stomp must affect the same PCM program as the chain power toggle");
+ assert(editor.includes("setLookAndFeel(&switchLook_)") &&
+        editor.includes("setLookAndFeel(&buttonLook_)"),
+        "native controls must use the same layered material language");
+ for(const path of ["pedalgate_png","pedaloverdrive_png","ampheadclassa_png"])
+   assert(!editor.includes("BinaryData::"+path),
+          "obsolete baked bitmap must not be loaded: "+path);
+});
+test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels",async()=>{
+ const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ const decode=spec=>{
+  const b=render(spec),w=b.readUInt32BE(16),h=b.readUInt32BE(20);
+  assert.equal(b[25],6,"RGBA PNG (not opaque image with fake black alpha)");
+  let i=8,idat=[];
+  while(i<b.length){
+   const n=b.readUInt32BE(i),tag=b.toString("ascii",i+4,i+8);
+   if(tag==="IDAT")idat.push(b.subarray(i+8,i+8+n));
+   i+=12+n;
+   if(tag==="IEND")break;
+  }
+  const raw=inflateSync(Buffer.concat(idat));
+  assert.equal(raw.length,(w*4+1)*h);
+  return {w,h,raw};
+ };
+ const find=name=>SKINS.find(s=>s[0]===name);
+ assert.equal(SKINS.length,12,"only active GFX modules and UI chrome");
+ for(const [a,b] of [["gfx-switch-off.png","gfx-switch-on.png"],
+                       ["gfx-button-off.png","gfx-button-on.png"],
+                       ["gfx-stomp-off.png","gfx-stomp-on.png"]]){
+  const A=decode(find(a)),B=decode(find(b));
+  assert.equal(A.w,B.w);assert.equal(A.h,B.h);
+  let stateChanges=0;
+  for(let y=0;y<A.h;y++)for(let x=0;x<A.w;x++){
+   const offset=y*(A.w*4+1)+1+x*4;
+   assert.equal(A.raw[offset+3],B.raw[offset+3],a+" vs "+b+
+     ": alpha/frame misregistration at "+x+","+y);
+   const outside=x<8||x>=A.w-8||y<10||y>=A.h-10;
+   if(outside)
+    for(let c=0;c<4;c++)assert.equal(A.raw[offset+c],B.raw[offset+c],
+      "outer frame cannot flicker across ON/OFF");
+   if(!outside&&A.raw[offset]!==B.raw[offset])stateChanges++;
+  }
+  assert(stateChanges>100,"state must visibly change while frame stays fixed");
+ }
+ // These are true independent body PNGs, with empty wells. The only
+ // draggable controls are JUCE child widgets, not burned-in knob pixels.
+ for(const name of ["gfx-pedal-gate-body.png","gfx-pedal-drive-body.png"]){
+  const body=decode(find(name));
+  const x=Math.floor(body.w*.5),y=Math.floor(body.h*.82);
+  const k=y*(body.w*4+1)+1+x*4;
+  assert(body.raw[k]<75,"stomp well must not contain a baked shiny switch");
+ }
 });
