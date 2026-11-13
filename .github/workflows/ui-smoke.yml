@@ -164,7 +164,7 @@ jobs:
       - name: Verify touch toolbar More keeps Add Audio available at 360/390/430px
         if: ${{ startsWith(github.head_ref, 'fix/gui-') }}
         run: python tests/approved_preview_mobile_navigation_smoke.py
-      - name: Check Vocal Throw editor, picker and plugin native UI at two viewport widths
+      - name: Check Vocal Delay editor, picker and plugin native UI at two viewport widths
         if: ${{ github.head_ref == 'fix/rc-ux-audio-first-run-20261112' }}
         run: python tests/approved_native_vocal_throw_smoke.py
       # RC branch only: run the current downstream GUI/WIRE/FX regressions
@@ -277,11 +277,11 @@ jobs:
           retention-days: 7
 
   vocal-throw-preview:
-    name: Vocal Throw native editor desktop/mobile Chromium FAT
+    name: Vocal Delay native editor desktop/mobile Chromium FAT
     needs: quick
-    # Run dedicated Vocal Throw visual validation in the reconciled native
+    # Run dedicated Vocal Delay visual validation in the reconciled native
     # engine branch too; generic /preview/ smoke does not call this fixture.
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -289,7 +289,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Chromium for targeted Vocal Throw UI
+      - name: Install Chromium for targeted Vocal Delay UI
         run: |
           python -m pip install playwright
           python -m playwright install --with-deps chromium
@@ -299,7 +299,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ArSonMix-Vocal-Throw-Desktop-Mobile-${{ github.run_id }}
+          name: ArSonMix-Vocal-Delay-Desktop-Mobile-${{ github.run_id }}
           path: arsonmix-vocal-throw-*.png
           if-no-files-found: ignore
           retention-days: 7
@@ -443,7 +443,7 @@ jobs:
         run: python tests/approved_native_peq_smoke.py
       - name: Native Compressor real Chromium FX, transfer curve, ACK and responsive editor
         run: python tests/approved_native_compressor_smoke.py
-      - name: Native Vocal Throw portable My Presets, audio ACK and responsive editor
+      - name: Native Vocal Delay portable My Presets, audio ACK and responsive editor
         run: python tests/approved_native_vocal_throw_smoke.py
       - name: Native Harmony effective-key LCD, Music/Manual ACK, slow readback and geometry
         run: python tests/approved_native_harmony_smoke.py
