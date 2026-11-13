@@ -100,6 +100,20 @@ set(ARMIX_GUITAR_ART_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/artist-source"
     CACHE PATH "Optional approved photo-real Guitar FX artist PNG source")
 if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+    # Reject incomplete/misaligned artist exports before CMake embeds them.
+    # A changed ON/OFF silhouette or outer frame would cause visible flicker.
+    execute_process(
+        COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_guitar_fx_artist_source.mjs"
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}"
+        RESULT_VARIABLE ARMIX_GUITAR_ART_CHECK_RESULT
+        OUTPUT_VARIABLE ARMIX_GUITAR_ART_CHECK_LOG
+        ERROR_VARIABLE ARMIX_GUITAR_ART_CHECK_ERROR)
+    if(NOT ARMIX_GUITAR_ART_CHECK_RESULT EQUAL 0)
+        message(FATAL_ERROR
+            "Invalid Guitar FX artist layers: ${ARMIX_GUITAR_ART_CHECK_ERROR}")
+    endif()
+    message(STATUS "${ARMIX_GUITAR_ART_CHECK_LOG}")
     foreach(ARMIX_GFX_ASSET
         gfx-amp-head.png gfx-cabinet.png gfx-pedal-gate-body.png
         gfx-pedal-drive-body.png gfx-knob.png gfx-switch-off.png
