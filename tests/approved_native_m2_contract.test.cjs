@@ -28,7 +28,13 @@ function acceptedFixture(){
  return s;
 }
 test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, with native readback only",()=>{
- const vm=require("node:vm"),html=read("site/preview-v2/index.html");
+ const vm=require("node:vm"),{execFileSync}=require("node:child_process");
+ const publicHtml=read("site/preview-v2/index.html");
+ assert.doesNotMatch(publicHtml,/__ARMIX_NATIVE_M2__/,
+  "public approved /preview/ must never own native control authority");
+ const html=execFileSync("python3",["-c",
+  "from scripts.build_approved_native_gui import native_html; from pathlib import Path; print(native_html(Path('site/preview-v2/index.html').read_text(encoding='utf-8')))"
+ ],{encoding:"utf8",maxBuffer:10*1024*1024});
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");
  assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
