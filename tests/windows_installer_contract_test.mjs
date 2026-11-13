@@ -397,10 +397,12 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
     'consent must gate the installer before any replacement');
   assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
   assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
-  assert.match(native, /NativeMessageBox::showAsync/);
-  assert.match(native, /withButton \("OK"\)/);
+  assert.match(native, /class ArSonMixUpdateNotice final : public juce::DocumentWindow/);
+  assert.match(native, /juce::TextButton ok \{"OK"\}/);
+  assert.match(native, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
+  assert.match(native, /std::make_unique<ArSonMixUpdateNotice>/);
+  assert.doesNotMatch(native, /juce::NativeMessageBox::showAsync \(options/);
   assert.match(native, /approved\.json/);
-  assert.match(native, /if \(button < 0\) return/);
   assert.match(native, /lastUpdatePromptedSha_ == candidate/);
   assert.doesNotMatch(updater, /(?:Stop-Process|taskkill|TerminateProcess)/);
 });
@@ -423,4 +425,15 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   // Explicit manual Repair mode may still relaunch on request.
   const afterApply = updater.slice(updater.indexOf('# Post-close supervisor'));
   assert.doesNotMatch(afterApply, /\[Diagnostics\.Process\]::Start\(\$exe\)/);
+});
+
+test('updater notice is nonmodal, dismissal cannot approve and shutdown cleans up', () => {
+  const s=read('src/Main.cpp');
+  const notice=s.slice(s.indexOf('class ArSonMixUpdateNotice final'),s.indexOf('class ConsoleApp final'));
+  assert.match(notice, /juce::DocumentWindow/);
+  assert.match(notice, /panel_\.ok\.onClick = \[this\]/);
+  assert.match(notice, /if \(onAccept_\) onAccept_\(\)/);
+  assert.match(notice, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
+  assert.doesNotMatch(notice, /enterModalState|runModalLoop|NativeMessageBox/);
+  assert.match(s, /updateNotice_\.reset\(\);\s*#endif\s*window_\.reset\(\)/);
 });
