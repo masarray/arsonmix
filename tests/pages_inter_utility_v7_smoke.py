@@ -129,7 +129,13 @@ async def visual(page,width):
         assert await key.locator('.mx-mute-face .mx-mute-legend').inner_text()=='MUTE'
         assert await key.locator('svg,img').count()==0
       else:
-        assert await key.locator('svg.mx-hw-face mask text').count()==1
+        # The SVG is inserted by the one authoritative resize-aware hardware
+        # renderer after the button enters the DOM. Assert the real mask and
+        # embossed legend, not merely the presence of an inert button.
+        legend=key.locator('svg.mx-hw-face mask text')
+        await legend.wait_for(state="attached",timeout=6000)
+        assert await legend.count()==1
+        assert await legend.inner_text()==('PFL' if k=='pfl' else 'SOLO')
 
 async def main():
     source_contract()
