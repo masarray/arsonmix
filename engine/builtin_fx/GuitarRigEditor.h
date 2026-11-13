@@ -262,8 +262,12 @@ private:
             requestedBank_=-1;
             activateBank(next);
         }
-        if(dirty_&&!waitingId_&&processor_.isReady()&&serial>0 &&
-           nowMs_-lastBlockMs_<900u) {
+        // The existing host consumes native edits even while this FX
+        // instance or the entire rack is fully bypassed. Do not wait for
+        // observed wet PCM here: otherwise changing a pedal while bypassed
+        // silently fails, and its state is not ready when bypass turns ON.
+        // No callback -> the queued intent remains PENDING, never fake-ACKed.
+        if(dirty_&&!waitingId_&&processor_.isReady()) {
             const auto id=processor_.nextRequestId();
             if(id && processor_.queueProgram(draft_,id,selectedBank_)){
                 waitingId_=id;dirty_=false;
