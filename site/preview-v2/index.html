@@ -360,6 +360,8 @@ function wireGraphCommit(ops,{record=true}={}){
  // Invalid/canceled operations never touch selection.
  const accepted=ops.filter(op=>['CONNECT','ROUTE_ONLY','RETARGET'].includes(op.type)).at(-1);
  if(accepted){
+  if(String(accepted.sourceId)===wireRetractOverlay?.dataset.wireRetract)
+   stopWireRetraction();
   const committed=accepted.edgeId!=null?
    wireEdges.find(e=>e.enabled&&e.id===accepted.edgeId&&e.destId===accepted.destId):
    wireEdges.find(e=>e.enabled&&e.sourceId===accepted.sourceId&&e.destId===accepted.destId);
@@ -921,28 +923,32 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
 const WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160;
 const WIRE_IMPACT_DURATION_MS=WIRE_IMPACT_TRAVEL_MS+WIRE_IMPACT_SETTLE_MS;
 function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
- const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
+ const span=Math.abs(x1-x0),chord=Math.hypot(x1-x0,y1-y0);
+ const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- const u=Math.max(0,Math.min(1,elapsedMs/WIRE_IMPACT_TRAVEL_MS));
- // Physical launch occurs at the IN end (t=1), never at OUT (t=0).
- // Ease-out front makes the receiving plug flick briskly, rather than creep.
+ // A short physical patch cable has little slack: scale its displacement,
+ // number of visible lobes AND propagation time, continuously with length.
+ // Long cables preserve the user-approved V62 520ms whip and end damping.
+ const length01=Math.max(0,Math.min(1,(chord-95)/300));
+ const longMix=length01*length01*(3-2*length01);
+ const travel=360+160*longMix;
+ const width=.65-.29*longMix; // broad single curl at short distances
+ const u=Math.max(0,Math.min(1,elapsedMs/travel));
  const front=1-Math.pow(1-u,1.45);
- const settle=Math.max(0,Math.min(1,(elapsedMs-WIRE_IMPACT_TRAVEL_MS)/WIRE_IMPACT_SETTLE_MS));
+ const settle=Math.max(0,Math.min(1,(elapsedMs-travel)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
- const strength=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*fade;
+ const amplitude=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*
+  (.27+.73*longMix)*fade;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64,v=1-t;
   const x=v*v*v*x0+3*v*v*t*x0+3*v*t*t*x1+t*t*t*x1;
   const y=v*v*v*y0+3*v*v*t*(y0+c)+3*v*t*t*(y1+c)+t*t*t*y1;
-  const distance=1-t; // distance travelled from IN toward OUT
-  const passed=front-distance; // material behind the advancing wavefront
+  const distance=1-t,passed=front-distance;
   const tether=Math.min(1,t/.025,(1-t)/.025);
-  // Finite causal travelling sine: first lobe moves UP at the IN socket,
-  // trailing lobes alternate and decay over time AND along cable length.
   const wave=passed>0?
-   -strength*Math.sin(2*Math.PI*passed/.36)*
+   -amplitude*Math.sin(2*Math.PI*passed/width)*
    Math.exp(-2.1*passed-2.9*distance)*tether:0;
   d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
  }
@@ -981,16 +987,38 @@ function kickWireSpring(sourceId,destId){
    noninteractive cable jacket falls and reels back to its real OUT jack.
    Own overlay SVG is independent of the canonical routing/PCM projection.
    A canceled drag cannot call this effect. Reduced-motion skips it. */
-const WIRE_RETRACT_MS=690;
+const WIRE_RETRACT_FALL_MS=320,WIRE_RETRACT_HANG_MS=150,WIRE_RETRACT_REEL_MS=660;
+const WIRE_RETRACT_MS=WIRE_RETRACT_FALL_MS+WIRE_RETRACT_HANG_MS+WIRE_RETRACT_REEL_MS;
 let wireRetractToken=0,wireRetractOverlay=null;
 function stopWireRetraction(){
  ++wireRetractToken;
  wireRetractOverlay?.remove();wireRetractOverlay=null;
 }
+// Deterministic three-phase cable physics: first the free plug falls while
+// staying at its released X, then a fully slack cable HANGS without reeling.
+// Only after the visible pause does the reel pull the plug to the fixed OUT.
+function wireRetractPose(x0,y0,rx,ry,drop,elapsedMs){
+ const falling=Math.max(0,Math.min(1,elapsedMs/WIRE_RETRACT_FALL_MS));
+ const fallEase=falling*falling*(3-2*falling);
+ const reelT=Math.max(0,Math.min(1,
+  (elapsedMs-WIRE_RETRACT_FALL_MS-WIRE_RETRACT_HANG_MS)/WIRE_RETRACT_REEL_MS));
+ const pull=1-Math.pow(1-reelT,2.15);
+ const remaining=1-pull;
+ const x=x0+(rx-x0)*remaining;
+ const y=y0+(ry-y0+drop*fallEase)*remaining;
+ const baseSag=Math.min(48,Math.max(12,Math.abs(rx-x0)*.25));
+ const hangSag=Math.min(105,Math.max(58,43+Math.abs(rx-x0)*.19));
+ const sag=(baseSag*(1-fallEase)+hangSag*fallEase)*remaining;
+ // Gentle trailing ripple while the reel pulls, never while freely falling
+ // or paused; both endpoints retain exactly their physical positions.
+ const wave=5.2*Math.sin(Math.PI*reelT)*Math.pow(remaining,.55)*
+  Math.min(1,Math.abs(rx-x0)/125);
+ return {x,y,sag,wave,reelT,phase:reelT>0?'reel':falling<1?'fall':'hang'};
+}
 function startWireRetraction(sourceId,releasePoint){
  stopWireRetraction();
  if(document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
- const viewport=document.getElementById('viewport'),base=document.getElementById('wireLayer');
+ const viewport=document.getElementById('viewport');
  const out=viewport?.querySelector('.strip[data-id="'+sourceId+'"] .wire-node-out');
  const source=wireSourceTrack(sourceId),vp=viewport?.getBoundingClientRect?.();
  const jack=wireJackRect(out);
@@ -998,16 +1026,16 @@ function startWireRetraction(sourceId,releasePoint){
  const x0=jack.left-vp.left+jack.width*.5,y0=jack.top-vp.top+jack.height*.5;
  const rx=Math.max(2,Math.min(vp.width-2,releasePoint.x-vp.left));
  const ry=Math.max(2,Math.min(vp.height-2,releasePoint.y-vp.top));
+ const drop=Math.max(20,Math.min(vp.height-ry-25,
+  Math.min(100,68+Math.abs(rx-x0)*.07)));
  const svgNS='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(svgNS,'svg');
  svg.id='wireRetractLayer';svg.classList.add('routing-wire-overlay');
  svg.dataset.wireRetract=String(sourceId);
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
- // Permit a short visible gravity drop beneath the normal WIRE bay,
- // while retaining the original horizontally clipped channel viewport.
- const bay=out.closest('.send-section')?.getBoundingClientRect?.();
- if(bay)svg.style.clipPath='inset('+Math.max(0,bay.top-vp.top-5)+'px 0px '+
-  Math.max(0,vp.bottom-bay.bottom-48)+'px 0px)';
+ // V62 clipped everything below the SEND bay after only ~48px: a limp
+ // hanging cable was therefore impossible to see. Clip only to viewport.
+ svg.style.clipPath='none';
  svg.style.pointerEvents='none';svg.style.zIndex='4';svg.style.filter='none';
  const mk=(tag,attrs)=>{
   const el=document.createElementNS(svgNS,tag);
@@ -1030,29 +1058,26 @@ function startWireRetraction(sourceId,releasePoint){
    stopWireRetraction();return;
   }
   if(began===null)began=now;
-  const p=Math.min(1,(now-began)/WIRE_RETRACT_MS);
-  const falling=Math.min(1,p/.29);
-  const reel=p<=.29?0:(p-.29)/.71;
-  const pull=1-Math.pow(1-reel,2.4);
-  const remaining=1-pull;
-  const x=x0+(rx-x0)*remaining;
-  const y=y0+(ry-y0)*remaining+26*falling*falling*remaining+
-   7*Math.sin(Math.PI*reel)*remaining;
-  const len=Math.hypot(x-x0,y-y0);
-  const sag=Math.min(43,len*.44)*(1-.45*pull);
-  const dx=x-x0;
-  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+
-   ' C '+(x0+dx*.04).toFixed(1)+' '+(y0+sag).toFixed(1)+
-   ', '+(x-dx*.09).toFixed(1)+' '+(y+sag).toFixed(1)+
-   ', '+x.toFixed(1)+' '+y.toFixed(1);
+  const elapsed=Math.min(WIRE_RETRACT_MS,Math.max(0,now-began));
+  const pose=wireRetractPose(x0,y0,rx,ry,drop,elapsed);
+  svg.dataset.wirePhase=pose.phase;
+  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
+  for(let i=1;i<=40;i++){
+   const t=i/40;
+   const bow=Math.sin(Math.PI*t);
+   const x=x0+(pose.x-x0)*t;
+   const curl=pose.wave*bow*Math.sin(2*Math.PI*((1-t)*1.2-pose.reelT*1.7));
+   const y=y0+(pose.y-y0)*t+pose.sag*bow+curl;
+   d+=' L '+x.toFixed(1)+' '+y.toFixed(1);
+  }
   shadow.setAttribute('d',d);jacket.setAttribute('d',d);
-  plug.setAttribute('cx',x.toFixed(1));plug.setAttribute('cy',y.toFixed(1));
-  plug.setAttribute('r',Math.max(0,5.2*remaining).toFixed(2));
-  if(p<1)requestAnimationFrame(step);
-  else stopWireRetraction(); // no ghost cable or hitbox after collapse
+  plug.setAttribute('cx',pose.x.toFixed(1));
+  plug.setAttribute('cy',pose.y.toFixed(1));
+  plug.setAttribute('r',Math.max(0,5.2*(1-pose.reelT)).toFixed(2));
+  if(elapsed<WIRE_RETRACT_MS)requestAnimationFrame(step);
+  else stopWireRetraction(); // no phantom WIRE or hit area after reel-in
  }
- // Paint the first detached frame before returning from pointerup; this
- // avoids a blank frame while the old committed path has been removed.
+ // Paint immediately after accepted REMOVE (no blank intermediate frame).
  step(performance.now());
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
