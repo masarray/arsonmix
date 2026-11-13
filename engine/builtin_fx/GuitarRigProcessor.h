@@ -126,7 +126,7 @@ public:
     bool queueProgram(const armix::guitarfx::Program& program,
                       std::uint64_t requestId) noexcept {
         if(!ready_||!requestId||!std::isfinite(rate_)||
-           armix::guitarfx::validate(program)!=armix::guitarfx::ProgramError::none)
+           !armix::guitarfx::GuitarRigCore::supportsProgram(program))
             return false;
         Edit next{};
         next.requestId=requestId;
@@ -207,7 +207,7 @@ public:
             for(auto& value:b.values)value=reader.readFloat();
         }
         if(!reader.isExhausted()||
-           armix::guitarfx::validate(candidate)!=armix::guitarfx::ProgramError::none)
+           !armix::guitarfx::GuitarRigCore::supportsProgram(candidate))
             return false;
         // A future-only module may be stored disabled, but a program that
         // requires unsupported enabled DSP is never admitted as live audio.
