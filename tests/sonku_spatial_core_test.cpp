@@ -4,6 +4,7 @@
 #endif
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
 #include <array>
+#include <memory>
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -113,34 +114,46 @@ int main() {
         // V3 late room is strictly opt-in, delayed and sample-partition
         // deterministic. The approved direct-HRTF + square ER is untouched
         // before the first late echo.
+        // IMPORTANT: the accepted reference is SQUARE, not the earlier
+        // rectangular V2 room. A rectangle-vs-square comparison cannot
+        // establish that adding the FDN leaves the approved orbit intact.
+        // Allocate this extra test processor off-stack (each core owns
+        // fixed ~192 KiB acoustic rings; Windows test stacks are bounded).
+        auto approvedSquare=std::make_unique<SonKuSpatialCore>();
         SonKuSpatialCore glow,glowChunks;
-        assert(glow.prepare(rate)&&glowChunks.prepare(rate));
+        assert(approvedSquare->prepare(rate)&&glow.prepare(rate)&&glowChunks.prepare(rate));
+        assert(approvedSquare->setEarlyReflectionsShape(SonKuRoomShape::Square));
         assert(glow.setEarlyReflectionsShape(SonKuRoomShape::Square));
         assert(glowChunks.setEarlyReflectionsShape(SonKuRoomShape::Square));
-        assert(glow.setSettings(roomSettings)&&glowChunks.setSettings(roomSettings));
-        assert(glow.setEarlyReflectionsAmount(.55f)&&glowChunks.setEarlyReflectionsAmount(.55f));
+        assert(approvedSquare->setSettings(roomSettings)&&
+               glow.setSettings(roomSettings)&&glowChunks.setSettings(roomSettings));
+        assert(approvedSquare->setEarlyReflectionsAmount(.55f)&&
+               glow.setEarlyReflectionsAmount(.55f)&&
+               glowChunks.setEarlyReflectionsAmount(.55f));
         assert(glow.setMusicalReverbAmount(.42f)&&glowChunks.setMusicalReverbAmount(.42f));
-        std::array<float,roomFrames> tailL{},tailR{},splitL{},splitR{};
-        tailL[0]=splitL[0]=.5f;tailR[0]=splitR[0]=.5f;
+        std::array<float,roomFrames> squareL{},squareR{},tailL{},tailR{},splitL{},splitR{};
+        squareL[0]=squareR[0]=tailL[0]=tailR[0]=splitL[0]=splitR[0]=.5f;
+        approvedSquare->process(squareL.data(),squareR.data(),roomFrames);
         glow.process(tailL.data(),tailR.data(),roomFrames);
         glowChunks.process(splitL.data(),splitR.data(),128);
         glowChunks.process(splitL.data()+128,splitR.data()+128,384);
         glowChunks.process(splitL.data()+512,splitR.data()+512,roomFrames-512);
-        double diff=0.;
+        double lateDifference=0.;
         for(int i=0;i<roomFrames;++i){
             assert(std::isfinite(tailL[i])&&std::isfinite(tailR[i]));
             assert(std::abs(tailL[i]-splitL[i])<1.e-6f);
             assert(std::abs(tailR[i]-splitR[i])<1.e-6f);
-            if(i<1700){
-                // This compares another shape? Original withRoom uses
-                // rectangle: only validate first late arrival against
-                // identical new square stage below, not against rectangle.
-                assert(std::abs(tailL[i])<1.f);
+            // Earliest FDN energy is >43 ms at both qualified rates.
+            // This proves exact sample identity in the approved square
+            // direct+ER path before late ambience arrives.
+            if(i<1800){
+                assert(tailL[i]==squareL[i]);
+                assert(tailR[i]==squareR[i]);
             }
-            if(i>2200)diff+=std::abs(tailL[i]-wetL[i])+
-                             std::abs(tailR[i]-wetR[i]);
+            if(i>2200)lateDifference+=std::abs(tailL[i]-squareL[i])+
+                                       std::abs(tailR[i]-squareR[i]);
         }
-        assert(diff>.001);
+        assert(lateDifference>.001);
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.
