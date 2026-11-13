@@ -195,7 +195,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-p1-') || startsWith(github.head_ref, 'feat/sonku-flipped-') || startsWith(github.head_ref, 'feat/sonku-rear-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -215,8 +215,12 @@ jobs:
       # Fast scoped SOF qualification runs on the existing SonKu integration
       # job (zero additional browser runners and zero Windows recompiles).
       - name: Native SOF PRE/POST, SEND ON, EdgeId gain and ACK/readback Chromium
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
         run: python tests/approved_native_sof_chromium_smoke.py
       - name: Native WIRE Inspector rejected gain and exact EdgeId ACK rollback (real Chromium)
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
         run: python tests/approved_native_wire_gain_smoke.py
       - name: Integrated V65 WIRE motion, SOF and actual native WIRE regression
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/sof-sonku-main-') }}
@@ -225,6 +229,8 @@ jobs:
           python tests/approved_native_wire_gain_smoke.py
           python tests/sof_contextual_console_smoke.py
       - name: Render original 8D-SonKu headphone candidate through exact native HRTF
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-listening
           /tmp/sonku-listening sonku-listening
@@ -233,6 +239,8 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_musical_reverb_test.cpp -o /tmp/sonku-fdn-test
           /tmp/sonku-fdn-test
       - name: SonKu same-runner realtime CPU comparison (informational, not a release pass)
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-rt-bench
           /tmp/sonku-rt-bench
