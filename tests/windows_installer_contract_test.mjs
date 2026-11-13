@@ -410,9 +410,10 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   const updater = read('installer/ArSonMixAutoUpdate.ps1');
   assert.match(main, /static bool isAutoUpdateHealthProbe\(\)/);
   assert.match(main, /if \(updaterProbeMode_ && audioEngineStarted_\)\s*return;/);
-  const guard=main.indexOf('if (updaterProbeMode_)\n            {\n                diagnostics_.record ("UPDATER_GUI_PROBE"');
-  const engine=main.indexOf('startupError_ = engine_.start (saved.get());',guard);
-  assert.ok(guard>0 && engine>guard, 'health probe must bypass engine start');
+  const guard=main.indexOf('diagnostics_.record ("UPDATER_GUI_PROBE"');
+  const engine=main.indexOf('startupError_ = engine_.start (saved.get());', guard);
+  assert.ok(guard >= 0 && engine > guard, 'GUI-only return must precede audio device startup');
+  assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
   assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
   assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
   assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
