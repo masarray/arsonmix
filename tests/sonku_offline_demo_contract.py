@@ -51,6 +51,24 @@ def energy(a):
     return sum(abs(int(x)) for x in a[300000:440000])
 assert .08<energy(spaciousFar)/energy(spaciousNear)<.75,"Unexpected 5m distance pressure"
 assert .05<energy(largeFar)/energy(largeNear)<.70,"Unexpected 8m distance pressure"
+# M4 native version-2 SPACE profiles use the SAME original pluck motif
+# and DSP core. Room size and source distance must independently change PCM.
+m4Square=read("sonku-m4-musical-square-near-2x.wav",960000)
+m4Chamber=read("sonku-m4-musical-chamber-near-2x.wav",960000)
+m4ChamberFar=read("sonku-m4-musical-chamber-far-2x.wav",960000,40,8000)
+m4Large=read("sonku-m4-musical-large-near-2x.wav",960000)
+m4LargeFar=read("sonku-m4-musical-large-far-2x.wav",960000,30,5000)
+def music_delta(a,b):
+    return sum(abs(int(x)-int(y)) for x,y in zip(a[280000:450000],b[280000:450000]))
+assert music_delta(m4Square,musicBase)>1000,"M4 square ambience is silent"
+assert music_delta(m4Chamber,m4Square)>1000,"Chamber settings ignored"
+assert music_delta(m4Large,m4Chamber)>1000,"Large room reverb ignored"
+assert music_delta(m4Chamber,m4ChamberFar)>1000,"Chamber distance ignored"
+assert music_delta(m4Large,m4LargeFar)>1000,"Large room distance ignored"
+def musical_energy(a):
+    return sum(abs(int(x)) for x in a[280000:450000])
+assert musical_energy(m4ChamberFar)<musical_energy(m4Chamber)*.8
+assert musical_energy(m4LargeFar)<musical_energy(m4Large)*.8
 # Baseline V1 and candidate V2 are deliberately non-identical on same noise.
 # Room must affect later samples, not fake position on the direct sound.
 difference=sum(abs(int(a)-int(b)) for a,b in
