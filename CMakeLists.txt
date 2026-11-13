@@ -202,6 +202,14 @@ if(BUILD_TESTING)
   add_executable(ARMixSonKuCoreTests tests/sonku_spatial_core_test.cpp)
   target_compile_features(ARMixSonKuCoreTests PRIVATE cxx_std_20)
   add_test(NAME NativeSonKuMeasuredBinauralDirectionalAndChunkParity COMMAND ARMixSonKuCoreTests)
+  # Real JUCE processor: audio-applied ACK, v1/v2 state, corruption fences.
+  juce_add_console_app(ARMixSonKuNativeStateTests PRODUCT_NAME "ArSonMix SonKu Native State Tests")
+  target_sources(ARMixSonKuNativeStateTests PRIVATE tests/sonku_native_state_test.cpp)
+  target_link_libraries(ARMixSonKuNativeStateTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixSonKuNativeStateTests PRIVATE cxx_std_20)
+  add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
+      COMMAND ARMixSonKuNativeStateTests)
   # Pure control-plane first-run routing selection: no JUCE, drivers,
   # WASAPI activation or callback dependencies. Full Windows CTest gate.
   add_executable(ARMixFirstRunEndpointPolicyTests
