@@ -272,6 +272,24 @@ test("new generator is repeatable and makes distinct device materials",async()=>
  assert(cmake.includes("if(ARMIX_GUITAR_USE_ARTIST_SOURCE)"),
        "rejected historic PNGs must not silently override the new generator");
 });
+test("eleven committed production PNGs are byte-exact, with no obsolete panel",async()=>{
+ // Read committed bytes BEFORE importing generator (which exports PNGs).
+ // A source-only PR cannot pass by relying on config-time regenerated files.
+ const names=[
+   "gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
+   "gfx-pedal-drive-body.png","gfx-knob.png","gfx-switch-off.png",
+   "gfx-switch-on.png","gfx-button-off.png","gfx-button-on.png",
+   "gfx-stomp-off.png","gfx-stomp-on.png"];
+ const original=names.map(n=>sha256(readFileSync(resolve(assetDir,n))));
+ const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ assert.deepEqual(SKINS.map(s=>s[0]).sort(),[...names].sort());
+ assert.deepEqual(original,names.map(n=>{
+   const spec=SKINS.find(x=>x[0]===n);
+   return sha256(render(spec));
+ }),"shipped BinaryData input must be exact deterministic v2 output");
+ assert(!SKINS.some(spec=>spec[0]==="gfx-panel.png"),
+   "framed panel from PR #663 must remain retired");
+});
 test("native control PNGs maintain exact aspect on all chain switches",()=>{
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
  assert(editor.includes("put(power_[i],x+148.f,91,54,20);"));
