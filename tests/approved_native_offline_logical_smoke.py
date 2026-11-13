@@ -158,16 +158,10 @@ def main():
         search.fill("guitar")
         assert guitar.is_visible(), "Guitar FX Rig must be searchable by name/category"
         assert page.locator('[data-fast-id="armix.builtin.fixture.v1"]').count() == 0
-        guitar.click()
-        page.wait_for_function("""()=>window.__events.some(e=>
-            e.name==='arMixLogicalIntent' &&
-            e.payload?.operation==='ADD_FX_REFERENCE' &&
-            e.payload?.payload?.catalogId==='armix.builtin.guitar-rig.v1')""")
-        # An offline logical intent is NOT equivalent to a native PCM
-        # insertion ACK. Keep the picker open until a verified readback or
-        # explicit user dismissal; never signal success prematurely.
-        assert page.locator("#fastPicker").is_visible()
         page.locator("#fastClose").click()
+        # We test pending guitar INSERT at the END of this workspace.
+        # Creating a pending logical edit here would otherwise contaminate
+        # subsequent CREATE_CHANNEL/WIRE_TRANSACTION assertions.
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
@@ -245,6 +239,21 @@ def main():
         emit(page,"arMixLogicalAck",{"requestId":fresh["requestId"],
             "status":"REJECTED","errorCode":"TEST_DISK_WRITE_FAILED","revision":"3"})
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
+        # Now assert actual selection dispatches the correct Guitar FX id.
+        # Leave pending ADD_FX_REFERENCE as the LAST edit; it must not
+        # falsely advertise a physical processor or block other fixtures.
+        page.locator("#tracks .strip").first.locator(
+            '[data-action="openPlugin"][data-slot="0"]').click()
+        guitar=page.locator('[data-fast-id="armix.builtin.guitar-rig.v1"]')
+        assert guitar.is_visible(), "Guitar FX missing after changing workspaces"
+        page.locator("#fastSearch").fill("guitar")
+        guitar.click()
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent' &&
+            e.payload?.operation==='ADD_FX_REFERENCE' &&
+            e.payload?.payload?.catalogId==='armix.builtin.guitar-rig.v1')""")
+        assert page.locator("#fastPicker").is_visible(), (
+            "Unacknowledged Guitar FX insert must not look accepted")
         assert not errors,errors
         page.close()
         # Device-loss boundary: the retained PCM graph may still carry a
