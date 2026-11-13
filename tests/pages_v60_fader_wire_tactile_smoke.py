@@ -202,7 +202,7 @@ def test_wire(page):
     assert abs(physics["nearOutEarly"])<.5,("wrong direction: OUT moves first",physics)
     assert physics["nearOutLate"]< -1.2,("wave stops before OUT",physics)
     assert abs(physics["pluggedOut"])<.25 and abs(physics["pluggedIn"])<.25,physics
-        assert len(samples)>=5,("no finite spring movement",len(samples))
+    assert len(samples)>=5,("no finite spring movement",len(samples))
     assert any(" L " in x["d"] for x in samples),("no cable impact",len(samples))
     settled=cable.get_attribute("d")
     assert " C " in settled,("must return to exact canonical cubic",settled[:90])
