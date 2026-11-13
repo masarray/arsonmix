@@ -195,7 +195,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-'))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-'))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -216,6 +216,8 @@ jobs:
       # job (zero additional browser runners and zero Windows recompiles).
       - name: Native SOF PRE/POST, SEND ON, EdgeId gain and ACK/readback Chromium
         run: python tests/approved_native_sof_chromium_smoke.py
+      - name: Native WIRE Inspector rejected gain and exact EdgeId ACK rollback (real Chromium)
+        run: python tests/approved_native_wire_gain_smoke.py
       - name: Integrated V65 WIRE motion, SOF and actual native WIRE regression
         if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/sof-sonku-main-') }}
         run: |
