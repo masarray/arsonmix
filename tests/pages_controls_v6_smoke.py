@@ -82,7 +82,10 @@ async def assert_mixer(page, width):
         background:s.backgroundImage,focus:e.getAttribute('aria-label')
       };
     })""")
-    assert [d["kind"] for d in details]==["mute","solo","cue"],details
+    # HTML hardware kind is the operator-facing PFL key, while its
+    # existing native action remains 'cue' for the monitoring contract.
+    # Never normalize the visual PFL back to cue or blindly alter the GUI.
+    assert [d["kind"] for d in details]==["mute","solo","pfl"],details
     assert [d["action"] for d in details]==["mute","solo","cue"],details
     assert [d["label"] for d in details]==["MUTE","SOLO","PFL"],details
     assert [d["led"] for d in details]==["255,78,90","255,207,68","101,210,236"],details
