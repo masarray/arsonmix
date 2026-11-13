@@ -4,14 +4,22 @@
 "use strict";
 const ID="armix.builtin.8d-sonku.v1";
 const defaults=()=>({startAzimuthDegrees:0,revolutionSeconds:12,
- stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true});
+ stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true,
+ spacePreset:0,sourceDistanceMeters:1.6,roomAmount:.55,ambience:.30});
+const normalizeSettings=s=>({...defaults(),...s});
+const roomMaxDistance=[10,3.1,6.7,10];
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
  Number.isFinite(s.revolutionSeconds)&&s.revolutionSeconds>=.5&&s.revolutionSeconds<=120 &&
  Number.isFinite(s.stereoSpreadDegrees)&&s.stereoSpreadDegrees>=0&&s.stereoSpreadDegrees<=180 &&
  Number.isFinite(s.spatialMix)&&s.spatialMix>=0&&s.spatialMix<=1 &&
  Number.isFinite(s.outputTrim)&&s.outputTrim>=0&&s.outputTrim<=1 &&
- typeof s.moving==="boolean"&&typeof s.clockwise==="boolean";
+ typeof s.moving==="boolean"&&typeof s.clockwise==="boolean" &&
+ Number.isInteger(s.spacePreset) && s.spacePreset>=0 && s.spacePreset<=3 &&
+ Number.isFinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6 &&
+ s.sourceDistanceMeters<=roomMaxDistance[s.spacePreset]+.0001 &&
+ Number.isFinite(s.roomAmount) && s.roomAmount>=0 && s.roomAmount<=1 &&
+ Number.isFinite(s.ambience) && s.ambience>=0 && s.ambience<=1;
 const backend=()=>window.__JUCE__?.backend;
 const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
@@ -104,7 +112,19 @@ root.innerHTML=[
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPATIAL MIX</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skMix" type="range" min="0" max="100" step="1" value="100" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skMixValue">100%</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">OUTPUT TRIM</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="0" max="100" step="1" value="75" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skTrimValue">75%</output></label>',
- '</div><div class="sk-guide">Drag the two monitors on the orbit · knobs: vertical drag, double-click to reset</div>',
+ '</div><div class="sk-space-panel" aria-label="Room simulation controls">',
+ '<div class="sk-space-head"><span>SPACE</span><output id="skSpaceText">DIRECT ONLY</output></div>',
+ '<div class="sk-space-options" role="group" aria-label="Room size">',
+ '<button type="button" data-sk-room="0">OFF</button>',
+ '<button type="button" data-sk-room="1">SQUARE</button>',
+ '<button type="button" data-sk-room="2">CHAMBER</button>',
+ '<button type="button" data-sk-room="3">LARGE</button></div>',
+ '<label class="sk-space-slider" for="skDistance">SOURCE DISTANCE <output id="skDistanceValue">1.6 m</output>',
+ '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
+ '<label class="sk-space-slider" for="skAmbience">AMBIENCE <output id="skAmbienceValue">30%</output>',
+ '<input id="skAmbience" type="range" min="0" max="100" step="1" value="30"/></label>',
+ '<div class="sk-space-hint">Reflections + musical room tail · OFF keeps original HRTF</div></div>',
+ '<div class="sk-guide">Drag monitors to position · rotary knobs: vertical drag, double-click to reset</div>',
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
@@ -142,6 +162,21 @@ function render(){
   dial.style.setProperty("--sk-sweep",(p*270).toFixed(2)+"deg");
   dial.style.setProperty("--sk-needle",(-135+p*270).toFixed(2)+"deg");
  }
+ // ROOM is one typed native scene, never a browser audio simulator.
+ root.querySelectorAll("[data-sk-room]").forEach(el=>{
+  el.setAttribute("aria-pressed",
+   String(Number(el.dataset.skRoom)===s.spacePreset));
+ });
+ const sizeLabels=["DIRECT ONLY","7.2 × 7.2 m","14.4 × 14.4 m","28.8 × 28.8 m"];
+ $("skSpaceText").textContent=sizeLabels[s.spacePreset];
+ const distance=$("skDistance"),max=roomMaxDistance[s.spacePreset];
+ distance.max=String(max);
+ distance.disabled=s.spacePreset===0;
+ distance.value=String(Math.min(max,s.sourceDistanceMeters));
+ $("skDistanceValue").textContent=s.sourceDistanceMeters.toFixed(1)+" m";
+ $("skAmbience").value=String(Math.round(s.ambience*100));
+ $("skAmbience").disabled=s.spacePreset===0;
+ $("skAmbienceValue").textContent=Math.round(s.ambience*100)+"%";
  const liveMotion=s.moving&&current&&!pending?observed:
     s.startAzimuthDegrees;
  const phase=native()&&s.moving&&current&&!pending&&observedAt?
@@ -208,16 +243,17 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
  const c=context();if(!c||r.status!=="ACCEPTED"||
    r.channelId!==c.channelId||r.instanceId!==c.instanceId)return;
- if(!valid(r.settings))return;
+ const incoming=normalizeSettings(r.settings);
+ if(!valid(incoming))return;
  readId="";readSentAt=0;
  if(pending) {
   if(!pending.ack || r.appliedRequestId!==pending.requestId){
    if(pending.ack)requestSnapshot();
    return;
   }
-  accepted={...r.settings};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
+  accepted={...incoming};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
  }else if(!drag&&!dialDrag){
-  accepted={...r.settings};draft={...r.settings};
+  accepted={...incoming};draft={...incoming};
  }
  if(Number.isFinite(r.observedAzimuthDegrees)){
   observed=r.observedAzimuthDegrees;observedAt=performance.now();
@@ -229,6 +265,27 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
  if(clock!==null){clearInterval(clock);clock=null;}});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
+root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
+ const preset=Number(btn.dataset.skRoom),max=roomMaxDistance[preset];
+ send({...draft,spacePreset:preset,
+  sourceDistanceMeters:preset===0?draft.sourceDistanceMeters:
+   Math.min(draft.sourceDistanceMeters,max)});
+}));
+for(const [id,key,convert] of [
+ ["skDistance","sourceDistanceMeters",v=>v],
+ ["skAmbience","ambience",v=>v/100]]) {
+ const slider=$(id);
+ slider.addEventListener("input",()=>{
+  if(slider.disabled)return;
+  const value=Number(slider.value);
+  if(!Number.isFinite(value))return;
+  draft={...draft,[key]:convert(value)};render();
+ });
+ slider.addEventListener("change",()=>{
+  if(slider.disabled)return;
+  send({...draft,[key]:convert(Number(slider.value))});
+ });
+}
 for(const [id,key,convert] of [
  ["skSpeed","revolutionSeconds",v=>v],
  ["skSpread","stereoSpreadDegrees",v=>v],
