@@ -50,6 +50,29 @@ assert.doesNotMatch(palette, /0xff50d4e7|0xff67b9ff|0xff168fa7|0xff287abd/);
 assert.match(chrome, /drawRoundedRectangle/);
 assert.match(chrome, /parent->isFullScreen\(\)/);
 
+/* JUCE 8 Button::mouseUp runs its listener before the message-loop's paint:
+ * Close/minimize vanish and maximize changes geometry before the bright click
+ * face is drawn. Test a real bounded, one-shot paint->dispatch handoff, not
+ * just the existence of red/green/amber palette hex values. */
+assert.match(chrome,/class MixerCaptionButton final : public juce::Button, private juce::Timer/);
+assert.match(chrome,/const bool pressed = down \|\| pendingClick_/);
+assert.match(chrome,/g\.setColour \(pressed \? palette\.pressedFace : palette\.hoverFace\)/);
+assert.match(chrome,/g\.setColour \(pressed \? palette\.pressedEdge : palette\.hoverEdge\)/);
+assert.match(chrome,/pressed && pressedRestoreIcon_ != nullptr/);
+assert.match(chrome,/pressed && pressedIcon_ != nullptr/);
+const defer=chrome.slice(chrome.indexOf('void internalClickCallback ('),
+                         chrome.indexOf('private:\n    struct CaptionPalette'));
+assert.match(defer,/if \(!isEnabled\(\) \|\| pendingClick_\)\s*return/);
+assert.match(defer,/pendingModifiers_ = modifiers/);
+assert.match(defer,/pendingClick_ = true;\s*repaint\(\);\s*startTimer \(160\)/);
+assert.match(defer,/void timerCallback\(\) override/);
+assert.match(defer,/stopTimer\(\);\s*pendingClick_ = false;\s*repaint\(\);/);
+assert.match(defer,/juce::Button::internalClickCallback \(pendingModifiers_\)/);
+assert.equal((defer.match(/juce::Button::internalClickCallback/g)||[]).length,1,
+ 'a caption click must dispatch once, through the original JUCE listener');
+assert.doesNotMatch(defer,/engine_|WebView|setAlwaysOnTop|toFront|sleep|Thread::sleep|std::thread/);
+
+
 /* Dark-ink pressed glyphs are prebuilt once, not reparsed/recoloured when
    paintButton receives a hover or pointer-down transition. Maintain WCAG
    non-text graphic contrast against the luminous green/amber pressed faces. */
