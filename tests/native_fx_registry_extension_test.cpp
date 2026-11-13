@@ -170,16 +170,50 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(guitarTyped && guitarTyped->isReady());
     juce::MemoryBlock snapshot;
     live->getStateInformation(snapshot);
-    assert(snapshot.getSize()==12u+4u*44u);
+    assert(snapshot.getSize()==12u+2u*4u+2u*4u*44u); // two durable banks
     auto restored=guitar->prepare(44100.,128,
         snapshot.getData(),static_cast<int>(snapshot.getSize()));
     assert(restored && restored->getLatencySamples()==32);
     auto broken=snapshot;
-    broken[8]=0;broken[9]=0;broken[10]=0;broken[11]=0;
+    // Corrupt active-bank index; the whole restore must fail closed.
+    broken[8]=0xff;broken[9]=0xff;broken[10]=0xff;broken[11]=0xff;
     assert(!guitar->prepare(48000.,128,broken.getData(),
         static_cast<int>(broken.getSize())));
     assert(!guitar->prepare(48000.,128,
         snapshot.getData(),static_cast<int>(snapshot.getSize())-1));
+
+    auto badSecondBank=snapshot;
+    // v2: 12-byte header + countA + 4*44-byte A + countB.
+    // Set Bank B's first block identity to zero, preserving exact length.
+    constexpr std::size_t secondBankFirstId=12u+4u+4u*44u+4u;
+    for(std::size_t i=0;i<4;++i)badSecondBank[secondBankFirstId+i]=0;
+    assert(!guitar->prepare(48000.,128,badSecondBank.getData(),
+        static_cast<int>(badSecondBank.getSize())));
+    // GRX1 v1 single-program snapshots remain loadable, migrated to both
+    // bank slots without changing the approved tone or DSP.
+    juce::MemoryBlock legacy;
+    juce::MemoryOutputStream legacyWriter(legacy,false);
+    legacyWriter.writeInt(static_cast<int>(
+        armix::builtin_fx::GuitarRigProcessor::stateMagic));
+    legacyWriter.writeInt(1);
+    const auto legacyTone=armix::guitarfx::factoryTone(2);
+    legacyWriter.writeInt(static_cast<int>(legacyTone.count));
+    for(std::size_t i=0;i<legacyTone.count;++i){
+        const auto& block=legacyTone.blocks[i];
+        legacyWriter.writeInt(static_cast<int>(block.id));
+        legacyWriter.writeInt(static_cast<int>(block.module));
+        legacyWriter.writeInt(block.enabled?1:0);
+        for(const float v:block.values)legacyWriter.writeFloat(v);
+    }
+    assert(legacy.getSize()==12u+4u*44u);
+    auto legacyRestored=guitar->prepare(48000.,128,
+        legacy.getData(),static_cast<int>(legacy.getSize()));
+    auto* legacyRig=dynamic_cast<armix::builtin_fx::GuitarRigProcessor*>(
+        legacyRestored.get());
+    assert(legacyRig && legacyRig->activeBank()==0);
+    assert(armix::guitarfx::sameTone(legacyRig->acceptedBankProgram(0),legacyTone));
+    assert(armix::guitarfx::sameTone(legacyRig->acceptedBankProgram(1),legacyTone));
+
     juce::AudioBuffer<float> pcm(2,1024);
     for(int i=0;i<pcm.getNumSamples();++i) {
         const float source=0.12f*std::sin(2.f*3.14159265358979323846f*
@@ -274,6 +308,33 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(guitarTyped->pendingProgramChanges()==0);
     assert(guitarTyped->lastCompletion().requestId==106);
     assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.62f);
+    // Helix-style live A/B comparison is not a second processor/FX slot.
+    // Bank A retains the accepted 0.62 tone. Applying B changes only its
+    // own bank and persists both choices through the exact same .smix blob.
+    auto alternate=armix::guitarfx::factoryTone(3);
+    assert(guitarTyped->queueProgram(alternate,107,1));
+    shortBlock.clear();
+    live->processBlock(shortBlock,midi); // still finishing old crossfade
+    shortBlock.clear();
+    live->processBlock(shortBlock,midi); // B starts after previous fade
+    assert(guitarTyped->stateSnapshotQuiescent());
+    assert(guitarTyped->lastCompletion().requestId==107);
+    assert(guitarTyped->lastCompletion().bank==1);
+    assert(guitarTyped->activeBank()==1);
+    assert(guitarTyped->acceptedBankProgram(0).blocks[2].values[0]==0.62f);
+    assert(armix::guitarfx::sameTone(
+        guitarTyped->acceptedBankProgram(1),alternate));
+    assert(!guitarTyped->queueProgram(alternate,108,3)); // invalid bank
+    juce::MemoryBlock banksSaved;
+    live->getStateInformation(banksSaved);
+    auto twoBanks=guitar->prepare(48000.,128,
+        banksSaved.getData(),static_cast<int>(banksSaved.getSize()));
+    auto* twoBankRig=dynamic_cast<armix::builtin_fx::GuitarRigProcessor*>(
+        twoBanks.get());
+    assert(twoBankRig && twoBankRig->activeBank()==1);
+    assert(twoBankRig->acceptedBankProgram(0).blocks[2].values[0]==0.62f);
+    assert(armix::guitarfx::sameTone(
+        twoBankRig->acceptedBankProgram(1),alternate));
     // State captured before publication is a reliable round-trip.
     juce::MemoryBlock roundtrip;
     restored->getStateInformation(roundtrip);
