@@ -13,6 +13,12 @@
 // No allocation, locks, worker, I/O, FFT or second device callback.
 namespace armix::sonku {
 enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
+// Offline-only center-listener geometry. Width/depth are full room spans;
+// the source moves on a horizontal ring at distanceMeters from the listener.
+// No realtime mutation or native state schema is published by this experiment.
+struct SonKuRoomGeometry {
+    float widthMeters=7.2f,depthMeters=7.2f,distanceMeters=1.6f;
+};
 class SonKuEarlyReflections final {
 public:
     struct Ears {float left=0.f,right=0.f;};
@@ -54,9 +60,38 @@ public:
             return false;
         if(active())return false;
         shape_=shape;
+        custom_=false; // restores the exact legacy square/rectangle semantics
         untilGeometry_=0;
         primed_=false;
         return true;
+    }
+    // Evaluated on an unpublished, inactive DSP instance only. Width up to
+    // 40m is safely contained in the existing 8192-frame delay rings at 48k.
+    static bool validGeometry(const SonKuRoomGeometry& g) noexcept {
+        if(!std::isfinite(g.widthMeters)||!std::isfinite(g.depthMeters)||
+           !std::isfinite(g.distanceMeters))return false;
+        if(g.widthMeters<5.f||g.depthMeters<5.f||
+           g.widthMeters>40.f||g.depthMeters>40.f||
+           g.distanceMeters<1.6f||g.distanceMeters>10.f||
+           2.f*(g.distanceMeters+.5f)>std::min(g.widthMeters,g.depthMeters))
+            return false;
+        const float longest=std::max(g.widthMeters,g.depthMeters)+g.distanceMeters;
+        const float largestPath=std::sqrt(longest*longest+
+                                          g.distanceMeters*g.distanceMeters);
+        return (largestPath-g.distanceMeters)*48000.f/343.f+32.f <
+               static_cast<float>(ringFrames-3);
+    }
+    bool setGeometry(const SonKuRoomGeometry& g) noexcept {
+        if(active()||!validGeometry(g))return false;
+        geometry_=g;
+        custom_=true;
+        shape_=SonKuRoomShape::Square; // consistent 0.70 walls, not rectangle
+        untilGeometry_=0;
+        primed_=false;
+        return true;
+    }
+    float relativeDistanceGain() const noexcept {
+        return custom_?1.6f/geometry_.distanceMeters:1.f;
     }
     SonKuRoomShape shape() const noexcept {return shape_;}
     bool active() const noexcept {return ready_&&(amount_>0.f||amountTarget_>0.f);}
@@ -116,11 +151,13 @@ private:
     }
     void updateGeometry(double azimuth,float spread) noexcept {
         constexpr float pi=3.14159265358979323846f;
-        constexpr float sourceDistance=1.60f; // meters
-        // The square profile tests rotationally symmetric wall geometry;
-        // it is not a simulated circular room or guaranteed psychoacoustics.
-        const float halfWidth=(shape_==SonKuRoomShape::Square)?3.60f:3.20f;
-        const float halfDepth=(shape_==SonKuRoomShape::Square)?3.60f:4.00f;
+        const float sourceDistance=custom_?geometry_.distanceMeters:1.60f;
+        // Preserve the approved 7.2m/1.6m path exactly when custom_ is false.
+        // A wider room changes physical image paths, not KEMAR azimuth signs.
+        const float halfWidth=custom_?geometry_.widthMeters*.5f:
+            ((shape_==SonKuRoomShape::Square)?3.60f:3.20f);
+        const float halfDepth=custom_?geometry_.depthMeters*.5f:
+            ((shape_==SonKuRoomShape::Square)?3.60f:4.00f);
         constexpr float speedOfSound=343.f;
         constexpr float earHalfTime=.00031f; // max +/-0.31ms
         constexpr std::array<float,wallCount> rectangular{.74f,.74f,.67f,.67f};
@@ -145,7 +182,11 @@ private:
                 // symmetric while keeping every reflection causal.
                 const float common=extra+earHalfTime*rate_;
                 const float earDelta=directionX*earHalfTime*rate_;
-                const float level=.28f*walls[wall]*(sourceDistance/path);
+                // New distance studies use fixed 1.6m acoustic reference:
+                // pressure at a reflected path falls with 1/path. Legacy
+                // calculations are untouched at the accepted radius.
+                const float level=.28f*walls[wall]*
+                                  ((custom_?1.6f:sourceDistance)/path);
                 auto& tap=tap_[source][wall];
                 tap.targetDelayL=std::clamp(common+earDelta,1.f,
                                            static_cast<float>(ringFrames-3));
@@ -171,6 +212,7 @@ private:
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0;
     SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
-    bool ready_=false,primed_=false;
+    SonKuRoomGeometry geometry_{};
+    bool custom_=false,ready_=false,primed_=false;
 };
 } // namespace armix::sonku

@@ -154,6 +154,45 @@ int main() {
                                        std::abs(tailR[i]-squareR[i]);
         }
         assert(lateDifference>.001);
+        // Explicit approved square parameters remain PCM-identical. Radius
+        // attenuation works even with early reflections disabled, so SPACE
+        // and DISTANCE remain independent, not one misleading "big hall" knob.
+        {
+            auto approved=std::make_unique<SonKuSpatialCore>();
+            auto same=std::make_unique<SonKuSpatialCore>();
+            auto distant=std::make_unique<SonKuSpatialCore>();
+            assert(approved->prepare(rate)&&same->prepare(rate)&&
+                   distant->prepare(rate));
+            Settings pose=s;pose.moving=false;pose.startAzimuthDegrees=0.f;
+            assert(approved->setSettings(pose)&&same->setSettings(pose)&&
+                   distant->setSettings(pose));
+            assert(approved->setEarlyReflectionsShape(SonKuRoomShape::Square));
+            assert(same->setAcousticRoomGeometry({7.2f,7.2f,1.6f}));
+            assert(distant->setAcousticRoomGeometry({28.8f,28.8f,8.f}));
+            assert(approved->setEarlyReflectionsAmount(.55f));
+            assert(same->setEarlyReflectionsAmount(.55f));
+            std::array<float,4096> aa{},ab{},ba{},bb{};
+            aa[0]=ab[0]=ba[0]=bb[0]=.6f;
+            approved->process(aa.data(),ab.data(),4096);
+            same->process(ba.data(),bb.data(),4096);
+            for(int i=0;i<4096;++i) {
+                assert(aa[i]==ba[i]&&ab[i]==bb[i]);
+            }
+            std::array<float,1024> nearL{},nearR{},farL{},farR{};
+            nearL[0]=nearR[0]=farL[0]=farR[0]=.6f;
+            // Compare separate fresh reference to distant field (ER OFF).
+            auto dryNear=std::make_unique<SonKuSpatialCore>();
+            assert(dryNear->prepare(rate)&&dryNear->setSettings(pose));
+            dryNear->process(nearL.data(),nearR.data(),1024);
+            distant->process(farL.data(),farR.data(),1024);
+            double nearEnergy=0.,farEnergy=0.;
+            for(int i=0;i<1024;++i) {
+                nearEnergy+=std::abs(nearL[i])+std::abs(nearR[i]);
+                farEnergy+=std::abs(farL[i])+std::abs(farR[i]);
+            }
+            assert(nearEnergy>.01);
+            assert(std::abs(farEnergy/nearEnergy-.2)<1.e-5);
+        }
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.

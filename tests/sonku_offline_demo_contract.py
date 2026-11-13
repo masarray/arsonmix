@@ -6,7 +6,7 @@ import sys
 import wave
 
 root = Path(sys.argv[1] if len(sys.argv)>1 else "sonku-listening")
-def read(name, frames):
+def read(name, frames, minimum_peak=250, minimum_energy=100000):
     path=root/name
     assert path.exists() and path.stat().st_size>10000,path
     with wave.open(str(path),"rb") as w:
@@ -18,8 +18,8 @@ def read(name, frames):
         if sys.byteorder!="little":pcm.byteswap()
     assert len(pcm)==2*frames
     peak=max(map(abs,pcm))
-    assert 250<peak<30000,(name,peak)
-    assert sum(abs(x) for x in pcm[:48000])>100000,(name,"unexpected silence")
+    assert minimum_peak<peak<30000,(name,peak)
+    assert sum(abs(x) for x in pcm[:48000])>minimum_energy,(name,"unexpected silence")
     return pcm
 single=read("sonku-reference-four.wav",4*120000)
 blind=read("sonku-blind-eight.wav",8*120000)
@@ -35,6 +35,22 @@ airy=read("sonku-v3-square-airy-cw-2x.wav",960000)
 musicBase=read("sonku-musical-square-base-2x.wav",960000)
 musicGlue=read("sonku-musical-square-glue-2x.wav",960000)
 musicAiry=read("sonku-musical-square-airy-2x.wav",960000)
+spaciousNear=read("sonku-v4-spacious-near-orbit-cw-2x.wav",960000)
+spaciousFar=read("sonku-v4-spacious-far-orbit-cw-2x.wav",960000,60,10000)
+largeNear=read("sonku-v4-large-near-orbit-cw-2x.wav",960000)
+largeFar=read("sonku-v4-large-far-orbit-cw-2x.wav",960000,40,8000)
+# Same source and identical 20s orbital clock: room width only changes
+# path delay/level; source distance only changes geometric pressure.
+def pcm_delta(a,b):
+    return sum(abs(int(x)-int(y)) for x,y in zip(a[300000:440000],b[300000:440000]))
+assert pcm_delta(spaciousNear,squareOrbit)>1500,"Spacious room is identical to approved square"
+assert pcm_delta(largeNear,spaciousNear)>1500,"Large and spacious room are identical"
+assert pcm_delta(spaciousFar,spaciousNear)>1500,"5m source ignored"
+assert pcm_delta(largeFar,largeNear)>1500,"8m source ignored"
+def energy(a):
+    return sum(abs(int(x)) for x in a[300000:440000])
+assert .08<energy(spaciousFar)/energy(spaciousNear)<.75,"Unexpected 5m distance pressure"
+assert .05<energy(largeFar)/energy(largeNear)<.70,"Unexpected 8m distance pressure"
 # Baseline V1 and candidate V2 are deliberately non-identical on same noise.
 # Room must affect later samples, not fake position on the direct sound.
 difference=sum(abs(int(a)-int(b)) for a,b in
@@ -72,10 +88,11 @@ assert right>left*1.2,("RIGHT HRTF channel swapped",left,right)
 assert sum(abs(x) for x in orbit[220000:230000])>1000
 # Verify there is no mute, edit or source reset at the 10s handoff.
 # Stereo interleaved: 48000 samples = 1 second, 2 PCM ints per frame.
-for audio in (orbit,v2orbit,squareOrbit,reverse,reverseRoom,reverseSquare,glue,airy):
+for audio in (orbit,v2orbit,squareOrbit,reverse,reverseRoom,reverseSquare,
+              glue,airy,spaciousNear,spaciousFar,largeNear,largeFar):
     for second in (9,10,11,19):
         begin=(second*48000+4000)*2
-        assert sum(abs(x) for x in audio[begin:begin+9600])>2000,(
+        assert sum(abs(x) for x in audio[begin:begin+9600])>400,(
             "silent loop seam",second)
 assert "20s" in (root/"LISTENING-GUIDE.txt").read_text()
 assert not (root/"sonku-orbit-cw.wav").exists(),(

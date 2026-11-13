@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -106,10 +107,12 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f,
     armix::sonku::SonKuRoomShape shape=armix::sonku::SonKuRoomShape::Rectangular,
     bool clockwise=true,float lateAmount=0.f,
     armix::sonku::SonKuReverbPreset latePreset=
-        armix::sonku::SonKuReverbPreset::StudioGlue){
+        armix::sonku::SonKuReverbPreset::StudioGlue,
+    std::optional<armix::sonku::SonKuRoomGeometry> geometry=std::nullopt){
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
     if(!dsp.setEarlyReflectionsShape(shape)||
+       (geometry && !dsp.setAcousticRoomGeometry(*geometry))||
        !dsp.setMusicalReverbPreset(latePreset)||
        !dsp.setEarlyReflectionsAmount(roomAmount)||
        !dsp.setMusicalReverbAmount(lateAmount))
@@ -239,8 +242,22 @@ void notes(const std::filesystem::path& directory,
       <<"The plucks are ORIGINAL test tones (no copyrighted composition).\n"
       <<"Use them to judge vocal-like reverb coloration/tail musicality.\n"
       <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
-      <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
-      <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
+      <<"V4: DISTANCE and ROOM SIZE are separate acoustic parameters.\n"
+      <<"sonku-v4-spacious-near-orbit-cw-2x.wav = 14.4x14.4m at 1.6m.\n"
+      <<"sonku-v4-spacious-far-orbit-cw-2x.wav = 14.4x14.4m at 5.0m.\n"
+      <<"sonku-v4-large-near-orbit-cw-2x.wav = 28.8x28.8m at 1.6m.\n"
+      <<"sonku-v4-large-far-orbit-cw-2x.wav = 28.8x28.8m at 8.0m.\n"
+      <<"All V4 tracks use the SAME 20s source and orbital motion as Square.\n"
+      <<"Larger room = later/weaker true 1st-order image echoes.\n"
+      <<"More distant source = quieter 1/r DIRECT KEMAR and weaker echoes.\n"
+      <<"These WAVs are NOT peak-normalized: turn down before near tracks.\n"
+      <<"Use matched perceived playback loudness for judgments of spatial\n"
+      <<"distance, and separately judge actual level reduction as a cue.\n"
+      <<"V4 room tests disable FDN deliberately: the existing 0.78/1.28s\n"
+      <<"tail is not calibrated for large halls (no pretend big-hall RT60).\n"
+      <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
+      <<"direct path time-of-flight, or higher-order wall reflections.\n"
+      <<"Offline candidates only, NO native GUI/session/product release.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
     key<<"OPEN ONLY AFTER LISTENING. Exact 2.5-second trial windows:\n";
@@ -285,6 +302,27 @@ int main(int argc,char** argv){
                  musicalOrbit(.42f,armix::sonku::SonKuReverbPreset::StudioGlue));
         writeWav(dir/"sonku-musical-square-airy-2x.wav",
                  musicalOrbit(.42f,armix::sonku::SonKuReverbPreset::AiryChamber));
+        // V4 independent distance/room dimensions, not synthetic reverb EQ.
+        // Original approved Square WAV and all V1-V3 audio are unchanged.
+        using armix::sonku::SonKuRoomShape;
+        using armix::sonku::SonKuRoomGeometry;
+        using armix::sonku::SonKuReverbPreset;
+        writeWav(dir/"sonku-v4-spacious-near-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,0.f,
+                       SonKuReverbPreset::StudioGlue,
+                       SonKuRoomGeometry{14.4f,14.4f,1.6f}));
+        writeWav(dir/"sonku-v4-spacious-far-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,0.f,
+                       SonKuReverbPreset::StudioGlue,
+                       SonKuRoomGeometry{14.4f,14.4f,5.f}));
+        writeWav(dir/"sonku-v4-large-near-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,0.f,
+                       SonKuReverbPreset::StudioGlue,
+                       SonKuRoomGeometry{28.8f,28.8f,1.6f}));
+        writeWav(dir/"sonku-v4-large-far-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,0.f,
+                       SonKuReverbPreset::StudioGlue,
+                       SonKuRoomGeometry{28.8f,28.8f,8.f}));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";

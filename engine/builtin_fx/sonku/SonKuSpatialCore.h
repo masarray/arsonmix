@@ -89,6 +89,10 @@ public:
     bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
         return room_.setShape(shape);
     }
+    // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
+    bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
+        return room_.setGeometry(geometry);
+    }
     // Experimental wet-only late room, OFF unless explicitly enabled by
     // controlled offline A/B. The native parameter contract is unchanged.
     bool setMusicalReverbAmount(float amount) noexcept {
@@ -105,6 +109,7 @@ public:
         if(!ready_ || !left || !right || samples<=0)return;
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
+        const float distanceGain=room_.relativeDistanceGain();
         for(int i=0;i<samples;++i) {
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
@@ -149,8 +154,20 @@ public:
             const auto late=reverb_.active()
                 ?reverb_.process(x0,x1)
                 :SonKuMusicalReverb::Ears{};
-            left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
-            right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+            // Exact legacy PCM arithmetic on the 1.6m reference (including
+            // all native instances). More distant experimental sources get
+            // inverse-distance pressure falloff on the DIRECT binaural field.
+            // ER uses matching absolute path pressure; diffuse late field
+            // remains an independent environmental stage.
+            if(distanceGain==1.f) {
+                left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
+                right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+            } else {
+                left[i]=dryLevel*x0+binauralLevel*
+                    (distanceGain*ears[0]+reflection.left+late.left);
+                right[i]=dryLevel*x1+binauralLevel*
+                    (distanceGain*ears[1]+reflection.right+late.right);
+            }
             if(++write_==taps)write_=0;
             if(step!=0.) {
                 degrees_+=step;

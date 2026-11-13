@@ -10,6 +10,7 @@
 int main(){
     using armix::sonku::SonKuEarlyReflections;
     using armix::sonku::SonKuRoomShape;
+    using armix::sonku::SonKuRoomGeometry;
     SonKuEarlyReflections invalid;
     assert(!invalid.prepare(96000.));
     assert(!invalid.prepare(std::numeric_limits<double>::quiet_NaN()));
@@ -30,6 +31,46 @@ int main(){
         }
         assert(soundEnergy>.004);
         assert(mirrorError<1.e-4);
+        // The published user's approved square impulse must remain byte-exact
+        // when the same geometry is expressed explicitly.
+        {
+            SonKuEarlyReflections approved,explicitSquare;
+            assert(approved.prepare(rate)&&explicitSquare.prepare(rate));
+            assert(approved.setShape(SonKuRoomShape::Square));
+            assert(explicitSquare.setGeometry({7.2f,7.2f,1.6f}));
+            assert(approved.setAmount(.55f)&&explicitSquare.setAmount(.55f));
+            assert(!explicitSquare.setGeometry({14.4f,14.4f,5.f}));
+            for(int i=0;i<8192;++i) {
+                const float v=i==0?.75f:0.f;
+                const auto a0=approved.process(v,v,37.,45.f);
+                const auto b0=explicitSquare.process(v,v,37.,45.f);
+                assert(a0.left==b0.left&&a0.right==b0.right);
+            }
+        }
+        assert(!SonKuEarlyReflections::validGeometry({7.2f,7.2f,5.f}));
+        assert(!SonKuEarlyReflections::validGeometry({40.1f,40.f,1.6f}));
+        assert(!SonKuEarlyReflections::validGeometry({
+            std::numeric_limits<float>::quiet_NaN(),14.f,2.f}));
+        assert(SonKuEarlyReflections::validGeometry({14.4f,14.4f,5.f}));
+        assert(SonKuEarlyReflections::validGeometry({28.8f,28.8f,8.f}));
+        // Larger boundaries delay the FIRST reflected arrival. No longer
+        // room is faked by increasing a single reverb decay number.
+        {
+            SonKuEarlyReflections nearRoom,largeRoom;
+            assert(nearRoom.prepare(rate)&&largeRoom.prepare(rate));
+            assert(nearRoom.setShape(SonKuRoomShape::Square));
+            assert(largeRoom.setGeometry({28.8f,28.8f,1.6f}));
+            assert(nearRoom.setAmount(.55f)&&largeRoom.setAmount(.55f));
+            int nearFirst=-1,largeFirst=-1;
+            for(int i=0;i<8000;++i) {
+                const float v=i==0?1.f:0.f;
+                const auto a0=nearRoom.process(v,v,0.,0.f);
+                const auto b0=largeRoom.process(v,v,0.,0.f);
+                if(nearFirst<0 && (a0.left!=0.f||a0.right!=0.f))nearFirst=i;
+                if(largeFirst<0 && (b0.left!=0.f||b0.right!=0.f))largeFirst=i;
+            }
+            assert(nearFirst>100 && largeFirst>nearFirst+800);
+        }
         SonKuEarlyReflections a,b;
         assert(a.prepare(rate)&&b.prepare(rate));
         assert(!a.active());
