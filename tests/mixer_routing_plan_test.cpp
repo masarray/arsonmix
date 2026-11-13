@@ -10,6 +10,7 @@
 #endif
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 using namespace armix::mixer;
@@ -1024,7 +1025,10 @@ static void verifyNativeInputGainBeforeFx() {
     create[0].kind=Kind::add;create[0].position=0;
     create[0].role=ChannelRole::input;create[0].text="Mic";
     create[1].kind=Kind::add;create[1].position=1;
-    create[1].role=ChannelRole::main;create[1].text="MAIN";
+    create[1].role=ChannelRole::main;create[1].format=ProcessingFormat::stereo;
+    create[1].text="MAIN";
+    // Preserve the golden microphone equal-power PAN without adding an
+    // unrelated second mono-pan attenuation on the MAIN sink.
     const auto added=roster.edit(0,create);
     assert(added.ok());
     const auto mic=added.createdIds[0],main=added.createdIds[1];
@@ -1086,6 +1090,11 @@ static void verifyNativePrePostAndSendEnablePcm() {
     for(int i=0;i<3;++i){
         add[i].kind=Kind::add;add[i].position=static_cast<std::size_t>(i);
         add[i].role=i==0?ChannelRole::input:i==1?ChannelRole::fxReturn:ChannelRole::main;
+        // Deliberate mono microphone into stereo FX RETURN and stereo MAIN.
+        // Without explicit formats, ChannelEdit defaults ALL THREE to mono:
+        // wet and MAIN each apply an additional equal-power -3 dB pan. The
+        // golden .25*2*mono*.5 assumes only the input's mono-pan stage.
+        add[i].format=i==0?ProcessingFormat::mono:ProcessingFormat::stereo;
         add[i].text=i==0?"Mic":i==1?"Wet":"MAIN";
     }
     const auto created=roster.edit(0,add);
@@ -1114,7 +1123,17 @@ static void verifyNativePrePostAndSendEnablePcm() {
     const auto render=[&](){return host.render(874,physical,1,
                         left.data(),right.data(),64,false,fx);};
     constexpr float mono=.7071067811865475f;
-    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    // Keep a real PCM assertion in Release and print both values when it
+    // fails: do not accept a DSP regression just to make Windows CI green.
+    const bool postRendered=render();
+    const float expectedPost=.25f*2.f*mono*.5f;
+    if(!postRendered||!close(left[63],expectedPost,1.e-4f))
+        std::fprintf(stderr,"PRE_POST_DIAG initial_post=%d L0=%.9g L63=%.9g R63=%.9g expected=%.9g source_format=%d wet_format=%d main_format=%d\\n",
+            static_cast<int>(postRendered),left[0],left[63],right[63],expectedPost,
+            static_cast<int>(roster.find(mic)->format),
+            static_cast<int>(roster.find(wet)->format),
+            static_cast<int>(roster.find(main)->format));
+    assert(postRendered&&close(left[63],expectedPost,1.e-4f));
     assert(host.setChannelMix(874,1,mic,0.f,0.f));
     assert(roster.rememberLiveMix(mic,0.f,0.f));
     assert(render()&&close(left[63],0.f));
@@ -1124,7 +1143,14 @@ static void verifyNativePrePostAndSendEnablePcm() {
     assert(roster.find(mic)->sends[0].edgeId==edgeId);
     assert(roster.find(mic)->sends[0].gain==.5f);
     assert(host.commit(roster,req,1,874,874,true).ok());
-    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    const bool preRendered=render();
+    const float expectedPre=.25f*2.f*mono*.5f;
+    if(!preRendered || !close(left[63],expectedPre,1.e-4f))
+        std::fprintf(stderr,"PRE_POST_DIAG pre_render=%d L0=%.9g L63=%.9g R63=%.9g expected=%.9g gain=%.9g edge_pre=%d edge_gain=%.9g\n",
+            static_cast<int>(preRendered),left[0],left[63],right[63],expectedPre,
+            roster.find(mic)->faderLinear,static_cast<int>(roster.find(mic)->sends[0].preFader),
+            roster.find(mic)->sends[0].gain);
+    assert(preRendered&&close(left[63],expectedPre,1.e-4f));
     assert(fxCalls==3); // one nonlinear FX pass per callback, no parallel duplicate
     assert(host.setWireEnabled(874,2,mic,edgeId,false));
     assert(roster.rememberLiveSendEnabled(mic,edgeId,false));
