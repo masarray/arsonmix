@@ -198,8 +198,11 @@ def verify_inspector_rejected_gain(page, out):
       "Rejection must not drop keyboard focus on the original range input")
     assert len(page.evaluate(
       "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN')"))==1
-    assert abs(float(page.evaluate(
-      "()=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.find(e=>e.id===2)?.levelDb"))-(-6))<.11
+    assert abs(float(page.evaluate("""()=>{
+      // EdgeId is allocated by the native graph projector; never assume 2.
+      const id=Number(document.getElementById('wireWsGain').dataset.wsGain);
+      return window.__ARMIX_NATIVE_SCOPE__.wireEdges.find(e=>e.id===id)?.levelDb;
+    }"""))-(-6))<.11
     assert not errors,errors
 
 def verify_external_output(page, out):
