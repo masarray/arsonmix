@@ -7008,7 +7008,7 @@ private:
 class ArSonMixUpdateNotice final : public juce::DocumentWindow
 {
 public:
-    ArSonMixUpdateNotice (const juce::String& tag, std::function<void()> onAccept)
+    ArSonMixUpdateNotice (const juce::String& tag, std::function<bool()> onAccept)
         : DocumentWindow ("ArSonMix · Update", juce::Colour (0xff141d27), closeButton),
           onAccept_ (std::move (onAccept))
     {
@@ -7017,8 +7017,19 @@ public:
                          "Your session and audio will not be interrupted.";
         panel_.ok.onClick = [this]
         {
-            if (onAccept_) onAccept_();
-            setVisible (false);
+            // Never say OK succeeded when the per-user approval file is
+            // unreadable/unwritable: leave this NON-modal window available
+            // for a retry without interrupting audio.
+            if (onAccept_ && onAccept_())
+            {
+                setVisible (false);
+                return;
+            }
+            panel_.message = "Could not save update approval.\n"
+                             "Your mixer remains available.\n"
+                             "Check disk permissions, then choose Retry.";
+            panel_.ok.setButtonText ("Retry");
+            panel_.repaint();
         };
         setUsingNativeTitleBar (false);
         setTitleBarHeight (31);
@@ -7051,7 +7062,7 @@ private:
                               juce::Justification::topLeft, 3);
         }
     } panel_;
-    std::function<void()> onAccept_;
+    std::function<bool()> onAccept_;
 };
 #endif
 
@@ -7288,7 +7299,7 @@ private:
                 approval->setProperty ("previousSha", previous);
                 // A usability acknowledgement only. PowerShell verifies the
                 // published release, both installer hashes and process locks.
-                (void) approvalFile.replaceWithText (
+                return approvalFile.replaceWithText (
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
     }
