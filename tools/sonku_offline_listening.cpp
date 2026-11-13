@@ -257,6 +257,14 @@ void notes(const std::filesystem::path& directory,
       <<"tail is not calibrated for large halls (no pretend big-hall RT60).\n"
       <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
       <<"direct path time-of-flight, or higher-order wall reflections.\n"
+      <<"V5 room-aware MUSICAL AMBIENCE candidates (still offline only):\n"
+      <<"sonku-v5-spacious-musical-orbit-cw-2x.wav = 14.4m/5m with\n"
+      <<"  prepared Spacious Chamber, RT60 about 1.65s, subtle wet.\n"
+      <<"sonku-v5-large-musical-orbit-cw-2x.wav = 28.8m/8m with\n"
+      <<"  prepared Large Auditorium, RT60 about 2.2s, subtle wet.\n"
+      <<"Compare the corresponding V4 room/distance file with FDN OFF;\n"
+      <<"no existing accepted Square file or public GUI has changed.\n"
+      <<"These are art-directed ambience, NOT calibrated room physics.\n"
       <<"Offline candidates only, NO native GUI/session/product release.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
@@ -323,6 +331,21 @@ int main(int argc,char** argv){
                  orbit(.55f,SonKuRoomShape::Square,true,0.f,
                        SonKuReverbPreset::StudioGlue,
                        SonKuRoomGeometry{28.8f,28.8f,8.f}));
+        // M4 uses room-scale profile for prepared FDN only. It does not
+        // change existing v1-v4 WAVs, any live/native GUI parameter or the
+        // owner-approved Square HRTF/early-reflection footprint.
+        const SonKuRoomGeometry spacious{14.4f,14.4f,5.f};
+        const SonKuRoomGeometry large{28.8f,28.8f,8.f};
+        const auto spaciousProfile=armix::sonku::musicalAmbienceForRoom(
+            spacious.widthMeters,spacious.depthMeters,spacious.distanceMeters);
+        const auto largeProfile=armix::sonku::musicalAmbienceForRoom(
+            large.widthMeters,large.depthMeters,large.distanceMeters);
+        writeWav(dir/"sonku-v5-spacious-musical-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,spaciousProfile.wet,
+                       spaciousProfile.preset,spacious));
+        writeWav(dir/"sonku-v5-large-musical-orbit-cw-2x.wav",
+                 orbit(.55f,SonKuRoomShape::Square,true,largeProfile.wet,
+                       largeProfile.preset,large));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
