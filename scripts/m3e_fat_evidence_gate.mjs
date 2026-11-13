@@ -178,6 +178,7 @@ export function assessM3eFat(root){
   const journalPath=join(resolve(root),'FAT_RUNS.json');
   if(!existsSync(journalPath))
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:'PENDING',releaseReady:false,hardwareCertified:false,
       blockers:['No physical FAT_RUNS.json: no 44.1/48-kHz field evidence']};
@@ -188,6 +189,7 @@ export function assessM3eFat(root){
       throw Error('Journal source/executable SHA differs from packaged native EXE');
     const physical=inspectM3eJournal(journal,{root:resolve(root)});
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:physical.physical,releaseReady:false,hardwareCertified:false,
       selectedSessions:physical.selectedSessions,blockers:physical.blockers,
@@ -195,6 +197,7 @@ export function assessM3eFat(root){
       renderHardwareXrun:physical.actualRenderXrunEvidence};
   }catch(error){
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:'PENDING',releaseReady:false,hardwareCertified:false,
       blockers:['FAT journal integrity: '+error.message]};
