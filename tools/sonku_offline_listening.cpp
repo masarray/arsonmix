@@ -353,6 +353,7 @@ std::vector<std::uint8_t> musicSplitBandProof() {
     }
     return output;
 }
+#if !defined(SONKU_AB_BASELINE)
 // P2: exact same original synthetic harmonics and direct KEMAR PCM;
 // ONLY the wall reflections switch from simple ITD/ILD to image-HRIR.
 std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured) {
@@ -404,6 +405,7 @@ void writeDirectionalRoomAudio(const std::filesystem::path& dir) {
          <<"Headphones only, safe playback gain, no OS spatial enhancer.\n"
          <<"These audio files are NOT subjective externalization proof.\n";
 }
+#endif // candidate-only experimental P2 renderer
 // Shared by the whole listening package and the fast PR-scoped integrity
 // experiment. No expensive 20-second room renders in the new fast lane.
 void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
@@ -443,8 +445,12 @@ int main(int argc,char** argv){
         std::filesystem::create_directories(dir);
         if(argc==3){
             if(std::string(argv[2])=="--directional-er-only") {
+#if !defined(SONKU_AB_BASELINE)
                 writeDirectionalRoomAudio(dir);
                 std::cout<<"P2 directional room 4 WAV rendered\n";
+#else
+                throw std::runtime_error("P2 directional room only exists in candidate");
+#endif
             } else {
                 writeMusicIntegrityEvidence(dir);
                 std::cout<<"Music-integrity 6x headphone A/B WAV PASS\n";
