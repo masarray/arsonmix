@@ -9,6 +9,7 @@
 #include "../integration/ApprovedNativeRuntimeSnapshot.h"
 #include "../integration/ApprovedNativeControlIntent.h"
 #include "LiveAudioEngine.h"
+#include "NativeLmsWebIntent.h"
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
@@ -303,6 +304,12 @@ public:
               })
               .withEventListener ("arMixFxParameterHotkeyInspect", [this] (juce::var args) {
                   inspectFxParameterHotkey(args);
+              })
+              .withEventListener ("arMixLmsInspect", [this] (juce::var args) {
+                  handleNativeLmsInspect(args);
+              })
+              .withEventListener ("arMixLmsValidate", [this] (juce::var args) {
+                  handleNativeLmsValidate(args);
               })
               .withEventListener ("arMixConsoleSubscribe", [this] (juce::var) {
                   // G0 real-device native producer, NEVER a synthetic ChannelId callback.
@@ -1765,6 +1772,75 @@ private:
         if (consoleSubscribed_ && browser_.loaded)
             browser_.emitEventIfBrowserIsVisible (
                 "arMixConsoleSnapshot", approvedNativeSnapshot());
+    }
+
+    // M6 CONTROL-only LMS bridge: the GUI may INSPECT an actual ASIO mask,
+    // but it can never claim ASIO ownership or produce PCM from JavaScript.
+    void handleNativeLmsInspect(const juce::var& args) {
+        const auto requestId=args.getProperty("requestId","").toString();
+        if(requestId.isEmpty()||requestId.length()>120)return;
+        armix::lms::TrustedSpeakerDeviceView inspected;
+        const bool ready=engine_.inspectLmsDeviceOffline(inspected);
+        juce::var response;
+        if(ready) {
+            const auto* read=engine_.lmsDraftReadback(
+                inspected.deviceEpoch,inspected.graphRevision);
+            response=armix::lms::web::inspection(inspected,read);
+        } else {
+            auto rejected=std::make_unique<juce::DynamicObject>();
+            rejected->setProperty("schema","arsonmix.lms.native-inspection.v1");
+            rejected->setProperty("ready",false);
+            rejected->setProperty("hardwareApplied",false);
+            rejected->setProperty("errorCode","NEEDS_VERIFIED_ASIO_CHANNEL_ID");
+            response=juce::var(rejected.release());
+        }
+        if(auto* obj=response.getDynamicObject())
+            obj->setProperty("requestId",requestId);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible(
+                "arMixLmsInspection",std::move(response));
+    }
+
+    void handleNativeLmsValidate(const juce::var& args) {
+        const auto id=args.getProperty("requestId","").toString();
+        if(id.isEmpty()||id.length()>120)return;
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("schema","arsonmix.lms.native-design-ack.v1");
+        reply->setProperty("requestId",id);
+        reply->setProperty("status","REJECTED");
+        reply->setProperty("hardwareApplied",false);
+        reply->setProperty("validatedDraft",false);
+        reply->setProperty("errorCode","INVALID_OFFLINE_LMS_INTENT");
+        armix::lms::web::OfflineIntent intent;
+        if(armix::lms::web::decode(args,intent)) {
+            // Only the real engine may collect device masks, physical MAIN
+            // identity and all-output disarm proof. No fake inspection
+            // object supplied by the browser is passed to this method.
+            const auto result=engine_.validateLmsDesignOffline(
+                intent.proposed,intent.expectedDesignRevision);
+            const auto& ack=result.ack;
+            reply->setProperty("deviceEpoch",
+                juce::String(std::to_string(ack.deviceEpoch)));
+            reply->setProperty("graphRevision",
+                juce::String(std::to_string(ack.graphRevision)));
+            reply->setProperty("designRevision",
+                juce::String(std::to_string(ack.designRevision)));
+            reply->setProperty("scratchBytes",
+                static_cast<juce::int64>(ack.preparedScratchBytes));
+            reply->setProperty("status",
+                ack.ok()?"VALIDATED_PENDING_READBACK":"REJECTED");
+            reply->setProperty("errorCode",
+                ack.ok()?"NONE":
+                "NATIVE_LMS_"+juce::String(static_cast<int>(ack.fault))+
+                "_PIN_"+juce::String(static_cast<int>(result.bindFault))+
+                "_RES_"+juce::String(static_cast<int>(ack.reservationFault))+
+                "_DSP_"+juce::String(static_cast<int>(ack.planFault)));
+        }
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible(
+                "arMixLmsDesignAck",juce::var(reply.release()));
+        // No speculative snapshot: the GUI must request a later native
+        // inspection and compare designRevision + accepted graph identity.
     }
 
     // UI-only native transaction. No PCM mutation; never arm an output.
