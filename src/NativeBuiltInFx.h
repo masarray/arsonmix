@@ -5,7 +5,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
-#include "../engine/builtin_fx/GuitarRigProcessor.h"
+#include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
 #include <cmath>
