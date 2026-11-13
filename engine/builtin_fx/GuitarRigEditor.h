@@ -40,6 +40,11 @@ public:
     explicit GuitarRigEditor(GuitarRigProcessor& processor)
         : juce::AudioProcessorEditor(processor),processor_(processor) {
         setOpaque(true);
+        // An earlier window may have closed after PCM applied a preset but
+        // before its timer drained the completion. Reduce it before showing
+        // the restored tone: opening another editor must not display stale
+        // accepted settings from the previous window.
+        processor_.serviceCompletions();
         draft_=processor_.acceptedProgram();
         accepted_=draft_;
         loadArt();

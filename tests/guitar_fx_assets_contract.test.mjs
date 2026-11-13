@@ -87,3 +87,12 @@ test("native JUCE editor uses the generated binary resource identifiers",()=>{
      name+" must not reference non-existent underscore-hyphen symbol");
  }
 });
+
+test("reopened native editor reduces prior accepted PCM completions before painting the tone",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const start=editor.indexOf("explicit GuitarRigEditor(");
+ const consume=editor.indexOf("processor_.serviceCompletions();",start);
+ const accepted=editor.indexOf("draft_=processor_.acceptedProgram();",start);
+ assert(start>=0 && consume>start && accepted>consume,
+        "editor must display already acknowledged DSP state after close/reopen");
+});
