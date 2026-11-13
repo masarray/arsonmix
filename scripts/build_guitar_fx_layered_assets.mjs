@@ -35,7 +35,12 @@ const hash=(x,y,s=7)=>{
 const mix=(a,b,t)=>a.map((v,i)=>clamp(v*(1-t)+b[i]*t));
 const gold=[190,128,58],silver=[166,158,149],dark=[28,30,34];
 const pixel=(spec,x,y)=>{
-  const [name,w,h,kind]=spec, X=x/w,Y=y/h,n=hash(x,y,kind.length),grain=(n-.5)*11;
+  // Shared texture seed for state pairs prevents frame pixel shimmering.
+  const [name,w,h,kind]=spec, X=x/w,Y=y/h;
+  const seed=kind.startsWith("switch")?11:
+             kind.startsWith("button")?13:
+             kind.startsWith("stomp")?17:kind.length;
+  const n=hash(x,y,seed),grain=(n-.5)*11;
   const gray=v=>[clamp(v+grain),clamp(v+grain*0.9),clamp(v+grain*0.8),255];
   const metal=(v,g=0)=>[clamp(v+g+grain),clamp(v+g*.67+grain),clamp(v+g*.24+grain),255];
   const alpha=(v,a)=>[v[0],v[1],v[2],clamp(a)];
