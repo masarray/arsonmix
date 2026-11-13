@@ -71,6 +71,10 @@ public:
         }
         // Global phase guard has priority; never duplicate global rescue.
         // The core keeps the existing bounded 0.65 * mix * trim return.
+        // The analysis filters retain history for smooth re-entry, but a
+        // digital-silence input must never emit a synthetic filter tail.
+        // Preserve P0's exact-zero digital silence contract.
+        if(l==0.f && r==0.f)return 0.f;
         return .5f*(l-r)*amount_+(1.f-amount_)*selected;
     }
     float recoveryAmount()const noexcept{return amount_;}
