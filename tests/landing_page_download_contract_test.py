@@ -33,6 +33,11 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertNotIn("heroDownload.href =", js)
             self.assertNotIn("isWindowsVisitor", js)
             self.assertIn("Free to download", html)
+            for feature in ("Vocal Delay", "8D-SonKu", "Guitar FX", "Harmonice", "WIRE"):
+                self.assertIn(feature, html)
+            self.assertIn("latest verified Windows alpha preview", html)
+            self.assertIn("updates automatically after an approved public release", html)
+            self.assertIn("latest verified downloads.", html.lower())
             self.assertIn("Earlier Linux/macOS builds", html)
             self.assertIn("latest verified Windows alpha preview", html)
             self.assertFalse(bool(re.search(r"Windows alpha\.\d+", html)),

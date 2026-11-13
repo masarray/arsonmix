@@ -14,11 +14,20 @@
 
 ## Download ArSonMix
 
-**[Open the official download page](https://masarray.github.io/arsonmix/#download)** and choose your operating system. For Windows 10/11 x64, select **Download installer ZIP**, extract it, then run Setup. The link downloads the published file directly from the landing page.
+**[Download the latest verified ArSonMix release](https://masarray.github.io/arsonmix/#download)** from the official landing page and choose your operating system. The Windows card always selects the newest verified public Windows installer; on Windows 10/11 x64, click **Download installer ZIP**, extract it, then run Setup. No GitHub account or visit to the GitHub Releases UI is needed.
+
+**Latest published Windows alpha as of 13 November 2026:** [v0.5.0-alpha.23 — Download installer ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/ArSonMix-v0.5.0-alpha.23-Windows-x64-Setup.zip) · [portable ZIP](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/ArSonMix-v0.5.0-alpha.23-Windows-x64-Portable.zip) · [SHA-256 checksums](https://github.com/masarray/arsonmix/releases/download/v0.5.0-alpha.23/SHA256SUMS.txt). These are pinned alpha.23 links; for any newer release, use the version-aware official download page above.
 
 The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
-The built-in effect is now named **Vocal Delay** (formerly Vocal Throw); saved sessions and presets retain the original internal identity. Recent Windows previews add global mixer and supported VST3 parameter hotkeys, Harmonice stereo lead Pitch Tune and ensemble improvements, and native user presets for EQ, Compressor, Harmonice, and Vocal Delay. For the scope of an installed build, match its version to the [release notes](https://github.com/masarray/arsonmix/releases).
+### What is included in the current Windows alpha
+
+- **8D-SonKu:** binaural 360° orbit with a transparent rear-view listener, depth-aware FRONT/REAR speakers and native SPACE controls. The PNG animation is visual feedback; the JUCE engine renders the audio.
+- **Vocal Delay:** native phrase-aware delay, formerly displayed as Vocal Throw. Existing `.smix` sessions and presets retain the compatible internal plugin identity.
+- **Harmonice, Guitar FX, EQ & Compressor:** native effects with dedicated GUI controls, alongside supported VST3 parameter hotkeys and built-in user presets.
+- **Live mixer & WIRE:** input channels, MAIN/BUS routing, gain, PRE/POST sends, mute/solo and Save/Open `.smix` sessions. ArSon Player remains part of the console workflow.
+
+Only features merged into the released source are listed; in-progress PRs such as the experimental Guitar FX visual redesign and LMS editor are **not** included. See the [alpha.23 release notes](docs/releases/v0.5.0-alpha.23.md) for scope and limitations.
 
 ## Get started
 
