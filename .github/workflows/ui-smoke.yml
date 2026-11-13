@@ -333,6 +333,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      # LMS Browser FAT is additive only when this feature exists in the
+      # exact checked-out source. Never test a separate or prototype renderer.
+      - name: LMS five-workspace crossover / matrix / EQ / geometry Chromium
+        if: ${{ hashFiles('tests/pages_lms_five_workspaces_smoke.py') != '' }}
+        run: python tests/pages_lms_five_workspaces_smoke.py
       - name: Verify opt-in actual /preview/ GUI profiling, default OFF
         run: python tests/approved_gui_perf_stage_a_smoke.py
       - name: Validate Stage B native meter dirty-write / authoritative Pages parity
@@ -650,6 +655,7 @@ jobs:
           name: arsonmix-gui-current-smoke
           path: |
             pages-wire-main-*.png
+          pages-lms-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png
             pages-fader-rollback-*.png
