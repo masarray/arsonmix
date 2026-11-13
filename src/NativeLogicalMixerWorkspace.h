@@ -190,6 +190,18 @@ public:
                 edit.value=static_cast<float>(n);
             }
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_TAP") {
+            const auto edgeVar=payload.getProperty("edgeId",{});
+            std::uint64_t sendId=0;
+            if(!armix::session::parseDecimal(edgeVar,sendId) || !sendId)
+                return bad("INVALID_SEND_TAP_EDGE");
+            const auto tap=payload.getProperty("tap","").toString();
+            if(tap!="PRE_FADER" && tap!="POST_FADER")
+                return bad("INVALID_SEND_TAP_STAGE");
+            edit.kind=ChannelEdit::Kind::setSendTap;
+            edit.sendEdgeId=sendId;
+            edit.preFader=tap=="PRE_FADER";
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_SEND_ENABLED") {
             // Logical/offline operation only: cannot authorize installed PCM.
             // The authoritative roster retains EdgeId and stored gain/tap.
@@ -365,7 +377,7 @@ public:
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
             "SET_INPUT_GAIN",
-            "SET_SEND_ENABLED",
+            "SET_SEND_ENABLED","SET_SEND_TAP",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
@@ -424,6 +436,9 @@ public:
                 set(edge,"gainLinear",static_cast<double>(send.gain));
                 set(edge,"primaryOutput",send.primaryOutput);
                 set(edge,"tap",send.preFader?"SPLIT_PRE":"POST_FADER");
+                // Explicit native DSP stage. Legacy SPLIT_PRE field stays
+                // compatible; it must not be presented as browser PRE_FX.
+                set(edge,"tapStage",send.preFader?"PRE_FADER":"POST_FADER");
                 edges.add(edge);
                 sends.add(edge);
                 if(send.primaryOutput)set(channel,"primaryOutId",str(send.destination.value));
