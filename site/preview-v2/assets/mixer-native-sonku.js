@@ -222,6 +222,27 @@ function drawSpeakers(){
   g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"°");
  }
 }
+// rAF is a VISUAL interpolator, not an audio clock or optimistic DSP ACK.
+// A bounded phase-locked correction follows the real native callback without
+// teleporting at each ~250ms readback. Only SVG geometry is painted per frame.
+function animate(time){
+ if(root.hidden||!current){frame=null;return;}
+ if(visualAt && draft.moving && !drag){
+  const dt=Math.max(0,Math.min(.08,(time-visualAt)*.001));
+  const speed=(draft.clockwise?1:-1)*360/draft.revolutionSeconds;
+  visualPhase=angle(visualPhase+speed*dt);
+  if(observedAt&&!pending){
+   const expected=angle(observed+(time-observedAt)*.001*speed);
+   const error=((expected-visualPhase+540)%360)-180;
+   // No hard reset to a delayed readback; max 1.5deg/frame correction.
+   const correction=error*(1-Math.exp(-dt/.32));
+   visualPhase=angle(visualPhase+Math.max(-1.5,Math.min(1.5,correction)));
+  }
+  drawSpeakers();
+ }
+ visualAt=time;
+ frame=requestAnimationFrame(animate);
+}
 function hint(s){$("skHint").textContent=s;}
 function requestSnapshot(force=false){
  const c=context();if(!c)return;
@@ -271,17 +292,22 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    return;
   }
   accepted={...incoming};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
- }else if(!drag&&!dialDrag){
+ }else if(!drag&&!dialDrag&&rangeEdits.size===0){
   accepted={...incoming};draft={...incoming};
  }
  if(Number.isFinite(r.observedAzimuthDegrees)){
+  // First authoritative phase anchors the loop once. Subsequent readbacks
+  // only adjust the PLL; never set the visible phase discontinuously.
+  if(!observedAt)visualPhase=angle(r.observedAzimuthDegrees);
   observed=r.observedAzimuthDegrees;observedAt=performance.now();
  }
  render();
 });
 $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
  pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
- if(clock!==null){clearInterval(clock);clock=null;}});
+ rangeEdits.clear();
+ if(clock!==null){clearInterval(clock);clock=null;}
+ if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
@@ -294,15 +320,24 @@ for(const [id,key,convert] of [
  ["skDistance","sourceDistanceMeters",v=>v],
  ["skAmbience","ambience",v=>v/100]]) {
  const slider=$(id);
+ // While a range gesture is active, timer-driven native readbacks MUST NOT
+ // overwrite the uncommitted value. Commit once on change/pointer release.
+ slider.addEventListener("pointerdown",()=>rangeEdits.add(id));
  slider.addEventListener("input",()=>{
   if(slider.disabled)return;
   const value=Number(slider.value);
   if(!Number.isFinite(value))return;
+  rangeEdits.add(id);
   draft={...draft,[key]:convert(value)};render();
  });
  slider.addEventListener("change",()=>{
-  if(slider.disabled)return;
-  send({...draft,[key]:convert(Number(slider.value))});
+  if(slider.disabled){rangeEdits.delete(id);return;}
+  const value=Number(slider.value);
+  rangeEdits.delete(id);
+  if(Number.isFinite(value))send({...draft,[key]:convert(value)});
+ });
+ slider.addEventListener("pointercancel",()=>{
+  rangeEdits.delete(id);draft={...accepted};render();
  });
 }
 for(const [id,key,convert] of [
@@ -392,7 +427,8 @@ const api={
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
-  observedAt=0;accepted=defaults();draft=defaults();
+  observedAt=0;visualAt=0;visualPhase=0;rangeEdits.clear();
+  accepted=defaults();draft=defaults();
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
@@ -403,9 +439,10 @@ const api={
   if(native())requestSnapshot();
   if(clock!==null)clearInterval(clock);
   clock=setInterval(()=>{if(root.hidden)return;
-    if(native()&&!pending&&context())requestSnapshot();
-    render();},250);
+    if(native()&&!pending&&context())requestSnapshot();},250);
   render();
+  if(frame!==null)cancelAnimationFrame(frame);
+  frame=requestAnimationFrame(animate);
  },
  close(){$("skClose").click();}
 };
