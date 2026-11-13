@@ -68,6 +68,11 @@ public:
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
         levelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
+        // Music-monitor distance/loudness controls are prepared off the
+        // realtime callback. Headphone low shelf ~180 Hz; no added latency.
+        distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
+        bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
+        limiterRelease_=static_cast<float>(1./(rate*0.080));
         if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
         reset();
         ready_=true;
@@ -82,6 +87,11 @@ public:
         for(auto& source:targets_)for(auto& ear:source)ear.fill(0.f);
         smoothedMix_=settings_.spatialMix;
         smoothedTrim_=settings_.outputTrim;
+        smoothedDistanceGain_=1.f;
+        smoothedRoomLevel_=1.f;
+        smoothedBassShelf_=0.f;
+        earBass_.fill(0.f);
+        limiterGain_=1.f;
         write_=0;
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
@@ -102,6 +112,10 @@ public:
             s.ambience!=settings_.ambience;
         if(changed && !applyAcousticSettings(s))return false;
         settings_=s;
+        // Once native ROOM has been enabled, retain the smoothed transition
+        // when it is turned OFF. Standalone experimental V2/V3 OFF fixtures
+        // continue to use their exact original 1/r distance law.
+        if(s.spacePreset!=0)nativeSpaceEverUsed_=true;
         remaining_=0;
         return true;
     }
@@ -136,6 +150,14 @@ public:
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
         const float distanceGain=room_.relativeDistanceGain();
+        const bool nativeSpace=nativeSpaceEverUsed_;
+        const bool roomEnabled=settings_.spacePreset!=0;
+        // Deliberate music-monitor compensation: real distance perception
+        // still comes from direct/reflected ratio and high-frequency cues,
+        // while the direct field is not attenuated by the full physical 1/r.
+        // 1.6m=1; 8m~0.55 instead of 0.20. No pow/exp on the PCM callback.
+        const float targetDistance=roomEnabled?
+            1.f/(1.f+0.13f*(settings_.sourceDistanceMeters-1.6f)):1.f;
         for(int i=0;i<samples;++i) {
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
@@ -180,19 +202,49 @@ public:
             const auto late=reverb_.active()
                 ?reverb_.process(x0,x1)
                 :SonKuMusicalReverb::Ears{};
-            // Exact legacy PCM arithmetic on the 1.6m reference (including
-            // all native instances). More distant experimental sources get
-            // inverse-distance pressure falloff on the DIRECT binaural field.
-            // ER uses matching absolute path pressure; diffuse late field
-            // remains an independent environmental stage.
-            if(distanceGain==1.f) {
-                left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
-                right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+            if(!nativeSpace) {
+                // Preserve byte-for-byte legacy HRIR and offline V2/V3 1/r
+                // until the operator actually enables a native ROOM scene.
+                if(distanceGain==1.f) {
+                    left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
+                    right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+                } else {
+                    left[i]=dryLevel*x0+binauralLevel*
+                        (distanceGain*ears[0]+reflection.left+late.left);
+                    right[i]=dryLevel*x1+binauralLevel*
+                        (distanceGain*ears[1]+reflection.right+late.right);
+                }
             } else {
-                left[i]=dryLevel*x0+binauralLevel*
-                    (distanceGain*ears[0]+reflection.left+late.left);
-                right[i]=dryLevel*x1+binauralLevel*
-                    (distanceGain*ears[1]+reflection.right+late.right);
+                // Slew gain changes per sample; a typed 1.6→8 m edit must
+                // never step the direct pressure at the buffer boundary.
+                smoothedDistanceGain_+=distanceSlew_*
+                    (targetDistance-smoothedDistanceGain_);
+                smoothedRoomLevel_+=distanceSlew_*
+                    ((roomEnabled?1.12f:1.f)-smoothedRoomLevel_);
+                smoothedBassShelf_+=distanceSlew_*
+                    ((roomEnabled?0.82f:0.f)-smoothedBassShelf_);
+                float spatialL=smoothedDistanceGain_*ears[0]+
+                    reflection.left+late.left;
+                float spatialR=smoothedDistanceGain_*ears[1]+
+                    reflection.right+late.right;
+                // Low-frequency KEMAR response is ~-7..-11 dB below 200Hz.
+                // A gentle bounded *binaural* shelf restores warmth without
+                // mixing dry mono under the HRIR or altering left/right ITD.
+                earBass_[0]+=bassSlew_*(spatialL-earBass_[0]);
+                earBass_[1]+=bassSlew_*(spatialR-earBass_[1]);
+                spatialL+=smoothedBassShelf_*earBass_[0];
+                spatialR+=smoothedBassShelf_*earBass_[1];
+                float outL=dryLevel*x0+binauralLevel*smoothedRoomLevel_*spatialL;
+                float outR=dryLevel*x1+binauralLevel*smoothedRoomLevel_*spatialR;
+                // Zero-lookahead *linked* sample-peak safety guard. Quiet
+                // signals are linear; peaks are gently returned below unity
+                // without routing through a second engine or allocating.
+                const float peak=std::max(std::abs(outL),std::abs(outR));
+                const float immediate=peak>0.98f?0.98f/peak:1.f;
+                limiterGain_=std::min(immediate,
+                    std::min(1.f,limiterGain_+limiterRelease_));
+                left[i]=outL*limiterGain_;
+                right[i]=outR*limiterGain_;
             }
             if(++write_==taps)write_=0;
             if(step!=0.) {
@@ -254,12 +306,17 @@ private:
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
+    float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
+    float smoothedBassShelf_=0.f,limiterGain_=1.f;
+    std::array<float,2> earBass_{};
     float filterSlew_=0.f,levelSlew_=0.f;
+    float distanceSlew_=0.f,bassSlew_=0.f,limiterRelease_=0.f;
     double sampleRate_=0.;
     double degrees_=0.;
     int write_=0;
     int remaining_=0;
     bool ready_=false;
     bool haveKernel_=false;
+    bool nativeSpaceEverUsed_=false;
 };
 } // namespace armix::sonku
