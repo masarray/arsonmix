@@ -63,10 +63,31 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "NATIVE_JUCE_WINDOW_CAPTURE_FAILED:$LASTEXITCODE" }
           $images = @(Get-ChildItem $dest -Filter '*.png' -File)
           if ($images.Count -ne 10) { throw "NATIVE_CAPTURE_COUNT:$($images.Count)" }
+          $digests = @{}
           foreach ($f in $images) {
             if ($f.Length -lt 10000) { throw "EMPTY_NATIVE_RENDER:$($f.Name)" }
             $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+            $digests[$f.Name] = $hash
             Write-Host "JUCE_EDITOR_PNG=$($f.Name) bytes=$($f.Length) sha256=$hash"
+          }
+          # Mandatory pixel-difference proof. Async Button::triggerClick
+          # previously captured identical images of different modules.
+          # Identical frames must fail, never masquerade as GUI acceptance.
+          $pairs = @(
+            @('01-gate.png', '02-overdrive.png'),
+            @('02-overdrive.png', '03-amplifier.png'),
+            @('03-amplifier.png', '04-cabinet.png'),
+            @('05-gate-before-toggle.png', '06-gate-after-toggle.png')
+          )
+          foreach ($pair in $pairs) {
+            $a = $pair[0]; $b = $pair[1]
+            if (-not $digests.ContainsKey($a) -or -not $digests.ContainsKey($b)) {
+              throw "MISSING_NATIVE_IMAGE_PAIR:$a $b"
+            }
+            if ($digests[$a] -eq $digests[$b]) {
+              throw "NATIVE_GUI_STATE_DID_NOT_CHANGE:$a / $b"
+            }
+            Write-Host "NATIVE_GUI_DISTINCT_STATES_PASS:$a vs $b"
           }
       - uses: actions/upload-artifact@v4
         if: always()
