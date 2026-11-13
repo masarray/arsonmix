@@ -54,12 +54,16 @@ def exercise(page,width,height):
               rail:r('.section-rail .rail-cell.fader'),
               travel:r('#tracks .strip[data-id="1"] .fader-travel'),
               fx:r('#tracks .strip[data-id="1"] .fx-section'),
-              footer:r('#tracks .strip[data-id="1"] .bottom-section')};
+              footer:r('#tracks .strip[data-id="1"] .bottom-section'),
+              token:getComputedStyle(document.querySelector('.console-body')).getPropertyValue('--fader-fixed-h').trim(),
+              flex:getComputedStyle(document.querySelector('#tracks .strip[data-id="1"] .fader-section')).flexBasis};
     }""")
     a,b,c=layout["fader"],layout["master"],layout["rail"]
     assert all(x and x["h"]>0 for x in (a,b,c)),layout
     assert abs(a["h"]-b["h"])<2 and abs(a["h"]-c["h"])<2,(width,layout)
-    assert a["h"]>=300 if height>=900 else a["h"]>=260,(width,layout)
+    min_height=300 if height>=1000 else (275 if height>=850 else 235)
+    assert a["h"]>=min_height,(width,"tall hardware fader lower bound",layout)
+    print("V60 geometry",width,height,"fader",a["h"],"CSS token",layout["token"],"flex",layout["flex"])
     assert layout["travel"]["h"]>a["h"]-110,(width,layout)
     assert layout["fx"]["h"]>=23,(width,"FX cell disappeared",layout)
     assert a["bottom"]<layout["footer"]["bottom"],(width,"fader overlaps footer",layout)
