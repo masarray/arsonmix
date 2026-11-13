@@ -49,7 +49,10 @@ public:
         preset_.addItem("Warm Blues",2);
         preset_.addItem("Vintage Crunch",3);
         preset_.addItem("Modern Lead",4);
-        preset_.setSelectedId(1,juce::dontSendNotification);
+        preset_.addItem("Custom / saved state",5);
+        selectedPreset_=matchPreset(draft_);
+        preset_.setSelectedId(selectedPreset_?selectedPreset_:5,
+                              juce::dontSendNotification);
         preset_.onChange=[this]{choosePreset(preset_.getSelectedId());};
         addAndMakeVisible(preset_);
         for(std::size_t i=0;i<4;++i){
@@ -73,7 +76,7 @@ public:
             power_[i].onClick=[this,i]{
                 if(draft_.count<=i)return;
                 draft_.blocks[i].enabled=!draft_.blocks[i].enabled;
-                dirty_=true;refreshWidgets();repaint();
+                markCustom();dirty_=true;refreshWidgets();repaint();
             };
             addAndMakeVisible(power_[i]);
         }
@@ -86,7 +89,7 @@ public:
                 if(refreshing_ || focus_>=draft_.count)return;
                 draft_.blocks[focus_].values[i]=static_cast<float>(
                     sliders_[i].getValue());
-                dirty_=true;repaint();
+                markCustom();dirty_=true;repaint();
             };
             addAndMakeVisible(sliders_[i]);
         }
@@ -273,6 +276,23 @@ private:
                                   juce::dontSendNotification);
         }
         refreshing_=false;
+    }
+    static int matchPreset(const Program& p) noexcept {
+        if(!armix::guitarfx::GuitarRigCore::supportsProgram(p))return 0;
+        if(p.blocks[1].enabled){
+            if(p.blocks[2].values[0]==0.43f &&
+               p.blocks[1].values[0]==0.22f)return 2;
+            if(p.blocks[2].values[0]==0.62f &&
+               p.blocks[1].values[0]==0.45f)return 3;
+            if(p.blocks[2].values[0]==0.91f &&
+               p.blocks[1].values[0]==0.73f)return 4;
+            return 0;
+        }
+        return p.blocks[2].values[0]==0.20f?1:0;
+    }
+    void markCustom() {
+        selectedPreset_=0;
+        preset_.setSelectedId(5,juce::dontSendNotification);
     }
     void choosePreset(int id){
         if(id<1||id>4)return;
