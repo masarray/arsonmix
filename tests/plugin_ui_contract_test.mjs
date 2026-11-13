@@ -163,7 +163,10 @@ test('WebView2 avoids hidden-page reload and white underlay; startup uses opaque
   assert.match(native,/withKeepPageLoadedWhenBrowserIsHidden\(\)/);
   assert.match(native,/withBackgroundColour \(juce::Colour \(0xff101921\)\)/);
   assert.match(native,/setVisible \(false\);\s*\/\/ Begin WebView navigation/);
-  assert.match(native,/setVisible \(true\);\s*toBack\(\)/);
+  const warm=native.slice(native.indexOf('if (!webViewPeerWarmed_)'),
+                          native.indexOf('// Existing message-thread 12 Hz timer',native.indexOf('if (!webViewPeerWarmed_)')));
+  assert.match(warm,/setVisible \\(true\\);/);
+  assert.doesNotMatch(warm,/\\btoBack\\s*\\(/); // splash already covers the first frame
   assert.match(read('src/ArSonMixStartupSplash.h'),/setOpaque \(true\)/);
   assert.doesNotMatch(native,/goToURL \(.*\);\s*\/\/ restore/);
 });
