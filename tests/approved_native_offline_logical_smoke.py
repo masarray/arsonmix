@@ -137,13 +137,29 @@ def main():
         assert not page.locator("#fastPicker").is_visible()
         emit(page, "arMixCatalog", {"items": [], "builtIns": [
             {"id": "armix.builtin.fixture.v1", "name": "Fixture processor", "category": "Utility"},
+            {"id": "armix.builtin.guitar-rig.v1", "name": "Guitar FX Rig",
+             "category": "Guitar", "showInPicker": True},
             {"id": "armix.builtin.hidden.v1", "name": "Hidden processor", "showInPicker": False},
         ]})
         rack.locator('[data-action="openPlugin"][data-slot="2"]').click()
         assert page.locator("#fastPicker").is_visible()
         assert page.locator('[data-fast-id="armix.builtin.fixture.v1"]').is_visible()
         assert page.locator('[data-fast-id="armix.builtin.hidden.v1"]').count() == 0
-        page.locator("#fastClose").click()
+        guitar=page.locator('[data-fast-id="armix.builtin.guitar-rig.v1"]')
+        assert guitar.is_visible(), "Guitar FX Rig missing from user-facing FX picker"
+        search=page.locator("#fastSearch")
+        search.fill("guitar")
+        assert guitar.is_visible(), "Guitar FX Rig must be searchable by name/category"
+        assert page.locator('[data-fast-id="armix.builtin.fixture.v1"]').count() == 0
+        guitar.click()
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent' &&
+            e.payload?.operation==='ADD_FX_REFERENCE' &&
+            e.payload?.payload?.catalogId==='armix.builtin.guitar-rig.v1')""")
+        assert not page.locator("#fastPicker").is_visible()
+        # UI may save a LOGICAL reference without physical audio; only an
+        # installed native ChannelId graph can own a real guitar insert.
+        page.locator("#fastClose").click() if page.locator("#fastPicker").is_visible() else None
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
