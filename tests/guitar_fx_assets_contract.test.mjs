@@ -200,7 +200,11 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
    const offset=y*(A.w*4+1)+1+x*4;
    assert.equal(A.raw[offset+3],B.raw[offset+3],a+" vs "+b+
      ": alpha/frame misregistration at "+x+","+y);
-   const outside=x<8||x>=A.w-8||y<10||y>=A.h-10;
+   // Match the immutable hardware shell. The circular stomp's lit
+   // ring extends close to the canvas top but is an intentional state pixel.
+   const d=Math.hypot(x/A.w-.5,y/A.h-.5);
+   const outside=a.includes("stomp")?d>.43:
+                 x<8||x>=A.w-8||y<10||y>=A.h-10;
    if(outside)
     for(let c=0;c<4;c++)assert.equal(A.raw[offset+c],B.raw[offset+c],
       "outer frame cannot flicker across ON/OFF");
