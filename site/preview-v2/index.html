@@ -424,7 +424,7 @@ function commitRouteChoice(kind){
  if(type==='CONNECT')op.mode=source.wireTapMode==='split'?'split':'send';
  const ok=wireGraphCommit([op]);
  closeRouteChoice();if(!ok)return false;
- render();kickWireSpring(source.id,dest.id);
+ render();selectTrack(source);kickWireSpring(source.id,dest.id);
  say(source.name+' → '+dest.name+' · '+(kind==='only'?'ROUTE ONLY':'PARALLEL SEND')+' · reference only');
  return true;
 }
@@ -1973,6 +1973,7 @@ function finishFaderPointer(ev){
      if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)){
       wireWsRecord(before);
       if(!snap)selectedWireEdgeId=null;
+      else selectTrack(wireSourceTrack(g.sourceId)); // reveal accepted selected cable
      }
     }
    }else{
@@ -1981,7 +1982,8 @@ function finishFaderPointer(ev){
     const target=snap?.track||(input?findTrack(input):null),source=wireSourceTrack(g.sourceId);
     if(target&&source&&target.id!==source.id){
      wireSourceId=source.id;wireSourcePinned=true;wireIntent=true;wireAnchorId=target.id;
-     requestWireConnection(source,target,input);
+     if(requestWireConnection(source,target,input))
+      selectTrack(source); // a successful OUT drag reveals its selected cable
     }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    }
    renderWireRouting();wireSuppressClick=true;
