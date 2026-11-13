@@ -100,3 +100,16 @@ test("reopened native editor reduces prior accepted PCM completions before paint
  assert(editor.includes("processor_.queueProgram(draft_,id,selectedBank_)"),
         "A/B selection must name the native target bank during control ACK");
 });
+
+test("bypassed Guitar FX editor may enqueue tone without a live wet meter",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const processor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigProcessor.h"),"utf8");
+ assert(editor.includes("processor_.queueProgram(draft_,id,selectedBank_)"));
+ assert(!editor.includes("processor_.isReady()&&serial>0"),
+        "guitar bypass must not disable native tone edits");
+ assert(processor.includes("pending_.fetch_add(1,std::memory_order_release)"),
+        "unacknowledged tone must block stale session save");
+ assert(editor.includes("~GuitarRigEditor() override") &&
+        editor.includes("processor_.queueProgram(bankDrafts_[target],id,target)"),
+        "closing editor must preserve queued native A/B switch");
+});

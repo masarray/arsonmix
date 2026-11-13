@@ -237,6 +237,21 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(guitarTyped->observedBlockSerial()==1);
     assert(guitarTyped->observedOutputPeak()>0.f);
     assert(guitarTyped->hasEditor()); // same generic routed editor host
+    // Active and fully bypassed rack paths share an authenticated mailbox.
+    // No PCM processing is necessary to acknowledge edits at full bypass:
+    // the existing FxInstance fast path calls consumeRealtimeEdits().
+    auto bypassed=guitar->prepare(48000.,128,nullptr,0);
+    auto* bypassRig=dynamic_cast<armix::builtin_fx::GuitarRigProcessor*>(
+        bypassed.get());
+    assert(bypassRig && bypassRig->observedBlockSerial()==0);
+    auto bypassTone=armix::guitarfx::factoryTone(1);
+    assert(bypassRig->queueProgram(bypassTone,99,0));
+    assert(!bypassRig->stateSnapshotQuiescent());
+    bypassRig->consumeRealtimeEdits(); // same callback hook as host bypass
+    assert(bypassRig->stateSnapshotQuiescent());
+    assert(bypassRig->lastCompletion().requestId==99);
+    assert(armix::guitarfx::sameTone(bypassRig->acceptedProgram(),bypassTone));
+    assert(bypassRig->observedBlockSerial()==0); // no fake wet PCM claim
     auto edit=guitarTyped->acceptedProgram();
     edit.blocks[2].values[0]=0.78f;
     edit.blocks[1].enabled=true;
