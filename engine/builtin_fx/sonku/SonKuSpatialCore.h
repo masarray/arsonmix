@@ -44,6 +44,10 @@ public:
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<.1)?hrir::normal44100:hrir::normal48000;
+        // Prepared control-side: continuous coefficient and gain smoothing
+        // without trigonometric/exponential work in the audio callback.
+        filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
+        levelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
         reset();
         ready_=true;
         return true;
@@ -51,6 +55,9 @@ public:
     void reset() noexcept {
         for(auto& channel:history_)channel.fill(0.f);
         for(auto& source:kernels_)for(auto& ear:source)ear.fill(0.f);
+        for(auto& source:targets_)for(auto& ear:source)ear.fill(0.f);
+        smoothedMix_=settings_.spatialMix;
+        smoothedTrim_=settings_.outputTrim;
         write_=0;
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
@@ -76,10 +83,11 @@ public:
         if(!ready_ || !left || !right || samples<=0)return;
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
-        const float wetLevel=0.5f*settings_.outputTrim;
-        const float dryLevel=1.f-settings_.spatialMix;
-        const float binauralLevel=settings_.spatialMix*wetLevel;
         for(int i=0;i<samples;++i) {
+            smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
+            smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
+            const float dryLevel=1.f-smoothedMix_;
+            const float binauralLevel=0.5f*smoothedMix_*smoothedTrim_;
             if(remaining_==0) {
                 updateKernels();
                 remaining_=updateInterval;
@@ -93,8 +101,18 @@ public:
                 int at=write_-tap;
                 if(at<0)at+=taps;
                 const float v0=history_[0][at],v1=history_[1][at];
-                ears[0]+=v0*kernels_[0][0][tap]+v1*kernels_[1][0][tap];
-                ears[1]+=v0*kernels_[0][1][tap]+v1*kernels_[1][1][tap];
+                // The old implementation replaced four HRIR kernels in
+                // visible 16-frame jumps. Slew continuously per audio sample.
+                auto& l0=kernels_[0][0][tap];
+                auto& r0=kernels_[0][1][tap];
+                auto& l1=kernels_[1][0][tap];
+                auto& r1=kernels_[1][1][tap];
+                l0+=filterSlew_*(targets_[0][0][tap]-l0);
+                r0+=filterSlew_*(targets_[0][1][tap]-r0);
+                l1+=filterSlew_*(targets_[1][0][tap]-l1);
+                r1+=filterSlew_*(targets_[1][1][tap]-r1);
+                ears[0]+=v0*l0+v1*l1;
+                ears[1]+=v0*r0+v1*r1;
             }
             left[i]=dryLevel*x0+binauralLevel*ears[0];
             right[i]=dryLevel*x1+binauralLevel*ears[1];
@@ -124,23 +142,27 @@ private:
             for(int k=0;k<taps;++k) {
                 const float next=scale*(static_cast<float>(bank_[lo][measuredEar][k])*(1.f-u)
                     + static_cast<float>(bank_[hi][measuredEar][k])*u);
-                // Small bounded coefficient smoothing prevents abrupt filter
-                // switches on motion/edits. No interpolating filter ownership.
-                auto& current=kernels_[source][ear][k];
-                current=haveKernel_?(current*0.65f+next*0.35f):next;
+                // Recompute target every 16 samples, interpolate per sample.
+                targets_[source][ear][k]=next;
             }
         }
     }
     void updateKernels() noexcept {
         interpolate(0,degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
         interpolate(1,degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+        // First prepared sample is a valid full-level measured HRIR; only
+        // subsequent direction edits slew, avoiding initial audio dropout.
+        if(!haveKernel_)kernels_=targets_;
         haveKernel_=true;
     }
     using Bank=const std::int16_t (*)[2][taps];
     Bank bank_=nullptr;
     std::array<std::array<float,taps>,2> history_{};
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
+    std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     Settings settings_{};
+    float smoothedMix_=1.f,smoothedTrim_=0.75f;
+    float filterSlew_=0.f,levelSlew_=0.f;
     double sampleRate_=0.;
     double degrees_=0.;
     int write_=0;

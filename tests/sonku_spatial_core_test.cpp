@@ -78,6 +78,49 @@ int main() {
             assert(std::abs(oneR[i]-chunkR[i])<1.e-6f);
         }
         assert(std::abs(whole.azimuthDegrees()-chunked.azimuthDegrees())<1.e-10);
+        // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
+        // at the next 16-sample boundary. Compare the identical dry/PCM
+        // history before and immediately after reposition.
+        SonKuSpatialCore teleport,stationary;
+        assert(teleport.prepare(rate)&&stationary.prepare(rate));
+        Settings front=s;front.startAzimuthDegrees=0.f;
+        assert(teleport.setSettings(front)&&stationary.setSettings(front));
+        std::array<float,512> preL{},preR{},sameL{},sameR{};
+        preL.fill(.12f);preR.fill(-.10f);sameL=preL;sameR=preR;
+        teleport.process(preL.data(),preR.data(),512);
+        stationary.process(sameL.data(),sameR.data(),512);
+        Settings rear=front;rear.startAzimuthDegrees=180.f;
+        assert(teleport.setSettings(rear));
+        std::array<float,1024> stepL{},stepR{},refL{},refR{};
+        stepL.fill(.12f);stepR.fill(-.10f);refL=stepL;refR=stepR;
+        teleport.process(stepL.data(),stepR.data(),1024);
+        stationary.process(refL.data(),refR.data(),1024);
+        assert(std::abs(stepL[0]-refL[0])<.008f);
+        assert(std::abs(stepR[0]-refR[0])<.008f);
+        double changed=0.;
+        for(int i=750;i<1024;++i)
+            changed+=std::abs(stepL[i]-refL[i])+std::abs(stepR[i]-refR[i]);
+        assert(changed>.005);
+        // MIX/trim changes are smoothed on the same audio clock.
+        SonKuSpatialCore mixCore;
+        assert(mixCore.prepare(rate));
+        Settings dry=front;dry.spatialMix=0.f;
+        assert(mixCore.setSettings(dry));
+        std::array<float,2048> warmL{},warmR{};
+        warmL.fill(.19f);warmR.fill(-.13f);
+        mixCore.process(warmL.data(),warmR.data(),2048);
+        Settings wet=dry;wet.spatialMix=1.f;wet.outputTrim=.5f;
+        assert(mixCore.setSettings(wet));
+        std::array<float,1024> fadeL{},fadeR{};
+        fadeL.fill(.19f);fadeR.fill(-.13f);
+        mixCore.process(fadeL.data(),fadeR.data(),1024);
+        assert(std::abs(fadeL[0]-.19f)<.01f);
+        assert(std::abs(fadeR[0]+.13f)<.01f);
+        for(int i=1;i<1024;++i) {
+            assert(std::isfinite(fadeL[i])&&std::isfinite(fadeR[i]));
+            assert(std::abs(fadeL[i]-fadeL[i-1])<.04f);
+            assert(std::abs(fadeR[i]-fadeR[i-1])<.04f);
+        }
         moving.spatialMix=0.f; assert(chunked.setSettings(moving));
         std::array<float,32> dryL{},dryR{};dryL.fill(.17f);dryR.fill(-.29f);
         chunked.process(dryL.data(),dryR.data(),32);
