@@ -101,6 +101,60 @@ test("native validation requires inspected physical pins, disarmed outputs and l
  assert.ok(!app.root.innerHTML.includes("VALIDATED DRAFT"));
  assert.ok(app.root.innerHTML.includes("native validation required"));
 });
+
+test("native readback must match EVERY output DSP field before VALIDATED",()=>{
+ const mutations=[
+  ["gain",x=>{x.gainDb=-13;}],
+  ["delay",x=>{x.delayMs=48.25;}],
+  ["polarity",x=>{x.polarityInverted=true;}],
+  ["limiter",x=>{x.limiterEnabled=true;}],
+  ["eq insertion",x=>{x.peq=[{frequencyHz:1000,q:1,gainDb:6,enabled:true}];}],
+  ["missing eq",x=>{delete x.peq;}],
+  ["missing delay",x=>{delete x.delayMs;}],
+  ["unmute",x=>{x.muted=false;}],
+ ];
+ for(const [name,mutate] of mutations){
+  const app=fixture(true);app.open();
+  const first=app.consume("arMixLmsInspect");
+  app.handlers.arMixLmsInspection(inspection(first.requestId));
+  app.click({action:"nativePorts"});app.click({action:"confirm"});
+  app.click({routePort:"ASIO-EXACT-DEVICE/PIN-4",routeSection:"L:1"});
+  app.click({action:"nativeValidate"});
+  const sent=app.consume("arMixLmsValidate");
+  app.handlers.arMixLmsDesignAck({
+   schema:"arsonmix.lms.native-design-ack.v1",requestId:sent.requestId,
+   status:"VALIDATED_PENDING_READBACK",hardwareApplied:false,
+   designRevision:"1",errorCode:"NONE"
+  });
+  const checked=app.consume("arMixLmsInspect");
+  const actual=structuredClone(sent.design);
+  mutate(actual.outputs[0]);
+  app.handlers.arMixLmsInspection(inspection(checked.requestId,{
+   revision:"1",design:actual
+  }));
+  assert.ok(!app.root.innerHTML.includes("VALIDATED DRAFT"),name);
+  assert.ok(app.root.innerHTML.includes("readback mismatch"),name);
+ }
+});
+test("native readback cannot validate when hardware is armed",()=>{
+ const app=fixture(true);app.open();
+ const first=app.consume("arMixLmsInspect");
+ app.handlers.arMixLmsInspection(inspection(first.requestId));
+ app.click({action:"nativePorts"});app.click({action:"confirm"});
+ app.click({routePort:"ASIO-EXACT-DEVICE/PIN-4",routeSection:"L:1"});
+ app.click({action:"nativeValidate"});
+ const sent=app.consume("arMixLmsValidate");
+ app.handlers.arMixLmsDesignAck({
+  schema:"arsonmix.lms.native-design-ack.v1",requestId:sent.requestId,
+  status:"VALIDATED_PENDING_READBACK",hardwareApplied:false,
+  designRevision:"1",errorCode:"NONE"
+ });
+ const checked=app.consume("arMixLmsInspect");
+ app.handlers.arMixLmsInspection(inspection(checked.requestId,{
+  revision:"1",design:sent.design,outputDisarmed:false
+ }));
+ assert.ok(!app.root.innerHTML.includes("VALIDATED DRAFT"));
+});
 test("native rejection and armed-device snapshot never invent APPLIED",()=>{
  const app=fixture(true);app.open();
  let req=app.consume("arMixLmsInspect");
