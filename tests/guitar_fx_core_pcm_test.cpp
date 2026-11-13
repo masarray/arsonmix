@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <iostream>
 
 using namespace armix::guitarfx;
 static_assert(GuitarRigCore::cabinetLatencySamples==32);
@@ -208,5 +209,48 @@ int main() {
     core.processStereo(l.data(),r.data(),l.size());
     for(auto sample:l)assert(std::isfinite(sample));
     for(auto sample:r)assert(std::isfinite(sample));
+
+    // Non-gating aliasing baseline for the next M2 amp-modeling decision.
+    // This is a measured SINGLE-bin probe, NOT an assertion of anti-alias
+    // quality: nonlinear stages intentionally run at native sample rate.
+    // At 48kHz a 9kHz driven input creates a third harmonic at 27kHz,
+    // folding to 21kHz. The original cabinet is bypassed for an unbiased
+    // pre-speaker measurement. Later 2x/4x modes must measurably reduce it.
+    auto driven=factoryTone(3);
+    driven.blocks[0].enabled=false;
+    driven.blocks[3].enabled=false;
+    GuitarRigCore audit{};
+    assert(audit.prepare(48000.,driven));
+    constexpr std::size_t warmup=480,window=4800,total=warmup+window;
+    std::array<float,total> probeL{},probeR{};
+    for(std::size_t i=0;i<total;++i){
+        const float x=0.035f*std::sin(
+            2.f*3.14159265358979323846f*9000.f*
+            static_cast<float>(i)/48000.f);
+        probeL[i]=probeR[i]=x;
+    }
+    audit.processStereo(probeL.data(),probeR.data(),total);
+    const auto spectralAmplitude=[&](int bin) noexcept {
+        constexpr double twicePi=6.28318530717958647692;
+        const double omega=twicePi*static_cast<double>(bin)/
+                           static_cast<double>(window);
+        double real=0.,imag=0.;
+        for(std::size_t i=0;i<window;++i){
+            const double phase=omega*static_cast<double>(i);
+            const double sample=probeL[warmup+i];
+            real+=sample*std::cos(phase);
+            imag-=sample*std::sin(phase);
+        }
+        return 2.*std::hypot(real,imag)/static_cast<double>(window);
+    };
+    const auto f9000=spectralAmplitude(900);
+    const auto f21000=spectralAmplitude(2100);
+    assert(std::isfinite(f9000)&&std::isfinite(f21000));
+    assert(f9000>1.e-7);
+    const double aliasedThirdDb=20.*std::log10(
+        std::max(f21000,1.e-12)/f9000);
+    assert(std::isfinite(aliasedThirdDb));
+    std::cout<<"GFX ALIAS BASELINE [not quality gate] 9k -> 21k: "
+             <<aliasedThirdDb<<" dBc at 48 kHz, CAB bypassed\\n";
     return 0;
 }

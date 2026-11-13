@@ -27,3 +27,9 @@
 - Synthetic cabinet FIR is 65-tap symmetric, reduced to 33 multiply pairs per sample per channel. This is a code-level operation count, **not** measured wall-clock performance. Benchmark one, four and eight guitar inserts before claiming CPU savings on ASIO hardware.
 - Confirm no spectral change, chirp, ringing asymmetry or PDC change with 44.1/48/96 kHz source. Compare silent / 64-frame and 128-frame blocks in the real interface; pure C++ regression covers exact output on deterministic input and 32-sample FIR latency.
 - Model loading / NAM captures and commercial cabinet IRs are explicitly not supported in M1; see [pro engineering decisions](GFX_PRO_WORKFLOW_AND_DSP_ARCHITECTURE.md).
+
+## GFX Gate engineering qualification
+- Feed a real guitar input with a quiet stereo echo/ambience return at one side. With Gate ON, adjust threshold close to idle-noise floor. The stereo image must remain stable because L/R attenuation is linked; no unintended dual mono gating.
+- Pluck a note, vary HOLD (0–120 ms) and RELEASE (12–240 ms). Short hold/release should damp background noise faster; longer values should preserve decaying guitar notes. Compare against gate OFF using level-matched reference; no invented VU movement.
+- Sweep Threshold −80…−30 dB; fast attacks must not audibly suppress the first pluck. Report pops/flutter, and device/buffer/rate changes at 44.1/48/96kHz.
+- The active DSP is native-rate nonlinear drive/amp. Inspect measured alias baseline in the fast core-test log before planning an optional 2x/4x anti-alias mode. Do not claim NAM capture fidelity or alias-free sound.

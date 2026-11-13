@@ -121,3 +121,18 @@ test("native hardware PNG decoding is cached across editor close/reopen",()=>{
  for(const key of ["amp_","cab_","gate_","pedal_","knob_"])
   assert(editor.includes(key+"=skins["),key+" shares cached image resource");
 });
+
+test("Guitar FX stereo-linked gate and visible hold/release are real native controls",()=>{
+ const core=readFileSync(resolve(root,"engine/builtin_fx/guitar/GuitarRigCore.h"),"utf8");
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ assert(core.includes("linkedGateGain(") &&
+        core.includes("std::max(std::fabs(leftIn),std::fabs(rightIn))"),
+        "stereo-linked guitar gate must use max level without summing to mono");
+ assert(core.includes("gateHoldSamples") && core.includes("gateCloseSmooth"),
+        "Hold/Release parameters must change DSP timing");
+ assert(editor.includes('{"THRESHOLD","HOLD","RELEASE"}'),
+        "visible controls must match three real gate parameters");
+ for(const value of ["-80.f+50.f*normalized","120.f*normalized",
+                     "12.f+228.f*normalized"])
+  assert(editor.includes(value),"gate values must use engineering dB/ms labels");
+});
