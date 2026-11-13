@@ -56,7 +56,9 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('data-fast-native-eq="1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-comp="1"'),1)
         self.assertIn("if(t.fx[index]==='Compressor')",self.assembled)
-        self.assertIn("if(t.fx[index]==='ArSon Vocal Throw')",self.assembled)
+        self.assertIn("if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw')",self.assembled)
+        self.assertIn('class="fast-effect-title">Vocal Delay</span>',self.assembled)
+        self.assertIn("'vocal delay','vocal throw'",self.assembled)
 
     def test_single_style_owner(self):
         # The approved CSS compiler requires exactly 18 component-owner links.
@@ -161,7 +163,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
                 "musicBeatAnchorFrame","musicDroppedFrames")
         for field in fields:
             self.assertIn('reply->setProperty("'+field+'"',vocal,
-                          "missing accepted Vocal Throw BPM field: "+field)
+                          "missing accepted Vocal Delay BPM field: "+field)
             self.assertNotIn('reply->setProperty("'+field+'"',eq,
                              "cross-FX snapshot pollution: "+field)
         # After device restart or graph change the last control snapshot

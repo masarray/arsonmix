@@ -31,7 +31,7 @@ public:
             .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
         setLatencySamples(VocalThrow::addedLatencySamples);
     }
-    const juce::String getName() const override {return "ArSon Vocal Throw";}
+    const juce::String getName() const override {return "Vocal Delay";}
     bool acceptsMidi() const override{return false;}
     bool producesMidi() const override{return false;}
     bool isMidiEffect() const override{return false;}

@@ -1,4 +1,4 @@
-/* ArSon Vocal Throw: controls ONLY, on the single approved /preview/ mixer.
+/* Vocal Delay: controls ONLY, on the single approved /preview/ mixer.
    No browser DSP or optimistic FX ACK: all state comes from JUCE PCM graph. */
 (() => {
 "use strict";
@@ -25,7 +25,7 @@ const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||window.__ARMIX
 const panel=document.createElement("section");
 panel.className="mx-vthrow";panel.id="mxNativeVocalThrow";panel.hidden=true;
 panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");
-panel.setAttribute("aria-label","ArSon Vocal Throw");
+panel.setAttribute("aria-label","Vocal Delay");
 // One universal 260-degree rounded level arc for EVERY hardware encoder.
 // The face itself stays stationary; only the pointer and stroke advance.
 const rotaryArc='<svg class="vt-knob-meter" viewBox="0 0 100 100" aria-hidden="true" focusable="false">'+
@@ -33,10 +33,10 @@ const rotaryArc='<svg class="vt-knob-meter" viewBox="0 0 100 100" aria-hidden="t
  '<path class="vt-meter-fill" d="M16.295 78.284 A44 44 0 1 1 83.705 78.284" pathLength="100"/>'+
  '</svg>';
 panel.innerHTML=[
- '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL THROW</span></div><span class="channel" id="vtChannel"></span>',
- '<label class="vt-preset"><select id="vtPreset" aria-label="Vocal Throw preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
- '<button class="vt-power armix-builtin-fx-power" id="vtPower" data-fx-state="unknown" aria-pressed="false" aria-label="Vocal Throw state unavailable" type="button" disabled>⏻</button><button class="vt-close armix-floating-close armix-builtin-fx-close" id="vtClose" aria-label="Close Vocal Throw" title="Close Vocal Throw" type="button">×</button></header>',
- '<div class="body vt-hardware"><section class="vt-console" aria-label="Vocal Throw hardware controls">',
+ '<header class="vt-face-header"><div class="brand"><span class="brand-mark">ARSON</span><span class="brand-name">VOCAL DELAY</span></div><span class="channel" id="vtChannel"></span>',
+ '<label class="vt-preset"><select id="vtPreset" aria-label="Vocal Delay preset"><option value="Concert">Concert</option><option value="Fast">Fast Echo</option><option value="Ballad">Ballad</option><option value="Word">Last Word</option><option value="Custom" disabled>Custom</option></select></label>',
+ '<button class="vt-power armix-builtin-fx-power" id="vtPower" data-fx-state="unknown" aria-pressed="false" aria-label="Vocal Delay state unavailable" type="button" disabled>⏻</button><button class="vt-close armix-floating-close armix-builtin-fx-close" id="vtClose" aria-label="Close Vocal Delay" title="Close Vocal Delay" type="button">×</button></header>',
+ '<div class="body vt-hardware"><section class="vt-console" aria-label="Vocal Delay hardware controls">',
  '<div class="vt-instrument"><div class="vt-encoder-bank" id="vtEncodersLeft"></div>',
  '<div class="vt-center"><button id="vtThrow" class="vt-throw-button" type="button" aria-label="Throw captured vocal phrase" title="THROW — send the captured phrase into the echo"><span class="vt-throw-aura" aria-hidden="true"></span></button><span class="vt-throw-engraving" aria-hidden="true">THROW</span></div>',
  '<div class="vt-encoder-bank" id="vtEncodersRight"></div></div>',
@@ -80,7 +80,7 @@ const context=()=>{
 };
 const hint=text=>{$("vtHint").textContent=text;};
 const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
- host:panel,select:$("vtPreset"),label:"Vocal Throw",catalogId:ID,
+ host:panel,select:$("vtPreset"),label:"Vocal Delay",catalogId:ID,
  context,stable:()=>!pending&&!tempoPending,
  readAccepted:()=>({...accepted}),validate:valid,
  factoryValue:settings=>Object.entries(presets)
@@ -233,7 +233,7 @@ for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  });
 }
 // Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
-let wheelFlush=null; // one timer for all Vocal Throw encoders, never PCM
+let wheelFlush=null; // one timer for all Vocal Delay encoders, never PCM
 // Update visual locally during movement; issue exactly ONE accepted native
 // settings intent at drag release. No DOM/audio DSP loops are introduced.
 function bindRotary(face,key,step){

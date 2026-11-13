@@ -1,4 +1,6 @@
-# ArSon Vocal Throw M3 — native music beat-phase quantized echo
+# Vocal Delay M3 — native music beat-phase quantized echo
+
+> Product display name (November 2026): **Vocal Delay**. Historical filenames, C++ symbols, wire events and the persisted `armix.builtin.vocal-throw.v1` catalog identity remain stable for backwards compatibility.
 
 **Branch:** `feature/arson-vocal-throw-phase-grid-m3-20261109`; builds on draft M2 PR #474 (which builds on M1 PR #469). Product issue #473. **Not a hardware-certified stage release.**
 

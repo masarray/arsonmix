@@ -81,20 +81,20 @@ function insertChosenNativeThrow(){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
  const slot=Number(activeFxTarget?.slot);
  if(!t||!Number.isInteger(slot)||slot<0||slot>=8){
-  say('Vocal Throw · choose an empty FX insert');return false;
+  say('Vocal Delay · choose an empty FX insert');return false;
  }
  if(window.__JUCE__?.backend?.emitEvent){
   const host=window.ArSonMixNativeVocalThrow;
-  if(!host?.insert){say('Native Vocal Throw host unavailable');return false;}
+  if(!host?.insert){say('Native Vocal Delay host unavailable');return false;}
   host.insert(activeFxTarget);return true;
  }
  if(t.fx[slot]!=='None'){
   say('FX slot already occupied · choose an empty insert');return false;
  }
- t.fx[slot]='ArSon Vocal Throw';t.slotBypass[slot]=false;
- t.fxInsertIds[slot]={id:'visual-throw-'+t.id+'-'+slot,name:'ArSon Vocal Throw'};
+ t.fx[slot]='Vocal Delay';t.slotBypass[slot]=false;
+ t.fxInsertIds[slot]={id:'visual-throw-'+t.id+'-'+slot,name:'Vocal Delay'};
  refreshStrip(t);setFastPicker(false);
- say('Vocal Throw · browser preview ONLY · no audio DSP');return true;
+ say('Vocal Delay · browser preview ONLY · no audio DSP');return true;
 }
 function insertChosenNativeSonKu(){
  const t=tracks.concat(master).find(x=>x.id===activeFxTarget?.channelId);
@@ -124,8 +124,8 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
  '<button class="fast-effect" type="button" data-fast-native-comp="1"><span class="fast-effect-title">Compressor</span><span class="fast-effect-kind">Native · 0-sample added latency · dynamics</span></button>':'';
  const harmonyBuiltin=!q||['harmonice','arson harmony','harmony','vocal harmony','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-harmony="1"><span class="fast-effect-title">Harmonice</span><span class="fast-effect-kind">Native · 3–5 voices · live pitch</span></button>':'';
- const throwBuiltin=!q||['vocal throw','throw','delay','echo','phrase','concert','built-in fx'].some(n=>n.includes(q))?
- '<button class="fast-effect" type="button" data-fast-native-throw="1"><span class="fast-effect-title">ArSon Vocal Throw</span><span class="fast-effect-kind">Native · phrase-aware concert echo</span></button>':'';
+ const throwBuiltin=!q||['vocal delay','vocal throw','throw','delay','echo','phrase','concert','built-in fx'].some(n=>n.includes(q))?
+ '<button class="fast-effect" type="button" data-fast-native-throw="1"><span class="fast-effect-title">Vocal Delay</span><span class="fast-effect-kind">Native · phrase-aware concert echo</span></button>':'';
  const sonkuBuiltin=!q||['8d-sonku','sonku','8d','binaural','spatial','orbit','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-sonku="1"><span class="fast-effect-title">8D-SonKu</span><span class="fast-effect-kind">Native · measured HRTF · 360° spatial orbit</span></button>':'';
  // One catalog-driven builtin shelf. Keep the dedicated SonKu editor button
@@ -171,7 +171,7 @@ OPEN_NEW=""" if(a==='openPlugin'){
   if(t.fx[index]==='Harmonice'||t.fx[index]==='ArSon Harmony'){
    window.ArSonMixNativeHarmony?.open(t,index);return;
   }
-  if(t.fx[index]==='ArSon Vocal Throw'){
+  if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw'){
    window.ArSonMixNativeVocalThrow?.open(t,index);return;
   }
   if(t.fx[index]==='8D-SonKu'){

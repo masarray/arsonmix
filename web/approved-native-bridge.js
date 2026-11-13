@@ -1368,7 +1368,7 @@
     // Native GuitarRigProcessor is compiled and installed: no WebAudio mock.
     Object.freeze({id:"armix.builtin.guitar-rig.v1",name:"Guitar FX Rig",
       vendor:"ArSonMix",category:"Guitar",format:"Native",source:"builtin"}),
-    Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"ArSon Vocal Throw",
+    Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"Vocal Delay",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false}),
     Object.freeze({id:"armix.builtin.8d-sonku.v1",name:"8D-SonKu",
       vendor:"ArSonMix",category:"Spatial",format:"Native",source:"builtin",showInPicker:false})

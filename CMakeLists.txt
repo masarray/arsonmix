@@ -694,7 +694,7 @@ if(BUILD_TESTING)
   # A stopped ASIO callback must not execute old, UI-rejected THROW cues
   # on resume. Exercise the real JUCE processor and its SPSC completion.
   juce_add_console_app(ARMixVocalThrowCancelTests PRODUCT_NAME
-      "ArSonMix Vocal Throw Expired Cue Safety Tests")
+      "ArSonMix Vocal Delay Expired Cue Safety Tests")
   target_sources(ARMixVocalThrowCancelTests PRIVATE
       tests/native_vocal_throw_cancel_test.cpp
       engine/builtin_fx/VocalThrowProcessor.h)
