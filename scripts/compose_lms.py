@@ -37,14 +37,14 @@ def apply_lms(html: str, assets: Path) -> str:
     scripts = "".join('<script defer src="assets/' + name + '?v=lms-m1"></script>\n'
                       for name in LMS_SCRIPTS)
     for name in LMS_SCRIPTS:
-        if not (assets / name).is_file():
+        if not (ROOT / "site" / "preview-v2" / "assets" / name).is_file():
             raise FileNotFoundError("LMS asset missing: " + name)
     html = _once(html, '</body>', scripts + '</body>', "script order")
 
     chrome = assets / "mixer-chrome-material.css"
     current = chrome.read_text(encoding="utf-8")
     scoped = LMS_STYLE.read_text(encoding="utf-8")
-    if ".lms-workspace{" in current or ".console-pane{" in scoped:
+    if ".lms-workspace{" in current or "\n.console-pane{" in scoped:
         raise ValueError("LMS CSS ownership collision")
     if not scoped.startswith("/* ArSonMix LMS:"):
         raise ValueError("Unexpected LMS CSS source")
