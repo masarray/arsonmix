@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""8D-SonKu real compiled WebView2 GUI: native insert -> ACK -> readback -> editor.
+Transport is emulated, never PCM. Native DSP is independently tested by CTest.
+The test does not invoke private mixer state APIs to fake accepted inserts.
+"""
+import copy
+import importlib.util
+from pathlib import Path
+import tempfile
+from playwright.sync_api import sync_playwright
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE
+
+ROOT=Path(__file__).resolve().parents[1]
+CATALOG="armix.builtin.8d-sonku.v1"
+INSTANCE="sonku-accepted-instance"
+SETTINGS={
+    "startAzimuthDegrees":0.0,
+    "revolutionSeconds":12.0,
+    "stereoSpreadDegrees":60.0,
+    "spatialMix":1.0,
+    "outputTrim":0.75,
+    "moving":True,
+    "clockwise":True,
+    "spacePreset":0,
+    "sourceDistanceMeters":1.6,
+    "roomAmount":0.55,
+    "ambience":0.30,
+}
+
+def last_action(page,name):
+    actions=page.evaluate(
+        "name=>window.__actions.filter(a=>a.action===name)",name)
+    assert actions, "Expected actual native action "+name
+    return actions[-1]
+
+def accepted_snapshot(page,state,settings,applied=None):
+    read=last_action(page,"nativeSonKuSnapshot")
+    payload={
+        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":2,
+        "channelId":SOURCE,"slot":0,"instanceId":INSTANCE,
+        "deviceEpoch":state["device"]["epoch"],
+        "graphRevision":state["graph"]["revision"],
+        "observedAzimuthDegrees":settings["startAzimuthDegrees"],
+        "settings":copy.deepcopy(settings),
+    }
+    if applied:payload["appliedRequestId"]=applied
+    emit(page,"arMixBuiltinSonKuSnapshot",payload)
+
+def exercise(browser,out,width,height):
+    page=browser.new_page(viewport={"width":width,"height":height})
+    failures=[]
+    page.on("pageerror",lambda exc:failures.append(str(exc)))
+    page.add_init_script("""window.__nativeListeners=new Map();
+      window.__nativeIntents=[];window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){
+          if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
+          if(name==='arMixAction')window.__actions.push(payload);
+        },
+        addEventListener(name,callback){
+          const prior=window.__nativeListeners.get(name);
+          window.__nativeListeners.set(name,prior?
+            packet=>{prior(packet);callback(packet)}:callback);
+        }
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function(
+        "()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeSonKu",
+        timeout=15000)
+    state=snapshot()
+    state["graph"]["capabilities"]["supportedOps"]+=["LOAD_INSERT","REMOVE_INSERT"]
+    emit(page,"arMixConsoleSnapshot",state)
+    if width<500:page.locator("#bankSelect").select_option("0")
+    strip=page.locator('#tracks .strip[data-id="1"]')
+    strip.locator(".fx-pick.empty").first.click()
+    picker=page.locator("#fastResults [data-fast-native-sonku]")
+    picker.wait_for(state="visible")
+    assert picker.count()==1,"8D-SonKu picker duplicated or missing"
+    assert page.locator("#mxNativeSonKu").is_hidden(),"Editor opened before native ACK"
+    picker.click()
+    requests=page.evaluate(
+        "()=>window.__nativeIntents.filter(x=>x.operation==='LOAD_INSERT')")
+    assert len(requests)==1,requests
+    req=requests[0]
+    assert req["payload"]["catalogId"]==CATALOG,req
+    assert page.locator("#mxNativeSonKu").is_hidden(),"Editor opened on intent only"
+    state["graph"].update(revision="3",rosterRevision="3")
+    state["graph"]["channels"][0]["inserts"].append({
+        "id":INSTANCE,"catalogId":CATALOG,"name":"8D-SonKu","bypassed":False})
+    state["mixerSession"].update(routeRevision="3",rosterRevision="3",
+        channels=copy.deepcopy(state["graph"]["channels"]))
+    ack(page,state,req)
+    # Acceptance alone does not paint active DSP; readback authorizes editor.
+    assert page.locator("#mxNativeSonKu").is_hidden()
+    emit(page,"arMixConsoleSnapshot",state)
+    editor=page.locator("#mxNativeSonKu")
+    editor.wait_for(state="visible",timeout=5000)
+    assert editor.locator("#skMap .sk-src").count()==2
+    assert editor.locator("#skMap .sk-speaker-shell").count()==2
+    assert editor.locator("#skMap #skRearArc").count()==1
+    assert editor.locator("#skMap #skFrontArc").count()==1
+    # Painter's ordering is 3D: far rail -> head PNG -> near rail.
+    assert page.evaluate("""() => {
+      const map=document.querySelector('#skMap');
+      const rear=map.querySelector('#skRearArc');
+      const art=map.querySelector('#skListenerArt');
+      const front=map.querySelector('#skFrontArc');
+      return Boolean((rear.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (art.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING));
+    }"""), "Front/back ring painter layering incorrect"
+    # Every rotation input remains an accessible native range, wrapped in
+    # a tactile rotary shell: no browser PCM, no fake processed state.
+    assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
+    for knob in ("skSpeed","skSpread","skMix","skTrim"):
+        assert editor.locator("#"+knob).get_attribute("type")=="range"
+        assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
+    art=editor.locator("#skListenerArt")
+    assert art.count()==1 and art.get_attribute("href")=="assets/sonku-listener-top.png"
+    # Image is actually available inside the assembled native GUI bundle.
+    assert page.evaluate("""async () => new Promise(resolve => {
+      const image=new Image();
+      image.onload=()=>resolve(image.naturalWidth>=128 && image.naturalHeight>=128);
+      image.onerror=()=>resolve(false);
+      image.src='assets/sonku-listener-top.png';
+    })"""), "Listener PNG did not load"
+    # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
+    # HTMLElement.innerText for these nodes. Read SVG textContent and verify
+    # the actual anchors, so front/rear cannot silently flip in the GUI.
+    direction=editor.locator("#skMap .sk-direction")
+    labels=direction.evaluate_all(
+        "(nodes)=>nodes.map(n=>({text:n.textContent.trim(),x:Number(n.getAttribute('x')),y:Number(n.getAttribute('y'))}))")
+    assert [x["text"] for x in labels]==["REAR","FRONT","RIGHT","LEFT"],labels
+    assert labels[0]["y"]<60 and labels[1]["y"]>290,labels
+    assert labels[2]["x"]<50 and labels[3]["x"]>300,labels
+    assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
+    assert editor.locator("#skMotion").inner_text()=="ORBIT"
+    assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
+    assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
+    # 250ms visualization timer must not overwrite an unacknowledged
+    # snapshot request (real JUCE message thread can be temporarily busy).
+    count=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
+    page.wait_for_timeout(700)
+    after=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
+    assert after==count, "Unanswered SonKu readback was overwritten"
+    accepted_snapshot(page,state,SETTINGS)
+    # Close/reopen must use the installed FX rack click, never a private open().
+    editor.locator("#skClose").click()
+    assert editor.is_hidden()
+    row=strip.locator('.fxslot-row[data-insert-id="'+INSTANCE+'"]')
+    row.wait_for(state="visible")
+    row.locator('[data-action="openPlugin"]').click()
+    editor.wait_for(state="visible")
+    accepted_snapshot(page,state,SETTINGS)
+    editor.locator("#skMotion").click()
+    command=last_action(page,"nativeSonKuSet")
+    assert command["settings"]["moving"] is False,command
+    assert command["instanceId"]==INSTANCE and command["channelId"]==SOURCE
+    emit(page,"arMixBuiltinSonKuQueue",{
+        "requestId":command["requestId"],"status":"QUEUED"})
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":command["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False},
+        applied=command["requestId"])
+    assert editor.locator("#skMotion").inner_text()=="STATIC"
+    assert "ACCEPTED" in editor.locator("#skHint").inner_text()
+    # Verify all four acoustic directions against the human figure:
+    # face points DOWN; anatomical RIGHT appears screen LEFT.
+    def pose(degrees):
+        page.wait_for_timeout(270)
+        settings={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
+                  "startAzimuthDegrees":float(degrees)}
+        accepted_snapshot(page,state,settings)
+        # Acoustic anchor is distinct from the readable icon's display offset.
+        # The offset NEVER alters native azimuth when both sources coincide.
+        nodes=editor.locator('#skMap .sk-src')
+        data=nodes.evaluate_all("""els=>els.map(n=>({
+          ax:Number(n.dataset.acousticX),ay:Number(n.dataset.acousticY),
+          vx:Number(n.dataset.visualX),vy:Number(n.dataset.visualY),
+          value:Number(n.getAttribute('aria-valuenow'))}))""")
+        assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
+        assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
+        assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
+        separation=((data[0]["vx"]-data[1]["vx"])**2+
+                    (data[0]["vy"]-data[1]["vy"])**2)**.5
+        assert separation>=44,("Two studio speakers overlap at zero spread",data)
+        return data[0]["ax"],data[0]["ay"]
+    x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
+    x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
+    x,y=pose(180);assert abs(x-200)<1 and y<100,("REAR",x,y)
+    x,y=pose(-90);assert x>335 and abs(y-174)<1,("LEFT",x,y)
+    # Actual pointer drag is taken from the VISIBLE L speaker at -90,
+    # toward the physical near-ellipse FRONT, not the hidden anchor.
+    svg=editor.locator("#skMap").bounding_box()
+    assert svg
+    def screen(x,y):
+        return (svg["x"]+x*svg["width"]/400,
+                svg["y"]+y*svg["height"]/330)
+    source=editor.locator('.sk-src[data-index="0"]')
+    sx,sy=screen(float(source.get_attribute("data-visual-x")),
+                 float(source.get_attribute("data-visual-y")))
+    ex,ey=screen(200,257)
+    page.mouse.move(sx,sy)
+    page.mouse.down()
+    page.mouse.move(ex,ey,steps=10)
+    page.mouse.up()
+    dragAction=last_action(page,"nativeSonKuSet")
+    assert dragAction["settings"]["moving"] is False
+    assert abs(dragAction["settings"]["startAzimuthDegrees"])<5,dragAction
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":dragAction["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0},
+        applied=dragAction["requestId"])
+    # Vertical knob drag must update one typed value and commit once on
+    # pointer release. Pure browser drawing cannot claim DSP APPLIED.
+    knob=editor.locator("#skSpeed").locator("..")
+    box=knob.bounding_box();assert box
+    x=box["x"]+box["width"]*.5;y=box["y"]+box["height"]*.5
+    before=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    page.mouse.move(x,y);page.mouse.down()
+    page.mouse.move(x,y-17,steps=6);page.mouse.up()
+    newactions=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet')")
+    assert len(newactions)==before+1,("Rotary did not commit once",newactions)
+    dialAction=newactions[-1]
+    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":dialAction["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
+        "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
+        applied=dialAction["requestId"])
+    # M4: native SPACE must be an actual typed ACK/readback edit.
+    # No browser-only audio, no visual success before PCM applied.
+    assert editor.locator(".sk-space-options button").count()==4
+    assert editor.locator("#skDistance").is_disabled()
+    assert editor.locator("#skAmbience").is_disabled()
+    editor.locator('[data-sk-room="2"]').click()
+    scene=last_action(page,"nativeSonKuSet")
+    assert scene["settings"]["spacePreset"]==2,scene
+    assert scene["settings"]["sourceDistanceMeters"]==1.6,scene
+    assert scene["settings"]["roomAmount"]==0.55,scene
+    assert scene["settings"]["ambience"]==0.30,scene
+    assert "ACCEPTED" not in editor.locator("#skHint").inner_text()
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":scene["requestId"],"status":"APPLIED"})
+    sceneState={**SETTINGS,"moving":False,"startAzimuthDegrees":0.0,
+                "stereoSpreadDegrees":0.0,
+                "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
+                "spacePreset":2}
+    accepted_snapshot(page,state,sceneState,applied=scene["requestId"])
+    assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
+    assert editor.locator("#skDistance").is_enabled()
+    assert editor.locator("#skAmbience").is_enabled()
+    # Programmatic range edit emits real DOM input+change events, just as
+    # an operator gesture does; assertions inspect outgoing native packets.
+    editor.locator("#skDistance").evaluate("""n=>{
+      n.value='5.0';n.dispatchEvent(new Event('input',{bubbles:true}));
+      n.dispatchEvent(new Event('change',{bubbles:true}));}""")
+    distance=last_action(page,"nativeSonKuSet")
+    assert distance["settings"]["spacePreset"]==2,distance
+    assert abs(distance["settings"]["sourceDistanceMeters"]-5.0)<.01,distance
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":distance["requestId"],"status":"APPLIED"})
+    sceneState={**sceneState,"sourceDistanceMeters":5.0}
+    accepted_snapshot(page,state,sceneState,applied=distance["requestId"])
+    editor.locator('[data-sk-room="1"]').click()
+    clamped=last_action(page,"nativeSonKuSet")
+    assert clamped["settings"]["spacePreset"]==1,clamped
+    assert clamped["settings"]["sourceDistanceMeters"]<=3.1,clamped
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":clamped["requestId"],"status":"APPLIED"})
+    sceneState={**sceneState,"spacePreset":1,
+                "sourceDistanceMeters":clamped["settings"]["sourceDistanceMeters"]}
+    accepted_snapshot(page,state,sceneState,applied=clamped["requestId"])
+    editor.locator('[data-sk-room="0"]').click()
+    off=last_action(page,"nativeSonKuSet")
+    assert off["settings"]["spacePreset"]==0,off
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":off["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**sceneState,"spacePreset":0},
+                      applied=off["requestId"])
+    assert editor.locator("#skDistance").is_disabled()
+    assert editor.locator("#skAmbience").is_disabled()
+    bounds=editor.bounding_box()
+    assert bounds and bounds["width"]>260 and bounds["width"]<width+2
+    # All listener and rendering JS exceptions remain fatal.
+    assert not failures,(width,height,failures)
+    page.screenshot(path=f"arsonmix-sonku-editor-{width}.png")
+    page.close()
+
+def main():
+    spec=importlib.util.spec_from_file_location(
+        "bundle",ROOT/"scripts/build_approved_native_gui.py")
+    bundle=importlib.util.module_from_spec(spec);spec.loader.exec_module(bundle)
+    with tempfile.TemporaryDirectory(prefix="armix-sonku-") as temp,sync_playwright() as p:
+        out=Path(temp);bundle.stage(out)
+        browser=p.chromium.launch(headless=True)
+        for width,height in [(1366,768),(390,844)]:
+            exercise(browser,out,width,height)
+        browser.close()
+    print("PASS 8D-SonKu actual native editor: insert intent, no premature GUI,"
+          " ACK/readback, reopen, typed settings and 2 viewport screenshots."
+          " Browser uses a transport mock; native DSP requires CTest and hardware FAT.")
+
+if __name__=="__main__":
+    main()

@@ -27,6 +27,188 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, with native readback only",()=>{
+ const vm=require("node:vm"),{execFileSync}=require("node:child_process");
+ const publicHtml=read("site/preview-v2/index.html");
+ assert.doesNotMatch(publicHtml,/__ARMIX_NATIVE_M2__/,
+  "public approved /preview/ must never own native control authority");
+ const html=execFileSync("python3",["-c",
+  "from scripts.build_approved_native_gui import native_html; from pathlib import Path; print(native_html(Path('site/preview-v2/index.html').read_text(encoding='utf-8')))"
+ ],{
+  encoding:"utf8",maxBuffer:10*1024*1024,
+  // Windows runner's default Python stdout is often CP1252. The approved
+  // GUI includes Unicode symbols (e.g. ◉), so explicitly encode THIS child
+  // stream as UTF-8 rather than relying on host code page or a global CI knob.
+  env:{...process.env,PYTHONIOENCODING:"utf-8"}
+ });
+ assert.ok(html.includes("◉"),"native assembled Unicode survives Python stdout on Windows");
+ const bridge=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
+ assert.match(bridge,/e\.edgeId===edgeId&&e\.from===source&&e\.primaryOutput===false/);
+ assert.match(builder,/getElementById\('wireWsGainText'\)/);
+ assert.match(builder,/!row\.pending/);
+ const renderStart=html.indexOf("function renderWireWsInspector(){");
+ const renderEnd=html.indexOf("function renderWireWorkspace(){",renderStart);
+ assert.ok(renderStart>0&&renderEnd>renderStart);
+ const primary={id:41,sourceId:1,destId:2,kind:"primary",mode:"routeOnly",
+  nativeTap:"POST_FADER",levelDb:0,enabled:true};
+ const parallel={id:42,sourceId:1,destId:3,kind:"send",mode:"send",
+  nativeTap:"POST_FADER",levelDb:-6,enabled:true};
+ const panel={hidden:false,innerHTML:""},readout={textContent:"-6 dB"};
+ const inspectorGain={value:"-12",dataset:{wsGain:"42"},disabled:false};
+ const observed=[];
+ const gain=input=>input?.dataset?.wsGain!==undefined?input:null;
+ const tap=input=>input?.dataset?.wsTap!==undefined?input:null;
+ const handlers={};
+ const scope={
+  document:{getElementById(id){
+    if(id==="wireWsInspector")return { ...panel, addEventListener(type,fn){handlers[type]=fn},
+     get hidden(){return panel.hidden},set hidden(v){panel.hidden=v},
+     get innerHTML(){return panel.innerHTML},set innerHTML(v){panel.innerHTML=v}};
+    if(id==="wireWsGainText")return readout;
+    if(id==="wireWsGain")return inspectorGain;
+    return null;
+  }},
+  window:{__JUCE__:{backend:{}},__ARMIX_NATIVE_M2__:{
+    canWireGain(edge,source){return edge===42&&source===1},
+    canWireTap(edge,source){return edge===42&&source===1},
+    consumeWire(changes){observed.push(changes)}
+  }},
+  wireWsOpen:true,wireWsInspect:{src:1,dst:2},wireWsRemoveConfirm:null,
+  wireWsEditBefore:null,
+  wireEdges:[primary,parallel],
+  tracks:[{id:1,kind:"audio",name:"Vocal"},{id:2,kind:"bus",name:"Bus A"}],
+  master:{id:3,kind:"master",name:"MAIN"},
+  wireWsRoutes:()=>[],
+  wireWsRouteKind:(src,dst)=>({kind:"wire",edge:src===1&&dst===2?primary:parallel}),
+  wireWsLabel:id=>"CH "+id,escapeHtml:s=>String(s),
+  wireSourceTrack:id=>({id}),wireGraphCommit(){throw Error("native must not mutate demo graph")},
+  wireWsSnapshot(){throw Error("native must not take demo undo snapshot")},
+  wireWsRecord(){throw Error("native must not create demo undo history")},
+  render(){throw Error("native must not rebuild mixer DOM")},
+  renderWireWorkspace(){throw Error("native must not rebuild inspector")},
+  say:s=>observed.push(s)
+ };
+ vm.runInNewContext(html.slice(renderStart,renderEnd),scope);
+ vm.runInNewContext("renderWireWsInspector()",scope);
+ assert.match(panel.innerHTML,/PRIMARY · UNITY/);
+ assert.match(panel.innerHTML,/data-ws-gain="41"[^>]+disabled/);
+ scope.wireWsInspect={src:1,dst:3};
+ vm.runInNewContext("renderWireWsInspector()",scope);
+ assert.match(panel.innerHTML,/data-ws-gain="42"/);
+ assert.doesNotMatch(panel.innerHTML,/data-ws-gain="42"[^>]+disabled/);
+ assert.match(panel.innerHTML,/POST FADER/);
+ const eventStart=html.indexOf("document.getElementById('wireWsInspector').addEventListener('focusin',");
+ const eventEnd=html.indexOf("document.getElementById('wireLegend').addEventListener('change',",eventStart);
+ assert.ok(eventStart>0&&eventEnd>eventStart);
+ vm.runInNewContext(html.slice(eventStart,eventEnd),scope);
+ const event=(element,selector)=>({target:{closest:name=>name===selector?element:null}});
+ handlers.input(event({dataset:{wsGain:"41"},value:"-10"},"[data-ws-gain]"));
+ assert.equal(observed.length,0,"PRIMARY BUS has no independent SEND gain");
+ handlers.input(event({dataset:{wsGain:"42"},value:"-12"},"[data-ws-gain]"));
+ assert.deepEqual(JSON.parse(JSON.stringify(observed[0])),[{
+  type:"GAIN",sourceId:1,edgeId:42,levelDb:-12
+ }],"PARALLEL MAIN has the exact writable EdgeId");
+ assert.equal(readout.textContent,"PENDING · -12 dB",
+  "input gesture is pending; never labels it accepted");
+ const picker={dataset:{wsTap:"42"},value:"split"};
+ handlers.change(event(picker,"[data-ws-tap]"));
+ assert.equal(picker.value,"send","native tap selector waits for independent PCM readback");
+ assert.deepEqual(JSON.parse(JSON.stringify(observed[1])),[{
+  type:"MODE",sourceId:1,edgeId:42,mode:"split"
+ }]);
+ assert.match(observed[2],/awaiting accepted native PCM readback/);
+ assert.equal(primary.levelDb,0);
+ assert.equal(parallel.levelDb,-6,"reference WIRE graph never becomes native routing owner");
+ // Execute the native compiled rollback method rather than a mock. It must
+ // repair the same focused DOM control from the latest accepted PCM readback.
+ // Rejection has no new snapshot: the original level remains -6, not -12.
+ const rollbackStart=html.indexOf(" rollbackNativeWireInspector(rows){");
+ const rollbackEnd=html.indexOf(" syncVerifiedM4Wires(rows,ids){",rollbackStart);
+ assert.ok(rollbackStart>0&&rollbackEnd>rollbackStart,"native rollback method installed exactly once");
+ const method=html.slice(rollbackStart,rollbackEnd).trim().replace(/,\s*$/,"");
+ const rollback=vm.runInNewContext("({"+method+"})",scope);
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
+ assert.equal(inspectorGain.value,"-6","failed native intent restores accepted gain without replacing the focused input");
+ assert.equal(readout.textContent,"UNCHANGED · -6 dB","LCD cannot remain PENDING after a rejected gain");
+ assert.equal(parallel.levelDb,-6,"no browser graph edit or optimistic audio state");
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),false,
+  "idempotent failure reconciliation must not repaint a settled LCD");
+ // A stale EdgeId cannot silently roll back or write a different route.
+ inspectorGain.dataset.wsGain="41";readout.textContent="PENDING · -8 dB";
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
+ assert.equal(inspectorGain.disabled,true);
+ assert.equal(readout.textContent,"SEND UNAVAILABLE");
+ assert.match(bridge,/rollbackNativeWireInspector\?\.\(nativeWireGainReadback\(state.current\)\)/,
+  "native control failure must invoke the same compiled inspector rollback");
+});
+
+test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and accepted readback",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const preview=read("site/preview-v2/index.html");
+ assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
+ assert.match(bridge,/ops\[0\]\.type==="MODE"/);
+ assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
+ assert.match(bridge,/const tap=\["PRE_FADER","POST_FADER"\]\.includes\(edge\.tapStage\)/);
+ assert.match(preview,/edge\.nativeTap==='PRE_FADER'\?'PRE FADER'/);
+ assert.match(preview,/edge\?\.nativeTap==='PRE_FADER'\?'split'/);
+ assert.match(preview,/native\?'PRE FADER':'Pre FX'/);
+ const s=acceptedFixture(),source=s.graph.channels[0].id;
+ const bus={id:"9007199254740999",role:"GROUP",name:"BUS B",processingFormat:"STEREO",
+   controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]};
+ s.graph.channels.splice(1,0,bus);
+ s.graph.destinations.push({id:bus.id,role:"GROUP"});
+ delete s.graph.channels[0].primaryOutId;
+ s.graph.edges[0]={edgeId:"9223372036854775808",from:source,to:bus.id,
+   tap:"POST_FADER",gainLinear:.5,enabled:true,sendEnabled:true,
+   primaryOutput:false,signalKind:"AUDIO"};
+ const sent=[],c=protocol.createController({emit:(event,payload)=>sent.push({event,payload})});
+ assert.equal(c.onSnapshot(clone(s)),true);
+ const change={op:"SET_TAP",from:source,edgeId:s.graph.edges[0].edgeId,tap:"PRE_FADER"};
+ const t=c.intent("APPLY_WIRE_TRANSACTION",source,{changes:[change]});
+ assert.equal(t.ok,true);
+ assert.deepEqual(sent.at(-1).payload.payload.changes,[change]);
+ assert.equal(c.state().current.graph.edges[0].tap,"POST_FADER");
+ assert.equal(c.onAck({requestId:t.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"8"}),true);
+ assert.equal(c.state().current.graph.edges[0].tap,"POST_FADER",
+  "ACK alone cannot repaint a PRE_FADER send");
+ const next=clone(s);next.graph.revision="6";next.graph.rosterRevision="8";
+ next.graph.edges[0].tap="PRE_FADER";
+ assert.equal(c.onSnapshot(next),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(c.state().current.graph.edges[0].tap,"PRE_FADER");
+ assert.equal(c.state().current.graph.edges[0].edgeId,change.edgeId);
+ assert.equal(c.state().current.graph.edges[0].gainLinear,.5);
+ assert.equal(c.state().current.graph.edges[0].sendEnabled,true);
+});
+
+test("native input Gain is a separate ChannelId scalar proven only by ACK plus inputGain readback",()=>{
+ const s=acceptedFixture(),id=s.graph.channels[0].id;
+ s.graph.capabilities.supportedOps.push("SET_INPUT_GAIN");
+ s.graph.channels[0].controls.inputGainDb=0;
+ const sent=[],ctl=protocol.createController({emit:(name,value)=>sent.push({name,value})});
+ assert.equal(ctl.onSnapshot(s),true);
+ const edit=ctl.intent("SET_INPUT_GAIN",id,{valueDb:6});
+ assert.equal(edit.ok,true);
+ assert.equal(sent.length,1);
+ assert.equal(ctl.state().pending?.operation,"SET_INPUT_GAIN");
+ assert.equal(ctl.onAck({requestId:edit.requestId,status:"ACCEPTED",
+  deviceEpoch:s.device.epoch,graphRevision:s.graph.revision,
+  rosterRevision:s.graph.rosterRevision,errorCode:"NONE"}),true);
+ // An unchanged FADER is not proof that an INPUT GAIN changed.
+ assert.equal(protocol.readbackProvesIntent(ctl.state().current,
+  {operation:"SET_INPUT_GAIN",targetChannelId:id,payload:{valueDb:6}}),false);
+ const actual=clone(s);actual.graph.channels[0].controls.inputGainDb=6;
+ assert.equal(ctl.onSnapshot(actual),true);
+ assert.equal(ctl.state().pending,null);
+ assert.equal(ctl.state().current.graph.channels[0].controls.faderDb,-6);
+ assert.equal(ctl.state().current.graph.channels[0].controls.inputGainDb,6);
+ const malformed=clone(actual);malformed.graph.channels[0].controls.inputGainDb="NaN";
+ assert.equal(protocol.normalizeSnapshot(malformed),null);
+});
+
 test("M5 native FX snapshot rejects malformed/duplicate lease tokens without losing accepted state",()=>{
  const good=acceptedFixture(),input=good.graph.channels[0].id;
  good.graph.channels[0].inserts=[{
@@ -1208,6 +1390,25 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  listeners.get("arMixConsoleSnapshot")(gained);
  assert.equal(scope.edges[0].levelDb,-12);
  assert.equal(paints,paintBeforeGain);
+ // WIRE inspector MODE is a legacy visual gesture. It MUST become one
+ // exact native SET_TAP EdgeId transaction; rejection leaves the PCM tap intact.
+ const tapUi=scope.edges[0].id;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([{
+   type:"MODE",sourceId:sourceUi,edgeId:tapUi,mode:"split"
+ }]),true);
+ const tapRequest=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(tapRequest.operation,"APPLY_WIRE_TRANSACTION");
+ assert.deepEqual(JSON.parse(JSON.stringify(tapRequest.payload.changes)),[{
+   op:"SET_TAP",from:routed.graph.channels[0].id,
+   edgeId:"9223372036854775810",tap:"PRE_FADER"
+ }]);
+ assert.equal(scope.edges[0].nativeTap,"POST_FADER");
+ listeners.get("arMixConsoleAck")({requestId:tapRequest.requestId,status:"REJECTED",
+   errorCode:"NATIVE_WIRE_TRANSACTION_REJECTED",deviceEpoch:gained.device.epoch,
+   graphRevision:"8",rosterRevision:"8"});
+ assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
+ assert.equal(scope.edges[0].nativeTap,"POST_FADER",
+   "rejected native tap must restore the last accepted PCM stage");
  // OUT uses the same actual INPUT destination as WIRE, not a name-only
  // GROUP lookup. An exclusive route promotes the existing native edge.
  const hooks=window.__ARMIX_NATIVE_M2__,sourceTrack=scope.tracks[0];
@@ -1990,4 +2191,25 @@ test("Guitar FX picker binding is real, visible and matches native installed reg
  assert.ok(guiBuilder.includes("renderPluginCatalog();renderFastPicker();"));
  assert.ok(bridge.includes('controller.intent("LOAD_INSERT",nativeId,'));
  assert.ok(bridge.includes('pendingFxInsert={authority:"CHANNEL_ID"'));
+});
+
+test("SOF double-click and target selection never commandeer MAIN fader",()=>{
+  const html=read("site/preview-v2/index.html");
+  const bridge=read("web/approved-native-bridge.js");
+  const bundle=read("scripts/build_approved_native_gui.py");
+  assert.match(html,/function selectedSofDestination\(\)/);
+  assert.match(html,/sofTargetId=target\?\.id\?\?null/);
+  assert.match(html,/const send=sofEnabled&&t\.kind==='audio'/);
+  assert.match(html,/fader\.dispatchEvent\(new Event\('change'/);
+  assert.match(bundle,/get sofTargetId\(\)\{return sofTargetId;\}/);
+  assert.match(bridge,/x\.id===scope\.sofTargetId/);
+  const start=bridge.indexOf("consumeDoubleClick(event,t)");
+  const end=bridge.indexOf("applyIdentity:",start);
+  assert.ok(start>0&&end>start,"native delegate must own double-click");
+  const handler=bridge.slice(start,end);
+  assert.ok(handler.indexOf("scope?.sofEnabled") <
+            handler.indexOf('sendM4Control'),
+    "SOF must intercept fader reset BEFORE M4/Main fader ownership");
+  assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
+  assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
 });

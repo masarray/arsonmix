@@ -5,6 +5,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/SonKuSpatialProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
@@ -81,7 +82,12 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
         "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",
         "NATIVE_GFX_PREPARE_EXCEPTION","Saved Guitar FX Rig state rejected; graph unchanged",
-        prepareNativeBuiltInFx<GuitarRigProcessor>}
+        prepareNativeBuiltInFx<GuitarRigProcessor>},
+    NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
+        "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",
+        "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
+        "NATIVE_SONKU_PREPARE_EXCEPTION","Saved 8D-SonKu state rejected; graph unchanged",
+        prepareNativeBuiltInFx<SonKuSpatialProcessor>}
 };
 
 // Compile-time registration contract: one stable catalog identity per FX,

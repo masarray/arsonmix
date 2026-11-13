@@ -324,7 +324,7 @@
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
-    const value=operation==="SET_FADER"?payload.valueDb:
+    const value=["SET_FADER","SET_INPUT_GAIN"].includes(operation)?payload.valueDb:
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
@@ -362,25 +362,50 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity)continue; // never replay into a new graph/device
+      if(current.identity!==edit.identity){
+        // A changed device/graph invalidates a deferred edit, but must not
+        // strand its LCD while waiting for a nonexistent ACK.
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue; // never replay into a new graph/device
+      }
       const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false)continue;
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001)continue;
+      if(!edge||edge.primaryOutput!==false){
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue;
+      }
+      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
+        // The accepted PCM gain already equals the requested scalar. Do not
+        // emit a redundant native intent, but DO settle the pending display.
+        scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
+        continue;
+      }
       const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
       else status("WIRE gain rejected · "+result.error);
       return; // next coalesced target follows ACK + independent readback
     }
   }
-  function requestWireGain(op){
+  // Every editable WIRE scalar must resolve an exact native ChannelId +
+  // EdgeId, not a destination kind, strip label, or reference graph index.
+  // A PARALLEL_SEND can legally point to MAIN; a PRIMARY_OUT can point to BUS.
+  function admittedParallelWire(uiSourceId,uiEdgeId,operation){
     const current=controller?.state()?.current;
-    const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    const source=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
+    if(!flags.acceptedGraphConnected||!current?.admitted||current.retained||
+       !source||!edgeId||!current.graph.capabilities.supportedOps.includes(operation))
+      return null;
+    const matches=current.graph.edges.filter(e=>e.enabled&&
+      e.edgeId===edgeId&&e.from===source&&e.primaryOutput===false);
+    return matches.length===1?matches[0]:null;
+  }
+  function requestWireGain(op){
     const db=Number(op.levelDb);
-    if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")||
-       !Number.isFinite(db)||db< -60||db>6)return false;
-    const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===source);
-    if(!edge||edge.primaryOutput!==false)return false;
-    pendingWireGains.set(edgeId,{source,gain:Math.pow(10,db/20),identity:current.identity});
+    if(!Number.isFinite(db)||db< -60||db>6||
+       !admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
+    const current=controller.state().current;
+    const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
+    pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
@@ -403,6 +428,53 @@
     else window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return result.ok;
   };
+  // One accepted EdgeId/tap command shared by SOF and the WIRE inspector.
+  // A typed SET_TAP recompiles the existing PCM graph; neither GUI may
+  // repaint PRE/POST until the subsequent independent accepted readback.
+  function requestNativeTap(source,edgeId,tap){
+    const state=controller?.state(),current=state?.current;
+    if(!current?.admitted||current.retained||state.pending||
+       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||
+       !source||!edgeId||!["PRE_FADER","POST_FADER"].includes(tap)){
+      status("PRE/POST unavailable · wait for an admitted native WIRE");return false;
+    }
+    const matches=current.graph.edges.filter(e=>e.enabled&&e.edgeId===edgeId&&
+      e.from===source&&e.primaryOutput===false);
+    if(matches.length!==1||!["PRE_FADER","POST_FADER"].includes(matches[0].tap)){
+      status("PRE/POST unavailable · selected send identity changed");return false;
+    }
+    if(matches[0].tap===tap)return true;
+    const result=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes:[{
+      op:"SET_TAP",from:source,edgeId,tap
+    }]});
+    if(!result.ok){status("PRE/POST unchanged · "+result.error);return false;}
+    window.setTimeout(()=>controller?.expire(result.requestId),8000);
+    return true;
+  }
+  function selectedNativeSofEdge(t) {
+    if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
+    const current=controller?.state()?.current,source=nativeIdFor(t);
+    const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
+      (x.kind==="bus"||x.kind==="fx"))||[];
+    if(!current?.admitted||!source||matches.length!==1)return null;
+    const dest=nativeIdFor(matches[0]);
+    const edges=current.graph.edges.filter(e=>e.enabled&&
+      e.from===source&&e.to===dest&&e.primaryOutput===false);
+    return edges.length===1?edges[0]:null;
+  }
+  function syncNativeSofAvailability(next=controller?.state()?.current) {
+    const admitted=!!next?.admitted&&!!scope?.toggleSof&&
+      ["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"].every(op=>
+        next.graph.capabilities.supportedOps.includes(op));
+    const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
+    for(const el of [toggle,target])if(el){
+      el.style?.setProperty?.("display",admitted?"":"none","important");
+      el.disabled=!admitted;
+      el.title=admitted?"Flip channel faders to selected SEND levels":
+        "Sends on Faders requires installed PCM WIRE gain, enable and tap ACK";
+    }
+    if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
+  }
   function projection(native) {
     if ((!native?.admitted && !native?.retained && !native?.logical) ||
         !Array.isArray(native.graph.edges) ||
@@ -435,6 +507,14 @@
       if(appearance?.icon)t.icon=appearance.icon;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
+      t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
+      t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
+        native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
+        Number.isFinite(ch.controls.inputGainDb);
+      t.nativeTapAvailable=native.admitted===true&&kind==="audio"&&
+        native.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION");
+      t.nativeSendAvailable=native.admitted===true&&kind==="audio"&&
+        native.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED");
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
@@ -481,9 +561,13 @@
       const isMain=edge.to===accepted.mainChannelId;
       const isPrimary=source?.primaryOutId===edge.to;
       // An independent SEND to MAIN is not the source's primary OUT.
-      const kind=isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
+      // Explicit native tapStage disambiguates legacy PRE_FX SPLIT_PRE from
+      // real post-FX PRE_FADER. The reference 'split' mode means PRE_FX only.
+      const tap=["PRE_FADER","POST_FADER"].includes(edge.tapStage)?edge.tapStage:edge.tap;
+      const legacySplit=tap==="SPLIT_PRE"||tap==="SPLIT_POST";
+      const kind=isPrimary?"primary":legacySplit?"split":"send";
       const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
-        kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
+        legacySplit?(tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
       if (isPrimary && edge.gainLinear!==1) return false;
       const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
         edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
@@ -492,6 +576,7 @@
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
       edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
+        nativeTap:tap,sendEnabled:edge.sendEnabled!==false,
         enabled:true,levelDb:gainDb});
     }
     if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
@@ -504,6 +589,7 @@
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     scope.installGraph(nextTracks,nextMaster,edges);
+    syncNativeSofAvailability(native);
     return true;
   }
   // Rack and individual FX power are scalar native DSP controls, NOT a
@@ -515,7 +601,11 @@
       return true; // never synthesize missing DSP readback
     const enabled=!ch.fxRackBypassed;
     const strip=document.querySelector('.strip[data-id="'+t.id+'"]');
-    const rack=strip?.querySelector(".fx-section");
+    // GAIN/SOF are alternate views of the FX area; power readback still
+    // updates the model but must not rebuild the rack or steal knob focus.
+    const rackArea=strip?.querySelector(".fx-section");
+    const rack=rackArea?.classList?.contains?.("is-gain-view") ||
+      rackArea?.classList?.contains?.("is-sof-view")?null:rackArea;
     // Virtualized mobile banks may have no mounted strip. The model still
     // receives verified state; normal bank render creates the right buttons.
     if(rack){
@@ -566,6 +656,14 @@
     }
     return true;
   }
+  // One authoritative EdgeId gain projection for normal readback AND failure
+  // rollback. No duplicate DSP math or synthetic accepted control state.
+  function nativeWireGainReadback(next){
+    return (next?.graph?.edges||[]).filter(e=>e.enabled&&e.primaryOutput===false)
+      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),
+        levelDb:Math.round(Math.max(-60,Math.min(6,
+          e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
+  }
   function projectNativeGraphWithoutFocusLoss(next) {
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
@@ -581,9 +679,28 @@
       lastNativeTopologySignature=structure;
       return true;
     }
-    scope?.syncNativeWireGains?.(next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
-        e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10})));
+    scope?.syncNativeWireGains?.(nativeWireGainReadback(next));
+    // A SEND OFF is a scalar, NOT a disconnected WIRE. Update just the
+    // affected selected SOF strip; preserve fader focus and all plugin state.
+    for(const edge of next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)){
+      const uiId=uiByWireId.get(edge.edgeId),tId=uiByNativeId.get(edge.from);
+      const local=scope?.wireEdges?.find(e=>e.id===uiId);
+      if(!local)continue;
+      if(local.sendEnabled!==(edge.sendEnabled!==false)){
+        local.sendEnabled=edge.sendEnabled!==false;
+        const t=scope?.tracks?.find(x=>x.id===tId);
+        if(t&&scope?.sofEnabled)scope.refreshStrip?.(t);
+      }
+      if(scope?.sofEnabled && local.destId===scope?.sofTargetId){
+        const t=scope?.tracks?.find(x=>x.id===tId);
+        const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
+        if(t&&slider&&document.activeElement!==slider){
+          slider.value=String(local.levelDb);
+          scope.syncFaderVisual?.(t);
+        }
+      }
+    }
+    syncNativeSofAvailability(next);
     // Immutable graph topology is identical: update actual scalar controls
     // only. Never detach the active HTML select or the captured fader pointer.
     for(const ch of next.graph.channels){
@@ -599,6 +716,23 @@
         return true;
       }
       const c=ch.controls;
+      const gainAdmitted=next.admitted===true&&ch.role==="INPUT"&&
+        next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN")&&
+        Number.isFinite(c.inputGainDb);
+      const gainChanged=gainAdmitted&&Math.abs((t.trim??0)-c.inputGainDb)>.011;
+      t.nativeGainAvailable=gainAdmitted;
+      if(gainChanged){
+        t.trim=c.inputGainDb;
+        const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+        const slider=root?.querySelector('input[data-field="trim"]');
+        if(slider&&document.activeElement!==slider){
+          slider.value=String(t.trim);
+          slider.closest(".gain-dial")?.style.setProperty("--gain-rotation",
+            (t.trim*5.625).toFixed(2)+"deg");
+          const readout=root.querySelector(".gain-readout");
+          if(readout)readout.textContent=(t.trim>=0?"+":"")+t.trim.toFixed(1)+" dB";
+        }
+      }
       const db=c.faderDb,pan=c.pan*100;
       const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
@@ -1231,14 +1365,14 @@
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
-    // This identity has a matching REAL GuitarRigProcessor in the native
-    // registry. The approved quick picker must expose it immediately, even
-    // before an async VST3 scan or arMixCatalog refresh. Do not add a demo
-    // processor or claim that the browser can produce guitar audio.
+    // The picker may show this installed native guitar processor before any
+    // external VST3 scan, without introducing a second FX engine or audio graph.
     Object.freeze({id:"armix.builtin.guitar-rig.v1",name:"Guitar FX Rig",
       vendor:"ArSonMix",category:"Guitar",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"ArSon Vocal Throw",
-      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false})
+      vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false}),
+    Object.freeze({id:"armix.builtin.8d-sonku.v1",name:"8D-SonKu",
+      vendor:"ArSonMix",category:"Spatial",format:"Native",source:"builtin",showInPicker:false})
   ]);
   const presentFxCatalog=()=>scope?.setNativeCatalog?.(
     [...nativeBuiltins.filter(fx=>fx.showInPicker!==false),...nativeCatalog.values()]);
@@ -2843,6 +2977,11 @@
              state.current?.device?.epoch===wire.epoch&&deferStartupWire(wire.ops,1))return;
           startupWire=null;
           pendingWireGains.clear();
+          // The controller deliberately freezes current on a rejected ACK.
+          // Repaint only an inspector that still says PENDING from that
+          // admitted PCM readback, without a new intent, timer or graph edit.
+          if(state.current)
+            scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(state.current));
           if(pendingFxInsert?.authority==="CHANNEL_ID"){
             pendingFxInsert=null;
             nativeToast("VST3 insert rejected · "+state.lastError);
@@ -2855,7 +2994,7 @@
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
           if(flags.acceptedGraphConnected && (scope.activeFaderId??-1)<0){
-            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain"))
+            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain,#wireWsGain"))
               scope.render?.();
             controller.subscribe();
             if(state.current)paintNativeMeters(state.current);
@@ -3178,6 +3317,45 @@
           el.value=String(t[field]);
         return true;
       }
+      if(field==="trim"){
+        const accepted=t.kind==="audio"&&t.nativeGainAvailable===true&&
+          (logicalView||controller?.state()?.current?.admitted===true);
+        const n=Number(el.value);
+        if(!accepted||!Number.isFinite(n)||n< -24||n>24){
+          el.value=String(Number.isFinite(t.trim)?t.trim:0);
+          status("INPUT GAIN unavailable · native PCM admission required");
+          return true;
+        }
+        // Gesture preview stays inside the knob; no browser-local t.trim
+        // audio authority and no phantom native ACK. Commit once on release.
+        if(event.type!=="change"){
+          el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
+            (n*5.625).toFixed(2)+"deg");
+          const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
+          if(lcd)lcd.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
+          return true;
+        }
+        if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
+          el.value=String(t.trim);
+          status("INPUT GAIN rejected · restoring accepted PCM readback");
+          controller?.subscribe?.();
+        }
+        return true;
+      }
+      if(field==="level"&&scope?.sofEnabled&&t.kind==="audio"){
+        const edge=selectedNativeSofEdge(t),db=Number(el.value);
+        const uiId=edge&&uiByWireId.get(edge.edgeId);
+        if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
+          status("SENDS ON FADERS · patch a selected WIRE destination first");
+          scope?.syncFaderVisual?.(t);return true;
+        }
+        if(event.type!=="change"){
+          previewFaderWithoutModelMutation(t,db);return true;
+        }
+        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))
+          status("SEND LEVEL rejected · accepted WIRE identity changed");
+        return true;
+      }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
@@ -3347,11 +3525,33 @@
     },
     consumeAction(t,action,btn) {
       if (!connected)return false;
-      // The PNG PRE/POST control is visible for layout consistency, but a
-      // per-SEND tap mode change must be acknowledged by the native PCM graph.
-      // Until MODE is admitted, NEVER let the browser pretend the tap changed.
-      if(action==="tapMode"){
-        status("PRE/POST requires native WIRE tap capability; routing unchanged");
+      // PRE/POST is an exact EdgeId structural graph transaction, not a
+      // cosmetic browser mode nor a channel-wide batch change.
+      if(action==="tapMode"||action==="sofTap"){
+        const current=controller?.state()?.current,id=nativeIdFor(t);
+        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||!id){
+          status("PRE/POST unavailable · native PCM graph not admitted");return true;
+        }
+        const sends=current.graph.edges.filter(e=>e.enabled&&
+          e.from===id&&e.primaryOutput===false&&e.to!==current.graph.mainChannelId);
+        let target=action==="sofTap"?selectedNativeSofEdge(t):
+          sends.find(e=>uiByWireId.get(e.edgeId)===scope?.selectedWireEdgeId)||
+          (sends.length===1?sends[0]:null);
+        if(!target||!["PRE_FADER","POST_FADER"].includes(target.tap)){
+          status("Select one outgoing parallel SEND WIRE to change PRE/POST");
+          return true;
+        }
+        const next=target.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
+        requestNativeTap(id,target.edgeId,next);
+        return true;
+      }
+      if(action==="sofOn"){
+        const current=controller?.state()?.current,edge=selectedNativeSofEdge(t);
+        if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED")||
+           !edge||typeof edge.sendEnabled!=="boolean"){
+          status("SEND ON/OFF unavailable · select an admitted WIRE send");return true;
+        }
+        intent("SET_SEND_ENABLED",t,{edgeId:edge.edgeId,enabled:!edge.sendEnabled});
         return true;
       }
       // Selection, WIRE inspection and section presentation are UI-only.
@@ -3392,6 +3592,10 @@
               window.ArSonMixNativeHarmony?.open(t,slot);
             } else if(insert.catalogId==='armix.builtin.vocal-throw.v1') {
               window.ArSonMixNativeVocalThrow?.open(t,slot);
+            } else if(insert.catalogId==='armix.builtin.8d-sonku.v1') {
+              if(window.ArSonMixNativeSonKu?.open)
+                window.ArSonMixNativeSonKu.open(t,slot);
+              else nativeToast("8D-SonKu editor unavailable · refresh the approved GUI bundle");
             } else if(current.logical) {
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",channelId:id,
                 slot,instanceId:insert.id,workspaceToken:current.workspaceToken,
@@ -3478,6 +3682,14 @@
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
+    canWireGain(uiEdgeId,uiSourceId){
+      return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
+    },
+    canWireTap(uiEdgeId,uiSourceId){
+      const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
+      return !!edge&&["PRE_FADER","POST_FADER"].includes(edge.tap)&&
+        !controller?.state()?.pending;
+    },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
       if(logicalView) {
@@ -3505,6 +3717,17 @@
               Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb??0)))/20)}:{})};
         if(!logicalIntent("WIRE_TRANSACTION",from,{changes:[change]}).ok)
           nativeToast("WIRE not saved · previous routing retained");
+        return true;
+      }
+      // The inspector's legacy MODE gesture is only a presentation gesture.
+      // Map it to one real installed PRE_FADER/POST_FADER EdgeId transaction;
+      // never queue/replay it as a startup wire or mutate a demo graph.
+      if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="MODE"){
+        const op=ops[0];
+        const source=nativeByUiId.get(op.sourceId),edgeId=wireByUiId.get(op.edgeId);
+        const tap=op.mode==="split"?"PRE_FADER":
+          op.mode==="send"?"POST_FADER":null;
+        requestNativeTap(source,edgeId,tap);
         return true;
       }
       const state=controller?.state();
@@ -3698,11 +3921,26 @@
     },
     consumeDoubleClick(event,t) {
       if (!connected)return false;
+      // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
+      // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.classList.contains("fader")){
+        if(scope?.sofEnabled&&t?.kind==="audio"){
+          const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
+          if(!edge||id===undefined||
+             !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
+            status("SOF unity reset unavailable · select one admitted SEND");
+          return true;
+        }
         if((m4ControlIsOwner()&&m4Verified()) ||
            (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
           sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
+      }
+      else if(event.target.closest?.(".gain-dial")){
+        if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
+          status("INPUT GAIN unity reset requires native PCM admission");
+        else intent("SET_INPUT_GAIN",t,{valueDb:0});
+        return true;
       }
       else if(event.target.classList.contains("center-pan")){
         if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
@@ -3814,8 +4052,6 @@
   // shortcuts instead of silently intercepting and leaving broken buttons.
   const nativeReferenceOnly=Object.freeze({
     sceneSelect:"Native full-session Show is not yet available",
-    sofToggle:"Sends on Faders requires acknowledged native send-gain routing",
-    sofTarget:"Sends on Faders requires acknowledged native send-gain routing",
     saveScene:"Native full-session Show is not yet available",
     recallScene:"Native full-session Show is not yet available",
     sceneSafe:"Show safe requires native session snapshots",
@@ -3856,6 +4092,7 @@
   }
   const ready=()=>{
     presentNativeOnlyTools();
+    syncNativeSofAvailability(); // hidden unless all installed native SEND controls exist
     installFirstSoundMenu();
     presentFxCatalog(); // compiled native FX, never demo or vendor placeholders
     updateHardwarePanel(null);

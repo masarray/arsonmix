@@ -79,6 +79,18 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
         auto controls=std::make_unique<juce::DynamicObject>();
         const double db=linear>0.?20.*std::log10(linear):-60.;
         controls->setProperty("faderDb",juce::jlimit(-60.,12.,db));
+        // Source-owned native digital trim is not the hardware preamp.
+        // Missing field on legacy snapshots remains unadmitted, never 0 dB guessed.
+        const auto trim=row.getProperty("inputGain",{});
+        double inputLinear=0.;
+        if(trim.isVoid()) {
+            // Historical/retained snapshots may predate digital gain.
+        } else {
+            if(!nativeV8Number(trim,inputLinear)||inputLinear<0.||inputLinear>16.||
+               (role!="INPUT"&&inputLinear!=1.))return false;
+            if(role=="INPUT")controls->setProperty("inputGainDb",
+                inputLinear>0.?20.*std::log10(inputLinear):-144.);
+        }
         controls->setProperty("pan",p);
         controls->setProperty("mute",mute);controls->setProperty("solo",solo);
         ch->setProperty("controls",juce::var(controls.release()));
@@ -140,6 +152,7 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
                    to=edge.getProperty("to",{}),gain=edge.getProperty("gainLinear",{});
         const auto tap=edge.getProperty("tap","").toString();
         const auto primary=edge.getProperty("primaryOutput",{});
+        const auto nativeEnabled=edge.getProperty("enabled",{});
         double linear=0.;
         if(!nativeV8Decimal(id)||!nativeV8Decimal(from)||!nativeV8Decimal(to)||
            from.toString()==to.toString()||
@@ -148,18 +161,23 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
            !ids.count(to.toString().toStdString())||
            from.toString()==mainId||(tap!="PRE_FADER"&&tap!="POST_FADER")||
            !nativeV8Number(gain,linear)||linear<0.||linear>4.||
-           !primary.isBool())return false;
+           !primary.isBool()||(!nativeEnabled.isVoid()&&!nativeEnabled.isBool())||
+           (static_cast<bool>(primary)&&nativeEnabled==juce::var(false)))return false;
         auto w=std::make_unique<juce::DynamicObject>();
         w->setProperty("edgeId",id);w->setProperty("from",from);w->setProperty("to",to);
         w->setProperty("tap",tap);w->setProperty("gainLinear",linear);
         w->setProperty("primaryOutput",primary);
-        w->setProperty("enabled",true);w->setProperty("signalKind","AUDIO");
+        // Connected patch identity survives SEND OFF; audio gate is separate.
+        w->setProperty("enabled",true);
+        w->setProperty("sendEnabled",nativeEnabled.isVoid()?true:static_cast<bool>(nativeEnabled));
+        w->setProperty("signalKind","AUDIO");
         wires.add(juce::var(w.release()));
         if(!static_cast<bool>(primary))for(auto& channel:channels) {
             if(channel.getProperty("id","").toString()!=from.toString())continue;
             auto send=std::make_unique<juce::DynamicObject>();
             send->setProperty("id",id);send->setProperty("targetId",to);
             send->setProperty("tap",tap);send->setProperty("gainLinear",linear);
+            send->setProperty("sendEnabled",nativeEnabled.isVoid()?true:static_cast<bool>(nativeEnabled));
             const auto list=channel.getProperty("sends",{});
             if(auto* a=list.getArray())a->add(juce::var(send.release()));
             break;

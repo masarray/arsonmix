@@ -4,6 +4,10 @@ on:
     paths:
       - 'engine/core/DeviceIndependentMixerSession.h'
       - 'engine/core/DynamicChannelRoster.h'
+      - 'engine/core/DynamicPreparedMixerBlock.h'
+      - 'engine/core/DynamicAcceptedSession.h'
+      - 'engine/core/DynamicNativeSessionPublisher.h'
+      - 'tests/dynamic_accepted_session_test.cpp'
       - 'tests/device_independent_mixer_session_test.cpp'
       - '.github/workflows/logical-mixer-fast.yml'
   workflow_dispatch:
@@ -19,3 +23,9 @@ jobs:
             tests/device_independent_mixer_session_test.cpp \
             -o /tmp/arsonmix-logical-test
           /tmp/arsonmix-logical-test
+      - name: Compile and run native PCM gain, PRE/POST and SEND regressions (no JUCE)
+        run: |
+          c++ -std=c++20 -O1 -Wall -Wextra -Werror -I. \
+            tests/dynamic_accepted_session_test.cpp \
+            -o /tmp/arsonmix-dynamic-pcm-test
+          /tmp/arsonmix-dynamic-pcm-test
