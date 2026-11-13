@@ -1557,15 +1557,3 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
  }
 }
 
-/* V60 operator fader reach — authoritative MECHANICAL CHROME height owner.
-   The original V28 declaration above remains intact for migration fixtures.
-   Source, BUS/FX, pinned MASTER and section rail all share --v13-fader-h;
-   this grows physical travel while the FX rack gives up only elastic space.
-   No cap bitmap, dB scale, bridge or WIRE geometry is changed here. */
-.console-body{--v13-fader-h:clamp(198px,calc(100dvh - 538px),550px)}
-@media(max-height:850px){
- .console-body{--v13-fader-h:clamp(194px,calc(100dvh - 538px),390px)}
-}
-@media(max-height:610px){
- .console-body{--v13-fader-h:clamp(155px,32dvh,210px)}
-}
