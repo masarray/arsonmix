@@ -7129,12 +7129,25 @@ public:
         if (!folder.createDirectory().wasOk() && !folder.isDirectory())
         {
             splash_.reset();
+            // The updater's GUI-only validation must never strand an invisible
+            // error dialog. Return control to the supervisor, which will keep
+            // the authenticated rollback installer available.
+            if (isAutoUpdateHealthProbe())
+            {
+                systemRequestedQuit();
+                return;
+            }
             showWebViewStartupError ("Cannot create the browser-cache folder: " + folder.getFullPathName());
             return;
         }
         if (!juce::WebBrowserComponent::areOptionsSupported (webViewOptions()))
         {
             splash_.reset();
+            if (isAutoUpdateHealthProbe())
+            {
+                systemRequestedQuit();
+                return;
+            }
             showWebViewStartupError ("The native browser backend could not be initialized on this machine.");
             return;
         }
