@@ -111,6 +111,7 @@ private:
     };
     using DiagnosticPublisher=armix::rt::RealtimeRoutePublisher<SpeakerDiagnosticPrepared>;
     std::unique_ptr<SpeakerDraftReadback> speakerDraft_; // CONTROL readback
+    std::unique_ptr<armix::lms::PreparedSpeakerSystem> speakerPrepared_; // validated CONTROL DSP
     DiagnosticPublisher speakerDiagnostics_; // ONLY diagnostic memory; never ASIO
     using Publisher=armix::rt::RealtimeRoutePublisher<Prepared>;
 public:
@@ -305,9 +306,13 @@ public:
             }
             const auto outputs=request.outputs.size();
             const auto frames=static_cast<std::size_t>(request.maxFrames);
+            // Count the validated CONTROL DSP, the diagnostic DSP and
+            // isolated output buffers together; no hidden 2x allocation.
             if(outputs>request.scratchBudgetBytes/sizeof(float)/frames ||
                diagPlan.scratchBytes>request.scratchBudgetBytes-
-                   outputs*frames*sizeof(float)) {
+                   outputs*frames*sizeof(float) ||
+               candidate.scratchBytes>request.scratchBudgetBytes-
+                   outputs*frames*sizeof(float)-diagPlan.scratchBytes) {
                 ack.fault=SpeakerDraftFault::invalidDsp;
                 ack.planFault=armix::lms::SpeakerPlanFault::scratchBudget;
                 return ack;
