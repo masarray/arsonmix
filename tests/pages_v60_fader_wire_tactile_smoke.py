@@ -118,7 +118,7 @@ def test_wire(page):
       window.__v60Observer=new MutationObserver(records=>{
         for(const record of records){
           const el=record.target;
-          if(!el.matches?.('path.wire-outgoing-line[data-from="1"][data-to="3"]'))continue;
+          if(!el.matches?.('path.wire-outgoing-line[data-from="1"][data-to="3"],path.wire-incoming-line[data-from="1"][data-to="3"]'))continue;
           const d=el.getAttribute('d'),len=el.getTotalLength();
           const p=el.getPointAtLength(len*.90),a=el.getPointAtLength(0),
                 b=el.getPointAtLength(len);
@@ -130,8 +130,10 @@ def test_wire(page):
     # CH01 -> CH03: simple explicit parallel graph patch, not PCM.
     source.click()
     target.click()
-    cable=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"]')
-    cable.wait_for(timeout=8000)
+    cable=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"],#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"]').first
+    print("V60 wire paths",page.locator("#wireLayer path[data-from][data-to]").evaluate_all(
+        "nodes=>nodes.map(n=>[n.getAttribute('class'),n.dataset.from,n.dataset.to])"))
+    cable.wait_for(state="attached",timeout=8000)
     page.wait_for_timeout(850)
     samples=page.evaluate("window.__v60WireSamples")
     assert len(samples)>=5,("no finite spring movement",len(samples))
@@ -152,7 +154,7 @@ def test_wire(page):
     assert hit.count()==1
     mid=point_at_midpoint(hit)
     page.mouse.click(mid["x"],mid["y"])
-    selected=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected')
+    selected=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected,#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"].is-wire-selected')
     assert selected.count()==1,"Selected edge must brighten its real visible jacket"
     values=selected.evaluate("""el=>{
       const c=getComputedStyle(el);
