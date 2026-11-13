@@ -226,12 +226,7 @@ public:
         g.setColour(dim);
         g.setFont(juce::Font(juce::FontOptions(10.5f)));
         g.drawText("INPUT",24,89,68,20,juce::Justification::centredLeft);
-        g.drawText("OUTPUT",1010,89,46,20,juce::Justification::centredLeft);
-        for(int i=0;i<3;++i) {
-            g.setColour(juce::Colour::fromRGB(78,90,94));
-            const float x=430.f+204.f*i;
-            g.drawLine(x,102.f,x+17.f,102.f,1.2f);
-        }
+        g.drawText("OUTPUT",1004,130,52,16,juce::Justification::centredLeft);
         // Flat theatre: no bezel, no large framed backdrop, no decorative well.
         g.setGradientFill(juce::ColourGradient(
             juce::Colour::fromRGB(36,39,42),0.f,158.f,
