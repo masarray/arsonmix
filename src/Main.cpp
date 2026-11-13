@@ -7118,7 +7118,6 @@ public:
     }
 private:
 #if defined(_WIN32)
-#if defined(_WIN32)
     void serviceSmartUpdateAcknowledgement()
     {
         // The separately running updater has already staged and SHA-checked
@@ -7162,7 +7161,7 @@ private:
         auto options = juce::MessageBoxOptions {}
             .withIconType (juce::MessageBoxIconType::InfoIcon)
             .withTitle ("ArSonMix · Update")
-            .withMessage ("Update " + tag + " is ready.\\n\\n"
+            .withMessage ("Update " + tag + " is ready.\n\n"
                           "Press OK to allow automatic installation after "
                           "you finish and close ArSonMix normally. "
                           "The mixer will not be interrupted. "
@@ -7182,7 +7181,6 @@ private:
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
     }
-#endif
     void launchSmartUpdater (bool applyStaged)
     {
         // Windows per-user installation only: independent updater process.
