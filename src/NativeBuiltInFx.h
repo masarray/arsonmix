@@ -40,7 +40,7 @@ std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
     // State bytes are CONTROL-only. A missing pointer with a positive size
     // must never be mistaken for a valid default, especially during restore.
     // Reject malformed device formats BEFORE constructing any DSP/hosted
-    // processor. This is shared by EQ, Compressor, Harmonice, Vocal Throw,
+    // processor. This is shared by EQ, Compressor, Harmonice, Vocal Delay,
     // offline .smix restore and future built-in catalog entries. A corrupt
     // rate/quantum must not cause extreme allocation inside prepareToPlay.
     // 16-frame ASIO is deliberately valid at the universal host boundary;
@@ -73,10 +73,10 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_HARMONY_UNSUPPORTED_AUDIO_FORMAT","NATIVE_HARMONY_PREPARE_OR_PDC_REJECTED",
         "NATIVE_HARMONY_PREPARE_EXCEPTION","Saved native Harmony state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelHarmonyProcessor>},
-    NativeBuiltInFx{VocalThrowProcessor::catalogIdentity,"ArSon Vocal Throw","Utility",false,8000.,192000.,
+    NativeBuiltInFx{VocalThrowProcessor::catalogIdentity,"Vocal Delay","Utility",false,8000.,192000.,
         "NATIVE_THROW_HOST_UNAVAILABLE","NATIVE_THROW_DEVICE_CHANGED",
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
-        "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Throw state rejected; graph unchanged",
+        "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Delay state rejected; graph unchanged",
         prepareNativeBuiltInFx<VocalThrowProcessor>},
     NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
         "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",

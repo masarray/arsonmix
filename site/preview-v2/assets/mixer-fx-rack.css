@@ -838,7 +838,7 @@
  .mx-harm *{transition:none!important;animation:none!important}
 }
 
-/* Vocal Throw M4 — aligned studio-hardware faceplate.
+/* Vocal Delay M4 — aligned studio-hardware faceplate.
    One spacing grid, one encoder body, one fixed 260deg rounded level arc.
    Close/Power remain the same approved EQ/Compressor shared controls. */
 .mx-vthrow{position:fixed;z-index:15001;top:clamp(7px,7vh,66px);left:clamp(7px,9vw,175px);
@@ -1080,7 +1080,7 @@
 
 /* Shared native My Presets controls — existing FX Rack CSS owner. */
 /* Single compact built-in FX My Presets control surface.
-   The same classes apply to EQ, Compressor, Harmonice and Vocal Throw.
+   The same classes apply to EQ, Compressor, Harmonice and Vocal Delay.
    This is intentionally a small anchored tool, never a bulky modal card. */
 .mx-fxp-button{
  flex:0 0 auto;height:23px;padding:1px 5px;min-width:22px;
@@ -1120,7 +1120,7 @@
  .mx-fxp-button{padding:1px 3px;font-size:8px}
 }
 
-/* Preset toolbar: the compact Vocal Throw header must retain its owner
+/* Preset toolbar: the compact Vocal Delay header must retain its owner
    brand and the stage transport at narrow Chromium/WebView viewports. */
 @media(max-width:600px){
  .mx-vthrow .vt-face-header{gap:4px}

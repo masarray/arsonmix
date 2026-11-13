@@ -18,7 +18,7 @@
 
 The download cards show the newest verified package available for each platform, including its version and size. Windows previews are published independently of Linux and macOS builds, so their version numbers may differ.
 
-Recent Windows previews add global mixer and supported VST3 parameter hotkeys, Harmonice stereo lead Pitch Tune and ensemble improvements, and native user presets for EQ, Compressor, Harmonice, and Vocal Throw. For the scope of an installed build, match its version to the [release notes](https://github.com/masarray/arsonmix/releases).
+The built-in effect is now named **Vocal Delay** (formerly Vocal Throw); saved sessions and presets retain the original internal identity. Recent Windows previews add global mixer and supported VST3 parameter hotkeys, Harmonice stereo lead Pitch Tune and ensemble improvements, and native user presets for EQ, Compressor, Harmonice, and Vocal Delay. For the scope of an installed build, match its version to the [release notes](https://github.com/masarray/arsonmix/releases).
 
 ## Get started
 

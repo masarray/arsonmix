@@ -295,3 +295,20 @@ test('M2B existing BUS supports group, parallel FX, rollback and feedback safety
     'mixerDraftActive=true','Native 32-send budget reached'])
     assert.ok(m.includes(part),part);
 });
+
+test('Vocal Delay is public name, preserved Vocal Throw catalog identity loads old sessions',()=>{
+  const picker=read('scripts/compose_native_peq.py');
+  const editor=read('site/preview-v2/assets/mixer-native-vocal-throw.js');
+  const processor=read('engine/builtin_fx/VocalThrowProcessor.h');
+  const catalog=read('src/NativeBuiltInFx.h');
+  const bridge=read('web/approved-native-bridge.js');
+  for(const source of [picker,editor,processor,catalog,bridge])assert.match(source,/Vocal Delay/);
+  assert.match(picker,/\['vocal delay','vocal throw','throw'/);
+  assert.match(picker,/if\(t\.fx\[index\]==='Vocal Delay'\|\|t\.fx\[index\]==='ArSon Vocal Throw'\)/);
+  assert.match(editor,/>VOCAL DELAY</);
+  assert.match(editor,/const ID="armix\.builtin\.vocal-throw\.v1"/);
+  assert.match(processor,/getName\(\) const override \{return "Vocal Delay";\}/);
+  assert.match(catalog,/VocalThrowProcessor::catalogIdentity,"Vocal Delay"/);
+  assert.match(bridge,/id:"armix\.builtin\.vocal-throw\.v1",name:"Vocal Delay"/);
+  assert.doesNotMatch(editor,/>VOCAL THROW</);
+});

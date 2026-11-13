@@ -1,4 +1,4 @@
-"""Real approved /preview/ bundle: ArSon Vocal Throw picker, insert, native ACK.
+"""Real approved /preview/ bundle: Vocal Delay picker, insert, native ACK.
 The JUCE event transport is emulated, NOT the native DSP nor singing quality.
 DSP is independently tested in standalone CTest on Windows."""
 import base64
@@ -88,7 +88,8 @@ def main():
             strip.locator('.fx-pick.empty').first.click()
             picker=page.locator("#fastResults [data-fast-native-throw]")
             picker.wait_for(state="visible")
-            assert picker.count()==1,"exactly one Vocal Throw built-in picker option"
+            assert picker.count()==1,"exactly one Vocal Delay built-in picker option"
+            assert picker.locator(".fast-effect-title").inner_text()=="Vocal Delay"
             picker.click()
             intents=page.evaluate("""()=>window.__nativeIntents.filter(
                 x=>x.operation==='LOAD_INSERT')""")
@@ -98,16 +99,18 @@ def main():
             state["graph"].update(revision="3",rosterRevision="3")
             state["graph"]["channels"][0]["fxRackBypassed"]=False
             state["graph"]["channels"][0]["inserts"].append({
-                "id":INSTANCE,"catalogId":ID,"name":"ArSon Vocal Throw","bypassed":False})
+                "id":INSTANCE,"catalogId":ID,"name":"Vocal Delay","bypassed":False})
             state["mixerSession"].update(routeRevision="3",rosterRevision="3",
                 channels=copy.deepcopy(state["graph"]["channels"]))
             ack(page,state,intents[0]);emit(page,"arMixConsoleSnapshot",state)
             row=strip.locator('.fxslot-row[data-insert-id="'+INSTANCE+'"]')
             row.wait_for(state="visible")
-            # Picker closes and Vocal Throw opens only after verified graph
+            # Picker closes and Vocal Delay opens only after verified graph
             # readback. Test its real Close then reopen through the rack.
             editor=page.locator("#mxNativeVocalThrow")
             editor.wait_for(state="visible")
+            assert editor.locator(".brand-name").inner_text()=="VOCAL DELAY"
+            assert editor.get_attribute("aria-label")=="Vocal Delay"
             editor.locator("#vtClose").click()
             assert editor.is_hidden()
             row.locator('[data-action="openPlugin"]').click()
@@ -127,7 +130,7 @@ def main():
             assert editor.locator("#vtPower").get_attribute("data-fx-state")=="on"
             assert editor.locator("#vtPower").get_attribute("aria-pressed")=="true"
             # EQ and Compressor have ONE CSS owner for 24px Close and 26px
-            # Power hit boxes, the same as Vocal Throw (no local overrides).
+            # Power hit boxes, the same as Vocal Delay (no local overrides).
             close_box=editor.locator("#vtClose").bounding_box()
             power_box=editor.locator("#vtPower").bounding_box()
             assert close_box and power_box
@@ -461,7 +464,7 @@ def main():
             assert not errors,(width,errors)
             page.close()
         browser.close()
-    print("PASS: ArSon Vocal Throw native picker/ACK/manual cue/compact editor in 2 viewports")
+    print("PASS: Vocal Delay native picker/ACK/manual cue/compact editor in 2 viewports")
 
 if __name__=="__main__":
     main()
