@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
-#include "GuitarProgramModel.h"
+#include "GuitarFactoryTones.h"
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -23,19 +23,8 @@ public:
         float ampGain=4.f,ampTonePole=0.5f,ampVolume=0.7f;
     };
 
-    static Program startingProgram() noexcept {
-        Program p{};
-        p.count=4;
-        p.blocks[0]={1,Module::gate,true,{}};
-        p.blocks[1]={2,Module::overdrive,false,{}};
-        p.blocks[2]={3,Module::amplifier,true,{}};
-        p.blocks[3]={4,Module::cabinet,true,{}};
-        p.blocks[0].values[0]=0.22f;
-        p.blocks[1].values[0]=0.45f;
-        p.blocks[2].values[0]=0.20f;
-        p.blocks[2].values[1]=0.57f;
-        p.blocks[2].values[2]=0.66f;
-        return p;
+    static constexpr Program startingProgram() noexcept {
+        return factoryTone(0);
     }
 
     // M1 supports exactly the four stages represented by its native
