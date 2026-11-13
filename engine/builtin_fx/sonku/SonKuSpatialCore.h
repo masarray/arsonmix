@@ -86,6 +86,13 @@ public:
         for(int i=0;i<samples;++i) {
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
+            // Land exactly on the accepted parameter once close enough.
+            // Without the snap a one-pole asymptote never becomes bit-exact
+            // dry and can retain unnecessary tiny FP tails indefinitely.
+            if(std::abs(smoothedMix_-settings_.spatialMix)<1.e-6f)
+                smoothedMix_=settings_.spatialMix;
+            if(std::abs(smoothedTrim_-settings_.outputTrim)<1.e-6f)
+                smoothedTrim_=settings_.outputTrim;
             const float dryLevel=1.f-smoothedMix_;
             const float binauralLevel=0.5f*smoothedMix_*smoothedTrim_;
             if(remaining_==0) {

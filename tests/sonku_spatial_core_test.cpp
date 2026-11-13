@@ -122,6 +122,13 @@ int main() {
             assert(std::abs(fadeR[i]-fadeR[i-1])<.04f);
         }
         moving.spatialMix=0.f; assert(chunked.setSettings(moving));
+        // The knob transition is deliberately clickless; zero wet is exact
+        // after its finite smoothing interval, not the first sample.
+        std::array<float,128> settleL{},settleR{};
+        for(int block=0;block<80;++block) {
+            settleL.fill(0.f);settleR.fill(0.f);
+            chunked.process(settleL.data(),settleR.data(),128);
+        }
         std::array<float,32> dryL{},dryR{};dryL.fill(.17f);dryR.fill(-.29f);
         chunked.process(dryL.data(),dryR.data(),32);
         for(int i=0;i<32;++i){assert(std::abs(dryL[i]-.17f)<1.e-6f);assert(std::abs(dryR[i]+.29f)<1.e-6f);}
