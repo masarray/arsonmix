@@ -398,11 +398,11 @@ void writeDirectionalRoomAudio(const std::filesystem::path& dir) {
     }
     std::ofstream guide(dir/"P2-HEADPHONE-LISTENING.txt");
     if(!guide)throw std::runtime_error("Missing P2 guide output");
-    guide<<"Four 2s SonKu A/B WAVs: identical original synth source.\\n"
-         <<"FRONT / REAR; compare light ER vs measured directional ER.\\n"
-         <<"Unmodified direct KEMAR, same output trim and room amount.\\n"
-         <<"Headphones only, safe playback gain, no OS spatial enhancer.\\n"
-         <<"These audio files are NOT subjective externalization proof.\\n";
+    guide<<"Four 2s SonKu A/B WAVs: identical original synth source.\n"
+         <<"FRONT / REAR; compare light ER vs measured directional ER.\n"
+         <<"Unmodified direct KEMAR, same output trim and room amount.\n"
+         <<"Headphones only, safe playback gain, no OS spatial enhancer.\n"
+         <<"These audio files are NOT subjective externalization proof.\n";
 }
 // Shared by the whole listening package and the fast PR-scoped integrity
 // experiment. No expensive 20-second room renders in the new fast lane.
