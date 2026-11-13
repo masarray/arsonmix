@@ -39,7 +39,12 @@ function Get-FatSha256([string] $Path) {
 $manifestPath=Join-Path $root 'BUILD_PROVENANCE.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Missing BUILD_PROVENANCE.json: extract the complete verified Windows FAT ZIP first' }
 $m=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ([string]$m.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE') { throw 'Unexpected hardware qualification claim' }
+# A portable FIELD preview is intentionally NOT full-CTest qualified.
+# Accept it as a manual field-test input only, with the same exact EXE and
+# collector SHA checks below; never convert it into a release certification.
+if ([string]$m.fatStatus -notin @('SOFTWARE_VERIFIED_PREVIEW_CANDIDATE','FIELD_PREVIEW_FULL_CTEST_NOT_RUN')) {
+  throw 'Unexpected or unapproved software qualification status'
+}
 if ([string]$m.sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Invalid exact source SHA' }
 if ([string]$m.fatCollectorSha256 -notmatch '^[a-f0-9]{64}$') { throw 'Missing FAT collector provenance' }
 $selfHash=(Get-FatSha256 -Path $PSCommandPath)

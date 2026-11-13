@@ -153,6 +153,28 @@ test('FAT bundle retains the reviewed first-sound guide and SHA protection',()=>
     assert.ok(quick.includes(text),text);
 });
 
+test('FIELD preview provenance is accepted by BOTH verifiers without counterfeit full FAT',()=>{
+ const gate=read('scripts/m3e_fat_evidence_gate.mjs');
+ const collector=read('scripts/collect_hardware_fat_windows.ps1');
+ const expected='FIELD_PREVIEW_FULL_CTEST_NOT_RUN';
+ const legacy='SOFTWARE_VERIFIED_PREVIEW_CANDIDATE';
+ for(const contents of [gate,collector]){
+   assert.ok(contents.includes(expected),'field marker missing from artifact verifier/collector');
+   assert.ok(contents.includes(legacy),'legacy full-software marker removed');
+ }
+ assert.match(gate,/M3E_PACKAGE_QUALIFICATIONS\.includes\(manifest\.fatStatus\)/);
+ assert.match(gate,/hardwareCertified:false/);
+ assert.match(gate,/releaseReady:false/);
+ assert.match(collector,/-notin @\('SOFTWARE_VERIFIED_PREVIEW_CANDIDATE','FIELD_PREVIEW_FULL_CTEST_NOT_RUN'\)/);
+ assert.match(collector,/FAT collector was modified after packaging/);
+ const mark=workflow.indexOf('Mark unqualified field preview BEFORE independent distribution verification');
+ const set=workflow.indexOf("fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'");
+ const verifyStep=workflow.indexOf('Independently verify release ZIP and embedded GUI/engine before upload');
+ const upload=workflow.indexOf('Upload portable Windows field preview');
+ assert.ok(mark>=0 && set>mark && verifyStep>set && upload>verifyStep);
+ assert.match(verify,/node scripts\/m3e_fat_evidence_gate\.mjs \$OutputDir/);
+});
+
 test('M3-E same-SHA native ZIP carries SHA-pinned FAT tools and no fake hardware claims',()=>{
   const p=read('scripts/package_native_windows.ps1');
   const v=read('scripts/verify_native_windows_artifact.ps1');

@@ -77,10 +77,62 @@ message(STATUS "${ARMIX_GUI_BUNDLE_LOG}")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_BINARIES CONFIGURE_DEPENDS
     "${ARMIX_APPROVED_GUI_DIR}/assets/*")
 list(SORT ARMIX_APPROVED_GUI_BINARIES)
-# Original Guitar FX artwork is embedded ONLY for the installed JUCE
-# plugin editor; it never becomes a second /preview/ or runtime file path.
+# Generate only the active, independent Guitar FX hardware layers before
+# globs are evaluated. Never embed deprecated prototype pictures or pictures
+# of non-playable modules (no chorus/reverb/etc in this native rig).
+# All ON/OFF layers use identical geometry and are drawn inside fixed bounds.
+find_program(ARMIX_GUITAR_NODE_EXECUTABLE NAMES node REQUIRED)
+execute_process(
+    COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_guitar_fx_layered_assets.mjs"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE ARMIX_GUITAR_ART_RESULT
+    OUTPUT_VARIABLE ARMIX_GUITAR_ART_LOG
+    ERROR_VARIABLE ARMIX_GUITAR_ART_ERROR)
+if(NOT ARMIX_GUITAR_ART_RESULT EQUAL 0)
+    message(FATAL_ERROR "Guitar FX layer generation failed: ${ARMIX_GUITAR_ART_ERROR}")
+endif()
+message(STATUS "${ARMIX_GUITAR_ART_LOG}")
+# Optional hi-resolution artist layers are copied on top of the deterministic
+# fallback *at configure time*, never loaded at runtime from user paths.
+# Art approval adds the 12 PNGs to artist-source/; the source/audio contract
+# remains unchanged. The shipped binary contains embedded PNG bytes only.
+set(ARMIX_GUITAR_ART_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/artist-source"
+    CACHE PATH "Optional approved photo-real Guitar FX artist PNG source")
+if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+    # Reject incomplete/misaligned artist exports before CMake embeds them.
+    # A changed ON/OFF silhouette or outer frame would cause visible flicker.
+    execute_process(
+        COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_guitar_fx_artist_source.mjs"
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}"
+        RESULT_VARIABLE ARMIX_GUITAR_ART_CHECK_RESULT
+        OUTPUT_VARIABLE ARMIX_GUITAR_ART_CHECK_LOG
+        ERROR_VARIABLE ARMIX_GUITAR_ART_CHECK_ERROR)
+    if(NOT ARMIX_GUITAR_ART_CHECK_RESULT EQUAL 0)
+        message(FATAL_ERROR
+            "Invalid Guitar FX artist layers: ${ARMIX_GUITAR_ART_CHECK_ERROR}")
+    endif()
+    message(STATUS "${ARMIX_GUITAR_ART_CHECK_LOG}")
+    foreach(ARMIX_GFX_ASSET
+        gfx-amp-head.png gfx-cabinet.png gfx-pedal-gate-body.png
+        gfx-pedal-drive-body.png gfx-knob.png gfx-switch-off.png
+        gfx-switch-on.png gfx-button-off.png gfx-button-on.png
+        gfx-panel.png gfx-stomp-off.png gfx-stomp-on.png)
+        if(NOT EXISTS "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}")
+            message(FATAL_ERROR "Incomplete approved Guitar FX art source: ${ARMIX_GFX_ASSET}")
+        endif()
+        configure_file(
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/${ARMIX_GFX_ASSET}"
+            COPYONLY)
+    endforeach()
+    message(STATUS "Guitar FX approved layered artist art selected")
+else()
+    message(STATUS "Guitar FX deterministic layered fallback selected")
+endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/*.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
@@ -88,7 +140,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
 # Limit the flag to C++ (not Windows .rc/resource compilation).
@@ -166,6 +218,39 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  # LMS M2: portable native DSP kernel, prepared off-RT and exercised with
+  # actual PCM blocks. This is NOT a second mixer callback or device graph.
+  add_executable(ARMixSpeakerPcmTests tests/lms_prepared_speaker_pcm_test.cpp
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
+      COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerDraftAckReadbackTests
+      tests/lms_native_draft_ack_readback_test.cpp
+      engine/core/DynamicNativeSessionPublisher.h
+      engine/lms/NativeSpeakerOutputReservation.h)
+  target_compile_features(ARMixSpeakerDraftAckReadbackTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeSameGraphDesignAckReadbackAndStaleRevocation
+      COMMAND ARMixSpeakerDraftAckReadbackTests)
+  add_executable(ARMixSpeakerPostFxMainWitnessTests
+      tests/lms_native_postfx_main_witness_test.cpp
+      engine/lms/PreparedSpeakerSystem.h
+      engine/core/DynamicNativeSessionPublisher.h)
+  target_compile_features(ARMixSpeakerPostFxMainWitnessTests PRIVATE cxx_std_20)
+  add_test(NAME LMSOneAcceptedNativeMainFxToEightWayShadowPcm
+      COMMAND ARMixSpeakerPostFxMainWitnessTests)
+  add_executable(ARMixSpeakerOutputReservationTests
+      tests/lms_native_output_reservation_test.cpp
+      engine/lms/NativeSpeakerOutputReservation.h
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerOutputReservationTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeAcceptedChannelIdExclusiveAsioOutputGuard
+      COMMAND ARMixSpeakerOutputReservationTests)
+  add_executable(ARMixSpeakerRealtimeTests tests/lms_synthetic_realtime_budget_test.cpp
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerRealtimeTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeFourWayStereoZeroCallbackHeap
+      COMMAND ARMixSpeakerRealtimeTests)
   juce_add_console_app(ARMixFactoryFxRegistryTests PRODUCT_NAME "ArSonMix Factory FX Integrity Tests")
   target_sources(ARMixFactoryFxRegistryTests PRIVATE tests/factory_fx_registry_test.cpp src/FactoryFxRegistry.h)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
@@ -205,6 +290,18 @@ if(BUILD_TESTING)
   add_test(NAME BuiltInFxUserPresetFourRealJuceAdaptersAndColdReopen
       COMMAND ARMixBuiltInFxAcceptedSnapshotTests)
 
+  # Native 8D-SonKu non-JUCE measured-HRIR PCM and deterministic orbit fixture.
+  add_executable(ARMixSonKuCoreTests tests/sonku_spatial_core_test.cpp)
+  target_compile_features(ARMixSonKuCoreTests PRIVATE cxx_std_20)
+  add_test(NAME NativeSonKuMeasuredBinauralDirectionalAndChunkParity COMMAND ARMixSonKuCoreTests)
+  # Real JUCE processor: audio-applied ACK, v1/v2 state, corruption fences.
+  juce_add_console_app(ARMixSonKuNativeStateTests PRODUCT_NAME "ArSonMix SonKu Native State Tests")
+  target_sources(ARMixSonKuNativeStateTests PRIVATE tests/sonku_native_state_test.cpp)
+  target_link_libraries(ARMixSonKuNativeStateTests PRIVATE
+      juce::juce_audio_processors juce::juce_recommended_config_flags)
+  target_compile_features(ARMixSonKuNativeStateTests PRIVATE cxx_std_20)
+  add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
+      COMMAND ARMixSonKuNativeStateTests)
   # Pure control-plane first-run routing selection: no JUCE, drivers,
   # WASAPI activation or callback dependencies. Full Windows CTest gate.
   add_executable(ARMixFirstRunEndpointPolicyTests

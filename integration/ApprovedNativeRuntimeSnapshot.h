@@ -295,6 +295,7 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("SET_FADER"));
         available.add(juce::String("SET_PAN"));
     }
+    if(has("NATIVE_SET_INPUT_GAIN"))available.add(juce::String("SET_INPUT_GAIN"));
     if(has("NATIVE_SET_CHANNEL_MUTE_SOLO")) {
         available.add(juce::String("SET_MUTE"));
         available.add(juce::String("SET_SOLO"));
@@ -306,6 +307,8 @@ inline bool projectInstalledNativeChannelIdGraph(
         available.add(juce::String("APPLY_WIRE_TRANSACTION"));
     if(has("NATIVE_SET_WIRE_GAIN"))
         available.add(juce::String("SET_WIRE_GAIN"));
+    if(has("NATIVE_SET_SEND_ENABLED"))
+        available.add(juce::String("SET_SEND_ENABLED"));
     if(has("NATIVE_SET_PROCESSING_FORMAT"))
         available.add(juce::String("SET_PROCESSING_FORMAT"));
     if(has("NATIVE_REMOVE_INSERT"))available.add(juce::String("REMOVE_INSERT"));

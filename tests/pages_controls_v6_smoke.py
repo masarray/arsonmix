@@ -40,11 +40,20 @@ def assert_ownership():
     # Still verifies every V26 owner fingerprint and V25 migrated material.
     from css_v26_restore import restore_owner,manifest as v26_manifest
     from css_v25_restore import manifest as v25_manifest
-    original_v25_key=restore_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"])
+    # The owner-approved historical V26 fixture used the internal
+    # data-hw-kind="cue" spelling. The current one-GUI preview now displays
+    # the semantic "pfl" hardware kind while retaining data-action="cue".
+    # Normalize ONLY this exact selector to reconstruct immutable V25/V26
+    # evidence; never rewrite its original CSS fixture or weaken the check.
+    old_selector='data-hw-kind="cue"'
+    live_selector='data-hw-kind="pfl"'
+    assert css.count(live_selector)==1 and old_selector not in css
+    historical_css=css.replace(live_selector,old_selector)
+    original_v25_key=restore_owner(historical_css,v26_manifest()["sources"]["mixer-control-keys.css"])
     v30=v25_manifest()["movedCss"]
     assert original_v25_key.startswith(v30)
     modern_v6=original_v25_key[len(v30):]
-    assert css.endswith(modern_v6),"V6 modern MUTE/SOLO/PFL CSS changed"
+    assert historical_css.endswith(modern_v6),"V6 original hardware CSS drifted beyond the PFL selector"
     assert css.count("!important")-modern_v6.count("!important")==83
     assert modern_v6.count("!important")<=14, "V6 key owner priority budget regressed"
 
@@ -79,7 +88,7 @@ async def assert_mixer(page, width):
         background:s.backgroundImage,focus:e.getAttribute('aria-label')
       };
     })""")
-    assert [d["kind"] for d in details]==["mute","solo","cue"],details
+    assert [d["kind"] for d in details]==["mute","solo","pfl"],details
     assert [d["action"] for d in details]==["mute","solo","cue"],details
     assert [d["label"] for d in details]==["MUTE","SOLO","PFL"],details
     assert [d["led"] for d in details]==["255,78,90","255,207,68","101,210,236"],details

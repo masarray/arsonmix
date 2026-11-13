@@ -117,14 +117,27 @@ async def visual(page,width):
     if width==1680:
       await page.screenshot(path='pages-v7-embedded-inter-utility-1680.png')
     # MUTE is an independent CSS/HTML caption; SOLO/PFL retain SVG masks.
-    for k in ('mute','solo','cue'):
+    # The accepted hardware key identity is 'pfl'; its action is 'cue'.
+    # Never confuse data-hw-kind with the internal click-handler action.
+    for k in ('mute','solo','pfl'):
       key=row.locator(f'.mx-hw-row button[data-hw-kind="{k}"]')
+      # FX/FORMAT toggles asynchronously re-render this strip; wait for the
+      # post-render DOM instead of sampling a transient detached key.
+      await key.wait_for(state="attached",timeout=6000)
       assert await key.count()==1
       if k=='mute':
         assert await key.locator('.mx-mute-face .mx-mute-legend').inner_text()=='MUTE'
         assert await key.locator('svg,img').count()==0
       else:
-        assert await key.locator('svg.mx-hw-face mask text').count()==1
+        # The SVG is inserted by the one authoritative resize-aware hardware
+        # renderer after the button enters the DOM. Assert the real mask and
+        # embossed legend, not merely the presence of an inert button.
+        legend=key.locator('svg.mx-hw-face mask text')
+        await legend.wait_for(state="attached",timeout=6000)
+        assert await legend.count()==1
+        # SVG <text> is SVGTextElement, not HTMLElement: Playwright's
+        # inner_text() fails in Chromium despite the valid painted legend.
+        assert (await legend.text_content())==('PFL' if k=='pfl' else 'SOLO')
 
 async def main():
     source_contract()

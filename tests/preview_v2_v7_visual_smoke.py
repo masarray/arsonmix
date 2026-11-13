@@ -42,7 +42,16 @@ def audit_geometry(page, title):
                 if(a!==b)problems.push('top/bottom channel color mismatch '+tag);
             }
             const controls=[...t.querySelectorAll('.switch-section.mx-hw-row > button.mx-hw-key')];
-            if(controls.length!==3)problems.push('MUTE/SOLO/PFL count !=3 '+tag);
+            // MASTER has only MUTE/SOLO; there is no independent MAIN PFL
+            // tap. All regular channels retain the three approved keys.
+            const master=t===m, expected=master?['mute','solo']:['mute','solo','pfl'];
+            const kinds=controls.map(c=>c.dataset.hwKind);
+            const actions=controls.map(c=>c.dataset.action);
+            const expectedActions=master?['mute','solo']:['mute','solo','cue'];
+            if(kinds.join(',')!==expected.join(',')||
+               actions.join(',')!==expectedActions.join(','))
+                problems.push('unexpected physical MUTE/SOLO/PFL identity '+tag+
+                    ' kinds='+kinds.join(',')+' actions='+actions.join(','));
             else {
                 if(Math.max(...controls.map(c=>r(c).width))-Math.min(...controls.map(c=>r(c).width))>1.8)
                     problems.push('inconsistent V6 button widths '+tag);
