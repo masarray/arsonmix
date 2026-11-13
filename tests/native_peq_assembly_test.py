@@ -75,8 +75,17 @@ class NativeParametricEqIntegration(unittest.TestCase):
         # rather than displaying the old face PNG upside-down. The legacy
         # PNG is still packaged for historical/checkpoint builds.
         self.assertIn('id="skListenerArt"',sonku)
-        self.assertIn('id="skCrown"',sonku)
-        self.assertIn('id="skBackSuit"',sonku)
+        self.assertIn('href="assets/sonku-listener-top.png"',sonku)
+        self.assertIn('data-orientation="front-up-flipped"',sonku)
+        self.assertNotIn('id="skCrown"',sonku)
+        self.assertNotIn('id="skBackSuit"',sonku)
+        # Alpha-palette PNG asset is the exact vertically flipped user-approved
+        # listener; fail if a stale provisional source is repackaged.
+        import hashlib
+        self.assertEqual(hashlib.sha256(png).hexdigest(),
+            "e4fa2f75a541615448dd2d2b0bcbbf7955428900b3bdba8ad45c1ff7374fefc8")
+        self.assertEqual(png[16:24],bytes([0,0,1,0,0,0,1,0]))
+        self.assertIn(b"tRNS",png)
         self.assertIn("FRONT</text>",sonku)
         self.assertIn('arMixBuiltinSonKuAck',sonku)
         self.assertIn('nativeSonKuSet',sonku)
