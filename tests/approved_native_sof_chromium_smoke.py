@@ -155,7 +155,7 @@ def exercise(browser, out, width, height):
     ack(page,state,level)
     state["graph"]["edges"][1]["gainLinear"] = level["payload"]["gainLinear"]
     emit(page,"arMixConsoleSnapshot",state)
-    fader.blur()
+    fader.evaluate("el=>el.blur()")
     emit(page,"arMixConsoleSnapshot",state)
     assert state["graph"]["channels"][0]["controls"]["faderDb"]==-7.5
     assert intent_list(page,"SET_FADER")==[]
