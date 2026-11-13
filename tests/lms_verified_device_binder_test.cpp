@@ -39,7 +39,7 @@ int main(){
     assert(out.verifiedRequest.verifiedPorts.size()==8);
     assert(out.verifiedRequest.verifiedPorts[4].callbackOrdinal==4);
     assert(p.verifiedPorts[0].callbackOrdinal==0);
-    assert(out.verifiedInventory.mainL==0&&!out.verifiedInventory.mayWritePhysicalAudio);
+    assert(out.verifiedInventory.mainL==0 && out.verifiedInventory.allOutputsDisarmed);
     const auto original=out.verifiedRequest.outputs[0].portIdentity;
     auto reject=[&](SpeakerBindFault wanted){
         const auto res=NativeSpeakerDeviceBinder::bind(p,d,99,out);
