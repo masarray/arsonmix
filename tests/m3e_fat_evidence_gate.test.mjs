@@ -72,6 +72,41 @@ test('no captured hardware record is PENDING, even if package hashes/PE match',(
   assert.equal(r.hardwareCertified,false);assert.equal(r.releaseReady,false);
  }finally{clean(d);}
 });
+test('exact field preview package is integrity-verified but NEVER a public FAT approval',()=>{
+ const d=makeTemp();try{
+  const p=makePackage(d);
+  p.m.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN';p.save();
+  const verified=inspectM3ePackage(d);
+  assert.equal(verified.build,'EXE_AND_FAT_BYTES_VERIFIED');
+  assert.equal(verified.softwareQualification,'FIELD_PREVIEW_FULL_CTEST_NOT_RUN');
+  const assessment=assessM3eFat(d);
+  assert.equal(assessment.build,'EXE_AND_FAT_BYTES_VERIFIED');
+  assert.equal(assessment.nativePcm,'PENDING_NATIVE_CALLBACK_PROOF');
+  assert.equal(assessment.physical,'PENDING');
+  assert.equal(assessment.releaseReady,false);
+  assert.equal(assessment.hardwareCertified,false);
+  assert.match(assessment.blockers.join(' '),/No physical FAT_RUNS.json/);
+  // Both package modes must independently attest the same EXE and tools.
+  writeFileSync(join(d,'collect_hardware_fat_windows.ps1'),'tampered');
+  assert.equal(assessM3eFat(d).build,'BLOCKED');
+  assert.match(assessM3eFat(d).blockers.join(' '),/SHA256 mismatch/);
+ }finally{clean(d);}
+});
+
+test('unknown, blank or forged software qualification claims remain fail-closed',()=>{
+ const d=makeTemp();try{
+  const p=makePackage(d);
+  for(const value of ['','FULL_CTEST_PASS','HARDWARE_CERTIFIED',
+                      'FIELD_PREVIEW_FULL_CTEST_NOT_RUN_EXTRA',null]){
+    p.m.fatStatus=value;p.save();
+    assert.equal(assessM3eFat(d).build,'BLOCKED',String(value));
+  }
+  p.m.fatStatus='SOFTWARE_VERIFIED_PREVIEW_CANDIDATE';p.save();
+  assert.equal(inspectM3ePackage(d).softwareQualification,
+               'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE');
+ }finally{clean(d);}
+});
+
 test('native PE target, original package SHA and approved GUI are required',()=>{
  const d=makeTemp();try{
   const p=makePackage(d);
