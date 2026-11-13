@@ -159,12 +159,40 @@ void digital_ceiling() {
     const float ceiling=static_cast<float>(std::pow(10.,-12./20.));
     for(const float sample:out.data[0])assert(sample<=ceiling+1.e-6f);
 }
+void per_output_peq() {
+    auto r=base(1,false);
+    r.outputs={patch("peq","ASIO#37/OUT-1",0,0)};
+    r.outputs[0].peq.push_back({1000.,1.,6.});
+    auto system=prepared(r);
+    Outputs out(8);
+    std::array<float,256> in{};
+    double inPower=0.,outPower=0.;
+    for(int block=0;block<200;++block){
+        for(int i=0;i<256;++i){
+            const double time=(block*256+i)/48000.;
+            in[i]=static_cast<float>(.1*std::sin(2*pi*1000.*time));
+        }
+        assert(system->process(71,14,in.data(),nullptr,out.raw.data(),8,256,true));
+        if(block<10)continue;
+        for(int i=0;i<256;++i){
+            inPower+=in[i]*in[i];
+            outPower+=out.data[0][i]*out.data[0][i];
+        }
+    }
+    const auto gain=std::sqrt(outPower/inPower);
+    assert(gain>1.93&&gain<2.07); // 6 dB peaking EQ, true PCM
+    r.outputs[0].peq[0].q=0.;
+    std::unique_ptr<PreparedSpeakerSystem> rejected=std::move(system);
+    const auto bad=PreparedSpeakerSystem::prepare(r,rejected);
+    assert(bad.fault==SpeakerPlanFault::invalidOutputDsp);
+    assert(rejected&&rejected->destinationCount()==1); // rollback
+}
 int main(){
     validate();
     frequency(100.,1.,0.);
     frequency(1000.,.5,.5);
     frequency(10000.,0.,1.);
-    hardware_guard_and_alias();delay_fanout_and_mute();digital_ceiling();
+    hardware_guard_and_alias();delay_fanout_and_mute();digital_ceiling();per_output_peq();
     for(int ways=1;ways<=4;++ways)
         assert(prepared(base(ways))->sectionCount()==static_cast<std::size_t>(2*ways));
     std::cout<<"PASS LMS prepared PCM: LR4, routing, epoch, DSP and delay\n";
