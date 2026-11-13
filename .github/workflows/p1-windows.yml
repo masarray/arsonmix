@@ -202,6 +202,8 @@ jobs:
           "$RUNNER_TEMP/armix-lms-post-main"
           g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_native_draft_ack_readback_test.cpp -o "$RUNNER_TEMP/armix-lms-ack"
           "$RUNNER_TEMP/armix-lms-ack"
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_verified_device_binder_test.cpp -o "$RUNNER_TEMP/armix-lms-device"
+          "$RUNNER_TEMP/armix-lms-device"
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |
