@@ -101,8 +101,15 @@ def exercise(browser,out,width,height):
       image.onerror=()=>resolve(false);
       image.src='assets/sonku-listener-top.png';
     })"""), "Listener PNG did not load"
-    labels=editor.locator("#skMap .sk-direction").all_inner_texts()
-    assert labels==["REAR","FRONT","RIGHT","LEFT"],labels
+    # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
+    # HTMLElement.innerText for these nodes. Read SVG textContent and verify
+    # the actual anchors, so front/rear cannot silently flip in the GUI.
+    direction=editor.locator("#skMap .sk-direction")
+    labels=direction.evaluate_all(
+        "(nodes)=>nodes.map(n=>({text:n.textContent.trim(),x:Number(n.getAttribute('x')),y:Number(n.getAttribute('y'))}))")
+    assert [x["text"] for x in labels]==["REAR","FRONT","RIGHT","LEFT"],labels
+    assert labels[0]["y"]<60 and labels[1]["y"]>290,labels
+    assert labels[2]["x"]<50 and labels[3]["x"]>300,labels
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
