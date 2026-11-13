@@ -338,6 +338,10 @@ public:
         // synchronous native controls with JUCE's existing resize constrainer.
         setLookAndFeel (&mixerCaption_);
         setUsingNativeTitleBar (false);
+        // DocumentWindow creates its caption buttons before ConsoleWindow
+        // installs its own LookAndFeel. Recreate them explicitly from the
+        // approved native SVG factory; never leave stock JUCE buttons here.
+        setTitleBarButtonsRequired (allButtons, false);
         setTitleBarHeight (31);
 #else
         setUsingNativeTitleBar (true);
@@ -380,6 +384,24 @@ public:
         juce::DocumentWindow::resized();
         if (getContentComponent() == &browser_ && browser_.isShowing())
             browser_.resized();
+    }
+
+    void activeWindowStatusChanged() override
+    {
+        juce::DocumentWindow::activeWindowStatusChanged();
+#if defined(_WIN32)
+        // JUCE disables DocumentWindow caption buttons when isActiveWindow()
+        // is false. WebView2 has its own child HWND/focus lifetime; this can
+        // temporarily report the mixer as inactive even while its native
+        // caption is visible and the user is clicking its controls.
+        // Windows caption commands must remain interactable on an inactive
+        // window: the first pointer click can activate it and perform the
+        // requested minimise/maximise/close action.
+        // No timers, synthetic clicks, forced foreground or WebView roundtrip.
+        for (auto* control : { getMinimiseButton(), getMaximiseButton(), getCloseButton() })
+            if (control != nullptr)
+                control->setEnabled (true);
+#endif
     }
 
     ~ConsoleWindow() override
