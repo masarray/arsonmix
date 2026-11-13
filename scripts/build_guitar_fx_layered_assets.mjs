@@ -18,7 +18,9 @@ export const SKINS = Object.freeze([
   ["gfx-switch-on.png",200,74,"switchOn"],
   ["gfx-button-off.png",280,80,"buttonOff"],
   ["gfx-button-on.png",280,80,"buttonOn"],
-  ["gfx-panel.png",800,330,"panel"]
+  ["gfx-panel.png",800,330,"panel"],
+  ["gfx-stomp-off.png",110,110,"stompOff"],
+  ["gfx-stomp-on.png",110,110,"stompOn"]
 ]);
 const clamp = x => Math.max(0,Math.min(255,Math.round(x)));
 const sdBox=(x,y,l,t,r,b,rad)=>{
@@ -48,6 +50,15 @@ const pixel=(spec,x,y)=>{
     const v=110+66*shine+Math.sin(a*32)*3+Math.cos(d*350)*3;
     if(Y<.39&&Y>.205&&Math.abs(X-.5)<.024)return [247,214,149,255];
     return metal(v,6);
+  }
+  if(kind==="stompOn"||kind==="stompOff"){
+    // Shared aperture and body, only LED ring brightness changes.
+    const d=Math.hypot(X-.5,Y-.5);
+    if(d>.47)return [0,0,0,0];
+    if(d>.42)return metal(22+grain*2,24);
+    if(d>.32)return metal(65+12*Math.sin(d*140),kind==="stompOn"?96:55);
+    if(d>.26)return metal(42,48);
+    return metal(120+35*Math.max(0,1-d/.26),13);
   }
   if(kind==="switchOn"||kind==="switchOff"){
     // Same exact body geometry/alpha, independent of state. No flicker.
