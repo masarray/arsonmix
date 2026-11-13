@@ -23,10 +23,13 @@ def source_contract():
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
                  "WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160",
-                 "const WIRE_RETRACT_MS=900",
+                 "const WIRE_RETRACT_MS=520",
                  "function wireRetractPose(x0,y0,rx,ry,elapsedMs)",
+                 "function wireRetractWave(pose,t)",
                  "function wireRetractPathData(x0,y0,rx,ry,elapsedMs)",
-                 "const passed=pose.front-t; // positive only AFTER OUT-origin front passes",
+                 "const endWave=wireRetractWave(pose,1)",
+                 "plug.setAttribute('cy',shape.pose.tipY.toFixed(1))",
+                 "const passed=pose.front-t; // first near OUT, then all along the cable",
                  "svg.style.clipPath='none'",
                  "const width=.65-.29*longMix",
                  "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
@@ -363,7 +366,17 @@ def test_replug_and_retract(page):
     source_x=cx(src.bounding_box())
     assert abs(moved[0]-source_x)<abs(first[0]-source_x)-3,\
         ("unplug cable did not begin retracting immediately",first,moved)
-    assert moved[1]<=first[1]+2,("unplug must not drop free plug downward",first,moved)
+    assert abs(moved[1]-first[1])<18,("free plug whipped beyond elastic envelope",first,moved)
+    # The free plug must be attached to the *moving wave tip*, not a
+    # rigid circle on the straight interpolation chord.
+    tip_gap=overlay.evaluate("""el=>{
+      const path=el.querySelector('[data-wire-retract-jacket]');
+      const plug=el.querySelector('[data-wire-retract-plug]');
+      const end=path.getPointAtLength(path.getTotalLength());
+      return Math.hypot(end.x-Number(plug.getAttribute('cx')),
+                        end.y-Number(plug.getAttribute('cy')));
+    }""")
+    assert tip_gap<.25,("free plug is detached from the wavy jacket",tip_gap)
     assert jacket.get_attribute("d")!=first_path,"reel never animated the jacket"
     assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none"
 
@@ -371,7 +384,7 @@ def test_replug_and_retract(page):
     # launch near OUT first and only later reach the moving free end. Both
     # physical endpoints must remain welded to their sockets and the source
     # of the wave must not reverse into IN->OUT plug-in behavior.
-    model=HTML[HTML.index("const WIRE_RETRACT_MS=900"):
+    model=HTML[HTML.index("const WIRE_RETRACT_MS=520"):
                HTML.index("function startWireRetraction(")]
     physics=page.evaluate("()=>{\n"+model+"""\n
       const chord=400;
@@ -382,25 +395,37 @@ def test_replug_and_retract(page):
         const baseline=pose.sag*Math.sin(Math.PI*t);
         return ys[2*i+1]-baseline;
       };
-      const early=wireRetractPathData(0,0,chord,0,145);
-      const middle=wireRetractPathData(0,0,chord,0,570);
+      const early=wireRetractPathData(0,0,chord,0,135);
+      const middle=wireRetractPathData(0,0,chord,0,220);
+      const flex=wireRetractPathData(0,0,chord,0,175);
       const finished=wireRetractPathData(0,0,chord,0,WIRE_RETRACT_MS);
+      const shortPose=wireRetractPose(0,0,80,0,115);
+      const longPose=wireRetractPose(0,0,chord,0,115);
       return {
-        nearOutEarly:deviation(145,8),farEarly:deviation(145,51),
-        farLater:deviation(570,48),sourceAnchor:deviation(145,0),
-        freeAnchor:deviation(145,64),
+        nearOutEarly:deviation(40,8),farEarly:deviation(40,51),
+        midAfter:deviation(125,32),farAfter:deviation(155,48),
+        freeTipWave:deviation(175,64),
+        sourceAnchor:deviation(175,0),
         halfwayX:middle.pose.x,earlyX:early.pose.x,
-        completeX:finished.pose.x,completeY:finished.pose.y,
+        tipX:flex.pose.tipX,tipY:flex.pose.tipY,
+        completeX:finished.pose.tipX,completeY:finished.pose.tipY,
+        shortAmplitude:shortPose.amplitude,longAmplitude:longPose.amplitude,
         startPhase:early.pose.phase,finishAmplitude:finished.pose.amplitude
       };
     }""")
-    assert physics["nearOutEarly"]< -2,("outgoing whip did not launch at OUT",physics)
-    assert abs(physics["farEarly"])<.4,("wave appears at free end before leaving OUT",physics)
-    assert physics["farLater"]<-.25,("wavy failed to travel toward moving end",physics)
-    assert abs(physics["sourceAnchor"])<.25 and abs(physics["freeAnchor"])<.25,\
-        ("cable path cannot pull physical sockets off anchor",physics)
-    assert 0<physics["halfwayX"]<physics["earlyX"]<400,physics
+    assert abs(physics["nearOutEarly"])>2,("reel has no abrupt OUT-origin whip",physics)
+    assert abs(physics["farEarly"])<.4,("free tip moves before OUT-origin front arrives",physics)
+    assert abs(physics["midAfter"])>2 and abs(physics["farAfter"])>2,\
+        ("wavy must travel through the whole jacket, not just near OUT",physics)
+    assert abs(physics["freeTipWave"])>3,\
+        ("loose plug remains rigid when wave arrives",physics)
+    assert abs(physics["sourceAnchor"])<.25,("OUT socket endpoint shifted",physics)
+    assert 0<physics["halfwayX"]<physics["earlyX"]<270,\
+        ("reel does not accelerate much faster than V64",physics)
+    assert abs(physics["tipY"])>3,("tip never reacts to wave",physics)
     assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
+    assert physics["shortAmplitude"]<physics["longAmplitude"]*.65,\
+        ("one-strip WIRE should not whip as violently as four strips",physics)
     assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
     overlay.wait_for(state="detached",timeout=2500)
@@ -432,7 +457,7 @@ def run():
                 page.close()
         finally:
             browser.close()
-    print("PASS V64 Chromium: accepted plug IN-to-OUT and unplug OUT-to-free-end wave while active reel, no ghost graph")
+    print("PASS V65 Chromium: fast OUT reel, full-span travelling wave, flexible free plug and no ghost graph")
 
 
 if __name__=="__main__":
