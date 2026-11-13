@@ -63,7 +63,7 @@ public:
         Edit stale{};
         while(queued_.pop(stale)) {
             pending_.fetch_sub(1,std::memory_order_release);
-            lastCompletion_={stale.requestId,stale.program,false};
+            lastCompletion_={stale.requestId,stale.program,false,stale.bank};
         }
         fadeLeft_=0;
         ready_=maxBlock>=16&&maxBlock<=8192&&
