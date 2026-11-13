@@ -154,6 +154,52 @@ int main() {
                                        std::abs(tailR[i]-squareR[i]);
         }
         assert(lateDifference>.001);
+        // Native M4 SPACE contract: the typed settings now traverse the
+        // real core rather than a browser-only slider. Direct HRTF remains
+        // identical before the first delayed reflection/reverb sample.
+        {
+            auto baseline=std::make_unique<SonKuSpatialCore>();
+            auto space=std::make_unique<SonKuSpatialCore>();
+            assert(baseline->prepare(rate)&&space->prepare(rate));
+            Settings nativeSettings=roomSettings;
+            nativeSettings.roomAmount=.55f;
+            nativeSettings.ambienceAmount=.30f;
+            assert(valid(nativeSettings));
+            assert(baseline->setSettings(roomSettings));
+            assert(space->setSettings(nativeSettings));
+            assert(space->settings().roomAmount==.55f);
+            assert(space->settings().ambienceAmount==.30f);
+            std::array<float,4096> baseL{},baseR{},spL{},spR{};
+            baseL[0]=baseR[0]=spL[0]=spR[0]=.5f;
+            baseline->process(baseL.data(),baseR.data(),4096);
+            space->process(spL.data(),spR.data(),4096);
+            double spaceDifference=0.;
+            for(int i=0;i<4096;++i) {
+                assert(std::isfinite(spL[i])&&std::isfinite(spR[i]));
+                if(i<180)assert(spL[i]==baseL[i]&&spR[i]==baseR[i]);
+                if(i>180)spaceDifference+=std::abs(spL[i]-baseL[i])+
+                                          std::abs(spR[i]-baseR[i]);
+            }
+            assert(spaceDifference>.001);
+            Settings off=nativeSettings;
+            off.roomAmount=off.ambienceAmount=0.f;
+            assert(space->setSettings(off));
+            std::array<float,128> zerosL{},zerosR{};
+            for(int block=0;block<100;++block) {
+                zerosL.fill(0.f);zerosR.fill(0.f);
+                space->process(zerosL.data(),zerosR.data(),128);
+            }
+            assert(space->setSettings(nativeSettings)); // O(1) reactivation
+            std::array<float,128> restartL{},restartR{};
+            restartL[0]=restartR[0]=.4f;
+            space->process(restartL.data(),restartR.data(),128);
+            for(int i=0;i<128;++i) {
+                assert(std::isfinite(restartL[i])&&std::isfinite(restartR[i]));
+            }
+            Settings invalidSpace=nativeSettings;
+            invalidSpace.ambienceAmount=1.1f;
+            assert(!space->setSettings(invalidSpace));
+        }
         // Explicit approved square parameters remain PCM-identical. Radius
         // attenuation works even with early reflections disabled, so SPACE
         // and DISTANCE remain independent, not one misleading "big hall" knob.
