@@ -51,6 +51,21 @@ const socket=(x,y,cx,cy,r=23)=>{
   if(d>r-4)return grey(47+8*sine(d*1.7));
   return grey(31+2*(cy-y)/r);
 };
+// Original deterministic material detail: inset fasteners and visible brushed
+// metal reflections are geometry, not separate interactive controls.
+const screw=(x,y,cx,cy,r=6)=>{
+  const dx=x-cx,dy=y-cy,d=Math.hypot(dx,dy);
+  if(d>r+1)return null;
+  if(d>r-.7)return grey(24);
+  if(d>r-2.3)return metal(119+26*(-dy+dx*.35)/r,noise(x,y,185,5));
+  const v=80+27*(-dy+dx*.35)/r+noise(x,y,184,6);
+  if(Math.abs(dy-dx*.3)<.85&&d<r*.64)return grey(20);
+  return metal(v);
+};
+const weave=(x,y)=>Math.sin((x+y)*1.83)*Math.sin((x-y)*1.88)*4.5
+                     +Math.sin(x*2.17)*Math.cos(y*2.11)*1.8;
+const micro=(x,y,seed)=>noise(x,y,seed,14)+
+                      .7*noise(Math.floor(x/3),Math.floor(y/3),seed+7,11);
 const pixel=(spec,x,y)=>{
   const [,w,h,kind]=spec, X=x/w,Y=y/h;
   // Every ON/OFF pair shares the SAME material grain and immovable shell.
@@ -107,81 +122,149 @@ const pixel=(spec,x,y)=>{
   }
   if(kind==="amp"){
     const e=sdBox(x,y,8,8,w-9,h-10,24);
-    if(e>0)return [0,0,0,0];
-    if(e>-5)return grey(42+17*(1-Y)+n*.45);
-    const seam=sdBox(x,y,17,17,w-18,h-18,17);
-    if(seam>-3)return grey(18+7*(1-Y)+n*.4);
-    // Separate upper tolex grille and satin control fascia, not a generic panel.
-    if(y<177){
-      if(y>166)return rgb(93+6*(1-Y),86+7*(1-Y),75+7*(1-Y),n*.3);
-      const mesh=3.5*sine((x+y)*.84)+3.5*sine((x-y)*.93);
-      const rimshade=Math.min(16,Math.abs(x-w*.5)*.027);
-      return rgb(22+mesh+18*(1-Y)-rimshade,23+mesh+18*(1-Y)-rimshade,
-                 23+mesh+18*(1-Y)-rimshade,n*.5);
+    if(e>0)return [0,0,0,0]; // immutable asset silhouette / alpha bounds
+    const fasteners=[[37,36],[683,36],[37,264],[683,264]];
+    for(const [cx,cy] of fasteners){
+      const bolt=screw(x,y,cx,cy,5);
+      if(bolt)return bolt;
     }
-    if(y<186)return metal(33+n*.3);
-    if(y>272)return grey(28+14*(1-Y)+n*.4);
-    const brushed=3*sine(y*2.4)+noise(x,y,49,4);
-    const sheen=13*shadow(x,y,w,h);
-    const face=94+sheen+brushed+10*(1-Y);
+    if(e>-5) {
+      const band=40+19*(1-Y)+micro(x,y,102)*.4;
+      return grey(band+Math.max(0,4+e)*4);
+    }
+    const seam=sdBox(x,y,17,17,w-18,h-18,17);
+    if(seam>-3)return grey(19+13*(1-Y)+micro(x,y,103)*.23);
+    const tolex=micro(x,y,107)*.55;
+    // Grille fabric is tightly woven and subtly directional. The inset grille
+    // is a real textile surface, not the full hardware skin framed by gold.
+    if(y<177){
+      if(y>165){
+        const lip=90+12*(1-Y)+4*Math.sin(y*.8);
+        return rgb(lip+5,lip+2,lip-5,micro(x,y,108)*.2);
+      }
+      if(y<34) return rgb(24+8*(1-Y),25+8*(1-Y),26+8*(1-Y),tolex);
+      const highlight=9*Math.max(0,1-Math.abs(y-62)/80);
+      const grille=26+weave(x,y)*.79+highlight+13*(1-Y)-
+                   Math.min(12,Math.abs(x-w*.5)*.029);
+      // A low-profile metallic identification badge, not a false control.
+      if(x>303&&x<417&&y>77&&y<113){
+        const badge=sdBox(x,y,304,78,416,112,5);
+        if(badge>-2)return metal(114+micro(x,y,109)*.4);
+        return grey(42+6*(1-Y)+micro(x,y,110)*.2);
+      }
+      return rgb(grille+1,grille+2,grille+3,tolex*.44);
+    }
+    if(y<186)return metal(28+4*Math.sin(x*.27)+tolex*.15);
+    if(y>272)return grey(30+17*(1-Y)+micro(x,y,111)*.38);
+    // Steel front fascia uses anisotropic brushing, clean corner highlights
+    // and carefully dimensioned empty holes; standalone JUCE knobs overlay.
     for(const [cx,cy] of mounts.amp.knobCenters){
       const hole=socket(x,y,cx,cy,26);
-      if(hole)return hole; // EMPTY mount: separate JUCE knob
+      if(hole)return hole;
     }
-    return rgb(face+10,face+5,face-1,n*.25);
+    const brushed=2.5*Math.sin(y*2.6)+micro(x,y,112)*.42;
+    const longSheen=22*Math.exp(-Math.pow((y-207)/25,2));
+    const local=8*(1-X)+9*(1-Y)+4*Math.sin((x+48)*.011);
+    const face=89+brushed+longSheen+local;
+    return rgb(face+11,face+8,face+3);
   }
   if(kind==="cab"){
     const e=sdBox(x,y,7,9,w-8,h-11,19);
     if(e>0)return [0,0,0,0];
-    if(e>-6)return grey(18+13*(1-Y)+n*.55);
+    if(e>-6)return grey(18+17*(1-Y)+micro(x,y,167)*.55);
     const seam=sdBox(x,y,25,27,w-26,h-28,9);
-    if(seam>-4)return grey(56+8*(1-Y)+n*.5);
-    // Two plausible 12-inch speaker circles behind a real textile grille.
-    const centres=[w*.30,w*.70],cy=h*.53;
+    if(seam>-4)return grey(49+10*(1-Y)+micro(x,y,168)*.35);
+    // Four restrained fasteners and inset cloth: no broad decorative frame.
+    for(const [cx,cy] of [[39,41],[681,41],[39,257],[681,257]]){
+       const bolt=screw(x,y,cx,cy,4);
+       if(bolt)return bolt;
+    }
+    // Twin 12-inch black loudspeaker cones, concentric surround and dust caps
+    // viewed through woven speaker grille: several non-flat radial surfaces.
     let cone=0;
-    for(const cx of centres){
-      const d=radial(x,y,cx,cy)/110;
-      if(d<1.05){
-        const rim=d>.93?-.05:0;
-        const bowl=d<.45?-.26:(d<.79?-.48:.11);
-        cone+=bowl+rim;
+    for(const cx of [w*.30,w*.70]){
+      const dx=x-cx,dy=y-h*.53;
+      const d=Math.hypot(dx,dy)/110;
+      const angle=Math.atan2(dy,dx);
+      if(d<1.055){
+        const ripple=Math.sin(d*56+angle*9)*1.8;
+        if(d>.96) cone-=12+ripple;
+        else if(d>.84) cone+=10-3*Math.cos(d*24);
+        else if(d>.47) cone-=22+15*(.84-d)+ripple;
+        else if(d>.20) cone-=29+4*Math.sin(d*17);
+        else cone-=15+6*(1-d/.2);
       }
     }
-    const weave=3.2*sine((x+y)*2.3)+3.2*sine((x-y)*2.3);
-    const lighting=8*(1-Y)+13*shadow(x,y,w,h);
-    const v=52+lighting+cone*46+weave;
-    return rgb(v,v+1,v+2,n*.55);
+    const cloth=weave(x,y)*1.17;
+    const lighting=13*(1-Y)+19*shadow(x,y,w,h);
+    const vignette=8*Math.pow(Math.abs(X-.48),1.4);
+    const v=56+lighting+cone+cloth-vignette+micro(x,y,173)*.24;
+    // Understated embossed make plate; cabinet speaker texture stays visible.
+    if(x>594&&x<663&&y>242&&y<262) {
+       const plate=sdBox(x,y,594,242,663,262,3);
+       if(plate>-1.5)return metal(81+micro(x,y,174)*.2);
+       return grey(34+8*(1-Y));
+    }
+    return rgb(v,v+.6,v+1.4);
   }
   if(kind==="gate"||kind==="drive"){
     const gate=kind==="gate";
-    // Different chassis tooling: slim powder-coated studio gate vs sloped,
-    // warm oxidised-aluminium overdrive. Matching canvas != identical body.
+    // Physically distinct powder-coated cast gate vs sloped anodised drive.
     const r=gate?24:39;
     const edge=gate?sdBox(x,y,19,9,w-20,h-10,r):
         sdBox(x,y,10,20,w-11,h-19,r);
     if(edge>0)return [0,0,0,0];
-    if(edge>-5)return gate?rgb(28,46,50,n*.8):rgb(73,40,29,n*.8);
-    const inside=gate?sdBox(x,y,26,16,w-27,h-17,r-7):
+    // Drive enclosure has angled side walls above its lower casting, unlike
+    // the narrow round-rectangle gate. The lower extremal alpha is unchanged.
+    const taper=gate?0:Math.max(0,(300-y)/300*18);
+    if(!gate&&(x<10+taper||x>289-taper))return [0,0,0,0];
+    const grain=micro(x,y,gate?211:313);
+    const glint=25*shadow(x,y,w,h);
+    if(edge>-5){
+       const light=29+18*(1-Y)+5*(-edge)/5;
+       return gate?rgb(light,light+15,light+18,grain*.48):
+                   rgb(light+38,light+8,light-4,grain*.50);
+    }
+    const inset=gate?sdBox(x,y,26,16,w-27,h-17,r-7):
                        sdBox(x,y,18,28,w-19,h-27,r-9);
-    if(inside>-3)return gate?rgb(69,92,95,n*.8):rgb(141,78,48,n*.8);
-    const glint=17*shadow(x,y,w,h);
-    const powder=noise(x,y,gate?211:313,15);
-    let base=gate?rgb(39+glint,76+glint,83+glint,powder*.55):
-                   rgb(128+glint,69+glint*.65,37+glint*.4,powder*.62);
-    // Distinct industrial shaping; no oversize holes or baked footswitch.
-    if(!gate){
-      if(y>h*.56 && y<h*.575)return rgb(88,47,31,n*.4);
-      if(x<33||x>w-33)base=rgb(108+glint,57+glint,34,powder*.5);
-    }else if(x>40&&x<w-40&&y>h*.595&&y<h*.608)
-      base=rgb(32,56,61,n*.5);
+    if(inset>-3)return gate?
+        rgb(64+9*(1-Y),89+11*(1-Y),92+14*(1-Y),grain*.36):
+        rgb(146+10*(1-Y),83+13*(1-Y),50+13*(1-Y),grain*.42);
+    // High-contrast flush metal corner fasteners are noninteractive chassis.
+    for(const [cx,cy] of gate?
+       [[47,48],[253,48],[47,385],[253,385]]:
+       [[43,62],[257,62],[43,384],[257,384]]) {
+      const bolt=screw(x,y,cx,cy,7);
+      if(bolt)return bolt;
+    }
+    const light=13*(1-Y)+glint;
+    const subtleWave=2.2*Math.sin(y*.43)+2.5*Math.sin(x*.042);
+    let base=gate?
+       rgb(34+light,75+light,80+light,grain*.58+subtleWave):
+       rgb(126+light,67+light*.8,40+light*.6,
+           grain*.54+2*Math.sin(y*1.4));
+    if(gate){
+      // One engraved service stripe, not an enclosing frame.
+      if(x>39&&x<261&&y>h*.595&&y<h*.606)
+         base=rgb(32+light*.5,56+light*.5,60+light*.5,grain*.3);
+      if(x>42&&x<258&&y>31&&y<37)
+         base=rgb(68+light,109+light,113+light,grain*.27);
+    }else{
+      // Industrial side casting with recessed equator and dark satin lower
+      // casting. No false "knobs" or footswitch baked into the body.
+      if(y>h*.56&&y<h*.575)return rgb(78+light*.5,43+light*.4,29+light*.3,grain*.31);
+      if(y>h*.60)base=rgb(113+light,61+light*.8,38+light*.7,grain*.57);
+      if(x<31||x>w-31)base=rgb(101+light,51+light*.6,30+light*.4,grain*.38);
+    }
     const mount=mounts[kind];
+    // Leave physically measured *empty* mounting recesses; JUCE owns the
+    // independent PNG knobs, footswitch and live LED signal color.
     for(const [cx,cy] of mount.knobCenters){
       const hole=socket(x,y,cx,cy,27);
       if(hole)return hole;
     }
     const foot=socket(x,y,mount.footswitch[0],mount.footswitch[1],30);
     if(foot)return foot;
-    // Small LED recess, no state burned into chassis.
     const led=socket(x,y,mount.led[0],mount.led[1],10);
     if(led)return led;
     return base;
