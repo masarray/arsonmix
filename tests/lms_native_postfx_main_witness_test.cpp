@@ -175,8 +175,9 @@ int main() {
     assert(!native.render(epoch+1,inputs.data(),2,mainL.data(),mainR.data(),
         Witness::maxFrames,false,fx,nullptr,nullptr,{},{},{},nullptr,0,observer));
     assert(witness.observations==count);
+    // Invalid zero quantum cannot read/write outside caller-provided arrays.
     assert(!native.render(epoch,inputs.data(),2,mainL.data(),mainR.data(),
-        Witness::maxFrames+1,false,fx,nullptr,nullptr,{},{},{},nullptr,0,observer));
+        0,false,fx,nullptr,nullptr,{},{},{},nullptr,0,observer));
     assert(witness.observations==count);
     native.unpublish();native.pollRetirement();
     std::puts("PASS LMS: one accepted ChannelId MAIN FX render -> 8 isolated crossover outputs, zero callback heap, no physical write");
