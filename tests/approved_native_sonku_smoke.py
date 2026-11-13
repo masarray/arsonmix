@@ -234,8 +234,10 @@ def exercise(browser,out,width,height):
             assert data[0]["layer"]==data[1]["layer"]==expected,(degrees,data)
         return data[0]["ax"],data[0]["ay"],data[0]
     x,y,front=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-front-depth-{width}.png")
     x,y,right=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
     x,y,rear=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-rear-depth-{width}.png")
     x,y,left=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
     assert front["depth"]=="far" and rear["depth"]=="near"
     assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
@@ -257,6 +259,7 @@ def exercise(browser,out,width,height):
     pair=editor.locator("#skMap .sk-src").evaluate_all(
         "els=>els.map(n=>({layer:n.parentElement.id,depth:n.dataset.depth}))")
     assert {v["depth"] for v in pair}=={"far","near"},pair
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-split-depth-{width}.png")
     page.wait_for_timeout(270)
     accepted_snapshot(page,state,{**SETTINGS,"moving":False,
         "startAzimuthDegrees":-90.0,"stereoSpreadDegrees":0.0})
