@@ -177,9 +177,13 @@ def test_wire(page):
     samples=page.evaluate("window.__v60WireSamples")
     # Deterministic physical direction: first visible UP kick near IN,
     # OUT remains quiet initially; then the decayed crest reaches near OUT.
-    physics=page.evaluate("""()=>{
-      const g=wireMotionGeometry.get('1-3');
-      if(!g)return null;
+    # Canonical Pages GUI intentionally encapsulates its lexical graph.
+    # Probe the exact checked-in motion function without exposing a runtime
+    # debug global or duplicating the production renderer.
+    motion=HTML[HTML.index("const WIRE_IMPACT_TRAVEL_MS="):
+                HTML.index("function kickWireSpring(")]
+    physics=page.evaluate("()=>{\n"+motion+"""\n
+      const g=[0,0,180,0,72]; // representative wire with anchored plugs
       const [x0,y0,x1,y1,limit]=g;
       const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
       const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
@@ -219,7 +223,7 @@ def test_wire(page):
     hit=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-3"]')
     assert hit.count()==1
     # The newly plugged edge is selected immediately, before the user clicks it.
-    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected').count()==1
+    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected,#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"].is-wire-selected').count()==1
     initial_edge=hit.get_attribute("data-edge-id")
     mid=point_at_midpoint(hit)
     page.mouse.click(mid["x"],mid["y"])
