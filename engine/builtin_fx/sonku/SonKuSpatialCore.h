@@ -68,9 +68,10 @@ public:
         if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
         reset();
         ready_=true;
-        // On device restore, settings_ may already equal the saved state;
-        // republish targets even when no new UI edit occurs.
-        return applyAcousticSettings(settings_);
+        // Re-publish a saved active scene after device restart, but do NOT
+        // select the new realtime FDN program for the legacy/offline default:
+        // original Studio Glue / Airy Chamber listening renders remain exact.
+        return settings_.spacePreset==0 || applyAcousticSettings(settings_);
     }
     void reset() noexcept {
         for(auto& channel:history_)channel.fill(0.f);
