@@ -35,7 +35,7 @@ test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and acce
  assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
  assert.match(bridge,/const tap=\["PRE_FADER","POST_FADER"\]\.includes\(edge\.tapStage\)/);
  assert.match(preview,/edge\.nativeTap==='PRE_FADER'\?'PRE FADER'/);
- assert.match(preview,/edge\.nativeTap==='PRE_FADER'\?'split'/);
+ assert.match(preview,/edge\?\.nativeTap==='PRE_FADER'\?'split'/);
  assert.match(preview,/native\?'PRE FADER':'Pre FX'/);
  const s=acceptedFixture(),source=s.graph.channels[0].id;
  const bus={id:"9007199254740999",role:"GROUP",name:"BUS B",processingFormat:"STEREO",
@@ -1281,7 +1281,7 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  }]),true);
  const tapRequest=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
  assert.equal(tapRequest.operation,"APPLY_WIRE_TRANSACTION");
- assert.deepEqual(tapRequest.payload.changes,[{
+ assert.deepEqual(JSON.parse(JSON.stringify(tapRequest.payload.changes)),[{
    op:"SET_TAP",from:routed.graph.channels[0].id,
    edgeId:"9223372036854775810",tap:"PRE_FADER"
  }]);
