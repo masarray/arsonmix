@@ -832,10 +832,17 @@
 #wireLayer path.wire-incoming-line.is-wire-selected,
 #wireLayer path.wire-outgoing-line.is-wire-selected,
 #wireLayer path.wire-context-line.is-wire-selected{
- stroke:color-mix(in srgb,var(--wire-selected-hue,#88dfff) 54%,#ffffff 46%)!important;
- stroke-width:5.6px!important;opacity:1!important;
+ stroke:color-mix(in srgb,var(--wire-selected-hue,#88dfff) 78%,#ffffff 22%)!important;
+ stroke-width:3.45px!important;opacity:.98!important;
  stroke-dasharray:none!important;
  filter:none!important;
+}
+/* A cable being actively pulled is already the operator's selected cable;
+   its preview uses the same quiet highlight as an accepted cable, never glow. */
+#wireLayer path.wire-drag-line.is-wire-selected{
+ stroke:color-mix(in srgb,var(--wire-selected-hue,#88dfff) 78%,#ffffff 22%)!important;
+ stroke-width:3.45px!important;opacity:.98!important;
+ stroke-dasharray:none!important;filter:none!important;
 }
 /* Source selection is temporary intent, while cable connection derives only
    from the committed route model. No phantom lit output without an edge. */
