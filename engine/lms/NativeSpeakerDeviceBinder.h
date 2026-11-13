@@ -18,7 +18,7 @@ struct TrustedSpeakerDeviceView final {
     std::uint64_t deviceEpoch=0,graphRevision=0,mainChannelId=0;
     std::string backend,deviceIdentity;
     double sampleRate=0.;
-    int callbackOutputs=0;
+    int callbackOutputs=0,maxFrames=0;
     int mainL=-1,mainR=-1,monitorL=-1,monitorR=-1;
     bool acceptedPcm=false,exactDeviceMask=false,allOutputsDisarmed=false;
     std::vector<VerifiedOutputPort> actualEnabledPorts;
