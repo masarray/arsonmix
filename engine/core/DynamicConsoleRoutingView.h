@@ -20,12 +20,14 @@ struct ConsoleSendView final {
     float gain=1.f,pan=0.f;
     bool preFader=false;
     std::uint64_t edgeId=0;
+    bool enabled=true;
 };
 struct ConsoleEdgeView final {
     std::uint64_t edgeId=0;
     ChannelId from{},to{};
     float gainLinear=1.f;
     bool preFader=false,primaryOutput=false;
+    bool enabled=true;
 };
 struct ConsoleChannelView final {
     ChannelId id{};
@@ -33,6 +35,7 @@ struct ConsoleChannelView final {
     ProcessingFormat format=ProcessingFormat::mono;
     std::string name;
     ChannelId primaryOutput{}; // zero is genuine OUT NONE, NOT muted parallel sends
+    float inputGainLinear=1.f; // accepted digital pre-insert stage
     std::vector<ConsoleSendView> parallelSends;
     std::vector<ChannelId> primarySources;
     std::vector<ChannelId> parallelSendSources;
@@ -70,7 +73,7 @@ public:
                 return false;
             ConsoleChannelView item;
             item.id=row.id;item.role=row.role;item.format=row.format;
-            item.name=row.name;
+            item.name=row.name;item.inputGainLinear=row.inputGainLinear;
             if(row.role==ChannelRole::main) {
                 if(next.main.value)return false;
                 next.main=row.id;
@@ -90,7 +93,7 @@ public:
                 if(it==index.end() || !link.edgeId ||
                    !acceptedEdgeIds.insert(link.edgeId).second)return false;
                 next.edges.push_back({link.edgeId,sender.id,link.destination,
-                    link.gain,link.preFader,link.primaryOutput});
+                    link.gain,link.preFader,link.primaryOutput,link.enabled});
                 auto& destination=next.channels[it->second];
                 if(link.primaryOutput) {
                     if(sender.primaryOutput.value || link.preFader ||
@@ -100,7 +103,7 @@ public:
                     destination.primarySources.push_back(sender.id);
                 } else {
                     sender.parallelSends.push_back(
-                        {link.destination,link.gain,link.pan,link.preFader,link.edgeId});
+                        {link.destination,link.gain,link.pan,link.preFader,link.edgeId,link.enabled});
                     // One source shown once in the Bus fan-in even if it has
                     // multiple legal taps to that destination.
                     if(std::find(destination.parallelSendSources.begin(),
