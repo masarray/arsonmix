@@ -205,6 +205,11 @@ static void verifyFirstSoundGuitarProcessor() {
         legacyWriter.writeInt(block.enabled?1:0);
         for(const float v:block.values)legacyWriter.writeFloat(v);
     }
+    // JUCE MemoryOutputStream reserves spare capacity in MemoryBlock until
+    // flush/destruction; getSize() is NOT the encoded payload length yet.
+    // This previously failed on MSVC after 91/92 other CTests passed.
+    assert(legacyWriter.getDataSize()==12u+4u*44u);
+    legacyWriter.flush();
     assert(legacy.getSize()==12u+4u*44u);
     auto legacyRestored=guitar->prepare(48000.,128,
         legacy.getData(),static_cast<int>(legacy.getSize()));
