@@ -163,6 +163,18 @@ public:
                 armix::mixer::ProcessingFormat::mono:
                 armix::mixer::ProcessingFormat::stereo;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_INPUT_GAIN") {
+            if(!(number.isDouble() || number.isInt() || number.isInt64()))
+                return bad("INVALID_INPUT_GAIN");
+            const auto db=static_cast<double>(number);
+            if(!std::isfinite(db) || db< -24. || db>24.)
+                return bad("INVALID_INPUT_GAIN");
+            const auto* target=editor_.roster().find(id);
+            if(!target || target->role!=Role::input)
+                return bad("INPUT_GAIN_NOT_APPLICABLE");
+            edit.kind=ChannelEdit::Kind::setInputGain;
+            edit.value=static_cast<float>(std::pow(10.,db/20.));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FADER" || operation=="SET_PAN") {
             if(!(number.isDouble() || number.isInt() || number.isInt64()))
                 return bad("INVALID_CONTROL_VALUE");
@@ -352,6 +364,7 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
+            "SET_INPUT_GAIN",
             "SET_SEND_ENABLED",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
@@ -373,6 +386,8 @@ public:
             set(controls,"faderDb",row.faderLinear>0.f?
                 std::max(-60.,20.*std::log10(static_cast<double>(row.faderLinear))):-60.);
             set(controls,"pan",static_cast<double>(row.pan));
+            set(controls,"inputGainDb",20.*std::log10(
+                std::max(1.e-12,static_cast<double>(row.inputGainLinear))));
             set(controls,"mute",row.mute);set(controls,"solo",row.solo);
             set(channel,"controls",controls);
             auto source=object();
