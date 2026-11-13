@@ -82,9 +82,15 @@ public:
         // Room geometry is the approved Square for the native SPACE
         // controls. Custom offline M3 geometry is not altered by these
         // native parameters. Both wet setters are O(1), including rearm.
-        if(s.roomAmount>0.f && !room_.active() &&
-           !room_.setShape(SonKuRoomShape::Square))return false;
-        if(!room_.setAmount(s.roomAmount) ||
+        // Do not overwrite already-configured offline acoustic trials
+        // merely because legacy motion settings are re-sent. Changes are
+        // strictly native-param deltas; old settings had both amounts OFF.
+        if(s.roomAmount!=settings_.roomAmount) {
+            if(s.roomAmount>0.f && !room_.active() &&
+               !room_.setShape(SonKuRoomShape::Square))return false;
+            if(!room_.setAmount(s.roomAmount))return false;
+        }
+        if(s.ambienceAmount!=settings_.ambienceAmount &&
            !reverb_.setAmount(s.ambienceAmount))return false;
         settings_=s;
         remaining_=0;
