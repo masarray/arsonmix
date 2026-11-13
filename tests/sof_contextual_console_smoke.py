@@ -34,6 +34,10 @@ def run() -> None:
         assert 'id="gainView"' in source and 'id="fxView"' in source
         assert 'id="mixContext"' in source
         assert "Never auto-patch or remove a WIRE at minimum send level." in source
+        assert "const send=sofEnabled&&t.kind==='audio';" in source, (
+            "Fader reset must inspect active SEND context instead of overwriting MAIN")
+        assert "nativeGainAvailable===true" in source, (
+            "Native input gain should be available only with installed capability")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -62,6 +66,14 @@ def run() -> None:
                     }""")
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
+                    # Double-click must use the same gain parameter path and restore unity.
+                    first.locator(".gain-dial").dblclick()
+                    assert "+0.0 dB" in first.locator(".gain-readout").inner_text()
+                    assert knob.input_value() == "0"
+                    knob.evaluate("""el => {
+                      el.value = '6.5';
+                      el.dispatchEvent(new Event('input', {bubbles:true}));
+                    }""")
 
                     fx.click()
                     assert first.locator(".is-gain-view").count() == 0
