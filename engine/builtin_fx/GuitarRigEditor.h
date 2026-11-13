@@ -296,8 +296,8 @@ public:
     }
     void resized() override {
         preset_.setBounds(getWidth()-280,16,258,33);
-        bankButtons_[0].setBounds(getWidth()-384,18,43,30);
-        bankButtons_[1].setBounds(getWidth()-337,18,43,30);
+        bankButtons_[0].setBounds(getWidth()-445,22,77,22);
+        bankButtons_[1].setBounds(getWidth()-360,22,77,22);
         status_.setBounds(16,getHeight()-105,175,46);
         for(std::size_t i=0;i<4;++i){
             library_[i].setBounds(18,216+static_cast<int>(i)*54,168,43);
@@ -305,7 +305,7 @@ public:
         for(std::size_t i=0;i<4;++i){
             const int x=228+static_cast<int>(i)*199;
             focusButtons_[i].setBounds(x,104,137,39);
-            power_[i].setBounds(x+141,107,51,32);
+            power_[i].setBounds(x+141,113,52,20);
         }
         stomp_.setBounds(stompBounds());
         for(std::size_t i=0;i<3;++i)
