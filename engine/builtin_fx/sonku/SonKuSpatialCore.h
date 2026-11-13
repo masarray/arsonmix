@@ -134,6 +134,10 @@ public:
     bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
         return room_.setShape(shape);
     }
+    // Experimental offline only. No persisted or native/UI renderer switch.
+    bool setDirectionalEarlyReflectionsHrir(bool on) noexcept {
+        return room_.setDirectionalHrir(on);
+    }
     // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
     bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
         return room_.setGeometry(geometry);
