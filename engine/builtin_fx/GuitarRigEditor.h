@@ -187,8 +187,17 @@ public:
             g.drawText(controlNames_[focus_][i],cx-40,549,110,22,
                        juce::Justification::centred);
             g.setColour(gold);
-            g.drawText(juce::String(draft_.blocks[focus_].values[i]*100.f,0)+"%",
-                       cx-40,570,110,18,juce::Justification::centred);
+            const float normalized=draft_.blocks[focus_].values[i];
+            juce::String reading;
+            if(focus_==0 && i==0)
+                reading=juce::String(-80.f+50.f*normalized,0)+" dB";
+            else if(focus_==0 && i==1)
+                reading=juce::String(120.f*normalized,0)+" ms";
+            else if(focus_==0 && i==2)
+                reading=juce::String(12.f+228.f*normalized,0)+" ms";
+            else reading=juce::String(normalized*100.f,0)+"%";
+            g.drawText(reading,cx-40,570,110,18,
+                       juce::Justification::centred);
             g.setColour(muted);
         }
         if(focus_==3){
@@ -311,7 +320,7 @@ private:
 #endif
     }
     std::size_t activeControlCount() const noexcept {
-        return focus_==2?3u:focus_==3?0u:1u;
+        return focus_==3?0u:(focus_==0||focus_==2)?3u:1u;
     }
     void refreshWidgets(){
         refreshing_=true;
@@ -395,7 +404,7 @@ private:
     static constexpr std::array<const char*,4> names_{
         "GATE","OVERDRIVE","AMPLIFIER","CABINET"};
     static constexpr std::array<std::array<const char*,3>,4> controlNames_{{
-        {"THRESHOLD","",""},
+        {"THRESHOLD","HOLD","RELEASE"},
         {"DRIVE","",""},
         {"GAIN","TONE","MASTER"},
         {"","",""}
