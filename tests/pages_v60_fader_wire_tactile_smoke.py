@@ -373,11 +373,11 @@ def test_replug_and_retract(page):
     # of the wave must not reverse into IN->OUT plug-in behavior.
     model=HTML[HTML.index("const WIRE_RETRACT_MS=900"):
                HTML.index("function startWireRetraction(")]
-    physics=page.evaluate("()=>{\\n"+model+"""\\n
+    physics=page.evaluate("()=>{\n"+model+"""\n
       const chord=400;
       const deviation=(ms,i)=>{
         const {d,pose}=wireRetractPathData(0,0,chord,0,ms);
-        const ys=d.match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
+        const ys=d.match(/-?\d+(?:\.\d+)?/g).map(Number);
         const t=i/64;
         const baseline=pose.sag*Math.sin(Math.PI*t);
         return ys[2*i+1]-baseline;
