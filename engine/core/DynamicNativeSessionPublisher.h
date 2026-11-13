@@ -67,6 +67,8 @@ public:
         bool available=false,hardwareApplied=false;
         std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
         std::uint64_t completedBlocks=0;
+        std::uint64_t capturedFrames=0,captureFrameLimit=0;
+        bool captureComplete=false; // last measured peak is historical
         float postMasterPeakL=0.f,postMasterPeakR=0.f;
         std::vector<std::pair<int,float>> isolatedOutputPeaks;
         std::vector<SpeakerDiagnosticProtection> outputProtection;
@@ -114,6 +116,8 @@ private:
         std::array<std::atomic<float>,256> lastPeaks{};
         std::atomic<float> inputPeakL{0.f},inputPeakR{0.f};
         std::atomic<std::uint64_t> completedBlocks{0};
+        std::atomic<std::uint64_t> capturedFrames{0};
+        std::uint64_t captureFrameLimit=0; // CONTROL-prepared fixed 2 s window
     };
     using DiagnosticPublisher=armix::rt::RealtimeRoutePublisher<SpeakerDiagnosticPrepared>;
     std::unique_ptr<SpeakerDraftReadback> speakerDraft_; // CONTROL readback
@@ -328,6 +332,12 @@ public:
             diagnostic->pcmRevision=request.graphRevision;
             diagnostic->designRevision=snapshot->designRevision;
             diagnostic->physicalCount=request.activeOutputChannels;
+            // The diagnostic doubles section processing only for a bounded
+            // two-second verification window. On a running show it MUST
+            // expire automatically; physical outputs remain disconnected.
+            // CONTROL uses trusted native sampleRate, not GUI milliseconds.
+            diagnostic->captureFrameLimit=static_cast<std::uint64_t>(
+                std::ceil(request.sampleRate*2.));
             diagnostic->scratch.resize(outputs*frames,0.f);
             diagnostic->pins.resize(static_cast<std::size_t>(request.activeOutputChannels),
                                     nullptr);
@@ -392,6 +402,8 @@ public:
         auto& diag=*snap->prepared;
         if(diag.pcmRevision!=pcmRevision || !diag.dsp ||
            diag.designRevision!=snap->graphRevision)return false;
+        const auto used=diag.capturedFrames.load(std::memory_order_relaxed);
+        if(used>=diag.captureFrameLimit)return false;
         const bool done=diag.dsp->process(epoch,pcmRevision,
             postMasterL,postMasterR,diag.pins.data(),diag.physicalCount,
             frames,true); // authorization is for PRIVATE scratch, not ASIO
@@ -416,6 +428,10 @@ public:
                 peak,std::memory_order_release);
         }
         diag.completedBlocks.fetch_add(1,std::memory_order_release);
+        // SINGLE audio-callback writer, no CAS or heap. A final accepted
+        // quantum can cross the frame limit by at most maxFrames-1 samples.
+        diag.capturedFrames.store(used+static_cast<std::uint64_t>(frames),
+                                  std::memory_order_release);
         return true;
     }
     // CONTROL only. Never infer hardware LIVE from these isolated PCM meters.
@@ -432,6 +448,9 @@ public:
         result.graphRevision=pcmRevision;
         result.designRevision=diag->designRevision;
         result.completedBlocks=diag->completedBlocks.load(std::memory_order_acquire);
+        result.capturedFrames=diag->capturedFrames.load(std::memory_order_acquire);
+        result.captureFrameLimit=diag->captureFrameLimit;
+        result.captureComplete=result.capturedFrames>=result.captureFrameLimit;
         result.postMasterPeakL=diag->inputPeakL.load(std::memory_order_acquire);
         result.postMasterPeakR=diag->inputPeakR.load(std::memory_order_acquire);
         for(std::size_t j=0;j<diag->ownedOrdinals.size();++j) {

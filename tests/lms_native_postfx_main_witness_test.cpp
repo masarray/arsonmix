@@ -209,6 +209,8 @@ int main() {
     assert(ack.ok()&&!ack.hardwareApplied);
     auto diag=native.speakerDiagnosticReadback(epoch,1);
     assert(diag.available && diag.completedBlocks==0);
+    assert(!diag.captureComplete && diag.capturedFrames==0);
+    assert(diag.captureFrameLimit==96000); // exactly two native seconds at 48k
     const auto noAlloc=allocations.load(std::memory_order_relaxed);
     std::uint64_t renderedRevision=0;
     for(int block=0;block<220;++block) {
@@ -228,6 +230,8 @@ int main() {
     assert(allocations.load(std::memory_order_relaxed)==noAlloc);
     diag=native.speakerDiagnosticReadback(epoch,1);
     assert(diag.available && diag.completedBlocks==220);
+    assert(!diag.captureComplete);
+    assert(diag.capturedFrames==220*Witness::maxFrames);
     assert(std::abs(diag.postMasterPeakL-.2f)<.0001f);
     assert(std::abs(diag.postMasterPeakR-.05f)<.0001f);
     assert(diag.isolatedOutputPeaks.size()==8);
@@ -263,6 +267,31 @@ int main() {
         mainL.data(),mainR.data(),Witness::maxFrames));
     diag=native.speakerDiagnosticReadback(epoch,1);
     assert(diag.postMasterPeakL==0.f && diag.postMasterPeakR==0.f);
+    // M10 CPU budget: even with an accepted design and continuous MAIN
+    // source, expensive 8-way diagnostics automatically expire. A speaker
+    // draft never activates a permanently running second DSP workload.
+    const auto capturedAllocations=allocations.load(std::memory_order_relaxed);
+    int acceptedRemaining=0;
+    for(int i=0;i<800;++i) {
+        if(!native.processSpeakerDiagnostic(epoch,1,
+            mainL.data(),mainR.data(),Witness::maxFrames))break;
+        ++acceptedRemaining;
+    }
+    assert(acceptedRemaining>100 && acceptedRemaining<300);
+    auto finalCapture=native.speakerDiagnosticReadback(epoch,1);
+    assert(finalCapture.available && !finalCapture.hardwareApplied);
+    assert(finalCapture.captureComplete);
+    assert(finalCapture.capturedFrames>=finalCapture.captureFrameLimit);
+    assert(finalCapture.completedBlocks==220+1+
+           static_cast<std::uint64_t>(acceptedRemaining));
+    for(int repeat=0;repeat<12;++repeat)
+        assert(!native.processSpeakerDiagnostic(epoch,1,
+            mainL.data(),mainR.data(),Witness::maxFrames));
+    assert(native.speakerDiagnosticReadback(epoch,1).completedBlocks==
+           finalCapture.completedBlocks);
+    assert(allocations.load(std::memory_order_relaxed)==capturedAllocations);
+    for(const auto& pin:driver)
+        for(float v:pin)assert(v==.8125f);
     native.revokeSpeakerDraft();
     assert(!native.speakerDiagnosticReadback(epoch,1).available);
     assert(!native.processSpeakerDiagnostic(epoch,1,
