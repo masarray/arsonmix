@@ -310,7 +310,8 @@ private:
     }
     // Positive azimuth is right. MIT KEMAR supplied azimuth 0..180 with
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
-    void interpolate(std::size_t source,double azimuth) noexcept {
+    using EarKernel=std::array<std::array<float,taps>,2>;
+    void interpolate(EarKernel& destination,double azimuth) noexcept {
         const double norm=wrapDegrees(azimuth);
         const bool swapped=norm>180.;
         const double positive=swapped?360.-norm:norm;
@@ -325,15 +326,40 @@ private:
                 const float next=scale*(static_cast<float>(bank_[lo][measuredEar][k])*(1.f-u)
                     + static_cast<float>(bank_[hi][measuredEar][k])*u);
                 // Recompute target every 16 samples, interpolate per sample.
-                targets_[source][ear][k]=next;
+                destination[ear][k]=next;
             }
         }
     }
     void updateKernels() noexcept {
-        interpolate(0,degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
-        interpolate(1,degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
-        // First prepared sample is a valid full-level measured HRIR; only
-        // subsequent direction edits slew, avoiding initial audio dropout.
+        interpolate(targets_[0],
+            degrees_-static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+        interpolate(targets_[1],
+            degrees_+static_cast<double>(settings_.stereoSpreadDegrees)*0.5);
+        // A stereo L=R object should become ONE virtual source at the central
+        // azimuth. Averaging two displaced HRIRs generates comb filtering
+        // (for example ~11dB attenuation near 2 kHz at rear/60° in KEMAR).
+        // Algebraic M/S projection, without a third convolution:
+        //  H_L' = H_L + mu*(H_center - (H_L+H_R)/2)
+        //  H_R' = H_R + mu*(H_center - (H_L+H_R)/2)
+        // The mid gets the true center HRIR as mu→1, while the SIDE
+        // transfer H_L'-H_R' is unchanged for ANY mu. Mono channel
+        // inputs/correlated scene intensity remain native PCM-only.
+        const float coherent=integrity_.coherentAmount();
+        if(coherent>1.e-5f && settings_.stereoSpreadDegrees>0.f) {
+            interpolate(centerTarget_,degrees_);
+            for(int ear=0;ear<2;++ear) {
+                for(int k=0;k<taps;++k) {
+                    const float half=.5f*
+                        (targets_[0][ear][k]+targets_[1][ear][k]);
+                    const float correction=coherent*
+                        (centerTarget_[ear][k]-half);
+                    targets_[0][ear][k]+=correction;
+                    targets_[1][ear][k]+=correction;
+                }
+            }
+        }
+        // The first prepared sample uses the original full-level measured
+        // HRIR; the correction and later direction edits slew per sample.
         if(!haveKernel_)kernels_=targets_;
         haveKernel_=true;
     }
@@ -342,6 +368,7 @@ private:
     std::array<std::array<float,taps>,2> history_{};
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
+    EarKernel centerTarget_{};  // fixed target coefficients, no extra PCM FIR
     Settings settings_{};
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};
