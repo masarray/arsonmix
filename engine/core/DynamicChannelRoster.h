@@ -61,7 +61,7 @@ struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
         setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
-        removeInsertReference, moveInsertReference, setSendEnabled, setInputGain,
+        removeInsertReference, moveInsertReference, setSendEnabled, setSendTap, setInputGain,
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision
@@ -257,14 +257,17 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
-                case ChannelEdit::Kind::setSendEnabled: {
+                case ChannelEdit::Kind::setSendEnabled:
+                case ChannelEdit::Kind::setSendTap: {
                     const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
                         [&](const auto& send){return send.edgeId==op.sendEdgeId;});
                     if(!op.sendEdgeId || edge==it->sends.end())
                         result.fault=ChannelEditFault::missingEdge;
                     else if(edge->primaryOutput)
                         result.fault=ChannelEditFault::invalidAction;
-                    else edge->enabled=op.enabled;
+                    else if(op.kind==ChannelEdit::Kind::setSendEnabled)
+                        edge->enabled=op.enabled;
+                    else edge->preFader=op.preFader; // post-insert PRE, not PRE_FX
                     break;
                 }
                 case ChannelEdit::Kind::touchDocumentRevision:
@@ -793,7 +796,8 @@ public:
                    !send.destination.value || send.destination==ch.id ||
                    !edges.insert(send.edgeId).second ||
                    !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
-                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
+                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f ||
+                   (send.primaryOutput && (!send.enabled || send.preFader)))
                     return false;
                 primary+=send.primaryOutput;
                 maxEdge=std::max(maxEdge,send.edgeId);
