@@ -2346,6 +2346,7 @@ public:
             pins.deviceName.toStdString();
         candidate.sampleRate=currentSampleRate;
         candidate.callbackOutputs=pins.outputCount;
+        candidate.maxFrames=nativeAccepted_.graph.request.maxFrames;
         const auto& hw=nativeAccepted_.hardware;
         candidate.mainL=hw.mainL;candidate.mainR=hw.mainR;
         candidate.monitorL=hw.monitorEnabled?hw.monitorL:-1;
