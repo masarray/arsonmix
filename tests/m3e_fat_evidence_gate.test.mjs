@@ -81,6 +81,7 @@ test('exact field preview package is integrity-verified but NEVER a public FAT a
   assert.equal(verified.softwareQualification,'FIELD_PREVIEW_FULL_CTEST_NOT_RUN');
   const assessment=assessM3eFat(d);
   assert.equal(assessment.build,'EXE_AND_FAT_BYTES_VERIFIED');
+  assert.equal(assessment.softwareQualification,'FIELD_PREVIEW_FULL_CTEST_NOT_RUN');
   assert.equal(assessment.nativePcm,'PENDING_NATIVE_CALLBACK_PROOF');
   assert.equal(assessment.physical,'PENDING');
   assert.equal(assessment.releaseReady,false);
