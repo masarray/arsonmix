@@ -57,6 +57,38 @@ int main(){
             airy+=std::abs(output.left)+std::abs(output.right);
         }
         assert(airy>.005);
+        // Prepared, deterministic room-aware presets; explicit old profiles
+        // remain unchanged and invalid/unsafe dimensions always choose OFF.
+        const auto bad=armix::sonku::musicalAmbienceForRoom(7.2f,7.2f,5.f);
+        assert(bad.wet==0.f);
+        const auto approved=armix::sonku::musicalAmbienceForRoom(7.2f,7.2f,1.6f);
+        const auto spacious=armix::sonku::musicalAmbienceForRoom(14.4f,14.4f,5.f);
+        const auto large=armix::sonku::musicalAmbienceForRoom(28.8f,28.8f,8.f);
+        assert(approved.preset==SonKuReverbPreset::StudioGlue);
+        assert(spacious.preset==SonKuReverbPreset::SpaciousChamber);
+        assert(large.preset==SonKuReverbPreset::LargeAuditorium);
+        assert(approved.wet>spacious.wet && spacious.wet>large.wet);
+        assert(large.wet>=.26f && approved.wet<=.38f);
+        SonKuMusicalReverb spaciousFx,largeFx;
+        assert(spaciousFx.prepare(rate) && largeFx.prepare(rate));
+        assert(spaciousFx.setPreset(spacious.preset));
+        assert(largeFx.setPreset(large.preset));
+        assert(spaciousFx.setAmount(spacious.wet));
+        assert(largeFx.setAmount(large.wet));
+        double largeLate=0.,spaciousLate=0.;
+        for(int i=0;i<static_cast<int>(rate*2.8);++i) {
+            const float sample=i==0?.5f:0.f;
+            const auto x=spaciousFx.process(sample,sample);
+            const auto y=largeFx.process(sample,sample);
+            assert(std::isfinite(x.left)&&std::isfinite(x.right));
+            assert(std::isfinite(y.left)&&std::isfinite(y.right));
+            assert(std::abs(x.left)<1.f && std::abs(y.right)<1.f);
+            if(i>rate*1.8) {
+                spaciousLate+=std::abs(x.left)+std::abs(x.right);
+                largeLate+=std::abs(y.left)+std::abs(y.right);
+            }
+        }
+        assert(largeLate>spaciousLate*.4);
     }
     return 0;
 }
