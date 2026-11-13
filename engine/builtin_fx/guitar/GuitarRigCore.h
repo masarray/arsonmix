@@ -123,6 +123,11 @@ private:
                 2.*pi*static_cast<double>(i)/(cabinetTaps-1));
             dst[static_cast<std::size_t>(i)]=static_cast<float>(ideal*window);
         }
+        // Enforce BIT-IDENTICAL mirror coefficients before pairing reads.
+        // Independently evaluated cosine windows can differ by a final ULP.
+        for(int i=0;i<cabinetLatencySamples;++i)
+            dst[static_cast<std::size_t>(cabinetTaps-1-i)]=
+                dst[static_cast<std::size_t>(i)];
         // Normalize at 1kHz rather than DC (this is a band-pass speaker).
         double real=0.,imag=0.;
         for(int i=0;i<cabinetTaps;++i){
