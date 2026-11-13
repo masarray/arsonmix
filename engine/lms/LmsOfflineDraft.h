@@ -26,8 +26,10 @@ struct OfflineSpeakerDraft final {
 };
 class OfflineSpeakerDraftPolicy final {
     static bool token(const std::string& s,std::size_t max) noexcept {
-        return !s.empty()&&s.size()<=max&&std::all_of(s.begin(),s.end(),
-            [](unsigned char c){return c>=33&&c<=126;});
+        return !s.empty()&&s.size()<=max&&
+            std::any_of(s.begin(),s.end(),[](unsigned char c){return c!=32;})&&
+            std::all_of(s.begin(),s.end(),
+                [](unsigned char c){return c>=32&&c<=126;});
     }
 public:
     [[nodiscard]] static bool valid(const OfflineSpeakerDraft& d) {
@@ -44,7 +46,7 @@ public:
         }
         std::unordered_set<std::string> seen;
         for(const auto& p:d.outputs) {
-            if(!token(p.outputId,96)||!seen.insert(p.outputId).second||
+            if(!token(p.outputId,256)||!seen.insert(p.outputId).second||
                !p.portIdentity.empty()||!p.mute||
                p.confirmedSpeakerProfile||p.voltageModel.has_value()||
                p.sourceSide<0||p.sourceSide>(d.stereo?1:0)||
@@ -75,7 +77,13 @@ public:
         next.ways=source.ways;next.stereo=source.stereo;
         next.crossoverHz=source.crossoverHz;
         next.outputs=source.outputs;
-        for(auto& output:next.outputs) {
+        for(std::size_t i=0;i<next.outputs.size();++i) {
+            auto& output=next.outputs[i];
+            // Current GUI identifies an output by its *physical port label*.
+            // Store an independent logical identity when they are the same:
+            // no ASIO/device path can later masquerade as a reconnect token.
+            if(output.outputId==output.portIdentity)
+                output.outputId="OUT-"+std::to_string(i+1);
             output.portIdentity.clear();
             output.mute=true;
             output.confirmedSpeakerProfile=false;

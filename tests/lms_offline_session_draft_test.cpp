@@ -35,6 +35,15 @@ int main() {
            saved.outputs[1].outputId=="HIGH-R");
     assert(saved.outputs[0].portIdentity.empty() &&
            saved.outputs[1].portIdentity.empty());
+    // A GUI-owned outputId that was identical to a physical port string
+    // must be severed from that hardware identity on cold save.
+    auto portNamed=bound;
+    portNamed.outputs[0].outputId=portNamed.outputs[0].portIdentity;
+    portNamed.outputs[1].outputId=portNamed.outputs[1].portIdentity;
+    OfflineSpeakerDraft aliased;
+    assert(OfflineSpeakerDraftPolicy::detach(portNamed,aliased));
+    assert(aliased.outputs[0].outputId=="OUT-1" &&
+           aliased.outputs[1].outputId=="OUT-2");
     assert(saved.outputs[0].mute && saved.outputs[1].mute);
     assert(!saved.outputs[0].confirmedSpeakerProfile &&
            !saved.outputs[0].voltageModel);
@@ -71,7 +80,7 @@ int main() {
     assert(!OfflineSpeakerDraftPolicy::valid(bad));
     bad=saved;bad.stereo=false;
     assert(!OfflineSpeakerDraftPolicy::valid(bad)); // stale right-side route
-    bad=saved;bad.outputs[0].outputId="LOW L";
+    bad=saved;bad.outputs[0].outputId="   ";
     assert(!OfflineSpeakerDraftPolicy::valid(bad));
     auto untouched=saved;
     bound.graphRevision=0;
