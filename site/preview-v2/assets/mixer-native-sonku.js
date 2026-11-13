@@ -83,11 +83,11 @@ root.innerHTML=[
  '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
- // Flipped transparent PNG replaces the provisional vector listener.
- // Anatomical nose/FRONT points TOP; source azimuth is unchanged.
+ // Rear/top-view translucent PNG: back of skull, protruding ears and shoulders.
+ // Listener looks toward FRONT at top; native source azimuth is unchanged.
  '<ellipse class="sk-head-shadow" cx="200" cy="246" rx="76" ry="22" fill="#031621" fill-opacity=".27"/>',
  '<g id="skRearSources" class="sk-rear-sources"></g>',
- '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="73" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-flipped" aria-label="Top-view listener facing front at top" pointer-events="none"/>',
+ '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="73" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
  // Near orbit overlays lower bust, forming ONE plausible 3D spatial ring.
  '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
  '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
