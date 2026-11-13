@@ -103,6 +103,7 @@
       if (ch.controls !== undefined &&
           (!object(ch.controls) ||
             (ch.controls.faderDb !== undefined && !Number.isFinite(ch.controls.faderDb)) ||
+            (ch.controls.inputGainDb !== undefined && !Number.isFinite(ch.controls.inputGainDb)) ||
             (ch.controls.pan !== undefined && !Number.isFinite(ch.controls.pan)) ||
             (ch.controls.mute !== undefined && !isBool(ch.controls.mute)) ||
             (ch.controls.solo !== undefined && !isBool(ch.controls.solo)))) return null;
@@ -116,7 +117,8 @@
         decimal(e.from) === null || decimal(e.to) === null ||
         !ids.includes(e.from) || !ids.includes(e.to) || e.from === e.to ||
         e.signalKind !== "AUDIO" || !isBool(e.enabled) ||
-        !Number.isFinite(e.gainLinear) || e.gainLinear < 0)) return null;
+        !Number.isFinite(e.gainLinear) || e.gainLinear < 0 ||
+        (e.sendEnabled!==undefined && !isBool(e.sendEnabled)))) return null;
     if (!unique(edges.map(e => e.edgeId))) return null;
     if (g.mainChannelId !== undefined &&
         (decimal(g.mainChannelId) === null || !ids.includes(g.mainChannelId))) return null;
@@ -254,6 +256,10 @@
     const {operation,targetChannelId,payload} = pending;
     const ch = next.graph.channels.find(c=>c.id===targetChannelId);
     if (!ch) return false;
+    if (operation === "SET_INPUT_GAIN")
+      return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
+        Number.isFinite(ch.controls?.inputGainDb) &&
+        Math.abs(ch.controls.inputGainDb-payload.valueDb)<=0.12;
     if (operation === "SET_FADER")
       return Number.isFinite(payload.valueDb) &&
         Math.abs(ch.controls.faderDb-payload.valueDb)<=0.11;
@@ -290,6 +296,13 @@
       const copies=next.graph.channels.reduce((n,c)=>n+c.inserts.filter(x=>x.id===payload.instanceId).length,0);
       return copies===(operation==="REMOVE_INSERT"?0:1);
     }
+    if (operation === "SET_SEND_ENABLED") {
+      const before=pending.wireIdentity;
+      const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
+      return !!before && !!edge && edge.primaryOutput===false &&
+        edge.to===before.to && edge.tap===before.tap &&
+        typeof payload.enabled==="boolean" && edge.sendEnabled===payload.enabled;
+    }
     if (operation === "SET_WIRE_GAIN") {
       const before=pending.wireIdentity;
       const edge=next.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
@@ -309,6 +322,13 @@
       if (edit.op==="REMOVE")
         return decimal(edit.edgeId)!==null &&
           !edges.some(e=>e.edgeId===edit.edgeId);
+      if (edit.op==="SET_TAP") {
+        const edge=edges.find(e=>e.edgeId===edit.edgeId&&e.from===targetChannelId);
+        return decimal(edit.edgeId)!==null && !!edge &&
+          edge.primaryOutput===false &&
+          (edit.tap==="PRE_FADER"||edit.tap==="POST_FADER") &&
+          edge.tap===edit.tap;
+      }
       if (edit.op==="CONNECT" || edit.op==="ROUTE_ONLY") {
         if (decimal(edit.to)===null) return false;
         // A cable painted at the requested destination is not proof that
@@ -436,6 +456,10 @@
       case "SET_PROCESSING_FORMAT":
         return !!row && ["MONO","STEREO"].includes(v.format) &&
           row.processingFormat===v.format;
+      case "SET_INPUT_GAIN":
+        return !!row && row.role==="INPUT" && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.inputGainDb) &&
+          Math.abs(row.controls.inputGainDb-v.valueDb)<0.12;
       case "SET_FADER":
         return !!row && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.faderDb) &&
@@ -605,10 +629,12 @@
         }
       }
       let wireIdentity=null;
-      if(operation==="SET_WIRE_GAIN") {
+      if(operation==="SET_WIRE_GAIN"||operation==="SET_SEND_ENABLED") {
         const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===payload.edgeId&&e.from===targetChannelId);
-        if(!edge||edge.primaryOutput!==false||!Number.isFinite(payload.gainLinear)||
-           payload.gainLinear<0||payload.gainLinear>4) {
+        if(!edge||edge.primaryOutput!==false||
+           (operation==="SET_WIRE_GAIN"&&(!Number.isFinite(payload.gainLinear)||
+            payload.gainLinear<0||payload.gainLinear>4))||
+           (operation==="SET_SEND_ENABLED"&&typeof payload.enabled!=="boolean")) {
           return refuseIntent("INVALID_WIRE_GAIN_TARGET");
         }
         wireIdentity={to:edge.to,tap:edge.tap};

@@ -13,6 +13,13 @@ export const M3E_MODES=Object.freeze([
 ]);
 export const M3E_SCHEMA='arsonmix.hardware-fat-field-journal.v1';
 const HEX40=/^[a-f0-9]{40}$/,HEX64=/^[a-f0-9]{64}$/;
+// These are two distinct, honestly-labelled SOFTWARE package types.
+// A field preview intentionally skips full CTest and is NEVER a public FAT
+// release. Both require identical PE, exact-SHA source, GUI and tool checks.
+export const M3E_PACKAGE_QUALIFICATIONS=Object.freeze([
+  'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE',
+  'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
+]);
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const nonempty=v=>typeof v==='string'&&v.trim().length>0;
 const uniqueInts=v=>Array.isArray(v)&&v.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=255)
@@ -57,7 +64,7 @@ export function inspectM3ePackage(root){
      !HEX64.test(manifest.approvedGuiPagesSha256||'')||
      !HEX64.test(manifest.approvedGuiNativeHtmlSha256||'')||
      !HEX64.test(manifest.approvedGuiManifestSha256||'')||
-     manifest.fatStatus!=='SOFTWARE_VERIFIED_PREVIEW_CANDIDATE')
+     !M3E_PACKAGE_QUALIFICATIONS.includes(manifest.fatStatus))
     throw Error('Source/GUI/qualification manifest is not approved and fail-closed');
   const exe=readExact(p,manifest.executable,manifest.exeSha256);
   checkPe64Gui(exe);
@@ -68,7 +75,8 @@ export function inspectM3ePackage(root){
   // inspection. This tool does not claim compressed ZIP verification.
   return {sourceSha:manifest.sourceCommit,exeSha256:manifest.exeSha256,
     build:'EXE_AND_FAT_BYTES_VERIFIED',zip:'EXTERNAL_WINDOWS_VERIFIER_REQUIRED',
-    gui:'APPROVED_PREVIEW_PROVENANCE_MANIFEST',manifest};
+    gui:'APPROVED_PREVIEW_PROVENANCE_MANIFEST',
+    softwareQualification:manifest.fatStatus,manifest};
 }
 function verifySession(run,mode,rate,root,blockers){
   const tag=rate+' '+mode;
@@ -170,6 +178,7 @@ export function assessM3eFat(root){
   const journalPath=join(resolve(root),'FAT_RUNS.json');
   if(!existsSync(journalPath))
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:'PENDING',releaseReady:false,hardwareCertified:false,
       blockers:['No physical FAT_RUNS.json: no 44.1/48-kHz field evidence']};
@@ -180,6 +189,7 @@ export function assessM3eFat(root){
       throw Error('Journal source/executable SHA differs from packaged native EXE');
     const physical=inspectM3eJournal(journal,{root:resolve(root)});
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:physical.physical,releaseReady:false,hardwareCertified:false,
       selectedSessions:physical.selectedSessions,blockers:physical.blockers,
@@ -187,6 +197,7 @@ export function assessM3eFat(root){
       renderHardwareXrun:physical.actualRenderXrunEvidence};
   }catch(error){
     return {sourceSha:packageResult.sourceSha,build:packageResult.build,
+      softwareQualification:packageResult.softwareQualification,
       zip:packageResult.zip,nativePcm:'PENDING_NATIVE_CALLBACK_PROOF',
       physical:'PENDING',releaseReady:false,hardwareCertified:false,
       blockers:['FAT journal integrity: '+error.message]};
