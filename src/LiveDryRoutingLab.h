@@ -2323,6 +2323,50 @@ public:
             pins.deviceName.toStdString()+"/"+std::to_string(physical)+"/"+
             pins.outputNames[physical].toStdString();
     }
+    bool inspectNativeSpeakerDevice(
+        const armix::device::JuceActivePortSnapshot& pins,
+        double currentSampleRate,bool outputsDisarmed,
+        armix::lms::TrustedSpeakerDeviceView& out) const {
+        if(!channelIdPhysicalPcmActive() || !ready() ||
+           !matchesSessionDevice(pins) || pins.typeName!="ASIO" ||
+           pins.deviceName.isEmpty() ||
+           !std::isfinite(currentSampleRate) || currentSampleRate<=0.)
+            return false;
+        const auto revision=nativeAccepted_.pcmRevision;
+        if(!nativeAccepted_.matches(nativePublisher_,pins.epoch,revision))
+            return false;
+        const auto* accepted=nativePublisher_.acceptedRouting(pins.epoch,revision);
+        if(!accepted || !accepted->main.value)return false;
+        armix::lms::TrustedSpeakerDeviceView candidate;
+        candidate.deviceEpoch=pins.epoch;
+        candidate.graphRevision=revision;
+        candidate.mainChannelId=accepted->main.value;
+        candidate.backend=pins.typeName.toStdString();
+        candidate.deviceIdentity=pins.typeName.toStdString()+"/"+
+            pins.deviceName.toStdString();
+        candidate.sampleRate=currentSampleRate;
+        candidate.callbackOutputs=pins.outputCount;
+        const auto& hw=nativeAccepted_.hardware;
+        candidate.mainL=hw.mainL;candidate.mainR=hw.mainR;
+        candidate.monitorL=hw.monitorEnabled?hw.monitorL:-1;
+        candidate.monitorR=hw.monitorEnabled?hw.monitorR:-1;
+        candidate.acceptedPcm=true;
+        candidate.exactDeviceMask=true; // matchesSessionDevice above
+        candidate.allOutputsDisarmed=outputsDisarmed;
+        for(int ordinal=0;ordinal<pins.outputCount;++ordinal){
+            auto identity=speakerNativePortIdentity(pins,ordinal);
+            if(identity.empty())return false;
+            candidate.actualEnabledPorts.push_back({std::move(identity),ordinal});
+        }
+        for(const auto& channel:accepted->channels){
+            const auto [left,right]=nativePublisher_.externalOutput(
+                pins.epoch,revision,channel.id);
+            if(left>=0)candidate.otherOccupiedOrdinals.push_back(left);
+            if(right>=0)candidate.otherOccupiedOrdinals.push_back(right);
+        }
+        out=std::move(candidate);
+        return true;
+    }
     SpeakerDraftControlResult acceptNativeSpeakerDraft(
         const armix::lms::SpeakerSystemRequest& draft,
         const armix::device::JuceActivePortSnapshot& pins,
@@ -2331,50 +2375,17 @@ public:
         SpeakerDraftControlResult reply;
         using Fault=armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftFault;
         reply.ack.fault=Fault::staleDeviceOrGraph;
-        // Never use display PIN ids or browser booleans as proof of ASIO.
-        if(!channelIdPhysicalPcmActive() || !ready() ||
-           !matchesSessionDevice(pins) || pins.typeName!="ASIO" ||
-           pins.deviceName.isEmpty() || !verifiedOutputsDisarmed ||
-           !nativeAccepted_.matches(nativePublisher_,draft.deviceEpoch,
-                                    draft.graphRevision) ||
-           !std::isfinite(currentSampleRate) || currentSampleRate<=0. ||
-           pins.epoch!=draft.deviceEpoch || draft.sampleRate!=currentSampleRate)
-            return reply;
-        const auto* accepted=nativePublisher_.acceptedRouting(
-            draft.deviceEpoch,draft.graphRevision);
-        if(!accepted || !accepted->main.value)return reply;
-        const auto& hw=nativeAccepted_.hardware;
         armix::lms::TrustedSpeakerDeviceView actual;
-        actual.deviceEpoch=pins.epoch;
-        actual.graphRevision=draft.graphRevision;
-        actual.mainChannelId=accepted->main.value;
-        actual.backend=pins.typeName.toStdString();
-        actual.deviceIdentity=pins.typeName.toStdString()+"/"+
-            pins.deviceName.toStdString();
-        actual.sampleRate=currentSampleRate;
-        actual.callbackOutputs=pins.outputCount;
-        actual.mainL=hw.mainL;actual.mainR=hw.mainR;
-        actual.monitorL=hw.monitorEnabled?hw.monitorL:-1;
-        actual.monitorR=hw.monitorEnabled?hw.monitorR:-1;
-        actual.acceptedPcm=true;
-        actual.exactDeviceMask=true; // matchesSessionDevice(pins) above
-        actual.allOutputsDisarmed=verifiedOutputsDisarmed;
-        for(int ordinal=0;ordinal<pins.outputCount;++ordinal){
-            auto identity=speakerNativePortIdentity(pins,ordinal);
-            if(identity.empty())return reply;
-            actual.actualEnabledPorts.push_back({std::move(identity),ordinal});
-        }
-        // Existing channel direct/external hardware lanes are occupied even
-        // when the browser MATRIX does not list those ChannelIds.
-        for(const auto& channel:accepted->channels){
-            const auto [left,right]=nativePublisher_.externalOutput(
-                pins.epoch,draft.graphRevision,channel.id);
-            if(left>=0)actual.otherOccupiedOrdinals.push_back(left);
-            if(right>=0)actual.otherOccupiedOrdinals.push_back(right);
-        }
+        if(!verifiedOutputsDisarmed ||
+           !inspectNativeSpeakerDevice(pins,currentSampleRate,
+                                       verifiedOutputsDisarmed,actual) ||
+           actual.graphRevision!=draft.graphRevision ||
+           actual.deviceEpoch!=draft.deviceEpoch ||
+           actual.sampleRate!=draft.sampleRate)
+            return reply;
         armix::lms::SpeakerBoundDraft bound;
         const auto boundResult=armix::lms::NativeSpeakerDeviceBinder::bind(
-            draft,actual,accepted->main.value,bound);
+            draft,actual,actual.mainChannelId,bound);
         reply.bindFault=boundResult.fault;
         if(!boundResult.ok()){
             reply.ack.fault=Fault::invalidReservation;
@@ -2382,7 +2393,8 @@ public:
         }
         reply.ack=nativePublisher_.acceptSpeakerDraft(
             bound.verifiedRequest,bound.verifiedInventory,
-            accepted->main,expectedDesignRevision);
+            armix::mixer::ChannelId{actual.mainChannelId},
+            expectedDesignRevision);
         return reply;
     }
     const armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftReadback*
