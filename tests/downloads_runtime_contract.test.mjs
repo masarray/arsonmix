@@ -128,11 +128,11 @@ test('alpha.23 Windows Setup ZIP supersedes older static and live releases',asyn
   const linux=release(5,['Linux-x86_64.tar.gz','macOS-universal.dmg']);
   const result=await render(local(22,'Windows-x64-Setup.zip'),[obsolete,newer,draft,linux]);
   const windows=result.cards[0].nodes;
-  assert.match(windows['[data-release-link]'].href,/v0\\.5\\.0-alpha\\.23\\/ArSonMix-v0\\.5\\.0-alpha\\.23-Windows-x64-Setup\\.zip$/);
+  assert.match(windows['[data-release-link]'].href,/v0\.5\.0-alpha\.23\/ArSonMix-v0\.5\.0-alpha\.23-Windows-x64-Setup\.zip$/);
   assert.equal(windows['[data-link-label]'].textContent,'Download installer ZIP');
-  assert.match(windows['[data-release-note]'].textContent,/alpha\\.23/);
-  assert.match(result.summary.textContent,/Windows v0\\.5\\.0-alpha\\.23/);
-  assert.match(result.summary.textContent,/Linux v0\\.5\\.0-alpha\\.5/);
-  assert.match(result.summary.textContent,/macOS v0\\.5\\.0-alpha\\.5/);
+  assert.match(windows['[data-release-note]'].textContent,/alpha\.23/);
+  assert.match(result.summary.textContent,/Windows v0\.5\.0-alpha\.23/);
+  assert.match(result.summary.textContent,/Linux v0\.5\.0-alpha\.5/);
+  assert.match(result.summary.textContent,/macOS v0\.5\.0-alpha\.5/);
   assert.equal(result.hero.href,'#download');
 });
