@@ -6,6 +6,7 @@
 #include "NativeBeatFrameContext.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
+#include "../lms/NativeSpeakerOutputReservation.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -35,6 +36,35 @@ public:
         void* context=nullptr;
         void (*observe)(void*,const float*,const float*,int) noexcept=nullptr;
     };
+    // M5: CONTROL-only, immutable readback of a VERIFIED but DISCONNECTED
+    // speaker design. Never exposed to the realtime callback. In particular,
+    // `validatedDraft` must NOT be presented as physically APPLIED/LIVE.
+    enum class SpeakerDraftFault : std::uint8_t {
+        none,staleDeviceOrGraph,staleDraft,invalidSource,
+        invalidReservation,invalidDsp,preparationFailed
+    };
+    struct SpeakerDraftAck final {
+        SpeakerDraftFault fault=SpeakerDraftFault::none;
+        armix::lms::SpeakerReservationFault reservationFault=
+            armix::lms::SpeakerReservationFault::none;
+        armix::lms::SpeakerPlanFault planFault=armix::lms::SpeakerPlanFault::none;
+        std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
+        std::size_t preparedScratchBytes=0;
+        bool validatedDraft=false,hardwareApplied=false;
+        [[nodiscard]] bool ok() const noexcept {
+            return fault==SpeakerDraftFault::none && validatedDraft &&
+                   !hardwareApplied;
+        }
+    };
+    struct SpeakerDraftReadback final {
+        std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
+        ChannelId mainSource{};
+        std::string deviceIdentity;
+        armix::lms::SpeakerSystemRequest design;
+        std::vector<int> reservedOutputOrdinals;
+        std::size_t preparedScratchBytes=0;
+        bool validatedDraft=true,hardwareApplied=false;
+    };
     struct FxPlan final {
         std::shared_ptr<void> owner; // CONTROL-only copy/destruction
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
@@ -55,6 +85,11 @@ private:
         int physicalInputs=0;
         bool monitor=false;
     };
+    // On CONTROL only: one speaker design belongs to the same accepted
+    // ChannelId/epoch. The prepared DSP is intentionally NOT placed in the
+    // hardware callback's published snapshot until physical protection exists.
+    std::unique_ptr<SpeakerDraftReadback> speakerDraft_;
+    std::unique_ptr<armix::lms::PreparedSpeakerSystem> speakerPrepared_;
     using Publisher=armix::rt::RealtimeRoutePublisher<Prepared>;
 public:
     enum class Fault : std::uint8_t {
@@ -137,6 +172,10 @@ public:
                                              expectedRevision,activeDeviceEpoch);
         switch(status) {
             case Publisher::Result::applied: {
+                // Every accepted structural PCM revision revokes old speaker
+                // pin identity and DSP; a UI draft cannot survive by accident.
+                speakerDraft_.reset();
+                speakerPrepared_.reset();
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
                     const auto* published=publisher_.controlPrepared(
@@ -163,6 +202,98 @@ public:
         }
         report.revision=publisher_.lastRevision();
         return report;
+    }
+
+    // M5: same-publisher CONTROL transaction. Required caller-side proof:
+    // inventory was constructed from the ACTUAL active JUCE device's
+    // enabled output mask, never from browser-stored ordinal labels.
+    // No side effects on existing ChannelId PCM or hardware pin ownership.
+    // ALL speaker output DSP remains permanently DISCONNECTED at M5.
+    SpeakerDraftAck acceptSpeakerDraft(
+        const armix::lms::SpeakerSystemRequest& request,
+        const armix::lms::NativePcmOutputInventory& inventory,
+        ChannelId mainSource,std::uint64_t expectedDesignRevision) {
+        SpeakerDraftAck ack;
+        ack.deviceEpoch=request.deviceEpoch;
+        ack.graphRevision=request.graphRevision;
+        ack.designRevision=speakerDraft_?speakerDraft_->designRevision:0;
+        const auto* accepted=publisher_.controlPrepared(
+            request.deviceEpoch,request.graphRevision);
+        if(!accepted || !request.deviceEpoch || !request.graphRevision ||
+           !inventory.acceptedChannelIdPcm ||
+           !inventory.deviceEpoch || !inventory.acceptedGraphRevision ||
+           inventory.deviceEpoch!=request.deviceEpoch ||
+           inventory.acceptedGraphRevision!=request.graphRevision) {
+            ack.fault=SpeakerDraftFault::staleDeviceOrGraph;return ack;
+        }
+        if(expectedDesignRevision!=ack.designRevision ||
+           expectedDesignRevision==std::numeric_limits<std::uint64_t>::max()){
+            ack.fault=SpeakerDraftFault::staleDraft;return ack;
+        }
+        if(!mainSource.value || accepted->routing.main!=mainSource ||
+           inventory.mainChannelId!=mainSource.value){
+            ack.fault=SpeakerDraftFault::invalidSource;return ack;
+        }
+        if(request.maxFrames!=accepted->graph.capacity()) {
+            ack.fault=SpeakerDraftFault::invalidDsp;
+            ack.planFault=armix::lms::SpeakerPlanFault::invalidFormat;
+            return ack;
+        }
+        try {
+            const auto reserved=armix::lms::NativeSpeakerOutputReservation::
+                preflight(request,inventory,mainSource.value);
+            if(!reserved.ok() || reserved.mayWritePhysicalAudio){
+                ack.fault=SpeakerDraftFault::invalidReservation;
+                ack.reservationFault=reserved.fault;return ack;
+            }
+            std::unique_ptr<armix::lms::PreparedSpeakerSystem> dsp;
+            const auto candidate=armix::lms::PreparedSpeakerSystem::
+                prepare(request,dsp);
+            if(!candidate.ok() || !dsp){
+                ack.fault=SpeakerDraftFault::invalidDsp;
+                ack.planFault=candidate.fault;return ack;
+            }
+            // Everything above is speculative. Build a complete readback
+            // BEFORE publishing either pointer: an exception leaves the last
+            // accepted draft and PCM untouched (transactional rollback).
+            auto snapshot=std::make_unique<SpeakerDraftReadback>();
+            snapshot->deviceEpoch=request.deviceEpoch;
+            snapshot->graphRevision=request.graphRevision;
+            snapshot->designRevision=expectedDesignRevision+1;
+            snapshot->mainSource=mainSource;
+            snapshot->deviceIdentity=inventory.deviceIdentity;
+            snapshot->design=request;
+            snapshot->reservedOutputOrdinals=reserved.reservedCallbackOrdinals;
+            snapshot->preparedScratchBytes=candidate.scratchBytes;
+            speakerPrepared_=std::move(dsp);
+            speakerDraft_=std::move(snapshot);
+            ack.designRevision=speakerDraft_->designRevision;
+            ack.preparedScratchBytes=candidate.scratchBytes;
+            ack.validatedDraft=true;
+            // No hardware output ACL exists in this transaction.
+            ack.hardwareApplied=false;
+            return ack;
+        } catch(...) {
+            ack.fault=SpeakerDraftFault::preparationFailed;
+            return ack;
+        }
+    }
+
+    // Copy the returned values on CONTROL before modifying the accepted PCM.
+    // Any graph/device change makes old draft readback unavailable.
+    [[nodiscard]] const SpeakerDraftReadback* speakerDraftReadback(
+        std::uint64_t epoch,std::uint64_t graphRevision) const noexcept {
+        if(!speakerDraft_ || speakerDraft_->deviceEpoch!=epoch ||
+           speakerDraft_->graphRevision!=graphRevision ||
+           !publisher_.controlPrepared(epoch,graphRevision))return nullptr;
+        return speakerDraft_.get();
+    }
+
+    // Closing a session, disconnecting device, or clearing a physical patch
+    // must invalidate readback before another control request arrives.
+    void revokeSpeakerDraft() noexcept {
+        speakerDraft_.reset();
+        speakerPrepared_.reset();
     }
 
     // Sole AUDIO CALLBACK path when connected by DYN1 live migration:
@@ -297,10 +428,12 @@ public:
     // Caller validates actual driver pins and MAIN/MONITOR collision first.
     bool setExternalOutput(std::uint64_t epoch,std::uint64_t revision,
                            ChannelId id,int left,int right,int outputCount) noexcept {
-        return publisher_.updateActiveControl(epoch,revision,
+        const bool updated=publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
                 return active.graph.setExternalOutput(id,left,right,outputCount);
             });
+        if(updated)revokeSpeakerDraft(); // physical pin inventory changed
+        return updated;
     }
     std::pair<int,int> externalOutput(std::uint64_t epoch,
                 std::uint64_t revision,ChannelId id) const noexcept {
@@ -381,7 +514,7 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
     }
-    void unpublish() noexcept {publisher_.unpublish();}
+    void unpublish() noexcept {revokeSpeakerDraft();publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
