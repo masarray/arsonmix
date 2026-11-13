@@ -1,0 +1,127 @@
+/* ArSonMix LMS: one scoped workspace in the approved /preview/ console.
+   Compiled into existing mixer-chrome-material CSS owner, no extra runtime sheet.
+   Independent of source mixer/fader/WIRE styling and all native PCM controls. */
+.app.lms-active .console-pane{display:none!important}
+.app.lms-active .command-bar>:not(#lmsOpen){display:none!important}
+.command-bar #lmsOpen[aria-pressed="true"]{border-color:#58bbce;background:#183944;color:#c8eff5}
+.lms-workspace[hidden]{display:none!important}
+.lms-workspace{
+ --lms-bg:#0c151c;--lms-surface:#13202a;--lms-border:#30434e;
+ --lms-ink:#d8e6eb;--lms-secondary:#92aeb9;--lms-accent:#5bc5d1;
+ flex:1;min-height:0;min-width:0;display:flex;overflow:hidden;
+ background:var(--lms-bg);color:var(--lms-ink);
+ font:400 12px/1.4 "Segoe UI",Arial,sans-serif;letter-spacing:0
+}
+.lms-workspace *{box-sizing:border-box}
+.lms-workspace button,.lms-workspace input,.lms-workspace select{
+ font:inherit;color:inherit
+}
+.lms-workspace button{cursor:pointer}
+.lms-workspace button:focus-visible,.lms-workspace input:focus-visible,
+.lms-workspace select:focus-visible{outline:2px solid var(--lms-accent);outline-offset:2px}
+.lms-sidebar{width:164px;flex:none;border-right:1px solid var(--lms-border);
+ background:linear-gradient(180deg,#172630,#101b24);padding:14px 8px;overflow-y:auto}
+.lms-sidebar .lms-name{font-size:12px;font-weight:620;letter-spacing:.03em;
+ color:#e8f4f6;margin:3px 10px 16px}
+.lms-nav{display:flex;flex-direction:column;gap:3px}
+.lms-nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+ border:1px solid transparent;background:transparent;padding:10px 11px;
+ border-radius:5px;color:#a9c0c9}
+.lms-nav button.active{background:#22424c;color:#e8fcff;border-color:#477985}
+.lms-nav button:hover:not(.active){background:#1d303b}
+.lms-nav .lms-index{opacity:.65;font:500 10px/1.2 monospace}
+.lms-sidebar-foot{border-top:1px solid #30434e;color:#93abb5;margin-top:22px;
+ padding:14px 10px;font-size:10px;line-height:1.5}
+.lms-stage{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.lms-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;
+ padding:11px 18px;border-bottom:1px solid var(--lms-border);min-height:53px;flex:none}
+.lms-heading h2{font-size:16px;font-weight:580;margin:0}
+.lms-heading small{font-size:10px;color:var(--lms-secondary)}
+.lms-offline{font-size:10px;border:1px solid #6e6141;padding:4px 8px;color:#e5c996;
+ border-radius:4px;white-space:nowrap;background:#332e22}
+.lms-content{overflow:auto;flex:1;min-height:0;padding:16px 18px 24px}
+.lms-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(240px,.8fr);gap:14px}
+.lms-panel{border:1px solid var(--lms-border);background:var(--lms-surface);
+ border-radius:6px;padding:14px;min-width:0;overflow:hidden}
+.lms-panel h3{font-size:12px;font-weight:590;margin:0 0 13px;color:#e3eff3}
+.lms-panel h3 span{float:right;font-weight:400;font-size:10px;color:var(--lms-secondary)}
+.lms-label{display:block;font-size:10px;color:var(--lms-secondary);margin-bottom:6px}
+.lms-muted{color:var(--lms-secondary)}
+.lms-caption{font-size:10px;color:#94afb8;line-height:1.45}
+.lms-line{border-top:1px solid #334651;margin:12px 0}
+.lms-control-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lms-btn,.lms-select,.lms-number{border:1px solid #3c5664;background:#192b35;
+ border-radius:4px;padding:7px 10px;min-height:30px}
+.lms-btn:hover{background:#26414c;border-color:#5da0b2}
+.lms-btn.active{background:#174753;border-color:#5ac3d1;color:#c7f6ff}
+.lms-btn:disabled{cursor:not-allowed;opacity:.45}
+.lms-select{max-width:100%;min-width:100px}
+.lms-number{width:92px;text-align:right;font-variant-numeric:tabular-nums}
+.lms-number:disabled{opacity:.5}
+.lms-summary{display:flex;gap:10px;flex-wrap:wrap}
+.lms-stat{padding:10px 14px;border:1px solid #364e59;background:#142733;
+ min-width:95px;border-radius:4px}
+.lms-stat b{font-size:19px;font-weight:500;display:block}
+.lms-stat span{font-size:10px;color:var(--lms-secondary)}
+.lms-steps{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.lms-step{padding:9px 11px;border:1px solid #375463;background:#1a2b37;border-radius:4px}
+.lms-step strong{display:block;font-weight:500;font-size:11px}
+.lms-step small{font-size:9px;color:#a4b9c1}
+.lms-arrow{color:#6c939f;font-size:16px}
+.lms-speaker-map{height:226px;position:relative;
+ border:1px solid #36505e;border-radius:5px;
+ background:repeating-linear-gradient(0deg,transparent,transparent 34px,#29404b40 35px),
+ repeating-linear-gradient(90deg,transparent,transparent 34px,#29404b40 35px),#0e1d26}
+.lms-speaker-map .stage{position:absolute;top:8px;left:30%;right:30%;
+ padding:7px;text-align:center;background:#334651;border-radius:4px;font-size:10px}
+.lms-map-spk{position:absolute;border:1px solid #689cac;border-radius:5px;
+ background:#1e414d;padding:6px 10px;color:#dcf8fd;font-size:10px}
+.lms-listener{position:absolute;bottom:21px;left:50%;transform:translateX(-50%);
+ border:1px solid #6a92a1;border-radius:20px;padding:7px;background:#213442}
+.lms-frequency{width:100%;max-height:250px;display:block;border:1px solid #334855;border-radius:4px}
+.lms-band-row{display:flex;gap:8px;align-items:center;border-bottom:1px solid #2d414e;
+ padding:9px 2px;font-size:11px}
+.lms-band-row:last-child{border-bottom:0}
+.lms-band-mark{width:9px;height:9px;border-radius:2px;display:inline-block;flex:none}
+.lms-band-row .lms-band-name{flex:1}
+.lms-split-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #2d414e}
+.lms-split-row:last-child{border:0}
+.lms-split-row label{flex:1}
+.lms-table-scroll{max-width:100%;overflow:auto;border:1px solid #354c57;border-radius:4px}
+.lms-matrix{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px}
+.lms-matrix th,.lms-matrix td{padding:7px 8px;border-right:1px solid #2b404d;
+ border-bottom:1px solid #293e48;text-align:center;white-space:nowrap}
+.lms-matrix th:first-child,.lms-matrix td:first-child{position:sticky;left:0;
+ background:#1a2c37;text-align:left;z-index:2;min-width:95px}
+.lms-matrix th{background:#1c2d38;font-weight:500;font-size:10px;color:#b3ccd4;position:sticky;top:0;z-index:1}
+.lms-cross{min-width:26px;min-height:26px;border:1px solid #405765;border-radius:4px;
+ background:#10212b;color:#90abb4;padding:0}
+.lms-cross.active{background:#177989;color:#fff;border-color:#5ed1de}
+.lms-cross:hover{border-color:#85dbe5}
+.lms-output-list{display:flex;flex-direction:column;gap:5px}
+.lms-output{display:flex;align-items:center;gap:10px;border:1px solid #334956;
+ background:#152731;padding:9px 10px;border-radius:4px;text-align:left;width:100%}
+.lms-output.active{border-color:#5cbdca;background:#1a3945}
+.lms-output strong{font-size:11px;font-weight:570;flex:1}
+.lms-output small{font-size:10px;color:#99b4be}
+.lms-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.lms-field label{display:block;color:#9bb6bf;font-size:10px;margin-bottom:6px}
+.lms-field input,.lms-field select{width:100%;max-width:100%}
+.lms-tip{border-left:2px solid #82b7c0;color:#a8c6cd;padding:5px 10px;
+ font-size:10px;margin:12px 0}
+.lms-warn{border-left:2px solid #c3a06d;color:#e4c9a1;padding:5px 10px;font-size:10px}
+.lms-room{width:100%;max-height:450px;display:block;background:#101e27;border-radius:5px;
+ border:1px solid #3c5360;touch-action:none}
+.lms-room .spk{cursor:grab}
+.lms-room .ref{cursor:move}
+.lms-room text{pointer-events:none;font:10px "Segoe UI",sans-serif}
+.lms-mini-table{width:100%;border-collapse:collapse;font-size:11px}
+.lms-mini-table th{text-align:left;font-size:10px;font-weight:500;color:#99b5be}
+.lms-mini-table td,.lms-mini-table th{padding:8px;border-bottom:1px solid #324752}
+.lms-mini-table tr.current{background:#23404b}
+@media(max-width:960px){.lms-grid{grid-template-columns:1fr}.lms-sidebar{width:138px}.lms-content{padding:12px}}
+@media(max-width:640px){.lms-sidebar{width:55px;padding:10px 4px}.lms-sidebar .lms-name{font-size:0}
+ .lms-nav button{justify-content:center;padding:10px 0;font-size:0}
+ .lms-nav .lms-index{font-size:12px}.lms-sidebar-foot{display:none}
+ .lms-heading{padding:10px}.lms-heading h2{font-size:13px}.lms-content{padding:8px}
+ .lms-form-grid{grid-template-columns:1fr}}
