@@ -70,5 +70,26 @@ int main(){
     assert(ports&&ports->size()==8);
     assert(ports->getReference(0).getProperty("occupied",{})==juce::var(true));
     assert(ports->getReference(4).getProperty("occupied",{})==juce::var(false));
+    armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftReadback read;
+    read.deviceEpoch=21;read.graphRevision=42;read.designRevision=3;
+    read.mainSource=armix::mixer::ChannelId{999};
+    read.design=accepted.proposed;
+    const auto roundTrip=inspection(inspected,&read);
+    const auto verified=roundTrip.getProperty("validatedDesign",{});
+    const auto outRows=verified.getProperty("outputs",{}).getArray();
+    assert(outRows&&outRows->size()==1);
+    const auto& row=outRows->getReference(0);
+    assert(row.getProperty("gainDb",{})==juce::var(-5.5));
+    assert(row.getProperty("delayMs",{})==juce::var(0.34));
+    assert(row.getProperty("polarityInverted",{})==juce::var(true));
+    assert(row.getProperty("limiterEnabled",{})==juce::var(false));
+    const auto peq=row.getProperty("peq",{}).getArray();
+    assert(peq&&peq->size()==1);
+    const auto& eq=peq->getReference(0);
+    assert(eq.getProperty("frequencyHz",{})==juce::var(1000.));
+    assert(eq.getProperty("q",{})==juce::var(1.5));
+    assert(eq.getProperty("gainDb",{})==juce::var(2.3));
+    assert(eq.getProperty("enabled",{})==juce::var(true));
+    assert(roundTrip.getProperty("hardwareApplied",{})==juce::var(false));
     std::puts("PASS LMS: strict JUCE message-thread schema, no fake hardware ACK, bounded device readback");
 }
