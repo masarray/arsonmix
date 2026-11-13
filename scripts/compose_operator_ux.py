@@ -36,11 +36,15 @@ SPLIT_BOOTSTRAP = """
           identity=height('.rail-cell.identity'),
           route=height('.rail-cell.route'),
           send=height('.rail-cell.send');
-    // Panels remain equal halves when upper racks are expanded. If all upper
-    // modules fold, the existing flex fader may use the deliberately freed bay.
+    // V60 one authoritative layout allocator, not an overriding stylesheet.
+    // Favor a taller physical fader by borrowing at most 48px of genuinely
+    // spare FX space. Retain at least 125px for insert controls, and never
+    // change the synchronized source/MASTER/rail mechanical alignment.
     const half=Math.round(h/2);
-    const fader=Math.max(130,Math.round(half-pan-switches-footer));
-    const fx=Math.max(125,Math.round(half-identity-route-send));
+    const fxBase=Math.max(125,Math.round(half-identity-route-send));
+    const boost=Math.min(48,Math.max(0,fxBase-125));
+    const fader=Math.max(130,Math.round(half-pan-switches-footer+boost));
+    const fx=fxBase-boost;
     const signature=fader+':'+fx;
     if(signature===previous)return;
     previous=signature;
@@ -59,7 +63,7 @@ SPLIT_BOOTSTRAP = """
 """
 
 OPERATOR_CSS = """
-/* V29 adaptive 50/50 console, authored for the same rail/strip/Master tokens.
+/* V60 physical-fader-priority console, same rail/strip/Master tokens.
    At very short heights preserve minimum usable controls and scroll vertically. */
 .console-pane{overflow-y:auto!important;overflow-x:hidden!important}
 .console-body{min-height:610px!important;
