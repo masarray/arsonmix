@@ -1337,7 +1337,8 @@ static void verifyLmsOfflineSmixRoundtrip() {
     assert(raw.isObject());
     assert(raw.getProperty("deviceEpoch",{}).isVoid());
     assert(raw.getProperty("hardwareApplied",{}).isVoid());
-    const auto outputs=raw.getProperty("outputs",{}).getArray();
+    const auto storedOutputs=raw.getProperty("outputs",{});
+    const auto* outputs=storedOutputs.getArray();
     assert(outputs && outputs->size()==1);
     assert(outputs->getReference(0).getProperty("portIdentity",{}).isVoid());
     assert(outputs->getReference(0).getProperty("voltageModel",{}).isVoid());
@@ -1360,7 +1361,8 @@ static void verifyLmsOfflineSmixRoundtrip() {
         auto test=juce::JSON::parse(text);
         auto draft=test.getProperty("lmsDraft",{});
         if(nested) {
-            auto out=draft.getProperty("outputs",{}).getArray();
+            const auto storedOutputs=draft.getProperty("outputs",{});
+            auto* out=storedOutputs.getArray();
             assert(out && out->size()==1);
             out->getReference(0).getDynamicObject()->setProperty(key,value);
         } else draft.getDynamicObject()->setProperty(key,value);
