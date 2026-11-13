@@ -129,6 +129,16 @@ public:
         channels_[it->second].inputGainLinear=gain;
         return true;
     }
+    bool rememberLiveSendEnabled(ChannelId source,std::uint64_t edgeId,bool enabled) noexcept {
+        if(!source.value || !edgeId)return false;
+        const auto it=index_.find(source.value);
+        if(it==index_.end())return false;
+        for(auto& send:channels_[it->second].sends)
+            if(send.edgeId==edgeId && !send.primaryOutput){
+                send.enabled=enabled;return true;
+            }
+        return false;
+    }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
         if(!id.value||it==index_.end())return false;
