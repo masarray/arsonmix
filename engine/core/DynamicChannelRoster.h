@@ -30,6 +30,7 @@ struct ChannelSendRef final {
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
     std::uint64_t edgeId=0; // stable native identity; CONTROL-only assignment
+    bool enabled=true; // independent SEND ON/OFF retains gain/tap/EdgeId
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -42,6 +43,9 @@ struct ChannelStripDefinition final {
     // The existing audio control thread owns independent VST instance creation.
     std::vector<std::string> insertCatalogIds;
     std::vector<ChannelSendRef> sends;
+    // Digital INPUT gain is independent of the channel fader and physical preamp.
+    // Append to retain positional aggregate compatibility with older fixtures.
+    float inputGainLinear=1.f;
 };
 
 struct ChannelRosterBudget final {
@@ -62,7 +66,8 @@ struct ChannelEdit final {
         removeInsertReference, moveInsertReference,
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
-        touchDocumentRevision
+        touchDocumentRevision,
+        setInputGain, setSendEnabled, setSendTap
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -76,6 +81,7 @@ struct ChannelEdit final {
     bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
     bool connectMainOnCreate=false; // WIRE-first native creation; legacy imports unchanged
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
+    std::uint64_t sendEdgeId=0; // exact existing parallel EdgeId
     std::string text;
 };
 struct ChannelEditResult final {
@@ -88,11 +94,12 @@ struct ChannelEditResult final {
 };
 
 struct WireChange final {
-    enum class Kind : std::uint8_t {connect,remove,retarget,routeOnly};
+    enum class Kind : std::uint8_t {connect,remove,retarget,routeOnly,setTap};
     Kind kind=Kind::connect;
     ChannelId from{},to{};
     std::uint64_t edgeId=0;
     float gain=1.f;
+    bool preFader=false; // SET_TAP only: true = post-FX / pre-channel-fader
 };
 
 class DynamicChannelRoster final {
@@ -118,6 +125,21 @@ public:
         auto& row=channels_[it->second];
         row.faderLinear=gain;row.pan=pan;
         return true;
+    }
+    // No graph revision change for realtime input trim; native PCM must ACK first.
+    bool rememberLiveInputGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
+        const auto it=index_.find(id.value);
+        if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
+        channels_[it->second].inputGainLinear=gain;
+        return true;
+    }
+    bool rememberLiveSendEnabled(ChannelId id,std::uint64_t edgeId,bool enabled) noexcept {
+        const auto it=index_.find(id.value);
+        if(!id.value||!edgeId||it==index_.end())return false;
+        for(auto& edge:channels_[it->second].sends)
+            if(edge.edgeId==edgeId&&!edge.primaryOutput){edge.enabled=enabled;return true;}
+        return false;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
@@ -225,6 +247,12 @@ public:
                     if(!validFormat(op.format))result.fault=ChannelEditFault::invalidValue;
                     else it->format=op.format;
                     break;
+                case ChannelEdit::Kind::setInputGain:
+                    if(it->role!=ChannelRole::input || !std::isfinite(op.value) ||
+                       op.value<0.f || op.value>16.f)
+                        result.fault=ChannelEditFault::invalidValue;
+                    else it->inputGainLinear=op.value;
+                    break;
                 case ChannelEdit::Kind::setFader:
                     if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f)
                         result.fault=ChannelEditFault::invalidValue;
@@ -241,6 +269,19 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
+                case ChannelEdit::Kind::setSendEnabled:
+                case ChannelEdit::Kind::setSendTap: {
+                    const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
+                        [&](const auto& send){return send.edgeId==op.sendEdgeId;});
+                    if(!op.sendEdgeId || edge==it->sends.end())
+                        result.fault=ChannelEditFault::missingEdge;
+                    else if(edge->primaryOutput)
+                        result.fault=ChannelEditFault::invalidAction;
+                    else if(op.kind==ChannelEdit::Kind::setSendEnabled)
+                        edge->enabled=op.enabled;
+                    else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
+                    break;
+                }
                 case ChannelEdit::Kind::touchDocumentRevision:
                     // Exact stable ChannelId is validated above. Bump the
                     // document revision without fabricating a DSP parameter
@@ -397,13 +438,23 @@ public:
             }
             auto& sends=source->sends;
             if(op.kind==WireChange::Kind::remove ||
-               op.kind==WireChange::Kind::retarget) {
+               op.kind==WireChange::Kind::retarget ||
+               op.kind==WireChange::Kind::setTap) {
                 const auto edge=std::find_if(sends.begin(),sends.end(),
                     [&](const auto& s){return s.edgeId==op.edgeId;});
                 if(!op.edgeId || edge==sends.end()) {
                     result.fault=ChannelEditFault::missingEdge;break;
                 }
                 if(op.kind==WireChange::Kind::remove){sends.erase(edge);continue;}
+                if(op.kind==WireChange::Kind::setTap) {
+                    // One exact parallel EdgeId. Never alter PRIMARY_OUT,
+                    // other sends, their levels, destination or PAN.
+                    if(edge->primaryOutput || edge->preFader==op.preFader) {
+                        result.fault=ChannelEditFault::invalidValue;break;
+                    }
+                    edge->preFader=op.preFader;
+                    continue;
+                }
                 if(!op.to.value || op.to==op.from || edge->destination==op.to){
                     result.fault=ChannelEditFault::invalidValue;break;
                 }
@@ -750,7 +801,10 @@ public:
             if(!ch.id.value || ch.id.value==std::numeric_limits<std::uint64_t>::max() ||
                !ids.insert(ch.id.value).second ||
                !std::isfinite(ch.faderLinear) || ch.faderLinear<0.f ||
-               ch.faderLinear>4.f || !std::isfinite(ch.pan) ||
+               ch.faderLinear>4.f || !std::isfinite(ch.inputGainLinear) ||
+               ch.inputGainLinear<0.f || ch.inputGainLinear>16.f ||
+               (ch.role!=ChannelRole::input && ch.inputGainLinear!=1.f) ||
+               !std::isfinite(ch.pan) ||
                ch.pan< -1.f || ch.pan>1.f)return false;
             maxId=std::max(maxId,ch.id.value);
             mains+=ch.role==ChannelRole::main;
@@ -764,6 +818,7 @@ public:
                    !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
                    !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
                     return false;
+                if(send.primaryOutput&&!send.enabled)return false;
                 primary+=send.primaryOutput;
                 maxEdge=std::max(maxEdge,send.edgeId);
             }

@@ -2375,6 +2375,15 @@ public:
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeWireGain(epoch,rev,roster,source,edge,gain);
     }
+    bool setNativeWireEnabled(std::uint64_t epoch,std::uint64_t rev,
+                              std::uint64_t roster,armix::mixer::ChannelId source,
+                              std::uint64_t edge,bool enabled) noexcept {
+        if(independent_.active()||!attached_||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeWireEnabled(epoch,rev,roster,source,edge,enabled);
+    }
     bool setNativeInputMix(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,float gain,float pan) noexcept {
         if(independent_.active()||!directFence_.permitted()||
@@ -2382,6 +2391,14 @@ public:
            diagnosticRoute_.load(std::memory_order_acquire)!=
                armix::diagnostics::Route::normal)return false;
         return dryRoutingLab_.setNativeInputMix(epoch,rev,id,gain,pan);
+    }
+    bool setNativeInputGain(std::uint64_t epoch,std::uint64_t rev,
+                            armix::mixer::ChannelId id,float gain) noexcept {
+        if(independent_.active()||!directFence_.permitted()||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal)return false;
+        return dryRoutingLab_.setNativeInputGain(epoch,rev,id,gain);
     }
     bool setNativeInputMuteSolo(std::uint64_t epoch,std::uint64_t rev,
                            armix::mixer::ChannelId id,bool mute,bool solo) noexcept {

@@ -2144,6 +2144,24 @@ public:
         nativeControlDirty_=true;
         return true;
     }
+    // Real ChannelId pre-insert digital input trim. Safe 64-sample DSP ramp;
+    // no new graph, callback, plugin instance or WIRE edit.
+    bool setNativeInputGain(std::uint64_t epochValue,std::uint64_t revision,
+                            armix::mixer::ChannelId id,float gain) noexcept {
+        if(!channelIdPhysicalPcmActive()||
+           nativeAccepted_.deviceEpoch!=epochValue||epochValue!=epoch()||
+           revision!=nativeAccepted_.pcmRevision||
+           !std::isfinite(gain)||gain<0.f||gain>16.f)return false;
+        const auto* channel=nativeAccepted_.graph.roster.find(id);
+        if(!channel||channel->role!=armix::mixer::ChannelRole::input)return false;
+        if(!nativePublisher_.setChannelInputGain(epochValue,revision,id,gain))return false;
+        if(!nativeAccepted_.graph.roster.rememberLiveInputGain(id,gain)) {
+            topologyFault_.store(true,std::memory_order_release);
+            return false;
+        }
+        nativeControlDirty_=true;
+        return true;
+    }
     bool setNativeInputMuteSolo(std::uint64_t epochValue,std::uint64_t revision,
                                 armix::mixer::ChannelId id,
                                 bool mute,bool solo) noexcept {
@@ -2221,6 +2239,29 @@ public:
                 if(!nativePublisher_.setWireGain(ep,graphRev,source,edgeId,gain))return false;
                 if(!nativeAccepted_.graph.roster.rememberLiveParallelSend(
                        source,edge.destination,edge.preFader,gain))return false;
+                nativeControlDirty_=true;
+                return true;
+            }
+        return false;
+    }
+    // SEND ON/OFF changes only the selected existing EdgeId audio gate.
+    // A 64-sample PCM ramp preserves the saved level/tap/PAN and WIRE.
+    bool setNativeWireEnabled(std::uint64_t ep,std::uint64_t graphRev,
+                              std::uint64_t rosterRev,armix::mixer::ChannelId source,
+                              std::uint64_t edgeId,bool enabled) noexcept {
+        if(!channelIdPhysicalPcmActive()||!ready()||ep!=epoch()||
+           graphRev!=nativeAccepted_.pcmRevision||
+           rosterRev!=nativeAccepted_.graph.roster.revision())return false;
+        const auto* row=nativeAccepted_.graph.roster.find(source);
+        if(!row||!edgeId)return false;
+        for(const auto& edge:row->sends)
+            if(edge.edgeId==edgeId&&!edge.primaryOutput){
+                if(!nativePublisher_.setWireEnabled(ep,graphRev,source,edgeId,enabled))
+                    return false;
+                if(!nativeAccepted_.graph.roster.rememberLiveSendEnabled(source,edgeId,enabled)){
+                    topologyFault_.store(true,std::memory_order_release);
+                    return false;
+                }
                 nativeControlDirty_=true;
                 return true;
             }
@@ -2680,8 +2721,10 @@ public:
                              "NATIVE_SET_PRIMARY_OUT",
                              "NATIVE_APPLY_WIRE_TRANSACTION",
                              "NATIVE_SET_WIRE_GAIN",
+                             "NATIVE_SET_SEND_ENABLED",
                              "NATIVE_SET_PROCESSING_FORMAT",
                              "NATIVE_SET_CHANNEL_MIX",
+                             "NATIVE_SET_INPUT_GAIN",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
                              "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
@@ -2714,6 +2757,7 @@ public:
                 ?"STEREO":"MONO");
             if(const auto* accepted=nativeAccepted_.graph.roster.find(ch.id)) {
                 row->setProperty("fader",static_cast<double>(accepted->faderLinear));
+                row->setProperty("inputGain",static_cast<double>(accepted->inputGainLinear));
                 row->setProperty("pan",static_cast<double>(accepted->pan));
                 row->setProperty("mute",accepted->mute);
                 row->setProperty("solo",accepted->solo);
@@ -2778,6 +2822,7 @@ public:
                     std::to_string(send.destination.value)));
                 edge->setProperty("preFader",send.preFader);
                 edge->setProperty("gain",static_cast<double>(send.gain));
+                edge->setProperty("enabled",send.enabled);
                 edge->setProperty("pan",static_cast<double>(send.pan));
                 sends.add(juce::var(edge.release()));
             }
@@ -2798,6 +2843,7 @@ public:
                 static_cast<double>(accepted.gainLinear));
             edge->setProperty("tap",accepted.preFader?"PRE_FADER":"POST_FADER");
             edge->setProperty("primaryOutput",accepted.primaryOutput);
+            edge->setProperty("enabled",accepted.enabled);
             edges.add(juce::var(edge.release()));
         }
         state->setProperty("edges",juce::var(edges));

@@ -1,4 +1,6 @@
-# ArSon Vocal Throw — native phrase-aware live delay
+# Vocal Delay — native phrase-aware live delay
+
+> Product display name (November 2026): **Vocal Delay**. Historical filenames, C++ symbols, wire events and the persisted `armix.builtin.vocal-throw.v1` catalog identity remain stable for backwards compatibility.
 
 **Status: functional prototype on a separate feature branch; not a certified live-performance release.**
 

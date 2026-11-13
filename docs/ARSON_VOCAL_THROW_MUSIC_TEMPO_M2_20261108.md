@@ -1,6 +1,8 @@
-# ArSon Vocal Throw M2 — Native Music Channel Tempo Detection
+# Vocal Delay M2 — Native Music Channel Tempo Detection
 
-**Status:** implementation and qualification draft, stacked on Vocal Throw M1 PR #469. M1 green head `4db384851e6f6378cca4fd037b744c98bd1f0ba3`; M2 is PR #474 and tracks issue #473.
+> Product display name (November 2026): **Vocal Delay**. Historical filenames, C++ symbols, wire events and the persisted `armix.builtin.vocal-throw.v1` catalog identity remain stable for backwards compatibility.
+
+**Status:** implementation and qualification draft, stacked on Vocal Delay M1 PR #469. M1 green head `4db384851e6f6378cca4fd037b744c98bd1f0ba3`; M2 is PR #474 and tracks issue #473.
 
 ## Signal authority
 
@@ -19,7 +21,7 @@ Authoritative ChannelId native PCM graph, single JUCE / ASIO callback
 
 **AUDIO callback contract:** no memory allocations, FFT, file I/O, logging, locks, networking, JS DSP, or new audio threads. Only the explicitly selected source channel's input stereo samples are summarized; every other channel skips the per-sample music tap. Existing JUCE callback remains the only audio authority. Core audio buffers and retained FX leases remain with the native graph.
 
-**CONTROL contract:** only an accepted `ChannelId` with input / GROUP / FX_RETURN role and an actually scheduled PCM lane is a permissible tempo source. The native FX editor validates both its own vocal insert instance and source identity, device epoch and graph revision. Monitor/MAIN and the vocal channel itself are not accepted. On a valid structural graph recompile, an existing source ID is rebound with a new analysis generation; if absent or stale, the music clock is disabled, and Vocal Throw falls back to its saved BPM or TAP tempo.
+**CONTROL contract:** only an accepted `ChannelId` with input / GROUP / FX_RETURN role and an actually scheduled PCM lane is a permissible tempo source. The native FX editor validates both its own vocal insert instance and source identity, device epoch and graph revision. Monitor/MAIN and the vocal channel itself are not accepted. On a valid structural graph recompile, an existing source ID is rebound with a new analysis generation; if absent or stale, the music clock is disabled, and Vocal Delay falls back to its saved BPM or TAP tempo.
 
 ## Detector
 
@@ -34,7 +36,7 @@ Authoritative ChannelId native PCM graph, single JUCE / ASIO callback
 
 - Prior M1 Windows MSVC/JUCE: 63/63 CTest on exact SHA `4db384851e6f6378cca4fd037b744c98bd1f0ba3`.
 - M2 Windows MSVC/JUCE: 64/64 CTest, including `NativeMusicTempoSourceOnsetsAndFallback`, on exact SHA `cce63231da52f69e6789873ecc406adba69aa1cb`. See [Actions run 42498186748](https://github.com/masarray/arsonmix/actions/runs/42498186748).
-- Chromium FAT M2 native Vocal Throw picker, music source ACK, BPM readback and stale instance handling passed on same SHA.
+- Chromium FAT M2 native Vocal Delay picker, music source ACK, BPM readback and stale instance handling passed on same SHA.
 - Later hardening: inbound tempo sampled before same-callback THROW and reset on plugin audio reprepare; corresponding regression checks for manual fallback and active tail interval stability. Qualification on the later SHA must be checked independently.
 - Deterministic PCM: 72, 95, 120, 160 BPM; non-vocal source, stale revision, source change, dropout, default fallback. The CTest calls the *actual* native publisher to verify a music signal traverses the accepted graph, not only the isolated estimator.
 

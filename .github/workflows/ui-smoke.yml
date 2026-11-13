@@ -110,12 +110,17 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-harmony.js
           python tests/native_harmony_assembly_test.py
           node --check site/preview-v2/assets/mixer-native-vocal-throw.js
+          node --check site/preview-v2/assets/mixer-native-sonku.js
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_spatial_core_test.cpp -o /tmp/armix-sonku-core-smoke
+          /tmp/armix-sonku-core-smoke
           python tests/native_peq_assembly_test.py
           python tests/native_v60_fader_assembly_contract.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
+          # Fast source-only CSS owner gate: catch stacking before expensive Chromium.
+          python scripts/check_preview_css_ownership.py
+          python -m unittest discover -s tests -p approved_preview_css_owner_nonregression_test.py -v
           python tests/gui_baseline_lock_test.py
-          python tests/mixer_physical_keys_contract.py
           python tests/brand_icon_contract_test.py
           python tests/brand_package_files_test.py
           python tests/css_v28_restore.py
@@ -160,7 +165,7 @@ jobs:
       - name: Verify touch toolbar More keeps Add Audio available at 360/390/430px
         if: ${{ startsWith(github.head_ref, 'fix/gui-') }}
         run: python tests/approved_preview_mobile_navigation_smoke.py
-      - name: Check Vocal Throw editor, picker and plugin native UI at two viewport widths
+      - name: Check Vocal Delay editor, picker and plugin native UI at two viewport widths
         if: ${{ github.head_ref == 'fix/rc-ux-audio-first-run-20261112' }}
         run: python tests/approved_native_vocal_throw_smoke.py
       # RC branch only: run the current downstream GUI/WIRE/FX regressions
@@ -189,12 +194,95 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  vocal-throw-preview:
-    name: Vocal Throw native editor desktop/mobile Chromium FAT
+  sonku-preview:
+    name: 8D-SonKu native insert/editor Chromium FAT (desktop and narrow)
     needs: quick
-    # Run dedicated Vocal Throw visual validation in the reconciled native
+    # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
+    # Preserve fast-only checks for unrelated GUI and engine branches.
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scoped Chromium only
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Actual native picker insert, ACK/readback, editor open, UI controls
+        run: python tests/approved_native_sonku_smoke.py
+      # Same Chromium installation and same native-only GUI assembler.
+      # Fast scoped SOF qualification runs on the existing SonKu integration
+      # job (zero additional browser runners and zero Windows recompiles).
+      - name: Native SOF PRE/POST, SEND ON, EdgeId gain and ACK/readback Chromium
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
+        run: python tests/approved_native_sof_chromium_smoke.py
+      - name: Native WIRE Inspector rejected gain and exact EdgeId ACK rollback (real Chromium)
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
+        run: python tests/approved_native_wire_gain_smoke.py
+      - name: Integrated V65 WIRE motion, SOF and actual native WIRE regression
+        if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'integration/sof-sonku-main-') }}
+        run: |
+          python tests/pages_v60_fader_wire_tactile_smoke.py
+          python tests/approved_native_wire_gain_smoke.py
+          python tests/sof_contextual_console_smoke.py
+      - name: Render original 8D-SonKu headphone candidate through exact native HRTF
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-listening
+          /tmp/sonku-listening sonku-listening
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_early_reflections_test.cpp -o /tmp/sonku-room-test
+          /tmp/sonku-room-test
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_musical_reverb_test.cpp -o /tmp/sonku-fdn-test
+          /tmp/sonku-fdn-test
+      - name: SonKu same-runner realtime CPU comparison (informational, not a release pass)
+        # GUI-only depth work must not recompile unrelated native/audio FAT.
+        if: ${{ !startsWith(github.head_ref, 'feat/sonku-depth-') }}
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-rt-bench
+          /tmp/sonku-rt-bench
+          python tests/sonku_offline_demo_contract.py sonku-listening
+      - name: Publish 8D-SonKu reproducible listening WAVs and blind answer key
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Headphone-Audio-${{ github.run_id }}
+          path: sonku-listening/*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Keep verified 8D-SonKu editor screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Editor-${{ github.run_id }}
+          path: arsonmix-sonku-editor-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Keep native SOF accepted-state desktop and narrow screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SOF-PCM-Bridge-${{ github.run_id }}
+          path: |
+            arsonmix-native-sof-*.png
+            arsonmix-v60-*.png
+            native-wire-gain-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  vocal-throw-preview:
+    name: Vocal Delay native editor desktop/mobile Chromium FAT
+    needs: quick
+    # Run dedicated Vocal Delay visual validation in the reconciled native
     # engine branch too; generic /preview/ smoke does not call this fixture.
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -202,7 +290,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Chromium for targeted Vocal Throw UI
+      - name: Install Chromium for targeted Vocal Delay UI
         run: |
           python -m pip install playwright
           python -m playwright install --with-deps chromium
@@ -212,7 +300,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ArSonMix-Vocal-Throw-Desktop-Mobile-${{ github.run_id }}
+          name: ArSonMix-Vocal-Delay-Desktop-Mobile-${{ github.run_id }}
           path: arsonmix-vocal-throw-*.png
           if-no-files-found: ignore
           retention-days: 7
@@ -281,7 +369,9 @@ jobs:
     name: Full Chromium /preview/ visual and interaction qualification
     # Draft edits are cheap; ChatGPT milestone comments dispatch this full suite.
     needs: quick
-    if: ${{ github.event_name != 'pull_request' }}
+    # Scoped SonKu exact-SHA milestone gets its own shorter visual + pointer FAT.
+    # Do not also run the full generic Chromium suite for the same manual SHA.
+    if: ${{ github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -359,7 +449,7 @@ jobs:
         run: python tests/approved_native_peq_smoke.py
       - name: Native Compressor real Chromium FX, transfer curve, ACK and responsive editor
         run: python tests/approved_native_compressor_smoke.py
-      - name: Native Vocal Throw portable My Presets, audio ACK and responsive editor
+      - name: Native Vocal Delay portable My Presets, audio ACK and responsive editor
         run: python tests/approved_native_vocal_throw_smoke.py
       - name: Native Harmony effective-key LCD, Music/Manual ACK, slow readback and geometry
         run: python tests/approved_native_harmony_smoke.py
@@ -375,6 +465,8 @@ jobs:
         run: python tests/approved_native_wire_gain_smoke.py
       - name: Stage D one runtime CSSOM and actual stylesheet network count
         run: python tests/approved_css_stage_d_single_bundle_smoke.py
+      - name: Contextual GAIN/FX and Sends-on-Faders browser workflow
+        run: python tests/sof_contextual_console_smoke.py
       - name: V60 real Chromium tactile fader and selected full-span WIRE
         run: python tests/pages_v60_fader_wire_tactile_smoke.py
       - name: Stage C rendered CSS parity (original vs compiled, three viewports + hover)

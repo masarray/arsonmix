@@ -27,21 +27,24 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count("function insertChosenNativeThrow(){"),1)
         self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-throw="1"'),1)
+        self.assertEqual(self.assembled.count('data-fast-native-sonku="1"'),1)
+        self.assertEqual(self.assembled.count('src="assets/mixer-native-sonku.js?v=sonku-1"'),1)
+        self.assertEqual(self.assembled.count("function insertChosenNativeSonKu(){"),1)
 
-    def test_additional_native_registry_fx_are_first_class_builtins(self):
-        # Source-level guard for the owner's actual Windows FAT screenshot:
-        # hardcoded EQ/Comp/Harmony/Throw were visible in BUILT-IN FX while
-        # catalog-driven Guitar FX was incorrectly below VST3 PLUGINS.
+    def test_catalog_driven_guitar_and_one_specialized_sonku_button(self):
+        # Main #657: use native catalog for newly compiled FX, not a fifth
+        # browser-only Guitar button. Preserve the M4 SonKu specialized editor.
         self.assertIn("const nativeExtra=list.filter(p=>p.format==='Native'",self.assembled)
         self.assertIn("p.id.startsWith('armix.builtin.')",self.assembled)
-        self.assertIn("nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin",self.assembled)
+        self.assertIn("'armix.builtin.8d-sonku.v1'",self.assembled)
+        self.assertIn("nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin",self.assembled)
         self.assertIn("const vstItems=list.filter(p=>p.format!=='Native');",self.assembled)
         self.assertIn("(vstItems.length?vstItems.map(p=>",self.assembled)
-        # New effects use standard catalog id insertion; no visual-only
-        # Guitar button and no fifth bespoke native FX branch are invented.
         self.assertIn('data-fast-id="'+
                       "'+escapeHtml(p.id)+'"+'"',self.assembled)
+        self.assertEqual(self.assembled.count('data-fast-native-sonku="1"'),1)
         self.assertNotIn('data-fast-native-guitar',self.assembled)
+        self.assertIn("if(b.hasAttribute('data-fast-native-sonku'))",self.assembled)
 
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
@@ -53,7 +56,9 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('data-fast-native-eq="1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-comp="1"'),1)
         self.assertIn("if(t.fx[index]==='Compressor')",self.assembled)
-        self.assertIn("if(t.fx[index]==='ArSon Vocal Throw')",self.assembled)
+        self.assertIn("if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw')",self.assembled)
+        self.assertIn('class="fast-effect-title">Vocal Delay</span>',self.assembled)
+        self.assertIn("'vocal delay','vocal throw'",self.assembled)
 
     def test_single_style_owner(self):
         # The approved CSS compiler requires exactly 18 component-owner links.
@@ -61,6 +66,40 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertNotIn('href="assets/mixer-native-peq.css',self.assembled)
         css=(ROOT/"site/preview-v2/assets/mixer-fx-rack.css").read_text("utf-8")
         self.assertIn(".mx-peq[hidden]{display:none}",css)
+        self.assertIn(".mx-sonku[hidden]{display:none!important}",css)
+        self.assertIn(".mx-sonku .sk-listener-art",css)
+        png=(ROOT/"site/preview-v2/assets/sonku-listener-top.png").read_bytes()
+        self.assertEqual(png[:8],bytes([137,80,78,71,13,10,26,10]))
+        self.assertLess(len(png),45000)
+        self.assertNotIn("mixer-native-sonku.css",self.assembled)
+        sonku=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        # SonKu now paints the actual rear/top-view PNG with the listener
+        # facing FRONT at the top of the room, not the prior top-view face.
+        self.assertIn('id="skListenerArt"',sonku)
+        self.assertIn('href="assets/sonku-listener-top.png"',sonku)
+        self.assertIn('data-orientation="front-up-rear"',sonku)
+        self.assertIn('id="skFarSources"',sonku)
+        self.assertIn('id="skNearSources"',sonku)
+        self.assertIn('id="skFarArc"',sonku)
+        self.assertIn('id="skNearArc"',sonku)
+        self.assertIn('x="103" y="90" width="194" height="202"',sonku)
+        self.assertNotIn('id="skRearSources"',sonku)
+        self.assertNotIn('id="skFrontSources"',sonku)
+        self.assertIn('const speakerNodes=',sonku)
+        self.assertIn('const depthLayers=',sonku)
+        self.assertNotIn('id="skCrown"',sonku)
+        self.assertNotIn('id="skBackSuit"',sonku)
+        # Pin the 256x256 rear-view alpha PNG used by the installed GUI;
+        # never silently repack the old flipped top-view artwork.
+        import hashlib
+        self.assertEqual(hashlib.sha256(png).hexdigest(),
+            "34d067dce8fa83ed0233b61c326fc8b2182a08b5b2a875d2ca28d75b3d2be5d8")
+        self.assertEqual(png[16:24],bytes([0,0,1,0,0,0,1,0]))
+        self.assertIn(b"tRNS",png)
+        self.assertIn("FRONT</text>",sonku)
+        self.assertIn('arMixBuiltinSonKuAck',sonku)
+        self.assertIn('nativeSonKuSet',sonku)
+        self.assertNotIn("new AudioContext",sonku)
         self.assertIn("grid-template-columns:minmax(0,1fr) 143px",css)
         script=(ROOT/"site/preview-v2/assets/mixer-native-peq.js").read_text("utf-8")
         self.assertIn('const LOG=Math.log(1000)',script)
@@ -81,6 +120,31 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn("armix-floating-close",throw)
         self.assertNotIn("new AudioContext",throw)
 
+    def test_sonku_native_space_v2_owned_by_single_pcm_graph(self):
+        main=(ROOT/"src/Main.cpp").read_text("utf-8")
+        processor=(ROOT/"engine/builtin_fx/SonKuSpatialProcessor.h").read_text("utf-8")
+        core=(ROOT/"engine/builtin_fx/sonku/SonKuSpatialCore.h").read_text("utf-8")
+        js=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        snapshot=main.split("void emitNativeSonKuSnapshot(",1)[1].split(
+            "void servicePendingNativeSonKu()",1)[0]
+        for field in ("spacePreset","sourceDistanceMeters","roomAmount","ambience"):
+            self.assertIn('values->setProperty("'+field+'"',snapshot)
+            if field=="spacePreset":
+                self.assertIn('values.getProperty("spacePreset"',main)
+            else:
+                self.assertIn('optionalNumber("'+field+'"',main)
+            self.assertIn(field,js)
+            self.assertIn(field,core)
+        self.assertIn('reply->setProperty("schemaVersion",2)',snapshot)
+        self.assertIn("queueSettings(settings,numeric)",main)
+        self.assertIn("complete_.push(",processor)
+        self.assertIn("out.writeInt(2)",processor)
+        self.assertIn("version==1&&size!=30",processor)
+        self.assertIn("version==2&&size!=46",processor)
+        self.assertNotIn("new AudioContext",js)
+        self.assertIn("[data-sk-room]",js)
+        self.assertIn('arMixBuiltinSonKuAck',js)
+
     def test_native_tempo_readback_belongs_to_vocal_throw_not_eq(self):
         # The real C++ dispatcher must populate the exact VocalThrow
         # snapshot, not an unrelated EQ response. Browser-only mocks cannot
@@ -99,7 +163,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
                 "musicBeatAnchorFrame","musicDroppedFrames")
         for field in fields:
             self.assertIn('reply->setProperty("'+field+'"',vocal,
-                          "missing accepted Vocal Throw BPM field: "+field)
+                          "missing accepted Vocal Delay BPM field: "+field)
             self.assertNotIn('reply->setProperty("'+field+'"',eq,
                              "cross-FX snapshot pollution: "+field)
         # After device restart or graph change the last control snapshot
