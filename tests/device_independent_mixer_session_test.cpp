@@ -80,6 +80,41 @@ int main() {
     valid(track->sends.back().destination==stableMain &&
           !track->sends.back().primaryOutput);
 
+    // SEND ON/OFF is a state of the exact parallel EdgeId, NOT removal.
+    // Primary OUT and a different edge may not be touched accidentally.
+    const auto sendEdge=track->sends.back().edgeId;
+    ChannelEdit off;off.kind=ChannelEdit::Kind::setSendEnabled;
+    off.id=backing;off.sendEdgeId=sendEdge;off.enabled=false;
+    auto toggled=logical.edit(logical.revision(),
+        std::span<const ChannelEdit>{&off,1});
+    valid(toggled.accepted());
+    track=logical.roster().find(backing);
+    valid(track->sends.size()==2 && !track->sends.back().enabled &&
+          track->sends.back().gain==.25f &&
+          track->sends.back().edgeId==sendEdge &&
+          track->sends.front().primaryOutput && track->sends.front().enabled);
+    const auto revisionAfterOff=logical.revision();
+    valid(!logical.edit(revisionAfterOff-1,
+        std::span<const ChannelEdit>{&off,1}).accepted());
+    ChannelEdit wrong=off;wrong.sendEdgeId=serialEdge;
+    valid(!logical.edit(logical.revision(),
+        std::span<const ChannelEdit>{&wrong,1}).accepted());
+    wrong.sendEdgeId=99999999;
+    valid(!logical.edit(logical.revision(),
+        std::span<const ChannelEdit>{&wrong,1}).accepted());
+    valid(!logical.roster().find(backing)->sends.back().enabled);
+    // Restore retains disabled SEND identity and parameters without hardware.
+    DeviceIndependentMixerSession switched;
+    valid(switched.restore(logical.roster()));
+    const auto* swapped=switched.roster().find(backing);
+    valid(swapped && !swapped->sends.back().enabled &&
+          swapped->sends.back().gain==.25f && swapped->sends.back().edgeId==sendEdge);
+    ChannelEdit on=off;on.enabled=true;
+    valid(logical.edit(logical.revision(),
+        std::span<const ChannelEdit>{&on,1}).accepted());
+    valid(logical.roster().find(backing)->sends.back().enabled &&
+          logical.roster().find(backing)->sends.back().edgeId==sendEdge);
+
     // 4) SOURCE ONLY removes primary MAIN but leaves the strip and
     // its explicit parallel SEND. Removing the last send keeps the channel.
     ChannelEdit sourceOnly;
