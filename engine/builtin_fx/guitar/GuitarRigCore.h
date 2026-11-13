@@ -32,7 +32,7 @@ public:
         p.blocks[3]={4,Module::cabinet,true,{}};
         p.blocks[0].values[0]=0.22f;
         p.blocks[1].values[0]=0.45f;
-        p.blocks[2].values[0]=0.25f;
+        p.blocks[2].values[0]=0.20f;
         p.blocks[2].values[1]=0.57f;
         p.blocks[2].values[2]=0.66f;
         return p;
