@@ -21,6 +21,10 @@ SETTINGS={
     "outputTrim":0.75,
     "moving":True,
     "clockwise":True,
+    "spacePreset":0,
+    "sourceDistanceMeters":1.6,
+    "roomAmount":0.55,
+    "ambience":0.30,
 }
 
 def last_action(page,name):
@@ -32,7 +36,7 @@ def last_action(page,name):
 def accepted_snapshot(page,state,settings,applied=None):
     read=last_action(page,"nativeSonKuSnapshot")
     payload={
-        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":1,
+        "requestId":read["requestId"],"status":"ACCEPTED","schemaVersion":2,
         "channelId":SOURCE,"slot":0,"instanceId":INSTANCE,
         "deviceEpoch":state["device"]["epoch"],
         "graphRevision":state["graph"]["revision"],
@@ -229,6 +233,58 @@ def exercise(browser,out,width,height):
         "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
         "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
         applied=dialAction["requestId"])
+    # M4: native SPACE must be an actual typed ACK/readback edit.
+    # No browser-only audio, no visual success before PCM applied.
+    assert editor.locator(".sk-space-options button").count()==4
+    assert editor.locator("#skDistance").is_disabled()
+    assert editor.locator("#skAmbience").is_disabled()
+    editor.locator('[data-sk-room="2"]').click()
+    scene=last_action(page,"nativeSonKuSet")
+    assert scene["settings"]["spacePreset"]==2,scene
+    assert scene["settings"]["sourceDistanceMeters"]==1.6,scene
+    assert scene["settings"]["roomAmount"]==0.55,scene
+    assert scene["settings"]["ambience"]==0.30,scene
+    assert "ACCEPTED" not in editor.locator("#skHint").inner_text()
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":scene["requestId"],"status":"APPLIED"})
+    sceneState={**SETTINGS,"moving":False,"startAzimuthDegrees":0.0,
+                "stereoSpreadDegrees":0.0,
+                "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
+                "spacePreset":2}
+    accepted_snapshot(page,state,sceneState,applied=scene["requestId"])
+    assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
+    assert editor.locator("#skDistance").is_enabled()
+    assert editor.locator("#skAmbience").is_enabled()
+    # Programmatic range edit emits real DOM input+change events, just as
+    # an operator gesture does; assertions inspect outgoing native packets.
+    editor.locator("#skDistance").evaluate("""n=>{
+      n.value='5.0';n.dispatchEvent(new Event('input',{bubbles:true}));
+      n.dispatchEvent(new Event('change',{bubbles:true}));}""")
+    distance=last_action(page,"nativeSonKuSet")
+    assert distance["settings"]["spacePreset"]==2,distance
+    assert abs(distance["settings"]["sourceDistanceMeters"]-5.0)<.01,distance
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":distance["requestId"],"status":"APPLIED"})
+    sceneState={**sceneState,"sourceDistanceMeters":5.0}
+    accepted_snapshot(page,state,sceneState,applied=distance["requestId"])
+    editor.locator('[data-sk-room="1"]').click()
+    clamped=last_action(page,"nativeSonKuSet")
+    assert clamped["settings"]["spacePreset"]==1,clamped
+    assert clamped["settings"]["sourceDistanceMeters"]<=3.1,clamped
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":clamped["requestId"],"status":"APPLIED"})
+    sceneState={**sceneState,"spacePreset":1,
+                "sourceDistanceMeters":clamped["settings"]["sourceDistanceMeters"]}
+    accepted_snapshot(page,state,sceneState,applied=clamped["requestId"])
+    editor.locator('[data-sk-room="0"]').click()
+    off=last_action(page,"nativeSonKuSet")
+    assert off["settings"]["spacePreset"]==0,off
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":off["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**sceneState,"spacePreset":0},
+                      applied=off["requestId"])
+    assert editor.locator("#skDistance").is_disabled()
+    assert editor.locator("#skAmbience").is_disabled()
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.

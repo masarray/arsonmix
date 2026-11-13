@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "SonKuMeasuredHrir.h"
+#include "SonKuEarlyReflections.h"
+#include "SonKuMusicalReverb.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -19,6 +21,15 @@ struct Settings {
     float outputTrim = 0.75f;         // avoid summing two uncorrelated emitters at unity
     bool moving = true;
     bool clockwise = true;
+    // Version-2 persisted, native-ACKed acoustic scene. Zero is legacy
+    // HRTF-only. All other scenes are optional and OFF unless selected.
+    int spacePreset = 0;  // 0=OFF, 1=Square 7.2, 2=Chamber 14.4, 3=Large 28.8
+    float sourceDistanceMeters = 1.6f;
+    // Stored while OFF so the first selected scene is immediately audible
+    // and turning ROOM off/on remembers the previous wet preference.
+    // spacePreset=0 still guarantees identical legacy HRTF-only PCM.
+    float roomAmount = .55f;
+    float ambience = .30f;
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
@@ -28,7 +39,16 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.stereoSpreadDegrees) && s.stereoSpreadDegrees>=0.f &&
         s.stereoSpreadDegrees<=180.f &&
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
-        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f;
+        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f &&
+        s.spacePreset>=0 && s.spacePreset<=3 &&
+        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
+        s.sourceDistanceMeters<=10.f &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
+        std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
+        (s.spacePreset==0 || SonKuEarlyReflections::validGeometry({
+            s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
+            s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
+            s.sourceDistanceMeters}));
 }
 inline double wrapDegrees(double degrees) noexcept {
     degrees=std::fmod(degrees,360.0);
@@ -48,9 +68,13 @@ public:
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
         levelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
+        if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
         reset();
         ready_=true;
-        return true;
+        // Re-publish a saved active scene after device restart, but do NOT
+        // select the new realtime FDN program for the legacy/offline default:
+        // original Studio Glue / Airy Chamber listening renders remain exact.
+        return settings_.spacePreset==0 || applyAcousticSettings(settings_);
     }
     void reset() noexcept {
         for(auto& channel:history_)channel.fill(0.f);
@@ -62,6 +86,8 @@ public:
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
         haveKernel_=false;
+        room_.reset();
+        reverb_.reset();
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -70,11 +96,37 @@ public:
         if(!s.moving || !settings_.moving ||
            s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
+        const bool changed=s.spacePreset!=settings_.spacePreset ||
+            s.sourceDistanceMeters!=settings_.sourceDistanceMeters ||
+            s.roomAmount!=settings_.roomAmount ||
+            s.ambience!=settings_.ambience;
+        if(changed && !applyAcousticSettings(s))return false;
         settings_=s;
         remaining_=0;
         return true;
     }
     Settings settings() const noexcept {return settings_;}
+    // A/B-only control pending room's headphone/device qualification.
+    // Legacy live insert remains room-free until product evidence is accepted.
+    bool setEarlyReflectionsAmount(float amount) noexcept {
+        return room_.setAmount(amount);
+    }
+    // Explicit A/B-only shape selection; never persisted or host-exposed.
+    bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
+        return room_.setShape(shape);
+    }
+    // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
+    bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
+        return room_.setGeometry(geometry);
+    }
+    // Experimental wet-only late room, OFF unless explicitly enabled by
+    // controlled offline A/B. The native parameter contract is unchanged.
+    bool setMusicalReverbAmount(float amount) noexcept {
+        return reverb_.setAmount(amount);
+    }
+    bool setMusicalReverbPreset(SonKuReverbPreset preset) noexcept {
+        return reverb_.setPreset(preset);
+    }
     bool ready() const noexcept {return ready_;}
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
@@ -83,6 +135,7 @@ public:
         if(!ready_ || !left || !right || samples<=0)return;
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
+        const float distanceGain=room_.relativeDistanceGain();
         for(int i=0;i<samples;++i) {
             smoothedMix_+=levelSlew_*(settings_.spatialMix-smoothedMix_);
             smoothedTrim_+=levelSlew_*(settings_.outputTrim-smoothedTrim_);
@@ -121,8 +174,26 @@ public:
                 ears[0]+=v0*l0+v1*l1;
                 ears[1]+=v0*r0+v1*r1;
             }
-            left[i]=dryLevel*x0+binauralLevel*ears[0];
-            right[i]=dryLevel*x1+binauralLevel*ears[1];
+            const auto reflection=room_.active()
+                ?room_.process(x0,x1,degrees_,settings_.stereoSpreadDegrees)
+                :SonKuEarlyReflections::Ears{};
+            const auto late=reverb_.active()
+                ?reverb_.process(x0,x1)
+                :SonKuMusicalReverb::Ears{};
+            // Exact legacy PCM arithmetic on the 1.6m reference (including
+            // all native instances). More distant experimental sources get
+            // inverse-distance pressure falloff on the DIRECT binaural field.
+            // ER uses matching absolute path pressure; diffuse late field
+            // remains an independent environmental stage.
+            if(distanceGain==1.f) {
+                left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
+                right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+            } else {
+                left[i]=dryLevel*x0+binauralLevel*
+                    (distanceGain*ears[0]+reflection.left+late.left);
+                right[i]=dryLevel*x1+binauralLevel*
+                    (distanceGain*ears[1]+reflection.right+late.right);
+            }
             if(++write_==taps)write_=0;
             if(step!=0.) {
                 degrees_+=step;
@@ -133,6 +204,18 @@ public:
         }
     }
 private:
+    bool applyAcousticSettings(const Settings& s) noexcept {
+        const float width=s.spacePreset==1?7.2f:
+            s.spacePreset==2?14.4f:28.8f;
+        const SonKuRoomGeometry geometry{
+            width,width,s.spacePreset? s.sourceDistanceMeters:1.6f};
+        const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
+            s.spacePreset==2?SonKuReverbPreset::AiryChamber:
+                             SonKuReverbPreset::StudioGlue;
+        return room_.setRealtimeRoom(geometry,s.roomAmount,s.spacePreset!=0) &&
+            reverb_.setRealtimeProgram(preset,
+                s.spacePreset!=0?s.ambience:0.f);
+    }
     // Positive azimuth is right. MIT KEMAR supplied azimuth 0..180 with
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
     void interpolate(std::size_t source,double azimuth) noexcept {
@@ -168,6 +251,8 @@ private:
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     Settings settings_{};
+    SonKuEarlyReflections room_{};
+    SonKuMusicalReverb reverb_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float filterSlew_=0.f,levelSlew_=0.f;
     double sampleRate_=0.;
