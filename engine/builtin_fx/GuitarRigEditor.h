@@ -249,6 +249,31 @@ public:
             g.setColour(juce::Colour::fromRGB(51,55,57));
             g.fillRoundedRectangle(picture,12.f);
         }
+        // Fine physical inscriptions live in JUCE, never baked into a body
+        // PNG. Keep typographic baseline locked to the native hardware pixels.
+        // These are identity marks, not fake controls or status indicators.
+        const etch=[&](const juce::String& text,float x,float y,float w,
+                       float h,float size,juce::Colour ink) {
+            const float s=picture.getWidth()/static_cast<float>(hw.width);
+            g.setColour(ink);
+            g.setFont(juce::Font(juce::FontOptions(size*s)));
+            g.drawText(text,juce::roundToInt(picture.getX()+x*s),
+                juce::roundToInt(picture.getY()+y*s),
+                juce::roundToInt(w*s),juce::roundToInt(h*s),
+                juce::Justification::centred);
+        };
+        if(focus_==0)
+            etch("SILENT GATE",72,57,156,30,13,
+                 juce::Colour::fromRGB(154,185,185));
+        else if(focus_==1)
+            etch("OVERDRIVE",78,68,144,26,14,
+                 juce::Colour::fromRGB(213,155,115));
+        else if(focus_==2)
+            etch("ARSON  /  AMP",304,79,112,29,12,
+                 juce::Colour::fromRGB(180,186,184));
+        else
+            etch("ARSON",594,243,69,18,10,
+                 juce::Colour::fromRGB(163,171,170));
         // Paint small readouts close to the hardware control they describe.
         // Neither values nor labels are burned into the device-body PNG.
         for(std::size_t i=0;i<activeControlCount();++i) {
