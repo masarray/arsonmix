@@ -34,7 +34,14 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
   "public approved /preview/ must never own native control authority");
  const html=execFileSync("python3",["-c",
   "from scripts.build_approved_native_gui import native_html; from pathlib import Path; print(native_html(Path('site/preview-v2/index.html').read_text(encoding='utf-8')))"
- ],{encoding:"utf8",maxBuffer:10*1024*1024});
+ ],{
+  encoding:"utf8",maxBuffer:10*1024*1024,
+  // Windows runner's default Python stdout is often CP1252. The approved
+  // GUI includes Unicode symbols (e.g. ◉), so explicitly encode THIS child
+  // stream as UTF-8 rather than relying on host code page or a global CI knob.
+  env:{...process.env,PYTHONIOENCODING:"utf-8"}
+ });
+ assert.ok(html.includes("◉"),"native assembled Unicode survives Python stdout on Windows");
  const bridge=read("web/approved-native-bridge.js");
  const builder=read("scripts/build_approved_native_gui.py");
  assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
