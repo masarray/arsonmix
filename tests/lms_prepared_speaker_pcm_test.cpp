@@ -224,12 +224,126 @@ void polarity_and_eq_band_bypass() {
     const auto measured=std::sqrt(energyOut/energyIn);
     assert(measured>1.93&&measured<2.07);
 }
+
+DriverVoltageModel measuredExample() {
+    DriverVoltageModel m;
+    m.profileId="TEST-ONLY-NOT-A-CERTIFIED-SPEAKER";
+    m.dacFullScaleVrms=2.;m.amplifierVoltageGain=30.;
+    m.continuousDriverVrms=10.;m.driverPeakVolts=18.;
+    m.rmsWindowMs=80.;m.releaseMs=40.;
+    return m;
+}
+void voltage_model_profile_validation_and_rollback() {
+    auto request=base(1,false);
+    request.outputs={patch("tested","ASIO#37/OUT-1",0,0)};
+    request.outputs[0].voltageModel=measuredExample();
+    auto kept=prepared(request);
+    auto reject=[&](DriverVoltageModel candidate) {
+        request.outputs[0].voltageModel=std::move(candidate);
+        const auto bad=PreparedSpeakerSystem::prepare(request,kept);
+        assert(bad.fault==SpeakerPlanFault::invalidVoltageModel);
+        assert(kept&&kept->destinationCount()==1); // prior graph intact
+    };
+    auto model=measuredExample();
+    model.dacFullScaleVrms=0.;reject(model);
+    model=measuredExample();model.amplifierVoltageGain=-1.;reject(model);
+    model=measuredExample();model.driverPeakVolts=2.;reject(model);
+    model=measuredExample();model.minimumHighpassHz=23000.;reject(model);
+    model=measuredExample();model.rmsWindowMs=0.;reject(model);
+    model=measuredExample();model.releaseMs=std::nan("");reject(model);
+    model=measuredExample();model.profileId.clear();reject(model);
+    request.outputs[0].voltageModel=measuredExample();
+    request.scratchBudgetBytes=250;
+    const auto budget=PreparedSpeakerSystem::prepare(request,kept);
+    assert(budget.fault==SpeakerPlanFault::scratchBudget);
+    PreparedSpeakerSystem::OutputProtectionReadback reading{};
+    assert(kept->outputProtectionReadback(0,reading)&&
+           reading.voltageModelPrepared);
+    assert(!kept->outputProtectionReadback(1,reading));
+}
+void voltage_peak_rms_recovery_and_channel_isolation() {
+    auto req=base(1,false);
+    req.outputs={patch("modelled","ASIO#37/OUT-1",0,0),
+                 patch("legacy","ASIO#37/OUT-3",0,0)};
+    req.outputs[0].voltageModel=measuredExample();
+    req.outputs[1].ceilingDbfs=0.;
+    auto system=prepared(req);
+    Outputs out(8);
+    std::array<float,256> in{};
+    in.fill(.8f);
+    // Real repeated float PCM; not a unit test of source string existence.
+    for(int block=0;block<500;++block) {
+        assert(system->process(71,14,in.data(),nullptr,out.raw.data(),8,256,true));
+        for(int i=0;i<256;++i) {
+            assert(std::isfinite(out.data[0][i]));
+            assert(std::abs(out.data[0][i])<.213f); // modelled peak voltage
+            assert(std::abs(out.data[2][i]-.8f)<1.e-5f); // independent output
+        }
+    }
+    PreparedSpeakerSystem::OutputProtectionReadback status{};
+    assert(system->outputProtectionReadback(0,status));
+    assert(status.voltageModelPrepared);
+    assert(status.gainReductionDb>12.f); // thermal-oriented detector actually active
+    assert(status.preLimitRmsDigital>.7f);
+    assert(status.outputPeakDigital<.125f);
+    assert(system->outputProtectionReadback(1,status));
+    assert(!status.voltageModelPrepared&&status.gainReductionDb==0.f);
+    assert(std::abs(status.outputPeakDigital-.8f)<1.e-5f);
+    // Recover smoothly toward unity with a low level input.
+    in.fill(.02f);
+    const float firstBefore=out.data[0][255];
+    assert(system->process(71,14,in.data(),nullptr,out.raw.data(),8,256,true));
+    const float shortlyAfter=out.data[0][255];
+    assert(shortlyAfter<.02f&&shortlyAfter<firstBefore);
+    for(int block=0;block<250;++block)
+        assert(system->process(71,14,in.data(),nullptr,out.raw.data(),8,256,true));
+    assert(out.data[0][255]>.019f&&out.data[0][255]<=.020001f);
+    assert(system->outputProtectionReadback(0,status)&&status.gainReductionDb<.1f);
+    // Stale callback cannot write to the isolated destination.
+    out.data[0][0]=.123f;
+    assert(!system->process(72,14,in.data(),nullptr,out.raw.data(),8,256,true));
+    assert(out.data[0][0]==.123f);
+}
+void voltage_profile_safety_hpf_frequency() {
+    auto req=base(1,false);
+    req.outputs={patch("hp","ASIO#37/OUT-1",0,0)};
+    auto model=measuredExample();
+    model.minimumHighpassHz=120.;
+    req.outputs[0].voltageModel=model;
+    auto measure=[&](double hz) {
+        auto graph=prepared(req);
+        Outputs out(8);
+        std::array<float,256> sine{};
+        double inputPower=0.,outputPower=0.;
+        for(int block=0;block<180;++block) {
+            for(int i=0;i<256;++i) {
+                const auto t=static_cast<double>(block*256+i)/req.sampleRate;
+                sine[i]=static_cast<float>(.04*std::sin(2*pi*hz*t));
+            }
+            assert(graph->process(71,14,sine.data(),nullptr,
+                                  out.raw.data(),8,256,true));
+            if(block<30)continue;
+            for(int i=0;i<256;++i) {
+                inputPower+=sine[i]*sine[i];
+                outputPower+=out.data[0][i]*out.data[0][i];
+            }
+        }
+        return std::sqrt(outputPower/inputPower);
+    };
+    const auto low=measure(30.),high=measure(1200.);
+    assert(low<.01); // genuine LR4 24dB/oct safety HPF
+    assert(high>.97&&high<1.03);
+}
+
 int main(){
     validate();
     frequency(100.,1.,0.);
     frequency(1000.,.5,.5);
     frequency(10000.,0.,1.);
     hardware_guard_and_alias();delay_fanout_and_mute();digital_ceiling();per_output_peq();polarity_and_eq_band_bypass();
+    voltage_model_profile_validation_and_rollback();
+    voltage_peak_rms_recovery_and_channel_isolation();
+    voltage_profile_safety_hpf_frequency();
     for(int ways=1;ways<=4;++ways)
         assert(prepared(base(ways))->sectionCount()==static_cast<std::size_t>(2*ways));
     std::cout<<"PASS LMS prepared PCM: LR4, routing, epoch, DSP and delay\n";
