@@ -27,6 +27,87 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, with native readback only",()=>{
+ const vm=require("node:vm"),html=read("site/preview-v2/index.html");
+ const bridge=read("web/approved-native-bridge.js");
+ const builder=read("scripts/build_approved_native_gui.py");
+ assert.match(bridge,/function admittedParallelWire\(uiSourceId,uiEdgeId,operation\)/);
+ assert.match(bridge,/e\.edgeId===edgeId&&e\.from===source&&e\.primaryOutput===false/);
+ assert.match(builder,/getElementById\('wireWsGainText'\)/);
+ assert.match(builder,/!row\.pending/);
+ const renderStart=html.indexOf("function renderWireWsInspector(){");
+ const renderEnd=html.indexOf("function renderWireWorkspace(){",renderStart);
+ assert.ok(renderStart>0&&renderEnd>renderStart);
+ const primary={id:41,sourceId:1,destId:2,kind:"primary",mode:"routeOnly",
+  nativeTap:"POST_FADER",levelDb:0,enabled:true};
+ const parallel={id:42,sourceId:1,destId:3,kind:"send",mode:"send",
+  nativeTap:"POST_FADER",levelDb:-6,enabled:true};
+ const panel={hidden:false,innerHTML:""},readout={textContent:"-6 dB"};
+ const observed=[];
+ const gain=input=>input?.dataset?.wsGain!==undefined?input:null;
+ const tap=input=>input?.dataset?.wsTap!==undefined?input:null;
+ const handlers={};
+ const scope={
+  document:{getElementById(id){
+    if(id==="wireWsInspector")return { ...panel, addEventListener(type,fn){handlers[type]=fn},
+     get hidden(){return panel.hidden},set hidden(v){panel.hidden=v},
+     get innerHTML(){return panel.innerHTML},set innerHTML(v){panel.innerHTML=v}};
+    if(id==="wireWsGainText")return readout;
+    return null;
+  }},
+  window:{__JUCE__:{backend:{}},__ARMIX_NATIVE_M2__:{
+    canWireGain(edge,source){return edge===42&&source===1},
+    canWireTap(edge,source){return edge===42&&source===1},
+    consumeWire(changes){observed.push(changes)}
+  }},
+  wireWsOpen:true,wireWsInspect:{src:1,dst:2},wireWsRemoveConfirm:null,
+  wireWsEditBefore:null,
+  wireEdges:[primary,parallel],
+  tracks:[{id:1,kind:"audio",name:"Vocal"},{id:2,kind:"bus",name:"Bus A"}],
+  master:{id:3,kind:"master",name:"MAIN"},
+  wireWsRoutes:()=>[],
+  wireWsRouteKind:(src,dst)=>({kind:"wire",edge:src===1&&dst===2?primary:parallel}),
+  wireWsLabel:id=>"CH "+id,escapeHtml:s=>String(s),
+  wireSourceTrack:id=>({id}),wireGraphCommit(){throw Error("native must not mutate demo graph")},
+  wireWsSnapshot(){throw Error("native must not take demo undo snapshot")},
+  wireWsRecord(){throw Error("native must not create demo undo history")},
+  render(){throw Error("native must not rebuild mixer DOM")},
+  renderWireWorkspace(){throw Error("native must not rebuild inspector")},
+  say:s=>observed.push(s)
+ };
+ vm.runInNewContext(html.slice(renderStart,renderEnd),scope);
+ vm.runInNewContext("renderWireWsInspector()",scope);
+ assert.match(panel.innerHTML,/PRIMARY · UNITY/);
+ assert.match(panel.innerHTML,/data-ws-gain="41"[^>]+disabled/);
+ scope.wireWsInspect={src:1,dst:3};
+ vm.runInNewContext("renderWireWsInspector()",scope);
+ assert.match(panel.innerHTML,/data-ws-gain="42"/);
+ assert.doesNotMatch(panel.innerHTML,/data-ws-gain="42"[^>]+disabled/);
+ assert.match(panel.innerHTML,/POST FADER/);
+ const eventStart=html.indexOf("document.getElementById('wireWsInspector').addEventListener('focusin',");
+ const eventEnd=html.indexOf("document.getElementById('wireLegend').addEventListener('change',",eventStart);
+ assert.ok(eventStart>0&&eventEnd>eventStart);
+ vm.runInNewContext(html.slice(eventStart,eventEnd),scope);
+ const event=(element,selector)=>({target:{closest:name=>name===selector?element:null}});
+ handlers.input(event({dataset:{wsGain:"41"},value:"-10"},"[data-ws-gain]"));
+ assert.equal(observed.length,0,"PRIMARY BUS has no independent SEND gain");
+ handlers.input(event({dataset:{wsGain:"42"},value:"-12"},"[data-ws-gain]"));
+ assert.deepEqual(JSON.parse(JSON.stringify(observed[0])),[{
+  type:"GAIN",sourceId:1,edgeId:42,levelDb:-12
+ }],"PARALLEL MAIN has the exact writable EdgeId");
+ assert.equal(readout.textContent,"PENDING · -12 dB",
+  "input gesture is pending; never labels it accepted");
+ const picker={dataset:{wsTap:"42"},value:"split"};
+ handlers.change(event(picker,"[data-ws-tap]"));
+ assert.equal(picker.value,"send","native tap selector waits for independent PCM readback");
+ assert.deepEqual(JSON.parse(JSON.stringify(observed[1])),[{
+  type:"MODE",sourceId:1,edgeId:42,mode:"split"
+ }]);
+ assert.match(observed[2],/awaiting accepted native PCM readback/);
+ assert.equal(primary.levelDb,0);
+ assert.equal(parallel.levelDb,-6,"reference WIRE graph never becomes native routing owner");
+});
+
 test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and accepted readback",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const preview=read("site/preview-v2/index.html");
