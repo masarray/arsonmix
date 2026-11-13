@@ -225,6 +225,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
       COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerDraftAckReadbackTests
+      tests/lms_native_draft_ack_readback_test.cpp
+      engine/core/DynamicNativeSessionPublisher.h
+      engine/lms/NativeSpeakerOutputReservation.h)
+  target_compile_features(ARMixSpeakerDraftAckReadbackTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeSameGraphDesignAckReadbackAndStaleRevocation
+      COMMAND ARMixSpeakerDraftAckReadbackTests)
   add_executable(ARMixSpeakerPostFxMainWitnessTests
       tests/lms_native_postfx_main_witness_test.cpp
       engine/lms/PreparedSpeakerSystem.h
