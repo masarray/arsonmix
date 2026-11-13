@@ -6884,13 +6884,13 @@ private:
         servicePendingNativeThrow();
         saveClosedLogicalVendorEditor();
         // A hidden JUCE/WebView2 peer may defer first navigation. Expose the
-        // compositor behind the opaque startup splash after the first tick;
-        // the user sees the completed mixer only after the ready handshake.
+        // compositor while the opaque always-on-top splash masks its first
+        // frame. Never call toBack(): it can leave the finished mixer behind
+        // unrelated desktop windows when Windows refuses foreground activation.
         if (!webViewPeerWarmed_)
         {
             webViewPeerWarmed_ = true;
             setVisible (true);
-            toBack();
             browser_.resized(); // first visible HWND, not its pre-splash size
         }
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
@@ -7377,8 +7377,8 @@ public:
                     if (window_) window_->setVisible (false);
                     updateProbeCompleteTick_ = juce::Time::getMillisecondCounter();
                 }
-                else if (window_)
-                    window_->toFront (true);
+                else if (stage == 2)
+                    presentMixerOnStartup();
             }
         });
 #if defined(_WIN32)
@@ -7426,6 +7426,39 @@ public:
 #endif
     }
 private:
+    void presentMixerOnStartup()
+    {
+        // GUI ready is the *only* normal-launch transition that may foreground
+        // the mixer. No polling, always-on-top mixer or focus stealing after
+        // a user starts working in another app. The updater's silent probe
+        // must remain entirely invisible.
+        if (startupMixerPresented_ || !window_ || isAutoUpdateHealthProbe())
+            return;
+        startupMixerPresented_ = true;
+        window_->setVisible (true);
+        window_->setMinimised (false);
+        window_->toFront (true);
+#if defined(_WIN32)
+        if (auto* peer = window_->getPeer())
+        {
+            auto* hwnd = static_cast<HWND> (peer->getNativeHandle());
+            if (hwnd != nullptr && ::IsWindow (hwnd))
+            {
+                // Windows may ignore JUCE's initial foreground request after
+                // the splash was a separate TOPMOST HWND. Raise once through
+                // the native Z-order, then immediately return to NOTOPMOST.
+                // This is not a persistent Always On Top setting.
+                constexpr auto flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+                ::SetWindowPos (hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+                ::SetWindowPos (hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+                ::SetForegroundWindow (hwnd); // best effort; Windows owns focus policy
+            }
+        }
+#endif
+        window_->grabKeyboardFocus();
+    }
+    bool startupMixerPresented_ = false;
+
 #if defined(_WIN32)
     void serviceSmartUpdateAcknowledgement()
     {

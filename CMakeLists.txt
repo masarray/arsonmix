@@ -77,8 +77,14 @@ message(STATUS "${ARMIX_GUI_BUNDLE_LOG}")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_BINARIES CONFIGURE_DEPENDS
     "${ARMIX_APPROVED_GUI_DIR}/assets/*")
 list(SORT ARMIX_APPROVED_GUI_BINARIES)
+# Original Guitar FX artwork is embedded ONLY for the installed JUCE
+# plugin editor; it never becomes a second /preview/ or runtime file path.
+file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/*.png")
+list(SORT ARMIX_GUITAR_SKIN_PNGS)
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
+    ${ARMIX_GUITAR_SKIN_PNGS}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
@@ -133,7 +139,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_APPLICATION_NAME_STRING="AR MIX Studio"
     JUCE_APPLICATION_VERSION_STRING="${ARMIX_APP_VERSION}"
-    ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}")
+    ARMIX_BUILD_SOURCE_SHA="${ARMIX_BUILD_SOURCE_SHA}"
+    ARMIX_GFX_EMBED_PNG_SKINS=1)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
