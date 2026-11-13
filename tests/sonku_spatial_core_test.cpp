@@ -12,12 +12,21 @@
 
 int main() {
     using namespace armix::sonku;
-    SonKuSpatialCore rejected;
+    // Windows default test-thread stack is commonly 1 MiB. Each SonKu
+    // instance owns ~192 KiB of fixed reverb/reflection delay state;
+    // multiple automatic instances can overflow the stack before an
+    // assertion executes, even though the standalone DSP is correct.
+    // This fixture creates processors on the CONTROL/test heap only.
+    // Production prepare/process and realtime zero-allocation semantics
+    // are not changed by this test-lifetime correction.
+    auto rejectedStorage=std::make_unique<SonKuSpatialCore>();
+    auto& rejected=*rejectedStorage;
     assert(!rejected.prepare(96000.));
     assert(!rejected.prepare(std::numeric_limits<double>::infinity()));
     assert(!rejected.ready());
     for(double rate:{44100.,48000.}) {
-        SonKuSpatialCore core;
+        auto coreStorage=std::make_unique<SonKuSpatialCore>();
+        auto& core=*coreStorage;
         assert(core.prepare(rate));
         Settings s{};
         s.moving=false; s.stereoSpreadDegrees=0.f; s.spatialMix=1.f;
@@ -67,7 +76,10 @@ int main() {
             oneL[i]=chunkL[i]=std::sin(i*0.07f)*0.2f;
             oneR[i]=chunkR[i]=std::cos(i*0.09f)*0.2f;
         }
-        SonKuSpatialCore whole,chunked;
+        auto wholeStorage=std::make_unique<SonKuSpatialCore>();
+        auto chunkedStorage=std::make_unique<SonKuSpatialCore>();
+        auto& whole=*wholeStorage;
+        auto& chunked=*chunkedStorage;
         assert(whole.prepare(rate)&&chunked.prepare(rate));
         assert(whole.setSettings(moving)&&chunked.setSettings(moving));
         whole.process(oneL.data(),oneR.data(),longFrames);
@@ -87,7 +99,12 @@ int main() {
         std::array<float,roomFrames> noL{},noR{},wetL{},wetR{},partL{},partR{};
         noL[0]=wetL[0]=partL[0]=.5f;
         noR[0]=wetR[0]=partR[0]=.5f;
-        SonKuSpatialCore noRoom,withRoom,partRoom;
+        auto noRoomStorage=std::make_unique<SonKuSpatialCore>();
+        auto withRoomStorage=std::make_unique<SonKuSpatialCore>();
+        auto partRoomStorage=std::make_unique<SonKuSpatialCore>();
+        auto& noRoom=*noRoomStorage;
+        auto& withRoom=*withRoomStorage;
+        auto& partRoom=*partRoomStorage;
         assert(noRoom.prepare(rate)&&withRoom.prepare(rate)&&partRoom.prepare(rate));
         Settings roomSettings=s;roomSettings.startAzimuthDegrees=0.f;
         assert(noRoom.setSettings(roomSettings)&&withRoom.setSettings(roomSettings)
@@ -121,7 +138,10 @@ int main() {
         // Allocate this extra test processor off-stack (each core owns
         // fixed ~192 KiB acoustic rings; Windows test stacks are bounded).
         auto approvedSquare=std::make_unique<SonKuSpatialCore>();
-        SonKuSpatialCore glow,glowChunks;
+        auto glowStorage=std::make_unique<SonKuSpatialCore>();
+        auto glowChunksStorage=std::make_unique<SonKuSpatialCore>();
+        auto& glow=*glowStorage;
+        auto& glowChunks=*glowChunksStorage;
         assert(approvedSquare->prepare(rate)&&glow.prepare(rate)&&glowChunks.prepare(rate));
         assert(approvedSquare->setEarlyReflectionsShape(SonKuRoomShape::Square));
         assert(glow.setEarlyReflectionsShape(SonKuRoomShape::Square));
@@ -415,7 +435,10 @@ int main() {
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.
-        SonKuSpatialCore teleport,stationary;
+        auto teleportStorage=std::make_unique<SonKuSpatialCore>();
+        auto stationaryStorage=std::make_unique<SonKuSpatialCore>();
+        auto& teleport=*teleportStorage;
+        auto& stationary=*stationaryStorage;
         assert(teleport.prepare(rate)&&stationary.prepare(rate));
         Settings frontPose=s;frontPose.startAzimuthDegrees=0.f;
         assert(teleport.setSettings(frontPose)&&stationary.setSettings(frontPose));
@@ -436,7 +459,8 @@ int main() {
             changed+=std::abs(stepL[i]-refL[i])+std::abs(stepR[i]-refR[i]);
         assert(changed>.005);
         // MIX/trim changes are smoothed on the same audio clock.
-        SonKuSpatialCore mixCore;
+        auto mixCoreStorage=std::make_unique<SonKuSpatialCore>();
+        auto& mixCore=*mixCoreStorage;
         assert(mixCore.prepare(rate));
         Settings dry=frontPose;dry.spatialMix=0.f;
         assert(mixCore.setSettings(dry));

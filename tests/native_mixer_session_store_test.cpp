@@ -1310,7 +1310,87 @@ static void verifyChannelInputGainSessionRoundtrip() {
     assert(!Codec::decode(juce::JSON::toString(invalid,false),restored));
 }
 
+
+static void verifyLmsOfflineSmixRoundtrip() {
+    using namespace armix::lms;
+    auto document=makeSession();
+    SpeakerSystemRequest accepted;
+    accepted.deviceEpoch=54;accepted.graphRevision=89;
+    accepted.sampleRate=48000.;accepted.ways=2;accepted.stereo=true;
+    accepted.crossoverHz={1200.};
+    OutputPatch way;
+    way.outputId="HF-L";way.portIdentity="ASIO-DRIVER:PORT-7";
+    way.section=1;way.sourceSide=0;way.mute=false;
+    way.gainDb=-6.;way.ceilingDbfs=-12.;
+    way.peq={{3200.,.7,-2.,true}};
+    way.confirmedSpeakerProfile=true;
+    way.voltageModel=DriverVoltageModel{"NOT-CALIBRATED",2.,20.,15.,24.,100.,600.,160.};
+    accepted.outputs={way};
+    OfflineSpeakerDraft saved;
+    assert(OfflineSpeakerDraftPolicy::detach(accepted,saved));
+    document.lmsDraft=saved;
+    const auto text=Codec::encode(document);
+    assert(text.isNotEmpty() && text.contains("arsonmix.lms.offline-draft.v1"));
+    // Hard guarantee: the SESSION extension cannot contain any ASIO binding
+    // or voltage model, including after a file save / reopen.
+    const auto raw=juce::JSON::parse(text).getProperty("lmsDraft",{});
+    assert(raw.isObject());
+    assert(raw.getProperty("deviceEpoch",{}).isVoid());
+    assert(raw.getProperty("hardwareApplied",{}).isVoid());
+    const auto storedOutputs=raw.getProperty("outputs",{});
+    const auto* outputs=storedOutputs.getArray();
+    assert(outputs && outputs->size()==1);
+    assert(outputs->getReference(0).getProperty("portIdentity",{}).isVoid());
+    assert(outputs->getReference(0).getProperty("voltageModel",{}).isVoid());
+    MixerSessionDocument reopened;
+    assert(Codec::decode(text,reopened));
+    assert(reopened.lmsDraft && reopened.lmsDraft->outputs.size()==1);
+    SpeakerSystemRequest disconnected;
+    assert(OfflineSpeakerDraftPolicy::restoreDisconnected(*reopened.lmsDraft,disconnected));
+    assert(disconnected.deviceEpoch==0 && disconnected.graphRevision==0);
+    assert(disconnected.verifiedPorts.empty());
+    assert(disconnected.outputs[0].mute && disconnected.outputs[0].portIdentity.empty());
+    assert(disconnected.outputs[0].peq.size()==1);
+    // Old v1 .smix has no LMS extension; it must still decode identically.
+    auto legacy=makeSession();legacy.lmsDraft.reset();
+    MixerSessionDocument old;
+    assert(Codec::decode(Codec::encode(legacy),old)&&!old.lmsDraft);
+
+    const auto checkTamper=[&](const char* key,const juce::var& value,
+                               bool nested) {
+        auto test=juce::JSON::parse(text);
+        auto draft=test.getProperty("lmsDraft",{});
+        if(nested) {
+            const auto storedOutputs=draft.getProperty("outputs",{});
+            auto* out=storedOutputs.getArray();
+            assert(out && out->size()==1);
+            out->getReference(0).getDynamicObject()->setProperty(key,value);
+        } else draft.getDynamicObject()->setProperty(key,value);
+        MixerSessionDocument rejected=old;
+        assert(!Codec::decode(juce::JSON::toString(test,false),rejected));
+        assert(!rejected.lmsDraft.has_value());
+    };
+    checkTamper("hardwareApplied",true,false);
+    checkTamper("deviceEpoch","54",false);
+    checkTamper("portIdentity","ASIO-DRIVER:PORT-7",true);
+    checkTamper("mute",false,true);
+    checkTamper("confirmedSpeakerProfile",true,true);
+    checkTamper("version",2,false);
+    checkTamper("ceilingDbfs",-99.0,true);
+    // Native file store uses the SAME codec and staged hash validation.
+    const auto file=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("arsonmix-lms-m11-"+juce::Uuid().toDashedString()+".smix");
+    assert(NativeMixerSessionStore::writeFile(file,document,{}).isEmpty());
+    MixerSessionDocument onDisk;
+    std::vector<armix::shows::BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,onDisk,states).isEmpty());
+    assert(onDisk.lmsDraft && onDisk.lmsDraft->outputs[0].outputId=="HF-L");
+    assert(onDisk.lmsDraft->outputs[0].portIdentity.empty());
+    assert(file.deleteFile());
+}
+
 int main(){
+    verifyLmsOfflineSmixRoundtrip();
     verifyChannelInputGainSessionRoundtrip();
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();

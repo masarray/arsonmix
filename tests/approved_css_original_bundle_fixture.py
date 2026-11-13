@@ -15,6 +15,7 @@ SOURCE = ROOT / "site/preview-v2/index.html"
 sys.path.insert(0, str(ROOT / "scripts"))
 from compile_approved_css import LINK
 from compose_operator_ux import apply_operator_ux
+from compose_lms import apply_lms
 from approved_fx_rack_interaction import apply_fx_rack_interaction
 ORIGINAL_LINK = re.compile(
     r'<link\s+rel="stylesheet"\s+href="assets/[^"]+\.css(?:\?[^"]*)?">'
@@ -44,5 +45,6 @@ def restore_original_css_bundle(bundle: Path) -> None:
         shutil.copyfile(ROOT / "site" / owner / "assets" / name, assets / name)
     # The shipped DOM already contains the same composition. Reapply it
     # only to reconstruct the CSS owner bytes, using its original HTML input.
-    apply_operator_ux(apply_fx_rack_interaction(source_html, assets), assets)
+    composed=apply_operator_ux(apply_fx_rack_interaction(source_html, assets), assets)
+    apply_lms(composed, assets)  # same new owner bytes before CSS optimization
     index.write_text(original_html, encoding="utf-8")

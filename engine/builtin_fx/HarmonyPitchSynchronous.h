@@ -92,6 +92,10 @@ private:
         if(state.nextCenter+width<static_cast<double>(time))
             state.nextCenter=static_cast<double>(time)+width;
         float sumL=0.f,sumR=0.f,weight=0.f;
+        // True mono source windows must stay bit-exact across compilers.
+        // Only reuse a normalized ear when every contributing sample is
+        // equal. Real stereo signals always retain independent accumulators.
+        bool identicalSourceWindows=true;
         for(auto& grain:state.grains) {
             if(!grain.active)continue;
             const double offset=static_cast<double>(time)-grain.center;
@@ -100,13 +104,27 @@ private:
             if(u<=-1.)continue;
             // Raised compact zero-slope window, avoiding per-sample trig.
             const float w=static_cast<float>((1.-u*u)*(1.-u*u));
-            sumL+=readAt(left,time,writeIndex,grain.source+offset)*w;
-            if constexpr(Stereo)
-                sumR+=readAt(right,time,writeIndex,grain.source+offset)*w;
+            const float leftSample=readAt(
+                left,time,writeIndex,grain.source+offset);
+            sumL+=leftSample*w;
+            if constexpr(Stereo) {
+                const float rightSample=readAt(
+                    right,time,writeIndex,grain.source+offset);
+                identicalSourceWindows &= leftSample==rightSample;
+                sumR+=rightSample*w;
+            }
             weight+=w;
         }
         if(weight<.05f)return {};
-        return {sumL/weight,sumR/weight,true};
+        const float normalizedLeft=sumL/weight;
+        if constexpr(Stereo) {
+            // GCC 15 may round equal independent float accumulations
+            // differently by one ULP. Never manufacture a stereo side
+            // channel from demonstrably identical mono grain samples.
+            return {normalizedLeft,
+                    identicalSourceWindows?normalizedLeft:sumR/weight,true};
+        }
+        return {normalizedLeft,0.f,true};
     }
     struct Grain {double center=0.,source=0.,width=1.;bool active=false;};
     struct State {

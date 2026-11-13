@@ -2,6 +2,7 @@
 #pragma once
 #include <algorithm>
 #include <optional>
+#include "../engine/lms/LmsOfflineDraft.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "NativeShowStore.h"
 #include "NativeHotkeyRegistry.h"
@@ -72,6 +73,9 @@ struct MixerSessionDocument final {
     // Logical-only per-slot bypass intentions; no fabricated FX processor
     // state or fake vendor SHA. Physical sessions keep existing inserts.
     std::vector<PlannedSlotBypass> plannedSlotBypassed;
+    // Device-INDEPENDENT LMS DSP design, optional legacy-v1 extension.
+    // NO ASIO pin, device epoch, calibration authority or ARM bit is stored.
+    std::optional<armix::lms::OfflineSpeakerDraft> lmsDraft;
     // Session-specific global shortcuts; app-wide keys live in native settings.
     std::vector<armix::hotkey::Mapping> hotkeys;
     float masterGain=1.f;
@@ -461,13 +465,125 @@ class Codec final {
         return parseDecimal(get(v,"main"),ids.main.value) &&
                parseDecimal(get(v,"monitor"),ids.monitor.value,true);
     }
+
+    // LMS-only strict whitelist. Unlike unknown ordinary v1 session fields,
+    // a speaker-related key cannot silently become physical authority during
+    // a future migration or typo'd session-import workflow.
+    static bool strictKeys(const juce::var& item,
+                           std::initializer_list<const char*> allowed) {
+        const auto* object=item.getDynamicObject();
+        if(!object)return false;
+        const auto& properties=object->getProperties();
+        for(int i=0;i<properties.size();++i) {
+            const auto name=properties.getName(i).toString();
+            bool accepted=false;
+            for(const auto* key:allowed)if(name==key){accepted=true;break;}
+            if(!accepted)return false;
+        }
+        return true;
+    }
+    static juce::var offlineSpeaker(const armix::lms::OfflineSpeakerDraft& d) {
+        auto root=object();
+        set(root,"schema","arsonmix.lms.offline-draft.v1");
+        set(root,"version",d.version);
+        set(root,"designRateHz",d.designRateHz);
+        set(root,"ways",d.ways);set(root,"stereo",d.stereo);
+        juce::Array<juce::var> cutoffs,outputs;
+        for(const auto hz:d.crossoverHz)cutoffs.add(hz);
+        set(root,"crossoverHz",juce::var(cutoffs));
+        for(const auto& p:d.outputs) {
+            auto out=object();
+            set(out,"outputId",juce::String::fromUTF8(p.outputId.c_str()));
+            set(out,"sourceSide",p.sourceSide);
+            set(out,"section",p.section);
+            set(out,"gainDb",p.gainDb);
+            set(out,"delayMs",p.delayMs);
+            set(out,"polarityInverted",p.polarityInverted);
+            set(out,"limiterEnabled",p.limiterEnabled);
+            set(out,"ceilingDbfs",p.ceilingDbfs);
+            juce::Array<juce::var> bands;
+            for(const auto& eq:p.peq) {
+                auto band=object();
+                set(band,"frequencyHz",eq.frequencyHz);
+                set(band,"q",eq.q);
+                set(band,"gainDb",eq.gainDb);
+                set(band,"enabled",eq.enabled);
+                bands.add(band);
+            }
+            set(out,"peq",juce::var(bands));
+            outputs.add(out);
+        }
+        set(root,"outputs",juce::var(outputs));
+        return root;
+    }
+    static bool readOfflineSpeaker(const juce::var& v,
+                                   armix::lms::OfflineSpeakerDraft& accepted) {
+        using armix::lms::OfflineSpeakerDraft;
+        using armix::lms::OfflineSpeakerDraftPolicy;
+        if(!strictKeys(v,{"schema","version","designRateHz","ways",
+                          "stereo","crossoverHz","outputs"})||
+           get(v,"schema").toString()!="arsonmix.lms.offline-draft.v1")
+            return false;
+        OfflineSpeakerDraft next;
+        if(!integral(get(v,"version"),next.version,1,1)||
+           !real(get(v,"designRateHz"),next.designRateHz,8000.,384000.)||
+           !integral(get(v,"ways"),next.ways,1,16)||
+           !strictBool(get(v,"stereo"),next.stereo))return false;
+        const auto cutoffs=get(v,"crossoverHz"),outputs=get(v,"outputs");
+        const auto* hz=cutoffs.getArray(),*list=outputs.getArray();
+        if(!hz||!list||hz->size()!=next.ways-1||list->size()>256)return false;
+        for(const auto& item:*hz) {
+            double value=0.;
+            if(!real(item,value,20.,384000.))return false;
+            next.crossoverHz.push_back(value);
+        }
+        for(const auto& item:*list) {
+            if(!strictKeys(item,{"outputId","sourceSide","section",
+                     "gainDb","delayMs","polarityInverted","limiterEnabled",
+                     "ceilingDbfs","peq"}))return false;
+            armix::lms::OutputPatch p;
+            juce::String outputId;
+            if(!textField(get(item,"outputId"),outputId,96)||
+               !integral(get(item,"sourceSide"),p.sourceSide,0,1)||
+               !integral(get(item,"section"),p.section,0,15)||
+               !real(get(item,"gainDb"),p.gainDb,-60.,6.)||
+               !real(get(item,"delayMs"),p.delayMs,0.,500.)||
+               !real(get(item,"ceilingDbfs"),p.ceilingDbfs,-60.,0.)||
+               !strictBool(get(item,"polarityInverted"),p.polarityInverted)||
+               !strictBool(get(item,"limiterEnabled"),p.limiterEnabled))
+                return false;
+            p.outputId=outputId.toStdString();
+            const auto eq=get(item,"peq");
+            const auto* bands=eq.getArray();
+            if(!bands||bands->size()>8)return false;
+            for(const auto& b:*bands) {
+                if(!strictKeys(b,{"frequencyHz","q","gainDb","enabled"}))
+                    return false;
+                armix::lms::ParametricBand row;
+                if(!real(get(b,"frequencyHz"),row.frequencyHz,20.,384000.)||
+                   !real(get(b,"q"),row.q,.1,18.)||
+                   !real(get(b,"gainDb"),row.gainDb,-18.,18.)||
+                   !strictBool(get(b,"enabled"),row.enabled))return false;
+                p.peq.push_back(row);
+            }
+            // Patch ctor defaults to mute=true with portIdentity blank.
+            // No saved hardware data is ever accepted by this decoder.
+            next.outputs.push_back(std::move(p));
+        }
+        if(!OfflineSpeakerDraftPolicy::valid(next))return false;
+        accepted=std::move(next);
+        return true;
+    }
 public:
     static juce::String encode(const MixerSessionDocument& d) {
+        if(d.lmsDraft && !armix::lms::OfflineSpeakerDraftPolicy::valid(*d.lmsDraft))
+            return {};
         auto root=object();
         set(root,"schema","arsonmix.mixer-session.v1");
         if(d.logicalOnly)set(root,"logicalOnly",true);
         set(root,"id",d.id);
         set(root,"acceptedRevision",decimal(d.acceptedRevision));
+        if(d.lmsDraft)set(root,"lmsDraft",offlineSpeaker(*d.lmsDraft));
         set(root,"savedMs",decimal(static_cast<std::uint64_t>(d.savedMs)));
         if(d.resumeMain.has_value())set(root,"resumeMain",*d.resumeMain);
         set(root,"legacyIds",ids(d.legacyIds));
@@ -621,6 +737,11 @@ public:
         if(!parseDecimal(get(root,"savedMs"),ms)||ms>static_cast<std::uint64_t>(
             std::numeric_limits<juce::int64>::max()))return false;
         doc.savedMs=static_cast<juce::int64>(ms);
+        if(root.getDynamicObject()->hasProperty("lmsDraft")) {
+            armix::lms::OfflineSpeakerDraft offline;
+            if(!readOfflineSpeaker(get(root,"lmsDraft"),offline))return false;
+            doc.lmsDraft=std::move(offline);
+        }
         const auto binding=get(root,"binding");
         if(!textField(get(binding,"backend"),doc.binding.backend,128,doc.logicalOnly)||
            !textField(get(binding,"capture"),doc.binding.capture,256,true)||

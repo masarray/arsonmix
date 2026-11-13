@@ -15,6 +15,8 @@
 #include "NativeTopologyEditSafety.h"
 #include "NativeMixerSessionDocument.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
+#include "../engine/lms/NativeSpeakerDeviceBinder.h"
+#include "../engine/lms/LmsOfflineDraft.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/core/ProductionRenderAudit.h"
@@ -2306,6 +2308,12 @@ public:
             draft.request=nativeAccepted_.graph.request;
             draft.waitingAsioInputs=waitingAsioInputs_;
             draft.externalOutputs=externalOutputAssignments_;
+            // M11: only the separately detached, muted and unassigned
+            // speaker DSP draft belongs in .smix, never live ASIO pins.
+            if(offlineSpeakerDraft_ &&
+               !armix::lms::OfflineSpeakerDraftPolicy::valid(*offlineSpeakerDraft_))
+                return "Saved LMS offline draft has invalid state";
+            draft.lmsDraft=offlineSpeakerDraft_;
             std::vector<armix::shows::BinaryState> staged;
             std::set<juce::String> hashes;
             juce::int64 total=0;
@@ -2345,6 +2353,119 @@ public:
             blobs=std::move(staged);
             return {};
         } catch(...) {return "Native graph/VST3 state capture failed";}
+    }
+
+    // M6 CONTROL ONLY: a browser draft NEVER supplies the trusted hardware
+    // mask. Build it here from a fresh JUCE snapshot and the SAME accepted
+    // ChannelId PCM publisher. This method does not arm any speaker.
+    struct SpeakerDraftControlResult final {
+        armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftAck ack{};
+        armix::lms::SpeakerBindFault bindFault=armix::lms::SpeakerBindFault::none;
+    };
+    static std::string speakerNativePortIdentity(
+            const armix::device::JuceActivePortSnapshot& pins,int ordinal) {
+        const int physical=pins.outputPhysicalPort(ordinal);
+        if(physical<0||physical>=pins.outputNames.size() ||
+           pins.outputNames[physical].isEmpty())return {};
+        return pins.typeName.toStdString()+"/"+
+            pins.deviceName.toStdString()+"/"+std::to_string(physical)+"/"+
+            pins.outputNames[physical].toStdString();
+    }
+    bool inspectNativeSpeakerDevice(
+        const armix::device::JuceActivePortSnapshot& pins,
+        double currentSampleRate,bool outputsDisarmed,
+        armix::lms::TrustedSpeakerDeviceView& out) const {
+        if(!channelIdPhysicalPcmActive() || !ready() ||
+           !matchesSessionDevice(pins) || pins.typeName!="ASIO" ||
+           pins.deviceName.isEmpty() ||
+           !std::isfinite(currentSampleRate) || currentSampleRate<=0.)
+            return false;
+        const auto revision=nativeAccepted_.pcmRevision;
+        if(!nativeAccepted_.matches(nativePublisher_,pins.epoch,revision))
+            return false;
+        const auto* accepted=nativePublisher_.acceptedRouting(pins.epoch,revision);
+        if(!accepted || !accepted->main.value)return false;
+        armix::lms::TrustedSpeakerDeviceView candidate;
+        candidate.deviceEpoch=pins.epoch;
+        candidate.graphRevision=revision;
+        candidate.mainChannelId=accepted->main.value;
+        candidate.backend=pins.typeName.toStdString();
+        candidate.deviceIdentity=pins.typeName.toStdString()+"/"+
+            pins.deviceName.toStdString();
+        candidate.sampleRate=currentSampleRate;
+        candidate.callbackOutputs=pins.outputCount;
+        candidate.maxFrames=nativeAccepted_.graph.request.maxFrames;
+        const auto& hw=nativeAccepted_.hardware;
+        candidate.mainL=hw.mainL;candidate.mainR=hw.mainR;
+        candidate.monitorL=hw.monitorEnabled?hw.monitorL:-1;
+        candidate.monitorR=hw.monitorEnabled?hw.monitorR:-1;
+        candidate.acceptedPcm=true;
+        candidate.exactDeviceMask=true; // matchesSessionDevice above
+        candidate.allOutputsDisarmed=outputsDisarmed;
+        for(int ordinal=0;ordinal<pins.outputCount;++ordinal){
+            auto identity=speakerNativePortIdentity(pins,ordinal);
+            if(identity.empty())return false;
+            candidate.actualEnabledPorts.push_back({std::move(identity),ordinal});
+        }
+        for(const auto& channel:accepted->channels){
+            const auto [left,right]=nativePublisher_.externalOutput(
+                pins.epoch,revision,channel.id);
+            if(left>=0)candidate.otherOccupiedOrdinals.push_back(left);
+            if(right>=0)candidate.otherOccupiedOrdinals.push_back(right);
+        }
+        out=std::move(candidate);
+        return true;
+    }
+    SpeakerDraftControlResult acceptNativeSpeakerDraft(
+        const armix::lms::SpeakerSystemRequest& draft,
+        const armix::device::JuceActivePortSnapshot& pins,
+        double currentSampleRate,bool verifiedOutputsDisarmed,
+        std::uint64_t expectedDesignRevision) {
+        SpeakerDraftControlResult reply;
+        using Fault=armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftFault;
+        reply.ack.fault=Fault::staleDeviceOrGraph;
+        armix::lms::TrustedSpeakerDeviceView actual;
+        if(!verifiedOutputsDisarmed ||
+           !inspectNativeSpeakerDevice(pins,currentSampleRate,
+                                       verifiedOutputsDisarmed,actual) ||
+           actual.graphRevision!=draft.graphRevision ||
+           actual.deviceEpoch!=draft.deviceEpoch ||
+           actual.sampleRate!=draft.sampleRate)
+            return reply;
+        armix::lms::SpeakerBoundDraft bound;
+        const auto boundResult=armix::lms::NativeSpeakerDeviceBinder::bind(
+            draft,actual,actual.mainChannelId,bound);
+        reply.bindFault=boundResult.fault;
+        if(!boundResult.ok()){
+            reply.ack.fault=Fault::invalidReservation;
+            return reply;
+        }
+        // Preflight session detachment BEFORE native ACK: a design that
+        // cannot safely survive cold-open must not report a full acceptance.
+        armix::lms::OfflineSpeakerDraft detached;
+        if(!armix::lms::OfflineSpeakerDraftPolicy::detach(
+                bound.verifiedRequest,detached)) {
+            reply.ack.fault=Fault::invalidDsp;
+            return reply;
+        }
+        reply.ack=nativePublisher_.acceptSpeakerDraft(
+            bound.verifiedRequest,bound.verifiedInventory,
+            armix::mixer::ChannelId{actual.mainChannelId},
+            expectedDesignRevision);
+        if(reply.ack.ok())offlineSpeakerDraft_=std::move(detached);
+        return reply;
+    }
+    const armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftReadback*
+    nativeSpeakerDraftReadback(std::uint64_t deviceEpoch,
+                               std::uint64_t graphRevision) const noexcept {
+        if(!channelIdPhysicalPcmActive() ||
+           nativeAccepted_.pcmRevision!=graphRevision ||
+           deviceEpoch!=epoch())return nullptr;
+        return nativePublisher_.speakerDraftReadback(deviceEpoch,graphRevision);
+    }
+
+    void revokeNativeSpeakerDraft() noexcept {
+        nativePublisher_.revokeSpeakerDraft();
     }
 
     // O1 CONTROL: true ASIO physical pin identity -> packed callback ordinal.
@@ -2508,6 +2629,11 @@ public:
         using namespace armix::mixer;
         if(!outputsDisarmed || (!replaceActive && channelIdPhysicalPcmActive()) || !bank)
             return "Restore requires a muted device";
+        // Even direct native callers cannot smuggle a physical speaker
+        // binding into the session restoration path.
+        if(document.lmsDraft &&
+           !armix::lms::OfflineSpeakerDraftPolicy::valid(*document.lmsDraft))
+            return "Invalid disconnected LMS draft";
         const auto generation=pins.epoch;
         if(!matchesSessionDevice(pins) || bank->epoch()!=generation ||
            document.request.physicalInputs!=pins.inputs.enabledCount ||
@@ -2562,6 +2688,9 @@ public:
                 if(!externalOutputVerified_.empty())
                     externalOutputEpoch_=generation;
             }
+            // After the graph is accepted this stays only on CONTROL.
+            // No speaker DSP or hardware patch is published from .smix.
+            offlineSpeakerDraft_=std::move(document.lmsDraft);
             nativeAccepted_.fxOwners=std::move(bank);
             nativeAccepted_.deviceEpoch=generation;
             nativeAccepted_.pcmRevision=published.revision;
@@ -3135,6 +3264,7 @@ public:
                     outputSlices[c]=outputs[c]?outputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             bool processed=false;
+            std::uint64_t renderedPcmRevision=0;
             if(channelIdRender) {
                 // The current M4 import is at most 10+4+MAIN+MONITOR.
                 // Meter sources are the ACTUAL ChannelId PCM POST-fader
@@ -3162,7 +3292,7 @@ public:
                     std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
-                     meterOnly?0:outputCount);
+                     meterOnly?0:outputCount,{},&renderedPcmRevision);
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
@@ -3199,7 +3329,33 @@ public:
             }
             for(int b=0;b<auxCount;++b)
                 perAuxPeaks[b]=std::max(perAuxPeaks[b],level.auxPeak[b]);
-            if(meterOnly)continue;
+            if(meterOnly) {
+                // M9: explicitly DISARMED ASIO output is still allowed to
+                // evaluate one bounded *virtual* post-master PCM witness.
+                // It uses the existing accepted ChannelId FX render above,
+                // and ONLY the preallocated meter scratch, never an output
+                // pointer, callback writer, or duplicated plugin invocation.
+                // Diagnostic readback remains hardwareApplied=false.
+                if(channelIdRender && renderedPcmRevision) {
+                    const float diagnosticGain=std::clamp(masterGain,0.f,2.f);
+                    float* diagnosticL=mutedMain_[0].data();
+                    float* diagnosticR=mutedMain_[1].data();
+                    for(int i=0;i<n;++i) {
+                        float l=diagnosticL[i]*diagnosticGain;
+                        float r=diagnosticR[i]*diagnosticGain;
+                        const float mainGain=mainOnlyMuteSlew_.next(mainOnlyMuted);
+                        l*=mainGain;r*=mainGain;
+                        masterMonoPolicy_.process(masterMono,l,r);
+                        diagnosticL[i]=l;diagnosticR[i]=r;
+                    }
+                    (void)nativePublisher_.processSpeakerDiagnostic(
+                        generation,renderedPcmRevision,
+                        diagnosticL,diagnosticR,n);
+                }
+                // The physical outputs remain cleared by the existing
+                // meterOnly all-pin silence fence at end of process().
+                continue;
+            }
             const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
                 float l=mainL[offset+i]*g;
@@ -3238,6 +3394,13 @@ public:
                     monitorPeakR=std::max(monitorPeakR,std::abs(mr));
                 }
             }
+            // M8 isolated DSP witness consumes the FINAL post-master gain,
+            // mute slew and mono policy. It never sees device output pointers.
+            // A stale/absent design simply skips diagnostic processing.
+            if(channelIdRender && renderedPcmRevision)
+                (void)nativePublisher_.processSpeakerDiagnostic(
+                    generation,renderedPcmRevision,
+                    mainL+offset,mainR+offset,n);
         }
         // All input PCM has been staged/processed by the native graph.
         // Only now silence unselected physical ports; do not clobber an
@@ -3459,6 +3622,7 @@ public:
 private:
     std::vector<armix::session::WaitingAsioInput> waitingAsioInputs_;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
+    std::optional<armix::lms::OfflineSpeakerDraft> offlineSpeakerDraft_; // CONTROL only; no ASIO ACL
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state
     // Four 9-bit callback indices (0 means absent) and the prepared quantum.

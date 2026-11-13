@@ -1,0 +1,51 @@
+name: DLMS speaker processor (focused C++ and UX)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/lms/**'
+      - 'engine/core/DynamicNativeSessionPublisher.h'
+      - 'src/NativeLmsWebIntent.h'
+      - 'src/NativeMixerSessionDocument.h'
+      - 'src/LiveDryRoutingLab.h'
+      - 'tests/lms_*'
+      - 'site/preview-v2/assets/lms-*.js'
+      - 'site/preview-v2/assets/lms-*.css'
+      - '.github/workflows/dlms-fast.yml'
+      - '.github/workflows/harmony-fast-dsp.yml'
+      - 'CMakeLists.txt'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dlms-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  dlms:
+    name: DLMS only — native speaker PCM, safety and 5-page model
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: One matrix of speaker-ONLY portable C++ tests (no JUCE, no hardware)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in lms_prepared_speaker_pcm_test lms_synthetic_realtime_budget_test \
+            lms_native_output_reservation_test lms_native_postfx_main_witness_test \
+            lms_native_draft_ack_readback_test lms_verified_device_binder_test \
+            lms_offline_session_draft_test; do
+            printf 'DLMS C++ %s\\n' "$name"
+            g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror \
+              "tests/${name}.cpp" -o "$RUNNER_TEMP/${name}"
+            "$RUNNER_TEMP/${name}"
+          done
+      - name: DLMS design UX, matrix, explicit port matching and native bridge
+        run: |
+          node --check site/preview-v2/assets/lms-system-model.js
+          node --check site/preview-v2/assets/lms-workspace.js
+          node --test tests/lms_system_model.test.cjs tests/lms_native_bridge.test.cjs
+      - name: DLMS scope contract (no vocal-harmony tests in this gate)
+        run: node --test tests/dlms_ci_scope_contract.test.cjs

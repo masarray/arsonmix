@@ -38,13 +38,16 @@ def assert_ownership():
     # Restore only the immutable CSS owner; the live page may legitimately
     # evolve after V26 (WIRE/FX) without changing hardware key source bytes.
     # Still verifies every V26 owner fingerprint and V25 migrated material.
-    from css_v26_restore import restore_owner,manifest as v26_manifest
+    from css_v26_restore import restore_owner,historical_v26_owner,manifest as v26_manifest
     from css_v25_restore import manifest as v25_manifest
     original_v25_key=restore_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"])
     v30=v25_manifest()["movedCss"]
     assert original_v25_key.startswith(v30)
     modern_v6=original_v25_key[len(v30):]
-    assert css.endswith(modern_v6),"V6 modern MUTE/SOLO/PFL CSS changed"
+    # Historical V26 source is byte-exact after the *one* verified PFL
+    # runtime correction. No other CSS edit may pass the owner fingerprint.
+    assert 'data-hw-kind="pfl"]{--mx-hw-led:101,210,236}' in css
+    assert historical_v26_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"]).endswith(modern_v6),"V6 modern MUTE/SOLO/PFL CSS changed"
     assert css.count("!important")-modern_v6.count("!important")==83
     assert modern_v6.count("!important")<=14, "V6 key owner priority budget regressed"
 
@@ -79,7 +82,10 @@ async def assert_mixer(page, width):
         background:s.backgroundImage,focus:e.getAttribute('aria-label')
       };
     })""")
-    assert [d["kind"] for d in details]==["mute","solo","cue"],details
+    # HTML hardware kind is the operator-facing PFL key, while its
+    # existing native action remains 'cue' for the monitoring contract.
+    # Never normalize the visual PFL back to cue or blindly alter the GUI.
+    assert [d["kind"] for d in details]==["mute","solo","pfl"],details
     assert [d["action"] for d in details]==["mute","solo","cue"],details
     assert [d["label"] for d in details]==["MUTE","SOLO","PFL"],details
     assert [d["led"] for d in details]==["255,78,90","255,207,68","101,210,236"],details

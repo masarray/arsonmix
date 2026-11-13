@@ -792,7 +792,7 @@ public:
     bool restoreExact(std::uint64_t restoredRevision,
                       std::span<const ChannelStripDefinition> entries) {
         if(restoredRevision==0 || entries.empty() ||
-           !withinBudget(std::vector<ChannelStripDefinition>(entries.begin(),entries.end())))
+           !withinBudget(entries))
             return false;
         std::unordered_set<std::uint64_t> ids,edges;
         std::uint64_t maxId=0,maxEdge=0;
@@ -878,7 +878,11 @@ private:
         return !s.empty() && s.size()<=96 &&
             std::none_of(s.begin(),s.end(),[](unsigned char c){return c<32;});
     }
-    bool withinBudget(const std::vector<ChannelStripDefinition>& rows) const noexcept {
+    // All CONTROL budget validation consumes a read-only view. A temporary
+    // vector copy in restoreExact() added heap churn and triggered GCC 15's
+    // -Wfree-nonheap-object in the temporary destructor. Validate the
+    // original immutable span before allocating the accepted candidate.
+    bool withinBudget(std::span<const ChannelStripDefinition> rows) const noexcept {
         std::size_t remaining=budget_.definitionBytes;
         for(const auto& row:rows) {
             const auto debit=[&remaining](std::size_t bytes){
