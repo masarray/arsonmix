@@ -202,6 +202,45 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(outputEnergy>0.00001 && difference>0.01);
     assert(guitarTyped->observedBlockSerial()==1);
     assert(guitarTyped->observedOutputPeak()>0.f);
+    assert(guitarTyped->hasEditor()); // same generic routed editor host
+    auto edit=guitarTyped->acceptedProgram();
+    edit.blocks[2].values[0]=0.78f;
+    edit.blocks[1].enabled=true;
+    edit.blocks[1].values[0]=0.64f;
+    assert(guitarTyped->queueProgram(edit,101));
+    // A queued GUI intent is NOT durable/accepted until audio callback ACK.
+    assert(guitarTyped->acceptedProgram().blocks[2].values[0]!=0.78f);
+    assert(!guitarTyped->stateSnapshotQuiescent());
+    guitarTyped->consumeRealtimeEdits();
+    pcm.clear();
+    pcm.setSample(0,0,0.15f);
+    pcm.setSample(1,0,0.15f);
+    live->processBlock(pcm,midi); // bounded dual-DSP crossfade
+    assert(guitarTyped->stateSnapshotQuiescent());
+    assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.78f);
+    assert(guitarTyped->lastCompletion().requestId==101);
+    assert(guitarTyped->lastCompletion().applied);
+    juce::MemoryBlock acceptedBytes;
+    live->getStateInformation(acceptedBytes);
+    auto acceptedRestore=guitar->prepare(96000.,128,
+        acceptedBytes.getData(),static_cast<int>(acceptedBytes.getSize()));
+    assert(acceptedRestore);
+    auto* acceptedGuitar=dynamic_cast<
+        armix::builtin_fx::GuitarRigProcessor*>(acceptedRestore.get());
+    assert(acceptedGuitar && acceptedGuitar->acceptedProgram().blocks[2].values[0]==0.78f);
+    edit.blocks[2].id=0;
+    assert(!guitarTyped->queueProgram(edit,102)); // invalid ID -> no graph edit
+    edit=guitarTyped->acceptedProgram();
+    edit.blocks[2].values[0]=0.49f;
+    assert(guitarTyped->queueProgram(edit,103));
+    // Device rate changes cancel stale prepared packets and preserve last
+    // applied program; a 48kHz FIR must never be applied to a 44.1k graph.
+    live->prepareToPlay(44100.,128);
+    assert(guitarTyped->stateSnapshotQuiescent());
+    assert(guitarTyped->lastCompletion().requestId==103);
+    assert(!guitarTyped->lastCompletion().applied);
+    assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.78f);
+    assert(guitarTyped->getLatencySamples()==32);
     // State captured before publication is a reliable round-trip.
     juce::MemoryBlock roundtrip;
     restored->getStateInformation(roundtrip);
