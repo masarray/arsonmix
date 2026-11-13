@@ -91,3 +91,12 @@ No dearVR binary/source/reverb preset copying, unlicensed HRTF dataset distribut
 5. **No "3D verified" badge until blind headphone front/rear listening succeeds.**
 
 See: [ARD](ARD_8D_SONKU_BINAURAL_ENGINE_20261112.md), [research evidence](RESEARCH_8D_SONKU_SPATIAL_AUDIO_20261112.md), and existing [feature playbook](architecture/FEATURE_EXTENSION_PLAYBOOK.md).
+
+## 2026-11-13 — verified spatial UX acceptance refinements
+For the owner's approved top-side-head PNG, the plugin shall present an **elliptical 3D-implied orbital plane** rather than a 2D circle. The rear orbit must visually pass **behind** the head, and the foreground orbit must pass **in front of** the lower bust. This is a UI projection, **not** an audio-path or 8-channel expansion.
+
+Both L and R studio monitor speakers must remain separately visible and individually interactive even when **Stereo Spread = 0°**. If acoustic positions coincide, graphical disambiguation must be clearly presentation-only; their identical native azimuths and original channel routing remain unchanged. FRONT remains the bottom of the stage; anatomical RIGHT is screen-left, anatomical LEFT screen-right.
+
+The editor must feel like a compact hardware-grade audio plugin, with tactile rotary controls and clear numeric readouts, not large web-style cards or anonymous browser sliders. Rotary pointer gestures must be bounded and single-commit; keyboard focus, range semantics and double-click default restoration remain accessible. Do not imitate or redistribute commercial plugin skins.
+
+Acceptance evidence on the real compiled native HTML bundle must cover correct Z-order, actual PNG load, two separately visible monitors at 0° spread, correct four-direction mapping, mouse drag to FRONT, knob edit single native queue/ACK and desktop/narrow screenshots. Do not translate GUI PASS into a claim of verified binaural headphone localization.

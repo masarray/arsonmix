@@ -53,3 +53,10 @@ Date: 2026-11-12. Status: desktop research, not first-hand FFT/CPU/ASIO/listener
 
 ## Design recommendation
 R0: publish PRD and ARD (this branch). M1: implement true 4-direction native HRTF core with one stable insert identity, PCM tests and safe bypass. M2: add sample-driven orbit. M3: real room. M4: premium path editor, calibration. Gate perfection claims on measured listening evidence.
+
+## UI references audited 2026-11-13 (form principles only)
+- [Waves Nx Virtual Mix Room user guide](https://assets.wavescdn.com/pdf/plugins/nx.pdf): a human-head-centric visual with speaker icons makes orientation and left/right scene intent recognizable. Adapt **human + monitors**, not Waves' copyrighted artwork or skin.
+- [Sound Particles Energy Panner 2](https://soundparticles.com/products/energypanner/overview/): the moving-source visualization is the main interaction canvas; source paths, controls and stereo distribution are visually connected. Adapt **one central spatial display** and visible source markers.
+- [dearVR PRO 2](https://spaes.org/dearVR-PRO-2): direct graphical XYZ positioning illustrates why direction should be interactive rather than a hidden numerical parameter. 8D-SonKu M1 stays horizontal 0° elevation; do not advertise full XYZ elevation or personalized distance room simulation absent DSP.
+
+The adapted user experience is **not** based on reverse-engineering any proprietary plugin GUI. Use the already-owner-approved blue bust asset, original SVG perspective ellipse, original mini studio-monitor vector controls and native JUCE/HTML range inputs. Preserve acoustic coordinate signs and distinguish display separation from true source azimuth. See the M4 contract in the ARD and PRD.
