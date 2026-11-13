@@ -25,9 +25,8 @@ int main(int argc,char** argv) {
         std::fprintf(stderr,"NATIVE_WINDOW_PEER_MISSING: screenshot is not qualified\n");
         return 3;
     }
-    const auto folder=juce::File::getCurrentWorkingDirectory()
-        .getChildFile(juce::String::fromUTF8(argv[1]));
-    if(!folder.createDirectory())return 4;
+    const juce::File folder(juce::String::fromUTF8(argv[1]));
+    if(!folder.createDirectory().wasOk())return 4;
     juce::PNGImageFormat encoder;
     const auto save=[&](const char* label) {
         // Captures the actual attached JUCE component hierarchy, including
