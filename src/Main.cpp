@@ -7001,6 +7001,60 @@ private:
     }
 };
 
+#if defined(_WIN32)
+// A non-modal desktop notice: no JUCE modal loop, no loss of live mixer controls.
+// The close X dismisses without consent; ONLY the OK action writes approval.
+// Update installation remains strictly deferred until a normal mixer exit.
+class ArSonMixUpdateNotice final : public juce::DocumentWindow
+{
+public:
+    ArSonMixUpdateNotice (const juce::String& tag, std::function<void()> onAccept)
+        : DocumentWindow ("ArSonMix · Update", juce::Colour (0xff141d27), closeButton),
+          onAccept_ (std::move (onAccept))
+    {
+        panel_.message = "Version " + tag + " is ready.\n"
+                         "It will install automatically after you close ArSonMix.\n"
+                         "Your session and audio will not be interrupted.";
+        panel_.ok.onClick = [this]
+        {
+            if (onAccept_) onAccept_();
+            setVisible (false);
+        };
+        setUsingNativeTitleBar (false);
+        setTitleBarHeight (31);
+        setResizable (false, false);
+        setContentNonOwned (&panel_, false);
+        centreWithSize (428, 185);
+        setVisible (true);
+        toFront (true);
+    }
+    void closeButtonPressed() override { setVisible (false); }
+
+private:
+    struct Panel final : juce::Component
+    {
+        juce::String message;
+        juce::TextButton ok {"OK"};
+        Panel()
+        {
+            addAndMakeVisible (ok);
+            ok.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff377bc7));
+            ok.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+        void resized() override { ok.setBounds (getWidth() - 106, getHeight() - 43, 88, 29); }
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (juce::Colour (0xff141d27));
+            g.setColour (juce::Colour (0xffe5edf7));
+            g.setFont (juce::Font (juce::FontOptions (14.0f)));
+            g.drawFittedText (message, 20, 15, getWidth() - 40, getHeight() - 69,
+                              juce::Justification::topLeft, 3);
+        }
+    } panel_;
+    std::function<void()> onAccept_;
+};
+#endif
+
 class ConsoleApp final : public juce::JUCEApplication, private juce::Timer
 {
 public:
@@ -7136,6 +7190,9 @@ public:
     void shutdown() override
     {
         stopTimer();
+#if defined(_WIN32)
+        updateNotice_.reset();
+#endif
         window_.reset();
         splash_.reset();
 #if defined(_WIN32)
@@ -7203,26 +7260,21 @@ private:
         }
         if (lastUpdatePromptedSha_ == candidate)
             return; // Never nag during one mixer session.
+        if (updateNotice_ && updateNotice_->isVisible())
+            return; // Do not open another notice over a currently visible one.
         lastUpdatePromptedSha_ = candidate;
-        auto options = juce::MessageBoxOptions {}
-            .withIconType (juce::MessageBoxIconType::InfoIcon)
-            .withTitle ("ArSonMix · Update")
-            .withMessage ("Update " + tag + " is ready.\n\n"
-                          "Press OK to allow automatic installation after "
-                          "you finish and close ArSonMix normally. "
-                          "The mixer will not be interrupted. "
-                          "Your sessions and plugins will be preserved.")
-            .withButton ("OK");
-        juce::NativeMessageBox::showAsync (options,
-            [approvalFile, tag, candidate, previous] (int button)
+        // The approved user need not see download progress or installer flags.
+        // Unlike NativeMessageBox::showAsync, this floating notice is NON-modal:
+        // a performer can still move faders or patch WIRE during a live session.
+        updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
+            [approvalFile, tag, candidate, previous]
             {
-                if (button < 0) return; // Closed/dismissed: no consent.
                 auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
                 approval->setProperty ("candidateTag", tag);
                 approval->setProperty ("candidateSha", candidate);
                 approval->setProperty ("previousSha", previous);
-                // A tiny per-user acknowledgement only; updater rechecks
-                // hashes, release identity and the running-mixer mutex.
+                // A usability acknowledgement only. PowerShell verifies the
+                // published release, both installer hashes and process locks.
                 (void) approvalFile.replaceWithText (
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
@@ -7265,6 +7317,7 @@ private:
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
     int updatePromptTicks_ = 0;
+    std::unique_ptr<ArSonMixUpdateNotice> updateNotice_;
     juce::uint32 updateProbeCompleteTick_ = 0;
     juce::String lastUpdatePromptedSha_;
 #endif
