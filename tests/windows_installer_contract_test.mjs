@@ -387,9 +387,12 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
   const native = read('src/Main.cpp');
   assert.match(updater, /\$approvalPath=Join-Path \$root 'approved\.json'/);
   assert.match(updater, /UPDATE_WAITING_FOR_USER_OK/);
+  assert.match(updater, /function Test-UserApproval\(/);
+  assert.match(updater, /ARSONMIX_UPDATER_USER_ACK_POLICY_PASS/);
+  assert.match(updater, /if\(-not \(Test-UserApproval \$approval \$state\)\)/);
   assert.match(updater, /\$state\.operation -ceq 'upgrade'/);
   for (const name of ['candidateSha','candidateTag','previousSha'])
-    assert.match(updater, new RegExp('\\$approval\\.'+name+' -cne \\[string\\]\\$state\\.'+name));
+    assert.ok(updater.includes('[string]$approval.'+name+' -ceq [string]$transaction.'+name));
   assert.ok(updater.indexOf('UPDATE_WAITING_FOR_USER_OK') < updater.indexOf("    $state.phase='installing'"),
     'consent must gate the installer before any replacement');
   assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
