@@ -239,8 +239,11 @@ private:
     float processPreamp(std::size_t ch,float input) noexcept {
         const bool drive=program_.blocks[1].enabled;
         const bool amp=program_.blocks[2].enabled;
-        if(!drive&&!amp)
-            return oversampling_[ch].bypassDelay(input);
+        // Keep the 16-frame dry delay warm even while the nonlinear stages
+        // are active. Switching AMP/DRIVE OFF must not crossfade into 16
+        // frames of stale silence from an unused dry delay buffer.
+        const float matchedDry=oversampling_[ch].bypassDelay(input);
+        if(!drive&&!amp)return matchedDry;
         float even=0.f,odd=0.f;
         oversampling_[ch].upsamplePair(input,even,odd);
         even=shapeDriveAmp(ch,even);
