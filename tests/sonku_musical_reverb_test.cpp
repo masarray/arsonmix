@@ -57,6 +57,30 @@ int main(){
             airy+=std::abs(output.left)+std::abs(output.right);
         }
         assert(airy>.005);
+        // Native M4 can change room decay in the callback with prepared
+        // coefficients and no tail-ring clear, even while active.
+        SonKuMusicalReverb live;
+        assert(live.prepare(rate));
+        assert(live.setRealtimeProgram(SonKuReverbPreset::StudioGlue,.38f));
+        assert(!live.setRealtimeProgram(SonKuReverbPreset::LargeRoom,1.1f));
+        for(int i=0;i<static_cast<int>(rate);++i) {
+            const auto out=live.process(i==0?.4f:0.f,i==0?.4f:0.f);
+            assert(std::isfinite(out.left)&&std::isfinite(out.right));
+        }
+        assert(live.setRealtimeProgram(SonKuReverbPreset::LargeRoom,.38f));
+        for(int i=0;i<8192;++i) {
+            const auto out=live.process(0.f,0.f);
+            assert(std::isfinite(out.left)&&std::isfinite(out.right));
+        }
+        assert(live.setRealtimeProgram(SonKuReverbPreset::LargeRoom,0.f));
+        for(int i=0;i<11000;++i)live.process(0.f,0.f);
+        assert(!live.active());
+        // Reactivation may not expose delay contents from the last run.
+        assert(live.setRealtimeProgram(SonKuReverbPreset::AiryChamber,.38f));
+        for(int i=0;i<1800;++i){
+            const auto out=live.process(0.f,0.f);
+            assert(out.left==0.f&&out.right==0.f);
+        }
     }
     return 0;
 }
