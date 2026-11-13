@@ -90,6 +90,8 @@ public:
         smoothedDistanceGain_=1.f;
         smoothedRoomLevel_=1.f;
         smoothedBassShelf_=0.f;
+        smoothedErPresence_=1.f;
+        smoothedTailPresence_=1.f;
         earBass_.fill(0.f);
         limiterGain_=1.f;
         write_=0;
@@ -236,14 +238,20 @@ public:
                 // echoes and the later diffuse field identify the room.
                 // Gain laws are bounded affine maps, zero wet stays EXACT
                 // zero, no exp/pow/alloc on the audio callback.
-                const float erPresence=roomEnabled?
+                const float targetErPresence=roomEnabled?
                     1.45f+2.0f*settings_.roomAmount:1.f;
-                const float tailPresence=roomEnabled?
+                const float targetTailPresence=roomEnabled?
                     2.2f+4.0f*settings_.ambience:1.f;
+                smoothedErPresence_+=distanceSlew_*
+                    (targetErPresence-smoothedErPresence_);
+                smoothedTailPresence_+=distanceSlew_*
+                    (targetTailPresence-smoothedTailPresence_);
                 float spatialL=smoothedDistanceGain_*ears[0]+
-                    erPresence*reflection.left+tailPresence*late.left;
+                    smoothedErPresence_*reflection.left+
+                    smoothedTailPresence_*late.left;
                 float spatialR=smoothedDistanceGain_*ears[1]+
-                    erPresence*reflection.right+tailPresence*late.right;
+                    smoothedErPresence_*reflection.right+
+                    smoothedTailPresence_*late.right;
                 // Low-frequency KEMAR response is ~-7..-11 dB below 200Hz.
                 // A gentle bounded *binaural* shelf restores warmth without
                 // mixing dry mono under the HRIR or altering left/right ITD.
@@ -330,6 +338,7 @@ private:
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
+    float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
     float filterSlew_=0.f,levelSlew_=0.f;
     float distanceSlew_=0.f,bassSlew_=0.f,limiterRelease_=0.f;
