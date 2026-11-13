@@ -113,6 +113,8 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-sonku.js
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_spatial_core_test.cpp -o /tmp/armix-sonku-core-smoke
           /tmp/armix-sonku-core-smoke
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_multiband_phase_test.cpp -o /tmp/armix-sonku-band-smoke
+          /tmp/armix-sonku-band-smoke
           python tests/native_peq_assembly_test.py
           python tests/native_v60_fader_assembly_contract.py
           python tests/approved_operator_ux_smoke.py
