@@ -17,12 +17,13 @@ def center(el):
 def impact_peak(path,baseline):
  values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
  base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
- assert " L " in path and len(values)==114,(len(values),path[:90])
+ assert " L " in path and len(values)%2==0 and 57<=len(values)//2<=128,(len(values),path[:90])
  assert " C " in baseline and len(base)==8,(len(base),baseline)
  x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
  max_point=(0.,0.)
- for i in range(1,57):
-  t=i/56.;u=1-t
+ for i in range(1,len(values)//2):
+  # Normalize by the actual SVG sampling resolution; V43 used 57, current WIRE uses 65.
+  t=i/(len(values)//2-1);u=1-t
   x=u*u*u*x0+3*u*u*t*c0x+3*u*t*t*c1x+t*t*t*x1
   y=u*u*u*y0+3*u*u*t*c0y+3*u*t*t*c1y+t*t*t*y1
   dist=math.hypot(values[i*2]-x,values[i*2+1]-y)
@@ -34,13 +35,14 @@ def impact_motion(path,baseline):
  # oscillation crest, this follows the entire slow traveling wave packet.
  values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
  base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
- assert " L " in path and len(values)==114,(len(values),path[:90])
+ assert " L " in path and len(values)%2==0 and 57<=len(values)//2<=128,(len(values),path[:90])
  assert " C " in baseline and len(base)==8,(len(base),baseline)
  x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
  energy=0.
  weighted_position=0.
- for i in range(1,57):
-  t=i/56.;u=1-t
+ for i in range(1,len(values)//2):
+  # Normalize by the actual SVG sampling resolution; V43 used 57, current WIRE uses 65.
+  t=i/(len(values)//2-1);u=1-t
   x=u*u*u*x0+3*u*u*t*c0x+3*u*t*t*c1x+t*t*t*x1
   y=u*u*u*y0+3*u*u*t*c0y+3*u*t*t*c1y+t*t*t*y1
   weight=(values[i*2]-x)**2+(values[i*2+1]-y)**2
