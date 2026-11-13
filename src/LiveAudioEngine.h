@@ -1474,6 +1474,41 @@ public:
             return "SOURCE: native prepare failed; prior audio kept";
         }
     }
+    // Read-only CONTROL inspection. Rendering this inventory in WebView
+    // neither authorizes loudspeakers nor grants browser access to driver
+    // callback ordinal selection.
+    bool inspectLmsDeviceOffline(
+        armix::lms::TrustedSpeakerDeviceView& out) const {
+        if(independent_.active() || !attached_ || !directFence_.permitted() ||
+           handoff_.busy() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return false;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen())return false;
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault reason{};
+        const auto generation=dryRoutingLab_.epoch();
+        if(!armix::device::JuceActivePortSnapshot::capture(
+                device,generation,pins,reason))return false;
+        const auto rate=device->getCurrentSampleRate();
+        if(!dryRoutingLab_.inspectNativeSpeakerDevice(
+                pins,rate,allOutputsDisarmed(),out))return false;
+        return deviceManager_.getCurrentAudioDevice()==device &&
+               device->isOpen() &&
+               rate==device->getCurrentSampleRate() &&
+               dryRoutingLab_.matchesSessionDevice(pins);
+    }
+
+    // Returns only a CONTROL-owned, already validated/disconnected draft.
+    // Null is the correct answer after a device or PCM revision change.
+    const armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftReadback*
+    lmsDraftReadback(std::uint64_t epoch,std::uint64_t graph) const noexcept {
+        return dryRoutingLab_.nativeSpeakerDraftReadback(epoch,graph);
+    }
+
     // M6 CONTROL only. The outer DEVICE authority, not the WebView, proves
     // that the present ASIO registration, callback mask, and ALL physical
     // playback paths are disarmed before validating a loudspeaker draft.
