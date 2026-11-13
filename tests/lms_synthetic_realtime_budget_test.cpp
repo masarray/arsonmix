@@ -42,6 +42,7 @@ int main(){
         o.sourceSide=i/4;o.section=i%4;o.delayMs=i*2.;
         o.mute=false;o.limiterEnabled=true;
         o.confirmedSpeakerProfile=true;o.ceilingDbfs=-3.;
+        o.peq={{120.,1.1,2.},{800.,.75,-3.},{3500.,1.2,1.5}};
         r.outputs.push_back(o);
     }
     std::unique_ptr<PreparedSpeakerSystem> graph;
