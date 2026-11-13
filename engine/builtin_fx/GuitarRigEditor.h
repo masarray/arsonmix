@@ -116,6 +116,22 @@ public:
     }
     ~GuitarRigEditor() override {
         stopTimer();
+        // Closing a floating native editor must not discard the last knob
+        // movement made between 15 Hz UI ticks. Ownership remains in the
+        // processor after the window disappears; callback ACK can still be
+        // reduced by .smix save/reopen, without any hidden editor timer.
+        if(dirty_ && processor_.isReady()){
+            const auto id=processor_.nextRequestId();
+            if(id && processor_.queueProgram(draft_,id,selectedBank_))
+                dirty_=false;
+        }
+        // If the performer selected B while A was applying, retain B as a
+        // separate ordered intent when the editor closes mid-transition.
+        if(requestedBank_>=0 && processor_.isReady()){
+            const auto target=static_cast<std::uint8_t>(requestedBank_);
+            const auto id=processor_.nextRequestId();
+            if(id) (void)processor_.queueProgram(bankDrafts_[target],id,target);
+        }
         for(auto& slider:sliders_)slider.setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override {
