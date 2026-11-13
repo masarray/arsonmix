@@ -100,7 +100,7 @@ void report(double rate){
       <<" v3_p99us="<<musical.p99us
       <<" v3_p99_budget_ratio="<<musical.p99us/
         (1000000.*static_cast<double>(block)/rate)
-      <<" NOTE=runner-local_not_ASIO_FAT\\n";
+      <<" NOTE=runner-local_not_ASIO_FAT\n";
 }
 }
 int main(){
