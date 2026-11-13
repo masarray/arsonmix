@@ -3,7 +3,11 @@
 // 8D-SonKu measured HRTF core. No external music, WebAudio or second engine.
 // Generates lossless stereo WAVs for listening and blind front/rear evaluation.
 // Audio is NONPERSONALIZED MIT KEMAR, so perceptual externalization is UNPROVEN.
+#if defined(SONKU_AB_BASELINE)
+#include "../.baseline-sonku/engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#else
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
+#endif
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -145,10 +149,13 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f,
 // copyrighted music or an imitation of a proprietary dearVR recording.
 // Equal LEVEL, timing, HRTF and 0-degree stereo spread across all variants;
 // only one input channel's polarity differs.
-std::vector<std::uint8_t> musicIntegrityProof(float azimuth,bool inverted) {
+std::vector<std::uint8_t> musicIntegrityProof(float azimuth,bool inverted,
+                                                  float stereoSpread=0.f) {
     SonKuSpatialCore dsp;
+    Settings settings=fixed(azimuth);
+    settings.stereoSpreadDegrees=stereoSpread;
     if(!dsp.prepare(rate)||
-       !dsp.setSettings(fixed(azimuth)))
+       !dsp.setSettings(settings))
         throw std::runtime_error("Music integrity fixture not prepared");
     constexpr int total=rate*4;
     constexpr float pi=3.14159265358979323846f;
@@ -162,9 +169,10 @@ std::vector<std::uint8_t> musicIntegrityProof(float azimuth,bool inverted) {
             const float t=static_cast<float>(n)/rate;
             const float env=std::clamp(
                 std::min(n,total-1-n)/static_cast<float>(rate/30),0.f,1.f);
-            const float x=env*(.13f*std::sin(2.f*pi*220.f*t)+
-                               .08f*std::sin(2.f*pi*330.f*t)+
-                               .045f*std::sin(2.f*pi*660.f*t));
+            const float x=env*(.12f*std::sin(2.f*pi*220.f*t)+
+                               .07f*std::sin(2.f*pi*330.f*t)+
+                               .04f*std::sin(2.f*pi*660.f*t)+
+                               .035f*std::sin(2.f*pi*2000.f*t));
             l[static_cast<std::size_t>(i)]=x;
             r[static_cast<std::size_t>(i)]=inverted?-x:x;
         }
@@ -324,12 +332,18 @@ void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
              musicIntegrityProof(0.f,true));
     writeWav(dir/"sonku-music-anti-phase-rear.wav",
              musicIntegrityProof(180.f,true));
+    writeWav(dir/"sonku-music-coherent-front-spread60.wav",
+             musicIntegrityProof(0.f,false,60.f));
+    writeWav(dir/"sonku-music-coherent-rear-spread60.wav",
+             musicIntegrityProof(180.f,false,60.f));
     std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
     if(!guide)throw std::runtime_error("Cannot write integrity guide");
     guide<<"All three are original generated 4s tones at matched input level, "
          <<"same measured KEMAR 0deg elevation and 0deg stereo spread.\n"
          <<"Compare in HEADPHONES at a safe volume. 1: L=R FRONT. "
          <<"2: L=-R FRONT. 3: L=-R REAR.\n"
+         <<"4: L=R FRONT at 60deg stereo spread.\n"
+         <<"5: L=R REAR at 60deg stereo spread.\n"
          <<"Do not infer dearVR parity, natural distance or externalization "
          <<"from the recovered side tone.\n";
 }
@@ -341,7 +355,7 @@ int main(int argc,char** argv){
         std::filesystem::create_directories(dir);
         if(argc==3){
             writeMusicIntegrityEvidence(dir);
-            std::cout<<"Music-integrity 3x headphone A/B WAV PASS\n";
+            std::cout<<"Music-integrity 5x headphone A/B WAV PASS\n";
             return 0;
         }
         constexpr std::array<int,4> reference{0,90,180,-90};
