@@ -3305,7 +3305,33 @@ public:
             }
             for(int b=0;b<auxCount;++b)
                 perAuxPeaks[b]=std::max(perAuxPeaks[b],level.auxPeak[b]);
-            if(meterOnly)continue;
+            if(meterOnly) {
+                // M9: explicitly DISARMED ASIO output is still allowed to
+                // evaluate one bounded *virtual* post-master PCM witness.
+                // It uses the existing accepted ChannelId FX render above,
+                // and ONLY the preallocated meter scratch, never an output
+                // pointer, callback writer, or duplicated plugin invocation.
+                // Diagnostic readback remains hardwareApplied=false.
+                if(channelIdRender && renderedPcmRevision) {
+                    const float diagnosticGain=std::clamp(masterGain,0.f,2.f);
+                    float* diagnosticL=mutedMain_[0].data();
+                    float* diagnosticR=mutedMain_[1].data();
+                    for(int i=0;i<n;++i) {
+                        float l=diagnosticL[i]*diagnosticGain;
+                        float r=diagnosticR[i]*diagnosticGain;
+                        const float mainGain=mainOnlyMuteSlew_.next(mainOnlyMuted);
+                        l*=mainGain;r*=mainGain;
+                        masterMonoPolicy_.process(masterMono,l,r);
+                        diagnosticL[i]=l;diagnosticR[i]=r;
+                    }
+                    (void)nativePublisher_.processSpeakerDiagnostic(
+                        generation,renderedPcmRevision,
+                        diagnosticL,diagnosticR,n);
+                }
+                // The physical outputs remain cleared by the existing
+                // meterOnly all-pin silence fence at end of process().
+                continue;
+            }
             const float g=std::clamp(masterGain,0.f,2.f);
             for(int i=0;i<n;++i) {
                 float l=mainL[offset+i]*g;
