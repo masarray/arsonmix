@@ -10,6 +10,7 @@
 #endif
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 using namespace armix::mixer;
@@ -1124,7 +1125,14 @@ static void verifyNativePrePostAndSendEnablePcm() {
     assert(roster.find(mic)->sends[0].edgeId==edgeId);
     assert(roster.find(mic)->sends[0].gain==.5f);
     assert(host.commit(roster,req,1,874,874,true).ok());
-    assert(render()&&close(left[63],.25f*2.f*mono*.5f,1.e-4f));
+    const bool preRendered=render();
+    const float expectedPre=.25f*2.f*mono*.5f;
+    if(!preRendered || !close(left[63],expectedPre,1.e-4f))
+        std::fprintf(stderr,"PRE_POST_DIAG pre_render=%d L0=%.9g L63=%.9g R63=%.9g expected=%.9g gain=%.9g edge_pre=%d edge_gain=%.9g\n",
+            static_cast<int>(preRendered),left[0],left[63],right[63],expectedPre,
+            roster.find(mic)->faderLinear,static_cast<int>(roster.find(mic)->sends[0].preFader),
+            roster.find(mic)->sends[0].gain);
+    assert(preRendered&&close(left[63],expectedPre,1.e-4f));
     assert(fxCalls==3); // one nonlinear FX pass per callback, no parallel duplicate
     assert(host.setWireEnabled(874,2,mic,edgeId,false));
     assert(roster.rememberLiveSendEnabled(mic,edgeId,false));
