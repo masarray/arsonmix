@@ -249,6 +249,90 @@ int main() {
                 scene->process(transitionL.data(),transitionR.data(),128);
             }
         }
+        // P0 field report: live SOURCE DISTANCE used the full 1/r pressure
+        // drop (-14 dB by 8m) on top of already attenuated KEMAR bass.
+        // Native SPACE now uses sample-smoothed *monitoring compensation*;
+        // no alteration to the user-approved ROOM OFF/offline reference.
+        {
+            auto listening=std::make_unique<SonKuSpatialCore>();
+            auto control=std::make_unique<SonKuSpatialCore>();
+            auto original=std::make_unique<SonKuSpatialCore>();
+            assert(listening->prepare(rate)&&control->prepare(rate)&&
+                   original->prepare(rate));
+            Settings near=roomSettings;
+            near.moving=false;near.startAzimuthDegrees=0.f;
+            near.stereoSpreadDegrees=0.f;near.outputTrim=0.8f;
+            near.spacePreset=3;near.sourceDistanceMeters=1.6f;
+            near.roomAmount=0.f;near.ambience=0.f;
+            Settings off=near;off.spacePreset=0;
+            assert(listening->setSettings(near)&&
+                   control->setSettings(near)&&
+                   original->setSettings(off));
+            constexpr int block=256;
+            std::array<float,block> audioL{},audioR{},controlL{},controlR{},
+                                    dryL{},dryR{};
+            auto fillSine=[&](int start) {
+                constexpr double pi=3.14159265358979323846;
+                for(int i=0;i<block;++i){
+                    const float v=.17f*std::sin(static_cast<float>(
+                        2.*pi*120.*(start+i)/rate));
+                    audioL[i]=audioR[i]=controlL[i]=controlR[i]=dryL[i]=dryR[i]=v;
+                }
+            };
+            for(int n=0;n<24;++n){
+                fillSine(n*block);
+                listening->process(audioL.data(),audioR.data(),block);
+                control->process(controlL.data(),controlR.data(),block);
+                original->process(dryL.data(),dryR.data(),block);
+            }
+            double nearEnergy=0.,dryEnergy=0.;
+            for(int i=0;i<block;++i){
+                nearEnergy+=std::abs(audioL[i])+std::abs(audioR[i]);
+                dryEnergy+=std::abs(dryL[i])+std::abs(dryR[i]);
+            }
+            assert(nearEnergy>dryEnergy*1.10); // bounded bass warmth
+            // Independent native distance edit while steady 120Hz music plays.
+            Settings far=near;far.sourceDistanceMeters=8.f;
+            assert(control->setSettings(far));
+            fillSine(24*block);
+            listening->process(audioL.data(),audioR.data(),block);
+            control->process(controlL.data(),controlR.data(),block);
+            assert(std::abs(audioL[0]-controlL[0])<.006f);
+            assert(std::abs(audioR[0]-controlR[0])<.006f);
+            for(int i=0;i<block;++i){
+                assert(std::isfinite(controlL[i])&&std::isfinite(controlR[i]));
+                assert(std::abs(controlL[i])<=.981f&&std::abs(controlR[i])<=.981f);
+                if(i){
+                    assert(std::abs(controlL[i]-controlL[i-1])<.05f);
+                    assert(std::abs(controlR[i]-controlR[i-1])<.05f);
+                }
+            }
+            for(int n=25;n<50;++n){
+                fillSine(n*block);
+                listening->process(audioL.data(),audioR.data(),block);
+                control->process(controlL.data(),controlR.data(),block);
+            }
+            double farEnergy=0.;nearEnergy=0.;
+            for(int i=0;i<block;++i){
+                farEnergy+=std::abs(controlL[i])+std::abs(controlR[i]);
+                nearEnergy+=std::abs(audioL[i])+std::abs(audioR[i]);
+            }
+            // Far must perceptually recede without becoming practically mute.
+            assert(farEnergy/nearEnergy>.39&&farEnergy/nearEnergy<.83);
+            // A full-scale musical peak cannot overflow the 0dBFS sample
+            // limit in native SPACE, regardless of correlated L/R emitters.
+            for(int n=0;n<30;++n){
+                for(int i=0;i<block;++i){
+                    const float v=.95f*std::sin(static_cast<float>(
+                        2.*3.14159265358979323846*3000.*(n*block+i)/rate));
+                    audioL[i]=audioR[i]=v;
+                }
+                listening->process(audioL.data(),audioR.data(),block);
+                for(int i=0;i<block;++i)
+                    assert(std::abs(audioL[i])<=.981f &&
+                           std::abs(audioR[i])<=.981f);
+            }
+        }
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.
