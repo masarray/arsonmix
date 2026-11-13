@@ -18,7 +18,9 @@ public:
     struct Coefficients {
         float gateThreshold=0.001f;
         float gateCloseThreshold=0.0007f;
-        float gateAttack=0.5f,gateRelease=0.999f,gateGainSmooth=0.995f;
+        float gateAttack=0.5f,gateRelease=0.999f;
+        float gateOpenSmooth=0.995f,gateCloseSmooth=0.999f;
+        int gateHoldSamples=0;
         float driveGain=2.f;
         float ampGain=4.f,ampTonePole=0.5f,ampVolume=0.7f;
     };
@@ -59,8 +61,17 @@ public:
                 c.gateThreshold=static_cast<float>(std::pow(10.,db/20.));
                 c.gateCloseThreshold=c.gateThreshold*0.65f;
                 c.gateAttack=static_cast<float>(std::exp(-1./(0.002*rate)));
-                c.gateRelease=static_cast<float>(std::exp(-1./(0.075*rate)));
-                c.gateGainSmooth=static_cast<float>(std::exp(-1./(0.0025*rate)));
+                c.gateRelease=static_cast<float>(std::exp(-1./(0.030*rate)));
+                // Threshold is values[0]. The unused reserved values[1..2]
+                // now control genuine hold (0..120ms) and gain RELEASE
+                // (12..240ms) without changing GRX1 v1/v2 storage.
+                const double holdSeconds=0.120*block.values[1];
+                const double closeSeconds=0.012+0.228*block.values[2];
+                c.gateHoldSamples=static_cast<int>(rate*holdSeconds);
+                c.gateOpenSmooth=static_cast<float>(
+                    std::exp(-1./(0.0012*rate)));
+                c.gateCloseSmooth=static_cast<float>(
+                    std::exp(-1./(closeSeconds*rate)));
             } else if(block.module==Module::overdrive){
                 c.driveGain=1.f+18.f*param*param;
             } else if(block.module==Module::amplifier) {
@@ -108,9 +119,22 @@ public:
     // PCM callback only: no locks, heap, IR generation, logging or syscalls.
     void processStereo(float* left,float* right,std::size_t frames) noexcept {
         if(!ready_||!left||!right)return;
+        const bool linkedGate=program_.blocks[0].enabled;
         for(std::size_t i=0;i<frames;++i){
-            left[i]=render(0,left[i]);
-            right[i]=render(1,right[i]);
+            // ONE shared amplitude detector/gain for both stereo channels.
+            // An instrument only on R must not close L separately and
+            // create an unintended drifting stereo balance. Do not blend
+            // L/R into a mono audio signal: guitar stereo remains stereo.
+            float leftIn=std::isfinite(left[i])?left[i]:0.f;
+            float rightIn=std::isfinite(right[i])?right[i]:0.f;
+            if(linkedGate){
+                const float gain=linkedGateGain(
+                    std::max(std::fabs(leftIn),std::fabs(rightIn)));
+                leftIn*=gain;
+                rightIn*=gain;
+            }
+            left[i]=render(0,leftIn);
+            right[i]=render(1,rightIn);
         }
     }
 private:
@@ -120,6 +144,7 @@ private:
         float driveIn=0.f,driveOut=0.f;
         float ampTone=0.f,ampIn=0.f,ampOut=0.f;
         bool gateOpen=false;
+        int gateHoldRemaining=0;
     };
     struct ChannelState {
         std::array<BlockState,maxBlocks> modules{};
@@ -164,6 +189,28 @@ private:
         // Smooth, bounded asymptotic overdrive; no tanh in PCM callback.
         return x/(1.f+std::fabs(x));
     }
+    float linkedGateGain(float amplitude) noexcept {
+        auto& history=lane_[0].modules[0]; // shared stereo detector
+        const auto& c=coeff_[0];
+        const float smooth=amplitude>history.envelope?
+            c.gateAttack:c.gateRelease;
+        history.envelope=smooth*history.envelope+
+                         (1.f-smooth)*amplitude;
+        if(history.envelope>c.gateThreshold){
+            history.gateOpen=true;
+            history.gateHoldRemaining=c.gateHoldSamples;
+        } else if(history.gateOpen) {
+            if(history.gateHoldRemaining>0)
+                --history.gateHoldRemaining;
+            else if(history.envelope<c.gateCloseThreshold)
+                history.gateOpen=false;
+        }
+        const float target=history.gateOpen?1.f:0.f;
+        const float k=history.gateOpen?
+            c.gateOpenSmooth:c.gateCloseSmooth;
+        history.gateGain=k*history.gateGain+(1.f-k)*target;
+        return history.gateGain;
+    }
     float render(std::size_t channel,float input) noexcept {
         auto& lane=lane_[channel];
         float sample=std::isfinite(input)?input:0.f;
@@ -173,21 +220,9 @@ private:
             auto& history=lane.modules[index];
             const Coefficients& c=coeff_[index];
             switch(block.module){
-                case Module::gate: {
-                    const float magnitude=std::fabs(sample);
-                    const float k=magnitude>history.envelope?
-                        c.gateAttack:c.gateRelease;
-                    history.envelope=k*history.envelope+(1.f-k)*magnitude;
-                    if(history.gateOpen){
-                        if(history.envelope<c.gateCloseThreshold)
-                            history.gateOpen=false;
-                    }else if(history.envelope>c.gateThreshold)history.gateOpen=true;
-                    const float target=history.gateOpen?1.f:0.f;
-                    history.gateGain=c.gateGainSmooth*history.gateGain+
-                                     (1.f-c.gateGainSmooth)*target;
-                    sample*=history.gateGain;
+                case Module::gate:
+                    // Already applied by the stereo-linked detector above.
                     break;
-                }
                 case Module::overdrive: {
                     // One-pole DC-bounded brightening before asymmetrical softclip.
                     const float hp=sample-history.driveIn+0.993f*history.driveOut;
