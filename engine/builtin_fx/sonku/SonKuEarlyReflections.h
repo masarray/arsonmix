@@ -42,7 +42,7 @@ public:
         for(auto& h:history_)h.fill(0.f);
         lowpass_.fill(0.f);
         for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
-        write_=0;untilGeometry_=0;primed_=false;
+        write_=0;untilGeometry_=0;primed_=false;validFrames_=0;
         amount_=0.f;
     }
     // Deliberately experimental and OFF by default. Legacy 8/8 direction
@@ -90,6 +90,26 @@ public:
         primed_=false;
         return true;
     }
+    // Caller validates geometry on CONTROL side before queuing the POD edit.
+    // Audio-side update only changes targets for existing 64-frame image
+    // geometry updates; old path taps smoothly move, never clear big rings.
+    bool setRealtimeRoom(const SonKuRoomGeometry& g,float amount,
+                         bool enabled) noexcept {
+        if(!std::isfinite(amount)||amount<0.f||amount>1.f)return false;
+        if(enabled && !validGeometry(g))return false;
+        if(!active() && enabled && amount>0.f){
+            validFrames_=0; lowpass_.fill(0.f);
+        }
+        if(enabled){
+            geometry_=g;custom_=true;shape_=SonKuRoomShape::Square;
+        }else{
+            custom_=false;shape_=SonKuRoomShape::Square;
+        }
+        realtimeMode_=true;
+        amountTarget_=enabled?amount:0.f;
+        untilGeometry_=0;
+        return true;
+    }
     float relativeDistanceGain() const noexcept {
         return custom_?1.6f/geometry_.distanceMeters:1.f;
     }
@@ -127,6 +147,7 @@ public:
             }
         }
         write_=(write_+1)&(ringFrames-1);
+        if(realtimeMode_&&validFrames_<ringFrames)++validFrames_;
         --untilGeometry_;
         // Preserve the headroom of the native direct path: no artificial
         // direction-dependent boost at FRONT or REAR.
@@ -144,6 +165,9 @@ private:
         // Fractional delay interpolated in a fixed-size power-of-two ring.
         const float bounded=std::clamp(delay,1.f,static_cast<float>(ringFrames-3));
         const int integer=static_cast<int>(bounded);
+        // Avoid re-reading a stale tail after the user disabled and later
+        // re-enabled the ROOM. Entire 64 KiB ring never needs RT clearing.
+        if(realtimeMode_&&validFrames_<=integer+1)return 0.f;
         const float fract=bounded-static_cast<float>(integer);
         const int i0=(write_-integer)&(ringFrames-1);
         const int i1=(i0-1)&(ringFrames-1);
@@ -210,7 +234,8 @@ private:
     std::array<float,sourceCount> lowpass_{};
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
-    int write_=0,untilGeometry_=0;
+    int write_=0,untilGeometry_=0,validFrames_=0;
+    bool realtimeMode_=false;
     SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
     SonKuRoomGeometry geometry_{};
     bool custom_=false,ready_=false,primed_=false;
