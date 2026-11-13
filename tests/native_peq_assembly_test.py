@@ -80,6 +80,31 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn("armix-floating-close",throw)
         self.assertNotIn("new AudioContext",throw)
 
+    def test_sonku_native_space_v2_owned_by_single_pcm_graph(self):
+        main=(ROOT/"src/Main.cpp").read_text("utf-8")
+        processor=(ROOT/"engine/builtin_fx/SonKuSpatialProcessor.h").read_text("utf-8")
+        core=(ROOT/"engine/builtin_fx/sonku/SonKuSpatialCore.h").read_text("utf-8")
+        js=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
+        snapshot=main.split("void emitNativeSonKuSnapshot(",1)[1].split(
+            "void servicePendingNativeSonKu()",1)[0]
+        for field in ("spacePreset","sourceDistanceMeters","roomAmount","ambience"):
+            self.assertIn('values->setProperty("'+field+'"',snapshot)
+            if field=="spacePreset":
+                self.assertIn('values.getProperty("spacePreset"',main)
+            else:
+                self.assertIn('optionalNumber("'+field+'"',main)
+            self.assertIn(field,js)
+            self.assertIn(field,core)
+        self.assertIn('reply->setProperty("schemaVersion",2)',snapshot)
+        self.assertIn("queueSettings(settings,numeric)",main)
+        self.assertIn("complete_.push(",processor)
+        self.assertIn("out.writeInt(2)",processor)
+        self.assertIn("version==1&&size!=30",processor)
+        self.assertIn("version==2&&size!=46",processor)
+        self.assertNotIn("new AudioContext",js)
+        self.assertIn("[data-sk-room]",js)
+        self.assertIn('arMixBuiltinSonKuAck',js)
+
     def test_native_tempo_readback_belongs_to_vocal_throw_not_eq(self):
         # The real C++ dispatcher must populate the exact VocalThrow
         # snapshot, not an unrelated EQ response. Browser-only mocks cannot

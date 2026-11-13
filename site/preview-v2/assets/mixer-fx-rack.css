@@ -1346,3 +1346,31 @@
  .mx-sonku .sk-rotary{padding:3px 0!important}
  .mx-sonku .sk-guide{font-size:9px}
 }
+
+/* SonKu M4 native SPACE controls — same existing FX-rack CSS owner.
+   Small instrument-row treatment, not another card or a 19th CSS bundle. */
+.mx-sonku .sk-space-panel{display:grid;gap:7px;padding:9px 8px 8px;
+ border-top:1px solid #446171;border-bottom:1px solid #203a4a;
+ background:rgba(5,20,30,.27);border-radius:6px}
+.mx-sonku .sk-space-head{display:flex;align-items:center;justify-content:space-between;
+ font-size:9px;letter-spacing:.85px;color:#afcfdd;font-weight:550}
+.mx-sonku .sk-space-head output{color:#8ed3e0;font-size:9px;letter-spacing:.2px;
+ font-variant-numeric:tabular-nums}
+.mx-sonku .sk-space-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.mx-sonku .sk-space-options button{min-width:0;min-height:26px;padding:4px 2px;
+ border:1px solid #45616c;border-radius:4px;background:#1d3543;
+ font-size:8px;letter-spacing:.2px;font-weight:500;color:#bad2dc}
+.mx-sonku .sk-space-options button[aria-pressed="true"]{color:#e8fbff;
+ border-color:#6fc6d7;background:#24556a;box-shadow:inset 0 1px #ffffff19}
+.mx-sonku .sk-space-options button:focus-visible{outline:2px solid #9bdae8;outline-offset:1px}
+.mx-sonku .sk-controls .sk-space-slider{display:grid!important;
+ grid-template-columns:1fr auto;gap:3px!important;align-items:center;
+ font-size:9px;letter-spacing:.4px;color:#a6c5d1;margin:0}
+.mx-sonku .sk-controls .sk-space-slider output{font-size:9px;
+ color:#daf2f7;font-variant-numeric:tabular-nums}
+.mx-sonku .sk-controls .sk-space-slider input{grid-column:1/-1;
+ width:100%;height:13px;margin:0!important;accent-color:#67c4d7}
+.mx-sonku .sk-space-slider input:disabled{opacity:.32;cursor:not-allowed}
+.mx-sonku .sk-space-hint{font-size:8px;line-height:1.35;color:#87aebb}
+@media(max-width:550px){.mx-sonku .sk-space-panel{gap:6px;padding:8px}
+ .mx-sonku .sk-space-options button{min-height:29px;font-size:9px}}
