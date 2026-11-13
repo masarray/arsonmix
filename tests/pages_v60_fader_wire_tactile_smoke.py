@@ -29,7 +29,7 @@ def source_contract():
                  "function wireRetractPathData(x0,y0,rx,ry,elapsedMs)",
                  "const endWave=wireRetractWave(pose,1)",
                  "plug.setAttribute('cy',shape.pose.tipY.toFixed(1))",
-                 "const passed=pose.front-t; // positive only AFTER OUT-origin front passes",
+                 "const passed=pose.front-t; // first near OUT, then all along the cable",
                  "svg.style.clipPath='none'",
                  "const width=.65-.29*longMix",
                  "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
