@@ -99,6 +99,18 @@ static void testLeadTune(){
     auto mono=leadFixture(rate,220.,-35.f,0.f);
     mono.right=mono.left;
     const auto on=tune(mono,rate,true);
+    if(on.left!=on.right){
+      std::size_t different=0,first=on.left.size();
+      float maximum=0.f;
+      for(std::size_t i=0;i<on.left.size();++i){
+        const float delta=std::abs(on.left[i]-on.right[i]);
+        if(delta>0.f){++different;first=std::min(first,i);
+          maximum=std::max(maximum,delta);}
+      }
+      std::cerr<<"mono-lead PCM mismatch rate="<<rate
+        <<" first-sample="<<first<<" count="<<different
+        <<" max-delta="<<maximum<<" total="<<on.left.size()<<'\\n';
+    }
     need(on.left==on.right,"mono lead acquired a stereo discrepancy");
     const auto dry=tune(mono,rate,false);
     const auto disabled=tune(mono,rate,true,127,.5f,rate);
