@@ -3839,11 +3839,26 @@
     },
     consumeDoubleClick(event,t) {
       if (!connected)return false;
+      // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
+      // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.classList.contains("fader")){
+        if(scope?.sofEnabled&&t?.kind==="audio"){
+          const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
+          if(!edge||id===undefined||
+             !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
+            status("SOF unity reset unavailable · select one admitted SEND");
+          return true;
+        }
         if((m4ControlIsOwner()&&m4Verified()) ||
            (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
           sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
+      }
+      else if(event.target.closest?.(".gain-dial")){
+        if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
+          status("INPUT GAIN unity reset requires native PCM admission");
+        else intent("SET_INPUT_GAIN",t,{valueDb:0});
+        return true;
       }
       else if(event.target.classList.contains("center-pan")){
         if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);
