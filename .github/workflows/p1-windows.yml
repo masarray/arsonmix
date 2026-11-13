@@ -100,7 +100,7 @@ on:
         required: false
         default: false
       focused_harmony_fat:
-        description: "Isolated Harmonice FAT only: full app + relevant native PCM/ASIO/RT tests; not full release qualification"
+        description: "Focused Windows FAT for the built-in vocal harmony plugin: full app, plugin DSP, mixer PCM and ASIO checks"
         type: boolean
         required: false
         default: false
@@ -324,12 +324,12 @@ jobs:
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
-      # Manual, scope-authorized Harmonice field FAT must compile the REAL
+      # Manual FAT scoped to the vocal harmony plugin must compile the actual
       # app plus DSP/PCM/ASIO boundary probes, not 70+ unrelated fixtures.
       # The CTest phase took ~8 sec in a full 80-test Windows run while its
       # full compilation took ~18 min. This is a build cost optimization,
       # NOT permission to skip the full CTest gate before release.
-      - name: Build actual JUCE app and focused Harmonice native tests
+      - name: Build JUCE app and focused vocal harmony, mixer and ASIO tests
         if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
         shell: pwsh
         run: |
@@ -347,7 +347,7 @@ jobs:
             'ARMixNativeMixerSessionTests'
             'ARMixLiveChannelFxTests'
           )
-          # Check exact source first: long-lived Harmonice PRs can have an
+          # Check exact source first: a long-lived vocal harmony plugin PR can have an
           # older CMakeLists.txt than the trusted CI YAML from main.
           # Fail before compiling JUCE if the mandatory test registry drifts.
           $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
@@ -373,7 +373,7 @@ jobs:
             throw "FOCUSED_FAT_MISSING_REQUIRED_TESTS=$($missing -join ',')"
           }
           # The production render audit exists in newer CMake but not in
-          # the older Harmonice candidate. Run it when source declares it.
+          # older vocal harmony plugin candidates. Run it when source declares it.
           if ('M3ActualProductionRenderPathAndFailSilentCounters' -in $available) {
             $targets += 'ARMixProductionRenderAuditTests'
             Write-Host 'FOCUSED_FAT_PRODUCTION_AUDIT=in-source'
@@ -401,7 +401,7 @@ jobs:
         if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}
         # Full build remains mandatory for main, release and native/full requests.
         run: cmake --build build --config Release --parallel 2
-      - name: Test focused Harmonice PCM and ASIO boundary (NOT full CTest)
+      - name: Run focused vocal harmony DSP, mixer PCM and ASIO checks
         if: ${{ env.FOCUSED_HARMONY_FAT == 'true' }}
         shell: pwsh
         run: |

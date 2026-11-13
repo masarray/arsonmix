@@ -47,7 +47,7 @@ async def main():
                 assert len(stats["links"]) == stats["count"] == 1, (size,stats)
                 if stats["cssRules"] is not None:
                     assert stats["cssRules"] > 100, (size,stats)
-                assert stats["keys"] >= 3 and "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in stats["image"], (size,stats)
+                assert stats["keys"] >= 3 and "mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png" in stats["image"], (size,stats)
                 assert stats["kinds"] == ["mute","solo","pfl"], (size,stats)
                 row=page.locator("#tracks .strip[data-id='1'] .mx-hw-row")
                 pfl=row.locator('[data-hw-kind="pfl"]')
@@ -59,7 +59,7 @@ async def main():
                     position:getComputedStyle(e,'::before').backgroundPosition,
                     shadow:getComputedStyle(e,'::before').filter
                 })""")
-                assert "harmonice-thin-flat-v9-pfl-font-matched-57x30.png" in artwork["bg"]
+                assert "mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png" in artwork["bg"]
                 assert artwork["position"].startswith("0%"), artwork
                 assert "drop-shadow(" in artwork["shadow"], artwork
                 await pfl.click()
@@ -113,7 +113,7 @@ async def main():
                         position:getComputedStyle(el,'::before').backgroundPosition,
                         shadow:getComputedStyle(el,'::before').filter
                     })""")
-                    assert "harmonice-thin-flat-v9-pfl-font-matched-57x30.png" in off_pfl["image"]
+                    assert "mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png" in off_pfl["image"]
                     assert off_pfl["position"].startswith("0%"),off_pfl
                     assert "drop-shadow(" in off_pfl["shadow"],off_pfl
                     assert await page.locator("#master [data-hw-kind='pfl']").count()==0
@@ -140,7 +140,7 @@ async def main():
                       size,"CSS rules",stats["cssRules"])
         finally:
             await browser.close()
-    print("PASS one approved runtime CSS, Harmonice v9 PNG MUTE/SOLO/PFL, zero late CSS link")
+    print("PASS one approved runtime CSS, v9 mixer PNG MUTE/SOLO/PFL, zero late CSS link")
 
 if __name__ == "__main__":
     asyncio.run(main())
