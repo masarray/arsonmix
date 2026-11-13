@@ -53,6 +53,15 @@ public:
         preset_.onChange=[this]{choosePreset(preset_.getSelectedId());};
         addAndMakeVisible(preset_);
         for(std::size_t i=0;i<4;++i){
+            library_[i].setButtonText(presetNames_[i]);
+            library_[i].onClick=[this,i]{
+                const int id=static_cast<int>(i)+1;
+                preset_.setSelectedId(id,juce::dontSendNotification);
+                choosePreset(id);
+            };
+            addAndMakeVisible(library_[i]);
+        }
+        for(std::size_t i=0;i<4;++i){
             const auto* name=names_[i];
             focusButtons_[i].setButtonText(name);
             focusButtons_[i].onClick=[this,i]{
@@ -155,21 +164,41 @@ public:
                        305,495,570,29,juce::Justification::centred);
         }
         g.setColour(juce::Colour::fromRGB(51,57,65));
-        g.fillRect(205,getHeight()-33,getWidth()-205,33);
+        g.fillRect(205,getHeight()-37,getWidth()-205,37);
         g.setColour(muted);
         const auto serial=processor_.observedBlockSerial();
         const bool live=serial>0 && nowMs_-lastBlockMs_<900;
-        g.drawText(live?"PCM CALLBACK OBSERVED  ·  audio input not independently verified":
-                   "PCM NOT OBSERVED  ·  no simulated audio meters",
-                   225,getHeight()-31,620,28,juce::Justification::centredLeft);
+        g.drawText(live?"PCM CALLBACK OBSERVED":"PCM OFFLINE  ·  NO FAKE METER",
+                   225,getHeight()-34,240,30,juce::Justification::centredLeft);
+        const int peakX=getWidth()-363,peakW=125;
+        const auto paintPeak=[&](int x,float peak,const juce::String& title){
+            g.setColour(muted);
+            g.drawText(title,x-32,getHeight()-32,28,26,
+                       juce::Justification::centredRight);
+            g.setColour(juce::Colour::fromRGB(24,29,34));
+            g.fillRoundedRectangle(static_cast<float>(x),
+                static_cast<float>(getHeight()-25),static_cast<float>(peakW),10.f,3.f);
+            if(live){
+                const auto magnitude=std::clamp(std::isfinite(peak)?peak:0.f,0.f,1.f);
+                g.setColour(juce::Colour::fromRGB(107,193,143));
+                g.fillRoundedRectangle(static_cast<float>(x),
+                    static_cast<float>(getHeight()-25),
+                    std::max(1.f,magnitude*peakW),10.f,3.f);
+            }
+        };
+        paintPeak(peakX,processor_.observedInputPeak(),"IN");
+        paintPeak(peakX+178,processor_.observedOutputPeak(),"OUT");
         g.setColour(live?juce::Colour::fromRGB(98,197,141):
                          juce::Colour::fromRGB(108,113,119));
-        g.fillEllipse(static_cast<float>(getWidth()-42),
-                      static_cast<float>(getHeight()-23),10.f,10.f);
+        g.fillEllipse(static_cast<float>(getWidth()-17),
+                      static_cast<float>(getHeight()-23),9.f,9.f);
     }
     void resized() override {
         preset_.setBounds(getWidth()-280,16,258,33);
-        status_.setBounds(16,207,175,46);
+        status_.setBounds(16,getHeight()-105,175,46);
+        for(std::size_t i=0;i<4;++i){
+            library_[i].setBounds(18,216+static_cast<int>(i)*54,168,43);
+        }
         for(std::size_t i=0;i<4;++i){
             const int x=228+static_cast<int>(i)*199;
             focusButtons_[i].setBounds(x,104,151,39);
@@ -190,16 +219,16 @@ private:
             }
             waitingId_=0;
         }
-        if(dirty_&&!waitingId_&&processor_.isReady()&&
-           processor_.observedBlockSerial()>0) {
+        const auto serial=processor_.observedBlockSerial();
+        nowMs_=juce::Time::getMillisecondCounter();
+        if(serial!=lastSerial_){lastSerial_=serial;lastBlockMs_=nowMs_;}
+        if(dirty_&&!waitingId_&&processor_.isReady()&&serial>0 &&
+           nowMs_-lastBlockMs_<900u) {
             const auto id=processor_.nextRequestId();
             if(id && processor_.queueProgram(draft_,id)){
                 waitingId_=id;dirty_=false;
             }
         }
-        const auto serial=processor_.observedBlockSerial();
-        nowMs_=juce::Time::getMillisecondCounter();
-        if(serial!=lastSerial_){lastSerial_=serial;lastBlockMs_=nowMs_;}
         juce::String message;
         if(waitingId_)message="APPLYING  ·  awaiting PCM ACK";
         else if(dirty_)message="PENDING  ·  no live PCM";
@@ -229,6 +258,10 @@ private:
     void refreshWidgets(){
         refreshing_=true;
         for(std::size_t i=0;i<4;++i){
+            library_[i].setColour(juce::TextButton::buttonColourId,
+                selectedPreset_==static_cast<int>(i)+1?
+                    juce::Colour::fromRGB(91,67,43):
+                    juce::Colour::fromRGB(39,44,50));
             power_[i].setButtonText(draft_.blocks[i].enabled?"ON":"OFF");
             focusButtons_[i].setColour(juce::TextButton::buttonColourId,
                 i==focus_?juce::Colour::fromRGB(93,67,43):
@@ -260,6 +293,7 @@ private:
         if(armix::guitarfx::validate(next)!=armix::guitarfx::ProgramError::none)
             return;
         draft_=next;
+        selectedPreset_=id;
         dirty_=true;
         refreshWidgets();repaint();
     }
@@ -269,13 +303,17 @@ private:
     juce::ComboBox preset_;
     juce::Label status_;
     std::array<juce::TextButton,4> focusButtons_{};
+    std::array<juce::TextButton,4> library_{};
     std::array<juce::TextButton,4> power_{};
     std::array<juce::Slider,3> sliders_{};
     Program draft_{},accepted_{};
     std::size_t focus_=2;
     std::uint64_t waitingId_=0,lastSerial_=0;
     juce::uint32 nowMs_=0,lastBlockMs_=0;
+    int selectedPreset_=1;
     bool refreshing_=false,dirty_=false;
+    static constexpr std::array<const char*,4> presetNames_{
+        "Clean Studio","Warm Blues","Vintage Crunch","Modern Lead"};
     static constexpr std::array<const char*,4> names_{
         "GATE","OVERDRIVE","AMPLIFIER","CABINET"};
     static constexpr std::array<std::array<const char*,3>,4> controlNames_{{
