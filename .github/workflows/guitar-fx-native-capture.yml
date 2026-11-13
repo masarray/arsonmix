@@ -1,0 +1,84 @@
+name: Guitar FX native JUCE screenshot — one target only
+# The native-window image is required visual evidence, not acceptance by itself.
+# Build only the test harness (no main mixer, full CTest, or installer).
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - 'engine/builtin_fx/GuitarRigEditor.h'
+      - 'engine/builtin_fx/guitar/GuitarHardwareGeometry.h'
+      - 'design-references/guitar-fx/hardware-layout.json'
+      - 'design-references/guitar-fx/assets/gfx-*.png'
+      - 'scripts/build_guitar_fx_layered_assets.mjs'
+      - 'tests/guitar_fx_native_capture.cpp'
+      - '.github/workflows/guitar-fx-native-capture.yml'
+permissions:
+  contents: read
+concurrency:
+  group: guitar-native-capture-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native-editor:
+    runs-on: windows-2022
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify pinned PR commit
+        shell: pwsh
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $head = (& git rev-parse HEAD).Trim()
+          if ($head -ne $env:EXPECTED) { throw "GUITAR_CAPTURE_SHA_MISMATCH expected=$env:EXPECTED got=$head" }
+          Write-Host "GUITAR_CAPTURE_EXACT_SHA=$head"
+      - name: Checkout pinned JUCE 8
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+      - name: Install common WebView2 CMake SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure capture-only target
+        shell: pwsh
+        run: |
+          cmake -S . -B build-gfx -G "Visual Studio 17 2022" -A x64 `
+            -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE" `
+            -DBUILD_TESTING=OFF `
+            -DARMIX_ENABLE_GUITAR_NATIVE_CAPTURE=ON `
+            -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build only actual editor screenshot executable (not mixer)
+        shell: pwsh
+        run: |
+          cmake --build build-gfx --config Release --parallel 2 --target ARMixGuitarEditorCapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Render a REAL JUCE peer and capture all active hardware
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build-gfx -Filter 'ARMixGuitarEditorCapture.exe' -Recurse -File |
+                 Select-Object -First 1
+          if (-not $exe) { throw 'NATIVE_GUITAR_EDITOR_CAPTURE_EXE_MISSING' }
+          $destination = Join-Path $PWD 'guitar-native-screenshots'
+          & $exe.FullName $destination
+          if ($LASTEXITCODE -ne 0) { throw "NATIVE_GUITAR_WINDOW_CAPTURE_FAILED exit=$LASTEXITCODE" }
+          $images = @(Get-ChildItem $destination -Filter '*.png' -File)
+          if ($images.Count -ne 10) { throw "GUITAR_SCREENSHOT_COUNT_WRONG:$($images.Count)" }
+          foreach ($png in $images) {
+            if ($png.Length -lt 10000) { throw "GUITAR_SCREENSHOT_SUSPICIOUSLY_SMALL:$($png.Name)" }
+            $hash = (Get-FileHash $png.FullName -Algorithm SHA256).Hash
+            Write-Host "NATIVE_JUCE_IMAGE=$($png.Name) bytes=$($png.Length) sha256=$hash"
+          }
+      - name: Upload real JUCE snapshots for visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guitar-fx-native-juce-peer-${{ github.event.pull_request.number }}
+          path: guitar-native-screenshots/*.png
+          retention-days: 7
+          if-no-files-found: warn
