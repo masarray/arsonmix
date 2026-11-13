@@ -141,12 +141,25 @@ def exercise(browser,out,width,height):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
-    assert art.count()==1 and "facing top" in art.get_attribute("aria-label")
-    # An original back-of-head vector replaces the physically incorrect
-    # upside-down face PNG. Same SVG is bundled directly into /preview/.
-    assert art.locator("path").count()>=6
-    assert editor.locator("#skMap #skCrown").count()==1
-    assert editor.locator("#skMap #skBackSuit").count()==1
+    assert art.count()==1 and art.get_attribute("data-orientation")=="front-up-flipped"
+    assert art.get_attribute("href")=="assets/sonku-listener-top.png"
+    # The vertically flipped PNG must actually resolve in the BUILT
+    # native /preview/ bundle, and have transparent palette metadata.
+    assert page.evaluate("""async () => {
+       const image=document.querySelector('#skListenerArt');
+       const href=image.getAttribute('href');
+       const asset=await fetch(href);
+       if(!asset.ok)return false;
+       const bytes=new Uint8Array(await asset.arrayBuffer());
+       const sig=[137,80,78,71,13,10,26,10];
+       return sig.every((n,i)=>bytes[i]===n) &&
+         bytes[16]===0&&bytes[17]===0&&bytes[18]===1&&bytes[19]===0 &&
+         bytes[20]===0&&bytes[21]===0&&bytes[22]===1&&bytes[23]===0 &&
+         await new Promise(resolve=>{
+           const im=new Image();im.onload=()=>resolve(im.naturalWidth===256);
+           im.onerror=()=>resolve(false);im.src=href;
+         });
+    }"""),"Flipped transparent PNG missing from native GUI bundle"
     # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
     # HTMLElement.innerText for these nodes. Read SVG textContent and verify
     # the actual anchors, so front/rear cannot silently flip in the GUI.
