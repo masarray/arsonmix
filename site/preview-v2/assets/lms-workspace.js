@@ -10,6 +10,7 @@ if (!M||!root||!app||!launch||root.dataset.ready) return;
 root.dataset.ready="1";
 let state=M.createSystem({ways:3,stereo:true,ports:M.demoPorts(6)});
 let page="system",selectedPort=state.ports[0],pending=null,message="";
+let dspTab="eq",selectedBand=0;
 let dragging=null;
 const pageNames={system:"System",crossover:"Crossover",matrix:"Matrix",
  processing:"Processing",alignment:"Alignment"};
@@ -54,34 +55,56 @@ function systemPage() {
 }
 function freqX(hz) {return 24+(Math.log10(hz)-Math.log10(20))/(Math.log10(20000)-Math.log10(20))*650;}
 function frequencyPage() {
- const edges=[20].concat(state.cutoffsHz,[20000]);
+ // Numeric response is the exact same two cascaded Butterworth magnitude
+ // model as the native PreparedSpeakerSystem LR4 kernel, at assumed 48 kHz.
+ const freqPoints=Array.from({length:116},(_,i)=>20*Math.pow(1000,i/115));
+ const dbToY=db=>Math.max(30,Math.min(196,30+(3-db)*3.75));
+ const guides=[0,-6,-12,-24,-36].map(db=>
+  '<line x1="24" x2="674" y1="'+dbToY(db)+'" y2="'+dbToY(db)+
+  '" stroke="#45606b" stroke-opacity=".45" stroke-dasharray="'+(db===0?'0':'2 5')+'"/>'+
+  '<text x="20" y="'+(dbToY(db)+3)+'" text-anchor="end" fill="#8caeba" font-size="9">'+db+'</text>').join("");
  let curves="",rows="";
- for (let i=0;i<state.ways;i++) {
-  const x1=freqX(edges[i]),x2=freqX(edges[i+1]),c=color(i);
-  curves+='<rect x="'+x1.toFixed(1)+'" y="30" width="'+(x2-x1).toFixed(1)+'" height="166" fill="'+c+'" fill-opacity=".19"/>'+
-   '<line x1="'+x1.toFixed(1)+'" y1="30" x2="'+x1.toFixed(1)+'" y2="196" stroke="'+c+'" stroke-opacity=".9"/>';
-  rows+='<div class="lms-band-row"><span class="lms-band-mark" style="background:'+c+'"></span>'+
-   '<span class="lms-band-name">'+safe(state.sections[i].band)+'</span><span class="lms-muted">'+
-   safe(Math.round(edges[i])+'–'+Math.round(edges[i+1])+' Hz')+'</span></div>';
+ for(let i=0;i<state.ways;i++){
+  const path=freqPoints.map((hz,j)=>{
+   const mag=M.crossoverMagnitude(state.cutoffsHz,i,hz,48000);
+   const db=20*Math.log10(Math.max(1e-7,mag));
+   return (j?"L":"M")+freqX(hz).toFixed(2)+" "+dbToY(db).toFixed(2);
+  }).join(" ");
+  const shade=color(i);
+  curves+='<path d="'+path+'" stroke="'+shade+'" stroke-width="2.5" fill="none" stroke-linecap="round"/>';
+  const edges=[20].concat(state.cutoffsHz,[20000]);
+  rows+='<div class="lms-band-row"><span class="lms-band-mark" style="background:'+shade+'"></span>'+
+    '<span class="lms-band-name">'+safe(state.sections[i].band)+'</span><span class="lms-muted">'+
+    safe(Math.round(edges[i])+'–'+Math.round(edges[i+1])+' Hz')+'</span></div>';
  }
- const splits=state.cutoffsHz.map((v,i)=>'<div class="lms-split-row"><label for="lms-x'+i+'">Split '+(i+1)+'</label>'+
- '<input id="lms-x'+i+'" class="lms-number" type="number" min="20" max="20000" step="1" value="'+v+
- '" data-cutoff="'+i+'"/> <span class="lms-muted">Hz</span></div>').join("");
- return '<div class="lms-grid"><section class="lms-panel"><h3>Crossover sections <span>Design frequency map · not acoustic measurement</span></h3>'+
- '<svg class="lms-frequency" viewBox="0 0 700 242" role="img" aria-label="Frequency bands from 20 Hz to 20 kilohertz">'+
- '<rect x="24" y="30" width="650" height="166" fill="#0b1720"/>'+
- [50,100,500,1000,5000,10000].map(h=>'<line x1="'+freqX(h)+'" x2="'+freqX(h)+'" y1="30" y2="196" stroke="#405461" stroke-opacity=".5"/>').join("")+
- curves+'<line x1="24" x2="674" y1="196" y2="196" stroke="#6b8897"/>'+
- [20,100,1000,10000,20000].map(h=>'<text x="'+freqX(h)+'" y="218" fill="#9db8c1" font-size="11" text-anchor="middle">'+(h===20000?'20k':h===10000?'10k':h===1000?'1k':h)+'</text>').join("")+
- '</svg><div class="lms-line"></div><div class="lms-control-row">'+
- '<label class="lms-label" for="lms-way">NUMBER OF WAYS</label>'+
- '<select class="lms-select" id="lms-way" data-ways>'+selectOptions(Array.from({length:16},(_,i)=>[String(i+1),(i+1)+" Way"]),state.ways)+'</select>'+
- '<label class="lms-label" for="lms-stereo">FORMAT</label>'+
- '<select class="lms-select" id="lms-stereo" data-stereo>'+selectOptions([["1","Stereo L/R"],["0","Mono"]],state.stereo?"1":"0")+'</select>'+
- '</div><p class="lms-warn">Changing the number of ways or mono/stereo layout clears all crosspoints and resets output protection drafts. This never changes the real PCM graph.</p></section>'+
- '<section class="lms-panel"><h3>Band boundaries <span>Linked across '+(state.stereo?"L/R":"mono")+'</span></h3>'+
- rows+'<div class="lms-line"></div>'+splits+
- '<p class="lms-tip">These are editable design boundaries, not validated loudspeaker presets. Native crossover filters and measured response are not yet active.</p></section></div>';
+ const crossoverMarks=state.cutoffsHz.map(hz=>
+   '<line x1="'+freqX(hz)+'" x2="'+freqX(hz)+'" y1="30" y2="196" stroke="#8eafb8" stroke-opacity=".55" stroke-dasharray="4 4"/>').join("");
+ const ticks=[20,100,1000,10000,20000].map(hz=>
+   '<text x="'+freqX(hz)+'" y="219" text-anchor="middle" fill="#9db8c1" font-size="11">'+
+   (hz===20000?"20k":hz===10000?"10k":hz===1000?"1k":hz)+'</text>').join("");
+ const splits=state.cutoffsHz.map((v,i)=>
+  '<div class="lms-split-row"><label for="lms-x'+i+'">Split '+(i+1)+'</label>'+
+  '<input id="lms-x'+i+'" class="lms-number" type="number" min="20" max="20000" step="1" value="'+v+
+  '" data-cutoff="'+i+'"/><span class="lms-muted">Hz</span></div>').join("");
+ return '<div class="lms-grid"><section class="lms-panel">'+
+  '<h3>Crossover frequency response <span>LR4 · 24 dB/oct · calculated at 48 kHz</span></h3>'+
+  '<svg class="lms-frequency" viewBox="0 0 700 242" role="img" aria-label="Calculated LR4 crossover magnitude responses with gain in decibels by frequency">'+
+  '<rect x="24" y="30" width="650" height="166" fill="#0b1720"/>'+guides+
+  [50,100,500,1000,5000,10000].map(hz=>'<line x1="'+freqX(hz)+'" x2="'+freqX(hz)+'" y1="30" y2="196" stroke="#405461" stroke-opacity=".35"/>').join("")+
+  crossoverMarks+curves+ticks+'</svg>'+
+  '<p class="lms-caption">Calculated electrical LR4 magnitude. No microphone measurement, speaker response, acoustic summation or phase correction. Output remains disconnected.</p>'+
+  '<div class="lms-line"></div><div class="lms-control-row">'+
+  '<label class="lms-label" for="lms-way">WAYS</label>'+
+  '<select class="lms-select" id="lms-way" data-ways>'+selectOptions(Array.from({length:16},(_,i)=>[String(i+1),(i+1)+" Way"]),state.ways)+'</select>'+
+  '<label class="lms-label" for="lms-stereo">SOURCE</label>'+
+  '<select class="lms-select" id="lms-stereo" data-stereo>'+selectOptions([["1","Stereo L/R"],["0","Mono"]],state.stereo?"1":"0")+'</select></div>'+
+  '<p class="lms-warn">A structural change clears every matrix patch and output protection draft. Never reconnect an HF speaker automatically.</p>'+
+  '</section><section class="lms-panel">'+
+  '<h3>Section boundaries <span>Linked '+(state.stereo?"L/R":"mono")+' design</span></h3>'+
+  rows+'<div class="lms-line"></div>'+splits+
+  '<p class="lms-tip">Start with section count, then patch sections to destinations in Matrix. Split frequencies must be checked against speaker specifications and actual device sample rate.</p>'+
+  '<div class="lms-control-row">'+btn("Route sections → Matrix","go:matrix")+'</div>'+
+  '</section></div>';
 }
 function matrixPage() {
  const headers=state.ports.map(p=>'<th scope="col">'+safe(p.replace("DEMO-","D"))+'</th>').join("");
@@ -108,61 +131,124 @@ function outputList() {
 }
 function dspPage() {
  const p=state.dsp[selectedPort]||{},section=state.sections.find(s=>s.id===state.routes[selectedPort]);
- return '<div class="lms-grid"><section class="lms-panel"><h3>Logical outputs <span>Select target</span></h3>'+
- outputList()+'</section><section class="lms-panel"><h3>'+safe(selectedPort||"No output")+
- ' <span>'+safe(section?.name||"Unassigned")+'</span></h3>'+
- '<div class="lms-form-grid">'+
- '<div class="lms-field"><label for="lms-gain">Output gain (dB)</label>'+
- '<input class="lms-number" id="lms-gain" data-dsp="gainDb" type="number" min="-60" max="6" step=".1" value="'+p.gainDb+'"/></div>'+
- '<div class="lms-field"><label for="lms-delay">Manual delay (ms)</label>'+
- '<input class="lms-number" id="lms-delay" data-dsp="delayMs" type="number" min="0" max="500" step=".01" value="'+p.delayMs+'"/></div>'+
- '<div class="lms-field"><label for="lms-pol">Polarity</label><select class="lms-select" id="lms-pol" data-dsp="polarity">'+
- selectOptions([["normal","Normal"],["invert","Invert"]],p.polarity)+'</select></div>'+
- '<div class="lms-field"><label for="lms-mute">Output gate (draft only)</label><select class="lms-select" id="lms-mute" data-dsp="muted">'+
- selectOptions([["1","Muted"],["0","Unmuted draft"]],p.muted?"1":"0")+'</select></div>'+
- '<div class="lms-field"><label for="lms-limiter">Limiter state</label><select class="lms-select" id="lms-limiter" data-dsp="limiterEnabled">'+
- selectOptions([["0","Off / uncalibrated"],["1","On (draft only)"]],p.limiterEnabled?"1":"0")+'</select></div>'+
- '<div class="lms-field"><label for="lms-thr">Limiter threshold (dBFS)</label>'+
- '<input class="lms-number" id="lms-thr" data-dsp="limiterThresholdDb" type="number" min="-60" max="0" step=".1" value="'+
- (p.limiterThresholdDb===null?"":p.limiterThresholdDb)+'" placeholder="Unset"/></div></div>'+
- '<div class="lms-line"></div><p class="lms-warn">Protection values require speaker, amplifier, impedance and gain calibration. An uncalibrated limiter must NEVER be treated as safe for hardware playback. No DSP changes are sent to JUCE.</p>'+
- '</section></div>';
+ const bands=p.peq||[];
+ const selector='<div class="lms-control-row lms-subtabs" role="group" aria-label="Output processing editor">'+
+ ["eq","level","protection"].map(id=>
+  '<button type="button" class="lms-btn'+(dspTab===id?' active':'')+
+  '" data-dsp-tab="'+id+'" aria-pressed="'+(dspTab===id)+'">'+
+  ({eq:"Equalizer",level:"Level & Timing",protection:"Protection"}[id])+'</button>').join("")+'</div>';
+ let editor="";
+ if(dspTab==="eq"){
+   const pointX=i=>24+650*i/95,yDb=db=>30+(18-Math.max(-18,Math.min(18,db)))*4.5;
+   const pth=Array.from({length:96},(_,i)=>{
+     const hz=20*Math.pow(1000,i/95);
+     const db=M.peqMagnitude(bands,hz);
+     return (i?'L':'M')+pointX(i).toFixed(2)+' '+yDb(db).toFixed(2);
+   }).join(' ');
+   const eqRows=bands.map((b,i)=>
+    '<button type="button" data-select-band="'+i+'" class="lms-output'+(selectedBand===i?' active':'')+'">'+
+    '<strong>EQ '+(i+1)+'</strong><small>'+(b.enabled?'ON':'OFF')+
+    ' · '+Math.round(b.frequencyHz)+' Hz · '+number(b.gainDb)+' dB</small></button>').join("");
+   const current=bands[selectedBand];
+   editor='<h3>Parametric EQ <span>8-band capacity · design only</span></h3>'+
+    '<svg class="lms-frequency" viewBox="0 0 700 242" role="img" aria-label="Calculated parametric equalizer electrical magnitude response">'+
+    '<rect x="24" y="30" width="650" height="166" fill="#0b1720"/>'+
+    [-18,-9,0,9,18].map(db=>'<line x1="24" x2="674" y1="'+yDb(db)+'" y2="'+yDb(db)+
+     '" stroke="#49616b" stroke-dasharray="'+(db===0?'0':'3 5')+
+     '" opacity=".55"/><text x="19" y="'+(yDb(db)+3)+'" text-anchor="end" fill="#a1b8bf" font-size="9">'+
+     (db>0?'+':'')+db+'</text>').join('')+
+    '<path d="'+pth+'" fill="none" stroke="#5bc5d1" stroke-width="2.6"/>'+
+    [20,100,1000,10000,20000].map(hz=>'<text x="'+freqX(hz)+'" y="218" text-anchor="middle" fill="#9bb4be" font-size="10">'+
+     (hz===20000?'20k':hz===10000?'10k':hz===1000?'1k':hz)+'</text>').join('')+
+    '</svg><p class="lms-caption">Calculated peaking EQ response at 48 kHz. No acoustic measurement or output PCM.</p>'+
+    '<div class="lms-line"></div><div class="lms-output-list">'+eqRows+'</div>'+
+    '<div class="lms-control-row" style="margin-top:10px">'+
+    '<button class="lms-btn" type="button" data-action="addPeq" '+(bands.length>=8?'disabled':'')+'>+ Add band</button>'+
+    (current?btn("Remove selected","removePeq"):'')+'</div>'+
+    (current?'<div class="lms-line"></div><div class="lms-form-grid">'+
+     '<div class="lms-field"><label for="lms-eq-f">Frequency (Hz)</label><input class="lms-number" id="lms-eq-f" type="number" min="20" max="20000" data-peq-field="frequencyHz" step="1" value="'+current.frequencyHz+'"/></div>'+
+     '<div class="lms-field"><label for="lms-eq-g">Gain (dB)</label><input class="lms-number" id="lms-eq-g" type="number" min="-18" max="18" data-peq-field="gainDb" step=".1" value="'+current.gainDb+'"/></div>'+
+     '<div class="lms-field"><label for="lms-eq-q">Q</label><input class="lms-number" id="lms-eq-q" type="number" min=".1" max="18" data-peq-field="q" step=".1" value="'+current.q+'"/></div>'+
+     '<div class="lms-field"><label for="lms-eq-en">Band state</label><select class="lms-select" id="lms-eq-en" data-peq-field="enabled">'+
+     selectOptions([["1","Enabled"],["0","Bypassed"]],current.enabled?"1":"0")+'</select></div></div>':
+     '<p class="lms-caption">No EQ bands. Add a band to start shaping this output.</p>');
+ }else if(dspTab==="level"){
+   editor='<h3>Gain / polarity / delay <span>Selected destination only</span></h3>'+
+    '<div class="lms-form-grid">'+
+    '<div class="lms-field"><label for="lms-gain">Output gain (dB)</label>'+
+    '<input class="lms-number" id="lms-gain" data-dsp="gainDb" type="number" min="-60" max="6" step=".1" value="'+p.gainDb+'"/></div>'+
+    '<div class="lms-field"><label for="lms-delay">Manual delay (ms)</label>'+
+    '<input class="lms-number" id="lms-delay" data-dsp="delayMs" type="number" min="0" max="500" step=".01" value="'+p.delayMs+'"/></div>'+
+    '<div class="lms-field"><label for="lms-pol">Polarity</label><select class="lms-select" id="lms-pol" data-dsp="polarity">'+
+    selectOptions([["normal","Normal"],["invert","Invert"]],p.polarity)+'</select></div>'+
+    '<div class="lms-field"><label for="lms-mute">Output gate (draft)</label><select class="lms-select" id="lms-mute" data-dsp="muted">'+
+    selectOptions([["1","Muted"],["0","Unmuted draft"]],p.muted?"1":"0")+'</select></div></div>'+
+    '<p class="lms-tip">Need distance-based timing? Use Alignment and copy its calculated offsets to output delay drafts.</p>'+
+    btn("Open visual alignment","go:alignment");
+ }else{
+   editor='<h3>Speaker protection <span>NOT CALIBRATED</span></h3>'+
+    '<div class="lms-form-grid">'+
+    '<div class="lms-field"><label for="lms-limiter">Limiter intention</label><select class="lms-select" id="lms-limiter" data-dsp="limiterEnabled">'+
+    selectOptions([["0","Off / uncalibrated"],["1","On (draft only)"]],p.limiterEnabled?"1":"0")+'</select></div>'+
+    '<div class="lms-field"><label for="lms-thr">Digital threshold (dBFS)</label>'+
+    '<input class="lms-number" id="lms-thr" data-dsp="limiterThresholdDb" type="number" min="-60" max="0" step=".1" value="'+
+    (p.limiterThresholdDb===null?'':p.limiterThresholdDb)+'" placeholder="Unset"/></div></div>'+
+    '<p class="lms-warn">Digital dBFS is not loudspeaker power or excursion. Native soft-knee/peak/RMS protection, amplifier sensitivity and speaker profiles require field calibration before hardware can ever be armed. No DSP writes or output-enable API exists here.</p>';
+ }
+ return '<div class="lms-grid">'+
+  '<section class="lms-panel"><h3>Section destinations <span>Hardware port unavailable</span></h3>'+
+  outputList()+'</section>'+
+  '<section class="lms-panel"><h3>'+safe(selectedPort||"No output")+
+  ' <span>'+safe(section?.name||"Not patched")+'</span></h3>'+
+  selector+'<div class="lms-line"></div>'+editor+'</section></div>';
 }
 function alignPage() {
  const all=M.alignment(state);
  const result=all.find(r=>r.port===selectedPort);
  const xSvg=x=>320+x*12,ySvg=y=>70+y*10;
  const lines=all.map(r=>{
-  const s=state.positions[r.port],x=xSvg(s.x),y=ySvg(s.y);
-  return '<line x1="'+x+'" y1="'+y+'" x2="'+xSvg(state.listener.x)+'" y2="'+ySvg(state.listener.y)+
-   '" stroke="'+(r.port===selectedPort?'#5ad0de':'#406675')+'" stroke-dasharray="5 5"/>'+
-   '<g class="spk" data-speaker="'+safe(r.port)+'"><circle cx="'+x+'" cy="'+y+
-   '" r="13" fill="'+(r.port===selectedPort?'#2b91a3':'#285463')+'" stroke="#8cd7e3" stroke-width="2"/>'+
-   '<text x="'+x+'" y="'+(y-22)+'" fill="#d8eef4" text-anchor="middle">'+safe(r.port.replace("DEMO-","D"))+'</text></g>';
+   const s=state.positions[r.port],x=xSvg(s.x),y=ySvg(s.y);
+   const refX=xSvg(state.listener.x),refY=ySvg(state.listener.y);
+   const midX=(x+refX)/2,midY=(y+refY)/2;
+   return '<line x1="'+x+'" y1="'+y+'" x2="'+refX+'" y2="'+refY+
+     '" stroke="'+(r.port===selectedPort?'#5ad0de':'#406675')+'" stroke-dasharray="5 5"/>'+
+     '<text x="'+midX+'" y="'+(midY-6)+'" text-anchor="middle" fill="#a1c2ca">'+unit(r.distanceM)+' m</text>'+
+     '<g class="spk" data-speaker="'+safe(r.port)+'"><circle cx="'+x+'" cy="'+y+
+     '" r="13" fill="'+(r.port===selectedPort?'#2b91a3':'#285463')+'" stroke="#8cd7e3" stroke-width="2"/>'+
+     '<text x="'+x+'" y="'+(y-22)+'" fill="#d8eef4" text-anchor="middle">'+safe(r.port.replace("DEMO-","D"))+'</text></g>';
  }).join("");
  const sx=state.positions[selectedPort]?.x??0,sy=state.positions[selectedPort]?.y??0;
- return '<div class="lms-grid"><section class="lms-panel"><h3>Speaker placement <span>Top view · metres</span></h3>'+
- '<svg id="lms-room-svg" class="lms-room" viewBox="0 0 640 380" role="img" aria-label="Draggable speaker layout">'+
- '<rect x="194" y="14" width="252" height="37" rx="5" fill="#344955"/>'+
- '<text x="320" y="37" fill="#dceef3" text-anchor="middle">STAGE</text>'+
- [100,160,220,280,340].map(y=>'<line x1="30" x2="610" y1="'+y+'" y2="'+y+'" stroke="#2c4651"/>').join("")+
- lines+'<circle class="ref" data-listener-point="1" cx="'+xSvg(state.listener.x)+'" cy="'+ySvg(state.listener.y)+
- '" r="10" fill="#e2e9ef" stroke="#60baca" stroke-width="3"/>'+
- '<text x="'+xSvg(state.listener.x)+'" y="'+(ySvg(state.listener.y)+28)+'" text-anchor="middle" fill="#c6d8de">REFERENCE</text>'+
- '</svg><p class="lms-caption">Drag a speaker or the reference marker. This estimates geometric arrival-time differences only, not phase alignment.</p></section>'+
- '<section class="lms-panel"><h3>Geometry inspector <span>Not applied to audio</span></h3>'+
- '<label class="lms-label" for="lms-align-port">SPEAKER</label>'+
- '<select class="lms-select" id="lms-align-port" data-align-port>'+
- selectOptions(state.ports.map(p=>[p,p]),selectedPort)+'</select>'+
- '<div class="lms-line"></div><div class="lms-form-grid">'+
- '<div class="lms-field"><label for="lms-sx">X (metres)</label><input id="lms-sx" type="number" step=".1" class="lms-number" data-position="x" value="'+number(sx)+'"/></div>'+
- '<div class="lms-field"><label for="lms-sy">Y (metres)</label><input id="lms-sy" type="number" step=".1" class="lms-number" data-position="y" value="'+number(sy)+'"/></div>'+
- '<div class="lms-field"><label for="lms-lx">Reference X</label><input id="lms-lx" type="number" step=".1" class="lms-number" data-listener="x" value="'+number(state.listener.x)+'"/></div>'+
- '<div class="lms-field"><label for="lms-ly">Reference Y</label><input id="lms-ly" type="number" step=".1" class="lms-number" data-listener="y" value="'+number(state.listener.y)+'"/></div></div>'+
- '<div class="lms-line"></div><div class="lms-stat"><b>'+unit(result?.additionalMs||0)+' ms</b>'+
- '<span>Extra geometric delay to '+safe(selectedPort)+'</span></div>'+
- '<p class="lms-warn">Delay assumes 343 m/s and one reference point. Driver acoustic centres, all-pass, crossover phase and real measurements remain outside this estimate.</p>'+
- '</section></div>';
+ const table=all.map(r=>'<tr class="'+(r.port===selectedPort?'current':'')+'">'+
+  '<td>'+safe(r.port)+'</td><td>'+unit(r.distanceM)+' m</td><td>'+unit(r.additionalMs)+' ms</td>'+
+  '<td>'+unit(state.dsp[r.port]?.delayMs??0)+' ms</td></tr>').join("");
+ return '<div class="lms-grid"><section class="lms-panel">'+
+  '<h3>Distance alignment <span>Top view · metres</span></h3>'+
+  '<svg id="lms-room-svg" class="lms-room" viewBox="0 0 640 380" role="img" aria-label="Draggable speaker positions and distances to listening reference">'+
+  '<rect x="194" y="14" width="252" height="37" rx="5" fill="#344955"/>'+
+  '<text x="320" y="37" fill="#dceef3" text-anchor="middle">STAGE</text>'+
+  [100,160,220,280,340].map(y=>'<line x1="30" x2="610" y1="'+y+'" y2="'+y+'" stroke="#2c4651"/>').join('')+
+  lines+'<circle class="ref" data-listener-point="1" cx="'+xSvg(state.listener.x)+'" cy="'+ySvg(state.listener.y)+
+  '" r="10" fill="#e2e9ef" stroke="#60baca" stroke-width="3"/>'+
+  '<text x="'+xSvg(state.listener.x)+'" y="'+(ySvg(state.listener.y)+28)+'" text-anchor="middle" fill="#c6d8de">REFERENCE</text>'+
+  '</svg><p class="lms-caption">Drag speakers or the reference marker. This calculates direct-path distances and arrival-time offsets, NOT phase or measured acoustic alignment.</p>'+
+  '<div class="lms-line"></div><div class="lms-table-scroll"><table class="lms-mini-table">'+
+  '<thead><tr><th>Output</th><th>Distance</th><th>Suggested</th><th>Draft</th></tr></thead>'+
+  '<tbody>'+table+'</tbody></table></div></section>'+
+  '<section class="lms-panel"><h3>Geometry inspector <span>Not applied to audio</span></h3>'+
+  '<label class="lms-label" for="lms-align-port">SPEAKER</label>'+
+  '<select class="lms-select" id="lms-align-port" data-align-port>'+
+  selectOptions(state.ports.map(p=>[p,p]),selectedPort)+'</select>'+
+  '<div class="lms-line"></div><div class="lms-form-grid">'+
+  '<div class="lms-field"><label for="lms-sx">X (metres)</label><input id="lms-sx" type="number" step=".1" class="lms-number" data-position="x" value="'+number(sx)+'"/></div>'+
+  '<div class="lms-field"><label for="lms-sy">Y (metres)</label><input id="lms-sy" type="number" step=".1" class="lms-number" data-position="y" value="'+number(sy)+'"/></div>'+
+  '<div class="lms-field"><label for="lms-lx">Reference X</label><input id="lms-lx" type="number" step=".1" class="lms-number" data-listener="x" value="'+number(state.listener.x)+'"/></div>'+
+  '<div class="lms-field"><label for="lms-ly">Reference Y</label><input id="lms-ly" type="number" step=".1" class="lms-number" data-listener="y" value="'+number(state.listener.y)+'"/></div></div>'+
+  '<div class="lms-line"></div><div class="lms-stat"><b>'+unit(result?.additionalMs||0)+' ms</b>'+
+  '<span>Suggested offset for '+safe(selectedPort)+'</span></div>'+
+  '<p class="lms-caption">Farthest speaker receives zero relative delay. Nearer speakers receive an additional delay (343 m/s assumption).</p>'+
+  '<div class="lms-line"></div>'+btn("Copy offsets into delay drafts","planDelay")+
+  '<p class="lms-warn">No geometry-only estimate compensates crossover phase, horn depth, temperature, device latency or measured impulse response. Draft changes never arm hardware or modify the JUCE callback.</p>'+
+  '</section></div>';
 }
 function reviewBox() {
  if (!pending) return "";
@@ -204,13 +290,33 @@ root.addEventListener("click",event=>{
  const act=t.dataset.action;
  if(act?.startsWith("go:")){page=act.slice(3);pending=null;render();return;}
  if(act==="cancel"){pending=null;render();return;}
+ if(act==="planDelay"){
+  pending={description:"Copy calculated geometric delays to all output DSP DRAFTS. No audio, device, native PCM ACK, or hardware output will be changed.",
+    run:()=>M.withSuggestedDelays(state)};
+  render();return;
+ }
+ if(act==="addPeq"){
+  try{selectedBand=state.dsp[selectedPort].peq.length;
+      update(M.withPeqBand(state,selectedPort,selectedBand,{}));}
+  catch(e){message=e.message;render();}
+  return;
+ }
+ if(act==="removePeq"){
+  try{update(M.withoutPeqBand(state,selectedPort,selectedBand));
+      selectedBand=Math.max(0,selectedBand-1);}
+  catch(e){message=e.message;render();}
+  return;
+ }
+ if(t.dataset.dspTab){dspTab=t.dataset.dspTab;render();return;}
+ if(t.dataset.selectBand!==undefined){selectedBand=Number(t.dataset.selectBand);render();return;}
+
  if(act==="confirm"&&pending){const p=pending;update(p.run());return;}
  if(t.dataset.routePort){
   try{update(M.withRoute(state,t.dataset.routePort,t.dataset.routeSection));}
   catch(e){message=e.message;render();}
   return;
  }
- if(t.dataset.selectPort){selectedPort=t.dataset.selectPort;render();}
+ if(t.dataset.selectPort){selectedPort=t.dataset.selectPort;selectedBand=0;render();}
 });
 root.addEventListener("change",event=>{
  const t=event.target;
@@ -231,7 +337,13 @@ root.addEventListener("change",event=>{
    render();return;
   }
   if(t.dataset.cutoff!==undefined){update(M.withCutoff(state,Number(t.dataset.cutoff),Number(t.value)));return;}
-  if(t.dataset.selectPort!==undefined||t.dataset.alignPort!==undefined){selectedPort=t.value;render();return;}
+  if(t.dataset.selectPort!==undefined||t.dataset.alignPort!==undefined){selectedPort=t.value;selectedBand=0;render();return;}
+  if(t.dataset.peqField!==undefined){
+   const field=t.dataset.peqField;
+   const value=field==="enabled"?t.value==="1":Number(t.value);
+   update(M.withPeqBand(state,selectedPort,selectedBand,{[field]:value}));
+   return;
+  }
   if(t.dataset.dsp!==undefined){
    const field=t.dataset.dsp;
    const v=["muted","limiterEnabled"].includes(field)?t.value==="1":
