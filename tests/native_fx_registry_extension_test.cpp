@@ -211,12 +211,13 @@ static void verifyFirstSoundGuitarProcessor() {
     // A queued GUI intent is NOT durable/accepted until audio callback ACK.
     assert(guitarTyped->acceptedProgram().blocks[2].values[0]!=0.78f);
     assert(!guitarTyped->stateSnapshotQuiescent());
-    guitarTyped->consumeRealtimeEdits();
+    assert(guitarTyped->pendingProgramChanges()==1);
     pcm.clear();
     pcm.setSample(0,0,0.15f);
     pcm.setSample(1,0,0.15f);
-    live->processBlock(pcm,midi); // bounded dual-DSP crossfade
+    live->processBlock(pcm,midi); // LIVE block drains edit and crossfades
     assert(guitarTyped->stateSnapshotQuiescent());
+    assert(guitarTyped->pendingProgramChanges()==0);
     assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.78f);
     assert(guitarTyped->lastCompletion().requestId==101);
     assert(guitarTyped->lastCompletion().applied);
@@ -233,14 +234,46 @@ static void verifyFirstSoundGuitarProcessor() {
     edit=guitarTyped->acceptedProgram();
     edit.blocks[2].values[0]=0.49f;
     assert(guitarTyped->queueProgram(edit,103));
+    assert(guitarTyped->pendingProgramChanges()==1);
     // Device rate changes cancel stale prepared packets and preserve last
     // applied program; a 48kHz FIR must never be applied to a 44.1k graph.
     live->prepareToPlay(44100.,128);
     assert(guitarTyped->stateSnapshotQuiescent());
     assert(guitarTyped->lastCompletion().requestId==103);
     assert(!guitarTyped->lastCompletion().applied);
+    assert(guitarTyped->pendingProgramChanges()==0);
     assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.78f);
     assert(guitarTyped->getLatencySamples()==32);
+
+    // Two accepted live edits must never interrupt a 128-frame crossfade:
+    // a second intent waits in the queue until the first transition ends.
+    auto first=guitarTyped->acceptedProgram();
+    first.blocks[2].values[0]=0.33f;
+    auto second=first;
+    second.blocks[2].values[0]=0.62f;
+    assert(guitarTyped->queueProgram(first,105));
+    juce::AudioBuffer<float> shortBlock(2,32);
+    shortBlock.clear();
+    shortBlock.setSample(0,0,0.25f);
+    shortBlock.setSample(1,0,0.25f);
+    live->processBlock(shortBlock,midi); // first intent becomes audio-owned
+    assert(guitarTyped->queueProgram(second,106));
+    assert(guitarTyped->pendingProgramChanges()==2);
+    // Save must be blocked while the second edit waits and the first ACK
+    // has not yet been consumed on CONTROL.
+    assert(!guitarTyped->stateSnapshotQuiescent());
+    for(int block=0;block<3;++block){
+        shortBlock.clear();
+        live->processBlock(shortBlock,midi);
+    }
+    assert(guitarTyped->pendingProgramChanges()==1);
+    assert(!guitarTyped->stateSnapshotQuiescent());
+    shortBlock.clear();
+    live->processBlock(shortBlock,midi); // now the next block starts second fade
+    assert(guitarTyped->stateSnapshotQuiescent());
+    assert(guitarTyped->pendingProgramChanges()==0);
+    assert(guitarTyped->lastCompletion().requestId==106);
+    assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.62f);
     // State captured before publication is a reliable round-trip.
     juce::MemoryBlock roundtrip;
     restored->getStateInformation(roundtrip);

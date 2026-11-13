@@ -58,8 +58,10 @@ public:
         // completions before retuning the program to the NEW sample rate.
         serviceCompletions();
         Edit stale{};
-        while(queued_.pop(stale))
+        while(queued_.pop(stale)) {
+            pending_.fetch_sub(1,std::memory_order_release);
             lastCompletion_={stale.requestId,stale.program,false};
+        }
         fadeLeft_=0;
         ready_=maxBlock>=16&&maxBlock<=8192&&
                core_.prepare(sampleRate,accepted_);
@@ -73,6 +75,10 @@ public:
         if(!ready_||pcm.getNumChannels()<2){pcm.clear();return;}
         const int samples=pcm.getNumSamples();
         if(samples<=0)return;
+        // Exactly like EQ/Compressor/Harmonice: consume once per live block.
+        // The FxInstance also drains on its fully-bypassed fast path.
+        // Without this, knob/preset edits stall whenever Guitar FX is ON.
+        consumeRealtimeEdits();
         auto* const left=pcm.getWritePointer(0);
         auto* const right=pcm.getWritePointer(1);
         float inPeak=0.f;
@@ -132,7 +138,13 @@ public:
         next.requestId=requestId;
         next.program=program;
         if(!next.prepared.prepare(rate_,program))return false;
-        return queued_.push(next);
+        // CONTROL publishes outstanding intent before AUDIO can see a packet.
+        // This closes the pop->ACK gap in stateSnapshotQuiescent(); .smix
+        // must never save stale accepted state while audio applies a tone.
+        pending_.fetch_add(1,std::memory_order_release);
+        if(queued_.push(next))return true;
+        pending_.fetch_sub(1,std::memory_order_release);
+        return false;
     }
     // CONTROL-only. Editor timers and Show capture share one reducer.
     // A pending GUI edit is not accepted until callback completion.
@@ -141,16 +153,21 @@ public:
         for(int i=0;i<4&&completed_.pop(next);++i) {
             if(next.applied)accepted_=next.program;
             lastCompletion_=next;
+            pending_.fetch_sub(1,std::memory_order_release);
         }
     }
     Completion lastCompletion() const noexcept {return lastCompletion_;}
+    std::uint32_t pendingProgramChanges() const noexcept {
+        return pending_.load(std::memory_order_acquire);
+    }
 
     bool isReady() const noexcept {return ready_&&core_.isReady();}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
         // CONTROL only: closed editors cannot strand accepted completions.
         const_cast<GuitarRigProcessor*>(this)->serviceCompletions();
-        return queued_.empty()&&completed_.empty();
+        return pending_.load(std::memory_order_acquire)==0 &&
+               queued_.empty()&&completed_.empty();
     }
     double acceptedSampleRate() const noexcept {return rate_;}
     const armix::guitarfx::Program& acceptedProgram() const noexcept {
@@ -239,6 +256,9 @@ private:
     FxSpsc<Edit,4> queued_{};
     FxSpsc<Completion,4> completed_{};
     Completion lastCompletion_{};
+    // CONTROL increments before publish and retires only on ACK/cancel.
+    // Tracks the in-flight gap between queue pop and completed_.push.
+    std::atomic<std::uint32_t> pending_{0};
     std::uint64_t requestSerial_=0; // CONTROL only
     int fadeLeft_=0; // audio-owned
     armix::guitarfx::Program accepted_=
