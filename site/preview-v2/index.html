@@ -1532,7 +1532,7 @@ function renderWireRouting(){
   }
   const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-drag-line is-wire-selected" d="'+d+'" stroke="'+(source?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".82" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-drag-line is-wire-selected" d="'+d+'" style="--wire-selected-hue:'+(source?.color||'#b5eedb')+'" stroke="'+(source?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".82" fill="none" stroke-linecap="round"/>'+
    (snap?'':'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(source?.color||'#87dfb8')+'" opacity=".82" stroke="none" pointer-events="none"/>'));
  }
  svg.innerHTML=paths.join('');
