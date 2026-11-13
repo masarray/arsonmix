@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 // Bounded, first-order image-source room for headphone externalization trials.
 // Reflection image geometry follows Allen & Berkley (JASA, 1979), not
@@ -11,6 +12,7 @@
 // this is NOT an HRTF-convolved reflection / arbitrary geometry simulation.
 // No allocation, locks, worker, I/O, FFT or second device callback.
 namespace armix::sonku {
+enum class SonKuRoomShape : std::uint8_t { Rectangular=0, Square=1 };
 class SonKuEarlyReflections final {
 public:
     struct Ears {float left=0.f,right=0.f;};
@@ -46,6 +48,17 @@ public:
         amountTarget_=value;
         return true;
     }
+    // Offline experiment only. Reject shape edits while effect is active.
+    bool setShape(SonKuRoomShape shape) noexcept {
+        if(shape!=SonKuRoomShape::Rectangular && shape!=SonKuRoomShape::Square)
+            return false;
+        if(active())return false;
+        shape_=shape;
+        untilGeometry_=0;
+        primed_=false;
+        return true;
+    }
+    SonKuRoomShape shape() const noexcept {return shape_;}
     bool active() const noexcept {return ready_&&(amount_>0.f||amountTarget_>0.f);}
     float targetAmount() const noexcept {return amountTarget_;}
     Ears process(float left,float right,double azimuth,float spread) noexcept {
@@ -104,10 +117,15 @@ private:
     void updateGeometry(double azimuth,float spread) noexcept {
         constexpr float pi=3.14159265358979323846f;
         constexpr float sourceDistance=1.60f; // meters
-        constexpr float halfWidth=3.20f,halfDepth=4.00f;
+        // The square profile tests rotationally symmetric wall geometry;
+        // it is not a simulated circular room or guaranteed psychoacoustics.
+        const float halfWidth=(shape_==SonKuRoomShape::Square)?3.60f:3.20f;
+        const float halfDepth=(shape_==SonKuRoomShape::Square)?3.60f:4.00f;
         constexpr float speedOfSound=343.f;
         constexpr float earHalfTime=.00031f; // max +/-0.31ms
-        constexpr std::array<float,wallCount> walls{.74f,.74f,.67f,.67f};
+        constexpr std::array<float,wallCount> rectangular{.74f,.74f,.67f,.67f};
+        constexpr std::array<float,wallCount> square{.70f,.70f,.70f,.70f};
+        const auto& walls=(shape_==SonKuRoomShape::Square)?square:rectangular;
         for(int source=0;source<sourceCount;++source){
             const float degrees=static_cast<float>(azimuth)
                 +(source==0?-.5f:.5f)*spread;
@@ -152,6 +170,7 @@ private:
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0;
+    SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
     bool ready_=false,primed_=false;
 };
 } // namespace armix::sonku

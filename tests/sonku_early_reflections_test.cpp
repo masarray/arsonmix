@@ -13,6 +13,22 @@ int main(){
     assert(!invalid.prepare(96000.));
     assert(!invalid.prepare(std::numeric_limits<double>::quiet_NaN()));
     for(double rate:{44100.,48000.}){
+        SonKuEarlyReflections squareRight,squareLeft;
+        assert(squareRight.prepare(rate)&&squareLeft.prepare(rate));
+        assert(squareRight.setShape(SonKuRoomShape::Square));
+        assert(squareLeft.setShape(SonKuRoomShape::Square));
+        assert(squareRight.setAmount(.55f)&&squareLeft.setAmount(.55f));
+        double mirrorError=0.,soundEnergy=0.;
+        for(int i=0;i<4096;++i){
+            const float v=i==0?1.f:0.f;
+            const auto right=squareRight.process(v,0.f,90.,0.f);
+            const auto left=squareLeft.process(v,0.f,-90.,0.f);
+            mirrorError+=std::abs(right.left-left.right)+
+                         std::abs(right.right-left.left);
+            soundEnergy+=std::abs(right.left)+std::abs(right.right);
+        }
+        assert(soundEnergy>.004);
+        assert(mirrorError<1.e-4);
         SonKuEarlyReflections a,b;
         assert(a.prepare(rate)&&b.prepare(rate));
         assert(!a.active());

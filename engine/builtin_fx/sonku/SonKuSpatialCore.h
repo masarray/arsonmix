@@ -83,6 +83,10 @@ public:
     bool setEarlyReflectionsAmount(float amount) noexcept {
         return room_.setAmount(amount);
     }
+    // Explicit A/B-only shape selection; never persisted or host-exposed.
+    bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
+        return room_.setShape(shape);
+    }
     bool ready() const noexcept {return ready_;}
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
