@@ -63,7 +63,9 @@ public:
             history_[s][write_]=.70f*x[s]+.30f*lowpass_[s];
         }
         amount_+=amountSlew_*(amountTarget_-amount_);
-        if(std::abs(amount_-amountTarget_)<1.e-6f)amount_=amountTarget_;
+        // Bound shutdown to a finite 10-12 time-constant fade, then
+        // restore strict bit-exact OFF/zero CPU on the next callback.
+        if(std::abs(amount_-amountTarget_)<1.e-5f)amount_=amountTarget_;
         Ears output{};
         for(int s=0;s<sourceCount;++s){
             for(int wall=0;wall<wallCount;++wall){
