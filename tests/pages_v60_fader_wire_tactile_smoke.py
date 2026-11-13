@@ -23,10 +23,14 @@ def source_contract():
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
                  "WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160",
-                 "const WIRE_RETRACT_MS=690",
+                 "const WIRE_RETRACT_FALL_MS=320,WIRE_RETRACT_HANG_MS=150,WIRE_RETRACT_REEL_MS=660",
+                 "function wireRetractPose(x0,y0,rx,ry,drop,elapsedMs)",
+                 "svg.style.clipPath='none'",
+                 "const width=.65-.29*longMix",
+                 "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
                  "function startWireRetraction(sourceId,releasePoint)",
                  "if(replugRequest)kickWireSpring(replugRequest.sourceId,replugRequest.destId)",
-                 "const distance=1-t; // distance travelled from IN toward OUT",
+                 "const distance=1-t,passed=front-distance;",
                  "const wave=passed>0?",
                  "const accepted=ops.filter(op=>['CONNECT','ROUTE_ONLY','RETARGET'].includes(op.type)).at(-1)",
                  "wire-drag-line is-wire-selected",
@@ -186,7 +190,7 @@ def test_wire(page):
     motion=HTML[HTML.index("const WIRE_IMPACT_TRAVEL_MS="):
                 HTML.index("function kickWireSpring(")]
     physics=page.evaluate("()=>{\n"+motion+"""\n
-      const g=[0,0,180,0,72]; // representative wire with anchored plugs
+      const g=[0,0,500,0,72]; // approved long wire with anchored plugs
       const [x0,y0,x1,y1,limit]=g;
       const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
       const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
@@ -195,6 +199,23 @@ def test_wire(page):
         const v=1-t;
         return v*v*v*y0+3*v*v*t*(y0+c)+3*v*t*t*(y1+c)+t*t*t*y1;
       };
+      // Same production physics for short and long spans; measure the
+      // maximum deformation against the natural slack cable at each length.
+      const peak=span=>{
+        const geom=[0,0,span,0,72];
+        const sag=Math.max(10,Math.min(72,Math.min(67,28+Math.sqrt(span)*1.55)));
+        const ctrl=sag*4/3;
+        let max=0;
+        for(const ms of [45,85,150,230,300,390,460,520]){
+         const pts=wireImpactPathData(...geom,ms).match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
+         for(let i=1;i<64;i++){
+          const t=i/64,v=1-t;
+          const y=3*v*v*t*ctrl+3*v*t*t*ctrl;
+          max=Math.max(max,Math.abs(pts[2*i+1]-y));
+         }
+        }
+        return max;
+      };
       const displaced=(ms,i)=>{
         const points=wireImpactPathData(...g,ms).match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
         return points[2*i+1]-baseline(i/64);
@@ -202,7 +223,8 @@ def test_wire(page):
       return {
         nearInEarly:displaced(45,60),nearOutEarly:displaced(45,10),
         nearOutLate:displaced(420,10),
-        pluggedOut:displaced(0,0),pluggedIn:displaced(45,64)
+        pluggedOut:displaced(0,0),pluggedIn:displaced(45,64),
+        tinyPeak:peak(70),shortPeak:peak(170),longPeak:peak(500)
       };
     }""")
     assert physics and physics["nearInEarly"]< -2.5,("no upward jerk at receiving IN",physics)
@@ -211,6 +233,10 @@ def test_wire(page):
     assert abs(physics["nearOutLate"])<abs(physics["nearInEarly"])*.25,\
         ("outgoing wave did not decay strongly toward OUT",physics)
     assert abs(physics["pluggedOut"])<.25 and abs(physics["pluggedIn"])<.25,physics
+    assert 0.8<physics["tinyPeak"]<physics["shortPeak"]*.65,\
+        ("one-channel wave is too violent or imperceptible",physics)
+    assert physics["shortPeak"]<physics["longPeak"]*.65,\
+        ("short cable retains long cable amplitude",physics)
     assert len(samples)>=5,("no finite spring movement",len(samples))
     assert any(" L " in x["d"] for x in samples),("no cable impact",len(samples))
     settled=cable.get_attribute("d")
@@ -329,13 +355,48 @@ def test_replug_and_retract(page):
     first=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
     page.wait_for_timeout(125)
     dropped=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    assert dropped[1]>first[1]+3,("unplugged plug did not fall downward",first,dropped)
+    assert dropped[1]>first[1]+3,("free plug did not fall",first,dropped)
+    assert abs(dropped[0]-first[0])<1.2,("reel began while the plug was still falling",first,dropped)
+    page.wait_for_timeout(220)
+    hang=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
+    assert overlay.get_attribute("data-wire-phase")=="hang","no hanging phase"
+    assert hang[1]>first[1]+38 and abs(hang[0]-first[0])<1.2,\
+        ("plug did not remain freely hanging below release",first,hang)
+    assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none",\
+        "the dangling cable is still clipped to the SEND tray"
+    sag=overlay.locator('[data-wire-retract-jacket]').evaluate("""el=>{
+      const length=el.getTotalLength(),mid=el.getPointAtLength(length/2),
+            a=el.getPointAtLength(0),b=el.getPointAtLength(length);
+      return mid.y-(a.y+b.y)/2;
+    }""")
+    assert sag>15,("hanging wire lacks a visible slack belly",sag)
+    # CI/browser scheduling can exceed a short hang interval between
+    # getPointAtLength and a second DOM read. The actual DOM phase above
+    # proves the hang occurred; check stationary positions at two precise
+    # timeline samples from the *production function*, not wall-clock sleep.
     page.wait_for_timeout(230)
     reel=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
     start_dist=abs(first[0]-cx(src.bounding_box()))
     assert abs(reel[0]-cx(src.bounding_box()))<start_dist*.85,\
-        ("cable did not retract toward OUT",first,reel)
-    page.wait_for_timeout(550)
+        ("reeling did not draw the plug toward OUT",first,reel)
+    assert overlay.get_attribute("data-wire-phase")=="reel"
+    model=HTML[HTML.index("const WIRE_RETRACT_FALL_MS="):
+               HTML.index("function startWireRetraction(")]
+    response=page.evaluate("()=>{\n"+model+"""\n
+      const a=wireRetractPose(0,0,300,0,82,180);
+      const b=wireRetractPose(0,0,300,0,82,350);
+      const held=wireRetractPose(0,0,300,0,82,445);
+      const c=wireRetractPose(0,0,300,0,82,680);
+      return {fall:a,hang:b,held,reel:c};
+    }""")
+    assert response["fall"]["wave"]==response["hang"]["wave"]==response["held"]["wave"]==0,response
+    assert abs(response["hang"]["x"]-response["held"]["x"])<.01 and \
+           abs(response["hang"]["y"]-response["held"]["y"])<.01,\
+        ("production hang pose moved before reel began",response)
+    assert response["reel"]["wave"]>1.2,response
+    assert response["fall"]["phase"]=="fall" and response["hang"]["phase"]=="hang" and response["reel"]["phase"]=="reel"
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
+    page.wait_for_timeout(580)
     assert page.locator('#wireRetractLayer').count()==0,"retraction left a ghost cable"
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
     page.evaluate("window.__v62Obs.disconnect()")
@@ -364,7 +425,7 @@ def run():
                 page.close()
         finally:
             browser.close()
-    print("PASS V62 Chromium: damped IN-to-OUT whip, accepted relocated wavy, falling/unspooling unplug, no ghost graph")
+    print("PASS V63 Chromium: adaptive 1/2/4-channel waves, real fall-hang-reel with trailing flex, no phantom graph")
 
 
 if __name__=="__main__":
