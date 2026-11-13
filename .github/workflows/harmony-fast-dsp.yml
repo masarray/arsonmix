@@ -6,7 +6,8 @@ on:
       - 'engine/builtin_fx/Harmony*.h'
       - 'tests/harmony*.cpp'
       - 'tools/harmony_offline_ab.cpp'
-      - 'CMakeLists.txt'
+      # Shared CMake edits for DLMS or the mixer are NOT Harmonice DSP edits.
+      # Full native CTest qualifies shared build integration separately.
       - '.github/workflows/harmony-fast-dsp.yml'
 permissions:
   contents: read
