@@ -360,6 +360,29 @@ public:
                 return true;
             });
     }
+    bool setSendEnabled(std::uint64_t epoch,std::uint64_t revision,
+                        ChannelId source,std::uint64_t edgeId,bool enabled,
+                        float rememberedGain) noexcept {
+        if(!source.value || !edgeId || !std::isfinite(rememberedGain) ||
+           rememberedGain<0.f || rememberedGain>4.f)return false;
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                const auto it=std::find_if(active.routing.edges.begin(),
+                    active.routing.edges.end(),[&](const auto& edge){
+                        return edge.from==source && edge.edgeId==edgeId &&
+                               !edge.primaryOutput;
+                    });
+                if(it==active.routing.edges.end())return false;
+                if(active.graph.channelScheduled(source) &&
+                   !active.graph.setSendEnabled(source,edgeId,enabled,rememberedGain))
+                    return false;
+                it->enabled=enabled;
+                for(auto& row:active.routing.channels)if(row.id==source)
+                    for(auto& send:row.parallelSends)
+                        if(send.edgeId==edgeId)send.enabled=enabled;
+                return true;
+            });
+    }
     bool setWireGain(std::uint64_t epoch,std::uint64_t revision,
                      ChannelId source,std::uint64_t edgeId,float gain) noexcept {
         const auto* routing=acceptedRouting(epoch,revision);
