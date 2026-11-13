@@ -21,6 +21,8 @@ struct Settings {
     float outputTrim = 0.75f;         // avoid summing two uncorrelated emitters at unity
     bool moving = true;
     bool clockwise = true;
+    float roomAmount = 0.f;   // default native ROOM OFF
+    float ambienceAmount = 0.f; // default native late FDN OFF
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
@@ -30,7 +32,9 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.stereoSpreadDegrees) && s.stereoSpreadDegrees>=0.f &&
         s.stereoSpreadDegrees<=180.f &&
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
-        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f;
+        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
+        std::isfinite(s.ambienceAmount) && s.ambienceAmount>=0.f && s.ambienceAmount<=1.f;
 }
 inline double wrapDegrees(double degrees) noexcept {
     degrees=std::fmod(degrees,360.0);
@@ -75,6 +79,13 @@ public:
         if(!s.moving || !settings_.moving ||
            s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
+        // Room geometry is the approved Square for the native SPACE
+        // controls. Custom offline M3 geometry is not altered by these
+        // native parameters. Both wet setters are O(1), including rearm.
+        if(s.roomAmount>0.f && !room_.active() &&
+           !room_.setShape(SonKuRoomShape::Square))return false;
+        if(!room_.setAmount(s.roomAmount) ||
+           !reverb_.setAmount(s.ambienceAmount))return false;
         settings_=s;
         remaining_=0;
         return true;
