@@ -77,7 +77,7 @@ test("native JUCE editor uses the generated binary resource identifiers",()=>{
    "gfx-amp-head.png","gfx-cabinet.png",
    "gfx-pedal-gate-body.png","gfx-pedal-drive-body.png",
    "gfx-knob.png","gfx-switch-off.png","gfx-switch-on.png",
-   "gfx-button-off.png","gfx-button-on.png","gfx-panel.png",
+   "gfx-button-off.png","gfx-button-on.png",
    "gfx-stomp-off.png","gfx-stomp-on.png"
  ]){
    const id=name.replace(/\.png$/,"").replace(/[^A-Za-z0-9_]/g,"")+"_png";
@@ -116,10 +116,10 @@ test("bypassed Guitar FX editor may enqueue tone without a live wet meter",()=>{
 
 test("native hardware PNG decoding is cached across editor close/reopen",()=>{
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
- assert(editor.includes("static const std::array<juce::Image,12> skins"),
+ assert(editor.includes("static const std::array<juce::Image,11> skins"),
         "native editor must cache all 12 layered PNG resources per app");
  for(const key of ["amp_","cab_","gate_","pedal_","knob_","switchOff_",
-                   "switchOn_","buttonOff_","buttonOn_","panel_",
+                   "switchOn_","buttonOff_","buttonOn_",
                    "stompOff_","stompOn_"])
   assert(editor.includes(key+"=skins["),key+" shares cached image resource");
 });
@@ -189,7 +189,7 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
   return {w,h,raw};
  };
  const find=name=>SKINS.find(s=>s[0]===name);
- assert.equal(SKINS.length,12,"only active GFX modules and UI chrome");
+ assert.equal(SKINS.length,11,"only active GFX modules and UI chrome");
  for(const [a,b] of [["gfx-switch-off.png","gfx-switch-on.png"],
                        ["gfx-button-off.png","gfx-button-on.png"],
                        ["gfx-stomp-off.png","gfx-stomp-on.png"]]){

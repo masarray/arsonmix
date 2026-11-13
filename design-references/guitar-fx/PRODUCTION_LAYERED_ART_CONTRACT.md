@@ -4,7 +4,7 @@ This is the authoritative asset contract for the **existing native JUCE** Guitar
 
 ## Required production layers
 
-Place all 12 artist-approved **RGBA (8-bit, non-interlaced) PNG** images in `design-references/guitar-fx/artist-source/` using the exact following names and canvas dimensions:
+Place all 11 artist-approved **RGBA (8-bit, non-interlaced) PNG** images in `design-references/guitar-fx/artist-source/` using the exact following names and canvas dimensions:
 
 | File | Canvas | Composited purpose |
 |---|---|---|
@@ -17,7 +17,6 @@ Place all 12 artist-approved **RGBA (8-bit, non-interlaced) PNG** images in `des
 | gfx-switch-on.png | 200×74 | SAME housing and alpha shape, ON bitmap |
 | gfx-button-off.png | 280×80 | Shared GUI button inactive |
 | gfx-button-on.png | 280×80 | Shared GUI button selected, same frame |
-| gfx-panel.png | 800×330 | Empty reusable GUI chassis/background |
 | gfx-stomp-off.png | 110×110 | Independent pedal switch OFF |
 | gfx-stomp-on.png | 110×110 | Same geometry pedal switch ON |
 
@@ -40,3 +39,7 @@ node scripts/validate_guitar_fx_artist_source.mjs design-references/guitar-fx/ar
 ```
 
 Then inspect a Windows JUCE screenshot for all four focuses, test independent knob rotation, ON/OFF toggle and hover/pressed states, and confirm Guitar FX remains in FX Picker. Real Hi-Z guitar/ASIO sound is a separate field acceptance.
+
+## Geometry-v2 retirement note
+
+The rejected PR #663 `artist-source/gfx-*.png` drawings are retired from the native editor; the current compiled editor uses the v2 generator output by default. The former uniform `gfx-panel.png` has no visual or interactive purpose and was removed. The historical browser concept uses **different** `assets/pedal-*.png` / `amp-head-class-a.png` assets, which remain for that standalone archived demo and are never embedded into the native product. To supply independent externally approved images, set `-DARMIX_GUITAR_USE_ARTIST_SOURCE=ON -DARMIX_GUITAR_ART_SOURCE_DIR=<path>` and supply all 11 approved state-aligned skins. Until native-window screenshots pass visual review, the generated deterministic art is not a professional photographic-asset qualification. Physical anchors and scale are defined in `hardware-layout.json` and `GuitarHardwareGeometry.h` and regression-tested against drift.

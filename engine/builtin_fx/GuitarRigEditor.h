@@ -174,7 +174,7 @@ public:
         addAndMakeVisible(stomp_);
         status_.setJustificationType(juce::Justification::centredRight);
         status_.setColour(juce::Label::textColourId,
-                          juce::Colour::fromRGB(213,170,112));
+                          juce::Colour::fromRGB(154,172,173));
         addAndMakeVisible(status_);
         refreshWidgets();
         startTimerHz(15); // UI only, never a second audio timer/callback.
@@ -384,8 +384,8 @@ private:
         // on every floating editor reopen is avoidable startup work; the
         // first UI creation populates this thread-safe function-local cache
         // and later editors only share image handles. No audio-thread IO.
-        static const std::array<juce::Image,12> skins=[] {
-            return std::array<juce::Image,12>{
+        static const std::array<juce::Image,11> skins=[] {
+            return std::array<juce::Image,11>{
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxamphead_png,
                     static_cast<std::size_t>(BinaryData::gfxamphead_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxcabinet_png,
@@ -404,8 +404,6 @@ private:
                     static_cast<std::size_t>(BinaryData::gfxbuttonoff_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxbuttonon_png,
                     static_cast<std::size_t>(BinaryData::gfxbuttonon_pngSize)),
-                juce::ImageFileFormat::loadFrom(BinaryData::gfxpanel_png,
-                    static_cast<std::size_t>(BinaryData::gfxpanel_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxstompoff_png,
                     static_cast<std::size_t>(BinaryData::gfxstompoff_pngSize)),
                 juce::ImageFileFormat::loadFrom(BinaryData::gfxstompon_png,
@@ -414,8 +412,8 @@ private:
         }();
         amp_=skins[0];cab_=skins[1];gate_=skins[2];pedal_=skins[3];
         knob_=skins[4];switchOff_=skins[5];switchOn_=skins[6];
-        buttonOff_=skins[7];buttonOn_=skins[8];panel_=skins[9];
-        stompOff_=skins[10];stompOn_=skins[11];
+        buttonOff_=skins[7];buttonOn_=skins[8];
+        stompOff_=skins[9];stompOn_=skins[10];
 #endif
     }
     static armix::guitarfx::art::Rect toArtRect(juce::Rectangle<int> r) {
@@ -515,7 +513,7 @@ private:
     HardwareKnobs knobsLook_{};
     NavigationButtons navLook_{};
     SkinButtons buttonLook_{},switchLook_{},stompLook_{};
-    juce::Image amp_,cab_,gate_,pedal_,knob_,panel_;
+    juce::Image amp_,cab_,gate_,pedal_,knob_;
     juce::Image switchOff_,switchOn_,buttonOff_,buttonOn_,stompOff_,stompOn_;
     juce::TextButton stomp_;
     juce::ComboBox preset_;

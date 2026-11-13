@@ -18,7 +18,6 @@ export const SKINS = Object.freeze([
   ["gfx-switch-on.png",200,74,"switchOn"],
   ["gfx-button-off.png",280,80,"buttonOff"],
   ["gfx-button-on.png",280,80,"buttonOn"],
-  ["gfx-panel.png",800,330,"panel"],
   ["gfx-stomp-off.png",110,110,"stompOff"],
   ["gfx-stomp-on.png",110,110,"stompOn"]
 ]);
@@ -105,11 +104,6 @@ const pixel=(spec,x,y)=>{
                                           grey(69+n*.3);
     if(d>.25)return metal(36,n*.4);
     return metal(133+24*shadow(x,y,w,h),n*.35);
-  }
-  if(kind==="panel"){
-    // A deliberately subtle utility backdrop. New editor does NOT render it.
-    const d=sdBox(x,y,3,3,w-4,h-4,9);
-    return d>0?[0,0,0,0]:grey(26+9*(1-Y)+n*.4);
   }
   if(kind==="amp"){
     const e=sdBox(x,y,8,8,w-9,h-10,24);

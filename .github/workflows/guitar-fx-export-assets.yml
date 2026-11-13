@@ -33,6 +33,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f -- design-references/guitar-fx/assets/gfx-*.png
+          git rm -f --ignore-unmatch design-references/guitar-fx/assets/gfx-panel.png
           if git diff --cached --quiet; then
             echo 'Production PNGs already match deterministic generator'
           else

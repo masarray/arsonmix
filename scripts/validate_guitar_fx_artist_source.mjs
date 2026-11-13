@@ -10,7 +10,7 @@ const sizes={
  "gfx-pedal-gate-body.png":[300,420],"gfx-pedal-drive-body.png":[300,420],
  "gfx-knob.png":[120,120],"gfx-switch-off.png":[200,74],
  "gfx-switch-on.png":[200,74],"gfx-button-off.png":[280,80],
- "gfx-button-on.png":[280,80],"gfx-panel.png":[800,330],
+ "gfx-button-on.png":[280,80],
  "gfx-stomp-off.png":[110,110],"gfx-stomp-on.png":[110,110]
 };
 function decode(name) {

@@ -127,7 +127,7 @@ if(ARMIX_GUITAR_USE_ARTIST_SOURCE)
         gfx-amp-head.png gfx-cabinet.png gfx-pedal-gate-body.png
         gfx-pedal-drive-body.png gfx-knob.png gfx-switch-off.png
         gfx-switch-on.png gfx-button-off.png gfx-button-on.png
-        gfx-panel.png gfx-stomp-off.png gfx-stomp-on.png)
+        gfx-stomp-off.png gfx-stomp-on.png)
         if(NOT EXISTS "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}")
             message(FATAL_ERROR "Incomplete approved Guitar FX art source: ${ARMIX_GFX_ASSET}")
         endif()
