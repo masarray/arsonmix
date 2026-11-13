@@ -64,7 +64,7 @@ class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
-        bool pre=false,primary=false;
+        bool pre=false,primary=false,enabled=true;
     };
     struct Lane final {
         ChannelId id{};
@@ -238,7 +238,7 @@ public:
         for(std::size_t e=lane.first;e<lane.last;++e){
             const auto& edge=edges_[e];
             if(lanes_[edge.destination].id==destination &&
-               edge.pre==preFader && !edge.primary) {
+               edge.pre==preFader && !edge.primary && edge.enabled) {
                 sendTargets_[e].gain.store(gain,std::memory_order_release);
                 return true;
             }
@@ -484,7 +484,7 @@ public:
                 const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
                     (send.pan<0.f?1.f+send.pan:1.f);
                 outgoing[i].push_back({to,gl,gr,send.enabled?send.gain:0.f,
-                                       send.preFader,send.primaryOutput});
+                                       send.preFader,send.primaryOutput,send.enabled});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
