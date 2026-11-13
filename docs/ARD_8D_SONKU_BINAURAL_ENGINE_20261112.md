@@ -151,3 +151,7 @@ This record supersedes the earlier **round/circular stage UI** and radial 2D mar
 - **No extra renderer or CSS owner**: add to existing one /preview/ editor and existing `mixer-fx-rack.css`, maintaining exactly 18 CSS owner links. No WebAudio, DSP JS clone, extra callback or CPU-intensive continuous 3D scene.
 - **Verification evidence**: Chromium assembled native GUI two viewport screenshots, actual FX picker insertion and ACK/readback, four acoustic directions, front/rear painter order, both monitors visible at 0° spread, real mouse drag to FRONT, rotary drag with one typed native request. Exact SHA `4652a744ab4ae01b1ceca58bb6c3d7e372eb420a`, [UI run](https://github.com/masarray/arsonmix/actions/runs/43342451656), [two screenshots](https://github.com/masarray/arsonmix/actions/runs/43342451656/artifacts/13999089726).
 - **Release gate**: browser FAT uses simulated JUCE events. It is not physical binaural localization or installed Windows/ASIO FAT, and the PR must be reconciled with advancing `main` before any public release.
+
+
+## 2026-11-13 — V2 spatial externalization architecture
+See docs/SONKU_V2_EXTERNALIZATION_DECISION_20261113.md. Experimental room processing is opt-in and OFF in native JUCE until qualified with headphone A/B. Fixed bounded image-source early reflections retain the same single PCM authority; future ITD-aligned HRIR implementation is a separate stage.
