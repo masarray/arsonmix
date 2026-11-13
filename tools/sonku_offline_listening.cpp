@@ -370,17 +370,17 @@ void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
              musicSplitBandProof());
     std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
     if(!guide)throw std::runtime_error("Cannot write integrity guide");
-    guide<<"Six original synthetic 4s fixtures, 48kHz/16-bit stereo.\\n"
-         <<"Baseline and candidate use the same generated sources and\\n"
-         <<"identical native KEMAR playback settings. HEADPHONES ONLY.\\n"
-         <<"1: positive coherent L=R FRONT, spread 0.\\n"
-         <<"2: inverted L=-R FRONT, spread 0.\\n"
-         <<"3: inverted L=-R REAR, spread 0.\\n"
-         <<"4: positive coherent FRONT, spread 60 degrees.\\n"
-         <<"5: positive coherent REAR, spread 60 degrees.\\n"
-         <<"6: coherent 220Hz bass plus inverted 3200Hz treble FRONT, spread 0.\\n"
-         <<"Do NOT infer dearVR-level spatialization or externalization\\n"
-         <<"from a numerical restoration of the stereo side information.\\n";
+    guide<<"Six original synthetic 4s fixtures, 48kHz/16-bit stereo.\n"
+         <<"Baseline and candidate use the same generated sources and\n"
+         <<"identical native KEMAR playback settings. HEADPHONES ONLY.\n"
+         <<"1: positive coherent L=R FRONT, spread 0.\n"
+         <<"2: inverted L=-R FRONT, spread 0.\n"
+         <<"3: inverted L=-R REAR, spread 0.\n"
+         <<"4: positive coherent FRONT, spread 60 degrees.\n"
+         <<"5: positive coherent REAR, spread 60 degrees.\n"
+         <<"6: coherent 220Hz bass plus inverted 3200Hz treble FRONT, spread 0.\n"
+         <<"Do NOT infer dearVR-level spatialization or externalization\n"
+         <<"from a numerical restoration of the stereo side information.\n";
 }
 int main(int argc,char** argv){
     try{
