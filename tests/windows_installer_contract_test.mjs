@@ -226,8 +226,10 @@ test('Windows updater executes byte-level offline stage integrity fixtures', () 
   const updater = read('installer/ArSonMixAutoUpdate.ps1');
   const smoke = read('scripts/test_inno_graceful_update_windows.ps1');
   assert.match(updater, /function Test-StagedAsset\(/);
-  assert.match(updater, /Test-StagedAsset \$newPath \$state\.newAsset/);
-  assert.match(updater, /Test-StagedAsset \$oldPath \$state\.previousAsset/);
+  assert.match(updater, /function Test-InstallableAssetPair\(/);
+  assert.match(updater, /Test-StagedAsset \$newPath \$newAsset/);
+  assert.match(updater, /Test-StagedAsset \$oldPath \$oldAsset/);
+  assert.match(updater, /Test-InstallableAssetPair \$newPath \$state\.newAsset \$oldPath \$state\.previousAsset/);
   assert.doesNotMatch(updater, /foreach\(\$pair in @\(@\(/);
   assert.match(updater, /Tampered staged EXE accepted/);
   assert.match(updater, /Short staged EXE accepted/);
