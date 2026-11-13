@@ -7020,7 +7020,15 @@ public:
         }
 #endif
         if (startupAttempted_)
+        {
+#if defined(_WIN32)
+            // Four-Hz control timer, sample tiny updater metadata every 10s.
+            // No network, hashing, disk writes or prompts in the PCM callback.
+            if (++updatePromptTicks_ % 40 == 0)
+                serviceSmartUpdateAcknowledgement();
+#endif
             return;
+        }
         startupAttempted_ = true;
         // Remain active only as a lightweight update handshake (4 Hz).
         // Do not touch audio-device selection, callback, or GUI geometry.
@@ -7110,6 +7118,71 @@ public:
     }
 private:
 #if defined(_WIN32)
+#if defined(_WIN32)
+    void serviceSmartUpdateAcknowledgement()
+    {
+        // The separately running updater has already staged and SHA-checked
+        // both packages. Never claim a prompt can validate publisher identity.
+        if (!window_)
+            return;
+        const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
+        if (local.isEmpty())
+            return;
+        const auto folder = juce::File (local).getChildFile ("ArSonMix")
+                                               .getChildFile ("Updates");
+        const auto stateFile = folder.getChildFile ("state.json");
+        if (!stateFile.existsAsFile() || stateFile.getSize() > 8192)
+            return;
+        const auto state = juce::JSON::parse (stateFile.loadFileAsString());
+        const auto* object = state.getDynamicObject();
+        if (object == nullptr || object->getProperty ("phase").toString() != "staged"
+            || object->getProperty ("operation").toString() != "upgrade")
+            return;
+        const auto tag = object->getProperty ("candidateTag").toString();
+        const auto candidate = object->getProperty ("candidateSha").toString();
+        const auto previous = object->getProperty ("previousSha").toString();
+        if (tag.length() > 60 || !tag.startsWith ("v")
+            || candidate.length() != 40 || previous.length() != 40
+            || !candidate.containsOnly ("0123456789abcdef")
+            || !previous.containsOnly ("0123456789abcdef"))
+            return;
+        const auto approvalFile = folder.getChildFile ("approved.json");
+        if (approvalFile.existsAsFile() && approvalFile.getSize() <= 2048)
+        {
+            const auto saved = juce::JSON::parse (approvalFile.loadFileAsString());
+            if (const auto* ack = saved.getDynamicObject())
+                if (ack->getProperty ("candidateTag").toString() == tag
+                    && ack->getProperty ("candidateSha").toString() == candidate
+                    && ack->getProperty ("previousSha").toString() == previous)
+                    return; // Already acknowledged; no repeat dialog.
+        }
+        if (lastUpdatePromptedSha_ == candidate)
+            return; // Never nag during one mixer session.
+        lastUpdatePromptedSha_ = candidate;
+        auto options = juce::MessageBoxOptions {}
+            .withIconType (juce::MessageBoxIconType::InfoIcon)
+            .withTitle ("ArSonMix · Update")
+            .withMessage ("Update " + tag + " is ready.\\n\\n"
+                          "Press OK to allow automatic installation after "
+                          "you finish and close ArSonMix normally. "
+                          "The mixer will not be interrupted. "
+                          "Your sessions and plugins will be preserved.")
+            .withButton ("OK");
+        juce::NativeMessageBox::showAsync (options,
+            [approvalFile, tag, candidate, previous] (int button)
+            {
+                if (button < 0) return; // Closed/dismissed: no consent.
+                auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
+                approval->setProperty ("candidateTag", tag);
+                approval->setProperty ("candidateSha", candidate);
+                approval->setProperty ("previousSha", previous);
+                // A tiny per-user acknowledgement only; updater rechecks
+                // hashes, release identity and the running-mixer mutex.
+                (void) approvalFile.replaceWithText (
+                    juce::JSON::toString (juce::var (approval.get()), false));
+            });
+    }
+#endif
     void launchSmartUpdater (bool applyStaged)
     {
         // Windows per-user installation only: independent updater process.
@@ -7147,6 +7220,8 @@ private:
 #if defined(_WIN32)
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
+    int updatePromptTicks_ = 0;
+    juce::String lastUpdatePromptedSha_;
 #endif
     std::unique_ptr<ArSonMixStartupSplash> splash_;
     std::unique_ptr<ConsoleWindow> window_;
