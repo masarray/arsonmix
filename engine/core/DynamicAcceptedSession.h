@@ -306,6 +306,15 @@ public:
             return false;
         return accepted_.rememberLiveMix(id,linear,pan);
     }
+    // A real accepted post-source, pre-FX digital gain update. Remembers the
+    // final value without changing graph topology or touching the audio thread.
+    bool setLiveInputGain(std::uint64_t epoch,std::uint64_t graphRevision,
+                          ChannelId id,float linear) noexcept {
+        const auto* row=accepted_.find(id);
+        if(!row || row->role!=ChannelRole::input ||
+           !publisher_.setInputGain(epoch,graphRevision,id,linear))return false;
+        return accepted_.rememberLiveInputGain(id,linear);
+    }
     // The accepted physical patch is canonical too: subsequent Group/FX
     // graph recompiles must preserve the most recently ACKed live SOURCE.
     bool setLivePhysicalSource(std::uint64_t epoch,std::uint64_t graphRevision,
