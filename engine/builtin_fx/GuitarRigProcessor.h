@@ -119,6 +119,13 @@ public:
         // The host calls this from the SINGLE callback before either its wet
         // processBlock or its fully-bypassed CPU-saving fast path. A Guitar FX
         // crossfade must not wait forever for PCM that is deliberately skipped.
+        if(fully&&!fullyBypassed_) {
+            // With no wet PCM consumed, a 32-sample cabinet delay would
+            // otherwise replay an old note on re-enable. Discard the stale
+            // history only when the host has finished fading to dry.
+            core_.reset();
+            beforeSwitch_.reset();
+        }
         fullyBypassed_=fully;
         if(fully)fadeLeft_=0;
     }
