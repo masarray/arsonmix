@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 2,
+  "units": "native-png-pixels",
+  "designCanvas": {
+    "width": 1060,
+    "height": 640
+  },
+  "stage": {
+    "x": 218,
+    "y": 158,
+    "width": 824,
+    "height": 366
+  },
+  "scaling": "uniform-contain-and-letterbox",
+  "modules": [
+    {
+      "key": "gate",
+      "file": "gfx-pedal-gate-body.png",
+      "canvas": [
+        300,
+        420
+      ],
+      "contentBounds": [
+        10,
+        7,
+        280,
+        406
+      ],
+      "knobCenters": [
+        [
+          76,
+          131,
+          71
+        ],
+        [
+          224,
+          131,
+          71
+        ],
+        [
+          150,
+          218,
+          71
+        ]
+      ],
+      "footswitch": [
+        150,
+        342,
+        72
+      ],
+      "led": [
+        150,
+        277,
+        16
+      ],
+      "safeMargin": 10,
+      "controls": [
+        "Threshold",
+        "Hold",
+        "Release"
+      ]
+    },
+    {
+      "key": "drive",
+      "file": "gfx-pedal-drive-body.png",
+      "canvas": [
+        300,
+        420
+      ],
+      "contentBounds": [
+        10,
+        7,
+        280,
+        406
+      ],
+      "knobCenters": [
+        [
+          150,
+          147,
+          74
+        ]
+      ],
+      "footswitch": [
+        150,
+        342,
+        72
+      ],
+      "led": [
+        150,
+        277,
+        16
+      ],
+      "safeMargin": 10,
+      "controls": [
+        "Drive"
+      ]
+    },
+    {
+      "key": "amp",
+      "file": "gfx-amp-head.png",
+      "canvas": [
+        720,
+        300
+      ],
+      "contentBounds": [
+        5,
+        9,
+        710,
+        282
+      ],
+      "knobCenters": [
+        [
+          210,
+          224,
+          64
+        ],
+        [
+          360,
+          224,
+          64
+        ],
+        [
+          510,
+          224,
+          64
+        ]
+      ],
+      "footswitch": null,
+      "led": [
+        88,
+        214,
+        14
+      ],
+      "safeMargin": 5,
+      "controls": [
+        "Gain",
+        "Tone",
+        "Master"
+      ]
+    },
+    {
+      "key": "cab",
+      "file": "gfx-cabinet.png",
+      "canvas": [
+        720,
+        300
+      ],
+      "contentBounds": [
+        5,
+        9,
+        710,
+        282
+      ],
+      "knobCenters": [],
+      "footswitch": null,
+      "led": null,
+      "safeMargin": 5,
+      "controls": []
+    }
+  ],
+  "statePairs": [
+    [
+      "gfx-switch-off.png",
+      "gfx-switch-on.png"
+    ],
+    [
+      "gfx-button-off.png",
+      "gfx-button-on.png"
+    ],
+    [
+      "gfx-stomp-off.png",
+      "gfx-stomp-on.png"
+    ]
+  ],
+  "assetVersion": "gfx-geometry-v2",
+  "notes": "Authoring coordinates are shared with GuitarHardwareGeometry.h. Tests must reject drift. The GUI stage shows only the selected module; all hardware controls are independent JUCE children. No baked controls."
+}
