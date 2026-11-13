@@ -235,6 +235,27 @@ test('BOM does not weaken malformed-journal rejection or source SHA pinning',()=
   }finally{clean(d);}
 });
 
+test('Windows offline FAT collector accepts attested FIELD preview, rejects invented qualification',()=>{
+ if(process.platform!=='win32')return;
+ const d=makeTemp();try{
+  const p=makePackage(d);
+  const collector=readFileSync('scripts/collect_hardware_fat_windows.ps1');
+  const collectorPath=join(d,'collect_hardware_fat_windows.ps1');
+  writeFileSync(collectorPath,collector);
+  p.m.fatCollectorSha256=sha(collector);
+  const verify=()=>execFileSync('powershell.exe',[
+    '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
+    '-File',collectorPath,'-Action','Verify'
+  ],{cwd:d,timeout:30000,encoding:'utf8'});
+  p.m.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN';p.save();
+  assert.doesNotThrow(verify);
+  p.m.fatStatus='HARDWARE_CERTIFIED';p.save();
+  assert.throws(verify,/Unexpected or unapproved software qualification status/);
+  p.m.fatStatus='SOFTWARE_VERIFIED_PREVIEW_CANDIDATE';p.save();
+  assert.doesNotThrow(verify);
+ }finally{clean(d);}
+});
+
 test('PowerShell Summary validates 44.1/48 kHz real start/end duration rather than a forged 30-minute field',()=>{
  if(process.platform!=='win32')return;
  const d=makeTemp();try{
