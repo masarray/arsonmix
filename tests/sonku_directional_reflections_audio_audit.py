@@ -25,6 +25,18 @@ def rms(samples, ch, first, last):
     return math.sqrt(sum((samples[2*i+ch]/32768.)**2
                          for i in range(first,last))/(last-first))
 
+def tone_amplitude(samples, channel, hz):
+    # Integer cycles in a fixed, 1-second steady window. These are
+    # synthetic component amplitudes, NOT LUFS or a perceptual metric.
+    first, count = RATE // 2, RATE
+    real = imag = 0.0
+    for i in range(first, first + count):
+        value = samples[2*i+channel] / 32768.
+        phase = 2. * math.pi * hz * i / RATE
+        real += value * math.cos(phase)
+        imag -= value * math.sin(phase)
+    return 2. * math.hypot(real, imag) / count
+
 def run(folder):
     report = {"note": "Measured PCM change, not proven improved externalization",
               "rate": RATE, "frames": FRAMES, "scenes": {}}
@@ -47,6 +59,24 @@ def run(folder):
             "directionalSamplePeakDbFS":
                 20*math.log10(max(map(abs,next_))/32768.),
         }
+        # Report actual synthetic harmonic spectral changes rather than
+        # claiming externalization or music neutrality from RMS alone.
+        # 165/660/2200/4700Hz map to the exact original source motif.
+        band_delta = {}
+        for hz in (165, 660, 2200, 4700):
+            before = [tone_amplitude(base,ch,hz) for ch in (0,1)]
+            after = [tone_amplitude(next_,ch,hz) for ch in (0,1)]
+            assert min(before) > 1e-6 and min(after) > 1e-6, (
+                "invalid harmonic measurement",pos,hz,before,after)
+            differences = [20*math.log10(a/b) for a,b in zip(after,before)]
+            assert all(math.isfinite(db) for db in differences)
+            band_delta[str(hz)] = differences
+        report["scenes"][pos]["harmonicChangeDb"] = band_delta
+        report["scenes"][pos]["rmsChangeDb"] = [
+            20*math.log10(v/b) for v,b in zip(values,original)]
+        # 1.5dB is an engineering review flag, not a subjective PASS gate.
+        report["scenes"][pos]["tonalityReviewFlag"] = any(
+            abs(db)>1.5 for pair in band_delta.values() for db in pair)
     (folder/"SONKU-P2-DIRECTIONAL-OBJECTIVE.json").write_text(
         json.dumps(report, indent=2, sort_keys=True)+"\n",encoding="utf-8")
     return report
@@ -56,5 +86,7 @@ if __name__ == "__main__":
     for name, metric in result["scenes"].items():
         print("SONKU_P2",name,"differenceRms",metric["pcmRmsDifference"],
               "light",metric["lightEarRms"],
-              "directional",metric["directionalEarRms"])
+              "directional",metric["directionalEarRms"],
+              "harmonicDeltaDb",metric["harmonicChangeDb"],
+              "tonalityReviewFlag",metric["tonalityReviewFlag"])
     print("PASS SonKu P2 directional native PCM A/B measurements")

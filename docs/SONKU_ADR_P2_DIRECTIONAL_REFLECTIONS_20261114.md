@@ -89,3 +89,14 @@ directional processing (such as carefully profiled SIMD/block
 convolution) or a measured quality/performance policy, followed by
 headphone and Windows ASIO evidence. This cannot be decided from CI
 alone.
+
+## P2 music timbre audit (candidate evidence, no perception claim)
+For each of the four 48k original A/B WAVs, offline analysis
+now demodulates exact 165/660/2200/4700Hz synthetic test harmonics
+over a one-second steady interval, comparing light and directional
+magnitude response by ear in dB. It reports RMS delta, sample peak
+and a 1.5dB *engineering review flag* (NOT a scientifically validated
+audibility threshold). Reflective HRTF spectral coloration is expected,
+but must be assessed for musical preference and no destructive notches
+with controlled blind headphones. This synthetic four-tone sample cannot
+prove transparency for real multitrack music.
