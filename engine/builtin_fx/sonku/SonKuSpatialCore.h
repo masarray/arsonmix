@@ -2,6 +2,7 @@
 #pragma once
 #include "SonKuMeasuredHrir.h"
 #include "SonKuEarlyReflections.h"
+#include "SonKuMusicalReverb.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -49,7 +50,7 @@ public:
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
         levelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
-        if(!room_.prepare(rate))return false;
+        if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
         reset();
         ready_=true;
         return true;
@@ -65,6 +66,7 @@ public:
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
         haveKernel_=false;
         room_.reset();
+        reverb_.reset();
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -86,6 +88,14 @@ public:
     // Explicit A/B-only shape selection; never persisted or host-exposed.
     bool setEarlyReflectionsShape(SonKuRoomShape shape) noexcept {
         return room_.setShape(shape);
+    }
+    // Experimental wet-only late room, OFF unless explicitly enabled by
+    // controlled offline A/B. The native parameter contract is unchanged.
+    bool setMusicalReverbAmount(float amount) noexcept {
+        return reverb_.setAmount(amount);
+    }
+    bool setMusicalReverbPreset(SonKuReverbPreset preset) noexcept {
+        return reverb_.setPreset(preset);
     }
     bool ready() const noexcept {return ready_;}
     double azimuthDegrees() const noexcept {return degrees_;}
@@ -136,8 +146,11 @@ public:
             const auto reflection=room_.active()
                 ?room_.process(x0,x1,degrees_,settings_.stereoSpreadDegrees)
                 :SonKuEarlyReflections::Ears{};
-            left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left);
-            right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right);
+            const auto late=reverb_.active()
+                ?reverb_.process(x0,x1)
+                :SonKuMusicalReverb::Ears{};
+            left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
+            right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
             if(++write_==taps)write_=0;
             if(step!=0.) {
                 degrees_+=step;
@@ -184,6 +197,7 @@ private:
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     Settings settings_{};
     SonKuEarlyReflections room_{};
+    SonKuMusicalReverb reverb_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float filterSlew_=0.f,levelSlew_=0.f;
     double sampleRate_=0.;
