@@ -208,5 +208,14 @@ export function render(spec){
  ]);
 }
 await mkdir(output,{recursive:true});
-for(const spec of SKINS)await writeFile(resolve(output,spec[0]),render(spec));
-console.log("Layered Guitar FX PNGs:",SKINS.map(s=>s[0]).join(", "));
+let changed=0;
+for(const spec of SKINS){
+  const file=resolve(output,spec[0]),bytes=render(spec);
+  let previous=null;
+  try {previous=await readFile(file);}
+  catch(error){if(error?.code!=="ENOENT")throw error;}
+  if(previous?.equals(bytes))continue; // preserve mtime: native incremental rebuild
+  await writeFile(file,bytes); changed++;
+}
+console.log("Layered Guitar FX PNGs:",SKINS.map(s=>s[0]).join(", "),
+            "changed:",changed);

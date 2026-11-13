@@ -2,7 +2,7 @@
 // Fast test: node --test tests/guitar_fx_assets_contract.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,statSync} from "node:fs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createHash} from "node:crypto";
@@ -295,6 +295,48 @@ test("eleven committed production PNGs are byte-exact, with no obsolete panel",a
  }),"shipped BinaryData input must be exact deterministic v2 output");
  assert(!SKINS.some(spec=>spec[0]==="gfx-panel.png"),
    "framed panel from PR #663 must remain retired");
+});
+test("production hardware manifests match real PNG alpha content bounds",async()=>{
+ const manifest=JSON.parse(readFileSync(resolve(root,
+   "design-references/guitar-fx/hardware-layout.json"),"utf8"));
+ const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ for(const m of manifest.modules){
+  const skin=SKINS.find(s=>s[0]===m.file);
+  assert(skin,m.file+" is not a generated production body");
+  const png=render(skin),w=png.readUInt32BE(16),h=png.readUInt32BE(20);
+  let offset=8,parts=[];
+  while(offset<png.length){
+   const n=png.readUInt32BE(offset),tag=png.toString("ascii",offset+4,offset+8);
+   if(tag==="IDAT")parts.push(png.subarray(offset+8,offset+8+n));
+   offset+=12+n;
+   if(tag==="IEND")break;
+  }
+  const rows=inflateSync(Buffer.concat(parts));
+  assert.equal(rows.length,h*(w*4+1));
+  let minX=w,minY=h,maxX=-1,maxY=-1;
+  for(let y=0;y<h;++y){
+   const start=y*(w*4+1);
+   assert.equal(rows[start],0,"generated PNG requires unfiltered RGBA row");
+   for(let x=0;x<w;++x){
+    const alpha=rows[start+1+x*4+3];
+    if(alpha===0)continue;
+    minX=Math.min(minX,x);minY=Math.min(minY,y);
+    maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+   }
+  }
+  assert(maxX>=minX&&maxY>=minY,m.file+" blank body");
+  assert.deepEqual([minX,minY,maxX-minX+1,maxY-minY+1],
+    m.contentBounds,m.file+" metadata must match actual alpha occupancy");
+ }
+});
+test("the asset generator preserves timestamps of unchanged production PNGs",()=>{
+ const names=productionNames;
+ const before=names.map(n=>readFileSync(resolve(assetDir,n)));
+ const modified=names.map(n=>statSync(resolve(assetDir,n)).mtimeMs);
+ execFileSync(process.execPath,["scripts/build_guitar_fx_layered_assets.mjs"],{cwd:root,stdio:"pipe"});
+ assert.deepEqual(names.map(n=>statSync(resolve(assetDir,n)).mtimeMs),modified,
+    "identical bitmaps must not force incremental JUCE BinaryData compilation");
+ assert.deepEqual(names.map(n=>readFileSync(resolve(assetDir,n))),before);
 });
 test("native control PNGs maintain exact aspect on all chain switches",()=>{
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");

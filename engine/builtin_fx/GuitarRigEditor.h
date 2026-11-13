@@ -253,8 +253,10 @@ public:
         // Neither values nor labels are burned into the device-body PNG.
         for(std::size_t i=0;i<activeControlCount();++i) {
             const auto k=knobBounds(i);
-            const int centre=k.getCentreX();
-            const int ty=k.getBottom()+3;
+            // Pedal readouts live outside the physical chassis to avoid covering
+            // the LED recess/footwell; amplifier legends sit below knobs.
+            const int centre=focus_<2?866:k.getCentreX();
+            const int ty=focus_<2?217+static_cast<int>(i)*74:k.getBottom()+3;
             g.setColour(dim);
             g.setFont(juce::Font(juce::FontOptions(10.f)));
             g.drawText(controlNames_[focus_][i],centre-61,ty,122,14,

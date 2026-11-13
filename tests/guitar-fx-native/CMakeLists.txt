@@ -27,7 +27,7 @@ target_sources(ARMixGuitarEditorCapture PRIVATE
 target_compile_features(ARMixGuitarEditorCapture PRIVATE cxx_std_20)
 target_compile_definitions(ARMixGuitarEditorCapture PRIVATE
     ARMIX_GFX_EMBED_PNG_SKINS=1 JUCE_WEB_BROWSER=0
-    JUCE_PLUGINHOST_VST3=0 JUCE_USE_CURL=0)
+    JUCE_PLUGINHOST_VST3=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(ARMixGuitarEditorCapture PRIVATE
     ARMixGuitarCaptureSkins juce::juce_audio_processors
     juce::juce_gui_extra juce::juce_recommended_config_flags)
