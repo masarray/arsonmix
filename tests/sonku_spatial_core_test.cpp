@@ -153,6 +153,50 @@ static void verifySonKuMusicIntegrity(double rate) {
             assert(newCenter>oldMean*2.5);
         }
     }
+    // The exact native ROOM ON path uses the SAME phase guard. Live room
+    // reflections and the FDN cannot silently drop the side content, exceed
+    // peak bounds or depend on host block partition. This is actual PCM.
+    {
+        auto live=std::make_unique<SonKuSpatialCore>();
+        auto chunks=std::make_unique<SonKuSpatialCore>();
+        Settings scene=s;
+        scene.startAzimuthDegrees=180.f;
+        scene.stereoSpreadDegrees=0.f;
+        scene.spatialMix=1.f;
+        scene.outputTrim=.65f;
+        scene.spacePreset=2; // 14.4m chamber, 5m source
+        scene.sourceDistanceMeters=5.f;
+        scene.roomAmount=.55f;
+        scene.ambience=.32f;
+        assert(valid(scene));
+        assert(live->prepare(rate)&&chunks->prepare(rate));
+        assert(live->setSettings(scene)&&chunks->setSettings(scene));
+        constexpr int sceneFrames=16384;
+        std::vector<float> l(sceneFrames),r(sceneFrames),
+                           cl(sceneFrames),cr(sceneFrames);
+        for(int i=0;i<sceneFrames;++i) {
+            const float v=.18f*static_cast<float>(
+                std::sin(2.*3.14159265358979323846*440.*i/rate));
+            l[i]=cl[i]=v;r[i]=cr[i]=-v;
+        }
+        live->process(l.data(),r.data(),sceneFrames);
+        for(int at=0;at<sceneFrames;at+=256)
+            chunks->process(cl.data()+at,cr.data()+at,
+                            std::min(256,sceneFrames-at));
+        double leftPower=0.,rightPower=0.;
+        for(int i=0;i<sceneFrames;++i) {
+            assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+            assert(std::abs(l[i]-cl[i])<2.e-6f);
+            assert(std::abs(r[i]-cr[i])<2.e-6f);
+            assert(std::abs(l[i])<.98f&&std::abs(r[i])<.98f);
+            if(i>=sceneFrames/2) {
+                leftPower+=static_cast<double>(l[i])*l[i];
+                rightPower+=static_cast<double>(r[i])*r[i];
+            }
+        }
+        assert(std::sqrt(leftPower/(sceneFrames/2))>.025);
+        assert(std::sqrt(rightPower/(sceneFrames/2))>.025);
+    }
     // Mix=0 preserves the source channels as dry, including negative phase.
     {
         auto dry=std::make_unique<SonKuSpatialCore>();
