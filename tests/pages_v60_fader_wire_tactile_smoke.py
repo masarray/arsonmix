@@ -415,16 +415,16 @@ def test_replug_and_retract(page):
     }""")
     assert abs(physics["nearOutEarly"])>2,("reel has no abrupt OUT-origin whip",physics)
     assert abs(physics["farEarly"])<.4,("free tip moves before OUT-origin front arrives",physics)
-    assert abs(physics["midAfter"])>2 and abs(physics["farAfter"])>2,\\
+    assert abs(physics["midAfter"])>2 and abs(physics["farAfter"])>2,\
         ("wavy must travel through the whole jacket, not just near OUT",physics)
-    assert abs(physics["freeTipWave"])>3,\\
+    assert abs(physics["freeTipWave"])>3,\
         ("loose plug remains rigid when wave arrives",physics)
     assert abs(physics["sourceAnchor"])<.25,("OUT socket endpoint shifted",physics)
-    assert 0<physics["halfwayX"]<physics["earlyX"]<270,\\
+    assert 0<physics["halfwayX"]<physics["earlyX"]<270,\
         ("reel does not accelerate much faster than V64",physics)
     assert abs(physics["tipY"])>3,("tip never reacts to wave",physics)
     assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
-    assert physics["shortAmplitude"]<physics["longAmplitude"]*.65,\\
+    assert physics["shortAmplitude"]<physics["longAmplitude"]*.65,\
         ("one-strip WIRE should not whip as violently as four strips",physics)
     assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
