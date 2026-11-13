@@ -143,6 +143,65 @@ def verify_socket_impact(page, out):
 
 
 
+
+def verify_inspector_rejected_gain(page, out):
+    """Real compiled native GUI: rejected ACK with NO new snapshot must not
+    strand PENDING or detach the inspector slider held in keyboard focus."""
+    page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){
+          if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
+        },
+        addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+      }};""")
+    errors=[]
+    page.on("pageerror",lambda exc:errors.append(str(exc)))
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    emit(page,"arMixConsoleSnapshot",state)
+    page.locator("#wireMatrixToggle").click()
+    route=page.locator('[data-ws-inspect="1:2"]')
+    route.wait_for(state="visible")
+    route.click()
+    slider=page.locator("#wireWsGain")
+    slider.wait_for(state="visible")
+    assert slider.is_enabled(),"Selected parallel SEND must allow native gain"
+    assert "PRIMARY" not in page.locator("#wireWsGainText").inner_text()
+    assert abs(float(slider.input_value())-(-6.0))<.11
+    page.evaluate("()=>window.__heldInspectorGain=document.getElementById('wireWsGain')")
+    slider.focus()
+    slider.evaluate("""el=>{
+       el.value='-12';
+       el.dispatchEvent(new Event('input',{bubbles:true}));
+    }""")
+    assert page.locator("#wireWsGainText").inner_text()=="PENDING · -12 dB"
+    page.wait_for_function(
+      "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN').length===1")
+    request=page.evaluate(
+      "()=>window.__nativeIntents.find(x=>x.operation==='SET_WIRE_GAIN')")
+    assert request["targetChannelId"]==SOURCE,request
+    assert request["payload"]["edgeId"]==SEND,request
+    assert abs(request["payload"]["gainLinear"]-10**(-12/20))<1e-8,request
+    emit(page,"arMixConsoleAck",{
+      "requestId":request["requestId"],"status":"REJECTED",
+      "errorCode":"TEST_REJECTION","deviceEpoch":state["device"]["epoch"],
+      "graphRevision":state["graph"]["revision"],
+      "rosterRevision":state["graph"]["rosterRevision"]})
+    # NO independent later snapshot is intentionally emitted.
+    # A rejected request cannot wait for one to repaint its LCD.
+    assert page.locator("#wireWsGainText").inner_text()=="UNCHANGED · -6 dB"
+    assert abs(float(slider.input_value())-(-6))<.11
+    assert page.evaluate(
+      "()=>document.getElementById('wireWsGain')===window.__heldInspectorGain")
+    assert slider.evaluate("el=>document.activeElement===el"), (
+      "Rejection must not drop keyboard focus on the original range input")
+    assert len(page.evaluate(
+      "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN')"))==1
+    assert abs(float(page.evaluate(
+      "()=>window.__ARMIX_NATIVE_SCOPE__.wireEdges.find(e=>e.id===2)?.levelDb"))-(-6))<.11
+    assert not errors,errors
+
 def verify_external_output(page, out):
     """Actual /preview/ native WebView: select -> native ACK -> callback readback.
 
@@ -250,6 +309,9 @@ def main():
             impact = browser.new_page(viewport={"width": 1366, "height": 768})
             verify_socket_impact(impact, out)
             impact.close()
+            inspector_page = browser.new_page(viewport={"width":1366,"height":900})
+            verify_inspector_rejected_gain(inspector_page,out)
+            inspector_page.close()
             output_page = browser.new_page(viewport={"width":1366,"height":900})
             verify_external_output(output_page,out)
             output_page.close()
