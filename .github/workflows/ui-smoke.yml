@@ -111,6 +111,7 @@ jobs:
           python tests/native_harmony_assembly_test.py
           node --check site/preview-v2/assets/mixer-native-vocal-throw.js
           python tests/native_peq_assembly_test.py
+          python tests/native_v60_fader_assembly_contract.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
           python tests/gui_baseline_lock_test.py
