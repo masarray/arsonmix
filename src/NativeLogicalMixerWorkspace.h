@@ -188,6 +188,29 @@ public:
                 edit.value=static_cast<float>(n);
             }
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_TAP") {
+            const auto raw=payload.getProperty("edgeId",{});
+            std::uint64_t edgeId=0;
+            if(!armix::session::parseDecimal(raw,edgeId)||!edgeId)
+                return bad("INVALID_SEND_TAP_EDGE");
+            const auto tap=payload.getProperty("tap","").toString();
+            if(tap!="PRE_FADER" && tap!="POST_FADER")
+                return bad("INVALID_SEND_TAP_STAGE");
+            edit.kind=ChannelEdit::Kind::setSendTap;
+            edit.sendEdgeId=edgeId;
+            edit.preFader=tap=="PRE_FADER";
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_ENABLED") {
+            // Document-only operation: never impersonate installed ASIO PCM.
+            const auto raw=payload.getProperty("edgeId",{});
+            const auto enabled=payload.getProperty("enabled",{});
+            std::uint64_t edgeId=0;
+            if(!armix::session::parseDecimal(raw,edgeId)||!edgeId||
+               !enabled.isBool())return bad("INVALID_SEND_ENABLED");
+            edit.kind=ChannelEdit::Kind::setSendEnabled;
+            edit.sendEdgeId=edgeId;
+            edit.enabled=static_cast<bool>(enabled);
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_MUTE" || operation=="SET_SOLO") {
             if(!number.isBool())return bad("INVALID_BOOLEAN_CONTROL");
             edit.kind=operation=="SET_MUTE"?
@@ -351,6 +374,7 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
+            "SET_SEND_ENABLED","SET_SEND_TAP",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
@@ -406,9 +430,13 @@ public:
                 set(edge,"from",str(row.id.value));
                 set(edge,"to",str(send.destination.value));
                 set(edge,"signalKind","AUDIO");set(edge,"enabled",true);
+                // The wire remains present; SEND ON is an independent audio gate.
+                set(edge,"sendEnabled",send.enabled);
                 set(edge,"gainLinear",static_cast<double>(send.gain));
                 set(edge,"primaryOutput",send.primaryOutput);
                 set(edge,"tap",send.preFader?"SPLIT_PRE":"POST_FADER");
+                // Never confuse the modern post-FX PRE_FADER tap with PRE_FX.
+                set(edge,"tapStage",send.preFader?"PRE_FADER":"POST_FADER");
                 edges.add(edge);
                 sends.add(edge);
                 if(send.primaryOutput)set(channel,"primaryOutId",str(send.destination.value));
