@@ -388,24 +388,28 @@ for(const [id,key,convert] of [
  ["skReflections","roomAmount",v=>v/100],
  ["skAmbience","ambience",v=>v/100]]) {
  const slider=$(id);
- // While a range gesture is active, timer-driven native readbacks MUST NOT
- // overwrite the uncommitted value. Commit once on change/pointer release.
- slider.addEventListener("pointerdown",()=>rangeEdits.add(id));
+ // ALL acoustic sliders stream PCM changes on input, not only on release.
+ // Thumb ownership survives stale ACK snapshots; no speculative "APPLIED".
+ slider.addEventListener("pointerdown",()=>{
+  rangeEdits.add(id);gestureStart.set(id,draft[key]);
+ });
  slider.addEventListener("input",()=>{
   if(slider.disabled)return;
   const value=Number(slider.value);
   if(!Number.isFinite(value))return;
   rangeEdits.add(id);
-  draft={...draft,[key]:convert(value)};render();
+  liveInput({...draft,[key]:convert(value)});
  });
  slider.addEventListener("change",()=>{
-  if(slider.disabled){rangeEdits.delete(id);return;}
+  gestureStart.delete(id);rangeEdits.delete(id);
+  if(slider.disabled)return;
   const value=Number(slider.value);
-  rangeEdits.delete(id);
-  if(Number.isFinite(value))send({...draft,[key]:convert(value)});
+  if(Number.isFinite(value))commitInput({...draft,[key]:convert(value)});
  });
  slider.addEventListener("pointercancel",()=>{
-  rangeEdits.delete(id);draft={...accepted};render();
+  const original=gestureStart.has(id)?gestureStart.get(id):accepted[key];
+  gestureStart.delete(id);rangeEdits.delete(id);
+  commitInput({...draft,[key]:original});
  });
 }
 for(const [id,key,convert] of [
@@ -415,12 +419,15 @@ for(const [id,key,convert] of [
  ["skTrim","outputTrim",v=>fromDb(v)]]) {
  const input=$(id);
  input.addEventListener("input",()=>{const v=Number(input.value);
-  if(!Number.isFinite(v))return;draft={...draft,[key]:convert(v)};render();});
- input.addEventListener("change",()=>send({...draft,[key]:convert(Number(input.value))}));
+  if(Number.isFinite(v))liveInput({...draft,[key]:convert(v)});
+ });
+ input.addEventListener("change",()=>{
+  const value=Number(input.value);
+  if(Number.isFinite(value))commitInput({...draft,[key]:convert(value)});
+ });
 }
-// Control-surface tactile dials. Retain native <input type=range> as the
-// accessible focus/keyboard source; direct pointer motion is vertical and
-// commits exactly once on release (never streams speculative host DSP values).
+// Tactile dials use the SAME bounded live gesture publisher as acoustic
+// sliders. Keyboard, mouse and touch all have one native PCM authority.
 for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim",0]]){
  const input=$(id),dial=input.closest(".sk-dial");
  const min=Number(input.min),max=Number(input.max),step=Number(input.step)||1;
@@ -448,7 +455,12 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   if(moved)input.dispatchEvent(new Event("change",{bubbles:true}));
  };
  dial.addEventListener("pointerup",finish);
- dial.addEventListener("pointercancel",e=>{if(dialDrag?.id===id)dialDrag=null;});
+ dial.addEventListener("pointercancel",e=>{
+  if(dialDrag?.id!==id || dialDrag.pointer!==e.pointerId)return;
+  input.value=String(dialDrag.origin);dialDrag=null;
+  input.dispatchEvent(new Event("input",{bubbles:true}));
+  input.dispatchEvent(new Event("change",{bubbles:true}));
+ });
  dial.addEventListener("dblclick",e=>{
   e.preventDefault();input.value=String(initial);
   input.dispatchEvent(new Event("input",{bubbles:true}));
@@ -464,20 +476,26 @@ function toAzimuth(e) {
 }
 map.addEventListener("pointerdown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
- drag={source:Number(g.dataset.index)};
+ drag={source:Number(g.dataset.index),pointer:e.pointerId,
+       starting:{...draft}};
  map.setPointerCapture?.(e.pointerId);e.preventDefault();
 });
 map.addEventListener("pointermove",e=>{
- if(!drag)return;
+ if(!drag||drag.pointer!==e.pointerId)return;
  const value=toAzimuth(e)-(drag.source?1:-1)*draft.stereoSpreadDegrees/2;
- draft={...draft,startAzimuthDegrees:Math.max(-360,Math.min(360,value)),
-  moving:false};render();
+ liveInput({...draft,startAzimuthDegrees:Math.max(-360,Math.min(360,value)),
+  moving:false});
 });
 map.addEventListener("pointerup",e=>{
- if(!drag)return;drag=null;map.releasePointerCapture?.(e.pointerId);
- send({...draft});
+ if(!drag||drag.pointer!==e.pointerId)return;
+ drag=null;map.releasePointerCapture?.(e.pointerId);
+ commitInput({...draft});
 });
-map.addEventListener("pointercancel",()=>{drag=null;draft={...accepted};render();});
+map.addEventListener("pointercancel",e=>{
+ if(!drag||drag.pointer!==e.pointerId)return;
+ const prior=drag.starting;drag=null;
+ commitInput(prior);
+});
 map.addEventListener("keydown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
  if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
