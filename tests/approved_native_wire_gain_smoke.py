@@ -159,6 +159,9 @@ def verify_inspector_rejected_gain(page, out):
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
+    # Use an exactly representable accepted -6 dB gain to prove the
+    # native coalescer's equality/no-op path emits no redundant intent.
+    state["graph"]["edges"][1]["gainLinear"]=10**(-6/20)
     emit(page,"arMixConsoleSnapshot",state)
     page.locator("#wireMatrixToggle").click()
     route=page.locator('[data-ws-inspect="1:2"]')
@@ -203,6 +206,21 @@ def verify_inspector_rejected_gain(page, out):
       const id=Number(document.getElementById('wireWsGain').dataset.wsGain);
       return window.__ARMIX_NATIVE_SCOPE__.wireEdges.find(e=>e.id===id)?.levelDb;
     }"""))-(-6))<.11
+    # Requesting the exact same accepted -6 dB is a no-op: native must
+    # suppress redundant PCM writes AND settle the pending LCD by itself.
+    # No ACK, new snapshot or hidden user recovery action is available.
+    slider.evaluate("""el=>{
+      el.value='-6';
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+    }""")
+    assert page.locator("#wireWsGainText").inner_text()=="PENDING · -6 dB"
+    page.wait_for_function("""()=>{
+      return document.getElementById('wireWsGainText')?.textContent==='-6 dB';
+    }""",timeout=5000)
+    assert len(page.evaluate(
+      "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN')"))==1, (
+      "Exact accepted gain no-op must not resend a native PCM command")
+    assert slider.evaluate("el=>document.activeElement===el")
     assert not errors,errors
 
 def verify_external_output(page, out):
