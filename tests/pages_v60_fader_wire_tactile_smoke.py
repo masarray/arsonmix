@@ -480,7 +480,7 @@ def test_adjacent_wire_whip(page):
     assert len(samples)>=5,("adjacent WIRE did not animate in Chromium",len(samples))
     assert " C " in cable.get_attribute("d"),"short WIRE failed to settle to canonical cubic"
     import re
-    nums=lambda d:[float(v) for v in re.findall(r"-?\\d+(?:\\.\\d+)?",d)]
+    nums=lambda d:[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",d)]
     base=nums(cable.get_attribute("d"))
     assert len(base)==8,("unexpected canonical geometry",base)
     y0,yc1,yc2,y1=base[1],base[3],base[5],base[7]
