@@ -138,6 +138,7 @@ public:
     static SpeakerPrepareResult prepare(const SpeakerSystemRequest& req,
         std::unique_ptr<PreparedSpeakerSystem>& accepted) {
         SpeakerPrepareResult result;
+        try {
         if(!req.deviceEpoch||!req.graphRevision){
             result.fault=SpeakerPlanFault::invalidEpoch;return result;
         }
@@ -176,7 +177,7 @@ public:
         }
         std::unordered_set<std::string> logical;
         std::unordered_set<std::string> physical;
-        std::size_t totalRing=0;
+        std::size_t totalRing=0,totalEq=0;
         for(const auto& p:req.outputs){
             if(p.outputId.empty()||p.portIdentity.empty()||
                !logical.insert(p.outputId).second||
@@ -208,6 +209,7 @@ public:
                    band.gainDb>18.){
                     result.fault=SpeakerPlanFault::invalidOutputDsp;return result;
                 }
+            totalEq+=p.peq.size();
             if(!p.mute&&(!p.confirmedSpeakerProfile||!p.limiterEnabled)){
                 result.fault=SpeakerPlanFault::unconfirmedSpeaker;return result;
             }
@@ -221,10 +223,11 @@ public:
         const auto sections=static_cast<std::size_t>(req.ways)*(req.stereo?2U:1U);
         const auto maxFloats=req.scratchBudgetBytes/sizeof(float);
         if(sections>maxFloats/static_cast<std::size_t>(req.maxFrames)||
-           totalRing>maxFloats-sections*static_cast<std::size_t>(req.maxFrames)){
+           totalRing>maxFloats-sections*static_cast<std::size_t>(req.maxFrames)||
+           totalEq*sizeof(Biquad)>req.scratchBudgetBytes-
+                (totalRing+sections*static_cast<std::size_t>(req.maxFrames))*sizeof(float)){
             result.fault=SpeakerPlanFault::scratchBudget;return result;
         }
-        try {
             auto next=std::make_unique<PreparedSpeakerSystem>();
             next->epoch_=req.deviceEpoch;next->revision_=req.graphRevision;
             next->capacity_=req.maxFrames;next->physicalCount_=req.activeOutputChannels;
@@ -265,7 +268,7 @@ public:
             }
             next->usedBytes_=next->scratch_.size()*sizeof(float);
             for(const auto& d:next->destinations_)
-                next->usedBytes_+=d.ring.size()*sizeof(float);
+                next->usedBytes_+=d.ring.size()*sizeof(float)+d.eq.size()*sizeof(Biquad);
             result.scratchBytes=next->usedBytes_;
             accepted=std::move(next);
             return result;
