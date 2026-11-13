@@ -13,13 +13,16 @@
 namespace {
 struct Result {double milliseconds=0.,checksum=0.,audios=0.;};
 template<std::size_t block>
-Result measure(double rate,float amount,float late=0.f){
+Result measure(double rate,float amount,float late=0.f,
+               const armix::sonku::SonKuRoomGeometry* geometry=nullptr){
     using namespace armix::sonku;
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate))throw std::runtime_error("unsupported sample rate");
     Settings s{};s.moving=true;s.revolutionSeconds=10.f;
     s.spatialMix=1.f;s.stereoSpreadDegrees=60.f;
-    if(!dsp.setSettings(s)||!dsp.setEarlyReflectionsAmount(amount)||
+    if(!dsp.setSettings(s)||
+       (geometry && !dsp.setAcousticRoomGeometry(*geometry))||
+       !dsp.setEarlyReflectionsAmount(amount)||
        !dsp.setMusicalReverbAmount(late))
         throw std::runtime_error("invalid DSP setup");
     std::array<float,block> inputL{},inputR{};
@@ -52,11 +55,14 @@ void report(double rate){
     const auto baseline=measure<block>(rate,0.f);
     const auto room=measure<block>(rate,.55f);
     const auto musical=measure<block>(rate,.55f,.42f);
+    const armix::sonku::SonKuRoomGeometry large{28.8f,28.8f,8.f};
+    const auto space=measure<block>(rate,.55f,0.f,&large);
     std::cout<<std::fixed<<std::setprecision(3)
       <<"SONKU_CPU rate="<<rate<<" block="<<block
       <<" v1_ms="<<baseline.milliseconds
       <<" v2_ms="<<room.milliseconds
       <<" v3_ms="<<musical.milliseconds
+      <<" v4_large_far_ms="<<space.milliseconds
       <<" v3_vs_v2="<<musical.milliseconds/room.milliseconds
       <<" ratio="<<room.milliseconds/baseline.milliseconds
       <<" v1_cores="<<(baseline.milliseconds/1000.)/baseline.audios
