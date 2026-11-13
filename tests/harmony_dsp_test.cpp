@@ -109,7 +109,7 @@ static void testLeadTune(){
       }
       std::cerr<<"mono-lead PCM mismatch rate="<<rate
         <<" first-sample="<<first<<" count="<<different
-        <<" max-delta="<<maximum<<" total="<<on.left.size()<<'\\n';
+        <<" max-delta="<<maximum<<" total="<<on.left.size()<<std::endl;
     }
     need(on.left==on.right,"mono lead acquired a stereo discrepancy");
     const auto dry=tune(mono,rate,false);
