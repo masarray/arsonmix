@@ -4,6 +4,7 @@
 #endif
 #include "../engine/builtin_fx/guitar/GuitarRigCore.h"
 #include <array>
+#include <chrono>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -214,12 +215,12 @@ int main() {
     for(auto sample:l)assert(std::isfinite(sample));
     for(auto sample:r)assert(std::isfinite(sample));
 
-    // Non-gating aliasing baseline for the next M2 amp-modeling decision.
-    // This is a measured SINGLE-bin probe, NOT an assertion of anti-alias
-    // quality: nonlinear stages intentionally run at native sample rate.
+    // Hard spectral regression: 2x oversampled nonlinear drive and amp
+    // must suppress folded high-gain harmonics. Legacy native-rate output
+    // measured -16.6682 dBc at 48kHz (9k input => 21k alias).
     // At 48kHz a 9kHz driven input creates a third harmonic at 27kHz,
-    // folding to 21kHz. The original cabinet is bypassed for an unbiased
-    // pre-speaker measurement. Later 2x/4x modes must measurably reduce it.
+    // folding to 21kHz. Cabinet is bypassed for an unbiased measurement.
+    // A regression exceeding -35dBc fails this portable DSP test.
     auto driven=factoryTone(3);
     driven.blocks[0].enabled=false;
     driven.blocks[3].enabled=false;
@@ -254,7 +255,41 @@ int main() {
     const double aliasedThirdDb=20.*std::log10(
         std::max(f21000,1.e-12)/f9000);
     assert(std::isfinite(aliasedThirdDb));
-    std::cout<<"GFX ALIAS BASELINE [not quality gate] 9k -> 21k: "
-             <<aliasedThirdDb<<" dBc at 48 kHz, CAB bypassed\n";
+    assert(aliasedThirdDb < -35.0); // ~22dB margin vs current -57.2dBc
+    std::cout<<"GFX 2X ALIAS PASS 9k -> 21k: "
+             <<aliasedThirdDb<<" dBc (legacy native-rate: -16.6682 dBc)\n";
+
+    // Non-gating CI CPU characterization at 128-frame blocks. These
+    // measurements MUST NOT be used as ASIO hardware CPU or latency claims.
+    double checkSum=0.;
+    for(int instances : {1,4,8}){
+        std::array<GuitarRigCore,8> rigs{};
+        for(int v=0;v<instances;++v)
+            assert(rigs[static_cast<std::size_t>(v)].prepare(48000.,driven));
+        std::array<float,128> perfL{},perfR{};
+        const auto start=std::chrono::steady_clock::now();
+        constexpr int blocks=128;
+        for(int frame=0;frame<blocks;++frame){
+            for(int voice=0;voice<instances;++voice){
+                for(std::size_t i=0;i<perfL.size();++i){
+                    perfL[i]=perfR[i]=0.06f*std::sin(
+                        2.f*3.14159265358979323846f*440.f*
+                        static_cast<float>(frame*128+
+                        static_cast<int>(i))/48000.f);
+                }
+                rigs[static_cast<std::size_t>(voice)].processStereo(
+                    perfL.data(),perfR.data(),perfL.size());
+                checkSum+=perfL[64];
+            }
+        }
+        const double seconds=std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-start).count();
+        const double simulatedSeconds=
+            static_cast<double>(blocks*128)/48000.;
+        std::cout<<"GFX CI CPU PROBE "<<instances<<" insert(s) x 128 frames: "
+                 <<100.*seconds/simulatedSeconds
+                 <<"% of 48k wall-clock budget [non-gating CI runner]\n";
+    }
+    assert(std::isfinite(checkSum));
     return 0;
 }
