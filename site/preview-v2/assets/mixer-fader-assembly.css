@@ -409,14 +409,3 @@
  filter:none!important;
 }
 
-/* V60 taller console fader: use ONE shared height for source channels,
-   pinned MASTER and the section rail. Reclaim space only from the elastic
-   FX workspace; never scale the approved SVG/PNG cap or move its dB ticks.
-   Short displays get a bounded travel instead of clipping the strip. */
-.console-body{--fader-fixed-h:clamp(270px,35vh,390px)}
-@media(max-height:850px){
- .console-body{--fader-fixed-h:clamp(225px,37vh,310px)}
-}
-@media(max-height:610px){
- .console-body{--fader-fixed-h:clamp(175px,32vh,210px)}
-}

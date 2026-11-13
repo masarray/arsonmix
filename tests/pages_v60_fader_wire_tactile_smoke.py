@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/"site/preview-v2/index.html").read_text("utf-8")
 FADER=(ROOT/"site/preview-v2/assets/mixer-fader-assembly.css").read_text("utf-8")
+CHROME=(ROOT/"site/preview-v2/assets/mixer-chrome-material.css").read_text("utf-8")
 WIRE=(ROOT/"site/preview-v2/assets/mixer-wire-dots.css").read_text("utf-8")
 
 
@@ -26,8 +27,9 @@ def source_contract():
                  "line.style.setProperty('--wire-selected-hue'"):
         assert text in HTML,("missing tactile contract",text)
     assert "elapsed<1600" not in HTML
-    assert "--fader-fixed-h:clamp(270px,35vh,390px)" in FADER
-    assert "--fader-fixed-h:clamp(175px,32vh,210px)" in FADER
+    assert "--v13-fader-h:clamp(198px,calc(100dvh - 538px),550px)" in CHROME
+    assert "--v13-fader-h:clamp(155px,32dvh,210px)" in CHROME
+    assert "--fader-fixed-h:clamp(" not in FADER
     assert "stroke:transparent!important;" in WIRE
     assert "stroke-width:5.6px!important;opacity:1!important;" in WIRE
     assert "stroke-dasharray:none!important;" in WIRE
@@ -61,7 +63,7 @@ def exercise(page,width,height):
     a,b,c=layout["fader"],layout["master"],layout["rail"]
     assert all(x and x["h"]>0 for x in (a,b,c)),layout
     assert abs(a["h"]-b["h"])<2 and abs(a["h"]-c["h"])<2,(width,layout)
-    min_height=300 if height>=1000 else (275 if height>=850 else 210)
+    min_height=350 if height>=1000 else (310 if height>=850 else 250)
     assert a["h"]>=min_height,(width,"tall hardware fader lower bound",layout)
     print("V60 geometry",width,height,"fader",a["h"],"CSS token",layout["token"],"flex",layout["flex"])
     assert layout["travel"]["h"]>a["h"]-110,(width,layout)
