@@ -362,10 +362,23 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity)continue; // never replay into a new graph/device
+      if(current.identity!==edit.identity){
+        // A changed device/graph invalidates a deferred edit, but must not
+        // strand its LCD while waiting for a nonexistent ACK.
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue; // never replay into a new graph/device
+      }
       const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false)continue;
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001)continue;
+      if(!edge||edge.primaryOutput!==false){
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue;
+      }
+      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
+        // The accepted PCM gain already equals the requested scalar. Do not
+        // emit a redundant native intent, but DO settle the pending display.
+        scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
+        continue;
+      }
       const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
       else status("WIRE gain rejected · "+result.error);
@@ -643,6 +656,14 @@
     }
     return true;
   }
+  // One authoritative EdgeId gain projection for normal readback AND failure
+  // rollback. No duplicate DSP math or synthetic accepted control state.
+  function nativeWireGainReadback(next){
+    return (next?.graph?.edges||[]).filter(e=>e.enabled&&e.primaryOutput===false)
+      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),
+        levelDb:Math.round(Math.max(-60,Math.min(6,
+          e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
+  }
   function projectNativeGraphWithoutFocusLoss(next) {
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
@@ -658,9 +679,7 @@
       lastNativeTopologySignature=structure;
       return true;
     }
-    scope?.syncNativeWireGains?.(next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)
-      .map(e=>({id:uiByWireId.get(e.edgeId),pending:pendingWireGains.has(e.edgeId),levelDb:Math.round(Math.max(-60,Math.min(6,
-        e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10})));
+    scope?.syncNativeWireGains?.(nativeWireGainReadback(next));
     // A SEND OFF is a scalar, NOT a disconnected WIRE. Update just the
     // affected selected SOF strip; preserve fader focus and all plugin state.
     for(const edge of next.graph.edges.filter(e=>e.enabled&&e.primaryOutput===false)){
@@ -2954,6 +2973,11 @@
              state.current?.device?.epoch===wire.epoch&&deferStartupWire(wire.ops,1))return;
           startupWire=null;
           pendingWireGains.clear();
+          // The controller deliberately freezes current on a rejected ACK.
+          // Repaint only an inspector that still says PENDING from that
+          // admitted PCM readback, without a new intent, timer or graph edit.
+          if(state.current)
+            scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(state.current));
           if(pendingFxInsert?.authority==="CHANNEL_ID"){
             pendingFxInsert=null;
             nativeToast("VST3 insert rejected · "+state.lastError);
@@ -2966,7 +2990,7 @@
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
           if(flags.acceptedGraphConnected && (scope.activeFaderId??-1)<0){
-            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain"))
+            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain,#wireWsGain"))
               scope.render?.();
             controller.subscribe();
             if(state.current)paintNativeMeters(state.current);
