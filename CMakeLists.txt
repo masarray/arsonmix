@@ -147,6 +147,30 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
     ${ARMIX_GUITAR_SKIN_PNGS}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
+# Dedicated opt-in true JUCE editor screenshot executable. It mounts the
+# actual editor in a native window and captures its complete Component tree;
+# no HTML prototype, browser pixels, or sample/mockup meters.
+# The production mixer never compiles or links this test-only executable.
+option(ARMIX_ENABLE_GUITAR_NATIVE_CAPTURE
+    "Build the lean native Guitar FX JUCE window screenshot test" OFF)
+if(ARMIX_ENABLE_GUITAR_NATIVE_CAPTURE)
+  juce_add_binary_data(ARMixGuitarCaptureSkins SOURCES ${ARMIX_GUITAR_SKIN_PNGS})
+  juce_add_console_app(ARMixGuitarEditorCapture
+      PRODUCT_NAME "ArSonMix Guitar FX Native Screenshot")
+  target_sources(ARMixGuitarEditorCapture PRIVATE tests/guitar_fx_native_capture.cpp)
+  target_compile_features(ARMixGuitarEditorCapture PRIVATE cxx_std_20)
+  target_compile_definitions(ARMixGuitarEditorCapture PRIVATE
+      ARMIX_GFX_EMBED_PNG_SKINS=1 JUCE_WEB_BROWSER=0
+      JUCE_PLUGINHOST_VST3=0 JUCE_USE_CURL=0)
+  target_link_libraries(ARMixGuitarEditorCapture PRIVATE
+      ARMixGuitarCaptureSkins juce::juce_audio_processors
+      juce::juce_gui_extra juce::juce_recommended_config_flags)
+  set_target_properties(ARMixGuitarEditorCapture PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  if(MSVC)
+    target_compile_options(ARMixGuitarEditorCapture PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
+  endif()
+endif()
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
 target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
