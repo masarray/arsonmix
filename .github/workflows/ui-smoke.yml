@@ -302,6 +302,11 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_AB_BASELINE tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-baseline
           /tmp/sonku-integrity-baseline sonku-integrity-baseline --music-integrity-only
           python tests/sonku_music_integrity_comparison.py sonku-integrity-baseline sonku-integrity-evidence
+      - name: Broad KEMAR frequency-response integrity audit (44.1k/48k)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_hrir_spectral_audit.cpp -o /tmp/sonku-hrir-audit
+          /tmp/sonku-hrir-audit > sonku-integrity-evidence/KEMAR-SPECTRAL-AUDIT.csv
+          test "$(($(wc -l < sonku-integrity-evidence/KEMAR-SPECTRAL-AUDIT.csv)-1))" -eq 380
       - name: Same-runner informational SonKu native realtime CPU check
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-integrity-cpu
