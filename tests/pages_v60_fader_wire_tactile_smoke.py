@@ -22,9 +22,12 @@ def source_contract():
     for text in ("FADER_UNITY_CAPTURE_PX=7,FADER_UNITY_RELEASE_PX=12",
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
-                 "WIRE_IMPACT_TRAVEL_MS=460,WIRE_IMPACT_SETTLE_MS=190",
-                 "const center=.035+.93*sweep",
-                 "const tether=Math.min(1,t/.035,(1-t)/.035)",
+                 "WIRE_IMPACT_TRAVEL_MS=330,WIRE_IMPACT_SETTLE_MS=170",
+                 "const distance=1-t; // distance travelled from IN toward OUT",
+                 "const wave=passed>0?",
+                 "const accepted=ops.filter(op=>['CONNECT','ROUTE_ONLY','RETARGET'].includes(op.type)).at(-1)",
+                 "wire-drag-line is-wire-selected",
+                 "latched?22:14",
                  "line.style.setProperty('--wire-selected-hue'"):
         assert text in HTML,("missing tactile contract",text)
     assert "elapsed<1600" not in HTML
@@ -34,7 +37,11 @@ def source_contract():
     assert "--fader-fixed-h:clamp(" not in FADER
     assert "--v13-fader-h:clamp(198px" not in CHROME
     assert "stroke:transparent!important;" in WIRE
-    assert "stroke-width:5.6px!important;opacity:1!important;" in WIRE
+    assert "stroke-width:3.45px!important;opacity:.98!important;" in WIRE
+    assert "78%,#ffffff 22%" in WIRE
+    assert "#wireLayer path.wire-drag-line.is-wire-selected{" in WIRE
+    BRIDGE=(ROOT/"web/approved-native-bridge.js").read_text("utf-8")
+    assert 'event.type==="change"?18:latched?22:14' in BRIDGE
     assert "stroke-dasharray:none!important;" in WIRE
     print("PASS V60 fast source contract: detent / tall rail / full-span impulse / selected jacket")
 
@@ -106,6 +113,33 @@ def exercise(page,width,height):
     return layout
 
 
+def test_pan(page):
+    # Real DOM input events, native-style hysteresis semantics, and bypass.
+    pan=page.locator('#tracks .strip[data-id="1"] .center-pan')
+    pan.wait_for()
+    def value(v):
+        pan.evaluate("""(el,val)=>{
+            el.value=String(val);
+            el.dispatchEvent(new Event('input',{bubbles:true}));
+        }""",v)
+        return float(pan.input_value())
+    assert value(12)==0,("PAN failed to capture center",pan.input_value())
+    assert value(20)==0,("PAN lost center too early",pan.input_value())
+    assert value(29)==29,("PAN cannot escape sticky detent",pan.input_value())
+    assert value(16)==16,("PAN outside capture should remain adjustable",pan.input_value())
+    pan.evaluate("(el)=>el.dispatchEvent(new Event('change',{bubbles:true}))")
+    assert float(pan.input_value())==0,"PAN should settle to center on release"
+    # Keyboard arrow remains fine-step, independent of drag snapping.
+    pan.focus()
+    page.keyboard.press("ArrowRight")
+    assert 0<float(pan.input_value())<=2,"Keyboard fine PAN was trapped"
+    pan.evaluate("(el)=>{el.dataset.panAltPointer='true';}")
+    assert value(8)==8,"Alt/pointer fine PAN bypass was lost"
+    pan.evaluate("(el)=>delete el.dataset.panAltPointer")
+    assert value(-8)==0,"PAN reverse side must also snap"
+    assert pan.get_attribute("aria-valuetext")=="Center"
+
+
 def test_wire(page):
     # The SEND bay can be folded by default on the assembled preview.
     # Use the actual operator rail to reveal the physical sockets.
@@ -141,6 +175,37 @@ def test_wire(page):
     cable.wait_for(state="attached",timeout=8000)
     page.wait_for_timeout(850)
     samples=page.evaluate("window.__v60WireSamples")
+    # Deterministic physical direction: first visible UP kick near IN,
+    # OUT remains quiet initially; then the decayed crest reaches near OUT.
+    # Canonical Pages GUI intentionally encapsulates its lexical graph.
+    # Probe the exact checked-in motion function without exposing a runtime
+    # debug global or duplicating the production renderer.
+    motion=HTML[HTML.index("const WIRE_IMPACT_TRAVEL_MS="):
+                HTML.index("function kickWireSpring(")]
+    physics=page.evaluate("()=>{\n"+motion+"""\n
+      const g=[0,0,180,0,72]; // representative wire with anchored plugs
+      const [x0,y0,x1,y1,limit]=g;
+      const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
+      const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
+      const c=sag*4/3;
+      const baseline=t=>{
+        const v=1-t;
+        return v*v*v*y0+3*v*v*t*(y0+c)+3*v*t*t*(y1+c)+t*t*t*y1;
+      };
+      const displaced=(ms,i)=>{
+        const points=wireImpactPathData(...g,ms).match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
+        return points[2*i+1]-baseline(i/64);
+      };
+      return {
+        nearInEarly:displaced(45,60),nearOutEarly:displaced(45,10),
+        nearOutLate:displaced(270,10),
+        pluggedOut:displaced(0,0),pluggedIn:displaced(45,64)
+      };
+    }""")
+    assert physics and physics["nearInEarly"]< -2.5,("no upward jerk at receiving IN",physics)
+    assert abs(physics["nearOutEarly"])<.5,("wrong direction: OUT moves first",physics)
+    assert physics["nearOutLate"]< -1.2,("wave stops before OUT",physics)
+    assert abs(physics["pluggedOut"])<.25 and abs(physics["pluggedIn"])<.25,physics
     assert len(samples)>=5,("no finite spring movement",len(samples))
     assert any(" L " in x["d"] for x in samples),("no cable impact",len(samples))
     settled=cable.get_attribute("d")
@@ -157,8 +222,12 @@ def test_wire(page):
 
     hit=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-3"]')
     assert hit.count()==1
+    # The newly plugged edge is selected immediately, before the user clicks it.
+    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected,#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"].is-wire-selected').count()==1
+    initial_edge=hit.get_attribute("data-edge-id")
     mid=point_at_midpoint(hit)
     page.mouse.click(mid["x"],mid["y"])
+    assert hit.get_attribute("data-edge-id")==initial_edge
     selected=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected,#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"].is-wire-selected')
     assert selected.count()==1,"Selected edge must brighten its real visible jacket"
     values=selected.evaluate("""el=>{
@@ -168,12 +237,32 @@ def test_wire(page):
               original:el.getAttribute('stroke'),dash:c.strokeDasharray,
               filter:c.filter,hit:getComputedStyle(hit).stroke};
     }""")
-    assert values["width"]>=5.5 and values["dash"]=="none",values
+    assert 3.35<=values["width"]<=3.55 and values["dash"]=="none",values
     assert values["stroke"]!=values["original"],values
     assert values["filter"]=="none",values
     assert values["hit"] in ("transparent","rgba(0, 0, 0, 0)"),values
     # Re-selecting does not alter source/destination graph identity.
-    assert hit.get_attribute("data-edge-id")
+    assert hit.get_attribute("data-edge-id")==initial_edge
+    # Start a NEW cable with a real pointer drag: preview is selected even
+    # before graph acceptance. Once plugged it retains its exact EdgeId.
+    out=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+    dest=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
+    a=out.bounding_box()
+    b=dest.bounding_box()
+    assert a and b,("need two visible physical sockets",a,b)
+    page.mouse.move(a["x"]+a["width"]/2,a["y"]+a["height"]/2)
+    page.mouse.down()
+    page.mouse.move(b["x"]+b["width"]/2,b["y"]+b["height"]/2,steps=8)
+    drag=page.locator('#wireLayer path.wire-drag-line.is-wire-selected')
+    assert drag.count()==1,"New wire is not highlighted during drag"
+    drag_style=drag.evaluate("(el)=>({width:parseFloat(getComputedStyle(el).strokeWidth),opacity:getComputedStyle(el).opacity,filter:getComputedStyle(el).filter})")
+    assert 3.35<=drag_style["width"]<=3.55 and drag_style["filter"]=="none",drag_style
+    page.mouse.up()
+    plugged=page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="4"].is-wire-selected')
+    assert plugged.count()==1,"Newly plugged route must become selected"
+    new_hit=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-4"].is-wire-selected')
+    assert new_hit.count()==1 and new_hit.get_attribute("data-edge-id")!=initial_edge
+    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected').count()==0
     page.evaluate("window.__v60Observer.disconnect()")
 
 
@@ -190,6 +279,7 @@ def run():
                 errs=[]
                 page.on("pageerror",lambda error:errs.append(str(error)))
                 exercise(page,width,height)
+                test_pan(page)
                 if width==1680:test_wire(page)
                 if width in (640,1680):
                     page.screenshot(path=f"arsonmix-v60-fader-wire-{width}.png",full_page=False)
@@ -197,7 +287,7 @@ def run():
                 page.close()
         finally:
             browser.close()
-    print("PASS V60 Chromium: taller source/Master, unity detent, fast full-span WIRE, no selected halo")
+    print("PASS V61 Chromium: physical fader, PAN hysteresis, IN-to-OUT whip, quiet selected jacket and auto-selected drag/plug")
 
 
 if __name__=="__main__":

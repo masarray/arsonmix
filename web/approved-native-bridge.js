@@ -873,12 +873,12 @@
   function previewNativePan(t,el,event){
     let value=Math.max(-100,Math.min(100,Number(el.value)));
     if(!Number.isFinite(value))return null;
-    // Identical center latch to the approved Pages mixer: capture at 7,
-    // hold until 12, snap on release. No fake demo-model DSP mutation.
+    // Same V61 center hysteresis as the canonical Pages UI: capture at
+    // ±14, hold to ±22, settle within ±18; never fake native DSP state.
     const keyboard=el.dataset.panKeyboard==="true";
     const bypass=!!event.altKey||el.dataset.panAltPointer==="true";
     const latched=el.dataset.panDetent==="true";
-    const width=event.type==="change"?12:latched?12:7;
+    const width=event.type==="change"?18:latched?22:14;
     if(!keyboard&&!bypass&&Math.abs(value)<=width){value=0;el.value="0";}
     el.dataset.panDetent=String(!keyboard&&value===0&&!bypass);
     if(event.type==="change")delete el.dataset.panKeyboard;

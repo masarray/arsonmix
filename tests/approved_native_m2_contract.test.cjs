@@ -675,7 +675,7 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  assert.match(nativeBundle,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
  assert.doesNotMatch(page,/FADER_TAPER/, "public Pages reference remains immutable");
  assert.match(bridge,/function previewNativePan\(t,el,event\)/);
- assert.match(bridge,/const width=event\.type==="change"\?12:latched\?12:7/);
+ assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
  assert.match(bridge,/function requestProcessingFormat\(t\)/);
  assert.match(bridge,/operation:"SET_PROCESSING_FORMAT"/);
