@@ -135,6 +135,13 @@ def main():
             e.payload?.action==='logicalVendorFxEditor')?.payload""")
         assert vendor["instanceId"]=="logical-vendor" and vendor["deviceEpoch"]=="0"
         assert not page.locator("#fastPicker").is_visible()
+        # Genuine native GFX must be exposed before any asynchronous VST
+        # discovery. The static fallback is validated against the same
+        # catalog ID compiled into the GuitarRigProcessor.
+        rack.locator('[data-action="openPlugin"][data-slot="2"]').click()
+        assert page.locator('[data-fast-id="armix.builtin.guitar-rig.v1"]').is_visible(), (
+            "Guitar FX missing at first native picker open")
+        page.locator("#fastClose").click()
         emit(page, "arMixCatalog", {"items": [], "builtIns": [
             {"id": "armix.builtin.fixture.v1", "name": "Fixture processor", "category": "Utility"},
             {"id": "armix.builtin.guitar-rig.v1", "name": "Guitar FX Rig",
@@ -156,10 +163,11 @@ def main():
             e.name==='arMixLogicalIntent' &&
             e.payload?.operation==='ADD_FX_REFERENCE' &&
             e.payload?.payload?.catalogId==='armix.builtin.guitar-rig.v1')""")
-        assert not page.locator("#fastPicker").is_visible()
-        # UI may save a LOGICAL reference without physical audio; only an
-        # installed native ChannelId graph can own a real guitar insert.
-        page.locator("#fastClose").click() if page.locator("#fastPicker").is_visible() else None
+        # An offline logical intent is NOT equivalent to a native PCM
+        # insertion ACK. Keep the picker open until a verified readback or
+        # explicit user dismissal; never signal success prematurely.
+        assert page.locator("#fastPicker").is_visible()
+        page.locator("#fastClose").click()
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
