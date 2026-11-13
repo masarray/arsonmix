@@ -387,8 +387,8 @@ private:
         float nx=.5f,ny=.74f;
         if(focus_==0){
             nx=i==0?.31f:i==1?.69f:.50f;
-            ny=i==2?.46f:.28f;
-        }else if(focus_==1){nx=.50f;ny=.32f;}
+            ny=i==2?.38f:.28f;
+        }else if(focus_==1){nx=.50f;ny=.38f;}
         else {nx=i==0?.30f:i==1?.50f:.70f;ny=.73f;}
         const int cx=juce::roundToInt(a.getX()+a.getWidth()*nx);
         const int cy=juce::roundToInt(a.getY()+a.getHeight()*ny);
