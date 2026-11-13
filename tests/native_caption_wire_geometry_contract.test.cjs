@@ -10,6 +10,24 @@ const page = read('site/preview-v2/index.html');
 const css = read('site/preview-v2/assets/mixer-chrome-material.css');
 const bridge = read('web/approved-native-bridge.js');
 assert.match(main, /setLookAndFeel \(&mixerCaption_\)/);
+
+// Regression for a real WebView2-hosted desktop: JUCE DocumentWindow's
+// activeWindowStatusChanged() disables caption buttons whenever its focus
+// bookkeeping reports inactive. A WebView2 child HWND may own Windows focus,
+// so these three real native controls must stay enabled and responsive to
+// their existing over/down transitions even on focus handoff.
+const nativeWindowConstructor=main.slice(main.indexOf('explicit ConsoleWindow ('),
+                                          main.indexOf('~ConsoleWindow()'));
+assert.match(nativeWindowConstructor,/setLookAndFeel \(&mixerCaption_\);[\s\S]*?setUsingNativeTitleBar \(false\);[\s\S]*?setTitleBarButtonsRequired \(allButtons, false\);/);
+const activation=main.slice(main.indexOf('void activeWindowStatusChanged() override'),
+                            main.indexOf('~ConsoleWindow()'));
+assert.match(activation,/juce::DocumentWindow::activeWindowStatusChanged\(\);/);
+assert.match(activation,/for \(auto\* control : \{ getMinimiseButton\(\), getMaximiseButton\(\), getCloseButton\(\) \}\)/);
+assert.match(activation,/control->setEnabled \(true\)/);
+assert.doesNotMatch(activation,/startTimer|setAlwaysOnTop|toFront|SetForegroundWindow|engine_/);
+assert.match(chrome,/void paintButton \(juce::Graphics& g, bool over, bool down\) override/);
+assert.match(chrome,/if \(over \|\| down\)/);
+
 assert.match(main, /setUsingNativeTitleBar \(false\)/);
 assert.match(main, /setTitleBarHeight \(31\)/);
 assert.match(main, /setLookAndFeel \(nullptr\)/);
