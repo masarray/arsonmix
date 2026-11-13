@@ -2394,6 +2394,10 @@ public:
         return nativePublisher_.speakerDraftReadback(deviceEpoch,graphRevision);
     }
 
+    void revokeNativeSpeakerDraft() noexcept {
+        nativePublisher_.revokeSpeakerDraft();
+    }
+
     // O1 CONTROL: true ASIO physical pin identity -> packed callback ordinal.
     // No OUT reconfiguration is allowed to steal MAIN or MONITOR. Every edit
     // preserves the existing internal WIRE graph and FX lease.
