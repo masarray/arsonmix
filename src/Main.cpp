@@ -1829,12 +1829,12 @@ private:
                 static_cast<juce::int64>(ack.preparedScratchBytes));
             reply->setProperty("status",
                 ack.ok()?"VALIDATED_PENDING_READBACK":"REJECTED");
-            reply->setProperty("errorCode",
-                ack.ok()?"NONE":
-                "NATIVE_LMS_"+juce::String(static_cast<int>(ack.fault))+
+            const auto error=juce::String("NATIVE_LMS_")+
+                juce::String(static_cast<int>(ack.fault))+
                 "_PIN_"+juce::String(static_cast<int>(result.bindFault))+
                 "_RES_"+juce::String(static_cast<int>(ack.reservationFault))+
-                "_DSP_"+juce::String(static_cast<int>(ack.planFault)));
+                "_DSP_"+juce::String(static_cast<int>(ack.planFault));
+            reply->setProperty("errorCode",ack.ok()?juce::String("NONE"):error);
         }
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible(
