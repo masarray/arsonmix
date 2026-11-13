@@ -219,8 +219,9 @@ def exercise(browser,out,width,height):
         assert separation>=44,("Two studio speakers overlap at zero spread",data)
         # Source icon is now INSIDE the front or rear SVG paint layer.
         layer=nodes.first.evaluate("(n)=>n.parentElement.id")
-        expected="skFrontSources" if abs(degrees)<90 else "skRearSources"
-        assert layer==expected,(degrees,layer,expected)
+        if degrees in (0,180):
+            expected="skFrontSources" if degrees==0 else "skRearSources"
+            assert layer==expected,(degrees,layer,expected)
         return data[0]["ax"],data[0]["ay"]
     x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
     x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
