@@ -372,14 +372,25 @@
       return; // next coalesced target follows ACK + independent readback
     }
   }
-  function requestWireGain(op){
+  // Every editable WIRE scalar must resolve an exact native ChannelId +
+  // EdgeId, not a destination kind, strip label, or reference graph index.
+  // A PARALLEL_SEND can legally point to MAIN; a PRIMARY_OUT can point to BUS.
+  function admittedParallelWire(uiSourceId,uiEdgeId,operation){
     const current=controller?.state()?.current;
-    const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    const source=nativeByUiId.get(uiSourceId),edgeId=wireByUiId.get(uiEdgeId);
+    if(!flags.acceptedGraphConnected||!current?.admitted||current.retained||
+       !source||!edgeId||!current.graph.capabilities.supportedOps.includes(operation))
+      return null;
+    const matches=current.graph.edges.filter(e=>e.enabled&&
+      e.edgeId===edgeId&&e.from===source&&e.primaryOutput===false);
+    return matches.length===1?matches[0]:null;
+  }
+  function requestWireGain(op){
     const db=Number(op.levelDb);
-    if(!current?.admitted||!current.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")||
-       !Number.isFinite(db)||db< -60||db>6)return false;
-    const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===source);
-    if(!edge||edge.primaryOutput!==false)return false;
+    if(!Number.isFinite(db)||db< -60||db>6||
+       !admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
+    const current=controller.state().current;
+    const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
     pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
@@ -3642,6 +3653,14 @@
         intent(key,t,{value:!t[action],enabled:!t[action]});return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
+    },
+    canWireGain(uiEdgeId,uiSourceId){
+      return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
+    },
+    canWireTap(uiEdgeId,uiSourceId){
+      const edge=admittedParallelWire(uiSourceId,uiEdgeId,"APPLY_WIRE_TRANSACTION");
+      return !!edge&&["PRE_FADER","POST_FADER"].includes(edge.tap)&&
+        !controller?.state()?.pending;
     },
     consumeWire(ops,retries=0) {
       if (!connected)return false;
