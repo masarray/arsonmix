@@ -345,34 +345,67 @@ def exercise(browser,out,width,height):
     sceneState={**sceneState,"ambience":.70}
     accepted_snapshot(page,state,sceneState,applied=reverb["requestId"])
     assert editor.locator("#skAmbienceValue").inner_text()=="70%"
-    # P0 regression: a 250ms native readback used to reset a held distance
-    # range thumb while dragging. Exercise a REAL mouse hold, issue old
-    # readback in the middle of the gesture, then release exactly once.
+    # All ROOM sliders are realtime, independent of final pointer release.
+    # Native mock ACK is deliberately withheld while the mouse is moving:
+    # there MUST be one, and only one, SPSC edit in flight.
     slider=editor.locator("#skDistance")
     rect=slider.bounding_box();assert rect
     sy=rect["y"]+rect["height"]*.5
-    before=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    before=command_count()
     page.mouse.move(rect["x"]+rect["width"]*.20,sy)
     page.mouse.down()
-    page.mouse.move(rect["x"]+rect["width"]*.76,sy,steps=9)
+    page.mouse.move(rect["x"]+rect["width"]*.76,sy,steps=12)
     held=float(slider.input_value())
     assert held>3.0,("Distance pointer gesture not effective",held)
+    assert command_count()==before+1,"Distance changed only after release or flooded DSP"
+    distanceFirst=last_action(page,"nativeSonKuSet")
+    assert distanceFirst["settings"]["sourceDistanceMeters"]>=1.6
+    # Simulate a delayed periodic snapshot DURING the gesture: no thumb snap.
     page.wait_for_timeout(310)
     accepted_snapshot(page,state,sceneState)
     assert abs(float(slider.input_value())-held)<.15,(
-        "Native snapshot incorrectly reverted the held range thumb",
+        "Native snapshot incorrectly reverted held range thumb",
         held,slider.input_value())
+    assert editor.locator("#skDistanceValue").inner_text()==f"{held:.1f} m"
     page.mouse.up()
+    assert command_count()==before+1
+    firstState={**sceneState,
+                "sourceDistanceMeters":distanceFirst["settings"]["sourceDistanceMeters"]}
+    applied_settings(distanceFirst,firstState)
     userDistance=last_action(page,"nativeSonKuSet")
     assert userDistance["settings"]["sourceDistanceMeters"]>3.,userDistance
-    assert page.evaluate(
-      "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")==before+1
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":userDistance["requestId"],"status":"APPLIED"})
-    sceneState={**sceneState,
-                "sourceDistanceMeters":userDistance["settings"]["sourceDistanceMeters"]}
-    accepted_snapshot(page,state,sceneState,applied=userDistance["requestId"])
+    if userDistance["requestId"]!=distanceFirst["requestId"]:
+        assert command_count()==before+2,"Latest range edit not coalesced after ACK"
+        sceneState={**sceneState,
+                    "sourceDistanceMeters":userDistance["settings"]["sourceDistanceMeters"]}
+        applied_settings(userDistance,sceneState)
+    else:
+        sceneState=firstState
+    # Verify a burst of 30 values on REVERB sends bounded realtime packets
+    # before a final change. This catches accidental unbounded streaming.
+    before=command_count()
+    editor.locator("#skAmbience").evaluate("""n=>{
+      for(let i=0;i<30;i++){
+        n.value=String(i%2?i*3:30+i);
+        n.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+    }""")
+    page.wait_for_timeout(60)
+    assert command_count()==before+1,"Reverb did not stream / issued uncontrolled edits"
+    one=last_action(page,"nativeSonKuSet")
+    assert one["settings"]["ambience"]!=sceneState["ambience"]
+    # Make a FINAL distinct value while earlier PCM ACK is still pending.
+    editor.locator("#skAmbience").evaluate("""n=>{
+       n.value="71";n.dispatchEvent(new Event('input',{bubbles:true}));
+       n.dispatchEvent(new Event('change',{bubbles:true}));
+    }""")
+    assert command_count()==before+1,"Reverb flooded the native SPSC"
+    applied_settings(one,{**sceneState,"ambience":one["settings"]["ambience"]})
+    finalReverb=last_action(page,"nativeSonKuSet")
+    assert finalReverb["requestId"]!=one["requestId"],"Latest 71% edit lost"
+    assert finalReverb["settings"]["ambience"]==.71
+    sceneState={**sceneState,"ambience":.71}
+    applied_settings(finalReverb,sceneState)
     # Programmatic range edit emits native DOM input+change for keyboard /
     # automation, using the exact same transaction and ACK fences.
     editor.locator("#skDistance").evaluate("""n=>{
