@@ -103,13 +103,14 @@ std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths,float ro
     return result;
 }
 std::vector<std::uint8_t> orbit(float roomAmount=0.f,
-    armix::sonku::SonKuRoomShape shape=armix::sonku::SonKuRoomShape::Rectangular){
+    armix::sonku::SonKuRoomShape shape=armix::sonku::SonKuRoomShape::Rectangular,
+    bool clockwise=true){
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
     if(!dsp.setEarlyReflectionsShape(shape)||
        !dsp.setEarlyReflectionsAmount(roomAmount))
         throw std::runtime_error("Invalid orbit room configuration");
-    Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
+    Settings s=fixed(0.f);s.moving=true;s.clockwise=clockwise;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("No 360 orbit");
     const int frames=orbitFrames; // two complete turns on ONE continuous audio clock
     std::vector<std::uint8_t> result;
@@ -164,6 +165,8 @@ void notes(const std::filesystem::path& directory,
       <<"sonku-v2-square-orbit-cw-2x.wav = 7.2 x 7.2m symmetric room.\n"
       <<"Both candidates reuse the SAME direct HRTF/noise and 20s clock.\n"
       <<"Square geometry is not a guarantee of circular perception.\n"
+      <<"CCW versions contain FRONT>LEFT>REAR>RIGHT>FRONT each 10s.\n"
+      <<"Compare direction-reversed tracks to isolate turn-order effects.\n"
       <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
       <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
       <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
@@ -193,6 +196,12 @@ int main(int argc,char** argv){
         writeWav(dir/"sonku-v2-room-orbit-cw-2x.wav",orbit(.55f));
         writeWav(dir/"sonku-v2-square-orbit-cw-2x.wav",
                  orbit(.55f,armix::sonku::SonKuRoomShape::Square));
+        writeWav(dir/"sonku-orbit-ccw-2x.wav",
+                 orbit(0.f,armix::sonku::SonKuRoomShape::Rectangular,false));
+        writeWav(dir/"sonku-v2-room-orbit-ccw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Rectangular,false));
+        writeWav(dir/"sonku-v2-square-orbit-ccw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,false));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";

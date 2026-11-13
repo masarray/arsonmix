@@ -27,6 +27,9 @@ orbit=read("sonku-orbit-cw-2x.wav",960000)
 v2four=read("sonku-v2-room-four.wav",4*120000)
 v2orbit=read("sonku-v2-room-orbit-cw-2x.wav",960000)
 squareOrbit=read("sonku-v2-square-orbit-cw-2x.wav",960000)
+reverse=read("sonku-orbit-ccw-2x.wav",960000)
+reverseRoom=read("sonku-v2-room-orbit-ccw-2x.wav",960000)
+reverseSquare=read("sonku-v2-square-orbit-ccw-2x.wav",960000)
 # Baseline V1 and candidate V2 are deliberately non-identical on same noise.
 # Room must affect later samples, not fake position on the direct sound.
 difference=sum(abs(int(a)-int(b)) for a,b in
@@ -38,6 +41,10 @@ assert orbitDelta>1500,("V2 moving room candidate did not affect PCM",orbitDelta
 shapeDelta=sum(abs(int(a)-int(b)) for a,b in
                zip(squareOrbit[70000:200000],v2orbit[70000:200000]))
 assert shapeDelta>1500,("Square and rectangle rendered the same",shapeDelta)
+# Reverse motion must change the binaural path (not merely rename a WAV).
+reverseDelta=sum(abs(int(a)-int(b)) for a,b in
+                 zip(reverse[350000:500000],orbit[350000:500000]))
+assert reverseDelta>1500,("CW/CCW unexpectedly identical",reverseDelta)
 # +90° (second reference segment) has a distinct binaural response.
 section=single[120000*2:120000*4]
 left=sum(abs(section[i]) for i in range(0,len(section),2))
@@ -47,7 +54,7 @@ assert right>left*1.2,("RIGHT HRTF channel swapped",left,right)
 assert sum(abs(x) for x in orbit[220000:230000])>1000
 # Verify there is no mute, edit or source reset at the 10s handoff.
 # Stereo interleaved: 48000 samples = 1 second, 2 PCM ints per frame.
-for audio in (orbit,v2orbit,squareOrbit):
+for audio in (orbit,v2orbit,squareOrbit,reverse,reverseRoom,reverseSquare):
     for second in (9,10,11,19):
         begin=(second*48000+4000)*2
         assert sum(abs(x) for x in audio[begin:begin+9600])>2000,(
