@@ -59,3 +59,33 @@ These are **objective DSP differences**, not proof of perceived distance,
 color or externalization. The informational runner benchmark compares
 48k/128 3-second native wall-clock and callback p99 using the same
 source and block size for light vs full measured reflections.
+
+## P2 CPU qualification and rejected optimization (2026-11-14)
+
+The measured HRIR P2 mode PASSED actual native C++/WAV gates on
+[Action #43528783968](https://github.com/masarray/arsonmix/actions/runs/43528783968).
+At 48kHz / 128 frames, the same runner 3s CPU test was:
+light ER 49.992ms, directional HRIR ER 231.677ms,
+ratio 4.634; directional callback p99 228.678us.
+These values are for isolated Linux runner, not live ASIO.
+
+A mirrored 2× delay-ring optimization was tested separately on
+[Action #43529139184](https://github.com/masarray/arsonmix/actions/runs/43529139184):
+light 49.992ms, directional 230.648ms, ratio 4.614,
+p99 223.867us. The observed ~0.4% whole-window change is much
+smaller than typical hosted-runner variability and costs an additional
+64KiB per processor; **reject and revert** this optimization.
+It does not pass an honest data-backed speed-quality tradeoff gate.
+
+The independent test now additionally exercises moving orbit PCM
+partition parity with coherent bass and reversed treble, and real
+near/far wall geometry arrival-time ordering. Only testable quality
+improvements are acceptable; no artificial CPU numbers or claim of
+dearVR equivalence.
+
+P2 measured per-ear reflection FIR remains intentionally offline.
+A practical production renderer requires **substantially cheaper**
+directional processing (such as carefully profiled SIMD/block
+convolution) or a measured quality/performance policy, followed by
+headphone and Windows ASIO evidence. This cannot be decided from CI
+alone.
