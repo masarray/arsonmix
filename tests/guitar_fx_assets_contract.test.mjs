@@ -63,3 +63,26 @@ test("editor prototype cannot claim PCM nor send production native control",()=>
  assert(!html.includes("arMixConsoleIntent"));
  assert(!html.includes("AudioContext"));
 });
+
+test("native JUCE editor uses the generated binary resource identifiers",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const cmake=readFileSync(resolve(root,"CMakeLists.txt"),"utf8");
+ const main=readFileSync(resolve(root,"src/Main.cpp"),"utf8");
+ // JUCE BinaryData strips hyphens from stems: arsonmix-256.png is
+ // BinaryData::arsonmix256_png, NOT BinaryData::arsonmix_256_png.
+ assert(main.includes("BinaryData::arsonmix256_png"),"verified production JUCE naming");
+ assert(cmake.includes("ARMIX_GUITAR_SKIN_PNGS"),"GFX images are embedded");
+ assert(cmake.includes("juce_add_binary_data(ARMixAssets"),"one existing app resource target");
+ for(const name of [
+   "amp-head-class-a.png",
+   "cabinet-dual-12.png",
+   "pedal-overdrive.png",
+   "knob-brushed-metal.png"
+ ]){
+   const id=name.replace(/\.png$/,"").replace(/[^A-Za-z0-9_]/g,"")+"_png";
+   assert(editor.includes("BinaryData::"+id),name+" correct generated JUCE identifier");
+   assert(editor.includes("BinaryData::"+id+"Size"),name+" corresponding size constant");
+   assert(!editor.includes("BinaryData::"+name.replaceAll("-","_").replace(".png","_png")),
+     name+" must not reference non-existent underscore-hyphen symbol");
+ }
+});
