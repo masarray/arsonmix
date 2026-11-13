@@ -448,7 +448,9 @@ test('updater notice is nonmodal, dismissal cannot approve and shutdown cleans u
   const notice=s.slice(s.indexOf('class ArSonMixUpdateNotice final'),s.indexOf('class ConsoleApp final'));
   assert.match(notice, /juce::DocumentWindow/);
   assert.match(notice, /panel_\.ok\.onClick = \[this\]/);
-  assert.match(notice, /if \(onAccept_\) onAccept_\(\)/);
+  assert.match(notice, /if \(onAccept_ && onAccept_\(\)\)/);
+  assert.match(notice, /panel_\.ok\.setButtonText \("Retry"\)/);
+  assert.match(s, /return approvalFile\.replaceWithText \(/);
   assert.match(notice, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
   assert.doesNotMatch(notice, /enterModalState|runModalLoop|NativeMessageBox/);
   assert.match(s, /updateNotice_\.reset\(\);\s*#endif\s*window_\.reset\(\)/);
