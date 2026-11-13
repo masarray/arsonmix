@@ -1275,12 +1275,20 @@ function renderWireWsInspector(){
  const native=!!window.__JUCE__?.backend;
  const tapValue=edge?.nativeTap==='PRE_FADER'?'split':
   edge?.nativeTap==='POST_FADER'?'send':edge?.mode;
- const tapEditable=!native||(src.nativeTapAvailable===true&&
-  edge?.kind==='send'&&['PRE_FADER','POST_FADER'].includes(edge.nativeTap));
+ // A PRIMARY_OUT is fixed unity even when its destination is a BUS.
+ // An independently admitted PARALLEL_SEND remains editable even to MAIN.
+ // Only the connected native bridge can grant PCM control capability.
+ const gainEditable=edge&&(!native?edge.kind!=='primary':
+  window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true);
+ const tapEditable=edge&&(!native?edge.kind!=='primary':
+  window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true);
  const controls=edge?
   '<div class="wire-ws-controls"><label for="wireWsGain">SEND LEVEL</label>'+
-  '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'" '+(dst.kind==='master'?'disabled':'')+'>'+
-  '<span id="wireWsGainText">'+edge.levelDb+' dB</span>'+
+  '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'" '+
+   (gainEditable?'':'disabled')+' title="'+(edge.kind==='primary'?'PRIMARY OUT · fixed unity':
+     native?'SEND LEVEL · native PCM ACK required':'SEND LEVEL · GUI reference only')+'">'+
+  '<span id="wireWsGainText">'+(edge.kind==='primary'?'PRIMARY · UNITY':
+    edge.levelDb+' dB')+'</span>'+
   '<label for="wireWsTap">TAP</label>'+
   '<select id="wireWsTap" data-ws-tap="'+edge.id+'" '+
   (edge.kind==='primary'||!tapEditable?'disabled':'')+
@@ -2624,14 +2632,47 @@ document.getElementById('wireWsInspector').addEventListener('input',e=>{
  const gain=e.target.closest?.('[data-ws-gain]');
  if(!gain)return;
  const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);
- if(!edge||edge.destId===master.id)return;
+ if(!edge||edge.kind==='primary')return;
  const amount=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));
+ if(window.__JUCE__?.backend){
+  if(window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)!==true)return;
+  // Coalesce rapid gestures in the existing native control queue. This LCD
+  // shows a pending operation, NEVER a speculative accepted PCM level.
+  window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',
+   sourceId:edge.sourceId,edgeId:edge.id,levelDb:amount}]);
+  const readout=document.getElementById('wireWsGainText');
+  if(readout)readout.textContent='PENDING · '+amount+' dB';
+  return;
+ }
  if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,
   levelDb:amount}],{record:false}))return;
  document.getElementById('wireWsGainText').textContent=amount+' dB';
 });
 document.getElementById('wireWsInspector').addEventListener('change',e=>{
  const gain=e.target.closest?.('[data-ws-gain]'),tap=e.target.closest?.('[data-ws-tap]');
+ if(window.__JUCE__?.backend){
+  if(gain){
+   const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);
+   if(edge?.kind!=='primary'&&window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true){
+    // Keyboard-only range change may not have emitted 'input'.
+    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',sourceId:edge.sourceId,
+     edgeId:edge.id,levelDb:Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)))}]);
+   }
+  }
+  if(tap){
+   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);
+   const requested=tap.value==='split'?'split':'send';
+   // Restore the accepted selector position immediately. An independent
+   // structural readback will move it after the engine actually publishes.
+   tap.value=edge?.nativeTap==='PRE_FADER'?'split':'send';
+   if(edge&&window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true){
+    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'MODE',sourceId:edge.sourceId,
+     edgeId:edge.id,mode:requested}]);
+    say('WIRE tap requested · awaiting accepted native PCM readback');
+   }else say('WIRE tap unavailable · native graph or EdgeId changed');
+  }
+  wireWsEditBefore=null;return; // native owns state; no demo undo or full repaint
+ }
  if(tap){
   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);
   if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,
