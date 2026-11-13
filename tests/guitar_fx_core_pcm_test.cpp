@@ -87,6 +87,51 @@ int main() {
             assert(std::fabs(l[i]-full[i])<0.000001f);
     }
 
+    // A realtime gain change MUST NOT flush a warm FIR history.
+    // Compatible prepared snapshots inherit temporal state, with identical
+    // output when the settings themselves have not changed.
+    GuitarRigCore source{},same{},changedRate{},changedTone{},cold{};
+    assert(source.prepare(48000.,factory));
+    assert(same.prepare(48000.,factory));
+    assert(changedRate.prepare(44100.,factory));
+    auto brighter=factory;
+    brighter.blocks[2].values[1]=0.81f;
+    assert(changedTone.prepare(48000.,brighter));
+    assert(cold.prepare(48000.,brighter));
+    std::array<float,512> warmLeft{},warmRight{};
+    for(std::size_t i=0;i<warmLeft.size();++i)
+        warmLeft[i]=warmRight[i]=0.17f*
+            std::sin(2.f*3.14159265358979323846f*440.f*
+                     static_cast<float>(i)/48000.f);
+    source.processStereo(warmLeft.data(),warmRight.data(),warmLeft.size());
+    assert(!changedRate.inheritCompatibleHistory(source));
+    assert(same.inheritCompatibleHistory(source));
+    assert(changedTone.inheritCompatibleHistory(source));
+    std::array<float,128> advance{},reference{},bright{},coldInput{};
+    for(std::size_t i=0;i<advance.size();++i){
+        const auto value=0.17f*std::sin(2.f*3.14159265358979323846f*
+            440.f*static_cast<float>(512+i)/48000.f);
+        advance[i]=reference[i]=bright[i]=coldInput[i]=value;
+    }
+    auto expectedRight=advance;
+    auto actualRight=reference;
+    source.processStereo(advance.data(),expectedRight.data(),advance.size());
+    same.processStereo(reference.data(),actualRight.data(),reference.size());
+    for(std::size_t i=0;i<advance.size();++i) {
+        assert(std::fabs(advance[i]-reference[i])<0.000001f);
+        assert(expectedRight[i]==actualRight[i]);
+    }
+    auto brightRight=bright;
+    changedTone.processStereo(bright.data(),brightRight.data(),bright.size());
+    auto coldRight=coldInput;
+    cold.processStereo(coldInput.data(),coldRight.data(),coldInput.size());
+    double transientDifference=0.;
+    for(std::size_t i=0;i<16;++i) {
+        transientDifference+=std::fabs(bright[i]-coldInput[i]);
+        assert(std::isfinite(bright[i]));
+    }
+    assert(transientDifference>0.0001); // history is materially preserved
+
     // Neither a malformed program nor unimplemented enabled modules may
     // silently claim a valid guitar DSP graph. Previous accepted core remains.
     Program invalid=factory;
