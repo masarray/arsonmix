@@ -481,7 +481,7 @@ function render() {
  ({system:systemPage,crossover:frequencyPage,matrix:matrixPage,
  processing:dspPage,alignment:alignPage}[page]())+'</div></div>';
 }
-function update(next) {state=next;message="";pending=null;validatedForRevision=-1;nativeStatus=nativeConnected?"Draft edited · native validation required":nativeStatus;if(!state.ports.includes(selectedPort)){selectedPort=state.ports[0]||null;selectedBand=0;}render();}
+function update(next,status="Draft edited · native validation required") {state=next;message="";pending=null;validatedForRevision=-1;nativeStatus=nativeConnected?status:nativeStatus;if(!state.ports.includes(selectedPort)){selectedPort=state.ports[0]||null;selectedBand=0;}render();}
 function openLms(open) {
  root.hidden=!open;app.classList.toggle("lms-active",open);
  launch.setAttribute("aria-pressed",String(open));
@@ -528,8 +528,7 @@ root.addEventListener("click",event=>{
   }
   try{
    const next=M.reassignVerifiedPorts(state,pending.ports,pending.assignments);
-   update(next);
-   nativeStatus="Explicit ASIO reassignment saved as MUTED draft · native validation required";
+   update(next,"Explicit ASIO reassignment saved as MUTED draft · native validation required");
   }catch(e){message=e.message;render();}
   return;
  }
