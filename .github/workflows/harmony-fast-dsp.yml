@@ -16,6 +16,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   harmony-cpp:
+    # The LMS long-running PR contains historical shared Harmony commits.
+    # Revalidate dedicated Harmonice changes in its OWN vocal FX PR; the
+    # speaker-only PR is qualified by DLMS PCM + general native integration.
+    if: ${{ !startsWith(github.head_ref, 'feat/lms-') && !startsWith(github.head_ref, 'feat/dlms-') }}
     name: Native DSP compile and PCM regression (Linux, no JUCE)
     runs-on: ubuntu-latest
     timeout-minutes: 7
