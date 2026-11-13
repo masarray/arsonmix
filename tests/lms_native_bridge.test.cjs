@@ -23,7 +23,7 @@ function fixture(withBackend){
    id==="lmsWorkspace"?root:null},
   querySelector(q){return q===".app"?app:null}
  };
- const window={ArSonMixLmsModel:M,
+ const window={ArSonMixLmsModel:M,addEventListener(){},
   ...(backend?{__JUCE__:{backend}}:{})};
  new Function("window","document",source)(window,document);
  const click=dataset=>dom.click({target:{closest:()=>({dataset})}});
