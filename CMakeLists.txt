@@ -77,10 +77,62 @@ message(STATUS "${ARMIX_GUI_BUNDLE_LOG}")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_BINARIES CONFIGURE_DEPENDS
     "${ARMIX_APPROVED_GUI_DIR}/assets/*")
 list(SORT ARMIX_APPROVED_GUI_BINARIES)
-# Original Guitar FX artwork is embedded ONLY for the installed JUCE
-# plugin editor; it never becomes a second /preview/ or runtime file path.
+# Generate only the active, independent Guitar FX hardware layers before
+# globs are evaluated. Never embed deprecated prototype pictures or pictures
+# of non-playable modules (no chorus/reverb/etc in this native rig).
+# All ON/OFF layers use identical geometry and are drawn inside fixed bounds.
+find_program(ARMIX_GUITAR_NODE_EXECUTABLE NAMES node REQUIRED)
+execute_process(
+    COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_guitar_fx_layered_assets.mjs"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE ARMIX_GUITAR_ART_RESULT
+    OUTPUT_VARIABLE ARMIX_GUITAR_ART_LOG
+    ERROR_VARIABLE ARMIX_GUITAR_ART_ERROR)
+if(NOT ARMIX_GUITAR_ART_RESULT EQUAL 0)
+    message(FATAL_ERROR "Guitar FX layer generation failed: ${ARMIX_GUITAR_ART_ERROR}")
+endif()
+message(STATUS "${ARMIX_GUITAR_ART_LOG}")
+# Optional hi-resolution artist layers are copied on top of the deterministic
+# fallback *at configure time*, never loaded at runtime from user paths.
+# Art approval adds the 12 PNGs to artist-source/; the source/audio contract
+# remains unchanged. The shipped binary contains embedded PNG bytes only.
+set(ARMIX_GUITAR_ART_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/artist-source"
+    CACHE PATH "Optional approved photo-real Guitar FX artist PNG source")
+if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+    # Reject incomplete/misaligned artist exports before CMake embeds them.
+    # A changed ON/OFF silhouette or outer frame would cause visible flicker.
+    execute_process(
+        COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_guitar_fx_artist_source.mjs"
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}"
+        RESULT_VARIABLE ARMIX_GUITAR_ART_CHECK_RESULT
+        OUTPUT_VARIABLE ARMIX_GUITAR_ART_CHECK_LOG
+        ERROR_VARIABLE ARMIX_GUITAR_ART_CHECK_ERROR)
+    if(NOT ARMIX_GUITAR_ART_CHECK_RESULT EQUAL 0)
+        message(FATAL_ERROR
+            "Invalid Guitar FX artist layers: ${ARMIX_GUITAR_ART_CHECK_ERROR}")
+    endif()
+    message(STATUS "${ARMIX_GUITAR_ART_CHECK_LOG}")
+    foreach(ARMIX_GFX_ASSET
+        gfx-amp-head.png gfx-cabinet.png gfx-pedal-gate-body.png
+        gfx-pedal-drive-body.png gfx-knob.png gfx-switch-off.png
+        gfx-switch-on.png gfx-button-off.png gfx-button-on.png
+        gfx-panel.png gfx-stomp-off.png gfx-stomp-on.png)
+        if(NOT EXISTS "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}")
+            message(FATAL_ERROR "Incomplete approved Guitar FX art source: ${ARMIX_GFX_ASSET}")
+        endif()
+        configure_file(
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/${ARMIX_GFX_ASSET}"
+            COPYONLY)
+    endforeach()
+    message(STATUS "Guitar FX approved layered artist art selected")
+else()
+    message(STATUS "Guitar FX deterministic layered fallback selected")
+endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/*.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
