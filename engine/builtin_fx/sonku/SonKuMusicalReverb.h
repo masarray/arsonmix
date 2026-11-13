@@ -60,13 +60,17 @@ public:
     void reset() noexcept {
         for(auto& line:memory_)line.fill(0.f);
         lowpass_.fill(0.f);
-        write_=0;amount_=0.f;
+        write_=0;activeFrames_=0;amount_=0.f;
         // The target amount is a CONTROL-side setting and survives resetting
         // host transport/processor so the same program can restart cleanly.
     }
     bool setAmount(float amount) noexcept {
         if(!std::isfinite(amount) || amount<0.f || amount>1.f)return false;
-        if(amount_==0.f && amountTarget_==0.f && amount>0.f)reset();
+        // O(1) safe realtime rearm: no 128KiB ring clear. Delayed
+        // reads are masked until new post-rearm samples fill their tap.
+        if(amount_==0.f && amountTarget_==0.f && amount>0.f) {
+            lowpass_.fill(0.f);write_=0;activeFrames_=0;
+        }
         amountTarget_=amount;
         return true;
     }
@@ -94,7 +98,8 @@ public:
         std::array<float,lineCount> y{},mix{};
         for(int i=0;i<lineCount;++i){
             const int index=(write_-delay_[i])&(ringFrames-1);
-            const float sample=memory_[i][index];
+            const float sample=activeFrames_>=delay_[i]?
+                memory_[i][index]:0.f;
             lowpass_[i]+=dampCoeff_*(sample-lowpass_[i]);
             y[i]=sample;
             mix[i]=lowpass_[i]*gain_[i];
@@ -123,6 +128,7 @@ public:
                 (mid*inMid[i]+side*inSide[i]);
         }
         write_=(write_+1)&(ringFrames-1);
+        if(activeFrames_<ringFrames)++activeFrames_;
         amount_+=slew_*(amountTarget_-amount_);
         if(std::abs(amount_-amountTarget_)<1.e-5f)amount_=amountTarget_;
         // Wet-only. The KEMAR direct field and physical reflections retain
@@ -161,7 +167,7 @@ private:
     std::array<int,lineCount> delay_{};
     float sampleRate_=48000.f,dampCoeff_=0.f,slew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
-    int write_=0;
+    int write_=0,activeFrames_=0;
     SonKuReverbPreset preset_=SonKuReverbPreset::StudioGlue;
     bool ready_=false;
 };
