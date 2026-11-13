@@ -92,6 +92,31 @@ if(NOT ARMIX_GUITAR_ART_RESULT EQUAL 0)
     message(FATAL_ERROR "Guitar FX layer generation failed: ${ARMIX_GUITAR_ART_ERROR}")
 endif()
 message(STATUS "${ARMIX_GUITAR_ART_LOG}")
+# Optional hi-resolution artist layers are copied on top of the deterministic
+# fallback *at configure time*, never loaded at runtime from user paths.
+# Art approval adds the 12 PNGs to artist-source/; the source/audio contract
+# remains unchanged. The shipped binary contains embedded PNG bytes only.
+set(ARMIX_GUITAR_ART_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/artist-source"
+    CACHE PATH "Optional approved photo-real Guitar FX artist PNG source")
+if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+    foreach(ARMIX_GFX_ASSET
+        gfx-amp-head.png gfx-cabinet.png gfx-pedal-gate-body.png
+        gfx-pedal-drive-body.png gfx-knob.png gfx-switch-off.png
+        gfx-switch-on.png gfx-button-off.png gfx-button-on.png
+        gfx-panel.png gfx-stomp-off.png gfx-stomp-on.png)
+        if(NOT EXISTS "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}")
+            message(FATAL_ERROR "Incomplete approved Guitar FX art source: ${ARMIX_GFX_ASSET}")
+        endif()
+        configure_file(
+            "${ARMIX_GUITAR_ART_SOURCE_DIR}/${ARMIX_GFX_ASSET}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/${ARMIX_GFX_ASSET}"
+            COPYONLY)
+    endforeach()
+    message(STATUS "Guitar FX approved layered artist art selected")
+else()
+    message(STATUS "Guitar FX deterministic layered fallback selected")
+endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
