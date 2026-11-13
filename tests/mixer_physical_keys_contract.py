@@ -14,11 +14,11 @@ HTML = (ROOT / "site/preview-v2/index.html").read_text(encoding="utf-8")
 CSS = (OWNER / "mixer-control-keys.css").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build_pages.py").read_text(encoding="utf-8")
 BRIDGE = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
-OLD = "harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
-PFL = "harmonice-thin-flat-v9-pfl-font-matched-57x30.png"
+OLD = "mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"
+PFL = "mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png"
 
 
-class HarmoniceV9KeysTests(unittest.TestCase):
+class MixerPhysicalKeysTests(unittest.TestCase):
     def test_exact_approved_artwork(self):
         original = (OWNER / OLD).read_bytes()
         pfl = (OWNER / PFL).read_bytes()

@@ -1,4 +1,4 @@
-/* Harmonice Thin Flat Bezel v9 — pixel-exact 1x raster frames extracted
+/* Mixer keys Thin Flat Bezel v9 — pixel-exact 1x raster frames extracted
    from the user-approved v9 Refined OFF Shadow Interactive A/B HTML.
    ONE 4x3 transparent RGBA PNG, 57x30 per cell. No new cap/bezel/font.
    OFF receives only the approved soft alpha drop-shadow below the cap;
@@ -69,7 +69,7 @@
   box-shadow:none!important;
   filter:none!important;
   background-color:transparent!important;
-  background-image:url("harmonice-thin-flat-v9-approved-off-shadow-57x30.png")!important;
+  background-image:url("mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png")!important;
   background-repeat:no-repeat!important;
   background-size:400% 300%!important;
   background-position:var(--mx-native-x,0%) var(--mx-native-y,0%)!important;
@@ -93,7 +93,7 @@
    Two frames are a separate extension to the original MUTE/SOLO/tap atlas:
    no repaint or reallocation of any previously approved control. */
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="pfl"]::before{
-  background-image:url("harmonice-thin-flat-v9-pfl-font-matched-57x30.png")!important;
+  background-image:url("mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png")!important;
   background-size:200% 100%!important;
   background-position:var(--mx-native-x,0%) 0%!important;
 }
@@ -101,7 +101,7 @@
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="pfl"][aria-pressed="false"]{--mx-native-x:0%}
 /* Approved v9 HTML, physical 1x: --shadow-u:1px.
    Exactly the two OFF-only alpha drop-shadow layers from the signed-off
-   Harmonice_Thin_Flat_Bezel_v9_Refined_OFF_Shadow_Interactive_AB.html.
+   v9 Refined OFF Shadow Interactive A/B reference.
    Shadow lives on the raster pseudo-element (alpha contour); never on
    the clickable box or ON face. No artwork repaint or geometry change. */
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"][aria-pressed="false"]::before,
