@@ -2659,9 +2659,15 @@ document.getElementById('wireMaster').addEventListener('click',toggleDirectMain)
 for(const [id,value] of [['gainView','gain'],['fxView','fx']]){
  document.getElementById(id).addEventListener('click',()=>{
   if(sofEnabled)return;
-  if(value==='gain'&&window.__JUCE__?.backend){say('Native input gain requires accepted DSP control');return;}
+  if(value==='gain'&&window.__JUCE__?.backend&&
+     !tracks.some(t=>t.kind==='audio'&&t.nativeGainAvailable===true)){
+   say('INPUT GAIN unavailable · no channel has an acknowledged native gain stage');
+   return;
+  }
+  // View selection is presentation-only; the DSP insert chain stays resident.
   stripView=value;render();
-  say(value==='gain'?'Digital INPUT GAIN view · preview trim only':'FX RACK view · existing inserts preserved');
+  say(value==='gain'?'Digital INPUT GAIN · each knob follows accepted channel readback':
+    'FX RACK · existing inserts preserved');
  });
 }
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
