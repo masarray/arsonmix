@@ -65,6 +65,7 @@ class DynamicPreparedMixerBlock final {
         std::size_t destination=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
         bool pre=false,primary=false,enabled=true;
+        std::uint64_t edgeId=0;
     };
     struct Lane final {
         ChannelId id{};
@@ -122,6 +123,7 @@ class DynamicPreparedMixerBlock final {
         static_assert(std::atomic<float>::is_always_lock_free,
             "Realtime SEND must never enter a hidden blocking atomic path");
         std::atomic<float> gain{1.f};
+        std::atomic<bool> enabled{true};
         armix::dsp::RealtimeSlew64 applied{};
     };
     // O1: immutable lane roster + one lock-free control target per lane.
@@ -249,10 +251,29 @@ public:
         for(std::size_t e=lane.first;e<lane.last;++e){
             const auto& edge=edges_[e];
             if(lanes_[edge.destination].id==destination &&
-               edge.pre==preFader && !edge.primary && edge.enabled) {
+               edge.pre==preFader && !edge.primary &&
+               sendTargets_[e].enabled.load(std::memory_order_acquire)) {
                 sendTargets_[e].gain.store(gain,std::memory_order_release);
                 return true;
             }
+        }
+        return false;
+    }
+    // Live SEND ON/OFF without rebuilding WIRE or VST3 graph. The existing
+    // 64-sample per-edge gain slew creates a click-free transition.
+    bool setSendEnabled(ChannelId source,std::uint64_t edgeId,
+                        bool enabled,float storedGain) noexcept {
+        if(!source.value || !edgeId || !std::isfinite(storedGain) ||
+           storedGain<0.f || storedGain>4.f)return false;
+        const auto found=controlIndex_.find(source.value);
+        if(found==controlIndex_.end())return false;
+        const auto& lane=lanes_[found->second];
+        for(std::size_t e=lane.first;e<lane.last;++e){
+            if(edges_[e].edgeId!=edgeId || edges_[e].primary)continue;
+            auto& target=sendTargets_[e];
+            target.enabled.store(enabled,std::memory_order_release);
+            target.gain.store(enabled?storedGain:0.f,std::memory_order_release);
+            return true;
         }
         return false;
     }
@@ -495,7 +516,7 @@ public:
                 const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
                     (send.pan<0.f?1.f+send.pan:1.f);
                 outgoing[i].push_back({to,gl,gr,send.enabled?send.gain:0.f,
-                                       send.preFader,send.primaryOutput,send.enabled});
+                                       send.preFader,send.primaryOutput,send.enabled,send.edgeId});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
@@ -621,6 +642,7 @@ public:
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
             next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
+            next.sendTargets_[e].enabled.store(next.edges_[e].enabled,std::memory_order_relaxed);
             next.sendTargets_[e].applied.reset(initial);
         }
         // Recycle the CONTROL compiler's verified stable-ID index instead
