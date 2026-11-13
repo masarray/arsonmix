@@ -94,3 +94,89 @@ test("output DSP is bounded, muted by default and never grants hardware authorit
  assert.throws(()=>M.withDsp(s,"out1",{limiterThresholdDb:3}),/limiterThresholdDb/);
  assert.throws(()=>M.withDsp(s,"out1",{unsafeHardwareEnable:true}),/unknown DSP/);
 });
+
+
+test("native-calculated LR4 amplitude response is complementary at split",()=>{
+ const low=M.crossoverMagnitude([1000],0,1000);
+ const high=M.crossoverMagnitude([1000],1,1000);
+ assert.ok(Math.abs(low-.5)<.002,(low).toString());
+ assert.ok(Math.abs(high-.5)<.002,(high).toString());
+ assert.ok(M.crossoverMagnitude([1000],0,100)>.99);
+ assert.ok(M.crossoverMagnitude([1000],1,100)<.01);
+ assert.throws(()=>M.crossoverMagnitude([1000],0,25000),/plot request/);
+});
+
+test("EQ band state and graph match native RBJ peak filter math",()=>{
+ const original=M.createSystem({ways:2,ports:["port"]});
+ const edited=M.withPeqBand(original,"port",0,
+   {frequencyHz:1000,q:1,gainDb:6,enabled:true});
+ assert.equal(original.dsp.port.peq.length,0);
+ assert.equal(edited.dsp.port.peq[0].gainDb,6);
+ const atPeak=M.peqMagnitude(edited.dsp.port.peq,1000);
+ assert.ok(Math.abs(atPeak-6)<.01,atPeak.toString());
+ assert.equal(M.peqMagnitude([{...edited.dsp.port.peq[0],enabled:false}],1000),0);
+ assert.throws(()=>M.withPeqBand(edited,"port",1,{q:0}),/PEQ Q/);
+ assert.throws(()=>M.withPeqBand(edited,"port",2,{}),/PEQ gap/);
+ assert.throws(()=>M.withPeqBand(edited,"port",1,{notAllowed:1}),/unknown PEQ/);
+ const removed=M.withoutPeqBand(edited,"port",0);
+ assert.deepEqual(removed.dsp.port.peq,[]);
+ assert.equal(removed.applied,false);
+});
+
+test("visual alignment explicitly copies geometric offsets to disconnected drafts",()=>{
+ let s=M.createSystem({ways:2,ports:["far","near"]});
+ s=M.withListener(s,0,0);
+ s=M.withPosition(s,"far",0,30);
+ s=M.withPosition(s,"near",0,10);
+ const prior=s;
+ const planned=M.withSuggestedDelays(s);
+ assert.equal(prior.dsp.near.delayMs,0);
+ assert.equal(planned.dsp.far.delayMs,0);
+ assert.ok(Math.abs(planned.dsp.near.delayMs-58.31)<.015);
+ assert.equal(planned.applied,false);
+ assert.deepEqual(planned.routes,{});
+ assert.equal(planned.dsp.near.muted,true);
+ const waysChanged=M.withWays(planned,3);
+ assert.equal(waysChanged.dsp.near.delayMs,0);
+});
+
+test("real five-workspace interactions show curves, PEQ and review rather than applying",()=>{
+ const fs=require("node:fs");
+ const ui=fs.readFileSync(require.resolve("../site/preview-v2/assets/lms-workspace.js"),"utf8");
+ const callbacks={root:{},launcher:{}};
+ const root={dataset:{},hidden:true,innerHTML:"",
+   addEventListener(type,fn){callbacks.root[type]=fn}};
+ const launcher={addEventListener(type,fn){callbacks.launcher[type]=fn},
+   setAttribute(k,v){this[k]=v},textContent:""};
+ const app={classList:{toggle(){}}};
+ const document={getElementById(id){return id==="lmsWorkspace"?root:
+     id==="lmsOpen"?launcher:null},
+   querySelector(q){return q===".app"?app:null}};
+ const window={ArSonMixLmsModel:M,addEventListener(){}};
+ new Function("window","document",ui)(window,document);
+ const click=dataset=>callbacks.root.click({target:{closest:()=>({dataset})}});
+ callbacks.launcher.click();
+ assert.ok(root.innerHTML.includes("Speaker system"));
+ click({page:"crossover"});
+ assert.ok(root.innerHTML.includes("LR4 · 24 dB/oct"));
+ assert.ok(root.innerHTML.includes("Calculated electrical LR4"));
+ click({page:"processing"});
+ assert.ok(root.innerHTML.includes("Parametric EQ"));
+ click({action:"addPeq"});
+ assert.ok(root.innerHTML.includes("EQ 1"));
+ callbacks.root.change({target:{dataset:{peqField:"gainDb"},value:"6"}});
+ assert.ok(root.innerHTML.includes("6.0 dB"));
+ click({dspTab:"protection"});
+ assert.ok(root.innerHTML.includes("NOT CALIBRATED"));
+ click({page:"alignment"});
+ assert.ok(root.innerHTML.includes("Suggested"));
+ click({action:"planDelay"});
+ assert.ok(root.innerHTML.includes("Review structural change"));
+ click({action:"cancel"});
+ assert.ok(!root.innerHTML.includes("Review structural change"));
+ click({action:"planDelay"});
+ click({action:"confirm"});
+ assert.ok(root.innerHTML.includes("revision "));
+ assert.ok(root.innerHTML.includes("Not applied to audio"));
+ assert.equal(launcher["aria-pressed"],"true");
+});
