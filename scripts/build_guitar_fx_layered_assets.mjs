@@ -136,7 +136,7 @@ const pixel=(spec,x,y)=>{
     if(rim>-4)return metal(64,79);
     const inner=sdBox(x,y,27,25,w-28,h-25,14);
     if(inner>-2)return gray(17);
-    const wells=kind==="gate"?[[.31,.28],[.69,.28],[.50,.46]]:[[.50,.32]];
+    const wells=kind==="gate"?[[.31,.28],[.69,.28],[.50,.38]]:[[.50,.38]];
     for(const [sx,sy] of wells){
       const d=Math.hypot((X-sx)*w,(Y-sy)*h);
       if(d<38){
