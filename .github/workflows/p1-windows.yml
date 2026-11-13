@@ -196,6 +196,19 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/mixer_routing_plan_test.cpp -o "$RUNNER_TEMP/armix-native-routing-pcm"
           "$RUNNER_TEMP/armix-native-routing-pcm"
+      # LMS has a portable JUCE-free DSP kernel. Catch an actual PCM or
+      # allocation regression in seconds before paying for Windows MSVC.
+      - name: LMS prepared crossover / EQ / speaker matrix PCM preflight
+        if: ${{ github.event_name == 'pull_request' && hashFiles('tests/lms_prepared_speaker_pcm_test.cpp') != '' }}
+        run: |
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_prepared_speaker_pcm_test.cpp -o "$RUNNER_TEMP/armix-lms-pcm"
+          "$RUNNER_TEMP/armix-lms-pcm"
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_synthetic_realtime_budget_test.cpp -o "$RUNNER_TEMP/armix-lms-rt"
+          "$RUNNER_TEMP/armix-lms-rt"
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_native_output_reservation_test.cpp -o "$RUNNER_TEMP/armix-lms-port-guard"
+          "$RUNNER_TEMP/armix-lms-port-guard"
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_native_postfx_main_witness_test.cpp -o "$RUNNER_TEMP/armix-lms-post-main"
+          "$RUNNER_TEMP/armix-lms-post-main"
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |

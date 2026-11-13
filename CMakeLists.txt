@@ -166,6 +166,32 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  # LMS M2: portable native DSP kernel, prepared off-RT and exercised with
+  # actual PCM blocks. This is NOT a second mixer callback or device graph.
+  add_executable(ARMixSpeakerPcmTests tests/lms_prepared_speaker_pcm_test.cpp
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
+      COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerPostFxMainWitnessTests
+      tests/lms_native_postfx_main_witness_test.cpp
+      engine/lms/PreparedSpeakerSystem.h
+      engine/core/DynamicNativeSessionPublisher.h)
+  target_compile_features(ARMixSpeakerPostFxMainWitnessTests PRIVATE cxx_std_20)
+  add_test(NAME LMSOneAcceptedNativeMainFxToEightWayShadowPcm
+      COMMAND ARMixSpeakerPostFxMainWitnessTests)
+  add_executable(ARMixSpeakerOutputReservationTests
+      tests/lms_native_output_reservation_test.cpp
+      engine/lms/NativeSpeakerOutputReservation.h
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerOutputReservationTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeAcceptedChannelIdExclusiveAsioOutputGuard
+      COMMAND ARMixSpeakerOutputReservationTests)
+  add_executable(ARMixSpeakerRealtimeTests tests/lms_synthetic_realtime_budget_test.cpp
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerRealtimeTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeFourWayStereoZeroCallbackHeap
+      COMMAND ARMixSpeakerRealtimeTests)
   juce_add_console_app(ARMixFactoryFxRegistryTests PRODUCT_NAME "ArSonMix Factory FX Integrity Tests")
   target_sources(ARMixFactoryFxRegistryTests PRIVATE tests/factory_fx_registry_test.cpp src/FactoryFxRegistry.h)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)

@@ -212,7 +212,7 @@
 }
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="mute"]{--mx-hw-led:255,78,90}
 .app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="solo"]{--mx-hw-led:255,207,68}
-.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="cue"]{--mx-hw-led:101,210,236}
+.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="pfl"]{--mx-hw-led:101,210,236}
 /* Occluded light escape: partial bottom + weak short sides, no neon perimeter. */
 .app .console-body .strip .mx-hw-row>button.mx-hw-key::before{
   content:"";

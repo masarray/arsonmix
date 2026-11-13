@@ -25,6 +25,16 @@ class DynamicNativeSessionPublisher final {
 public:
     // Control-owned native FX lifetime travels IN the same accepted PCM
     // snapshot. JUCE types stay outside this portable DSP publisher.
+    // Optional one-pass observer of the already-accepted MAIN PCM after
+    // ChannelId routing and rack FX. No new renderer, separate mixing pass,
+    // hardware pin ownership, or data lifetime beyond this callback.
+    // Observers MUST be no-throw, allocation-free and MUST NOT mutate MAIN.
+    // This is pre-master-output gain; the physical post-gain path remains the
+    // authority for future speaker activation and must be gated separately.
+    struct MainPcmObserver final {
+        void* context=nullptr;
+        void (*observe)(void*,const float*,const float*,int) noexcept=nullptr;
+    };
     struct FxPlan final {
         std::shared_ptr<void> owner; // CONTROL-only copy/destruction
         void* context=nullptr;       // unchanged owner.get(), RT raw pointer
@@ -168,7 +178,9 @@ public:
                 std::span<float> channelPeaksR={},
                 std::span<const DynamicPlayerPcmBlock> playerPcm={},
                 float* const* hardwareOutputs=nullptr,
-                int hardwareOutputCount=0) noexcept {
+                int hardwareOutputCount=0,
+                MainPcmObserver observer={}) noexcept {
+
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -241,6 +253,8 @@ public:
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
               hardwareOutputs,hardwareOutputCount);
+        if(ok && observer.observe)
+            observer.observe(observer.context,mainL,mainR,frames);
         if(!ok) {
             // A rejected physical callback (including aliased independent
             // amplifier buffers) emits silence, not a stale LIVE snapshot.

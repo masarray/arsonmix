@@ -117,8 +117,13 @@ async def visual(page,width):
     if width==1680:
       await page.screenshot(path='pages-v7-embedded-inter-utility-1680.png')
     # MUTE is an independent CSS/HTML caption; SOLO/PFL retain SVG masks.
-    for k in ('mute','solo','cue'):
+    # The accepted hardware key identity is 'pfl'; its action is 'cue'.
+    # Never confuse data-hw-kind with the internal click-handler action.
+    for k in ('mute','solo','pfl'):
       key=row.locator(f'.mx-hw-row button[data-hw-kind="{k}"]')
+      # FX/FORMAT toggles asynchronously re-render this strip; wait for the
+      # post-render DOM instead of sampling a transient detached key.
+      await key.wait_for(state="attached",timeout=6000)
       assert await key.count()==1
       if k=='mute':
         assert await key.locator('.mx-mute-face .mx-mute-legend').inner_text()=='MUTE'
