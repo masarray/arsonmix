@@ -655,7 +655,7 @@ jobs:
           name: arsonmix-gui-current-smoke
           path: |
             pages-wire-main-*.png
-          pages-lms-*.png
+            pages-lms-*.png
             pages-v53-fx-rail-*.png
             pages-v51-portrait-meter-*.png
             pages-fader-rollback-*.png
