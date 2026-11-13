@@ -77,10 +77,23 @@ message(STATUS "${ARMIX_GUI_BUNDLE_LOG}")
 file(GLOB_RECURSE ARMIX_APPROVED_GUI_BINARIES CONFIGURE_DEPENDS
     "${ARMIX_APPROVED_GUI_DIR}/assets/*")
 list(SORT ARMIX_APPROVED_GUI_BINARIES)
-# Original Guitar FX artwork is embedded ONLY for the installed JUCE
-# plugin editor; it never becomes a second /preview/ or runtime file path.
+# Generate only the active, independent Guitar FX hardware layers before
+# globs are evaluated. Never embed deprecated prototype pictures or pictures
+# of non-playable modules (no chorus/reverb/etc in this native rig).
+# All ON/OFF layers use identical geometry and are drawn inside fixed bounds.
+find_program(ARMIX_GUITAR_NODE_EXECUTABLE NAMES node REQUIRED)
+execute_process(
+    COMMAND "${ARMIX_GUITAR_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_guitar_fx_layered_assets.mjs"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE ARMIX_GUITAR_ART_RESULT
+    OUTPUT_VARIABLE ARMIX_GUITAR_ART_LOG
+    ERROR_VARIABLE ARMIX_GUITAR_ART_ERROR)
+if(NOT ARMIX_GUITAR_ART_RESULT EQUAL 0)
+    message(FATAL_ERROR "Guitar FX layer generation failed: ${ARMIX_GUITAR_ART_ERROR}")
+endif()
+message(STATUS "${ARMIX_GUITAR_ART_LOG}")
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/*.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
 list(SORT ARMIX_GUITAR_SKIN_PNGS)
 juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_APPROVED_GUI_DIR}/index.html" ${ARMIX_APPROVED_GUI_BINARIES}
