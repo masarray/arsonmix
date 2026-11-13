@@ -173,6 +173,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
       COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerPostFxMainWitnessTests
+      tests/lms_native_postfx_main_witness_test.cpp
+      engine/lms/PreparedSpeakerSystem.h
+      engine/core/DynamicNativeSessionPublisher.h)
+  target_compile_features(ARMixSpeakerPostFxMainWitnessTests PRIVATE cxx_std_20)
+  add_test(NAME LMSOneAcceptedNativeMainFxToEightWayShadowPcm
+      COMMAND ARMixSpeakerPostFxMainWitnessTests)
   add_executable(ARMixSpeakerOutputReservationTests
       tests/lms_native_output_reservation_test.cpp
       engine/lms/NativeSpeakerOutputReservation.h
