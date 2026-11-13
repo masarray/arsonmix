@@ -68,7 +68,9 @@ def run() -> None:
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
-                    assert "+0.0 dB" in first.locator(".gain-readout").inner_text()
+                    # The public formatter reserves '+' for strictly
+                    # positive values; gain unity is displayed as 0.0 dB.
+                    assert first.locator(".gain-readout").inner_text().strip() == "0.0 dB"
                     assert knob.input_value() == "0"
                     knob.evaluate("""el => {
                       el.value = '6.5';
