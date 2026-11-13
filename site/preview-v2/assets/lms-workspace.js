@@ -93,9 +93,21 @@ function sameNativeReadback(snapshot,pending) {
     return false;
  if(!Array.isArray(actual.outputs)||actual.outputs.length!==pending.outputs.length)
     return false;
+ // Complete native readback parity is mandatory. Reading only route/mute
+ // permits an old EQ/delay/polarity to be falsely advertised as validated.
+ // All values are bounded and numerically decoded by the JUCE intent parser.
+ if(snapshot.outputDisarmed!==true)return false;
+ const bandEqual=(x,p)=>x&&p&&
+   x.frequencyHz===p.frequencyHz&&x.q===p.q&&
+   x.gainDb===p.gainDb&&x.enabled===p.enabled;
  return pending.outputs.every(p=>actual.outputs.some(x=>
    x.outputId===p.outputId&&x.portIdentity===p.portIdentity&&
-   x.sourceSide===p.sourceSide&&x.section===p.section&&x.muted===p.muted));
+   x.sourceSide===p.sourceSide&&x.section===p.section&&x.muted===p.muted&&
+   x.gainDb===p.gainDb&&x.delayMs===p.delayMs&&
+   x.polarityInverted===p.polarityInverted&&
+   x.limiterEnabled===p.limiterEnabled&&
+   Array.isArray(x.peq)&&x.peq.length===p.peq.length&&
+   p.peq.every((band,i)=>bandEqual(x.peq[i],band))));
 }
 if(nativeConnected){
  backend.addEventListener("arMixLmsInspection",response=>{
@@ -164,7 +176,9 @@ function nativeBar() {
  const canBind=nativeInventory?.ready && ports.length>0&&ports.length<=64;
  const ready=nativeBound()&&nativeInventory.outputDisarmed &&
    Object.keys(state.routes).length>0&&!nativePending;
- const verified=validatedForRevision===state.revision&&
+ const verified=nativeInventory?.ready===true&&
+   nativeInventory.outputDisarmed===true&&nativeInventory.hardwareApplied===false&&
+   nativeBound()&&validatedForRevision===state.revision&&
    validatedGraph===nativeInventory?.graphRevision&&
    validatedDevice===nativeInventory?.deviceEpoch;
  return '<div class="lms-native-bar" role="status">'+
