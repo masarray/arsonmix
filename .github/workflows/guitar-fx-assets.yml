@@ -7,8 +7,12 @@ on:
       - 'design-references/guitar-fx/**'
       - 'docs/guitar-fx/**'
       - 'scripts/build_guitar_fx_assets.mjs'
+      - 'scripts/build_guitar_fx_layered_assets.mjs'
+      - 'engine/builtin_fx/GuitarRigEditor.h'
+      - 'CMakeLists.txt'
       - 'engine/builtin_fx/guitar/**'
       - 'tests/guitar_fx_program_model_test.cpp'
+      - 'tests/guitar_fx_hardware_geometry_test.cpp'
       - 'tests/guitar_fx_core_pcm_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
@@ -18,8 +22,12 @@ on:
       - 'design-references/guitar-fx/**'
       - 'docs/guitar-fx/**'
       - 'scripts/build_guitar_fx_assets.mjs'
+      - 'scripts/build_guitar_fx_layered_assets.mjs'
+      - 'engine/builtin_fx/GuitarRigEditor.h'
+      - 'CMakeLists.txt'
       - 'engine/builtin_fx/guitar/**'
       - 'tests/guitar_fx_program_model_test.cpp'
+      - 'tests/guitar_fx_hardware_geometry_test.cpp'
       - 'tests/guitar_fx_core_pcm_test.cpp'
       - 'tests/guitar_fx_assets_contract.test.mjs'
       - '.github/workflows/guitar-fx-assets.yml'
@@ -41,6 +49,10 @@ jobs:
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_program_model_test.cpp -o /tmp/guitar-fx-program-model-test
           /tmp/guitar-fx-program-model-test
+      - name: Verify physical anchor geometry, no control overlap and HiDPI transforms
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_hardware_geometry_test.cpp -o /tmp/guitar-fx-hardware-geometry-test
+          /tmp/guitar-fx-hardware-geometry-test
       - name: Verify wet PCM, 2x antialias and fixed 48-sample PDC without JUCE
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_core_pcm_test.cpp -o /tmp/guitar-fx-core-pcm-test
