@@ -1,7 +1,8 @@
 # Approved PNG hardware keys — internal build dependency
 
-This directory owns **only** the approved MUTE/SOLO/PRE/POST assets:
+This directory owns the approved MUTE/SOLO/PRE/POST historical atlas and PFL FontMatched extension:
 - `assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png`
+- `assets/harmonice-thin-flat-v9-pfl-font-matched-57x30.png`
 - `assets/mixer-control-keys.css`
 - `assets/mixer-control-keys.js`
 
@@ -22,3 +23,19 @@ No outgoing parallel SEND: POST is rendered as a **non-illuminated graphite PNG*
 ## Harmonice v9 refined — approved physical OFF-only shadow
 
 The authoritative raster is `assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png`, a 228×90 RGBA atlas built pixel-for-pixel from the **57×30 1× images embedded in** the user-approved `Harmonice_Thin_Flat_Bezel_v9_Refined_OFF_Shadow_Interactive_AB.html`. Frame mapping (4 columns × 3 rows) is unchanged from v8. The stylesheet adds only the exact two transparent alpha `drop-shadow` layers from the approved A/B HTML to OFF faces: MUTE OFF, SOLO OFF, PRE OFF. ON faces, POST idle/active and MIX get no added shadow. Outer bezel, cap, wording, scaling, alpha, glyphs, and device/routing behavior stay untouched. The shadow is painted on the raster `::before` alpha, not the clickable hitbox; PFL remains hidden and `/preview-prod/` remains the old historical archive.
+
+## Current owner correction — 13 November 2026
+
+The historical v7/v8/v9 PRE/POST row and hidden-PFL description above
+documents **earlier designs**, not the current product behavior. PR #610
+mistakenly limited approved PFL to SOF, leaving PRE/POST as the Main Mix third
+button. This is superseded.
+
+**Main Mix and SOF now display approved v9 MUTE / SOLO / PFL** on every
+non-MASTER channel. MASTER retains MUTE/SOLO. The channel-global tap button
+is removed; send PRE/POST remains available per EdgeId in the WIRE Route
+Inspector, and belongs in the contextual SOF SEND CONTROLS under work in
+#604/#606. PFL is still reference-only in a browser and disabled on native
+until MONITOR L/R routing is truly admitted. PFL selection persists when
+switching between Main Mix and SOF. The PNG originals are unchanged.
+See `docs/HARMONICE_PHYSICAL_KEYS_SOF_CONTRACT.md`.

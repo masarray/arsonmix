@@ -56,6 +56,9 @@ test('FX picker closes and opens an actual editor only after accepted native or 
   assert.match(bridge,/justInsertedLogicalFx/);
   assert.match(bridge,/scope\?\.closeNativePicker\?\.\(\);\s*openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.catalogId,inserted\.id\)/);
   assert.match(bridge,/openVerifiedInsertedFx\(p\.channelId,p\.slot,p\.id,inserted\.id\)/);
+  assert.match(bridge,/confirmed\.requestId===pendingFxInsert\.requestId/);
+  assert.match(bridge,/ack\.channel===p\.channel && ack\.slot===p\.slot/);
+  assert.match(bridge,/paintM4FxInstances\(state\);\s*scope\?\.closeNativePicker\?\.\(\);\s*openRoutedFxEditor\(p\.channel,p\.slot,actual\.instanceId,epoch,revision\)/);
   assert.match(bridge,/consumeAction\?\.\(track,"openPlugin"/);
 });
 test('Vocal Throw wheel does not flicker performance button and presets have dark dropdown',()=>{

@@ -77,6 +77,33 @@ test('exact SHA and FAT are dispatched only when lightweight checks pass',async(
   await assert.rejects(performMilestone({event:event(),repo,api:failed}),/CI_QUICK_FAILED/);
 });
 
+test('early milestone waits automatically and refuses a superseded SHA',async()=>{
+  for(const stale of [false,true]){
+    const writes=[];
+    let waits=0;
+    const api=async(path,method)=>{
+      if(method==='POST'){writes.push(path);return null;}
+      if(path.startsWith('/pulls/'))return pr(stale&&waits?'b'.repeat(40):sha);
+      if(path.startsWith('/issues/'))return [];
+      if(path.includes('/runs?event=pull_request'))return {workflow_runs:[{id:7,head_sha:sha}]};
+      if(path.includes('/actions/runs/7/jobs'))return {jobs:[{
+        name:'Fast native contracts (no Windows / JUCE checkout)',
+        conclusion:waits?'success':null
+      }]};
+      return {workflow_runs:[]};
+    };
+    const request=performMilestone({event:event(),repo,api,waitForQuick:async()=>{waits++;}});
+    if(stale){
+      await assert.rejects(request,/CI_STALE_SHA/);
+      assert.deepEqual(writes,[]);
+    }else{
+      assert.equal((await request).kind,'dispatched');
+      assert.deepEqual(writes,['/actions/workflows/p1-windows.yml/dispatches']);
+    }
+    assert.equal(waits,1);
+  }
+});
+
 test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file proof',async()=>{
   const files=[
     'engine/builtin_fx/HarmonyDsp.h',
