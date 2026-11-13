@@ -318,6 +318,13 @@ public:
                 return active.graph.setChannelMix(id,gain,pan);
             });
     }
+    bool setInputGain(std::uint64_t epoch,std::uint64_t revision,
+                      ChannelId id,float linear) noexcept {
+        return publisher_.updateActiveControl(epoch,revision,
+            [&](Prepared& active) noexcept {
+                return active.graph.setInputGain(id,linear);
+            });
+    }
     bool setChannelMuteSolo(std::uint64_t epoch,std::uint64_t revision,
                             ChannelId id,bool mute,bool solo) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
