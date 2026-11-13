@@ -41,9 +41,18 @@ def audit_geometry(page, title):
                 const b=getComputedStyle(bottom).borderBottomColor;
                 if(a!==b)problems.push('top/bottom channel color mismatch '+tag);
             }
+            // MASTER deliberately has MUTE+SOLO only: PFL needs a separate
+            // monitor bus and must never pretend to audition a loudspeaker
+            // or create a feedback path back into MAIN. Non-master strips
+            // (audio, bus, FX return) retain all three physical keys.
             const controls=[...t.querySelectorAll('.switch-section.mx-hw-row > button.mx-hw-key')];
-            if(controls.length!==3)problems.push('MUTE/SOLO/PFL count !=3 '+tag);
-            else {
+            const expected=t.classList.contains('master')?
+                ['mute','solo']:['mute','solo','pfl'];
+            const kinds=controls.map(c=>c.dataset.hwKind);
+            if(kinds.join(',')!==expected.join(','))
+                problems.push('MUTE/SOLO/PFL kind/count mismatch '+tag+
+                    ' expected '+expected.join(',')+' actual '+kinds.join(','));
+            if(controls.length===expected.length) {
                 if(Math.max(...controls.map(c=>r(c).width))-Math.min(...controls.map(c=>r(c).width))>1.8)
                     problems.push('inconsistent V6 button widths '+tag);
                 if(Math.max(...controls.map(c=>r(c).top))-Math.min(...controls.map(c=>r(c).top))>1)
