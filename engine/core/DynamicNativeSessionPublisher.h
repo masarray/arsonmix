@@ -13,6 +13,8 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <vector>
+#include <cmath>
 #include <type_traits>
 #include <utility>
 
@@ -56,6 +58,13 @@ public:
                    !hardwareApplied;
         }
     };
+    struct SpeakerDiagnosticReadback final {
+        bool available=false,hardwareApplied=false;
+        std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
+        std::uint64_t completedBlocks=0;
+        float postMasterPeakL=0.f,postMasterPeakR=0.f;
+        std::vector<std::pair<int,float>> isolatedOutputPeaks;
+    };
     struct SpeakerDraftReadback final {
         std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
         ChannelId mainSource{};
@@ -85,11 +94,24 @@ private:
         int physicalInputs=0;
         bool monitor=false;
     };
-    // On CONTROL only: one speaker design belongs to the same accepted
-    // ChannelId/epoch. The prepared DSP is intentionally NOT placed in the
-    // hardware callback's published snapshot until physical protection exists.
-    std::unique_ptr<SpeakerDraftReadback> speakerDraft_;
-    std::unique_ptr<armix::lms::PreparedSpeakerSystem> speakerPrepared_;
+    // The ONLY speaker output publication is an isolated, in-memory diagnostic
+    // sink. It consumes the actual post-master PCM from the existing callback;
+    // it has no device output pointers or physical authorization API.
+    // A separate RT lease protects its DSP state from CONTROL retirement.
+    struct SpeakerDiagnosticPrepared final {
+        std::unique_ptr<armix::lms::PreparedSpeakerSystem> dsp;
+        std::uint64_t pcmRevision=0,designRevision=0;
+        int physicalCount=0;
+        std::vector<float> scratch;
+        std::vector<float*> pins;
+        std::vector<int> ownedOrdinals;
+        std::array<std::atomic<float>,256> lastPeaks{};
+        std::atomic<float> inputPeakL{0.f},inputPeakR{0.f};
+        std::atomic<std::uint64_t> completedBlocks{0};
+    };
+    using DiagnosticPublisher=armix::rt::RealtimeRoutePublisher<SpeakerDiagnosticPrepared>;
+    std::unique_ptr<SpeakerDraftReadback> speakerDraft_; // CONTROL readback
+    DiagnosticPublisher speakerDiagnostics_; // ONLY diagnostic memory; never ASIO
     using Publisher=armix::rt::RealtimeRoutePublisher<Prepared>;
 public:
     enum class Fault : std::uint8_t {
@@ -174,8 +196,7 @@ public:
             case Publisher::Result::applied: {
                 // Every accepted structural PCM revision revokes old speaker
                 // pin identity and DSP; a UI draft cannot survive by accident.
-                speakerDraft_.reset();
-                speakerPrepared_.reset();
+                revokeSpeakerDraft();
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
                     const auto* published=publisher_.controlPrepared(
@@ -265,6 +286,55 @@ public:
             snapshot->design=request;
             snapshot->reservedOutputOrdinals=reserved.reservedCallbackOrdinals;
             snapshot->preparedScratchBytes=candidate.scratchBytes;
+            // Prepare the same real DSP kernel for an *isolated* post-master
+            // sink. Only its internal scratch is unmuted to measure the filter
+            // response. It is NEVER passed a physical ASIO pointer. The
+            // accepted design and all real outputs remain muted/disarmed.
+            auto diagnosticRequest=request;
+            for(auto& patch:diagnosticRequest.outputs) {
+                patch.mute=false;
+                patch.limiterEnabled=true; // bounded digital test ceiling only
+                patch.confirmedSpeakerProfile=true; // diagnostics only; NOT calibration
+            }
+            std::unique_ptr<armix::lms::PreparedSpeakerSystem> diagnosticDsp;
+            const auto diagPlan=armix::lms::PreparedSpeakerSystem::prepare(
+                diagnosticRequest,diagnosticDsp);
+            if(!diagPlan.ok()||!diagnosticDsp) {
+                ack.fault=SpeakerDraftFault::invalidDsp;
+                ack.planFault=diagPlan.fault;return ack;
+            }
+            const auto outputs=request.outputs.size();
+            const auto frames=static_cast<std::size_t>(request.maxFrames);
+            if(outputs>request.scratchBudgetBytes/sizeof(float)/frames ||
+               diagPlan.scratchBytes>request.scratchBudgetBytes-
+                   outputs*frames*sizeof(float)) {
+                ack.fault=SpeakerDraftFault::invalidDsp;
+                ack.planFault=armix::lms::SpeakerPlanFault::scratchBudget;
+                return ack;
+            }
+            auto diagnostic=std::make_unique<SpeakerDiagnosticPrepared>();
+            diagnostic->dsp=std::move(diagnosticDsp);
+            diagnostic->pcmRevision=request.graphRevision;
+            diagnostic->designRevision=snapshot->designRevision;
+            diagnostic->physicalCount=request.activeOutputChannels;
+            diagnostic->scratch.resize(outputs*frames,0.f);
+            diagnostic->pins.resize(static_cast<std::size_t>(request.activeOutputChannels),
+                                    nullptr);
+            diagnostic->ownedOrdinals=reserved.reservedCallbackOrdinals;
+            for(std::size_t i=0;i<diagnostic->ownedOrdinals.size();++i)
+                diagnostic->pins[static_cast<std::size_t>(
+                    diagnostic->ownedOrdinals[i])]=diagnostic->scratch.data()+i*frames;
+            auto diagSnapshot=std::make_unique<DiagnosticPublisher::Snapshot>();
+            diagSnapshot->deviceEpoch=request.deviceEpoch;
+            diagSnapshot->graphRevision=snapshot->designRevision;
+            diagSnapshot->prepared=std::move(diagnostic);
+            // The separate diagnostic publication is CONTROL-only, revision
+            // fenced and RT-retired. Failed publication retains old readback.
+            if(speakerDiagnostics_.publish(std::move(diagSnapshot),
+                    expectedDesignRevision,request.deviceEpoch)!=
+                    DiagnosticPublisher::Result::applied) {
+                ack.fault=SpeakerDraftFault::preparationFailed;return ack;
+            }
             speakerPrepared_=std::move(dsp);
             speakerDraft_=std::move(snapshot);
             ack.designRevision=speakerDraft_->designRevision;
@@ -292,8 +362,72 @@ public:
     // Closing a session, disconnecting device, or clearing a physical patch
     // must invalidate readback before another control request arrives.
     void revokeSpeakerDraft() noexcept {
+        speakerDiagnostics_.unpublish();
         speakerDraft_.reset();
         speakerPrepared_.reset();
+    }
+
+    // AUDIO: a post-master sidecar on the SAME accepted callback. All speaker
+    // destinations are privately preallocated on CONTROL. This method has
+    // NO hardware output parameter and NEVER changes MAIN/MONITOR/EXTERNAL.
+    // The caller must pass the revision returned by the actual PCM render.
+    bool processSpeakerDiagnostic(std::uint64_t epoch,std::uint64_t pcmRevision,
+                                  const float* postMasterL,
+                                  const float* postMasterR,int frames) noexcept {
+        auto lease=speakerDiagnostics_.acquire();
+        const auto* snap=lease.get(epoch);
+        if(!snap||!snap->prepared||!pcmRevision||!postMasterL||
+           !postMasterR||frames<1)return false;
+        auto& diag=*snap->prepared;
+        if(diag.pcmRevision!=pcmRevision || !diag.dsp ||
+           diag.designRevision!=snap->graphRevision)return false;
+        const bool done=diag.dsp->process(epoch,pcmRevision,
+            postMasterL,postMasterR,diag.pins.data(),diag.physicalCount,
+            frames,true); // authorization is for PRIVATE scratch, not ASIO
+        if(!done)return false;
+        float left=0.f,right=0.f;
+        for(int i=0;i<frames;++i) {
+            if(std::isfinite(postMasterL[i]))
+                left=std::max(left,std::abs(postMasterL[i]));
+            if(std::isfinite(postMasterR[i]))
+                right=std::max(right,std::abs(postMasterR[i]));
+        }
+        diag.inputPeakL.store(left,std::memory_order_release);
+        diag.inputPeakR.store(right,std::memory_order_release);
+        for(std::size_t j=0;j<diag.ownedOrdinals.size();++j) {
+            const int pin=diag.ownedOrdinals[j];
+            const float* samples=diag.pins[static_cast<std::size_t>(pin)];
+            float peak=0.f;
+            for(int i=0;i<frames;++i)
+                if(std::isfinite(samples[i]))
+                    peak=std::max(peak,std::abs(samples[i]));
+            diag.lastPeaks[static_cast<std::size_t>(pin)].store(
+                peak,std::memory_order_release);
+        }
+        diag.completedBlocks.fetch_add(1,std::memory_order_release);
+        return true;
+    }
+    // CONTROL only. Never infer hardware LIVE from these isolated PCM meters.
+    [[nodiscard]] SpeakerDiagnosticReadback speakerDiagnosticReadback(
+        std::uint64_t epoch,std::uint64_t pcmRevision) const {
+        SpeakerDiagnosticReadback result;
+        if(!speakerDraft_||speakerDraft_->deviceEpoch!=epoch ||
+           speakerDraft_->graphRevision!=pcmRevision)return result;
+        const auto* diag=speakerDiagnostics_.controlPrepared(
+            epoch,speakerDraft_->designRevision);
+        if(!diag || diag->pcmRevision!=pcmRevision)return result;
+        result.available=true;
+        result.deviceEpoch=epoch;
+        result.graphRevision=pcmRevision;
+        result.designRevision=diag->designRevision;
+        result.completedBlocks=diag->completedBlocks.load(std::memory_order_acquire);
+        result.postMasterPeakL=diag->inputPeakL.load(std::memory_order_acquire);
+        result.postMasterPeakR=diag->inputPeakR.load(std::memory_order_acquire);
+        for(int ordinal:diag->ownedOrdinals)
+            result.isolatedOutputPeaks.emplace_back(
+                ordinal,diag->lastPeaks[static_cast<std::size_t>(ordinal)]
+                    .load(std::memory_order_acquire));
+        return result;
     }
 
     // Sole AUDIO CALLBACK path when connected by DYN1 live migration:
@@ -310,7 +444,9 @@ public:
                 std::span<const DynamicPlayerPcmBlock> playerPcm={},
                 float* const* hardwareOutputs=nullptr,
                 int hardwareOutputCount=0,
-                MainPcmObserver observer={}) noexcept {
+                MainPcmObserver observer={},
+                std::uint64_t* renderedGraphRevision=nullptr) noexcept {
+        if(renderedGraphRevision)*renderedGraphRevision=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -383,6 +519,8 @@ public:
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
               hardwareOutputs,hardwareOutputCount);
+        if(ok && renderedGraphRevision)
+            *renderedGraphRevision=snap->graphRevision;
         if(ok && observer.observe)
             observer.observe(observer.context,mainL,mainR,frames);
         if(!ok) {
@@ -515,7 +653,10 @@ public:
         return p?p->graph.latencySamples():0;
     }
     void unpublish() noexcept {revokeSpeakerDraft();publisher_.unpublish();}
-    void pollRetirement() noexcept {publisher_.pollRetirement();}
+    void pollRetirement() noexcept {
+        publisher_.pollRetirement();
+        speakerDiagnostics_.pollRetirement();
+    }
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
     }

@@ -3194,6 +3194,7 @@ public:
                     outputSlices[c]=outputs[c]?outputs[c]+offset:nullptr;
             armix::mixer::RenderLevels level;
             bool processed=false;
+            std::uint64_t renderedPcmRevision=0;
             if(channelIdRender) {
                 // The current M4 import is at most 10+4+MAIN+MONITOR.
                 // Meter sources are the ACTUAL ChannelId PCM POST-fader
@@ -3221,7 +3222,7 @@ public:
                     std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
-                     meterOnly?0:outputCount);
+                     meterOnly?0:outputCount,{},&renderedPcmRevision);
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
@@ -3297,6 +3298,13 @@ public:
                     monitorPeakR=std::max(monitorPeakR,std::abs(mr));
                 }
             }
+            // M8 isolated DSP witness consumes the FINAL post-master gain,
+            // mute slew and mono policy. It never sees device output pointers.
+            // A stale/absent design simply skips diagnostic processing.
+            if(channelIdRender && renderedPcmRevision)
+                (void)nativePublisher_.processSpeakerDiagnostic(
+                    generation,renderedPcmRevision,
+                    mainL+offset,mainR+offset,n);
         }
         // All input PCM has been staged/processed by the native graph.
         // Only now silence unselected physical ports; do not clobber an

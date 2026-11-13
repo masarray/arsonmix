@@ -188,6 +188,65 @@ int main() {
     assert(!native.render(epoch,inputs.data(),2,mainL.data(),mainR.data(),
         0,false,fx,nullptr,nullptr,{},{},{},nullptr,0,observer));
     assert(witness.observations==count);
+    // M8: the very same accepted native PCM publisher now owns a prepared,
+    // isolated diagnostic sink wired by the production routing callback AFTER
+    // master gain/mute/mono. The sink has no ASIO output pointer parameter.
+    for(auto& p:settings.outputs) {
+        p.mute=true;p.confirmedSpeakerProfile=false;
+        p.limiterEnabled=false;p.ceilingDbfs=0.;
+    }
+    const auto ack=native.acceptSpeakerDraft(settings,physical,main,0);
+    assert(ack.ok()&&!ack.hardwareApplied);
+    auto diag=native.speakerDiagnosticReadback(epoch,1);
+    assert(diag.available && diag.completedBlocks==0);
+    const auto noAlloc=allocations.load(std::memory_order_relaxed);
+    std::uint64_t renderedRevision=0;
+    for(int block=0;block<220;++block) {
+        assert(native.render(epoch,inputs.data(),2,mainL.data(),mainR.data(),
+            Witness::maxFrames,false,fx,nullptr,nullptr,{},{},{},nullptr,0,
+            {},&renderedRevision));
+        assert(renderedRevision==1);
+        // Mirrors production post-master amplitude stage; physical writes
+        // are still forbidden and existing MAIN is not changed by the sink.
+        for(int i=0;i<Witness::maxFrames;++i) {
+            mainL[i]*=.5f;mainR[i]*=.5f;
+        }
+        assert(native.processSpeakerDiagnostic(epoch,renderedRevision,
+            mainL.data(),mainR.data(),Witness::maxFrames));
+        assert(std::abs(mainL[200]-.2f)<.0001f);
+    }
+    assert(allocations.load(std::memory_order_relaxed)==noAlloc);
+    diag=native.speakerDiagnosticReadback(epoch,1);
+    assert(diag.available && diag.completedBlocks==220);
+    assert(std::abs(diag.postMasterPeakL-.2f)<.0001f);
+    assert(std::abs(diag.postMasterPeakR-.05f)<.0001f);
+    assert(diag.isolatedOutputPeaks.size()==8);
+    // The low-frequency steady source flows only into the two LOW sections,
+    // and their levels follow post-master gain instead of pre-master PCM.
+    assert(diag.isolatedOutputPeaks[0].first==4);
+    assert(diag.isolatedOutputPeaks[0].second>.15f);
+    assert(diag.isolatedOutputPeaks[4].first==8);
+    assert(diag.isolatedOutputPeaks[4].second>.035f);
+    assert(diag.isolatedOutputPeaks[3].second<.02f);
+    assert(diag.isolatedOutputPeaks[7].second<.02f);
+    for(const auto& pin:driver)
+        for(float v:pin)assert(v==.8125f); // NO touched ASIO pin
+    const auto beforeStale=diag.completedBlocks;
+    assert(!native.processSpeakerDiagnostic(epoch,2,
+        mainL.data(),mainR.data(),Witness::maxFrames));
+    assert(!native.processSpeakerDiagnostic(epoch+1,1,
+        mainL.data(),mainR.data(),Witness::maxFrames));
+    assert(native.speakerDiagnosticReadback(epoch,1).completedBlocks==beforeStale);
+    // Runtime master mute enters as zero PCM, never a stale full-range signal.
+    mainL.fill(0.f);mainR.fill(0.f);
+    assert(native.processSpeakerDiagnostic(epoch,1,
+        mainL.data(),mainR.data(),Witness::maxFrames));
+    diag=native.speakerDiagnosticReadback(epoch,1);
+    assert(diag.postMasterPeakL==0.f && diag.postMasterPeakR==0.f);
+    native.revokeSpeakerDraft();
+    assert(!native.speakerDiagnosticReadback(epoch,1).available);
+    assert(!native.processSpeakerDiagnostic(epoch,1,
+        mainL.data(),mainR.data(),Witness::maxFrames));
     native.unpublish();native.pollRetirement();
     std::puts("PASS LMS: one accepted ChannelId MAIN FX render -> 8 isolated crossover outputs, zero callback heap, no physical write");
 }
