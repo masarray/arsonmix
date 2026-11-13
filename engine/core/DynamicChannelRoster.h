@@ -30,6 +30,7 @@ struct ChannelSendRef final {
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
     std::uint64_t edgeId=0; // stable native identity; CONTROL-only assignment
+    bool enabled=true; // independent SEND ON; retain EdgeId/gain/tap when OFF
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -59,7 +60,7 @@ struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
         setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
-        removeInsertReference, moveInsertReference,
+        removeInsertReference, moveInsertReference, setSendEnabled,
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision
@@ -76,6 +77,7 @@ struct ChannelEdit final {
     bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
     bool connectMainOnCreate=false; // WIRE-first native creation; legacy imports unchanged
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
+    std::uint64_t sendEdgeId=0; // exact parallel send identity for SEND ON/OFF
     std::string text;
 };
 struct ChannelEditResult final {
@@ -241,6 +243,16 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
+                case ChannelEdit::Kind::setSendEnabled: {
+                    const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
+                        [&](const auto& send){return send.edgeId==op.sendEdgeId;});
+                    if(!op.sendEdgeId || edge==it->sends.end())
+                        result.fault=ChannelEditFault::missingEdge;
+                    else if(edge->primaryOutput)
+                        result.fault=ChannelEditFault::invalidAction;
+                    else edge->enabled=op.enabled;
+                    break;
+                }
                 case ChannelEdit::Kind::touchDocumentRevision:
                     // Exact stable ChannelId is validated above. Bump the
                     // document revision without fabricating a DSP parameter
@@ -306,6 +318,7 @@ public:
                         primary->gain=1.f;
                         primary->preFader=false;
                         primary->pan=0.f;
+                        primary->enabled=true;
                     } else {
                         if(edges.size()>=budget_.maximumSendsPerChannel) {
                             result.fault=ChannelEditFault::budgetExceeded;break;
@@ -439,6 +452,7 @@ public:
                     // of doubling a parallel SEND in the accepted PCM.
                     target->primaryOutput=true;
                     target->gain=1.f;target->preFader=false;target->pan=0.f;
+                    target->enabled=true;
                     continue;
                 }
             }
