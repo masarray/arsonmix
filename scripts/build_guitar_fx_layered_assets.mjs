@@ -54,7 +54,9 @@ const socket=(x,y,cx,cy,r=23)=>{
 };
 const pixel=(spec,x,y)=>{
   const [,w,h,kind]=spec, X=x/w,Y=y/h;
-  const n=noise(x,y,kind.length*71,8);
+  // Every ON/OFF pair shares the SAME material grain and immovable shell.
+  const family=kind.replace(/(?:On|Off)$/,"");
+  const n=noise(x,y,family.length*71,8);
   if(kind==="knob"){
     const d=radial(x,y,w/2,h/2),angle=Math.atan2(y-h/2,x-w/2),edge=w*.475;
     if(d>edge+1)return [0,0,0,0];
