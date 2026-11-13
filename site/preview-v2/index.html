@@ -1051,7 +1051,9 @@ function startWireRetraction(sourceId,releasePoint){
   if(p<1)requestAnimationFrame(step);
   else stopWireRetraction(); // no ghost cable or hitbox after collapse
  }
- requestAnimationFrame(step);
+ // Paint the first detached frame before returning from pointerup; this
+ // avoids a blank frame while the old committed path has been removed.
+ step(performance.now());
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
