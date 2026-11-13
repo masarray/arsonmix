@@ -284,14 +284,24 @@ jobs:
     timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
-      - name: Render exact native anti-phase stereo headphone A/B
+      # Public alpha.23 is immutable baseline; fetch ONLY SonKu engine
+      # headers for matched native C++ reference rendering (no JUCE/SDK).
+      - name: Checkout immutable public alpha.23 SonKu baseline headers
+        uses: actions/checkout@v4
+        with:
+          ref: 4a6e47e2905a4aa995f879045a907abee8b1aae5
+          path: .baseline-sonku
+          persist-credentials: false
+          sparse-checkout: |
+            engine/builtin_fx/sonku
+          sparse-checkout-cone-mode: true
+      - name: Render and numerically compare five native PCM music A/B tracks
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-audio
           /tmp/sonku-integrity-audio sonku-integrity-evidence --music-integrity-only
-          test -s sonku-integrity-evidence/sonku-music-positive-front.wav
-          test -s sonku-integrity-evidence/sonku-music-anti-phase-front.wav
-          test -s sonku-integrity-evidence/sonku-music-anti-phase-rear.wav
-          python -c "import wave; from pathlib import Path; files=list(Path('sonku-integrity-evidence').glob('*.wav')); assert len(files)==3; [(lambda w: (w.getnchannels()==2 and w.getframerate()==48000 and w.getnframes()==192000) or (_ for _ in ()).throw(ValueError('invalid WAV')))(wave.open(str(p),'rb')) for p in files]"
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_AB_BASELINE tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-baseline
+          /tmp/sonku-integrity-baseline sonku-integrity-baseline --music-integrity-only
+          python tests/sonku_music_integrity_comparison.py sonku-integrity-baseline sonku-integrity-evidence
       - name: Same-runner informational SonKu native realtime CPU check
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-integrity-cpu
@@ -301,7 +311,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ArSonMix-SonKu-Phase-Integrity-${{ github.run_id }}
-          path: sonku-integrity-evidence/*
+          path: |
+            sonku-integrity-evidence/*
+            sonku-integrity-baseline/*
           if-no-files-found: ignore
           retention-days: 14
 
