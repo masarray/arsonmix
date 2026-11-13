@@ -197,3 +197,7 @@ Full current-product UI qualification keeps archived V8–V27 migration tests di
 ## Operator-first fast delivery amendment (2026-11-09)
 
 Read [Autonomous Fast Delivery Contract](AUTONOMOUS_FAST_DELIVERY_CONTRACT_20261109.md). Continue code editing while fast CI runs when tasks are independent; finish one real native Player→MUSIC→MAIN workflow before cosmetic or M2 features. No separate M0 plan/review/merge gate, repeated owner approvals, parallel micro PRs or dummy commits to start expensive Actions. Preserve fail-closed hardware identity, Native/Browser quality, exact-SHA jobs, permissions and branch protection. Trigger early unqualified Windows FAT installer **once** when M1 native audio is integrated, so owner can field-test; any later runtime fix requires a new exact-SHA qualification. Do not claim physical FAT on CI success.
+
+### Portable Windows field preview
+
+Use `/arsonmix-ci field <exact current PR HEAD SHA>` when the next step is hands-on testing of the current mixer on Windows. The owner dispatcher runs the existing fast native checks, builds only `ARMixConsole`, verifies the exact-source portable package, and uploads `ArSonMix-Windows-Field-Preview-<SHA>`. Download the Actions artifact ZIP, extract it and run the included executable. Use `fat` for installer testing or full Windows qualification. The field ZIP records that full CTest was omitted and carries no public release or physical qualification.

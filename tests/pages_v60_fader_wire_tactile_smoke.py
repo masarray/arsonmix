@@ -34,6 +34,8 @@ def source_contract():
                  "const passed=pose.front-t;",
                  "svg.style.clipPath='none'",
                  "const width=.65-.29*longMix",
+                 "const shortEnergy=Math.max(.78,.27+.73*longMix)",
+                 "const shortEnergy=Math.max(.80,.46+.54*longMix)",
                  "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
                  "function startWireRetraction(sourceId,releasePoint)",
                  "if(replugRequest)kickWireSpring(replugRequest.sourceId,replugRequest.destId)",
@@ -231,7 +233,8 @@ def test_wire(page):
         nearInEarly:displaced(45,60),nearOutEarly:displaced(45,10),
         nearOutLate:displaced(420,10),
         pluggedOut:displaced(0,0),pluggedIn:displaced(45,64),
-        tinyPeak:peak(70),shortPeak:peak(170),longPeak:peak(500)
+        tinyPeak:peak(70),adjacentPeak:peak(145),
+        shortPeak:peak(170),twoChannelPeak:peak(300),longPeak:peak(500)
       };
     }""")
     assert physics and physics["nearInEarly"]< -2.5,("no upward jerk at receiving IN",physics)
@@ -240,10 +243,17 @@ def test_wire(page):
     assert abs(physics["nearOutLate"])<abs(physics["nearInEarly"])*.25,\
         ("outgoing wave did not decay strongly toward OUT",physics)
     assert abs(physics["pluggedOut"])<.25 and abs(physics["pluggedIn"])<.25,physics
-    assert 0.8<physics["tinyPeak"]<physics["shortPeak"]*.65,\
-        ("one-channel wave is too violent or imperceptible",physics)
-    assert physics["shortPeak"]<physics["longPeak"]*.65,\
-        ("short cable retains long cable amplitude",physics)
+    assert 3.5<physics["tinyPeak"]<physics["adjacentPeak"]*.55,\
+        ("tiny cable must stay bounded but visible",physics)
+    assert physics["adjacentPeak"]>physics["twoChannelPeak"]*.70,\
+        ("adjacent-channel WIRE is still too quiet vs two-channel WIRE",physics)
+    assert physics["adjacentPeak"]<physics["twoChannelPeak"],\
+        ("adjacent-channel WIRE should be lively, not overpower two channels",physics)
+    assert physics["shortPeak"]>physics["longPeak"]*.60,\
+        ("short cable must have a perceptible whip",physics)
+    assert abs(physics["twoChannelPeak"]-13.38)<.6 and \
+           abs(physics["longPeak"]-16.56)<.6,\
+        ("approved two-channel and long-wire motion must stay unchanged",physics)
     assert len(samples)>=5,("no finite spring movement",len(samples))
     assert any(" L " in x["d"] for x in samples),("no cable impact",len(samples))
     settled=cable.get_attribute("d")
@@ -434,10 +444,70 @@ def test_replug_and_retract(page):
            abs(physics["tipX"]-physics["svgTip"][0])<.1, \
         ("free plug circle detached from last path vertex",physics)
     assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
-    assert physics["shortAmplitude"]<physics["longAmplitude"]*.7, \
-        ("short cable should remain controlled",physics)
+    assert physics["shortAmplitude"]>physics["longAmplitude"]*.20 and \
+           physics["shortAmplitude"]<physics["longAmplitude"]*.40, \
+        ("tiny free reel must swing more, without overpowering full cable",physics)
     assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
     page.evaluate("window.__v62Obs.disconnect()")
+
+
+def test_adjacent_wire_whip(page):
+    """V67 real Chromium evidence: CH01 -> CH02 must ripple visibly.
+    No standalone/parallel animation renderer or synthetic graph mutation.
+    """
+    source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+    target=page.locator('#tracks .strip[data-id="2"] .wire-node-in')
+    assert source.count()==target.count()==1
+    page.evaluate("""()=>{
+      window.__v67AdjacentSamples=[];
+      window.__v67AdjacentObserver=new MutationObserver(records=>{
+        for(const record of records){
+          const el=record.target;
+          if(!el.matches?.('path.wire-outgoing-line[data-cable-key="1-2"],path.wire-incoming-line[data-cable-key="1-2"]'))continue;
+          const d=el.getAttribute('d');
+          if(d?.includes(' L '))window.__v67AdjacentSamples.push(d);
+        }
+      });
+      window.__v67AdjacentObserver.observe(document.querySelector('#wireLayer'),
+        {subtree:true,attributes:true,attributeFilter:['d']});
+    }""")
+    # Use an explicit OUT -> IN pointer drag, independent of prior focus
+    # and whether the visible jacket is an incoming or outgoing projection.
+    a=source.bounding_box()
+    b=target.bounding_box()
+    assert a and b
+    sx,sy=a["x"]+a["width"]/2,a["y"]+a["height"]/2
+    tx,ty=b["x"]+b["width"]/2,b["y"]+b["height"]/2
+    page.mouse.move(sx,sy)
+    page.mouse.down()
+    page.mouse.move(tx,ty,steps=10)
+    page.mouse.up()
+    cable=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-2"],#wireLayer path.wire-incoming-line[data-cable-key="1-2"]').first
+    assert cable.count()==1,("adjacent patch missing",page.locator('#wireLayer path[data-cable-key]').evaluate_all(
+        "nodes=>nodes.map(n=>[n.getAttribute('class'),n.dataset.cableKey])"))
+    page.wait_for_timeout(780)
+    samples=page.evaluate("window.__v67AdjacentSamples")
+    assert len(samples)>=5,("adjacent WIRE did not animate in Chromium",len(samples))
+    assert " C " in cable.get_attribute("d"),"short WIRE failed to settle to canonical cubic"
+    import re
+    nums=lambda d:[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",d)]
+    base=nums(cable.get_attribute("d"))
+    assert len(base)==8,("unexpected canonical geometry",base)
+    y0,yc1,yc2,y1=base[1],base[3],base[5],base[7]
+    max_deformation=0
+    for d in samples:
+        points=nums(d)
+        if len(points)!=130:continue
+        for i in range(1,64):
+            t=i/64
+            v=1-t
+            natural=v*v*v*y0+3*v*v*t*yc1+3*v*t*t*yc2+t*t*t*y1
+            max_deformation=max(max_deformation,abs(points[2*i+1]-natural))
+    assert max_deformation>7,("adjacent-channel impact is too subdued",
+                               max_deformation,len(samples))
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-2"]').count()==1
+    page.evaluate("window.__v67AdjacentObserver.disconnect()")
+
 
 
 def run():
@@ -457,13 +527,14 @@ def run():
                 if width==1680:
                     test_wire(page)
                     test_replug_and_retract(page)
+                    test_adjacent_wire_whip(page)
                 if width in (640,1680):
                     page.screenshot(path=f"arsonmix-v60-fader-wire-{width}.png",full_page=False)
                 assert not errs,(width,errs)
                 page.close()
         finally:
             browser.close()
-    print("PASS V66 Chromium: 330ms fast reel, whole cable ripple and swing-back free dot with no ghost graph")
+    print("PASS V67 Chromium: lively adjacent-channel WIRE plus V66 long whip and 330ms free-dot reel")
 
 
 if __name__=="__main__":
