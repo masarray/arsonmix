@@ -58,12 +58,18 @@ public:
                    !hardwareApplied;
         }
     };
+    struct SpeakerDiagnosticProtection final {
+        int callbackOrdinal=-1;
+        bool voltageModelPrepared=false; // NOT proof of verified calibration
+        float gainReductionDb=0.f,preLimitRmsDigital=0.f,outputPeakDigital=0.f;
+    };
     struct SpeakerDiagnosticReadback final {
         bool available=false,hardwareApplied=false;
         std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
         std::uint64_t completedBlocks=0;
         float postMasterPeakL=0.f,postMasterPeakR=0.f;
         std::vector<std::pair<int,float>> isolatedOutputPeaks;
+        std::vector<SpeakerDiagnosticProtection> outputProtection;
     };
     struct SpeakerDraftReadback final {
         std::uint64_t deviceEpoch=0,graphRevision=0,designRevision=0;
@@ -428,10 +434,18 @@ public:
         result.completedBlocks=diag->completedBlocks.load(std::memory_order_acquire);
         result.postMasterPeakL=diag->inputPeakL.load(std::memory_order_acquire);
         result.postMasterPeakR=diag->inputPeakR.load(std::memory_order_acquire);
-        for(int ordinal:diag->ownedOrdinals)
+        for(std::size_t j=0;j<diag->ownedOrdinals.size();++j) {
+            const int ordinal=diag->ownedOrdinals[j];
             result.isolatedOutputPeaks.emplace_back(
                 ordinal,diag->lastPeaks[static_cast<std::size_t>(ordinal)]
                     .load(std::memory_order_acquire));
+            armix::lms::PreparedSpeakerSystem::OutputProtectionReadback sample;
+            // Same native DSP instance as the PCM sink; atomic readback only.
+            if(diag->dsp && diag->dsp->outputProtectionReadback(j,sample))
+                result.outputProtection.push_back({
+                    ordinal,sample.voltageModelPrepared,sample.gainReductionDb,
+                    sample.preLimitRmsDigital,sample.outputPeakDigital});
+        }
         return result;
     }
 
