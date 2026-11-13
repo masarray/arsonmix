@@ -156,7 +156,8 @@ const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
- drag=null,dialDrag=null,rangeEdits=new Set(),visualPhase=0,visualAt=0;
+ drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
+ visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
 const context=()=>{
  if(!current||!native())return null;
  const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -277,22 +278,60 @@ function requestSnapshot(force=false){
  readSentAt=now;
  backend().emitEvent("arMixAction",{action:"nativeSonKuSnapshot",requestId:readId,...c});
 }
-function send(next){
+// One reusable CONTROL gesture publisher for every SonKu slider, knob,
+// keyboard nudge and SVG speaker. The JUCE PCM callback still owns audio.
+// Limit UI→native emissions to <= 25Hz. At most ONE change in flight, with
+// latest-wins coalescing; ACK + accepted snapshot remain mandatory before
+// issuing the next. Never fill the DSP SPSC queue with raw pointer events.
+const LIVE_INTERVAL_MS=40;
+const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]);
+function send(next,continuous=false){
  if(!valid(next))return false;
  draft={...next};render();
  if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");return true;}
- if(pending){latest={...next};hint("DSP BUSY · FINAL CHANGE HELD");return true;}
  const c=context();if(!c){hint("NATIVE INSERT NOT ACCEPTED");return false;}
+ if(pending){
+  latest=sameSettings(next,pending.settings)?null:{...next};
+  if(!continuous)hint("DSP FOLLOWING · FINAL VALUE PENDING");
+  return true;
+ }
+ if(sameSettings(next,accepted))return true;
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
  pending={requestId:id,settings:{...next},context:c,ack:false};
  backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
- hint("DSP QUEUED · AWAITING AUDIO ACK");return true;
+ hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
+ return true;
+}
+function cancelLiveTimer(){
+ if(liveTimer!==null){clearTimeout(liveTimer);liveTimer=null;}
+}
+function liveInput(next){
+ if(!valid(next))return false;
+ draft={...next};render();
+ const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
+ if(wait<=0){
+  cancelLiveTimer();lastLiveAt=now;return send(next,true);
+ }
+ if(liveTimer===null)liveTimer=setTimeout(()=>{
+  liveTimer=null;lastLiveAt=performance.now();
+  if(current&&!root.hidden)send({...draft},true);
+ },Math.max(0,wait));
+ return true;
+}
+function commitInput(next){
+ cancelLiveTimer();lastLiveAt=performance.now();
+ return send(next,false);
 }
 function flushLatest(){
- if(latest){const next=latest;latest=null;send(next);}
+ if(latest){const next=latest;latest=null;
+  if(!sameSettings(next,accepted))send(next,true);
+ }
 }
 function finishFailure(reason){
- pending=null;latest=null;draft={...accepted};hint(reason);render();requestSnapshot(true);
+ cancelLiveTimer();pending=null;latest=null;
+ // Native failure is real. Never display false "applied" audio; read back
+ // authoritative DSP state, do not retry a stale device/graph on a timer.
+ draft={...accepted};hint(reason);render();requestSnapshot(true);
 }
 backend()?.addEventListener?.("arMixBuiltinSonKuQueue",r=>{
  if(!pending||r?.requestId!==pending.requestId)return;
@@ -318,6 +357,10 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
   accepted={...incoming};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
  }else if(!drag&&!dialDrag&&rangeEdits.size===0){
   accepted={...incoming};draft={...incoming};
+ }else if(!pending){
+  // Preserve live thumb ownership, yet advance the accepted mirror so a
+  // later failure/reopen never restores a stale value.
+  accepted={...incoming};
  }
  if(Number.isFinite(r.observedAzimuthDegrees)){
   // First authoritative phase anchors the loop once. Subsequent readbacks
@@ -328,8 +371,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  render();
 });
 $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
- pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
- rangeEdits.clear();
+ cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
+ drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
  if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
@@ -451,8 +494,9 @@ const api={
  id:ID,
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
-  pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
-  observedAt=0;visualAt=0;visualPhase=0;rangeEdits.clear();
+  cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
+  observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
+  drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
