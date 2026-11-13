@@ -117,6 +117,7 @@ if(nativeConnected){
   if(!response||response.schema!=="arsonmix.lms.native-inspection.v1"||
      response.requestId!==nativeInspectRequest)return;
   if(!response.ready){
+   if(pending?.kind==="reassign")pending=null;
    nativeInventory=null;
    nativeStatus="Native ASIO graph unavailable · output disconnected";
    validatedForRevision=-1;
@@ -134,6 +135,9 @@ if(nativeConnected){
    nativeInventory=null;nativePending=null;
    nativeStatus="Invalid native port readback";render();return;
   }
+  if(pending?.kind==="reassign" &&
+      (pending.deviceEpoch!==response.deviceEpoch ||
+       pending.graphRevision!==response.graphRevision))pending=null;
   nativeInventory=response;
   if(nativePending?.ackedRevision!==null&&nativePending &&
      state.revision===nativePending.uiRevision &&
@@ -191,6 +195,8 @@ function nativeBar() {
   '<div class="lms-control-row">'+
   btn("Inspect ASIO","nativeInspect")+
   (canBind?btn("Use verified ports","nativePorts"):'')+
+  (canBind&&Object.keys(state.routes).length?
+    btn("Reassign + keep DSP","nativeReassign"):'')+
   (nativeBound()?'<button type="button" class="lms-btn" data-action="nativeValidate"'+
    (ready?'':' disabled')+'>Validate design</button>':'')+
   '</div></div>';
@@ -438,6 +444,20 @@ function alignPage() {
 }
 function reviewBox() {
  if (!pending) return "";
+ if(pending.kind==="reassign") {
+  const rows=state.ports.map(source=>'<div class="lms-field">'+
+    '<label>'+safe(source)+' · '+safe(state.routes[source]||"Unrouted")+'</label>'+
+    '<select class="lms-select" data-rebind-source="'+safe(source)+'">'+
+    selectOptions([["","Not assigned"],...pending.ports.map(p=>[p,portLabel(p)])],
+                  pending.assignments[source]||"")+'</select></div>').join("");
+  return '<div class="lms-panel" role="group" aria-label="Review physical output reassignment">'+
+    '<strong>Review explicit output reassignment</strong>'+
+    '<p class="lms-caption">'+safe(pending.description)+'</p>'+
+    '<div class="lms-form-grid">'+rows+'</div>'+
+    '<p class="lms-warn">Every routed, tuned or positioned output needs a unique verified port. All reassigned outputs become MUTED. Only the offline design changes; fresh native ACK and subsequent readback are still required.</p>'+
+    '<div class="lms-control-row">'+btn("Confirm muted reassignment","confirmReassign")+
+    btn("Cancel","cancel")+'</div></div>';
+ }
  return '<div class="lms-panel" role="status" style="margin-bottom:12px;border-color:#99794e">'+
  '<strong>Review structural change</strong><p class="lms-caption">'+safe(pending.description)+
  '</p><div class="lms-control-row">'+btn("Confirm, clear routes","confirm")+
@@ -485,6 +505,34 @@ root.addEventListener("click",event=>{
   render();return;
  }
  if(act==="nativeValidate"){validateNativeDraft();return;}
+ if(act==="nativeReassign"){
+  if(!nativeInventory?.ready||!nativeInventory.outputDisarmed||
+     nativePending||!Object.keys(state.routes).length)return;
+  const ports=nativeAvailable().map(p=>p.identity);
+  if(!ports.length||ports.length>64)return;
+  pending={kind:"reassign",revision:state.revision,ports,
+    deviceEpoch:nativeInventory.deviceEpoch,
+    graphRevision:nativeInventory.graphRevision,assignments:{},
+    description:"Choose exact ASIO destinations. No automatic ordinal mapping. Routing, DSP and alignment are preserved only for explicitly selected outputs."};
+  message="";render();return;
+ }
+ if(act==="confirmReassign"){
+  if(pending?.kind!=="reassign"||pending.revision!==state.revision||
+     !nativeInventory?.ready||!nativeInventory.outputDisarmed||
+     nativeInventory.deviceEpoch!==pending.deviceEpoch||
+     nativeInventory.graphRevision!==pending.graphRevision||
+     JSON.stringify(nativeAvailable().map(p=>p.identity))!==
+       JSON.stringify(pending.ports)){
+    pending=null;message="ASIO device inventory changed · inspect again";
+    validatedForRevision=-1;render();return;
+  }
+  try{
+   const next=M.reassignVerifiedPorts(state,pending.ports,pending.assignments);
+   update(next);
+   nativeStatus="Explicit ASIO reassignment saved as MUTED draft · native validation required";
+  }catch(e){message=e.message;render();}
+  return;
+ }
  if(act==="planDelay"){
   pending={description:"Copy calculated geometric delays to all output DSP DRAFTS. No audio, device, native PCM ACK, or hardware output will be changed.",
     run:()=>M.withSuggestedDelays(state)};
@@ -516,6 +564,14 @@ root.addEventListener("click",event=>{
 root.addEventListener("change",event=>{
  const t=event.target;
  try {
+  if(t.dataset.rebindSource!==undefined){
+   if(pending?.kind!=="reassign")return;
+   const source=t.dataset.rebindSource;
+   if(!state.ports.includes(source))return;
+   if(t.value)pending.assignments[source]=t.value;
+   else delete pending.assignments[source];
+   message="";render();return;
+  }
   if(t.dataset.ways!==undefined){
    const ways=Number(t.value);
    if(ways!==state.ways) pending={description:"Changing the number of ways clears ALL crosspoints and resets output DSP drafts. The current mixer/audio remains untouched.",run:()=>M.withWays(state,ways)};
