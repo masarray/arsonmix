@@ -62,8 +62,11 @@ inline bool decode(const juce::var& args,OfflineIntent& out) {
     if(!requestId.isString() || requestId.toString().isEmpty() ||
        requestId.toString().length()>120)return false;
     // Log-safe fixed-size request token (no whitespace, markup or control).
-    for(const auto c:requestId.toString())
+    const auto token=requestId.toString();
+    for(int i=0;i<token.length();++i){
+        const auto c=token[i];
         if(c<0x21||c>0x7e)return false;
+    }
     OfflineIntent candidate;
     candidate.requestId=requestId.toString().toStdString();
     if(!uint64Token(args.getProperty("deviceEpoch",{}),
