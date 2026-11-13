@@ -40,3 +40,18 @@ This is an implementation roadmap for an **in-channel native insert in ArSonMix*
 - Physical audio engineer tests: real guitar/Hi-Z → ASIO processed output, output level safety, SOURCE ONLY/no MAIN, WIRE reconnect, low buffer stress and measured round-trip latency. A Windows CI result cannot prove this; see [GFX field acceptance](GFX_FIELD_ACCEPTANCE.md).
 
 **Out of scope for the current PR:** shipping unlicensed commercial amp/IR images or captures, claiming NAM fidelity, MIDI control before actual tested mapping, a separate standalone mixer, and sound quality approvals based only on CI.
+
+## M1.6 realtime correctness recovery (2026-11-13)
+
+**Root-cause evidence:** Exact-SHA M1.5 FAT #43355170393 compiled in MSVC but failed 1 of 92 CTests: `M4NativeFxCatalogExtensionAndStatePreparation` hit `legacy.getSize()==12u+4u*44u`. This fixture queried a `juce::MemoryBlock` while its `MemoryOutputStream` was still open and reserving spare capacity. JUCE documents `flush()` or destruction to trim the final byte size. The fixture now checks `writer.getDataSize()` then calls `writer.flush()` **before** asserting the MemoryBlock length. It was not an assertion against the actual rendered guitar sound.
+
+**Active-rig fixes:**
+- `GuitarRigCore::inheritCompatibleHistory()` copies audio-owned gate envelope, drive/amp filter histories and 65-tap cabinet circular buffers to prepared snapshots only when sample rate, stable module IDs and topology match. 128-frame crossfade now starts with matching warm audio history instead of newly zeroed delay taps. All DSP preparation remains on CONTROL; copying bounded histories remains inside one audio callback.
+- `GuitarRigProcessor::onRealtimeBypass()` handles the existing host callback's **fully bypassed** signal: stops a partial wet-only crossfade, resets stale cabinet/gate state after the rack finishes fading to dry, and applies later SPSC updates without waiting for PCM that the host deliberately skips. Re-enabling wet does not replay old FIR tails.
+- `GuitarRigEditor::loadArt()` uses a function-local static cache for five embedded original PNG skins, so closing and reopening a floating native editor does not repeatedly decode images. Native controls, meters, and actual accepted DSP state still render independently of the bitmap artwork.
+
+**New tests:** portable C++ checks identical future PCM after warm history transfer, rejection of cross-rate transfers and nonzero warm vs cold behavior; native registry regression covers mid-crossfade → fully bypassed → next A/B ACK and no stale cabinet tail after re-enable; path-scoped JS checks cached hardware skin decoding. No unnecessary second graph, time-consuming DSP preparation on callback, or imaginary music controls.
+
+**Quality research:** JUCE's documented `dsp::Oversampling` supports 2×/4× with FIR/IIR filter tradeoffs. A nonlinear guitar amp may alias; future anti-alias mode must quantify spectral energy and CPU/PDC latency on 44.1/48/96 kHz and realistic ASIO buffers before selecting oversampling in production. See https://docs.juce.com/master/classjuce_1_1dsp_1_1Oversampling.html. Helix snapshot behavior remains our benchmark for seamless parameter/bypass changes, not a claim of identical audio modeling.
+
+**Pending release evidence:** run a single exact-SHA Windows native FAT/CTest after complete fast checks and main reconciliation; verify ZIP and installer provenance. Hardware Hi-Z/ASIO audition and commercial-grade amp tone acceptance remain mandatory.
