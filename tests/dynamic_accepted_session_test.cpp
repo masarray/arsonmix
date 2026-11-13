@@ -93,6 +93,58 @@ static void verifyPerEdgeSendEnablePcm() {
     session.unpublish();session.pollRetirement();
 }
 
+// Digital input trim must precede nonlinear FX, with callback-continuous
+// sample smoothing and a stable ChannelId during live parameter changes.
+static void verifyDigitalInputGainBeforeFxPcm() {
+    constexpr std::uint64_t epoch=9442;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    const std::array<ChannelEdit,2> setup{
+        add(0,ChannelRole::input,"MIC"),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,setup,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto mic=a.edit.createdIds[0];
+    const auto main=a.edit.createdIds[1];
+    const std::array<ChannelEdit,1> link{output(mic,main)};
+    req.sources={{mic,0,-1,false}};
+    a=session.edit(1,1,link,req,epoch,epoch,true);
+    assert(a.ok());
+    std::array<float,64> input{},l{},r{};input.fill(.25f);
+    const float* pins[]{input.data()};
+    const auto square=[&](ChannelId ch,float* left,float* right,int n) noexcept {
+        if(ch!=mic)return;
+        for(int i=0;i<n;++i){left[i]*=left[i];right[i]*=right[i];}
+    };
+    const auto render=[&](int frames){
+        return session.render(epoch,pins,1,l.data(),r.data(),frames,false,square);
+    };
+    assert(render(64));
+    const float original=l[63];
+    assert(near(original,.25f*.25f*.70710678f,1e-4f));
+    assert(!session.setLiveInputGain(epoch-1,2,mic,2.f));
+    assert(!session.setLiveInputGain(epoch,1,mic,2.f));
+    assert(!session.setLiveInputGain(epoch,2,main,2.f));
+    assert(!session.setLiveInputGain(epoch,2,mic,17.f));
+    assert(session.setLiveInputGain(epoch,2,mic,2.f));
+    assert(session.acceptedRoster().find(mic)->inputGainLinear==2.f);
+    assert(render(4));
+    assert(l[3]>original && l[3]<original*4.f);
+    assert(render(60));
+    // Gain x2 BEFORE square-law FX gives x4 PCM, not x2 (post-FX bug).
+    assert(near(l[59],original*4.f,1e-4f));
+    // A subsequent graph edit must preserve the accepted input gain.
+    ChannelEdit rename;rename.kind=ChannelEdit::Kind::rename;
+    rename.id=mic;rename.text="MIC NEW NAME";
+    const std::array<ChannelEdit,1> change{rename};
+    a=session.edit(2,2,change,req,epoch,epoch,true);
+    assert(a.ok() && session.acceptedRoster().find(mic)->inputGainLinear==2.f);
+    assert(render(64));
+    assert(near(l[63],original*4.f,1e-4f));
+    session.unpublish();session.pollRetirement();
+}
+
 static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
     using armix::dsp::RealtimeSlew64;
     // Sub-64 variable callbacks must not finish a 64-sample gesture in 4
@@ -984,6 +1036,7 @@ int main() {
     verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
     verifyPerEdgeSendEnablePcm();
+    verifyDigitalInputGainBeforeFxPcm();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
     DynamicAcceptedSession session;
