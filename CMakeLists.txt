@@ -257,6 +257,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerRealtimeTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeFourWayStereoZeroCallbackHeap
       COMMAND ARMixSpeakerRealtimeTests)
+  # LMS M11 detached session draft: portable cold-open safety policy.
+  add_executable(ARMixSpeakerOfflineDraftTests
+      tests/lms_offline_session_draft_test.cpp
+      engine/lms/LmsOfflineDraft.h)
+  target_compile_features(ARMixSpeakerOfflineDraftTests PRIVATE cxx_std_20)
+  add_test(NAME LMSOfflineSmixDraftAlwaysUnassignedDisarmed
+      COMMAND ARMixSpeakerOfflineDraftTests)
   # LMS M6 JUCE WebView control ABI tests: native schema only, no ASIO
   # endpoint/driver opened, no second audio callback or render.
   juce_add_console_app(ARMixSpeakerWebIntentTests PRODUCT_NAME "ArSonMix LMS Offline WebView Native Contract")
