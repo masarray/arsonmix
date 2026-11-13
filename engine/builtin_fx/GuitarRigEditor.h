@@ -133,7 +133,7 @@ public:
         g.fillRoundedRectangle(stage.toFloat(),12.f);
         g.setColour(juce::Colour::fromRGB(72,70,67));
         g.drawRoundedRectangle(stage.toFloat(),12.f,1.f);
-        const auto hero=focus_==2?amp_:focus_==3?cab_:pedal_;
+        const auto hero=focus_==2?amp_:focus_==3?cab_:focus_==0?gate_:pedal_;
         const auto art=stage.reduced(20,20);
         if(hero.isValid())
             g.drawImageWithin(hero,art.getX(),art.getY(),art.getWidth(),
@@ -247,6 +247,9 @@ private:
         cab_=juce::ImageFileFormat::loadFrom(
             BinaryData::cabinetdual12_png,
             static_cast<std::size_t>(BinaryData::cabinetdual12_pngSize));
+        gate_=juce::ImageFileFormat::loadFrom(
+            BinaryData::pedalgate_png,
+            static_cast<std::size_t>(BinaryData::pedalgate_pngSize));
         pedal_=juce::ImageFileFormat::loadFrom(
             BinaryData::pedaloverdrive_png,
             static_cast<std::size_t>(BinaryData::pedaloverdrive_pngSize));
@@ -319,7 +322,7 @@ private:
     }
     GuitarRigProcessor& processor_;
     HardwareKnobs knobsLook_{};
-    juce::Image amp_,cab_,pedal_,knob_;
+    juce::Image amp_,cab_,gate_,pedal_,knob_;
     juce::ComboBox preset_;
     juce::Label status_;
     std::array<juce::TextButton,4> focusButtons_{};
