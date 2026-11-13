@@ -221,3 +221,33 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
   assert(body.raw[k]<75,"stomp well must not contain a baked shiny switch");
  }
 });
+
+
+test("native bitmap control bounds preserve switch and button proportions",()=>{
+ const s=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const match=(re,label)=>{
+  const m=s.match(re);
+  assert(m,label+" must have explicit static JUCE bounds");
+  return m.slice(1).map(Number);
+ };
+ const [bankAX,bankAY,bankAW,bankAH]=match(
+  /bankButtons_\[0\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
+  "bank A bounds");
+ const [bankBX,bankBY,bankBW,bankBH]=match(
+  /bankButtons_\[1\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
+  "bank B bounds");
+ const [,powerY,powerW,powerH]=match(
+  /power_\[i\]\.setBounds\(x\+([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
+  "module power bounds");
+ const ratio=(w,h)=>w/h;
+ assert(Math.abs(ratio(bankAW,bankAH)-280/80)<0.10,
+   "bank A PNG must not be stretched into a square");
+ assert.equal(bankAW,bankBW);assert.equal(bankAH,bankBH);
+ assert.equal(bankAY,bankBY);
+ assert(bankBX-bankBW > bankAX,
+   "A and B bounds must be separated before the preset");
+ assert(Math.abs(ratio(powerW,powerH)-200/74)<0.15,
+   "module switch PNG must not be squeezed vertically");
+ assert(powerY>=104&&powerY+powerH<=143,
+   "module switch stays within chain button row");
+});
