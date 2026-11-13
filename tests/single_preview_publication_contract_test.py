@@ -1,6 +1,6 @@
 """Fail closed: GitHub Pages must expose ONE approved ArSonMix GUI at /preview/."""
 from pathlib import Path
-import json, re, sys, hashlib, shutil, tempfile
+import json, re, sys, hashlib, shutil, tempfile, subprocess
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from compile_approved_css import LINK, optimize_css, compile_runtime_bundle, link_runtime_bundle, RUNTIME_CSS
 from approved_fx_rack_power import apply_authoritative_fx_power
@@ -106,6 +106,18 @@ shipped=list(LINK.finditer(html))
 require(len(shipped)==1 and shipped[0].group(2)==RUNTIME_CSS,
         'Only the single compiled runtime CSS is allowed to load')
 require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + one runtime CSS + nonvisual profiler')
+# LMS is a sibling workspace in the SAME renderer; never a second /preview/ page.
+require(html.count('id="lmsOpen"')==1 and html.count('id="lmsWorkspace"')==1,
+        'LMS button or workspace absent/duplicated')
+for asset in ('lms-workspace.js','lms-system-model.js','lms-workspace.css'):
+    require((gui/'assets'/asset).read_bytes()==
+            (ROOT/'site/preview-v2/assets'/asset).read_bytes(),
+            'LMS composed asset drift: '+asset)
+require('ArSonMixLmsModel' in (gui/'assets/lms-workspace.js').read_text(encoding='utf-8'),
+        'LMS logical model not used by workspace')
+subprocess.run(['node','--test',str(ROOT/'tests/lms_system_model.test.cjs')],
+               cwd=ROOT,check=True)
+
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)
 require((gui/'assets/mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png').read_bytes()==(ROOT/'site/preview-buttons/assets/mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png').read_bytes(),'approved PNG sprite mismatch')
