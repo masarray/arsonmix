@@ -141,9 +141,9 @@ def exercise(browser,out,width,height):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
-    assert art.count()==1 and art.get_attribute("data-orientation")=="front-up-flipped"
+    assert art.count()==1 and art.get_attribute("data-orientation")=="front-up-rear"
     assert art.get_attribute("href")=="assets/sonku-listener-top.png"
-    # The vertically flipped PNG must actually resolve in the BUILT
+    # The rear-view alpha PNG must actually resolve in the BUILT
     # native /preview/ bundle, and have transparent palette metadata.
     assert page.evaluate("""async () => new Promise(resolve => {
        const image=document.querySelector('#skListenerArt');
@@ -154,7 +154,7 @@ def exercise(browser,out,width,height):
        im.onload=()=>resolve(im.naturalWidth===256&&im.naturalHeight===256);
        im.onerror=()=>resolve(false);
        im.src=href;
-    })"""),"Flipped transparent PNG missing from native GUI bundle"
+    })"""),"Rear-view transparent PNG missing from native GUI bundle"
     # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
     # HTMLElement.innerText for these nodes. Read SVG textContent and verify
     # the actual anchors, so front/rear cannot silently flip in the GUI.

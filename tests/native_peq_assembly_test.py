@@ -71,19 +71,18 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertLess(len(png),45000)
         self.assertNotIn("mixer-native-sonku.css",self.assembled)
         sonku=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
-        # SonKu FRONT-up scene now uses a shaded inline vector back view
-        # rather than displaying the old face PNG upside-down. The legacy
-        # PNG is still packaged for historical/checkpoint builds.
+        # SonKu now paints the actual rear/top-view PNG with the listener
+        # facing FRONT at the top of the room, not the prior top-view face.
         self.assertIn('id="skListenerArt"',sonku)
         self.assertIn('href="assets/sonku-listener-top.png"',sonku)
-        self.assertIn('data-orientation="front-up-flipped"',sonku)
+        self.assertIn('data-orientation="front-up-rear"',sonku)
         self.assertNotIn('id="skCrown"',sonku)
         self.assertNotIn('id="skBackSuit"',sonku)
-        # Alpha-palette PNG asset is the exact vertically flipped user-approved
-        # listener; fail if a stale provisional source is repackaged.
+        # Pin the 256x256 rear-view alpha PNG used by the installed GUI;
+        # never silently repack the old flipped top-view artwork.
         import hashlib
         self.assertEqual(hashlib.sha256(png).hexdigest(),
-            "e4fa2f75a541615448dd2d2b0bcbbf7955428900b3bdba8ad45c1ff7374fefc8")
+            "34d067dce8fa83ed0233b61c326fc8b2182a08b5b2a875d2ca28d75b3d2be5d8")
         self.assertEqual(png[16:24],bytes([0,0,1,0,0,0,1,0]))
         self.assertIn(b"tRNS",png)
         self.assertIn("FRONT</text>",sonku)
