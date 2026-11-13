@@ -90,6 +90,27 @@ static void verifyPerEdgeSendEnablePcm() {
     assert(onEdge!=row->sends.end() && onEdge->enabled &&
            onEdge->gain==.5f && onEdge->preFader);
     assert(render() && near(l[63],withSend,1e-4f));
+    // Toggle the same EdgeId LIVE without a graph revision or WIRE removal.
+    assert(!session.setLiveSendEnabled(epoch-1,4,voice,edgeId,false));
+    assert(!session.setLiveSendEnabled(epoch,3,voice,edgeId,false));
+    assert(session.setLiveSendEnabled(epoch,4,voice,edgeId,false));
+    assert(session.acceptedGraphRevision()==4);
+    assert(!session.acceptedRoster().find(voice)->sends.back().enabled);
+    const auto* accepted=session.acceptedRouting(epoch,4);
+    assert(accepted);
+    const auto routingEdge=std::find_if(accepted->edges.begin(),accepted->edges.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(routingEdge!=accepted->edges.end() && !routingEdge->enabled);
+    assert(!session.setLiveParallelSend(epoch,4,voice,wet,true,1.f));
+    assert(render());
+    const float liveOff=l[63];
+    assert(liveOff>withoutSend && liveOff<withSend);
+    assert(render() && near(l[63],withoutSend,1e-4f));
+    assert(session.setLiveSendEnabled(epoch,4,voice,edgeId,true));
+    assert(session.acceptedRoster().find(voice)->sends.back().enabled);
+    assert(render() && l[63]>withoutSend && l[63]<withSend);
+    assert(render() && near(l[63],withSend,1e-4f));
+    assert(session.acceptedGraphRevision()==4);
     // PRE_FADER is AFTER FX and BEFORE the source channel fader.
     // With source fader fully closed, wet PRE remains; POST must go silent.
     assert(session.setLiveMix(epoch,4,voice,0.f,0.f));
