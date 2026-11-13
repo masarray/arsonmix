@@ -197,6 +197,22 @@ inline juce::var inspection(const TrustedSpeakerDeviceView& device,
             route->setProperty("sourceSide",p.sourceSide);
             route->setProperty("section",p.section);
             route->setProperty("muted",p.mute);
+            route->setProperty("gainDb",p.gainDb);
+            route->setProperty("delayMs",p.delayMs);
+            route->setProperty("polarityInverted",p.polarityInverted);
+            route->setProperty("limiterEnabled",p.limiterEnabled);
+            // Return exactly the bounded parameter values that were prepared
+            // by native DSP. The UI verifies these BEFORE claiming VALIDATED.
+            juce::Array<juce::var> bands;
+            for(const auto& b:p.peq){
+                auto band=std::make_unique<juce::DynamicObject>();
+                band->setProperty("frequencyHz",b.frequencyHz);
+                band->setProperty("q",b.q);
+                band->setProperty("gainDb",b.gainDb);
+                band->setProperty("enabled",b.enabled);
+                bands.add(juce::var(band.release()));
+            }
+            route->setProperty("peq",juce::var(bands));
             routes.add(juce::var(route.release()));
         }
         design->setProperty("outputs",juce::var(routes));
