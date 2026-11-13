@@ -1981,3 +1981,24 @@ test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
   assert.match(bridge,/owner\.textContent=patch\.role/);
   assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);
 });
+
+test("SOF double-click and target selection never commandeer MAIN fader",()=>{
+  const html=read("site/preview-v2/index.html");
+  const bridge=read("web/approved-native-bridge.js");
+  const bundle=read("scripts/build_approved_native_gui.py");
+  assert.match(html,/function selectedSofDestination\(\)/);
+  assert.match(html,/sofTargetId=target\?\.id\?\?null/);
+  assert.match(html,/const send=sofEnabled&&t\.kind==='audio'/);
+  assert.match(html,/fader\.dispatchEvent\(new Event\('change'/);
+  assert.match(bundle,/get sofTargetId\(\)\{return sofTargetId;\}/);
+  assert.match(bridge,/x\.id===scope\.sofTargetId/);
+  const start=bridge.indexOf("consumeDoubleClick(event,t)");
+  const end=bridge.indexOf("applyIdentity:",start);
+  assert.ok(start>0&&end>start,"native delegate must own double-click");
+  const handler=bridge.slice(start,end);
+  assert.ok(handler.indexOf("scope?.sofEnabled") <
+            handler.indexOf('sendM4Control'),
+    "SOF must intercept fader reset BEFORE M4/Main fader ownership");
+  assert.match(handler,/requestWireGain\(\{sourceId:t\.id,edgeId:id,levelDb:0\}\)/);
+  assert.match(handler,/intent\("SET_INPUT_GAIN",t,\{valueDb:0\}\)/);
+});
