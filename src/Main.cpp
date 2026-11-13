@@ -228,6 +228,19 @@ private:
     bool wasVisible_ = false;
 };
 
+// A post-install GUI probe must not open the owner's last audio interface,
+// restore or overwrite the last .smix, or automatically resume live output.
+// Only the supervisor creates the canonical 36-character GUID env token.
+static bool isAutoUpdateHealthProbe()
+{
+#if defined(_WIN32)
+    const auto token = juce::SystemStats::getEnvironmentVariable ("ARSONMIX_UPDATE_PROBE", {});
+    return token.length() == 36 && juce::Uuid (token).toDashedString() == token;
+#else
+    return false;
+#endif
+}
+
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
@@ -318,7 +331,8 @@ public:
         });
         restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
-        catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
+        if (!updaterProbeMode_)
+            catalog_.scanFactoryIfPresent(); // Do not scan even FactoryFX during GUI-only probe.
 #if defined(_WIN32)
         // JUCE owns the real window commands; unlike WebView2 JS, these are
         // synchronous native controls with JUCE's existing resize constrainer.
@@ -390,8 +404,9 @@ public:
         mixerSessionWorker_.finishForShutdown();
         logicalVendorEditor_.reset();
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
-           logicalMixer_.loaded()) {
+        if (!updaterProbeMode_ &&
+            (static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
+             logicalMixer_.loaded())) {
             const auto error=saveMixerSession(resumeMain);
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
@@ -518,6 +533,7 @@ private:
     juce::uint32 webViewStartupTick_ = 0;
     juce::uint32 guiReadyTick_ = 0;
     bool audioEngineStarted_ = false;
+    const bool updaterProbeMode_ = isAutoUpdateHealthProbe();
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     // Opt-in and bounded: message-thread timing only, NEVER the audio callback.
@@ -6663,8 +6679,9 @@ private:
 #if defined(_WIN32)
         // A startup splash can delay HWND creation; attach once the real JUCE
         // peer exists. Never install a low-level keyboard hook.
-        if(auto* peer=getPeer())
-            hotkeys_.attach(peer->getNativeHandle());
+        if (!updaterProbeMode_)
+            if(auto* peer=getPeer())
+                hotkeys_.attach(peer->getNativeHandle());
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         // Always disabled unless the user explicitly starts a bounded trace.
@@ -6703,10 +6720,15 @@ private:
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
             if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog
-            showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
-                                     " Check the WebView2 Runtime and browser-cache folder permissions.");
+            if (!updaterProbeMode_)
+                showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
+                                         " Check the WebView2 Runtime and browser-cache folder permissions.");
             return;
         }
+        // Health probes verify WebView/native readiness without opening any
+        // audio device, restoring plugins or writing a replacement .smix.
+        if (updaterProbeMode_ && audioEngineStarted_)
+            return;
         // First visible GUI frame must precede device discovery. Reuse the
         // existing timer; never add a worker or poll the audio callback.
         if (!audioEngineStarted_)
@@ -6715,6 +6737,12 @@ private:
                 juce::Time::getMillisecondCounter() - guiReadyTick_ < 150u)
                 return;
             audioEngineStarted_ = true;
+            if (updaterProbeMode_)
+            {
+                diagnostics_.record ("UPDATER_GUI_PROBE", "Native bridge ready; device and session intentionally untouched");
+                if (onStartupStage_) onStartupStage_ (2);
+                return;
+            }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
             startupError_ = engine_.start (saved.get());
@@ -7003,7 +7031,8 @@ public:
 #endif
         // Paint the approved dark native splash BEFORE browser cache I/O,
         // WebView2 initialization, device scan or native console construction.
-        splash_ = std::make_unique<ArSonMixStartupSplash>();
+        if (!isAutoUpdateHealthProbe())
+            splash_ = std::make_unique<ArSonMixStartupSplash>();
         startTimer (90); // one-shot handoff after Windows first paint
     }
     void timerCallback() override
@@ -7022,9 +7051,18 @@ public:
         if (startupAttempted_)
         {
 #if defined(_WIN32)
-            // Four-Hz control timer, sample tiny updater metadata every 10s.
-            // No network, hashing, disk writes or prompts in the PCM callback.
-            if (++updatePromptTicks_ % 40 == 0)
+            if (isAutoUpdateHealthProbe())
+            {
+                // Give the supervisor time to observe GUI_READY_NO_AUDIO,
+                // then quit by JUCE's ordinary message-thread teardown.
+                if (updateProbeCompleteTick_ != 0 &&
+                    juce::Time::getMillisecondCounter() - updateProbeCompleteTick_ >= 3500u)
+                {
+                    systemRequestedQuit();
+                    return;
+                }
+            }
+            else if (++updatePromptTicks_ % 40 == 0)
                 serviceSmartUpdateAcknowledgement();
 #endif
             return;
@@ -7069,16 +7107,23 @@ public:
                         .getChildFile ("health");
                     if (healthDir.createDirectory().wasOk())
                         healthDir.getChildFile (probe + ".ready")
-                            .replaceWithText ("GUI_READY");
+                            .replaceWithText ("GUI_READY_NO_AUDIO");
                 }
 #endif
 
 
-                if (window_) window_->toFront (true);
+                if (isAutoUpdateHealthProbe())
+                {
+                    if (window_) window_->setVisible (false);
+                    updateProbeCompleteTick_ = juce::Time::getMillisecondCounter();
+                }
+                else if (window_)
+                    window_->toFront (true);
             }
         });
 #if defined(_WIN32)
-        launchSmartUpdater (false);
+        if (!isAutoUpdateHealthProbe())
+            launchSmartUpdater (false);
 #endif
         // Opaque cover exactly matches the large HWND, not a small 740×420
         // card leaving white WebView2 edges exposed during first paint.
@@ -7102,7 +7147,8 @@ public:
         // Avoid starting setup while Windows is signing out/shutting down:
         // Windows may terminate installer midway through file replacement.
         // A staged transaction remains available on the next normal exit.
-        if (!innoIsClosing && ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
+        if (!innoIsClosing && !isAutoUpdateHealthProbe() &&
+            ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
             launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
         {
@@ -7219,6 +7265,7 @@ private:
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
     int updatePromptTicks_ = 0;
+    juce::uint32 updateProbeCompleteTick_ = 0;
     juce::String lastUpdatePromptedSha_;
 #endif
     std::unique_ptr<ArSonMixStartupSplash> splash_;
