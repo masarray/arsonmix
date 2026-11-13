@@ -140,7 +140,10 @@ public:
             // Absorption on the reflected path only; direct measured HRTF
             // stays unchanged. Mild low pass preserves source intelligibility.
             lowpass_[s]+=.27f*(x[s]-lowpass_[s]);
-            history_[s][write_]=.70f*x[s]+.30f*lowpass_[s];
+            const float reflectedSample=.70f*x[s]+.30f*lowpass_[s];
+            history_[s][write_]=reflectedSample;
+            if(directionalHrir_)
+                history_[s][write_+ringFrames]=reflectedSample;
         }
         amount_+=amountSlew_*(amountTarget_-amount_);
         // Bound shutdown to a finite 10-12 time-constant fade, then
@@ -162,12 +165,15 @@ public:
                     const int d=static_cast<int>(delay);
                     const float frac=delay-d;
                     const int idx=(write_-d)&(ringFrames-1);
-                    const auto& signal=history_[s];
+                    // Doubled mirrored ring: both accesses are contiguous,
+                    // avoiding a modulo/mask per FIR tap, including at wrap.
+                    // Physical audio sample sequence is otherwise identical.
+                    const float* signal=history_[s].data()+ringFrames+idx;
+                    const float oneMinusFrac=1.f-frac;
                     float l=0.f,r=0.f;
                     for(int k=0;k<hrir::taps;++k){
-                        const int at=(idx-k)&(ringFrames-1);
-                        const float v=(1.f-frac)*signal[at]+
-                            frac*signal[(at-1)&(ringFrames-1)];
+                        const float v=oneMinusFrac*signal[-k]+
+                            frac*signal[-k-1];
                         auto& hL=p.kernel[0][k];
                         auto& hR=p.kernel[1][k];
                         hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
@@ -287,7 +293,9 @@ private:
         primed_=true;
     }
     static_assert((ringFrames&(ringFrames-1))==0);
-    std::array<std::array<float,ringFrames>,sourceCount> history_{};
+    // The second half mirrors the first only in P2, yielding contiguous
+    // 140-tap windows even across the circular buffer wrap.
+    std::array<std::array<float,ringFrames*2>,sourceCount> history_{};
     std::array<std::array<Tap,wallCount>,sourceCount> tap_{};
     std::array<float,sourceCount> lowpass_{};
     using Bank=const std::int16_t (*)[2][hrir::taps];
