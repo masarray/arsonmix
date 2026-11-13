@@ -32,22 +32,18 @@ const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
  window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const angle=(v)=>((v%360)+360)%360;
-// Listener faces the BOTTOM of this top-down stage.
-// Acoustic coordinates stay fixed: FRONT=0°, RIGHT=+90°, REAR=180°,
-// LEFT=-90°. When facing down, anatomical RIGHT appears screen-left.
-// Perspective projection is presentation-only. Never remap the HRTF azimuth:
-// 0° FRONT (screen bottom), +90° listener RIGHT (screen left).
-// All emitters lie on one physically plausible horizontal ellipse;
- // its rear half is occluded by the head and near half overlays the bust.
+// Top-down listener faces the TOP: FRONT=0°, RIGHT=+90°, REAR=180°,
+// LEFT=-90°. Presentation-only SVG projection; native HRIR ITD/ILD
+// and audio rotation coordinates NEVER change.
 const STAGE=Object.freeze({x:200,y:174,rx:148,ry:83});
 const stagePoint=(azimuthDegrees)=>{
  const rad=angle(azimuthDegrees)*Math.PI/180;
- return {x:STAGE.x-STAGE.rx*Math.sin(rad),
-         y:STAGE.y+STAGE.ry*Math.cos(rad)};
+ return {x:STAGE.x+STAGE.rx*Math.sin(rad),
+         y:STAGE.y-STAGE.ry*Math.cos(rad)};
 };
 const stageAzimuth=(screenX,screenY)=>
- Math.atan2((STAGE.x-screenX)/STAGE.rx,
-            (screenY-STAGE.y)/STAGE.ry)*180/Math.PI;
+ Math.atan2((screenX-STAGE.x)/STAGE.rx,
+            (STAGE.y-screenY)/STAGE.ry)*180/Math.PI;
 // At SPREAD=0 the two actual HRIR directions coincide. Separate the
 // drawings (not their acoustic coordinates) tangentially, with tiny tethers
 // identifying the shared acoustic point. L and R remain independently draggable.
@@ -59,8 +55,8 @@ const displayPair=(azimuths)=>{
  const n=Math.hypot(tangent.x,tangent.y)||1;
  const offset=Math.max(0,(46-distance)*0.5);
  return anchors.map((anchor,i)=>({
-  anchor,visible:{x:anchor.x+(i===0?1:-1)*offset*tangent.x/n,
-                  y:anchor.y+(i===0?1:-1)*offset*tangent.y/n}
+  anchor,visible:{x:anchor.x+(i===0?-1:1)*offset*tangent.x/n,
+                  y:anchor.y+(i===0?-1:1)*offset*tangent.y/n}
  }));
 };
 const root=document.createElement("section");
@@ -76,27 +72,41 @@ root.innerHTML=[
  '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-down head and two draggable binaural emitters">',
  '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263b49"/><stop offset=".65" stop-color="#152533"/><stop offset="1" stop-color="#0a1622"/></radialGradient>',
  '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#7fdae7" stop-opacity=".14"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
- '<linearGradient id="skRail" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#355969"/><stop offset="1" stop-color="#8bdbe6"/></linearGradient></defs>',
+ '<linearGradient id="skRail" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#80dce8"/><stop offset="1" stop-color="#355969"/></linearGradient>',
+ '<linearGradient id="skBackSuit" x1="0" x2=".85" y1="0" y2="1"><stop stop-color="#9ee9ff"/><stop offset=".32" stop-color="#3ca8d3"/><stop offset=".77" stop-color="#14648b"/><stop offset="1" stop-color="#0b3c5d"/></linearGradient>',
+ '<radialGradient id="skCrown" cx=".43" cy=".24" r=".79"><stop stop-color="#b4f1ff"/><stop offset=".27" stop-color="#6ec8ec"/><stop offset=".63" stop-color="#338fbc"/><stop offset="1" stop-color="#115477"/></radialGradient>',
+ '<linearGradient id="skNeck" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#2b81ad"/><stop offset=".45" stop-color="#88d6f4"/><stop offset="1" stop-color="#1a6389"/></linearGradient>',
+ '<filter id="skAvatarGlow" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="4"/></filter></defs>',
  '<rect width="400" height="330" rx="10" fill="url(#skBg)"/>',
  '<ellipse cx="200" cy="174" rx="148" ry="83" fill="url(#skFloor)"/>',
  '<path class="sk-axis" d="M200 79V270 M45 174H355" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
  // Far orbit belongs BEHIND the listener; true perspective elliptical rail.
- '<path id="skRearArc" class="sk-orbit-rear" d="M52 174 A148 83 0 0 1 348 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
- '<path class="sk-secondary-rail" d="M64 174 A136 70 0 0 1 336 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
- '<text class="sk-direction" x="200" y="55" text-anchor="middle">REAR</text>',
- '<text class="sk-direction sk-front" x="200" y="317" text-anchor="middle">FRONT</text>',
- '<text class="sk-direction" x="11" y="149">RIGHT</text><text class="sk-direction" x="352" y="149">LEFT</text>',
- // Image stays a single 128px transparent original: never canvas-generated DSP.
- '<ellipse class="sk-head-shadow" cx="200" cy="206" rx="72" ry="32" fill="#031621" fill-opacity=".3"/>',
- // Rear source icons are painted BELOW the person's head, not in front of it.
+ '<path id="skRearArc" class="sk-orbit-rear" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
+ '<path class="sk-secondary-rail" d="M64 174 A136 70 0 0 0 336 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
+ '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
+ '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
+ '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
+ // Original vector back-view listener: anatomy and shoulders face UP.
+ // Do not rotate the old face PNG upside-down or alter native HRTF angles.
+ '<ellipse class="sk-head-shadow" cx="200" cy="242" rx="88" ry="30" fill="#031621" fill-opacity=".34"/>',
  '<g id="skRearSources" class="sk-rear-sources"></g>',
- '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="107" y="73" width="186" height="190" preserveAspectRatio="xMidYMid meet" aria-label="Listener facing bottom" pointer-events="none"/>',
+ '<g id="skListenerArt" class="sk-listener-art" aria-label="Listener back of head facing top" pointer-events="none">',
+ '<path d="M121 250 Q122 216 151 208 Q165 204 181 204 L219 204 Q235 204 250 210 Q279 221 279 250 Q200 278 121 250Z" fill="#0d87b2" opacity=".2" filter="url(#skAvatarGlow)"/>',
+ '<path d="M118 247 Q123 217 150 210 Q169 202 180 203 L220 203 Q235 204 251 211 Q277 223 282 247 Q245 271 200 266 Q154 270 118 247Z" fill="url(#skBackSuit)" stroke="#77c6e7" stroke-opacity=".54" stroke-width="1.3"/>',
+ '<path d="M152 211 Q174 229 200 229 Q226 229 249 212" fill="none" stroke="#a9ebfb" stroke-opacity=".22" stroke-width="2"/>',
+ '<path d="M183 189 L183 214 Q199 226 217 214 L216 189Z" fill="url(#skNeck)" stroke="#7bcbea" stroke-opacity=".5"/>',
+ '<ellipse cx="159" cy="170" rx="9" ry="17" fill="#3b9ec9" stroke="#9ae1f3" stroke-opacity=".45"/>',
+ '<ellipse cx="241" cy="170" rx="9" ry="17" fill="#206f9c" stroke="#9ae1f3" stroke-opacity=".45"/>',
+ '<path d="M200 99 C171 99 157 118 155 151 Q151 185 171 201 Q184 211 200 211 Q216 211 229 201 Q249 183 245 151 C243 118 228 99 200 99Z" fill="url(#skCrown)" stroke="#a0e8f9" stroke-opacity=".68" stroke-width="1.7"/>',
+ '<path d="M181 113 Q200 102 219 113 M169 142 Q182 124 194 126 M207 126 Q222 126 232 145" fill="none" stroke="#c7f7ff" stroke-opacity=".26" stroke-width="2.6" stroke-linecap="round"/>',
+ '<path d="M172 188 Q197 213 229 189" fill="none" stroke="#134e75" stroke-opacity=".28" stroke-width="2.4"/>',
+ '</g>',
  // Near orbit overlays lower bust, forming ONE plausible 3D spatial ring.
- '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 1 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
- '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 1 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
+ '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
+ '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
  // Near-field speaker icons are painted above the bust, with perspective.
  '<g id="skFrontSources" class="sk-front-sources"></g>',
- '<path d="M193 283 L200 291 L207 283" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
+ '<path d="M193 68 L200 60 L207 68" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
  // No circle markers: each emitter is a small raised studio monitor.
  // Offsets at coincident directions are display-only; native azimuth stays equal.
  '<g class="sk-src" data-index="0" tabindex="0" role="slider" aria-label="Left virtual source position" aria-valuemin="-180" aria-valuemax="180">',
