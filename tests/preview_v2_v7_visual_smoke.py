@@ -99,7 +99,7 @@ def audit_geometry(page, title):
 
 
 def audit_v29_operator_collapse(page, label):
-    """Real published V29: one comfort layout, frame-synchronized 50:50.
+    """Real published V60: one comfort layout, bounded fader-priority split.
 
     Keep all eight actual operator fold combinations, not the obsolete V7
     fixed-viewport fader-height law. Legacy V7 geometry remains independently
@@ -169,12 +169,12 @@ def audit_v29_operator_collapse(page, label):
                 assert data["wireDeck"]!="none" and data["wireTray"]!="none",(
                     label,status,"WIRE dock unexpectedly hidden",data)
                 assert data["sendExpanded"]=="true",(label,status,"WIRE rail expand ARIA drift")
-            # For ALL expanded upper modules the native V29 50:50 split
-            # must be actual computed geometry, not a forced old pixel target.
+            # V60 genuinely lengthens the fader only from spare FX area;
+            # preserve bounded geometry even with every bay expanded.
             if not any(target):
                 upper=rows["pan"]["strip"]["top"]-data["root"]["top"]
                 lower=rows["footer"]["strip"]["bottom"]-rows["pan"]["strip"]["top"]
-                assert abs(upper-lower)<=3,(label,"V29 halves must be equal",upper,lower,data)
+                assert -3<=lower-upper<=100,(label,"V60 tactile fader priority must be bounded",upper,lower,data)
             assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').get_attribute("data-wire-main-edge")==initial_edge,(
                 label,status,"fold changed accepted MAIN EdgeId")
     finally:
