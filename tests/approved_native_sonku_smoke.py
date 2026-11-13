@@ -116,7 +116,7 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap #skRearArc").count()==1
     assert editor.locator("#skMap #skFrontArc").count()==1
-    # Painter's ordering is 3D: far rail -> head PNG -> near rail.
+    # Painter's ordering is 3D: far rail -> back-facing listener -> near rail.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const rear=map.querySelector('#skRearArc');
@@ -141,21 +141,19 @@ def exercise(browser,out,width,height):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
-    assert art.count()==1 and art.get_attribute("href")=="assets/sonku-listener-top.png"
-    # Image is actually available inside the assembled native GUI bundle.
-    assert page.evaluate("""async () => new Promise(resolve => {
-      const image=new Image();
-      image.onload=()=>resolve(image.naturalWidth>=128 && image.naturalHeight>=128);
-      image.onerror=()=>resolve(false);
-      image.src='assets/sonku-listener-top.png';
-    })"""), "Listener PNG did not load"
+    assert art.count()==1 and "facing top" in art.get_attribute("aria-label")
+    # An original back-of-head vector replaces the physically incorrect
+    # upside-down face PNG. Same SVG is bundled directly into /preview/.
+    assert art.locator("path").count()>=6
+    assert editor.locator("#skMap #skCrown").count()==1
+    assert editor.locator("#skMap #skBackSuit").count()==1
     # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
     # HTMLElement.innerText for these nodes. Read SVG textContent and verify
     # the actual anchors, so front/rear cannot silently flip in the GUI.
     direction=editor.locator("#skMap .sk-direction")
     labels=direction.evaluate_all(
         "(nodes)=>nodes.map(n=>({text:n.textContent.trim(),x:Number(n.getAttribute('x')),y:Number(n.getAttribute('y'))}))")
-    assert [x["text"] for x in labels]==["REAR","FRONT","RIGHT","LEFT"],labels
+    assert [x["text"] for x in labels]==["FRONT","REAR","LEFT","RIGHT"],labels
     assert labels[0]["y"]<60 and labels[1]["y"]>290,labels
     assert labels[2]["x"]<50 and labels[3]["x"]>300,labels
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
@@ -197,8 +195,8 @@ def exercise(browser,out,width,height):
         applied=command["requestId"])
     assert editor.locator("#skMotion").inner_text()=="STATIC"
     assert "ACCEPTED" in editor.locator("#skHint").inner_text()
-    # Verify all four acoustic directions against the human figure:
-    # face points DOWN; anatomical RIGHT appears screen LEFT.
+    # Verify native HRTF azimuth is unchanged while screen orientation
+    # now matches the real user: FRONT=TOP, anatomical RIGHT=SCREEN RIGHT.
     def pose(degrees):
         page.wait_for_timeout(270)
         settings={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
@@ -223,10 +221,10 @@ def exercise(browser,out,width,height):
             expected="skFrontSources" if degrees==0 else "skRearSources"
             assert layer==expected,(degrees,layer,expected)
         return data[0]["ax"],data[0]["ay"]
-    x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
-    x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
-    x,y=pose(180);assert abs(x-200)<1 and y<100,("REAR",x,y)
-    x,y=pose(-90);assert x>335 and abs(y-174)<1,("LEFT",x,y)
+    x,y=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
+    x,y=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
+    x,y=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
+    x,y=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
     # Actual pointer drag is taken from the VISIBLE L speaker at -90,
     # toward the physical near-ellipse FRONT, not the hidden anchor.
     svg=editor.locator("#skMap").bounding_box()
