@@ -107,6 +107,15 @@
 .lms-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .lms-field label{display:block;color:#9bb6bf;font-size:10px;margin-bottom:6px}
 .lms-field input,.lms-field select{width:100%;max-width:100%}
+.lms-native-bar{display:flex;align-items:center;justify-content:space-between;
+ flex-wrap:wrap;gap:8px;padding:7px 10px;margin-bottom:10px;
+ border:1px solid #334b57;border-radius:4px;background:#132630;
+ color:#b9d5de;font-size:10px}
+.lms-native-bar strong{font-weight:600;color:#d3edf2;letter-spacing:.03em}
+.lms-native-bar small{font-size:9px;color:#91acb6}
+.lms-native-bar .lms-control-row{margin:0;gap:6px}
+.lms-native-bar .lms-btn{min-height:24px;font-size:10px;padding:4px 9px}
+.lms-native-bar .lms-btn:disabled{opacity:.4;cursor:not-allowed}
 .lms-tip{border-left:2px solid #82b7c0;color:#a8c6cd;padding:5px 10px;
  font-size:10px;margin:12px 0}
 .lms-warn{border-left:2px solid #c3a06d;color:#e4c9a1;padding:5px 10px;font-size:10px}
