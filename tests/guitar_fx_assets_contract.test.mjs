@@ -136,3 +136,19 @@ test("Guitar FX stereo-linked gate and visible hold/release are real native cont
                      "12.f+228.f*normalized"])
   assert(editor.includes(value),"gate values must use engineering dB/ms labels");
 });
+
+test("Guitar FX 2x polyphase processing preserves an authoritative fixed PDC",()=>{
+ const core=readFileSync(resolve(root,"engine/builtin_fx/guitar/GuitarRigCore.h"),"utf8");
+ const proc=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigProcessor.h"),"utf8");
+ const overs=readFileSync(resolve(root,"engine/builtin_fx/guitar/GuitarOversampling2x.h"),"utf8");
+ const portable=readFileSync(resolve(root,"tests/guitar_fx_core_pcm_test.cpp"),"utf8");
+ assert(overs.includes("static constexpr int latencySamples=16"));
+ assert(core.includes("processingLatencySamples=") &&
+        core.includes("cabinetLatencySamples+oversamplingLatencySamples"));
+ assert(proc.includes("setLatencySamples(armix::guitarfx::GuitarRigCore::processingLatencySamples)"));
+ assert(overs.includes("upsamplePair(") && overs.includes("decimateEven("));
+ assert(core.includes("const float matchedDry=oversampling_[ch].bypassDelay(input)"),
+        "clean path must have same fixed PDC and warm dry history");
+ assert(portable.includes("assert(aliasedThirdDb < -35.0)"),
+        "folded 21kHz alias must remain a hard regression gate");
+});

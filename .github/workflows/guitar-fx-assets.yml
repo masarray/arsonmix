@@ -41,7 +41,7 @@ jobs:
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_program_model_test.cpp -o /tmp/guitar-fx-program-model-test
           /tmp/guitar-fx-program-model-test
-      - name: Verify actual wet guitar PCM and 32-sample FIR latency without JUCE
+      - name: Verify wet PCM, 2x antialias and fixed 48-sample PDC without JUCE
         run: |
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic tests/guitar_fx_core_pcm_test.cpp -o /tmp/guitar-fx-core-pcm-test
           /tmp/guitar-fx-core-pcm-test

@@ -25,11 +25,18 @@
 
 ## New engine performance verification
 - Synthetic cabinet FIR is 65-tap symmetric, reduced to 33 multiply pairs per sample per channel. This is a code-level operation count, **not** measured wall-clock performance. Benchmark one, four and eight guitar inserts before claiming CPU savings on ASIO hardware.
-- Confirm no spectral change, chirp, ringing asymmetry or PDC change with 44.1/48/96 kHz source. Compare silent / 64-frame and 128-frame blocks in the real interface; pure C++ regression covers exact output on deterministic input and 32-sample FIR latency.
+- Verify spectral character and transient level by ear across 44.1/48/96 kHz. The intentional 2× antialias path does change preamp harmonics; avoid claims of bit-identical reproduction of pre-M2 audio. Measure exactly **48 samples total fixed GFX PDC** (16 preamp + 32 CAB), with the same timing for Drive/Amp/CAB bypass. Compare 64/128/256 frames in the real interface.
 - Model loading / NAM captures and commercial cabinet IRs are explicitly not supported in M1; see [pro engineering decisions](GFX_PRO_WORKFLOW_AND_DSP_ARCHITECTURE.md).
 
 ## GFX Gate engineering qualification
 - Feed a real guitar input with a quiet stereo echo/ambience return at one side. With Gate ON, adjust threshold close to idle-noise floor. The stereo image must remain stable because L/R attenuation is linked; no unintended dual mono gating.
 - Pluck a note, vary HOLD (0–120 ms) and RELEASE (12–240 ms). Short hold/release should damp background noise faster; longer values should preserve decaying guitar notes. Compare against gate OFF using level-matched reference; no invented VU movement.
 - Sweep Threshold −80…−30 dB; fast attacks must not audibly suppress the first pluck. Report pops/flutter, and device/buffer/rate changes at 44.1/48/96kHz.
-- The active DSP is native-rate nonlinear drive/amp. Inspect measured alias baseline in the fast core-test log before planning an optional 2x/4x anti-alias mode. Do not claim NAM capture fidelity or alias-free sound.
+- The Drive/Amp are now **2× oversampled** using fixed FIR, not native-rate. Portable high-gain 9kHz→21kHz alias improved from −16.6682 to −57.1979 dBc at 48 kHz with cabinet bypassed. Test real guitar buzz/brightness and level-match before/after switching models or bypass; no claim of NAM capture fidelity or alias-free output across the full spectrum.
+
+## M2 2× antialiasing / ASIO performance acceptance
+
+- Observe the exact installed build SHA after 2× antialias was merged; the earlier M1.6 FAT archive does **not** contain this processing.
+- In a live Hi-Z guitar channel test clean/pedal drive/lead with CAB ON and OFF. Compare headroom, harshness/alias fizz and output loudness; the 2× algorithm must be subjectively acceptable rather than only passing a single spectral fixture.
+- Repeat with 1, 4 and 8 simultaneous Guitar FX inserts at 44.1, 48, and 96 kHz, 64/128/256 frames if supported by the interface. Record ASIO interface driver, xruns, actual loopback latency and CPU; the GitHub 0.75/2.93/5.77% figures are not a guaranteed customer PC benchmark.
+- Verify 48-sample DSP PDC remains matched during CAB/Drive/Amp ON→OFF, rack bypass and dynamic WIRE reconnection. Fast toggle must not output stale samples or unaligned echoes; the matched dry preamp delay remains warm even when distortion is enabled.
