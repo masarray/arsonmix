@@ -1075,7 +1075,11 @@ function kickWireSpring(sourceId,destId){
    Single visual-only transient, no synthetic route or native DSP mutation.
    The travelling wave spans the shrinking jacket and the detached plug
    is a FREE end: it moves with the final wave rather than being pinned. */
-const WIRE_RETRACT_MS=520;
+/* V66 fast, lively elastic recoil: OUT stays fixed while a travelling
+   whip reaches the entire shrinking cable. The disconnected dot is free:
+   a damped tip response makes it wobble rather than ride a rigid chord.
+   Visual-only; graph REMOVE always commits before this animation exists. */
+const WIRE_RETRACT_MS=330;
 let wireRetractToken=0,wireRetractOverlay=null;
 function stopWireRetraction(){
  ++wireRetractToken;
@@ -1083,46 +1087,56 @@ function stopWireRetraction(){
 }
 function wireRetractPose(x0,y0,rx,ry,elapsedMs){
  const p=Math.max(0,Math.min(1,elapsedMs/WIRE_RETRACT_MS));
- // 42% shorter than V64, brisk at the beginning and softly decelerating.
- const remaining=Math.pow(1-p,2.25);
+ // Fast pull from the first frame, no preceding fall/hang/idle phase.
+ const remaining=Math.pow(1-p,2.65);
  const x=x0+(rx-x0)*remaining,y=y0+(ry-y0)*remaining;
  const chord=Math.hypot(rx-x0,ry-y0);
- const length01=Math.max(0,Math.min(1,(chord-85)/270));
+ const length01=Math.max(0,Math.min(1,(chord-90)/270));
  const longMix=length01*length01*(3-2*length01);
- // The pulse traverses the *whole* cable before reel-in is over.
- // OUT -> FREE end, then leaves a short damped trailing tail.
- const front=1.5*(1-Math.pow(1-Math.min(1,p/.55),1.35));
- const width=.62-.25*longMix; // fewer smoother lobes on short cables
- const sag=Math.min(46,Math.max(9,Math.sqrt(chord)*2.1))*
-  Math.pow(remaining,.72);
- const amplitude=Math.min(19,Math.max(7,Math.sqrt(chord)*.95))*
-  (.42+.58*longMix)*Math.pow(remaining,.47)*Math.min(1,p/.095);
- return {x,y,remaining,sag,front,width,amplitude,phase:'reel'};
+ // Front originates at OUT and reaches the loose tip early enough that
+ // the tip can swing repeatedly BEFORE the wire disappears.
+ const front=1.42*(1-Math.pow(1-Math.min(1,p/.40),1.35));
+ const catchUp=Math.max(0,Math.min(1,(front-.78)/.30));
+ const width=.59-.24*longMix;
+ const sag=Math.min(44,Math.max(10,Math.sqrt(chord)*2.1))*
+  Math.pow(remaining,.78);
+ const amplitude=Math.min(32,Math.max(14,Math.sqrt(chord)*1.5))*
+  (.46+.54*longMix)*Math.pow(remaining,.29)*
+  Math.min(1,p/.07)*Math.min(1,chord*remaining/55);
+ const recoil=amplitude*.13*catchUp*
+  Math.sin(2*Math.PI*Math.max(0,p-.19)/.26);
+ return {p,x,y,remaining,sag,front,catchUp,width,amplitude,recoil,phase:'reel'};
 }
 function wireRetractWave(pose,t){
- const passed=pose.front-t; // first near OUT, then all along the cable
- if(passed<=0)return 0;
- const sourceAnchor=Math.min(1,t/.035);
- // Unlike the connected socket, the unplugged end is not tethered:
- // the sine displaces the plug itself, so it never looks rigid.
- return -pose.amplitude*Math.sin(2*Math.PI*passed/pose.width)*
-  Math.exp(-1.05*passed-.32*t)*sourceAnchor;
+ const passed=pose.front-t;
+ const travelling=passed>0?
+  -Math.sin(2*Math.PI*passed/pose.width)*
+  Math.exp(-.77*passed-.35*t):0;
+ // The travelling pulse excites an inertial after-swing at the FREE tip.
+ // Its influence smoothly increases toward that end, without moving OUT.
+ const lag=Math.max(0,pose.p-.19);
+ const tipSwing=1.15*pose.catchUp*Math.sin(2*Math.PI*lag/.26)*
+  Math.exp(-1.25*lag)*Math.pow(t,1.65);
+ return pose.amplitude*Math.min(1,t/.04)*(travelling+tipSwing);
 }
 function wireRetractPathData(x0,y0,rx,ry,elapsedMs){
  const pose=wireRetractPose(x0,y0,rx,ry,elapsedMs);
  const dx=pose.x-x0,dy=pose.y-y0;
  const norm=Math.max(1,Math.hypot(dx,dy));
- const nx=-dy/norm,ny=dx/norm;
+ const nx=-dy/norm,ny=dx/norm,tx=dx/norm,ty=dy/norm;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64;
   const wave=wireRetractWave(pose,t);
-  const x=x0+dx*t+nx*wave;
-  const y=y0+dy*t+pose.sag*Math.sin(Math.PI*t)+ny*wave;
+  const surge=pose.recoil*t*t;
+  const x=x0+dx*t+nx*wave+tx*surge;
+  const y=y0+dy*t+pose.sag*Math.sin(Math.PI*t)+ny*wave+ty*surge;
   d+=' L '+x.toFixed(1)+' '+y.toFixed(1);
  }
  const endWave=wireRetractWave(pose,1);
- return {d,pose:{...pose,tipX:pose.x+nx*endWave,tipY:pose.y+ny*endWave}};
+ return {d,pose:{...pose,
+  tipX:pose.x+nx*endWave+tx*pose.recoil,
+  tipY:pose.y+ny*endWave+ty*pose.recoil}};
 }
 function startWireRetraction(sourceId,releasePoint){
  stopWireRetraction();
@@ -1170,7 +1184,7 @@ function startWireRetraction(sourceId,releasePoint){
   // Visual plug follows the same free endpoint as the final SVG sample.
   plug.setAttribute('cx',shape.pose.tipX.toFixed(1));
   plug.setAttribute('cy',shape.pose.tipY.toFixed(1));
-  plug.setAttribute('r',Math.max(0,5.2*Math.pow(shape.pose.remaining,.6)).toFixed(2));
+  plug.setAttribute('r',Math.max(0,5.8*Math.pow(shape.pose.remaining,.48)).toFixed(2));
   if(elapsed<WIRE_RETRACT_MS)requestAnimationFrame(step);
   else stopWireRetraction(); // no ghost cable or hitbox
  }

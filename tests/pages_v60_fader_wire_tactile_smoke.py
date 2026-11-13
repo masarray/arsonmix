@@ -23,13 +23,15 @@ def source_contract():
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
                  "WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160",
-                 "const WIRE_RETRACT_MS=520",
+                 "const WIRE_RETRACT_MS=330",
+                 "const tipSwing=1.15*pose.catchUp",
+                 "const recoil=amplitude*.13*catchUp",
                  "function wireRetractPose(x0,y0,rx,ry,elapsedMs)",
                  "function wireRetractWave(pose,t)",
                  "function wireRetractPathData(x0,y0,rx,ry,elapsedMs)",
                  "const endWave=wireRetractWave(pose,1)",
                  "plug.setAttribute('cy',shape.pose.tipY.toFixed(1))",
-                 "const passed=pose.front-t; // first near OUT, then all along the cable",
+                 "const passed=pose.front-t;",
                  "svg.style.clipPath='none'",
                  "const width=.65-.29*longMix",
                  "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
@@ -342,49 +344,52 @@ def test_replug_and_retract(page):
     new_jacket=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-5"],#wireLayer path.wire-incoming-line[data-cable-key="1-5"]').first
     assert " C " in new_jacket.get_attribute("d"),"replug must settle to canonical cubic"
 
-    # Drag receiver to a valid blank WIRE bay. The committed graph REMOVE
-    # is immediate; the detached jacket is visual-only and actively reels
-    # back to OUT. V64 intentionally has NO falling / hanging phase.
+    # Observe the actual detached SVG during an accepted pointer unplug.
+    # A 330ms reel MUST be measured with RAF/DOM evidence, not a sequence
+    # of slow locator reads that might miss a fast short-lived animation.
+    page.evaluate("""()=>{
+      window.__v66ReelFrames=[];
+      window.__v66ReelObserver=new MutationObserver(()=>{
+        const layer=document.querySelector('#wireRetractLayer');
+        const plug=layer?.querySelector('[data-wire-retract-plug]');
+        const jacket=layer?.querySelector('[data-wire-retract-jacket]');
+        if(!plug||!jacket)return;
+        const x=Number(plug.getAttribute('cx')),y=Number(plug.getAttribute('cy'));
+        if(Number.isFinite(x)&&Number.isFinite(y))
+          window.__v66ReelFrames.push({x,y,r:Number(plug.getAttribute('r')),
+                                      phase:layer.dataset.wirePhase,
+                                      d:jacket.getAttribute('d')});
+      });
+      window.__v66ReelObserver.observe(document.getElementById('viewport'),
+        {childList:true,subtree:true,attributes:true,attributeFilter:['cx','cy','d']});
+    }""")
     other=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
     t=dst.bounding_box();q=other.bounding_box()
     blank_x=(cx(t)+cx(q))/2
     blank_y=cy(t)
     page.mouse.move(cx(t),cy(t));page.mouse.down()
     page.mouse.move(blank_x,blank_y,steps=12);page.mouse.up()
-    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0,\
-        "unplug must remove committed edge immediately"
-    overlay=page.locator('#wireRetractLayer[data-wire-retract="1"]')
-    assert overlay.count()==1,"accepted unplug must have transient cable"
-    assert overlay.get_attribute("data-wire-phase")=="reel"
-    assert overlay.evaluate("(el)=>getComputedStyle(el).pointerEvents")=="none"
-    jacket=overlay.locator('[data-wire-retract-jacket]')
-    plug=overlay.locator('[data-wire-retract-plug]')
-    first=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    first_path=jacket.get_attribute("d")
-    page.wait_for_timeout(175)
-    moved=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0, \
+        "unplug must REMOVE the graph edge immediately"
+    page.wait_for_timeout(450)
+    frames=page.evaluate("window.__v66ReelFrames")
     source_x=cx(src.bounding_box())
-    assert abs(moved[0]-source_x)<abs(first[0]-source_x)-3,\
-        ("unplug cable did not begin retracting immediately",first,moved)
-    assert abs(moved[1]-first[1])<18,("free plug whipped beyond elastic envelope",first,moved)
-    # The free plug must be attached to the *moving wave tip*, not a
-    # rigid circle on the straight interpolation chord.
-    tip_gap=overlay.evaluate("""el=>{
-      const path=el.querySelector('[data-wire-retract-jacket]');
-      const plug=el.querySelector('[data-wire-retract-plug]');
-      const end=path.getPointAtLength(path.getTotalLength());
-      return Math.hypot(end.x-Number(plug.getAttribute('cx')),
-                        end.y-Number(plug.getAttribute('cy')));
-    }""")
-    assert tip_gap<.25,("free plug is detached from the wavy jacket",tip_gap)
-    assert jacket.get_attribute("d")!=first_path,"reel never animated the jacket"
-    assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none"
+    assert len(frames)>=6,("fast plug-out never animated in real browser",frames[:2])
+    distances=[abs(item["x"]-source_x) for item in frames]
+    assert distances[0]>max(25,distances[-1]*2.5), \
+        ("free plug did not reel briskly toward OUT",distances)
+    delta=max(item["y"] for item in frames)-min(item["y"] for item in frames)
+    assert delta>12,("plug dot did not visibly swing with the WIRE",delta)
+    assert frames[-1]["r"]<frames[0]["r"],"free plug does not shrink into OUT"
+    assert all(item["phase"]=="reel" for item in frames),"unexpected fall/hang phase"
+    assert not page.locator('#wireRetractLayer').count(),"reel left ghost visual"
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
+    page.evaluate("window.__v66ReelObserver.disconnect()")
 
-    # Evaluate the very same committed runtime production math. A wave must
-    # launch near OUT first and only later reach the moving free end. Both
-    # physical endpoints must remain welded to their sockets and the source
-    # of the wave must not reverse into IN->OUT plug-in behavior.
-    model=HTML[HTML.index("const WIRE_RETRACT_MS=520"):
+    # Exact production code evaluated in Chromium: a strong pulse starts at
+    # OUT, travels through the middle and far cable, then throws the loose
+    # plug from side to side. It fades to zero as remaining length runs out.
+    model=HTML[HTML.index("const WIRE_RETRACT_MS=330"):
                HTML.index("function startWireRetraction(")]
     physics=page.evaluate("()=>{\n"+model+"""\n
       const chord=400;
@@ -392,45 +397,46 @@ def test_replug_and_retract(page):
         const {d,pose}=wireRetractPathData(0,0,chord,0,ms);
         const ys=d.match(/-?\d+(?:\.\d+)?/g).map(Number);
         const t=i/64;
-        const baseline=pose.sag*Math.sin(Math.PI*t);
-        return ys[2*i+1]-baseline;
+        return ys[2*i+1]-pose.sag*Math.sin(Math.PI*t);
       };
-      const early=wireRetractPathData(0,0,chord,0,135);
-      const middle=wireRetractPathData(0,0,chord,0,220);
-      const flex=wireRetractPathData(0,0,chord,0,175);
+      const early=wireRetractPathData(0,0,chord,0,50);
+      const middle=wireRetractPathData(0,0,chord,0,120);
+      const crest=wireRetractPathData(0,0,chord,0,135);
       const finished=wireRetractPathData(0,0,chord,0,WIRE_RETRACT_MS);
-      const shortPose=wireRetractPose(0,0,80,0,115);
-      const longPose=wireRetractPose(0,0,chord,0,115);
+      const shortPose=wireRetractPose(0,0,80,0,95);
+      const longPose=wireRetractPose(0,0,chord,0,95);
+      const tip=ms=>wireRetractPathData(0,0,chord,0,ms).pose.tipY;
+      const svgTip=crest.d.match(/-?\d+(?:\.\d+)?/g).map(Number).slice(-2);
       return {
-        nearOutEarly:deviation(40,8),farEarly:deviation(40,51),
-        midAfter:deviation(125,32),farAfter:deviation(155,48),
-        freeTipWave:deviation(175,64),
-        sourceAnchor:deviation(175,0),
-        halfwayX:middle.pose.x,earlyX:early.pose.x,
-        tipX:flex.pose.tipX,tipY:flex.pose.tipY,
+        nearOut:deviation(20,8),farEarly:deviation(20,51),
+        middleSwing:deviation(60,32),farSwing:deviation(80,48),
+        tipFirst:tip(100),tipRebound:tip(135),
+        sourceAnchor:deviation(135,0),earlyX:early.pose.x,
+        middleX:middle.pose.x,tipX:crest.pose.tipX,
+        tipY:crest.pose.tipY,svgTip,
         completeX:finished.pose.tipX,completeY:finished.pose.tipY,
         shortAmplitude:shortPose.amplitude,longAmplitude:longPose.amplitude,
         startPhase:early.pose.phase,finishAmplitude:finished.pose.amplitude
       };
     }""")
-    assert abs(physics["nearOutEarly"])>2,("reel has no abrupt OUT-origin whip",physics)
-    assert abs(physics["farEarly"])<.4,("free tip moves before OUT-origin front arrives",physics)
-    assert abs(physics["midAfter"])>2 and abs(physics["farAfter"])>2,\
-        ("wavy must travel through the whole jacket, not just near OUT",physics)
-    assert abs(physics["freeTipWave"])>3,\
-        ("loose plug remains rigid when wave arrives",physics)
-    assert abs(physics["sourceAnchor"])<.25,("OUT socket endpoint shifted",physics)
-    assert 0<physics["halfwayX"]<physics["earlyX"]<270,\
-        ("reel does not accelerate much faster than V64",physics)
-    assert abs(physics["tipY"])>3,("tip never reacts to wave",physics)
+    assert abs(physics["nearOut"])>3 and abs(physics["farEarly"])<.4, \
+        ("impulse must start at OUT, not at the free plug",physics)
+    assert abs(physics["middleSwing"])>7 and abs(physics["farSwing"])>9, \
+        ("wave fails to excite the entire shortening cable",physics)
+    assert abs(physics["tipFirst"])>10 and abs(physics["tipRebound"])>17, \
+        ("dot/loose plug does not swing enough",physics)
+    assert physics["tipFirst"]*physics["tipRebound"]<0, \
+        ("free dot must whip back in the opposite direction",physics)
+    assert abs(physics["sourceAnchor"])<.25,"source OUT socket cannot move"
+    assert 0<physics["middleX"]<physics["earlyX"]<300, \
+        ("retraction speed is not appreciably faster than V65",physics)
+    assert abs(physics["tipY"]-physics["svgTip"][1])<.1 and \
+           abs(physics["tipX"]-physics["svgTip"][0])<.1, \
+        ("free plug circle detached from last path vertex",physics)
     assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
-    assert physics["shortAmplitude"]<physics["longAmplitude"]*.65,\
-        ("one-strip WIRE should not whip as violently as four strips",physics)
+    assert physics["shortAmplitude"]<physics["longAmplitude"]*.7, \
+        ("short cable should remain controlled",physics)
     assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
-    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
-    overlay.wait_for(state="detached",timeout=2500)
-    assert page.locator('#wireRetractLayer').count()==0,"reel left ghost path"
-    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
     page.evaluate("window.__v62Obs.disconnect()")
 
 
@@ -457,7 +463,7 @@ def run():
                 page.close()
         finally:
             browser.close()
-    print("PASS V65 Chromium: fast OUT reel, full-span travelling wave, flexible free plug and no ghost graph")
+    print("PASS V66 Chromium: 330ms fast reel, whole cable ripple and swing-back free dot with no ghost graph")
 
 
 if __name__=="__main__":
