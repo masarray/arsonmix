@@ -79,8 +79,8 @@ assert.doesNotMatch(defer,/engine_|WebView|setAlwaysOnTop|toFront|sleep|Thread::
 assert.match(chrome, /pressedIcon_ = load \(iconPath, kind == juce::DocumentWindow::minimiseButton/);
 assert.match(chrome, /pressedRestoreIcon_ = load \(restorePath/);
 assert.match(chrome, /const bool restoring = kind_ == juce::DocumentWindow::maximiseButton/);
-assert.match(chrome, /down && pressedRestoreIcon_ != nullptr/);
-assert.match(chrome, /down && pressedIcon_ != nullptr/);
+assert.match(chrome, /pressed && pressedRestoreIcon_ != nullptr/);
+assert.match(chrome, /pressed && pressedIcon_ != nullptr/);
 assert.match(chrome, /static std::unique_ptr<juce::Drawable> load \(const char\* path, const char\* ink/);
 const paint = chrome.slice(chrome.indexOf('void paintButton '), chrome.indexOf('private:\n    struct CaptionPalette'));
 assert.doesNotMatch(paint, /Drawable::createFromSVG|XmlDocument::parse|std::make_unique|new juce::/);
