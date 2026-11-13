@@ -927,19 +927,20 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- // A short physical patch cable has little slack: scale its displacement,
- // number of visible lobes AND propagation time, continuously with length.
- // Long cables preserve the user-approved V62 520ms whip and end damping.
+ // V67: keep short jumper cables energetic instead of suppressing their
+ // response to 27%. Length interpolates smoothly into the approved V62
+ // long-cable wave. Both socket endpoints remain mathematically pinned.
  const length01=Math.max(0,Math.min(1,(chord-95)/300));
  const longMix=length01*length01*(3-2*length01);
- const travel=360+160*longMix;
- const width=.65-.29*longMix; // broad single curl at short distances
+ const travel=310+210*longMix;
+ const width=.58-.22*longMix; // readable curl even across adjacent strips
  const u=Math.max(0,Math.min(1,elapsedMs/travel));
  const front=1-Math.pow(1-u,1.45);
  const settle=Math.max(0,Math.min(1,(elapsedMs-travel)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
  const amplitude=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*
-  (.27+.73*longMix)*fade;
+  (.74+.26*longMix)*fade;
+ const spatialDamping=.95+1.95*longMix; // retain V62 damping on long spans
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64,v=1-t;
@@ -949,7 +950,7 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
   const tether=Math.min(1,t/.025,(1-t)/.025);
   const wave=passed>0?
    -amplitude*Math.sin(2*Math.PI*passed/width)*
-   Math.exp(-2.1*passed-2.9*distance)*tether:0;
+   Math.exp(-2.1*passed-spatialDamping*distance)*tether:0;
   d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
  }
  return d;
