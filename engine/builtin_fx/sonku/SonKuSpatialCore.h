@@ -21,6 +21,12 @@ struct Settings {
     float outputTrim = 0.75f;         // avoid summing two uncorrelated emitters at unity
     bool moving = true;
     bool clockwise = true;
+    // Version-2 persisted, native-ACKed acoustic scene. Zero is legacy
+    // HRTF-only. All other scenes are optional and OFF unless selected.
+    int spacePreset = 0;  // 0=OFF, 1=Square 7.2, 2=Chamber 14.4, 3=Large 28.8
+    float sourceDistanceMeters = 1.6f;
+    float roomAmount = 0.f;
+    float ambience = 0.f;
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
@@ -30,7 +36,16 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.stereoSpreadDegrees) && s.stereoSpreadDegrees>=0.f &&
         s.stereoSpreadDegrees<=180.f &&
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
-        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f;
+        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f &&
+        s.spacePreset>=0 && s.spacePreset<=3 &&
+        std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
+        s.sourceDistanceMeters<=10.f &&
+        std::isfinite(s.roomAmount) && s.roomAmount>=0.f && s.roomAmount<=1.f &&
+        std::isfinite(s.ambience) && s.ambience>=0.f && s.ambience<=1.f &&
+        (s.spacePreset==0 || SonKuEarlyReflections::validGeometry({
+            s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
+            s.spacePreset==1?7.2f:s.spacePreset==2?14.4f:28.8f,
+            s.sourceDistanceMeters}));
 }
 inline double wrapDegrees(double degrees) noexcept {
     degrees=std::fmod(degrees,360.0);
@@ -53,7 +68,9 @@ public:
         if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
         reset();
         ready_=true;
-        return true;
+        // On device restore, settings_ may already equal the saved state;
+        // republish targets even when no new UI edit occurs.
+        return applyAcousticSettings(settings_);
     }
     void reset() noexcept {
         for(auto& channel:history_)channel.fill(0.f);
@@ -75,6 +92,11 @@ public:
         if(!s.moving || !settings_.moving ||
            s.startAzimuthDegrees!=settings_.startAzimuthDegrees)
             degrees_=wrapDegrees(s.startAzimuthDegrees);
+        const bool changed=s.spacePreset!=settings_.spacePreset ||
+            s.sourceDistanceMeters!=settings_.sourceDistanceMeters ||
+            s.roomAmount!=settings_.roomAmount ||
+            s.ambience!=settings_.ambience;
+        if(changed && !applyAcousticSettings(s))return false;
         settings_=s;
         remaining_=0;
         return true;
@@ -178,6 +200,18 @@ public:
         }
     }
 private:
+    bool applyAcousticSettings(const Settings& s) noexcept {
+        const float width=s.spacePreset==1?7.2f:
+            s.spacePreset==2?14.4f:28.8f;
+        const SonKuRoomGeometry geometry{
+            width,width,s.spacePreset? s.sourceDistanceMeters:1.6f};
+        const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
+            s.spacePreset==2?SonKuReverbPreset::AiryChamber:
+                             SonKuReverbPreset::StudioGlue;
+        return room_.setRealtimeRoom(geometry,s.roomAmount,s.spacePreset!=0) &&
+            reverb_.setRealtimeProgram(preset,
+                s.spacePreset!=0?s.ambience:0.f);
+    }
     // Positive azimuth is right. MIT KEMAR supplied azimuth 0..180 with
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
     void interpolate(std::size_t source,double azimuth) noexcept {
