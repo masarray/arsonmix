@@ -105,6 +105,11 @@ static void verifySonKuMusicIntegrity(double rate) {
         auto dry=std::make_unique<SonKuSpatialCore>();
         s.spatialMix=0.f;s.startAzimuthDegrees=0.f;
         assert(dry->prepare(rate)&&dry->setSettings(s));
+        // The original engine intentionally slews MIX edits for de-click;
+        // exact dry identity applies after the accepted transition settles.
+        std::array<float,256> warmL{},warmR{};
+        for(int k=0;k<48;++k)
+            dry->process(warmL.data(),warmR.data(),256);
         std::array<float,2048> l{},r{};
         for(int i=0;i<static_cast<int>(l.size());++i){
             l[i]=.15f*std::sin(i*.017f);r[i]=-l[i];
