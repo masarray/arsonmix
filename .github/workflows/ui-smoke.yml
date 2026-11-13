@@ -195,7 +195,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-p1-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
