@@ -4,6 +4,8 @@
 // No wall-clock queries or I/O INSIDE the realtime processing function.
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
 #include <array>
+#include <algorithm>
+#include <vector>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -11,7 +13,10 @@
 #include <stdexcept>
 
 namespace {
-struct Result {double milliseconds=0.,checksum=0.,audios=0.;};
+struct Result {
+    double milliseconds=0.,checksum=0.,audios=0.;
+    double p50us=0.,p95us=0.,p99us=0.;
+};
 template<std::size_t block>
 Result measure(double rate,float amount,float late=0.f,
                const armix::sonku::SonKuRoomGeometry* geometry=nullptr){
@@ -31,13 +36,22 @@ Result measure(double rate,float amount,float late=0.f,
         inputR[n]=std::sin(n*.071f)*.16f;
     }
     const int frames=static_cast<int>(rate)*3; // three virtual seconds
+    // Instrumentation lives outside the DSP callback. It allocates once
+    // before processing and stores one duration only AFTER each callback.
+    // Informational hosted-runner timing is not ASIO deadline evidence.
+    std::vector<double> callbackUs;
+    callbackUs.reserve((frames+static_cast<int>(block)-1)/static_cast<int>(block));
     auto start=std::chrono::steady_clock::now();
     double checksum=0.;
     int done=0;
     while(done<frames){
         const int take=std::min<int>(static_cast<int>(block),frames-done);
         auto l=inputL,r=inputR;
+        const auto blockStart=std::chrono::steady_clock::now();
         dsp.process(l.data(),r.data(),take);
+        const auto blockEnd=std::chrono::steady_clock::now();
+        callbackUs.push_back(std::chrono::duration<double,std::micro>(
+            blockEnd-blockStart).count());
         for(int i=0;i<take;++i){
             if(!std::isfinite(l[i])||!std::isfinite(r[i]))
                 throw std::runtime_error("nonfinite benchmark output");
@@ -48,7 +62,18 @@ Result measure(double rate,float amount,float late=0.f,
     const auto elapsed=std::chrono::duration<double,std::milli>(
         std::chrono::steady_clock::now()-start).count();
     if(!(elapsed>0.)||!(checksum>1.))throw std::runtime_error("empty benchmark");
-    return {elapsed,checksum,static_cast<double>(frames)/rate};
+    if(callbackUs.empty())throw std::runtime_error("missing callback samples");
+    std::sort(callbackUs.begin(),callbackUs.end());
+    const auto percentile=[&](double q) noexcept {
+        const auto index=static_cast<std::size_t>(
+            std::ceil(q*static_cast<double>(callbackUs.size())))-1u;
+        return callbackUs[std::min(index,callbackUs.size()-1)];
+    };
+    const double p50=percentile(.50),p95=percentile(.95),p99=percentile(.99);
+    if(!(p50>0. && p50<=p95 && p95<=p99) || !std::isfinite(p99))
+        throw std::runtime_error("invalid callback distribution");
+    return {elapsed,checksum,static_cast<double>(frames)/rate,
+            p50,p95,p99};
 }
 template<std::size_t block>
 void report(double rate){
@@ -68,13 +93,22 @@ void report(double rate){
       <<" v1_cores="<<(baseline.milliseconds/1000.)/baseline.audios
       <<" v2_cores="<<(room.milliseconds/1000.)/room.audios
       <<" v3_cores="<<(musical.milliseconds/1000.)/musical.audios
-      <<" NOTE=runner-local_not_ASIO_FAT\n";
+      <<" v1_p50us="<<baseline.p50us
+      <<" v1_p95us="<<baseline.p95us
+      <<" v1_p99us="<<baseline.p99us
+      <<" v2_p99us="<<room.p99us
+      <<" v3_p99us="<<musical.p99us
+      <<" v3_p99_budget_ratio="<<musical.p99us/
+        (1000000.*static_cast<double>(block)/rate)
+      <<" NOTE=runner-local_not_ASIO_FAT\\n";
 }
 }
 int main(){
     try{
         for(double rate:{44100.,48000.}){
+            report<64>(rate);
             report<128>(rate);
+            report<256>(rate);
             report<512>(rate);
         }
     }catch(const std::exception& e){

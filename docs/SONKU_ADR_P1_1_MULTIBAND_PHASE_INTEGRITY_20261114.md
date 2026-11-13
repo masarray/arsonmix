@@ -62,3 +62,17 @@ The sixth 3200Hz note recovered above an objective amplitude gate of
 0.006 while the coherent 220Hz bass changed by less than 0.25dB.
 This is a machine test threshold, not a perceptual listening rating.
 The run's artifact is [#14083314097](https://github.com/masarray/arsonmix/actions/runs/43524526143/artifacts/14083314097).
+
+## Informational block callback distribution (same native core)
+
+The scoped `tools/sonku_rt_benchmark.cpp` collects external
+`steady_clock` timing around each exact DSP `process` call, sorts
+per-callback timings and reports p50/p95/p99 in microseconds on
+64/128/256/512-frame blocks at 44.1/48kHz, for HRTF-only, early-room
+and late-room modes. Also reports p99 divided by the theoretical
+buffer duration. All benchmark allocations are **outside** the DSP
+callback; no new runtime telemetry or DSP branch is added.
+Hosted CI percentiles are informational and may include scheduler
+jitter; there is deliberately no unstable hard CPU pass threshold.
+Real Windows ASIO field p99, XRUN count and source+FX+WIRE integration
+remain release blockers.
