@@ -301,12 +301,12 @@ void notes(const std::filesystem::path& directory,
       <<"decay programs = 0.78 / 1.28 / 2.05 s. NOT volume-normalized.\n"
       <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
       <<"direct path time-of-flight, or higher-order wall reflections.\n"
-      <<"P0 MUSIC INTEGRITY measured native stereo comparison:\\n"
-       <<"sonku-music-positive-front.wav = reference coherent stereo.\\n"
-       <<"sonku-music-anti-phase-front.wav = L=-R at FRONT 0 deg.\\n"
-       <<"sonku-music-anti-phase-rear.wav = L=-R at REAR 180 deg.\\n"
-       <<"Same original 3-tone source, level, 4s clock, 0 spread and HRIR.\\n"
-       <<"Headphone listening only; preservation is NOT externalization proof.\\n"
+      <<"P0 MUSIC INTEGRITY measured native stereo comparison:\n"
+       <<"sonku-music-positive-front.wav = reference coherent stereo.\n"
+       <<"sonku-music-anti-phase-front.wav = L=-R at FRONT 0 deg.\n"
+       <<"sonku-music-anti-phase-rear.wav = L=-R at REAR 180 deg.\n"
+       <<"Same original 3-tone source, level, 4s clock, 0 spread and HRIR.\n"
+       <<"Headphone listening only; preservation is NOT externalization proof.\n"
        <<"Offline candidates only, NO native GUI/session/product release.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
