@@ -652,7 +652,12 @@ function sectionSend(t){
  let label='',status='';
  if(isSource){label='SOURCE';status='⇢ '+wireOutgoingCount(t.id)+' OUT';}
  else if(t.kind==='master'){label='MAIN';status=source&&wireFor(source.id,master.id)?'DIRECT ON':'DIRECT OFF';}
- else if(edge){label='IN ← CH'+String(source.id).padStart(2,'0');status=edge.mode==='split'?'PRE FX':'POST FADER';}
+ else if(edge){
+  label='IN ← CH'+String(source.id).padStart(2,'0');
+  status=edge.nativeTap==='PRE_FADER'?'PRE FADER':
+   edge.nativeTap==='POST_FADER'?'POST FADER':
+   edge.mode==='split'?'PRE FX':'POST FADER';
+ }
  else if(legacy){label='LEGACY';status='SEND ACTIVE';}
  else if(t.kind==='bus')label='BUS';
  else if(t.kind==='fx')label='FX RETURN';
@@ -1267,14 +1272,23 @@ function renderWireWsInspector(){
  const src=tracks.find(t=>t.id===p.src),dst=tracks.concat(master).find(t=>t.id===p.dst);
  if(!src||!dst){panel.hidden=true;return;}
  const edge=info.edge,key=p.src+':'+p.dst;
+ const native=!!window.__JUCE__?.backend;
+ const tapValue=edge?.nativeTap==='PRE_FADER'?'split':
+  edge?.nativeTap==='POST_FADER'?'send':edge?.mode;
+ const tapEditable=!native||(src.nativeTapAvailable===true&&
+  edge?.kind==='send'&&['PRE_FADER','POST_FADER'].includes(edge.nativeTap));
  const controls=edge?
-  '<div class="wire-ws-controls"><label for="wireWsGain">GAIN</label>'+
+  '<div class="wire-ws-controls"><label for="wireWsGain">SEND LEVEL</label>'+
   '<input type="range" id="wireWsGain" data-ws-gain="'+edge.id+'" min="-60" max="6" step="1" value="'+edge.levelDb+'" '+(dst.kind==='master'?'disabled':'')+'>'+
   '<span id="wireWsGainText">'+edge.levelDb+' dB</span>'+
   '<label for="wireWsTap">TAP</label>'+
-  '<select id="wireWsTap" data-ws-tap="'+edge.id+'" '+(edge.kind==='primary'?'disabled':'')+'>'+
-  '<option value="send" '+(edge.mode==='send'?'selected':'')+'>Follow Fader</option>'+
-  '<option value="split" '+(edge.mode==='split'?'selected':'')+'>Pre FX</option></select>'+
+  '<select id="wireWsTap" data-ws-tap="'+edge.id+'" '+
+  (edge.kind==='primary'||!tapEditable?'disabled':'')+
+  (native?' title="Change this exact SEND tap after native PCM ACK"':'')+'>'+
+  '<option value="send" '+(tapValue==='send'?'selected':'')+'>'+
+   (native?'POST FADER':'Follow Fader')+'</option>'+
+  '<option value="split" '+(tapValue==='split'?'selected':'')+'>'+
+   (native?'PRE FADER':'Pre FX')+'</option></select>'+
   '<button type="button" data-ws-remove="'+key+'">'+(wireWsRemoveConfirm===key?'Confirm remove':'Disconnect')+'</button></div>':
   '<div class="wire-ws-controls"><span>Managed by existing '+escapeHtml(info.kind.toUpperCase())+' routing. No duplicate WIRE edge.</span></div>';
  panel.innerHTML='<strong>'+escapeHtml(wireWsLabel(p.src))+' → '+escapeHtml(wireWsLabel(p.dst))+'</strong>'+
