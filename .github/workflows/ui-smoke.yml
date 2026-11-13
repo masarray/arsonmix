@@ -193,7 +193,9 @@ jobs:
   sonku-preview:
     name: 8D-SonKu native insert/editor Chromium FAT (desktop and narrow)
     needs: quick
-    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/8d-sonku-')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
+    # Preserve fast-only checks for unrelated GUI and engine branches.
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'test/sof-native-'))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
