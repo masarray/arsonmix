@@ -927,9 +927,9 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- // A short physical patch cable has little slack: scale its displacement,
- // number of visible lobes AND propagation time, continuously with length.
- // Long cables preserve the user-approved V62 520ms whip and end damping.
+ // V67: one-channel patches need a lively visible flex, not a nearly
+ // flat jacket. Keep wavelength/travel length-aware and retain the
+ // approved two-channel+ behaviour without increasing its impulse.
  const length01=Math.max(0,Math.min(1,(chord-95)/300));
  const longMix=length01*length01*(3-2*length01);
  const travel=360+160*longMix;
@@ -938,8 +938,13 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const front=1-Math.pow(1-u,1.45);
  const settle=Math.max(0,Math.min(1,(elapsedMs-travel)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
+ // The V63 .27 baseline made a one-channel cable visibly lifeless.
+ // Floor its energy near the approved two-channel feel. For a very tiny
+ // span, scale against its actual chord so the curl stays contained.
+ // At >= ~280px the V66 waveform is bit-for-bit unchanged.
+ const shortEnergy=Math.max(.78,.27+.73*longMix)*Math.min(1,chord/120);
  const amplitude=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*
-  (.27+.73*longMix)*fade;
+  shortEnergy*fade;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64,v=1-t;
@@ -992,7 +997,15 @@ function kickWireSpring(sourceId,destId){
    The free plug is pulled straight home while a damped traveling sine
    starts at OUT and crosses the shortening, naturally slack cable.
    No falling, hanging pause, constant wobble or phantom input edge. */
-const WIRE_RETRACT_MS=900;
+/* V65 fast elastic cable reel. OUT is the sole impulse source.
+   Single visual-only transient, no synthetic route or native DSP mutation.
+   The travelling wave spans the shrinking jacket and the detached plug
+   is a FREE end: it moves with the final wave rather than being pinned. */
+/* V66 fast, lively elastic recoil: OUT stays fixed while a travelling
+   whip reaches the entire shrinking cable. The disconnected dot is free:
+   a damped tip response makes it wobble rather than ride a rigid chord.
+   Visual-only; graph REMOVE always commits before this animation exists. */
+const WIRE_RETRACT_MS=330;
 let wireRetractToken=0,wireRetractOverlay=null;
 function stopWireRetraction(){
  ++wireRetractToken;
@@ -1000,34 +1013,59 @@ function stopWireRetraction(){
 }
 function wireRetractPose(x0,y0,rx,ry,elapsedMs){
  const p=Math.max(0,Math.min(1,elapsedMs/WIRE_RETRACT_MS));
- // Continuous winch acceleration/deceleration without a waiting/fall stage.
- const pull=p*p*(3-2*p),remaining=1-pull;
+ // Fast pull from the first frame, no preceding fall/hang/idle phase.
+ const remaining=Math.pow(1-p,2.65);
  const x=x0+(rx-x0)*remaining,y=y0+(ry-y0)*remaining;
  const chord=Math.hypot(rx-x0,ry-y0);
- // Loose but restrained curve shrinks with available cable length.
- const sag=Math.min(48,Math.max(11,Math.sqrt(chord)*2.1))*Math.pow(remaining,.86);
- // Propagation from OUT (t=0) toward the moving free plug (t=1).
- const front=1-Math.pow(1-Math.min(1,p/.76),1.3);
- const amplitude=Math.min(13,Math.max(5,Math.sqrt(chord)*.76))*
-  Math.pow(remaining,.62)*Math.min(1,p/.08);
- return {x,y,remaining,sag,front,amplitude,phase:'reel'};
+ const length01=Math.max(0,Math.min(1,(chord-90)/270));
+ const longMix=length01*length01*(3-2*length01);
+ // Front originates at OUT and reaches the loose tip early enough that
+ // the tip can swing repeatedly BEFORE the wire disappears.
+ const front=1.42*(1-Math.pow(1-Math.min(1,p/.40),1.35));
+ const catchUp=Math.max(0,Math.min(1,(front-.78)/.30));
+ const width=.59-.24*longMix;
+ const sag=Math.min(44,Math.max(10,Math.sqrt(chord)*2.1))*
+  Math.pow(remaining,.78);
+ // Keep the fast OUT-origin reel lively even for adjacent-channel wires.
+ // At two-channel spans and beyond the V66 motion remains unchanged.
+ const shortEnergy=Math.max(.80,.46+.54*longMix);
+ const amplitude=Math.min(32,Math.max(14,Math.sqrt(chord)*1.5))*
+  shortEnergy*Math.pow(remaining,.29)*
+  Math.min(1,p/.07)*Math.min(1,chord*remaining/55);
+ const recoil=amplitude*.13*catchUp*
+  Math.sin(2*Math.PI*Math.max(0,p-.19)/.26);
+ return {p,x,y,remaining,sag,front,catchUp,width,amplitude,recoil,phase:'reel'};
+}
+function wireRetractWave(pose,t){
+ const passed=pose.front-t;
+ const travelling=passed>0?
+  -Math.sin(2*Math.PI*passed/pose.width)*
+  Math.exp(-.77*passed-.35*t):0;
+ // The travelling pulse excites an inertial after-swing at the FREE tip.
+ // Its influence smoothly increases toward that end, without moving OUT.
+ const lag=Math.max(0,pose.p-.19);
+ const tipSwing=1.15*pose.catchUp*Math.sin(2*Math.PI*lag/.26)*
+  Math.exp(-1.25*lag)*Math.pow(t,1.65);
+ return pose.amplitude*Math.min(1,t/.04)*(travelling+tipSwing);
 }
 function wireRetractPathData(x0,y0,rx,ry,elapsedMs){
  const pose=wireRetractPose(x0,y0,rx,ry,elapsedMs);
+ const dx=pose.x-x0,dy=pose.y-y0;
+ const norm=Math.max(1,Math.hypot(dx,dy));
+ const nx=-dy/norm,ny=dx/norm,tx=dx/norm,ty=dy/norm;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64;
-  const x=x0+(pose.x-x0)*t;
-  // Gravity creates gentle static slack, not a falling plug trajectory.
-  const y=y0+(pose.y-y0)*t+pose.sag*Math.sin(Math.PI*t);
-  const passed=pose.front-t; // positive only AFTER OUT-origin front passes
-  const anchor=Math.min(1,t/.035,(1-t)/.035);
-  const wave=passed>0?
-   -pose.amplitude*Math.sin(2*Math.PI*passed/.39)*
-   Math.exp(-1.8*passed-1.45*t)*anchor:0;
-  d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
+  const wave=wireRetractWave(pose,t);
+  const surge=pose.recoil*t*t;
+  const x=x0+dx*t+nx*wave+tx*surge;
+  const y=y0+dy*t+pose.sag*Math.sin(Math.PI*t)+ny*wave+ty*surge;
+  d+=' L '+x.toFixed(1)+' '+y.toFixed(1);
  }
- return {d,pose};
+ const endWave=wireRetractWave(pose,1);
+ return {d,pose:{...pose,
+  tipX:pose.x+nx*endWave+tx*pose.recoil,
+  tipY:pose.y+ny*endWave+ty*pose.recoil}};
 }
 function startWireRetraction(sourceId,releasePoint){
  stopWireRetraction();
@@ -1072,9 +1110,10 @@ function startWireRetraction(sourceId,releasePoint){
   const shape=wireRetractPathData(x0,y0,rx,ry,elapsed);
   svg.dataset.wirePhase=shape.pose.phase;
   shadow.setAttribute('d',shape.d);jacket.setAttribute('d',shape.d);
-  plug.setAttribute('cx',shape.pose.x.toFixed(1));
-  plug.setAttribute('cy',shape.pose.y.toFixed(1));
-  plug.setAttribute('r',Math.max(0,5.2*Math.pow(shape.pose.remaining,.6)).toFixed(2));
+  // Visual plug follows the same free endpoint as the final SVG sample.
+  plug.setAttribute('cx',shape.pose.tipX.toFixed(1));
+  plug.setAttribute('cy',shape.pose.tipY.toFixed(1));
+  plug.setAttribute('r',Math.max(0,5.8*Math.pow(shape.pose.remaining,.48)).toFixed(2));
   if(elapsed<WIRE_RETRACT_MS)requestAnimationFrame(step);
   else stopWireRetraction(); // no ghost cable or hitbox
  }

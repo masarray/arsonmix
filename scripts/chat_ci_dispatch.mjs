@@ -5,7 +5,7 @@ import {setTimeout as sleep} from 'node:timers/promises';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (ui|native|fat) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (ui|native|fat|field) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -78,7 +78,7 @@ export function hasPriorDispatch(runs,sha) {
 // Never infer provenance from head_sha or an unstructured display title.
 export function parseWindowsMilestoneRun(run) {
   if(run?.event!=='workflow_dispatch')return null;
-  const m=/^ArSonMix (NATIVE|FAT) PR([1-9][0-9]*) ([0-9a-f]{40})$/
+  const m=/^ArSonMix (NATIVE|FAT|FIELD) PR([1-9][0-9]*) ([0-9a-f]{40})$/
     .exec(run.display_title||'');
   return m?{lane:m[1].toLowerCase(),number:Number(m[2]),sha:m[3]}:null;
 }
@@ -103,6 +103,11 @@ export async function guardWindowsMilestone({target,api}) {
     run,identity:parseWindowsMilestoneRun(run)
   })).filter(x=>x.identity?.number===target.number);
   const same=runs.filter(x=>x.identity.sha===target.sha);
+  if(target.lane==='field'){
+    const existing=same.find(({run,identity})=>['fat','field'].includes(identity.lane) &&
+      (isActiveWindowsRun(run)||run.conclusion==='success'));
+    return existing?{kind:'skipped',reason:'portable-already-available-or-scheduled',target}:null;
+  }
   const activeFat=runs.find(x=>x.identity.lane==='fat'&&isActiveWindowsRun(x.run));
   // Never cancel an RC package build even after later PR edits: it is
   // immutable field-test evidence. A new request can be made after it ends.
@@ -189,6 +194,7 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   const inputs=target.lane==='ui'?{expected_sha:target.sha}:
     {expected_sha:target.sha,package_fat:target.lane==='fat',
      request_pr_number:String(target.number),
+     ...(target.lane==='field'?{field_preview:true}:{}),
      ...(focusedHarmony?{focused_harmony_fat:true}:{})};
   // Windows always uses the reviewed CI definition from main, and checks
   // out the exact PR source SHA. Run-name also carries the verified PR/SHA

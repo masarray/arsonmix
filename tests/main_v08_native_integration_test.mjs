@@ -105,3 +105,25 @@ test('startup uses splash before constructing WebView2 and native engine',()=>{
  assert.match(main,/onStartupStage_ \(1\)/);
  assert.match(main,/onStartupStage_ \(2\)/);
 });
+
+test('startup handoff raises mixer once after splash, without permanent topmost or probe focus',()=>{
+ const app=main.slice(main.indexOf('class ConsoleApp final'));
+ const warm=main.slice(main.indexOf('if (!webViewPeerWarmed_)'),
+                       main.indexOf('// Existing message-thread 12 Hz timer',main.indexOf('if (!webViewPeerWarmed_)')));
+ assert.match(warm,/setVisible \(true\);/);
+ assert.doesNotMatch(warm,/\btoBack\s*\(/,'warm compositor must not bury the mixer');
+ assert.match(app,/else if \(stage == 2\)\s*presentMixerOnStartup\(\);/);
+ const handoff=app.slice(app.indexOf('void presentMixerOnStartup()'),
+                         app.indexOf('void serviceSmartUpdateAcknowledgement()'));
+ assert.match(handoff,/if \(startupMixerPresented_ \|\| !window_ \|\| isAutoUpdateHealthProbe\(\)\)/);
+ assert.match(handoff,/startupMixerPresented_ = true/);
+ assert.match(handoff,/window_->setVisible \(true\);/);
+ assert.match(handoff,/window_->setMinimised \(false\);/);
+ assert.match(handoff,/window_->toFront \(true\);/);
+ assert.match(handoff,/SetWindowPos \(hwnd, HWND_TOPMOST/);
+ assert.match(handoff,/SetWindowPos \(hwnd, HWND_NOTOPMOST/);
+ assert.match(handoff,/::SetForegroundWindow \(hwnd\)/);
+ assert.match(handoff,/window_->grabKeyboardFocus\(\)/);
+ assert.doesNotMatch(handoff,/startTimer|engine_\.start|setAlwaysOnTop\s*\(/);
+ assert.match(app,/if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*if \(window_\) window_->setVisible \(false\);/);
+});

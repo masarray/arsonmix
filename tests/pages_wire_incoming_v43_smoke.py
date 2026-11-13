@@ -17,13 +17,15 @@ def center(el):
 def impact_peak(path,baseline):
  values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
  base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
- assert " L " in path and len(values)%2==0 and 57<=len(values)//2<=128,(len(values),path[:90])
+ # V43 used 56 polyline samples; current animator uses 64. Verify
+ # valid topology without hard-coding one historical tessellation size.
+ assert " L " in path and len(values)>=34 and (len(values)-2)%2==0,(len(values),path[:90])
+ n=(len(values)-2)//2
  assert " C " in baseline and len(base)==8,(len(base),baseline)
  x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
  max_point=(0.,0.)
- for i in range(1,len(values)//2):
-  # Normalize by the actual SVG sampling resolution; V43 used 57, current WIRE uses 65.
-  t=i/(len(values)//2-1);u=1-t
+ for i in range(1,n+1):
+  t=i/n;u=1-t
   x=u*u*u*x0+3*u*u*t*c0x+3*u*t*t*c1x+t*t*t*x1
   y=u*u*u*y0+3*u*u*t*c0y+3*u*t*t*c1y+t*t*t*y1
   dist=math.hypot(values[i*2]-x,values[i*2+1]-y)
@@ -35,14 +37,16 @@ def impact_motion(path,baseline):
  # oscillation crest, this follows the entire slow traveling wave packet.
  values=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",path)]
  base=[float(v) for v in re.findall(r"-?\d+(?:\.\d+)?",baseline)]
- assert " L " in path and len(values)%2==0 and 57<=len(values)//2<=128,(len(values),path[:90])
+ # V43 used 56 polyline samples; current animator uses 64. Verify
+ # valid topology without hard-coding one historical tessellation size.
+ assert " L " in path and len(values)>=34 and (len(values)-2)%2==0,(len(values),path[:90])
+ n=(len(values)-2)//2
  assert " C " in baseline and len(base)==8,(len(base),baseline)
  x0,y0,c0x,c0y,c1x,c1y,x1,y1=base
  energy=0.
  weighted_position=0.
- for i in range(1,len(values)//2):
-  # Normalize by the actual SVG sampling resolution; V43 used 57, current WIRE uses 65.
-  t=i/(len(values)//2-1);u=1-t
+ for i in range(1,n+1):
+  t=i/n;u=1-t
   x=u*u*u*x0+3*u*u*t*c0x+3*u*t*t*c1x+t*t*t*x1
   y=u*u*u*y0+3*u*u*t*c0y+3*u*t*t*c1y+t*t*t*y1
   weight=(values[i*2]-x)**2+(values[i*2+1]-y)**2
@@ -123,8 +127,8 @@ def main():
     # reacquire the NEW live path and update it rather than a detached path.
     page.wait_for_function("()=>window.__v43Wave.length>=16",timeout=4000)
     live=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]')
-    # Wait for the accepted cable to settle into its original cubic (not
-    # frame-count-based indexing; actual temporal damping is ~1600ms).
+    # The V66 impact travels for <=520ms and settles within another 160ms.
+    # Wait for the actual cubic restoration, not an obsolete V43 1.6s timer.
     page.wait_for_function("""()=>{
       const p=document.querySelector('#wireLayer path.wire-outgoing-line[data-cable-key="5-3"]');
       return p&&p.getAttribute('d')?.includes(' C ')&&window.__v43Frames.length>=16;
@@ -142,11 +146,13 @@ def main():
      assert len(subset)>=3,("not enough timed animation samples",lo,hi,len(subset))
      return (sum(x[0] for x in subset)/len(subset),
              sum(x[1] for x in subset)/len(subset))
-    early=window_motion(150,400)
-    late=window_motion(950,1250)
+    # Both windows sit inside the shipped 680ms impact interval. The
+    # travelling packet begins at IN (t=1) and reaches OUT (t=0).
+    early=window_motion(90,220)
+    late=window_motion(360,520)
     assert early[1]>2.0 and late[1]>.35,(early,late)
-    assert early[0]-late[0]>.20,("energy packet did not travel IN to OUT",early,late)
-    assert late[1]<early[1]*.65,("cable motion did not damp",early,late)
+    assert early[0]-late[0]>.12,("energy packet did not travel IN to OUT",early,late)
+    assert late[1]<early[1]*.75,("cable motion did not damp",early,late)
     # Unarming WIRE must not delete the already committed incoming cable.
     page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
     assert "wire-intent" not in (body.get_attribute("class") or "")

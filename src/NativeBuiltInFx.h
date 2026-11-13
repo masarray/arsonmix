@@ -5,6 +5,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include <array>
 #include <cmath>
@@ -75,7 +76,12 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_THROW_HOST_UNAVAILABLE","NATIVE_THROW_DEVICE_CHANGED",
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
         "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Throw state rejected; graph unchanged",
-        prepareNativeBuiltInFx<VocalThrowProcessor>}
+        prepareNativeBuiltInFx<VocalThrowProcessor>},
+    NativeBuiltInFx{GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true,32000.,192000.,
+        "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
+        "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",
+        "NATIVE_GFX_PREPARE_EXCEPTION","Saved Guitar FX Rig state rejected; graph unchanged",
+        prepareNativeBuiltInFx<GuitarRigProcessor>}
 };
 
 // Compile-time registration contract: one stable catalog identity per FX,

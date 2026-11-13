@@ -1,0 +1,315 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#pragma once
+#include "GuitarFactoryTones.h"
+#include "GuitarOversampling2x.h"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+
+// Portable, allocation-free M1 DSP. No second audio callback or vendor model.
+// Cabinet uses a *generated original FIR*, NOT a sampled commercial cab IR;
+// neural amp captures/hi-fi IR selection are explicitly later milestones.
+namespace armix::guitarfx {
+class GuitarRigCore final {
+public:
+    static constexpr int cabinetTaps=65;
+    static constexpr int cabinetLatencySamples=(cabinetTaps-1)/2;
+    static constexpr int oversamplingLatencySamples=
+        GuitarOversampling2x::latencySamples;
+    static constexpr int processingLatencySamples=
+        cabinetLatencySamples+oversamplingLatencySamples;
+    struct Coefficients {
+        float gateThreshold=0.001f;
+        float gateCloseThreshold=0.0007f;
+        float gateAttack=0.5f,gateRelease=0.999f;
+        float gateOpenSmooth=0.995f,gateCloseSmooth=0.999f;
+        int gateHoldSamples=0;
+        float driveGain=2.f,driveHighPass=0.993f;
+        float ampGain=4.f,ampHighPass=0.997f;
+        float ampTonePole=0.5f,ampVolume=0.7f;
+    };
+
+    static constexpr Program startingProgram() noexcept {
+        return factoryTone(0);
+    }
+
+    // M1 supports exactly the four stages represented by its native
+    // hardware editor. The generic versioned Program can express richer
+    // future graphs, but this DSP never silently accepts a mismatched UI.
+    static constexpr bool supportsProgram(const Program& p) noexcept {
+        return validate(p)==ProgramError::none && p.count==4 &&
+            p.blocks[0].module==Module::gate &&
+            p.blocks[1].module==Module::overdrive &&
+            p.blocks[2].module==Module::amplifier &&
+            p.blocks[3].module==Module::cabinet;
+    }
+
+    // CONTROL only: validate complete program, construct FIR/filter constants,
+    // and reset all audio histories before publication. On failure, reject
+    // without mutating an existing ready core.
+    bool prepare(double rate,const Program& program) noexcept {
+        if(!std::isfinite(rate)||rate<32000.||rate>192000.||
+           !supportsProgram(program))return false;
+        for(std::size_t i=0;i<program.count;++i)
+            if(program.blocks[i].enabled && !supported(program.blocks[i].module))
+                return false;
+        std::array<float,cabinetTaps> nextIR{};
+        if(!makeCabinetIR(rate,nextIR))return false;
+        std::array<GuitarOversampling2x,2> nextOversampling{};
+        for(auto& o:nextOversampling)
+            if(!o.prepare(rate))return false;
+        std::array<Coefficients,maxBlocks> nextCoeff{};
+        for(std::size_t i=0;i<program.count;++i){
+            const Block& block=program.blocks[i];
+            auto& c=nextCoeff[i];
+            const float param=block.values[0];
+            if(block.module==Module::gate){
+                const float db=-80.f+50.f*param;
+                c.gateThreshold=static_cast<float>(std::pow(10.,db/20.));
+                c.gateCloseThreshold=c.gateThreshold*0.65f;
+                c.gateAttack=static_cast<float>(std::exp(-1./(0.002*rate)));
+                c.gateRelease=static_cast<float>(std::exp(-1./(0.030*rate)));
+                // Threshold is values[0]. The unused reserved values[1..2]
+                // now control genuine hold (0..120ms) and gain RELEASE
+                // (12..240ms) without changing GRX1 v1/v2 storage.
+                const double holdSeconds=0.120*block.values[1];
+                const double closeSeconds=0.012+0.228*block.values[2];
+                c.gateHoldSamples=static_cast<int>(rate*holdSeconds);
+                c.gateOpenSmooth=static_cast<float>(
+                    std::exp(-1./(0.0012*rate)));
+                c.gateCloseSmooth=static_cast<float>(
+                    std::exp(-1./(closeSeconds*rate)));
+            } else if(block.module==Module::overdrive){
+                c.driveGain=1.f+18.f*param*param;
+                c.driveHighPass=static_cast<float>(
+                    std::exp(-2.*pi*54./(rate*2.)));
+            } else if(block.module==Module::amplifier) {
+                c.ampGain=1.f+22.f*param*param;
+                c.ampHighPass=static_cast<float>(
+                    std::exp(-2.*pi*23./(rate*2.)));
+                const float cutoff=3200.f+4600.f*block.values[1];
+                c.ampTonePole=static_cast<float>(
+                    std::exp(-2.*pi*cutoff/(rate*2.)));
+                c.ampVolume=0.3f+0.9f*block.values[2];
+            }
+        }
+        program_=program;
+        coeff_=nextCoeff;
+        ir_=nextIR;
+        oversampling_=nextOversampling;
+        lane_={};
+        sampleRate_=rate;
+        ready_=true;
+        return true;
+    }
+    void reset() noexcept {
+        lane_={};
+        for(auto& o:oversampling_)o.reset();
+    }
+    bool isReady() const noexcept {return ready_;}
+    // AUDIO-only; the prepared program owns its new coefficients/IR, but
+    // compatible running delay/filter/envelope state is inherited from the
+    // outgoing core before the 128-frame transition. No heap, blocking,
+    // preparation or race with the CONTROL-owned prepared object.
+    // This prevents every small knob turn from starting with an empty
+    // cabinet history and cold gate. Old and new DSP run from the SAME
+    // temporal point, rather than crossfading a warm voice into silence.
+    bool inheritCompatibleHistory(const GuitarRigCore& previous) noexcept {
+        if(!ready_||!previous.ready_||
+           sampleRate_!=previous.sampleRate_ ||
+           program_.count!=previous.program_.count)return false;
+        for(std::size_t i=0;i<program_.count;++i) {
+            if(program_.blocks[i].id!=previous.program_.blocks[i].id ||
+               program_.blocks[i].module!=previous.program_.blocks[i].module)
+                return false;
+        }
+        lane_=previous.lane_;
+        for(std::size_t i=0;i<oversampling_.size();++i)
+            if(!oversampling_[i].inheritHistory(previous.oversampling_[i]))
+                return false;
+        return true;
+    }
+    const Program& program() const noexcept {return program_;}
+    static bool supported(Module m) noexcept {
+        return m==Module::gate||m==Module::overdrive||
+               m==Module::amplifier||m==Module::cabinet;
+    }
+    // PCM callback only: no locks, heap, IR generation, logging or syscalls.
+    void processStereo(float* left,float* right,std::size_t frames) noexcept {
+        if(!ready_||!left||!right)return;
+        const bool linkedGate=program_.blocks[0].enabled;
+        for(std::size_t i=0;i<frames;++i){
+            // ONE shared amplitude detector/gain for both stereo channels.
+            // An instrument only on R must not close L separately and
+            // create an unintended drifting stereo balance. Do not blend
+            // L/R into a mono audio signal: guitar stereo remains stereo.
+            float leftIn=std::isfinite(left[i])?left[i]:0.f;
+            float rightIn=std::isfinite(right[i])?right[i]:0.f;
+            if(linkedGate){
+                const float gain=linkedGateGain(
+                    std::max(std::fabs(leftIn),std::fabs(rightIn)));
+                leftIn*=gain;
+                rightIn*=gain;
+            }
+            left[i]=processCabinet(0,processPreamp(0,leftIn));
+            right[i]=processCabinet(1,processPreamp(1,rightIn));
+        }
+    }
+private:
+    static constexpr double pi=3.14159265358979323846;
+    struct BlockState {
+        float envelope=0.f,gateGain=0.f;
+        float driveIn=0.f,driveOut=0.f;
+        float ampTone=0.f,ampIn=0.f,ampOut=0.f;
+        bool gateOpen=false;
+        int gateHoldRemaining=0;
+    };
+    struct ChannelState {
+        std::array<BlockState,maxBlocks> modules{};
+        std::array<float,cabinetTaps> cabDelay{};
+        std::size_t cabCursor=0;
+    };
+    // Bounded 65-tap symmetric, band-limited handcrafted speaker coloration.
+    // Latency is exactly the integer group delay (32 samples at all rates).
+    // It is NOT an acoustic capture of any named cabinet.
+    static bool makeCabinetIR(double rate,
+                               std::array<float,cabinetTaps>& dst) noexcept {
+        constexpr double low=95.,high=4900.;
+        constexpr double test=1000.;
+        const int center=cabinetLatencySamples;
+        for(int i=0;i<cabinetTaps;++i){
+            const int n=i-center;
+            const double ideal=n==0?2.*(high-low)/rate:
+                (std::sin(2.*pi*high*n/rate)-
+                 std::sin(2.*pi*low*n/rate))/(pi*n);
+            const double window=0.5-0.5*std::cos(
+                2.*pi*static_cast<double>(i)/(cabinetTaps-1));
+            dst[static_cast<std::size_t>(i)]=static_cast<float>(ideal*window);
+        }
+        // Enforce BIT-IDENTICAL mirror coefficients before pairing reads.
+        // Independently evaluated cosine windows can differ by a final ULP.
+        for(int i=0;i<cabinetLatencySamples;++i)
+            dst[static_cast<std::size_t>(cabinetTaps-1-i)]=
+                dst[static_cast<std::size_t>(i)];
+        // Normalize at 1kHz rather than DC (this is a band-pass speaker).
+        double real=0.,imag=0.;
+        for(int i=0;i<cabinetTaps;++i){
+            const double phase=2.*pi*test*i/rate;
+            real+=dst[static_cast<std::size_t>(i)]*std::cos(phase);
+            imag-=dst[static_cast<std::size_t>(i)]*std::sin(phase);
+        }
+        const double magnitude=std::sqrt(real*real+imag*imag);
+        if(!std::isfinite(magnitude)||magnitude<1.e-5)return false;
+        for(auto& value:dst)value=static_cast<float>(value/magnitude);
+        return true;
+    }
+    static float saturate(float x) noexcept {
+        // Smooth, bounded asymptotic overdrive; no tanh in PCM callback.
+        return x/(1.f+std::fabs(x));
+    }
+    float linkedGateGain(float amplitude) noexcept {
+        auto& history=lane_[0].modules[0]; // shared stereo detector
+        const auto& c=coeff_[0];
+        const float smooth=amplitude>history.envelope?
+            c.gateAttack:c.gateRelease;
+        history.envelope=smooth*history.envelope+
+                         (1.f-smooth)*amplitude;
+        if(history.envelope>c.gateThreshold){
+            history.gateOpen=true;
+            history.gateHoldRemaining=c.gateHoldSamples;
+        } else if(history.gateOpen) {
+            if(history.gateHoldRemaining>0)
+                --history.gateHoldRemaining;
+            else if(history.envelope<c.gateCloseThreshold)
+                history.gateOpen=false;
+        }
+        const float target=history.gateOpen?1.f:0.f;
+        const float k=history.gateOpen?
+            c.gateOpenSmooth:c.gateCloseSmooth;
+        history.gateGain=k*history.gateGain+(1.f-k)*target;
+        return history.gateGain;
+    }
+    // Two nonlinear stages run at twice the device rate, while the
+    // linked gate and 65-tap cabinet operate at native rate. Polyphase FIR
+    // filtering attenuates nonlinear products above native Nyquist before
+    // they can fold into the monitored guitar signal.
+    float processPreamp(std::size_t ch,float input) noexcept {
+        const bool drive=program_.blocks[1].enabled;
+        const bool amp=program_.blocks[2].enabled;
+        // Keep the 16-frame dry delay warm even while the nonlinear stages
+        // are active. Switching AMP/DRIVE OFF must not crossfade into 16
+        // frames of stale silence from an unused dry delay buffer.
+        const float matchedDry=oversampling_[ch].bypassDelay(input);
+        if(!drive&&!amp)return matchedDry;
+        float even=0.f,odd=0.f;
+        oversampling_[ch].upsamplePair(input,even,odd);
+        even=shapeDriveAmp(ch,even);
+        odd=shapeDriveAmp(ch,odd);
+        return oversampling_[ch].decimateEven(even,odd);
+    }
+    float shapeDriveAmp(std::size_t channel,float sample) noexcept {
+        auto& lane=lane_[channel];
+        if(program_.blocks[1].enabled){
+            auto& h=lane.modules[1];
+            const auto& c=coeff_[1];
+            const float hp=sample-h.driveIn+c.driveHighPass*h.driveOut;
+            h.driveIn=sample;h.driveOut=hp;
+            const float driven=c.driveGain*hp;
+            sample=1.65f*(saturate(driven+0.08f)-saturate(0.08f));
+        }
+        if(program_.blocks[2].enabled){
+            auto& h=lane.modules[2];
+            const auto& c=coeff_[2];
+            const float hp=sample-h.ampIn+c.ampHighPass*h.ampOut;
+            h.ampIn=sample;h.ampOut=hp;
+            const float shaped=2.2f*(
+                saturate(c.ampGain*hp+0.08f)-saturate(0.08f));
+            h.ampTone=c.ampTonePole*h.ampTone+
+                       (1.f-c.ampTonePole)*shaped;
+            sample=h.ampTone*c.ampVolume;
+        }
+        return std::isfinite(sample)?sample:0.f;
+    }
+    float processCabinet(std::size_t channel,float sample) noexcept {
+        auto& lane=lane_[channel];
+        const bool cabEnabled=program_.blocks[3].enabled;
+        lane.cabDelay[lane.cabCursor]=sample;
+        if(cabEnabled){
+            // Exact symmetric 65-tap cabinet FIR: 33 multiplies; its
+            // original 32-frame group delay combines with 16 from 2x.
+            float result=0.f;
+            std::size_t lo=lane.cabCursor;
+            std::size_t hi=lane.cabCursor+1;
+            if(hi==cabinetTaps)hi=0;
+            for(std::size_t tap=0;
+                tap<static_cast<std::size_t>(cabinetLatencySamples);
+                ++tap) {
+                result+=ir_[tap]*(
+                    lane.cabDelay[lo]+lane.cabDelay[hi]);
+                lo=lo==0?cabinetTaps-1:lo-1;
+                hi=hi+1==cabinetTaps?0:hi+1;
+            }
+            result+=ir_[cabinetLatencySamples]*lane.cabDelay[lo];
+            sample=result;
+        } else {
+            // CAB OFF is PDC-compatible even if Drive/Amp are bypassed.
+            const auto delayed=(lane.cabCursor+cabinetTaps-
+                cabinetLatencySamples)%cabinetTaps;
+            sample=lane.cabDelay[delayed];
+        }
+        lane.cabCursor=(lane.cabCursor+1)%cabinetTaps;
+        if(!std::isfinite(sample))return 0.f;
+        return sample>1.25f?1.25f:sample< -1.25f?-1.25f:sample;
+    }
+    Program program_{};
+    std::array<Coefficients,maxBlocks> coeff_{};
+    std::array<float,cabinetTaps> ir_{};
+    std::array<GuitarOversampling2x,2> oversampling_{};
+    std::array<ChannelState,2> lane_{};
+    double sampleRate_=0.;
+    bool ready_=false;
+};
+} // namespace armix::guitarfx

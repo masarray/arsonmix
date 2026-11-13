@@ -1962,3 +1962,32 @@ test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
   assert.match(bridge,/owner\.textContent=patch\.role/);
   assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);
 });
+
+test("Guitar FX picker binding is real, visible and matches native installed registry",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const catalog=read("src/NativeBuiltInFx.h");
+ const processor=read("engine/builtin_fx/GuitarRigProcessor.h");
+ const host=read("src/Main.cpp");
+ const guiBuilder=read("scripts/build_approved_native_gui.py");
+ const id="armix.builtin.guitar-rig.v1";
+ const start=bridge.indexOf("let nativeBuiltins=Object.freeze([");
+ const end=bridge.indexOf("const presentFxCatalog=",start);
+ assert.ok(start>0 && end>start,"compiled native catalog exists");
+ const builtinSlice=bridge.slice(start,end);
+ assert.ok(builtinSlice.includes('id:"'+id+'",name:"Guitar FX Rig"'));
+ assert.ok(builtinSlice.includes('category:"Guitar",format:"Native",source:"builtin"'));
+ assert.ok(processor.includes('catalogIdentity="'+id+'"'),
+           "native processor ID matches UI catalog");
+ assert.ok(catalog.includes('GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true'),
+           "C++ native registry advertises exactly the same visible FX");
+ assert.ok(host.includes('for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)'));
+ assert.ok(host.includes('entry->setProperty("showInPicker",fx.showInPicker)'));
+ assert.ok(host.includes('setProperty("builtIns",juce::var(builtIns))'));
+ assert.ok(bridge.includes("if(Array.isArray(catalog.builtIns))"));
+ assert.ok(bridge.includes("nativeBuiltins=catalog.builtIns.filter"));
+ assert.ok(bridge.includes("const presentFxCatalog=()=>scope?.setNativeCatalog?.("));
+ assert.ok(guiBuilder.includes("setNativeCatalog(rows)"));
+ assert.ok(guiBuilder.includes("renderPluginCatalog();renderFastPicker();"));
+ assert.ok(bridge.includes('controller.intent("LOAD_INSERT",nativeId,'));
+ assert.ok(bridge.includes('pendingFxInsert={authority:"CHANNEL_ID"'));
+});

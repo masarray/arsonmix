@@ -1231,6 +1231,12 @@
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
+    // This identity has a matching REAL GuitarRigProcessor in the native
+    // registry. The approved quick picker must expose it immediately, even
+    // before an async VST3 scan or arMixCatalog refresh. Do not add a demo
+    // processor or claim that the browser can produce guitar audio.
+    Object.freeze({id:"armix.builtin.guitar-rig.v1",name:"Guitar FX Rig",
+      vendor:"ArSonMix",category:"Guitar",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.vocal-throw.v1",name:"ArSon Vocal Throw",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin",showInPicker:false})
   ]);
