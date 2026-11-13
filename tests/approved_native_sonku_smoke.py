@@ -215,7 +215,7 @@ def exercise(browser,out,width,height):
         # Acoustic anchor is distinct from the readable icon's display offset.
         # The offset NEVER alters native azimuth when both sources coincide.
         nodes=editor.locator('#skMap .sk-src')
-        data=nodes.evaluate_all("""els=>els.map(n=>({
+        data=nodes.evaluate_all(r"""els=>els.map(n=>({
           ax:Number(n.dataset.acousticX),ay:Number(n.dataset.acousticY),
           vx:Number(n.dataset.visualX),vy:Number(n.dataset.visualY),
           value:Number(n.getAttribute('aria-valuenow')),
@@ -249,11 +249,15 @@ def exercise(browser,out,width,height):
     assert abs(far_side["scale"]-near_side["scale"])<.02,(far_side,near_side)
     assert abs(far_side["opacity"]-near_side["opacity"])<.02,(far_side,near_side)
     # L and R belong to independent near/far planes when they straddle 90°.
+    # Native control snapshots are request-correlated; allow a fresh read
+    # instead of reusing the previous consumed requestId (rejected as stale).
+    page.wait_for_timeout(270)
     accepted_snapshot(page,state,{**SETTINGS,"moving":False,
         "startAzimuthDegrees":90.0,"stereoSpreadDegrees":40.0})
     pair=editor.locator("#skMap .sk-src").evaluate_all(
         "els=>els.map(n=>({layer:n.parentElement.id,depth:n.dataset.depth}))")
     assert {v["depth"] for v in pair}=={"far","near"},pair
+    page.wait_for_timeout(270)
     accepted_snapshot(page,state,{**SETTINGS,"moving":False,
         "startAzimuthDegrees":-90.0,"stereoSpreadDegrees":0.0})
     # All drag paths now STREAM native edits DURING the gesture. A burst
