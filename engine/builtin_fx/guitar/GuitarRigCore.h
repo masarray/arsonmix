@@ -38,12 +38,23 @@ public:
         return p;
     }
 
+    // M1 supports exactly the four stages represented by its native
+    // hardware editor. The generic versioned Program can express richer
+    // future graphs, but this DSP never silently accepts a mismatched UI.
+    static constexpr bool supportsProgram(const Program& p) noexcept {
+        return validate(p)==ProgramError::none && p.count==4 &&
+            p.blocks[0].module==Module::gate &&
+            p.blocks[1].module==Module::overdrive &&
+            p.blocks[2].module==Module::amplifier &&
+            p.blocks[3].module==Module::cabinet;
+    }
+
     // CONTROL only: validate complete program, construct FIR/filter constants,
     // and reset all audio histories before publication. On failure, reject
     // without mutating an existing ready core.
     bool prepare(double rate,const Program& program) noexcept {
         if(!std::isfinite(rate)||rate<32000.||rate>192000.||
-           validate(program)!=ProgramError::none)return false;
+           !supportsProgram(program))return false;
         for(std::size_t i=0;i<program.count;++i)
             if(program.blocks[i].enabled && !supported(program.blocks[i].module))
                 return false;
