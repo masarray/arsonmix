@@ -86,21 +86,11 @@ root.innerHTML=[
  '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
- // Original vector back-view listener: anatomy and shoulders face UP.
- // Do not rotate the old face PNG upside-down or alter native HRTF angles.
- '<ellipse class="sk-head-shadow" cx="200" cy="242" rx="88" ry="30" fill="#031621" fill-opacity=".34"/>',
+ // Flipped transparent PNG replaces the provisional vector listener.
+ // Anatomical nose/FRONT points TOP; source azimuth is unchanged.
+ '<ellipse class="sk-head-shadow" cx="200" cy="246" rx="76" ry="22" fill="#031621" fill-opacity=".27"/>',
  '<g id="skRearSources" class="sk-rear-sources"></g>',
- '<g id="skListenerArt" class="sk-listener-art" aria-label="Listener back of head facing top" pointer-events="none">',
- '<path d="M121 250 Q122 216 151 208 Q165 204 181 204 L219 204 Q235 204 250 210 Q279 221 279 250 Q200 278 121 250Z" fill="#0d87b2" opacity=".2" filter="url(#skAvatarGlow)"/>',
- '<path d="M118 247 Q123 217 150 210 Q169 202 180 203 L220 203 Q235 204 251 211 Q277 223 282 247 Q245 271 200 266 Q154 270 118 247Z" fill="url(#skBackSuit)" stroke="#77c6e7" stroke-opacity=".54" stroke-width="1.3"/>',
- '<path d="M152 211 Q174 229 200 229 Q226 229 249 212" fill="none" stroke="#a9ebfb" stroke-opacity=".22" stroke-width="2"/>',
- '<path d="M183 189 L183 214 Q199 226 217 214 L216 189Z" fill="url(#skNeck)" stroke="#7bcbea" stroke-opacity=".5"/>',
- '<ellipse cx="159" cy="170" rx="9" ry="17" fill="#3b9ec9" stroke="#9ae1f3" stroke-opacity=".45"/>',
- '<ellipse cx="241" cy="170" rx="9" ry="17" fill="#206f9c" stroke="#9ae1f3" stroke-opacity=".45"/>',
- '<path d="M200 99 C171 99 157 118 155 151 Q151 185 171 201 Q184 211 200 211 Q216 211 229 201 Q249 183 245 151 C243 118 228 99 200 99Z" fill="url(#skCrown)" stroke="#a0e8f9" stroke-opacity=".68" stroke-width="1.7"/>',
- '<path d="M181 113 Q200 102 219 113 M169 142 Q182 124 194 126 M207 126 Q222 126 232 145" fill="none" stroke="#c7f7ff" stroke-opacity=".26" stroke-width="2.6" stroke-linecap="round"/>',
- '<path d="M172 188 Q197 213 229 189" fill="none" stroke="#134e75" stroke-opacity=".28" stroke-width="2.4"/>',
- '</g>',
+ '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="73" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-flipped" aria-label="Top-view listener facing front at top" pointer-events="none"/>',
  // Near orbit overlays lower bust, forming ONE plausible 3D spatial ring.
  '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
  '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
