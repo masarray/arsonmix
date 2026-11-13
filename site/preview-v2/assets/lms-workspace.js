@@ -275,7 +275,7 @@ function render() {
  ({system:systemPage,crossover:frequencyPage,matrix:matrixPage,
  processing:dspPage,alignment:alignPage}[page]())+'</div></div>';
 }
-function update(next) {state=next;message="";pending=null;render();}
+function update(next) {state=next;message="";pending=null;if(!state.ports.includes(selectedPort)){selectedPort=state.ports[0]||null;selectedBand=0;}render();}
 function openLms(open) {
  root.hidden=!open;app.classList.toggle("lms-active",open);
  launch.setAttribute("aria-pressed",String(open));
@@ -302,8 +302,8 @@ root.addEventListener("click",event=>{
   return;
  }
  if(act==="removePeq"){
-  try{update(M.withoutPeqBand(state,selectedPort,selectedBand));
-      selectedBand=Math.max(0,selectedBand-1);}
+  try{const next=M.withoutPeqBand(state,selectedPort,selectedBand);
+      selectedBand=Math.max(0,selectedBand-1);update(next);}
   catch(e){message=e.message;render();}
   return;
  }
