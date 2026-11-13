@@ -96,10 +96,19 @@ message(STATUS "${ARMIX_GUITAR_ART_LOG}")
 # fallback *at configure time*, never loaded at runtime from user paths.
 # Art approval adds the 12 PNGs to artist-source/; the source/audio contract
 # remains unchanged. The shipped binary contains embedded PNG bytes only.
+# The historical artist-source/ from PR #663 contains the very graphics
+# rejected in physical UI review. NEVER silently overwrite new generated art
+# with those legacy files on a clean configure. External artist sources require
+# an explicit opt-in and pass the pixel-level validation gate.
+option(ARMIX_GUITAR_USE_ARTIST_SOURCE
+    "Explicitly opt in to externally approved Guitar FX PNG exports" OFF)
 set(ARMIX_GUITAR_ART_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/artist-source"
-    CACHE PATH "Optional approved photo-real Guitar FX artist PNG source")
-if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+    CACHE PATH "Optional approved external Guitar FX artist PNG source")
+if(ARMIX_GUITAR_USE_ARTIST_SOURCE)
+    if(NOT IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
+        message(FATAL_ERROR "Guitar FX external art opt-in needs a valid directory")
+    endif()
     # Reject incomplete/misaligned artist exports before CMake embeds them.
     # A changed ON/OFF silhouette or outer frame would cause visible flicker.
     execute_process(
@@ -129,7 +138,7 @@ if(IS_DIRECTORY "${ARMIX_GUITAR_ART_SOURCE_DIR}")
     endforeach()
     message(STATUS "Guitar FX approved layered artist art selected")
 else()
-    message(STATUS "Guitar FX deterministic layered fallback selected")
+    message(STATUS "Guitar FX new deterministic hardware artwork selected (legacy PR 663 art disabled)")
 endif()
 file(GLOB ARMIX_GUITAR_SKIN_PNGS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/design-references/guitar-fx/assets/gfx-*.png")
