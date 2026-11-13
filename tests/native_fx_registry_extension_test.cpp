@@ -290,6 +290,24 @@ static void verifyFirstSoundGuitarProcessor() {
     tiny.clear();
     partiallyWet->processBlock(tiny,tinyMidi);
     assert(partiallyWetRig->pendingProgramChanges()==0);
+    // Cabinet impulse history must not leak after the 128-frame host
+    // rack-bypass envelope reaches fully dry. No old note on wet return.
+    auto noTail=guitar->prepare(48000.,128,nullptr,0);
+    auto* noTailRig=dynamic_cast<
+        armix::builtin_fx::GuitarRigProcessor*>(noTail.get());
+    assert(noTailRig);
+    tiny.clear();
+    tiny.setSample(0,0,0.6f);
+    tiny.setSample(1,0,0.6f);
+    noTail->processBlock(tiny,tinyMidi); // populate FIR's 32-sample history
+    noTailRig->onRealtimeBypass(true,true);
+    noTailRig->onRealtimeBypass(false,false);
+    tiny.clear();
+    noTail->processBlock(tiny,tinyMidi);
+    for(int i=0;i<tiny.getNumSamples();++i){
+        assert(tiny.getSample(0,i)==0.f);
+        assert(tiny.getSample(1,i)==0.f);
+    }
     auto edit=guitarTyped->acceptedProgram();
     edit.blocks[2].values[0]=0.78f;
     edit.blocks[1].enabled=true;
