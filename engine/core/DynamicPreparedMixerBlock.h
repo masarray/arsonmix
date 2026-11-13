@@ -483,8 +483,8 @@ public:
                     (send.pan>0.f?1.f-send.pan:1.f);
                 const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
                     (send.pan<0.f?1.f+send.pan:1.f);
-                outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
-                                       send.primaryOutput});
+                outgoing[i].push_back({to,gl,gr,send.enabled?send.gain:0.f,
+                                       send.preFader,send.primaryOutput});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
