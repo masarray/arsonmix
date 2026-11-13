@@ -29,6 +29,70 @@ static ChannelEdit send(ChannelId from,ChannelId to,float gain,bool pre=false) {
     e.id=from;e.target=to;e.value=gain;e.preFader=pre;return e;
 }
 
+// Real PCM SEND ON/OFF: mute one parallel edge without deleting the cable,
+// changing its gain/tap, or affecting the source channel's MAIN contribution.
+static void verifyPerEdgeSendEnablePcm() {
+    constexpr std::uint64_t epoch=9422;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    const std::array<ChannelEdit,3> channels{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::fxReturn,"WET",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,channels,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0];
+    const auto wet=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,3> links{
+        output(voice,main),output(wet,main),send(voice,wet,.5f,true)
+    };
+    req.sources={{voice,0,-1,false}};
+    a=session.edit(1,1,links,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto* row=session.acceptedRoster().find(voice);
+    assert(row && row->sends.size()==2);
+    const auto edge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.destination==wet && !e.primaryOutput;});
+    assert(edge!=row->sends.end() && edge->enabled);
+    const auto edgeId=edge->edgeId;
+    std::array<float,64> input{},l{},r{};input.fill(.5f);
+    const float* pins[]{input.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](){
+        return session.render(epoch,pins,1,l.data(),r.data(),64,false,fx);
+    };
+    assert(render());
+    const float withSend=l[63];
+    assert(withSend>.35f);
+    ChannelEdit off;off.kind=ChannelEdit::Kind::setSendEnabled;
+    off.id=voice;off.sendEdgeId=edgeId;off.enabled=false;
+    const std::array<ChannelEdit,1> disable{off};
+    a=session.edit(2,2,disable,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==3);
+    row=session.acceptedRoster().find(voice);
+    const auto offEdge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(offEdge!=row->sends.end() && !offEdge->enabled &&
+           offEdge->gain==.5f && offEdge->preFader);
+    assert(!session.setLiveParallelSend(epoch,3,voice,wet,true,1.f));
+    assert(render());
+    const float withoutSend=l[63];
+    assert(withoutSend>.1f && withoutSend<withSend);
+    auto on=off;on.enabled=true;
+    const std::array<ChannelEdit,1> enable{on};
+    a=session.edit(3,3,enable,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==4);
+    row=session.acceptedRoster().find(voice);
+    const auto onEdge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(onEdge!=row->sends.end() && onEdge->enabled &&
+           onEdge->gain==.5f && onEdge->preFader);
+    assert(render() && near(l[63],withSend,1e-4f));
+    session.unpublish();session.pollRetirement();
+}
+
 static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
     using armix::dsp::RealtimeSlew64;
     // Sub-64 variable callbacks must not finish a 64-sample gesture in 4
@@ -919,6 +983,7 @@ int main() {
 
     verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
+    verifyPerEdgeSendEnablePcm();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
     DynamicAcceptedSession session;
