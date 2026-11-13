@@ -32,7 +32,26 @@ def inline_css(text):
     assert len(blocks)==3 and blocks[0].group(1)==blocks[1].group(1)==""
     return blocks[-1].group(1)
 
+def historical_v26_owner(modern,record):
+    """Reconstruct the immutable V26 owner after the one audited PFL fix.
+
+    The shipping hardware key has data-hw-kind="pfl"; V26's historic owner
+    used "cue" for the LED selector. Keep the V26 ledger byte-exact rather
+    than silently rewriting an old milestone fingerprint or allowing arbitrary
+    CSS changes. Only this single selector substitution is admissible.
+    """
+    if meta(modern)==record["current"]:
+        return modern
+    live='.app .console-body .strip .mx-hw-row>button.mx-hw-key[data-hw-kind="pfl"]{--mx-hw-led:101,210,236}'
+    historical=live.replace('data-hw-kind="pfl"','data-hw-kind="cue"')
+    if modern.count(live)!=1 or modern.count(historical)!=0:
+        raise AssertionError("V26 owner source changed unexpectedly")
+    original=modern.replace(live,historical,1)
+    assert meta(original)==record["current"],"Unapproved CSS drift outside exact PFL selector"
+    return original
+
 def restore_owner(modern,record):
+    modern=historical_v26_owner(modern,record)
     assert meta(modern)==record["current"],"V26 owner source changed unexpectedly"
     old=modern
     for edit in sorted(record["edits"],key=lambda e:e["offset"]):
