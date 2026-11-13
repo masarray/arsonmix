@@ -60,8 +60,8 @@ static void verifyPerEdgeSendEnablePcm() {
     std::array<float,64> input{},l{},r{};input.fill(.5f);
     const float* pins[]{input.data()};
     const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
-    const auto render=[&](){
-        return session.render(epoch,pins,1,l.data(),r.data(),64,false,fx);
+    const auto render=[&](int frames=64){
+        return session.render(epoch,pins,1,l.data(),r.data(),frames,false,fx);
     };
     assert(render());
     const float withSend=l[63];
@@ -102,14 +102,14 @@ static void verifyPerEdgeSendEnablePcm() {
         [&](const auto& e){return e.edgeId==edgeId;});
     assert(routingEdge!=accepted->edges.end() && !routingEdge->enabled);
     assert(!session.setLiveParallelSend(epoch,4,voice,wet,true,1.f));
-    assert(render());
-    const float liveOff=l[63];
+    assert(render(4));
+    const float liveOff=l[3];
     assert(liveOff>withoutSend && liveOff<withSend);
-    assert(render() && near(l[63],withoutSend,1e-4f));
+    assert(render(60) && near(l[59],withoutSend,1e-4f));
     assert(session.setLiveSendEnabled(epoch,4,voice,edgeId,true));
     assert(session.acceptedRoster().find(voice)->sends.back().enabled);
-    assert(render() && l[63]>withoutSend && l[63]<withSend);
-    assert(render() && near(l[63],withSend,1e-4f));
+    assert(render(4) && l[3]>withoutSend && l[3]<withSend);
+    assert(render(60) && near(l[59],withSend,1e-4f));
     assert(session.acceptedGraphRevision()==4);
     // PRE_FADER is AFTER FX and BEFORE the source channel fader.
     // With source fader fully closed, wet PRE remains; POST must go silent.
