@@ -9,6 +9,7 @@
 #include <limits>
 int main(){
     using armix::sonku::SonKuEarlyReflections;
+    using armix::sonku::SonKuRoomShape;
     SonKuEarlyReflections invalid;
     assert(!invalid.prepare(96000.));
     assert(!invalid.prepare(std::numeric_limits<double>::quiet_NaN()));
