@@ -10,6 +10,16 @@ import {execFileSync} from "node:child_process";
 import {inflateSync} from "node:zlib";
 const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
 const assetDir=resolve(root,"design-references/guitar-fx/assets");
+const productionNames=[
+ "gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
+ "gfx-pedal-drive-body.png","gfx-knob.png","gfx-switch-off.png",
+ "gfx-switch-on.png","gfx-button-off.png","gfx-button-on.png",
+ "gfx-stomp-off.png","gfx-stomp-on.png"];
+// Snapshot checked-in bytes at module load, BEFORE any test imports the
+// generator (which writes image files as an intentional side effect).
+const committedProductionFingerprints=productionNames.map(n=>
+ createHash("sha256").update(readFileSync(resolve(assetDir,n))).digest("hex"));
+
 const expected=[
  ["amp-head-class-a.png",920,340,400000],["cabinet-dual-12.png",720,360,340000],
  ["pedal-gate.png",260,360,130000],["pedal-compressor.png",260,360,130000],["pedal-overdrive.png",260,360,130000],["pedal-delay.png",260,360,130000],
@@ -275,12 +285,8 @@ test("new generator is repeatable and makes distinct device materials",async()=>
 test("eleven committed production PNGs are byte-exact, with no obsolete panel",async()=>{
  // Read committed bytes BEFORE importing generator (which exports PNGs).
  // A source-only PR cannot pass by relying on config-time regenerated files.
- const names=[
-   "gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
-   "gfx-pedal-drive-body.png","gfx-knob.png","gfx-switch-off.png",
-   "gfx-switch-on.png","gfx-button-off.png","gfx-button-on.png",
-   "gfx-stomp-off.png","gfx-stomp-on.png"];
- const original=names.map(n=>sha256(readFileSync(resolve(assetDir,n))));
+ const names=productionNames;
+ const original=committedProductionFingerprints;
  const {SKINS,render}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
  assert.deepEqual(SKINS.map(s=>s[0]).sort(),[...names].sort());
  assert.deepEqual(original,names.map(n=>{
