@@ -30,7 +30,7 @@ def main():
           top:e.getBoundingClientRect().top,
           width:e.getBoundingClientRect().width
         }))""")
-        assert_true([x['kind'] for x in rows]==['mute','solo','cue'],rows)
+        assert_true([x['kind'] for x in rows]==['mute','solo','pfl'],rows)
         assert_true(all(abs(x['h']-29)<.5 and x['width']>24 for x in rows),rows)
         assert_true(max(x['top'] for x in rows)-min(x['top'] for x in rows)<.5,rows)
         well=page.locator('#tracks .strip[data-id="1"] .mx-hw-row')
@@ -70,7 +70,7 @@ def main():
         # CSS MUTE follows the owner reference. SOLO/PFL keep SVG cutout keys.
         key=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="mute"]')
         solo=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="solo"]')
-        cue=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="cue"]')
+        cue=page.locator('#tracks .strip[data-id="1"] button[data-hw-kind="pfl"]')
         mute_off=key.evaluate("""el=>({
           led:getComputedStyle(el).getPropertyValue('--mx-hw-led').trim(),
           text:el.querySelector('.mx-mute-legend')?.textContent,
