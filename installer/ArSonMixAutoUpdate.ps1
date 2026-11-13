@@ -18,6 +18,9 @@ $local=$env:LOCALAPPDATA
 if([string]::IsNullOrWhiteSpace($local)){exit 0}
 $root=Join-Path $local 'ArSonMix\Updates'
 $statePath=Join-Path $root 'state.json'
+# Consent is a usability acknowledgement, never a cryptographic trust boundary.
+# The worker independently verifies both published installers before execution.
+$approvalPath=Join-Path $root 'approved.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
@@ -176,6 +179,17 @@ function Should-RetryInstaller([int]$attempts,[bool]$success,[bool]$oldRemains) 
     # throws and must not spawn a second installer while the first runs.
     return (-not $success -and $oldRemains -and $attempts -ge 1 -and $attempts -lt 2)
 }
+function Test-UserApproval([object]$approval,[object]$transaction) {
+    if($null -eq $transaction -or
+       $transaction.operation -cnotin @('repair','upgrade')) {return $false}
+    if($transaction.operation -ceq 'repair'){return $true}
+    # Approval is only a usability gate. It does NOT authenticate publisher.
+    return ($null -ne $approval -and
+        [string]$approval.candidateSha -ceq [string]$transaction.candidateSha -and
+        [string]$approval.previousSha -ceq [string]$transaction.previousSha -and
+        [string]$approval.candidateTag -ceq [string]$transaction.candidateTag)
+}
+
 function Get-InstalledImageStatus([object]$build) {
     try {
         $hash=[string]$build.exeSha256
@@ -345,7 +359,7 @@ function Launch-WithHealth([string]$expectedSha) {
         do {
             if($process.HasExited){return $false}
             if(Test-Path -LiteralPath $marker -PathType Leaf) {
-                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY' -and
+                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY_NO_AUDIO' -and
                    (Test-InstalledRelease $expectedSha)) {
                     Start-Sleep -Seconds 2
                     $process.Refresh()
@@ -470,6 +484,25 @@ if($PolicySelfTest) {
     if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
     if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
     if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    # Test same-version repair and exact candidate acknowledgement offline.
+    $transaction=[pscustomobject]@{
+        operation='upgrade';candidateSha=('a'*40);previousSha=('b'*40);
+        candidateTag='v0.5.0-alpha.6'}
+    $goodAck=[pscustomobject]@{
+        candidateSha=('a'*40);previousSha=('b'*40);candidateTag='v0.5.0-alpha.6'}
+    if(-not (Test-UserApproval $goodAck $transaction)) {throw 'Exact update acknowledgement rejected'}
+    if(Test-UserApproval $null $transaction) {throw 'Missing acknowledgement accepted'}
+    $goodAck.candidateSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different release acknowledgement accepted'}
+    $goodAck.candidateSha='a'*40
+    $goodAck.previousSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different baseline acknowledgement accepted'}
+    $goodAck.previousSha='b'*40
+    $goodAck.candidateTag='v0.5.0-alpha.7'
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different version acknowledgement accepted'}
+    $transaction.operation='repair'
+    if(-not (Test-UserApproval $null $transaction)) {throw 'Same-version repair incorrectly gated'}
+    Write-Output 'ARSONMIX_UPDATER_USER_ACK_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
@@ -669,6 +702,20 @@ try {
        -not (Test-StagedAsset $oldPath $state.previousAsset)) {
         Fail 'Offline staged install/rollback bytes not verified'
     }
+    # A published upgrade must be acknowledged once by the user in the
+    # lightweight GUI prompt. A missing/stale/corrupt token defers installation,
+    # without breaking mixer startup or forcing an active audio session closed.
+    # Same-release binary repair is separate and does not require this consent.
+    if($state.operation -ceq 'upgrade') {
+        $approval=$null
+        if(Test-Path -LiteralPath $approvalPath -PathType Leaf) {
+            try {$approval=Read-Json $approvalPath} catch { }
+        }
+        if(-not (Test-UserApproval $approval $state)) {
+            Log-Result 'UPDATE_WAITING_FOR_USER_OK'
+            exit 0
+        }
+    }
     # Re-query public release to reject a revoked or replaced candidate.
     # No network is needed *during* live audio; if offline on close, defer.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
@@ -744,6 +791,7 @@ try {
         $state.blockedTag=''
         Write-State $state
         Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
+        Remove-Item -LiteralPath $approvalPath -Force -ErrorAction SilentlyContinue
         Clear-StagedVendorFiles $state
         exit 0
     }
@@ -755,9 +803,9 @@ try {
         $state.retryAfterUtc=[DateTime]::UtcNow.AddMinutes(30).ToString('o')
         Write-State $state
         Log-Result ('INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT '+$new.tag_name)
-        try {[Diagnostics.Process]::Start($exe) | Out-Null} catch {
-            Log-Result 'PREVIOUS_EXE_RELAUNCH_FAILED'
-        }
+        # Do not surprise the operator by restarting audible audio after Quit.
+        # The previous verified EXE remains available on next deliberate launch.
+        Log-Result 'PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH'
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.
@@ -770,7 +818,7 @@ try {
     Write-State $state
     if($actualSha -ceq $installedSha) {
         Log-Result ('INSTALLER_FAILED_PREVIOUS_VERSION_RETAINED '+$new.tag_name)
-        [Diagnostics.Process]::Start($exe) | Out-Null
+        # A failed post-exit update must not auto-start an audible mixer.
         exit 0
     }
     foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
@@ -792,7 +840,7 @@ try {
             $state.phase='rolled-back'
             Write-State $state
             Log-Result ('ROLLED_BACK '+$new.tag_name)
-            [Diagnostics.Process]::Start($exe) | Out-Null
+            # Restored version is ready for the next deliberate user launch.
             exit 0
         }
     }

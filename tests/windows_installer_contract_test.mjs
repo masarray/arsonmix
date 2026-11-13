@@ -173,7 +173,7 @@ test('Smart Auto Updater uses an independent process and strict release gates', 
   assert.match(native, /getChildFile \("ArSonMixAutoUpdate\.ps1"\)/);
   assert.match(native, /juce::ChildProcess supervisor/);
   assert.match(native, /ARSONMIX_UPDATE_PROBE/);
-  assert.match(native, /GUI_READY/);
+  assert.match(native, /GUI_READY_NO_AUDIO/);
   // JUCE 8.0.15 Uuid::toString() is un-dashed; PS .NET Guid.ToString("D") is dashed.
   assert.match(native, /juce::Uuid \(probe\)\.toDashedString\(\) == probe/);
   assert.doesNotMatch(native, /juce::Uuid \(probe\)\.toString\(\) == probe/);
@@ -315,7 +315,7 @@ test('healthy install, repair and rollback require real EXE SHA, not provenance 
   assert.match(script, /Repair did not restore exact authenticated EXE and source manifest/);
   assert.match(script, /if\(\$upgradeOK -and \(Test-InstalledRelease/);
   assert.match(script, /if\(Test-InstalledRelease \$installedSha\)/);
-  assert.match(script, /GUI_READY' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
+  assert.match(script, /GUI_READY_NO_AUDIO' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
   assert.match(script, /Same source with changed EXE accepted/);
   assert.match(smoke, /ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS/);
 });
@@ -379,4 +379,79 @@ test('WebView2 error screen cannot acknowledge healthy GUI; staging retries afte
   assert.match(script, /\$state\.phase='staging-retry'\s*\n\s*\$state\.lastCheckUtc=''/);
   assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
   assert.match(script, /TotalMinutes -lt 20/);
+});
+
+
+test('acknowledged one-click upgrade is deferred until the exact candidate is approved', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  const native = read('src/Main.cpp');
+  assert.match(updater, /\$approvalPath=Join-Path \$root 'approved\.json'/);
+  assert.match(updater, /UPDATE_WAITING_FOR_USER_OK/);
+  assert.match(updater, /function Test-UserApproval\(/);
+  assert.match(updater, /ARSONMIX_UPDATER_USER_ACK_POLICY_PASS/);
+  assert.match(updater, /if\(-not \(Test-UserApproval \$approval \$state\)\)/);
+  assert.match(updater, /\$state\.operation -ceq 'upgrade'/);
+  for (const name of ['candidateSha','candidateTag','previousSha'])
+    assert.ok(updater.includes('[string]$approval.'+name+' -ceq [string]$transaction.'+name));
+  assert.ok(updater.indexOf('UPDATE_WAITING_FOR_USER_OK') < updater.indexOf("    $state.phase='installing'"),
+    'consent must gate the installer before any replacement');
+  assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
+  assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
+  assert.match(native, /class ArSonMixUpdateNotice final : public juce::DocumentWindow/);
+  assert.match(native, /juce::TextButton ok \{"OK"\}/);
+  assert.match(native, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
+  assert.match(native, /std::make_unique<ArSonMixUpdateNotice>/);
+  assert.doesNotMatch(native, /juce::NativeMessageBox::showAsync \(options/);
+  assert.match(native, /approved\.json/);
+  assert.match(native, /lastUpdatePromptedSha_ == candidate/);
+  assert.doesNotMatch(updater, /(?:Stop-Process|taskkill|TerminateProcess)/);
+});
+
+test('GUI-only updater probe does not strand pre-window WebView2 startup failures', () => {
+  const native = read('src/Main.cpp');
+  const startup = native.slice(native.indexOf('void initialise (const juce::String&) override'),
+                               native.indexOf('void shutdown() override', native.indexOf('void initialise (const juce::String&) override')));
+  const failures = [
+    'Cannot create the browser-cache folder:',
+    'The native browser backend could not be initialized on this machine.'
+  ];
+  for (const message of failures) {
+    const failureAt = startup.indexOf(message);
+    assert.ok(failureAt > 0, message);
+    const preceding = startup.slice(Math.max(0, failureAt - 285), failureAt);
+    assert.match(preceding, /if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*systemRequestedQuit\(\);\s*return;\s*\}/);
+  }
+});
+
+test('silent post-install GUI probe cannot automatically arm ASIO or save a user session', () => {
+  const main = read('src/Main.cpp');
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(main, /static bool isAutoUpdateHealthProbe\(\)/);
+  assert.match(main, /if \(updaterProbeMode_ && audioEngineStarted_\)\s*return;/);
+  const guard=main.indexOf('diagnostics_.record ("UPDATER_GUI_PROBE"');
+  const engine=main.indexOf('startupError_ = engine_.start (saved.get());', guard);
+  assert.ok(guard >= 0 && engine > guard, 'GUI-only return must precede audio device startup');
+  assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
+  assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
+  assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
+  assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
+  assert.match(updater, /GUI_READY_NO_AUDIO/);
+  assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
+  // Explicit manual Repair mode may still relaunch on request.
+  const afterApply = updater.slice(updater.indexOf('# Post-close supervisor'));
+  assert.doesNotMatch(afterApply, /\[Diagnostics\.Process\]::Start\(\$exe\)/);
+});
+
+test('updater notice is nonmodal, dismissal cannot approve and shutdown cleans up', () => {
+  const s=read('src/Main.cpp');
+  const notice=s.slice(s.indexOf('class ArSonMixUpdateNotice final'),s.indexOf('class ConsoleApp final'));
+  assert.match(notice, /juce::DocumentWindow/);
+  assert.match(notice, /panel_\.ok\.onClick = \[this\]/);
+  assert.match(notice, /if \(onAccept_ && onAccept_\(\)\)/);
+  assert.match(notice, /panel_\.ok\.setButtonText \("Retry"\)/);
+  assert.match(s, /return approvalFile\.replaceWithText \(/);
+  assert.match(notice, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
+  assert.doesNotMatch(notice, /enterModalState|runModalLoop|NativeMessageBox/);
+  assert.match(s, /updateNotice_\.reset\(\);\s*#endif\s*window_\.reset\(\)/);
 });
