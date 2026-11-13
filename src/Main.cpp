@@ -228,6 +228,19 @@ private:
     bool wasVisible_ = false;
 };
 
+// A post-install GUI probe must not open the owner's last audio interface,
+// restore or overwrite the last .smix, or automatically resume live output.
+// Only the supervisor creates the canonical 36-character GUID env token.
+static bool isAutoUpdateHealthProbe()
+{
+#if defined(_WIN32)
+    const auto token = juce::SystemStats::getEnvironmentVariable ("ARSONMIX_UPDATE_PROBE", {});
+    return token.length() == 36 && juce::Uuid (token).toDashedString() == token;
+#else
+    return false;
+#endif
+}
+
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
@@ -318,7 +331,8 @@ public:
         });
         restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
         catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
-        catalog_.scanFactoryIfPresent(); // Only the signed-off local manifest; never global VST scans.
+        if (!updaterProbeMode_)
+            catalog_.scanFactoryIfPresent(); // Do not scan even FactoryFX during GUI-only probe.
 #if defined(_WIN32)
         // JUCE owns the real window commands; unlike WebView2 JS, these are
         // synchronous native controls with JUCE's existing resize constrainer.
@@ -390,8 +404,9 @@ public:
         mixerSessionWorker_.finishForShutdown();
         logicalVendorEditor_.reset();
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
-        if(static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
-           logicalMixer_.loaded()) {
+        if (!updaterProbeMode_ &&
+            (static_cast<bool>(lab.getProperty("nativeChannelIdPcmActive",false)) ||
+             logicalMixer_.loaded())) {
             const auto error=saveMixerSession(resumeMain);
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
@@ -525,6 +540,7 @@ private:
     juce::uint32 webViewStartupTick_ = 0;
     juce::uint32 guiReadyTick_ = 0;
     bool audioEngineStarted_ = false;
+    const bool updaterProbeMode_ = isAutoUpdateHealthProbe();
     bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     // Opt-in and bounded: message-thread timing only, NEVER the audio callback.
@@ -6824,8 +6840,9 @@ private:
 #if defined(_WIN32)
         // A startup splash can delay HWND creation; attach once the real JUCE
         // peer exists. Never install a low-level keyboard hook.
-        if(auto* peer=getPeer())
-            hotkeys_.attach(peer->getNativeHandle());
+        if (!updaterProbeMode_)
+            if(auto* peer=getPeer())
+                hotkeys_.attach(peer->getNativeHandle());
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         // Always disabled unless the user explicitly starts a bounded trace.
@@ -6865,10 +6882,15 @@ private:
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
             if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog
-            showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
-                                     " Check the WebView2 Runtime and browser-cache folder permissions.");
+            if (!updaterProbeMode_)
+                showWebViewStartupError ("The embedded mixer did not initialize in 10 seconds."
+                                         " Check the WebView2 Runtime and browser-cache folder permissions.");
             return;
         }
+        // Health probes verify WebView/native readiness without opening any
+        // audio device, restoring plugins or writing a replacement .smix.
+        if (updaterProbeMode_ && audioEngineStarted_)
+            return;
         // First visible GUI frame must precede device discovery. Reuse the
         // existing timer; never add a worker or poll the audio callback.
         if (!audioEngineStarted_)
@@ -6877,6 +6899,12 @@ private:
                 juce::Time::getMillisecondCounter() - guiReadyTick_ < 150u)
                 return;
             audioEngineStarted_ = true;
+            if (updaterProbeMode_)
+            {
+                diagnostics_.record ("UPDATER_GUI_PROBE", "Native bridge ready; device and session intentionally untouched");
+                if (onStartupStage_) onStartupStage_ (2);
+                return;
+            }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
             startupError_ = engine_.start (saved.get());
@@ -7135,6 +7163,71 @@ private:
     }
 };
 
+#if defined(_WIN32)
+// A non-modal desktop notice: no JUCE modal loop, no loss of live mixer controls.
+// The close X dismisses without consent; ONLY the OK action writes approval.
+// Update installation remains strictly deferred until a normal mixer exit.
+class ArSonMixUpdateNotice final : public juce::DocumentWindow
+{
+public:
+    ArSonMixUpdateNotice (const juce::String& tag, std::function<bool()> onAccept)
+        : DocumentWindow ("ArSonMix · Update", juce::Colour (0xff141d27), closeButton),
+          onAccept_ (std::move (onAccept))
+    {
+        panel_.message = "Version " + tag + " is ready.\n"
+                         "It will install automatically after you close ArSonMix.\n"
+                         "Your session and audio will not be interrupted.";
+        panel_.ok.onClick = [this]
+        {
+            // Never say OK succeeded when the per-user approval file is
+            // unreadable/unwritable: leave this NON-modal window available
+            // for a retry without interrupting audio.
+            if (onAccept_ && onAccept_())
+            {
+                setVisible (false);
+                return;
+            }
+            panel_.message = "Could not save update approval.\n"
+                             "Your mixer remains available.\n"
+                             "Check disk permissions, then choose Retry.";
+            panel_.ok.setButtonText ("Retry");
+            panel_.repaint();
+        };
+        setUsingNativeTitleBar (false);
+        setTitleBarHeight (31);
+        setResizable (false, false);
+        setContentNonOwned (&panel_, false);
+        centreWithSize (428, 185);
+        setVisible (true);
+        toFront (true);
+    }
+    void closeButtonPressed() override { setVisible (false); }
+
+private:
+    struct Panel final : juce::Component
+    {
+        juce::String message;
+        juce::TextButton ok {"OK"};
+        Panel()
+        {
+            addAndMakeVisible (ok);
+            ok.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff377bc7));
+            ok.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+        void resized() override { ok.setBounds (getWidth() - 106, getHeight() - 43, 88, 29); }
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (juce::Colour (0xff141d27));
+            g.setColour (juce::Colour (0xffe5edf7));
+            g.setFont (juce::Font (juce::FontOptions (14.0f)));
+            g.drawFittedText (message, 20, 15, getWidth() - 40, getHeight() - 69,
+                              juce::Justification::topLeft, 3);
+        }
+    } panel_;
+    std::function<bool()> onAccept_;
+};
+#endif
+
 class ConsoleApp final : public juce::JUCEApplication, private juce::Timer
 {
 public:
@@ -7165,7 +7258,8 @@ public:
 #endif
         // Paint the approved dark native splash BEFORE browser cache I/O,
         // WebView2 initialization, device scan or native console construction.
-        splash_ = std::make_unique<ArSonMixStartupSplash>();
+        if (!isAutoUpdateHealthProbe())
+            splash_ = std::make_unique<ArSonMixStartupSplash>();
         startTimer (90); // one-shot handoff after Windows first paint
     }
     void timerCallback() override
@@ -7182,7 +7276,24 @@ public:
         }
 #endif
         if (startupAttempted_)
+        {
+#if defined(_WIN32)
+            if (isAutoUpdateHealthProbe())
+            {
+                // Give the supervisor time to observe GUI_READY_NO_AUDIO,
+                // then quit by JUCE's ordinary message-thread teardown.
+                if (updateProbeCompleteTick_ != 0 &&
+                    juce::Time::getMillisecondCounter() - updateProbeCompleteTick_ >= 3500u)
+                {
+                    systemRequestedQuit();
+                    return;
+                }
+            }
+            else if (++updatePromptTicks_ % 40 == 0)
+                serviceSmartUpdateAcknowledgement();
+#endif
             return;
+        }
         startupAttempted_ = true;
         // Remain active only as a lightweight update handshake (4 Hz).
         // Do not touch audio-device selection, callback, or GUI geometry.
@@ -7191,12 +7302,25 @@ public:
         if (!folder.createDirectory().wasOk() && !folder.isDirectory())
         {
             splash_.reset();
+            // The updater's GUI-only validation must never strand an invisible
+            // error dialog. Return control to the supervisor, which will keep
+            // the authenticated rollback installer available.
+            if (isAutoUpdateHealthProbe())
+            {
+                systemRequestedQuit();
+                return;
+            }
             showWebViewStartupError ("Cannot create the browser-cache folder: " + folder.getFullPathName());
             return;
         }
         if (!juce::WebBrowserComponent::areOptionsSupported (webViewOptions()))
         {
             splash_.reset();
+            if (isAutoUpdateHealthProbe())
+            {
+                systemRequestedQuit();
+                return;
+            }
             showWebViewStartupError ("The native browser backend could not be initialized on this machine.");
             return;
         }
@@ -7223,16 +7347,23 @@ public:
                         .getChildFile ("health");
                     if (healthDir.createDirectory().wasOk())
                         healthDir.getChildFile (probe + ".ready")
-                            .replaceWithText ("GUI_READY");
+                            .replaceWithText ("GUI_READY_NO_AUDIO");
                 }
 #endif
 
 
-                if (window_) window_->toFront (true);
+                if (isAutoUpdateHealthProbe())
+                {
+                    if (window_) window_->setVisible (false);
+                    updateProbeCompleteTick_ = juce::Time::getMillisecondCounter();
+                }
+                else if (window_)
+                    window_->toFront (true);
             }
         });
 #if defined(_WIN32)
-        launchSmartUpdater (false);
+        if (!isAutoUpdateHealthProbe())
+            launchSmartUpdater (false);
 #endif
         // Opaque cover exactly matches the large HWND, not a small 740×420
         // card leaving white WebView2 edges exposed during first paint.
@@ -7245,6 +7376,9 @@ public:
     void shutdown() override
     {
         stopTimer();
+#if defined(_WIN32)
+        updateNotice_.reset();
+#endif
         window_.reset();
         splash_.reset();
 #if defined(_WIN32)
@@ -7256,7 +7390,8 @@ public:
         // Avoid starting setup while Windows is signing out/shutting down:
         // Windows may terminate installer midway through file replacement.
         // A staged transaction remains available on the next normal exit.
-        if (!innoIsClosing && ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
+        if (!innoIsClosing && !isAutoUpdateHealthProbe() &&
+            ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
             launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
         {
@@ -7272,6 +7407,64 @@ public:
     }
 private:
 #if defined(_WIN32)
+    void serviceSmartUpdateAcknowledgement()
+    {
+        // The separately running updater has already staged and SHA-checked
+        // both packages. Never claim a prompt can validate publisher identity.
+        if (!window_)
+            return;
+        const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
+        if (local.isEmpty())
+            return;
+        const auto folder = juce::File (local).getChildFile ("ArSonMix")
+                                               .getChildFile ("Updates");
+        const auto stateFile = folder.getChildFile ("state.json");
+        if (!stateFile.existsAsFile() || stateFile.getSize() > 8192)
+            return;
+        const auto state = juce::JSON::parse (stateFile.loadFileAsString());
+        const auto* object = state.getDynamicObject();
+        if (object == nullptr || object->getProperty ("phase").toString() != "staged"
+            || object->getProperty ("operation").toString() != "upgrade")
+            return;
+        const auto tag = object->getProperty ("candidateTag").toString();
+        const auto candidate = object->getProperty ("candidateSha").toString();
+        const auto previous = object->getProperty ("previousSha").toString();
+        if (tag.length() > 60 || !tag.startsWith ("v")
+            || candidate.length() != 40 || previous.length() != 40
+            || !candidate.containsOnly ("0123456789abcdef")
+            || !previous.containsOnly ("0123456789abcdef"))
+            return;
+        const auto approvalFile = folder.getChildFile ("approved.json");
+        if (approvalFile.existsAsFile() && approvalFile.getSize() <= 2048)
+        {
+            const auto saved = juce::JSON::parse (approvalFile.loadFileAsString());
+            if (const auto* ack = saved.getDynamicObject())
+                if (ack->getProperty ("candidateTag").toString() == tag
+                    && ack->getProperty ("candidateSha").toString() == candidate
+                    && ack->getProperty ("previousSha").toString() == previous)
+                    return; // Already acknowledged; no repeat dialog.
+        }
+        if (lastUpdatePromptedSha_ == candidate)
+            return; // Never nag during one mixer session.
+        if (updateNotice_ && updateNotice_->isVisible())
+            return; // Do not open another notice over a currently visible one.
+        lastUpdatePromptedSha_ = candidate;
+        // The approved user need not see download progress or installer flags.
+        // Unlike NativeMessageBox::showAsync, this floating notice is NON-modal:
+        // a performer can still move faders or patch WIRE during a live session.
+        updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
+            [approvalFile, tag, candidate, previous]
+            {
+                auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
+                approval->setProperty ("candidateTag", tag);
+                approval->setProperty ("candidateSha", candidate);
+                approval->setProperty ("previousSha", previous);
+                // A usability acknowledgement only. PowerShell verifies the
+                // published release, both installer hashes and process locks.
+                return approvalFile.replaceWithText (
+                    juce::JSON::toString (juce::var (approval.get()), false));
+            });
+    }
     void launchSmartUpdater (bool applyStaged)
     {
         // Windows per-user installation only: independent updater process.
@@ -7309,6 +7502,10 @@ private:
 #if defined(_WIN32)
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
+    int updatePromptTicks_ = 0;
+    std::unique_ptr<ArSonMixUpdateNotice> updateNotice_;
+    juce::uint32 updateProbeCompleteTick_ = 0;
+    juce::String lastUpdatePromptedSha_;
 #endif
     std::unique_ptr<ArSonMixStartupSplash> splash_;
     std::unique_ptr<ConsoleWindow> window_;

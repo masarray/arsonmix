@@ -22,8 +22,20 @@ def source_contract():
     for text in ("FADER_UNITY_CAPTURE_PX=7,FADER_UNITY_RELEASE_PX=12",
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
-                 "WIRE_IMPACT_TRAVEL_MS=330,WIRE_IMPACT_SETTLE_MS=170",
-                 "const distance=1-t; // distance travelled from IN toward OUT",
+                 "WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160",
+                 "const WIRE_RETRACT_MS=520",
+                 "function wireRetractPose(x0,y0,rx,ry,elapsedMs)",
+                 "function wireRetractWave(pose,t)",
+                 "function wireRetractPathData(x0,y0,rx,ry,elapsedMs)",
+                 "const endWave=wireRetractWave(pose,1)",
+                 "plug.setAttribute('cy',shape.pose.tipY.toFixed(1))",
+                 "const passed=pose.front-t; // first near OUT, then all along the cable",
+                 "svg.style.clipPath='none'",
+                 "const width=.65-.29*longMix",
+                 "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
+                 "function startWireRetraction(sourceId,releasePoint)",
+                 "if(replugRequest)kickWireSpring(replugRequest.sourceId,replugRequest.destId)",
+                 "const distance=1-t,passed=front-distance;",
                  "const wave=passed>0?",
                  "const accepted=ops.filter(op=>['CONNECT','ROUTE_ONLY','RETARGET'].includes(op.type)).at(-1)",
                  "wire-drag-line is-wire-selected",
@@ -177,9 +189,13 @@ def test_wire(page):
     samples=page.evaluate("window.__v60WireSamples")
     # Deterministic physical direction: first visible UP kick near IN,
     # OUT remains quiet initially; then the decayed crest reaches near OUT.
-    physics=page.evaluate("""()=>{
-      const g=wireMotionGeometry.get('1-3');
-      if(!g)return null;
+    # Canonical Pages GUI intentionally encapsulates its lexical graph.
+    # Probe the exact checked-in motion function without exposing a runtime
+    # debug global or duplicating the production renderer.
+    motion=HTML[HTML.index("const WIRE_IMPACT_TRAVEL_MS="):
+                HTML.index("function kickWireSpring(")]
+    physics=page.evaluate("()=>{\n"+motion+"""\n
+      const g=[0,0,500,0,72]; // approved long wire with anchored plugs
       const [x0,y0,x1,y1,limit]=g;
       const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
       const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
@@ -188,20 +204,44 @@ def test_wire(page):
         const v=1-t;
         return v*v*v*y0+3*v*v*t*(y0+c)+3*v*t*t*(y1+c)+t*t*t*y1;
       };
+      // Same production physics for short and long spans; measure the
+      // maximum deformation against the natural slack cable at each length.
+      const peak=span=>{
+        const geom=[0,0,span,0,72];
+        const sag=Math.max(10,Math.min(72,Math.min(67,28+Math.sqrt(span)*1.55)));
+        const ctrl=sag*4/3;
+        let max=0;
+        for(const ms of [45,85,150,230,300,390,460,520]){
+         const pts=wireImpactPathData(...geom,ms).match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
+         for(let i=1;i<64;i++){
+          const t=i/64,v=1-t;
+          const y=3*v*v*t*ctrl+3*v*t*t*ctrl;
+          max=Math.max(max,Math.abs(pts[2*i+1]-y));
+         }
+        }
+        return max;
+      };
       const displaced=(ms,i)=>{
         const points=wireImpactPathData(...g,ms).match(/-?\\d+(?:\\.\\d+)?/g).map(Number);
         return points[2*i+1]-baseline(i/64);
       };
       return {
         nearInEarly:displaced(45,60),nearOutEarly:displaced(45,10),
-        nearOutLate:displaced(270,10),
-        pluggedOut:displaced(0,0),pluggedIn:displaced(45,64)
+        nearOutLate:displaced(420,10),
+        pluggedOut:displaced(0,0),pluggedIn:displaced(45,64),
+        tinyPeak:peak(70),shortPeak:peak(170),longPeak:peak(500)
       };
     }""")
     assert physics and physics["nearInEarly"]< -2.5,("no upward jerk at receiving IN",physics)
     assert abs(physics["nearOutEarly"])<.5,("wrong direction: OUT moves first",physics)
-    assert physics["nearOutLate"]< -1.2,("wave stops before OUT",physics)
+    assert physics["nearOutLate"]< -1.1,("wave stops before OUT",physics)
+    assert abs(physics["nearOutLate"])<abs(physics["nearInEarly"])*.25,\
+        ("outgoing wave did not decay strongly toward OUT",physics)
     assert abs(physics["pluggedOut"])<.25 and abs(physics["pluggedIn"])<.25,physics
+    assert 0.8<physics["tinyPeak"]<physics["shortPeak"]*.65,\
+        ("one-channel wave is too violent or imperceptible",physics)
+    assert physics["shortPeak"]<physics["longPeak"]*.65,\
+        ("short cable retains long cable amplitude",physics)
     assert len(samples)>=5,("no finite spring movement",len(samples))
     assert any(" L " in x["d"] for x in samples),("no cable impact",len(samples))
     settled=cable.get_attribute("d")
@@ -219,7 +259,7 @@ def test_wire(page):
     hit=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-3"]')
     assert hit.count()==1
     # The newly plugged edge is selected immediately, before the user clicks it.
-    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected').count()==1
+    assert page.locator('#wireLayer path.wire-outgoing-line[data-from="1"][data-to="3"].is-wire-selected,#wireLayer path.wire-incoming-line[data-from="1"][data-to="3"].is-wire-selected').count()==1
     initial_edge=hit.get_attribute("data-edge-id")
     mid=point_at_midpoint(hit)
     page.mouse.click(mid["x"],mid["y"])
@@ -262,6 +302,138 @@ def test_wire(page):
     page.evaluate("window.__v60Observer.disconnect()")
 
 
+
+def test_replug_and_retract(page):
+    # All actions are real pointer gestures on the preview mixer. Neither the
+    # retract overlay nor a wave can create a second graph EdgeId.
+    src=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
+    old=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
+    dst=page.locator('#tracks .strip[data-id="5"] .wire-node-in')
+    assert src.count()==old.count()==dst.count()==1,"need visible channels in wide bank"
+    old_edge=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-4"]')
+    original_id=old_edge.get_attribute("data-edge-id")
+    assert original_id
+    page.evaluate("""()=>{
+       window.__v62Relink=[];
+       const wire=document.querySelector('#wireLayer');
+       window.__v62Obs=new MutationObserver(records=>{
+         for(const rec of records){
+           const el=rec.target;
+           if(el.matches?.('path.wire-outgoing-line[data-cable-key="1-5"],path.wire-incoming-line[data-cable-key="1-5"]'))
+             window.__v62Relink.push(el.getAttribute('d'));
+         }
+       });
+       window.__v62Obs.observe(wire,{subtree:true,attributes:true,attributeFilter:['d']});
+    }""")
+    a=old.bounding_box()
+    b=dst.bounding_box()
+    cx=lambda q:q["x"]+q["width"]/2
+    cy=lambda q:q["y"]+q["height"]/2
+    page.mouse.move(cx(a),cy(a));page.mouse.down()
+    page.mouse.move(cx(b),cy(b),steps=12);page.mouse.up()
+    new_edge=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]')
+    assert new_edge.count()==1 and new_edge.get_attribute("data-edge-id")==original_id,\
+        "Retarget must preserve the exact selected committed EdgeId"
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-4"]').count()==0
+    page.wait_for_timeout(850)
+    waves=page.evaluate("window.__v62Relink")
+    assert len(waves)>=5 and any(" L " in d for d in waves),\
+        ("replug did not trigger newly rendered WIRE wavy",waves[:2])
+    new_jacket=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-5"],#wireLayer path.wire-incoming-line[data-cable-key="1-5"]').first
+    assert " C " in new_jacket.get_attribute("d"),"replug must settle to canonical cubic"
+
+    # Drag receiver to a valid blank WIRE bay. The committed graph REMOVE
+    # is immediate; the detached jacket is visual-only and actively reels
+    # back to OUT. V64 intentionally has NO falling / hanging phase.
+    other=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
+    t=dst.bounding_box();q=other.bounding_box()
+    blank_x=(cx(t)+cx(q))/2
+    blank_y=cy(t)
+    page.mouse.move(cx(t),cy(t));page.mouse.down()
+    page.mouse.move(blank_x,blank_y,steps=12);page.mouse.up()
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0,\
+        "unplug must remove committed edge immediately"
+    overlay=page.locator('#wireRetractLayer[data-wire-retract="1"]')
+    assert overlay.count()==1,"accepted unplug must have transient cable"
+    assert overlay.get_attribute("data-wire-phase")=="reel"
+    assert overlay.evaluate("(el)=>getComputedStyle(el).pointerEvents")=="none"
+    jacket=overlay.locator('[data-wire-retract-jacket]')
+    plug=overlay.locator('[data-wire-retract-plug]')
+    first=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
+    first_path=jacket.get_attribute("d")
+    page.wait_for_timeout(175)
+    moved=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
+    source_x=cx(src.bounding_box())
+    assert abs(moved[0]-source_x)<abs(first[0]-source_x)-3,\
+        ("unplug cable did not begin retracting immediately",first,moved)
+    assert abs(moved[1]-first[1])<18,("free plug whipped beyond elastic envelope",first,moved)
+    # The free plug must be attached to the *moving wave tip*, not a
+    # rigid circle on the straight interpolation chord.
+    tip_gap=overlay.evaluate("""el=>{
+      const path=el.querySelector('[data-wire-retract-jacket]');
+      const plug=el.querySelector('[data-wire-retract-plug]');
+      const end=path.getPointAtLength(path.getTotalLength());
+      return Math.hypot(end.x-Number(plug.getAttribute('cx')),
+                        end.y-Number(plug.getAttribute('cy')));
+    }""")
+    assert tip_gap<.25,("free plug is detached from the wavy jacket",tip_gap)
+    assert jacket.get_attribute("d")!=first_path,"reel never animated the jacket"
+    assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none"
+
+    # Evaluate the very same committed runtime production math. A wave must
+    # launch near OUT first and only later reach the moving free end. Both
+    # physical endpoints must remain welded to their sockets and the source
+    # of the wave must not reverse into IN->OUT plug-in behavior.
+    model=HTML[HTML.index("const WIRE_RETRACT_MS=520"):
+               HTML.index("function startWireRetraction(")]
+    physics=page.evaluate("()=>{\n"+model+"""\n
+      const chord=400;
+      const deviation=(ms,i)=>{
+        const {d,pose}=wireRetractPathData(0,0,chord,0,ms);
+        const ys=d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+        const t=i/64;
+        const baseline=pose.sag*Math.sin(Math.PI*t);
+        return ys[2*i+1]-baseline;
+      };
+      const early=wireRetractPathData(0,0,chord,0,135);
+      const middle=wireRetractPathData(0,0,chord,0,220);
+      const flex=wireRetractPathData(0,0,chord,0,175);
+      const finished=wireRetractPathData(0,0,chord,0,WIRE_RETRACT_MS);
+      const shortPose=wireRetractPose(0,0,80,0,115);
+      const longPose=wireRetractPose(0,0,chord,0,115);
+      return {
+        nearOutEarly:deviation(40,8),farEarly:deviation(40,51),
+        midAfter:deviation(125,32),farAfter:deviation(155,48),
+        freeTipWave:deviation(175,64),
+        sourceAnchor:deviation(175,0),
+        halfwayX:middle.pose.x,earlyX:early.pose.x,
+        tipX:flex.pose.tipX,tipY:flex.pose.tipY,
+        completeX:finished.pose.tipX,completeY:finished.pose.tipY,
+        shortAmplitude:shortPose.amplitude,longAmplitude:longPose.amplitude,
+        startPhase:early.pose.phase,finishAmplitude:finished.pose.amplitude
+      };
+    }""")
+    assert abs(physics["nearOutEarly"])>2,("reel has no abrupt OUT-origin whip",physics)
+    assert abs(physics["farEarly"])<.4,("free tip moves before OUT-origin front arrives",physics)
+    assert abs(physics["midAfter"])>2 and abs(physics["farAfter"])>2,\
+        ("wavy must travel through the whole jacket, not just near OUT",physics)
+    assert abs(physics["freeTipWave"])>3,\
+        ("loose plug remains rigid when wave arrives",physics)
+    assert abs(physics["sourceAnchor"])<.25,("OUT socket endpoint shifted",physics)
+    assert 0<physics["halfwayX"]<physics["earlyX"]<270,\
+        ("reel does not accelerate much faster than V64",physics)
+    assert abs(physics["tipY"])>3,("tip never reacts to wave",physics)
+    assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
+    assert physics["shortAmplitude"]<physics["longAmplitude"]*.65,\
+        ("one-strip WIRE should not whip as violently as four strips",physics)
+    assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
+    overlay.wait_for(state="detached",timeout=2500)
+    assert page.locator('#wireRetractLayer').count()==0,"reel left ghost path"
+    assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
+    page.evaluate("window.__v62Obs.disconnect()")
+
+
 def run():
     from playwright.sync_api import sync_playwright
     subprocess.run([sys.executable,str(ROOT/"scripts/build_pages.py"),
@@ -276,14 +448,16 @@ def run():
                 page.on("pageerror",lambda error:errs.append(str(error)))
                 exercise(page,width,height)
                 test_pan(page)
-                if width==1680:test_wire(page)
+                if width==1680:
+                    test_wire(page)
+                    test_replug_and_retract(page)
                 if width in (640,1680):
                     page.screenshot(path=f"arsonmix-v60-fader-wire-{width}.png",full_page=False)
                 assert not errs,(width,errs)
                 page.close()
         finally:
             browser.close()
-    print("PASS V61 Chromium: physical fader, PAN hysteresis, IN-to-OUT whip, quiet selected jacket and auto-selected drag/plug")
+    print("PASS V65 Chromium: fast OUT reel, full-span travelling wave, flexible free plug and no ghost graph")
 
 
 if __name__=="__main__":
