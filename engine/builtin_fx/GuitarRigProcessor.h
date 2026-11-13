@@ -107,7 +107,7 @@ public:
     }
     void consumeRealtimeEdits() noexcept override {
         Edit next{};
-        if(!ready_||!completed_.canPush()||!queued_.pop(next))return;
+        if(!ready_||fadeLeft_>0||!completed_.canPush()||!queued_.pop(next))return;
         // An immutable program is prepared by CONTROL before publication.
         beforeSwitch_=core_;
         core_=next.prepared;
