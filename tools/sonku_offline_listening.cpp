@@ -315,11 +315,35 @@ void notes(const std::filesystem::path& directory,
         key<<"Trial "<<i+1<<": "<<direction(blind[i])<<"\n";
 }
 }
+// Shared by the whole listening package and the fast PR-scoped integrity
+// experiment. No expensive 20-second room renders in the new fast lane.
+void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
+    writeWav(dir/"sonku-music-positive-front.wav",
+             musicIntegrityProof(0.f,false));
+    writeWav(dir/"sonku-music-anti-phase-front.wav",
+             musicIntegrityProof(0.f,true));
+    writeWav(dir/"sonku-music-anti-phase-rear.wav",
+             musicIntegrityProof(180.f,true));
+    std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
+    if(!guide)throw std::runtime_error("Cannot write integrity guide");
+    guide<<"All three are original generated 4s tones at matched input level, "
+         <<"same measured KEMAR 0deg elevation and 0deg stereo spread.\\n"
+         <<"Compare in HEADPHONES at a safe volume. 1: L=R FRONT. "
+         <<"2: L=-R FRONT. 3: L=-R REAR.\\n"
+         <<"Do not infer dearVR parity, natural distance or externalization "
+         <<"from the recovered side tone.\\n";
+}
 int main(int argc,char** argv){
     try{
-        if(argc!=2)throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY");
+        if(argc!=2 && !(argc==3 && std::string(argv[2])=="--music-integrity-only"))
+            throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
+        if(argc==3){
+            writeMusicIntegrityEvidence(dir);
+            std::cout<<"Music-integrity 3x headphone A/B WAV PASS\\n";
+            return 0;
+        }
         constexpr std::array<int,4> reference{0,90,180,-90};
         const std::vector<int> blind{180,0,-90,90,90,180,0,-90};
         writeWav(dir/"sonku-reference-four.wav",
@@ -388,12 +412,7 @@ int main(int argc,char** argv){
         emitScene("sonku-m4-musical-chamber-far-2x.wav",2,5.f);
         emitScene("sonku-m4-musical-large-near-2x.wav",3,1.6f);
         emitScene("sonku-m4-musical-large-far-2x.wav",3,8.f);
-        writeWav(dir/"sonku-music-positive-front.wav",
-                 musicIntegrityProof(0.f,false));
-        writeWav(dir/"sonku-music-anti-phase-front.wav",
-                 musicIntegrityProof(0.f,true));
-        writeWav(dir/"sonku-music-anti-phase-rear.wav",
-                 musicIntegrityProof(180.f,true));
+        writeMusicIntegrityEvidence(dir);
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
