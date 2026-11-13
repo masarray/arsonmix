@@ -1962,3 +1962,34 @@ test("O3 OUTPUTS stays in one existing Audio I/O with safe, read-only DOM",()=>{
   assert.match(bridge,/owner\.textContent=patch\.role/);
   assert.doesNotMatch(bridge,/owner\.innerHTML=patch/);
 });
+
+test("Guitar FX picker binding is real, visible and matches native installed registry",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const catalog=read("src/NativeBuiltInFx.h");
+ const processor=read("engine/builtin_fx/GuitarRigProcessor.h");
+ const host=read("src/Main.cpp");
+ const guiBuilder=read("scripts/build_approved_native_gui.py");
+ const id="armix.builtin.guitar-rig.v1";
+ const start=bridge.indexOf("let nativeBuiltins=Object.freeze([");
+ const end=bridge.indexOf("const presentFxCatalog=",start);
+ assert.ok(start>0 && end>start,"compiled native catalog exists");
+ const builtinSlice=bridge.slice(start,end);
+ assert.match(builtinSlice,/id:"armix\\.builtin\\.guitar-rig\\.v1",name:"Guitar FX Rig"/);
+ assert.match(builtinSlice,/category:"Guitar",format:"Native",source:"builtin"/);
+ assert.ok(!builtinSlice.includes('id:"armix.builtin.guitar-rig.v1",name:"Guitar FX Rig",\n      vendor:"ArSonMix",category:"Guitar",format:"Native",source:"builtin",showInPicker:false'));
+ assert.ok(processor.includes('catalogIdentity="'+id+'"'),"native processor ID matches UI catalog");
+ assert.match(catalog,/GuitarRigProcessor::catalogIdentity,"Guitar FX Rig","Guitar",true/);
+ assert.match(host,/for\\(const auto& fx:armix::builtin_fx::nativeBuiltInFx\\)/);
+ assert.match(host,/entry->setProperty\\("showInPicker",fx.showInPicker\\)/);
+ assert.match(host,/catalog.getDynamicObject\\(\\)->setProperty\\("builtIns",juce::var\\(builtIns\\)\\)/);
+ assert.match(bridge,/if\\(Array\\.isArray\\(catalog\\.builtIns\\)\\)/);
+ assert.match(bridge,/nativeBuiltins=catalog\\.builtIns\\.filter/);
+ assert.match(bridge,/const presentFxCatalog=\\(\\)=>scope\\?\\.setNativeCatalog\\?\\.\\(/);
+ assert.ok(guiBuilder.includes("setNativeCatalog(rows)"),"approved native picker accepts the catalog");
+ assert.ok(guiBuilder.includes("renderPluginCatalog();renderFastPicker();"),
+           "native catalog changes refresh both picker and FX browser");
+ // The compiled UI dispatches the exact native identity as an intent, never
+ // invents a successful active insert before host ACK/readback.
+ assert.match(bridge,/controller\\.intent\\("LOAD_INSERT",nativeId,/);
+ assert.match(bridge,/pendingFxInsert=\\{authority:"CHANNEL_ID"/);
+});
