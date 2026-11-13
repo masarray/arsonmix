@@ -73,6 +73,23 @@ def exercise(browser,out,width,height):
     if width<500:page.locator("#bankSelect").select_option("0")
     strip=page.locator('#tracks .strip[data-id="1"]')
     strip.locator(".fx-pick.empty").first.click()
+    # Real assembled WebView picker: Guitar FX is a catalog Native processor
+    # BEFORE the VST3 divider; SonKu retains its one specialized editor button.
+    # This catches the #657 / SonKu M4 cross-branch regression at the operator
+    # click surface, not merely by matching assembler source strings.
+    guitar=page.locator('#fastResults [data-fast-id="armix.builtin.guitar-rig.v1"]')
+    guitar.wait_for(state="visible",timeout=6000)
+    assert guitar.count()==1,"Native Guitar FX missing or duplicated in BUILT-IN FX"
+    assert page.evaluate("""()=>{
+      const node=document.querySelector('#fastResults [data-fast-id="armix.builtin.guitar-rig.v1"]');
+      const group=Array.from(document.querySelectorAll('#fastResults .fast-fx-category'));
+      return group.length===2 && group[0].textContent==='BUILT-IN FX' &&
+        group[1].textContent==='VST3 PLUGINS' &&
+        (group[0].compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)!==0 &&
+        (node.compareDocumentPosition(group[1])&Node.DOCUMENT_POSITION_FOLLOWING)!==0;
+    }"""),"Guitar FX shown under VST3 instead of first native BUILT-IN shelf"
+    assert page.locator('#fastResults [data-fast-id="armix.builtin.8d-sonku.v1"]').count()==0, (
+        "SonKu specialized editor must not be duplicated as catalog generic")
     picker=page.locator("#fastResults [data-fast-native-sonku]")
     picker.wait_for(state="visible")
     assert picker.count()==1,"8D-SonKu picker duplicated or missing"
