@@ -187,12 +187,49 @@ void per_output_peq() {
     assert(bad.fault==SpeakerPlanFault::invalidOutputDsp);
     assert(rejected&&rejected->destinationCount()==1); // rollback
 }
+
+void polarity_and_eq_band_bypass() {
+    auto req=base(1,false);
+    req.outputs={patch("polarity","ASIO#37/OUT-1",0,0),
+                 patch("eq-bypass","ASIO#37/OUT-3",0,0)};
+    req.outputs[0].polarityInverted=true;
+    req.outputs[1].peq.push_back({1000.,1.,6.,false});
+    auto system=prepared(req);
+    Outputs out(8);
+    std::array<float,256> input{};
+    input.fill(.2f);
+    assert(system->process(71,14,input.data(),nullptr,out.raw.data(),8,256,true));
+    for(int i=0;i<256;++i) {
+        assert(std::abs(out.data[0][i]+.2f)<.00001f);
+        assert(std::abs(out.data[2][i]-.2f)<.00001f);
+    }
+    assert(out.data[0][255]<0.f&&out.data[2][255]>0.f);
+    // A bypassed 6 dB EQ must not retain DSP state or affect any channel.
+    // Verify enabled band peak is about +6 dB after the biquad settles.
+    req.outputs[0].peq.clear();
+    req.outputs[1].peq[0].enabled=true;
+    system=prepared(req);
+    double energyIn=0.,energyOut=0.;
+    for(int block=0;block<100;++block) {
+        for(int i=0;i<256;++i) {
+            const double time=static_cast<double>(block*256+i)/req.sampleRate;
+            input[i]=static_cast<float>(.05*std::sin(2*pi*1000.*time));
+        }
+        assert(system->process(71,14,input.data(),nullptr,out.raw.data(),8,256,true));
+        if(block>10)for(int i=0;i<256;++i) {
+            energyIn+=input[i]*input[i];
+            energyOut+=out.data[2][i]*out.data[2][i];
+        }
+    }
+    const auto measured=std::sqrt(energyOut/energyIn);
+    assert(measured>1.93&&measured<2.07);
+}
 int main(){
     validate();
     frequency(100.,1.,0.);
     frequency(1000.,.5,.5);
     frequency(10000.,0.,1.);
-    hardware_guard_and_alias();delay_fanout_and_mute();digital_ceiling();per_output_peq();
+    hardware_guard_and_alias();delay_fanout_and_mute();digital_ceiling();per_output_peq();polarity_and_eq_band_bypass();
     for(int ways=1;ways<=4;++ways)
         assert(prepared(base(ways))->sectionCount()==static_cast<std::size_t>(2*ways));
     std::cout<<"PASS LMS prepared PCM: LR4, routing, epoch, DSP and delay\n";
