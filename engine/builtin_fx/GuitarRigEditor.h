@@ -252,7 +252,7 @@ public:
         // Fine physical inscriptions live in JUCE, never baked into a body
         // PNG. Keep typographic baseline locked to the native hardware pixels.
         // These are identity marks, not fake controls or status indicators.
-        const etch=[&](const juce::String& text,float x,float y,float w,
+        const auto etch=[&](const juce::String& text,float x,float y,float w,
                        float h,float size,juce::Colour ink) {
             const float s=picture.getWidth()/static_cast<float>(hw.width);
             g.setColour(ink);
