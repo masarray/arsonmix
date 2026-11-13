@@ -135,7 +135,7 @@ async def visual(page,width):
         legend=key.locator('svg.mx-hw-face mask text')
         await legend.wait_for(state="attached",timeout=6000)
         assert await legend.count()==1
-        assert await legend.inner_text()==('PFL' if k=='pfl' else 'SOLO')
+        assert (await legend.text_content())==('PFL' if k=='pfl' else 'SOLO')
 
 async def main():
     source_contract()
