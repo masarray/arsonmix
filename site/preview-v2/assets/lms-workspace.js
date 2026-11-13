@@ -1,6 +1,6 @@
-/* ArSonMix LMS workspace: GUI-only offline draft.
- * Native publication is deliberately NOT wired; all output ports are DEMO
- * identities and every output DSP begins muted with limiter uncalibrated.
+/* ArSonMix LMS: five focused pages; native offline design inspection/ACK
+ * only. One JUCE engine owns device identity and accepted PCM; this view
+ * NEVER writes audio or turns a draft into a speaker hardware Apply.
  */
 (function () {
 "use strict";
@@ -12,6 +12,173 @@ let state=M.createSystem({ways:3,stereo:true,ports:M.demoPorts(6)});
 let page="system",selectedPort=state.ports[0],pending=null,message="";
 let dspTab="eq",selectedBand=0;
 let dragging=null;
+// Browser preview has NO native bridge, demo ports or pretend live ACK.
+// Desktop requests actual ASIO port inventory from the sole JUCE engine.
+const backend=window.__JUCE__?.backend;
+const nativeConnected=!!(backend?.emitEvent&&backend?.addEventListener);
+let nativeInventory=null,nativeStatus="Inspection required";
+let nativeInspectRequest="",nativeSerial=0,nativePending=null;
+let validatedForRevision=-1,validatedGraph="",validatedDevice="";
+function nativeBound() {
+ return !!(nativeInventory?.ready && Array.isArray(nativeInventory.ports) &&
+   state.ports.length &&
+   state.ports.every(p=>nativeInventory.ports.some(x=>x.identity===p&&!x.occupied)));
+}
+function nativeAvailable() {
+ return nativeInventory?.ready?nativeInventory.ports.filter(x=>!x.occupied):[];
+}
+function portLabel(id) {
+ const actual=nativeInventory?.ports?.find(x=>x.identity===id);
+ return actual?"OUT "+(Number(actual.callbackOrdinal)+1):
+  id.replace("DEMO-","D");
+}
+function inspectNative() {
+ if(!nativeConnected)return;
+ nativeInspectRequest="lms-inspect-"+(++nativeSerial);
+ backend.emitEvent("arMixLmsInspect",{requestId:nativeInspectRequest});
+}
+function proposedOutputs() {
+ return state.ports.filter(p=>state.routes[p]).map(port=>{
+  const section=state.sections.find(s=>s.id===state.routes[port]);
+  const dsp=state.dsp[port];
+  if(!section||!dsp)throw new Error("Incomplete speaker output draft");
+  return {
+   outputId:port,portIdentity:port,
+   sourceSide:section.side==="R"?1:0,section:section.index,
+   gainDb:dsp.gainDb,delayMs:dsp.delayMs,
+   muted:dsp.muted,polarityInverted:dsp.polarity==="invert",
+   limiterEnabled:dsp.limiterEnabled,
+   peq:(dsp.peq||[]).map(b=>({
+    frequencyHz:b.frequencyHz,q:b.q,gainDb:b.gainDb,enabled:b.enabled
+   }))
+  };
+ });
+}
+function validateNativeDraft() {
+ if(!nativeConnected||!nativeBound()||!nativeInventory.outputDisarmed ||
+    nativePending||!Object.keys(state.routes).length)return;
+ try {
+  M.validateSystem(state);
+  const outputs=proposedOutputs();
+  const id="lms-validate-"+(++nativeSerial);
+  const document={
+   schema:state.schema,applied:false,ways:state.ways,
+   stereo:state.stereo,cutoffsHz:state.cutoffsHz.slice(),outputs
+  };
+  nativePending={requestId:id,uiRevision:state.revision,
+   deviceEpoch:nativeInventory.deviceEpoch,graphRevision:nativeInventory.graphRevision,
+   outputs,cutoffsHz:document.cutoffsHz,ackedRevision:null};
+  nativeStatus="Validating muted design against native ASIO graph";
+  backend.emitEvent("arMixLmsValidate",{
+   schema:"arsonmix.lms.native-design-intent.v1",requestId:id,
+   deviceEpoch:nativeInventory.deviceEpoch,
+   graphRevision:nativeInventory.graphRevision,
+   expectedDesignRevision:nativeInventory.designRevision,
+   sampleRate:nativeInventory.sampleRate,
+   maxFrames:nativeInventory.maxFrames,
+   activeOutputChannels:nativeInventory.activeOutputChannels,
+   design:document
+  });
+  render();
+ }catch(error){nativeStatus="Rejected: "+error.message;nativePending=null;render();}
+}
+function sameNativeReadback(snapshot,pending) {
+ const actual=snapshot.validatedDesign;
+ if(!actual || snapshot.hardwareApplied!==false ||
+    snapshot.deviceEpoch!==pending.deviceEpoch ||
+    snapshot.graphRevision!==pending.graphRevision ||
+    snapshot.designRevision!==pending.ackedRevision ||
+    actual.ways!==state.ways || actual.stereo!==state.stereo ||
+    JSON.stringify(actual.cutoffsHz)!==JSON.stringify(pending.cutoffsHz))
+    return false;
+ if(!Array.isArray(actual.outputs)||actual.outputs.length!==pending.outputs.length)
+    return false;
+ return pending.outputs.every(p=>actual.outputs.some(x=>
+   x.outputId===p.outputId&&x.portIdentity===p.portIdentity&&
+   x.sourceSide===p.sourceSide&&x.section===p.section&&x.muted===p.muted));
+}
+if(nativeConnected){
+ backend.addEventListener("arMixLmsInspection",response=>{
+  if(!response||response.schema!=="arsonmix.lms.native-inspection.v1"||
+     response.requestId!==nativeInspectRequest)return;
+  if(!response.ready){
+   nativeInventory=null;
+   nativeStatus="Native ASIO graph unavailable · output disconnected";
+   validatedForRevision=-1;
+   nativePending=null;
+   render();return;
+  }
+  if(!Array.isArray(response.ports) ||
+     response.ports.some(x=>typeof x.identity!=="string"||
+       !Number.isInteger(x.callbackOrdinal)||typeof x.occupied!=="boolean") ||
+     typeof response.deviceEpoch!=="string" ||
+     typeof response.graphRevision!=="string" ||
+     typeof response.designRevision!=="string" ||
+     !Number.isFinite(response.sampleRate) ||
+     !Number.isInteger(response.maxFrames)){
+   nativeInventory=null;nativePending=null;
+   nativeStatus="Invalid native port readback";render();return;
+  }
+  nativeInventory=response;
+  if(nativePending?.ackedRevision!==null&&nativePending &&
+     state.revision===nativePending.uiRevision &&
+     sameNativeReadback(response,nativePending)){
+   validatedForRevision=state.revision;
+   validatedGraph=response.graphRevision;
+   validatedDevice=response.deviceEpoch;
+   nativeStatus="Native validated draft · hardware NOT applied";
+   nativePending=null;
+  }else if(nativePending?.ackedRevision!==null&&nativePending){
+   nativeStatus="Native readback mismatch · draft NOT validated";
+   nativePending=null;
+   validatedForRevision=-1;
+  }else if(validatedForRevision!==state.revision ||
+           validatedGraph!==response.graphRevision ||
+           validatedDevice!==response.deviceEpoch){
+   validatedForRevision=-1;
+   nativeStatus=response.outputDisarmed?
+      "Verified ASIO ports · select and validate a muted design":
+      "Verified ASIO ports · mute ALL outputs before validation";
+  }
+  render();
+ });
+ backend.addEventListener("arMixLmsDesignAck",ack=>{
+  if(!nativePending || !ack ||
+     ack.schema!=="arsonmix.lms.native-design-ack.v1" ||
+     ack.requestId!==nativePending.requestId)return;
+  if(ack.status!=="VALIDATED_PENDING_READBACK" || ack.hardwareApplied!==false){
+   nativeStatus="Native REJECTED: "+String(ack.errorCode||"INVALID_DESIGN");
+   validatedForRevision=-1;
+   nativePending=null;
+   inspectNative();
+   render();return;
+  }
+  nativePending.ackedRevision=ack.designRevision;
+  nativeStatus="Native ACK received · checking subsequent readback";
+  inspectNative();render();
+ });
+}
+function nativeBar() {
+ if(!nativeConnected)return "";
+ const ports=nativeAvailable();
+ const canBind=nativeInventory?.ready && ports.length>0&&ports.length<=64;
+ const ready=nativeBound()&&nativeInventory.outputDisarmed &&
+   Object.keys(state.routes).length>0&&!nativePending;
+ const verified=validatedForRevision===state.revision&&
+   validatedGraph===nativeInventory?.graphRevision&&
+   validatedDevice===nativeInventory?.deviceEpoch;
+ return '<div class="lms-native-bar" role="status">'+
+  '<span><strong>'+safe(verified?'VALIDATED DRAFT':'NATIVE INSPECTION')+
+  '</strong> · '+safe(nativeStatus)+
+  '<small> · '+ports.length+' free ASIO pins · No speaker output authorization</small></span>'+
+  '<div class="lms-control-row">'+
+  btn("Inspect ASIO","nativeInspect")+
+  (canBind?btn("Use verified ports","nativePorts"):'')+
+  (nativeBound()?'<button type="button" class="lms-btn" data-action="nativeValidate"'+
+   (ready?'':' disabled')+'>Validate design</button>':'')+
+  '</div></div>';
+}
+
 const pageNames={system:"System",crossover:"Crossover",matrix:"Matrix",
  processing:"Processing",alignment:"Alignment"};
 const pages=Object.keys(pageNames);
@@ -29,7 +196,7 @@ function stats() {
  return '<div class="lms-summary"><div class="lms-stat"><b>'+state.ways+'</b><span>Ways / source</span></div>'+
  '<div class="lms-stat"><b>'+state.sections.length+'</b><span>Section signals</span></div>'+
  '<div class="lms-stat"><b>'+Object.keys(state.routes).length+'</b><span>Draft patches</span></div>'+
- '<div class="lms-stat"><b>'+state.ports.length+'</b><span>Demo output ports</span></div></div>';
+ '<div class="lms-stat"><b>'+state.ports.length+'</b><span>'+(nativeBound()?"Verified ASIO ports":"Demo output ports")+'</span></div></div>';
 }
 function overviewMap() {
  return '<div class="lms-speaker-map" aria-label="Illustration of stage and speaker positions">'+
@@ -107,17 +274,19 @@ function frequencyPage() {
   '</section></div>';
 }
 function matrixPage() {
- const headers=state.ports.map(p=>'<th scope="col">'+safe(p.replace("DEMO-","D"))+'</th>').join("");
+ const headers=state.ports.map(p=>'<th scope="col" title="'+safe(p)+'">'+safe(portLabel(p))+'</th>').join("");
  const rows=state.sections.map(s=>'<tr><th scope="row">'+safe(s.name)+'</th>'+
  state.ports.map(p=>'<td><button type="button" class="lms-cross'+(state.routes[p]===s.id?' active':'')+
  '" data-route-port="'+safe(p)+'" data-route-section="'+safe(s.id)+'" aria-pressed="'+
  (state.routes[p]===s.id?"true":"false")+'" aria-label="Assign '+safe(s.name)+' to '+safe(p)+'">'+
  (state.routes[p]===s.id?'✓':'·')+'</button></td>').join("")+'</tr>').join("");
  return '<section class="lms-panel"><h3>Section → Output Matrix <span>Exclusive destination · source fan-out allowed</span></h3>'+
- '<div class="lms-control-row"><label class="lms-label" for="lms-count">DEMO PORTS</label>'+
+ '<div class="lms-control-row">'+(nativeBound()?
+ '<span class="lms-caption">Verified native ASIO roster · output pins remain DISCONNECTED</span>':
+ '<label class="lms-label" for="lms-count">DEMO PORTS</label>'+
  '<select id="lms-count" data-ports class="lms-select">'+
  selectOptions([2,4,6,8,12,16,24,32].map(n=>[String(n),n+" ports"]),state.ports.length)+
- '</select><span class="lms-caption">Hardware pin identity will come from ASIO discovery; these IDs are placeholders.</span></div>'+
+ '</select><span class="lms-caption">Hardware pin identity will come from ASIO discovery; these IDs are placeholders.</span>')+'</div>'+
  '<div class="lms-line"></div><div class="lms-table-scroll" style="max-height:430px"><table class="lms-matrix"><thead><tr><th scope="col">CROSSOVER</th>'+
  headers+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
  '<p class="lms-tip">Click a crosspoint to assign/unassign that section. A destination can have only one section; several destinations may share a source. A different hardware device must be explicitly mapped later.</p>'+
@@ -126,7 +295,7 @@ function matrixPage() {
 function outputList() {
  return '<div class="lms-output-list">'+state.ports.map(p=>
   '<button type="button" class="lms-output'+(selectedPort===p?' active':'')+'" data-select-port="'+safe(p)+'">'+
-  '<strong>'+safe(p)+'</strong><small>'+safe(state.sections.find(s=>s.id===state.routes[p])?.name||"Unassigned")+'</small>'+
+  '<strong title="'+safe(p)+'">'+safe(portLabel(p))+'</strong><small>'+safe(state.sections.find(s=>s.id===state.routes[p])?.name||"Unassigned")+'</small>'+
   '</button>').join("")+'</div>';
 }
 function dspPage() {
@@ -265,22 +434,22 @@ function render() {
  '<button type="button" data-page="'+id+'" class="'+(page===id?'active':'')+'" aria-current="'+
  (page===id?'page':'false')+'"><span class="lms-index">'+String(i+1).padStart(2,"0")+'</span>'+
  pageNames[id]+'</button>').join("")+'</nav>'+
- '<div class="lms-sidebar-foot">ArSonMix LMS<br/>Offline speaker design<br/>No native PCM ACK</div></aside>'+
+ '<div class="lms-sidebar-foot">ArSonMix LMS<br/>Disconnected speaker design<br/>'+(nativeConnected?'Native validation only':'No native PCM ACK')+'</div></aside>'+
  '<div class="lms-stage"><div class="lms-heading"><div><h2>'+pageNames[page]+
  '</h2><small>'+safe(state.name)+' · '+(state.stereo?"Stereo":"Mono")+
  ' · '+state.ways+' Way · revision '+state.revision+'</small></div>'+
  '<div class="lms-offline">DESIGN ONLY · OUTPUT DISCONNECTED</div></div>'+
- '<div class="lms-content">'+reviewBox()+
+ '<div class="lms-content">'+nativeBar()+reviewBox()+
  (message?'<p role="alert" class="lms-warn">'+safe(message)+'</p>':'')+
  ({system:systemPage,crossover:frequencyPage,matrix:matrixPage,
  processing:dspPage,alignment:alignPage}[page]())+'</div></div>';
 }
-function update(next) {state=next;message="";pending=null;if(!state.ports.includes(selectedPort)){selectedPort=state.ports[0]||null;selectedBand=0;}render();}
+function update(next) {state=next;message="";pending=null;validatedForRevision=-1;nativeStatus=nativeConnected?"Draft edited · native validation required":nativeStatus;if(!state.ports.includes(selectedPort)){selectedPort=state.ports[0]||null;selectedBand=0;}render();}
 function openLms(open) {
  root.hidden=!open;app.classList.toggle("lms-active",open);
  launch.setAttribute("aria-pressed",String(open));
  launch.textContent=open?"Back to Mixer":"Speakers";
- if (open) render();
+ if (open){render();inspectNative();}
 }
 launch.addEventListener("click",()=>openLms(root.hidden));
 root.addEventListener("click",event=>{
@@ -290,6 +459,15 @@ root.addEventListener("click",event=>{
  const act=t.dataset.action;
  if(act?.startsWith("go:")){page=act.slice(3);pending=null;render();return;}
  if(act==="cancel"){pending=null;render();return;}
+ if(act==="nativeInspect"){inspectNative();return;}
+ if(act==="nativePorts"){
+  const actual=nativeAvailable().map(p=>p.identity);
+  if(!actual.length||actual.length>64)return;
+  pending={description:"Replace DEMO ports with the CURRENT verified ASIO output mask? This intentionally clears all patches and DSP settings; it does NOT route or arm speakers.",
+    run:()=>M.withPorts(state,actual)};
+  render();return;
+ }
+ if(act==="nativeValidate"){validateNativeDraft();return;}
  if(act==="planDelay"){
   pending={description:"Copy calculated geometric delays to all output DSP DRAFTS. No audio, device, native PCM ACK, or hardware output will be changed.",
     run:()=>M.withSuggestedDelays(state)};
