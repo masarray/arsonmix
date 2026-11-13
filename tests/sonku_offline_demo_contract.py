@@ -23,9 +23,9 @@ def read(name, frames):
     return pcm
 single=read("sonku-reference-four.wav",4*120000)
 blind=read("sonku-blind-eight.wav",8*120000)
-orbit=read("sonku-orbit-cw.wav",480000)
+orbit=read("sonku-orbit-cw-2x.wav",960000)
 v2four=read("sonku-v2-room-four.wav",4*120000)
-v2orbit=read("sonku-v2-room-orbit-cw.wav",480000)
+v2orbit=read("sonku-v2-room-orbit-cw-2x.wav",960000)
 # Baseline V1 and candidate V2 are deliberately non-identical on same noise.
 # Room must affect later samples, not fake position on the direct sound.
 difference=sum(abs(int(a)-int(b)) for a,b in
@@ -41,8 +41,18 @@ right=sum(abs(section[i]) for i in range(1,len(section),2))
 assert right>left*1.2,("RIGHT HRTF channel swapped",left,right)
 # No false silence between orbit buffer boundaries; source is continuous.
 assert sum(abs(x) for x in orbit[220000:230000])>1000
+# Verify there is no mute, edit or source reset at the 10s handoff.
+# Stereo interleaved: 48000 samples = 1 second, 2 PCM ints per frame.
+for audio in (orbit,v2orbit):
+    for second in (9,10,11,19):
+        begin=(second*48000+4000)*2
+        assert sum(abs(x) for x in audio[begin:begin+9600])>2000,(
+            "silent loop seam",second)
+assert "20s" in (root/"LISTENING-GUIDE.txt").read_text()
+assert not (root/"sonku-orbit-cw.wav").exists(),(
+    "stale 10s artifact must not appear alongside 2x master")
 assert (root/"LISTENING-GUIDE.txt").exists()
 key=(root/"BLIND-ANSWER-KEY.txt").read_text()
 assert key.count("Trial ")==8 and key.count("FRONT")==2 and key.count("REAR")==2
 print("PASS 8D-SonKu actual C++ offline WAV: four directions, balanced blind",
-      "set, clockwise orbit, 48kHz stereo PCM, no clipping.")
+      "set, two continuous 360deg turns (20s), 48kHz stereo PCM, no clipping.")

@@ -32,3 +32,8 @@ M5: optional low-cost FDN late reverb, several HRTF profiles / calibration and h
 
 ## Listening gate
 Compare the legacy source-accurate 4-direction WAV and 10s orbit with two V2 files rendered from EXACT same input samples. Match perceived level, listen on headphones with OS virtualization off. Measure 8-direction mapping, front/rear distance, orbit continuity, colorations, metallic echoes and time-varying flutter. If room worsens direction or sound quality, keep amount=0. CI PCM PASS alone does not prove spatial externalization.
+
+## 2026-11-13 listener feedback and two-turn orbit gate
+Listener recognizes direction but describes a noncircular perceived orbit: RIGHT → FRONT is pleasing, yet FRONT/RIGHT/REAR continuity feels incomplete and FRONT subjectively nearer. The room is **rectangular 6.4 × 8 m**, so reflected image distances and directional/temporal profiles vary across axes. This is one plausible contributor, not a proven cause; non-individual HRTF and ITD-inconsistent HRIR interpolation remain other hypotheses.
+
+The offline evaluation now renders a **single uninterrupted 20-second, 2 × 360° clockwise trajectory** (10 seconds/turn) for both legacy direct HRTF and rectangular-room A/B. Only fade in at time 0 and fade out at 20 seconds; no fade/reset/offset at the 10-second boundary. Landmarks: FRONT 0/10/20s; RIGHT 2.5/12.5; REAR 5/15; LEFT 7.5/17.5. PCM tests verify 960,000 frames, non-silent seam, fixed rate and output sign, and C++ end-of-two-turn phase closure. Do not market a verified circular perceptual effect until headphone evaluation.

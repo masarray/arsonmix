@@ -21,6 +21,10 @@ constexpr int framesPerBlock=128;
 constexpr int activeFrames=rate*2;
 constexpr int silenceFrames=rate/2;
 constexpr int rampFrames=rate/50; // 20ms, no clicks between labeled probes
+constexpr int orbitSecondsPerTurn=10;
+constexpr int orbitTurns=2;
+constexpr int orbitFrames=rate*orbitSecondsPerTurn*orbitTurns;
+static_assert(orbitFrames==960000);
 using armix::sonku::Settings;
 using armix::sonku::SonKuSpatialCore;
 struct Noise {
@@ -105,7 +109,7 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f){
         throw std::runtime_error("Invalid orbit room amount");
     Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("No 360 orbit");
-    const int frames=rate*10;
+    const int frames=orbitFrames; // two complete turns on ONE continuous audio clock
     std::vector<std::uint8_t> result;
     result.reserve(static_cast<std::size_t>(frames)*4);
     for(int base=0;base<frames;base+=framesPerBlock){
@@ -122,6 +126,9 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f){
         dsp.process(l.data(),r.data(),n);
         for(int i=0;i<n;++i)appendStereo(result,l[i],r[i]);
     }
+    const double finish=dsp.azimuthDegrees();
+    if(std::min(std::abs(finish),std::abs(360.-finish))>.01)
+        throw std::runtime_error("Two turns do not close acoustic orbit");
     return result;
 }
 const char* direction(int deg) {
@@ -142,14 +149,16 @@ void notes(const std::filesystem::path& directory,
       <<"then 0.5s quiet. Order: FRONT, RIGHT, REAR, LEFT.\n"
       <<"sonku-blind-eight.wav: 8 x 2.5 seconds, balanced two times each.\n"
       <<"Write down FRONT/RIGHT/REAR/LEFT for trials 1..8 before opening KEY.\n"
-      <<"sonku-orbit-cw.wav: 10s one continuous 360deg clockwise orbit,\n"
-      <<"starting at FRONT, acoustic RIGHT on listener's right headphone.\n\n"
+      <<"sonku-orbit-cw-2x.wav: 20s TWO seamless continuous 360deg\n"
+      <<"clockwise turns, 10s each, FRONT at 0/10/20s. No pause at 10s.\n"
+      <<"At 2.5/12.5s RIGHT, 5/15s REAR, 7.5/17.5s LEFT.\n"
+      <<"Acoustic RIGHT is on listener's right headphone.\n\n"
       <<"If front/rear is ambiguous or internalized, note headphones and listener.\n"
       <<"Baseline SonKu files have no room reflections (V1).\n"
       <<"V2 room candidate adds four 1st-order image-source reflections\n"
       <<"per emitter (6.4x8m fixed room) with bounded ear delays and level.\n"
       <<"sonku-v2-room-four.wav = A/B against sonku-reference-four.wav.\n"
-      <<"sonku-v2-room-orbit-cw.wav = A/B against sonku-orbit-cw.wav.\n"
+      <<"sonku-v2-room-orbit-cw-2x.wav = A/B against sonku-orbit-cw-2x.wav.\n"
       <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
       <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
       <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
@@ -170,16 +179,16 @@ int main(int argc,char** argv){
         writeWav(dir/"sonku-reference-four.wav",
             staticProbes({reference.begin(),reference.end()}));
         writeWav(dir/"sonku-blind-eight.wav",staticProbes(blind));
-        writeWav(dir/"sonku-orbit-cw.wav",orbit());
+        writeWav(dir/"sonku-orbit-cw-2x.wav",orbit());
         // Only the bounded early-reflection stage changes between paired
         // files. Source, directions, KEMAR HRIR, loudness trim and clock are
         // identical. Blind front/back listening is the decision gate.
         writeWav(dir/"sonku-v2-room-four.wav",
             staticProbes({reference.begin(),reference.end()},.55f));
-        writeWav(dir/"sonku-v2-room-orbit-cw.wav",orbit(.55f));
+        writeWav(dir/"sonku-v2-room-orbit-cw-2x.wav",orbit(.55f));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
-                 <<"4 labeled + 8 blind directions + one 360 orbit\n";
+                 <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
     }catch(const std::exception& error){
         std::cerr<<"SonKu offline render FAILED: "<<error.what()<<"\n";
         return 1;
