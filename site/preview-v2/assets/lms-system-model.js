@@ -64,7 +64,7 @@
     return Array.from({length:n}, (_,i) => "DEMO-" + String(i+1).padStart(2,"0"));
   }
   const defaultDsp = () => ({
-    gainDb:0, delayMs:0, polarity:"normal",
+    gainDb:0, delayMs:0, polarity:"normal", peq:[],
     muted:true, limiterEnabled:false, limiterThresholdDb:null
   });
   const defaultPosition = i => ({x:(i%2===0?-4.5:4.5), y:3+2*Math.floor(i/2)});
@@ -169,6 +169,108 @@
     // No hardware safety claims: this offline draft NEVER authorizes output.
     return {...s, revision:s.revision+1, dsp:{...s.dsp,[port]:p}};
   }
+  // Output DSP band editor. The browser never runs audio; parameters stay
+  // in a typed disconnected draft pending native rate/port verification.
+  function validateBand(b) {
+    if (!b || typeof b !== "object" || typeof b.enabled !== "boolean")
+      throw new TypeError("PEQ band identity");
+    requireNumber(b.frequencyHz,20,20000,"PEQ frequency");
+    requireNumber(b.q,0.1,18,"PEQ Q");
+    requireNumber(b.gainDb,-18,18,"PEQ gain");
+    return true;
+  }
+  function withPeqBand(s,port,index,patch) {
+    validateSystem(s);
+    if (!s.ports.includes(port)) throw new RangeError("unknown output DSP target");
+    if (!Number.isInteger(index)||index<0||index>=8)throw new RangeError("PEQ band index");
+    const before=s.dsp[port].peq;
+    if (!Array.isArray(before)||index>before.length)throw new RangeError("PEQ gap");
+    const allowed=["frequencyHz","q","gainDb","enabled"];
+    if (!patch || Object.keys(patch).some(key=>!allowed.includes(key)))
+      throw new Error("unknown PEQ property");
+    const next=before.map(p=>({...p}));
+    next[index]={frequencyHz:1000,q:0.70710678118,gainDb:0,enabled:true,
+                 ...next[index],...patch};
+    validateBand(next[index]);
+    return {...s,revision:s.revision+1,dsp:{
+      ...s.dsp,[port]:{...s.dsp[port],peq:next}
+    }};
+  }
+  function withoutPeqBand(s,port,index) {
+    validateSystem(s);
+    if(!s.ports.includes(port))throw new RangeError("unknown output DSP target");
+    const before=s.dsp[port].peq;
+    requireInteger(index,0,before.length-1,"PEQ band index");
+    return {...s,revision:s.revision+1,dsp:{
+      ...s.dsp,[port]:{...s.dsp[port],peq:before.filter((_,i)=>i!==index)}
+    }};
+  }
+  // C++ PreparedSpeakerSystem::Biquad::make is the authority. Mirror its
+  // 2 x Butterworth LR4 magnitude here, not made-up rectangular "curves".
+  // Preview always labels its ASSUMED 48kHz sample rate; not a measurement.
+  function biquadMagnitude(hz,cutoff,high,sampleRate) {
+    requireNumber(hz,20,sampleRate*.5-.01,"preview Hz");
+    const omega=2*Math.PI*cutoff/sampleRate,c=Math.cos(omega);
+    const alpha=Math.sin(omega)/(2*Math.SQRT1_2);
+    const scale=1/(1+alpha);
+    const b0=((high?1+c:1-c)*.5)*scale;
+    const b1=(high?-(1+c):1-c)*scale,b2=b0;
+    const a1=-2*c*scale,a2=(1-alpha)*scale;
+    const theta=2*Math.PI*hz/sampleRate;
+    const cos=Math.cos(theta),sin=Math.sin(theta);
+    const real=b0+b1*cos+b2*Math.cos(2*theta);
+    const imag=-b1*sin-b2*Math.sin(2*theta);
+    const denR=1+a1*cos+a2*Math.cos(2*theta);
+    const denI=-a1*sin-a2*Math.sin(2*theta);
+    return Math.sqrt((real*real+imag*imag)/
+      Math.max(1e-28,denR*denR+denI*denI));
+  }
+  function crossoverMagnitude(cutoffs,way,hz,sampleRate=48000) {
+    if(!Array.isArray(cutoffs)||!Number.isInteger(way)||
+       way<0||way>cutoffs.length||sampleRate<44100||sampleRate>192000||
+       !Number.isFinite(hz)||hz<20||hz>=sampleRate*.5)
+      throw new RangeError("crossover plot request");
+    let magnitude=1;
+    if(way>0){
+      const one=biquadMagnitude(hz,cutoffs[way-1],true,sampleRate);
+      magnitude*=one*one;
+    }
+    if(way<cutoffs.length){
+      const one=biquadMagnitude(hz,cutoffs[way],false,sampleRate);
+      magnitude*=one*one;
+    }
+    return Math.max(0,Math.min(1,magnitude));
+  }
+  function peqMagnitude(bands,hz,sampleRate=48000) {
+    if(!Array.isArray(bands)||sampleRate<44100||sampleRate>192000||
+       !Number.isFinite(hz)||hz<20||hz>=sampleRate*.5)
+      throw new RangeError("PEQ plot request");
+    let mag=1;
+    for(const b of bands) {
+      validateBand(b);
+      if(!b.enabled)continue;
+      if(b.frequencyHz>=sampleRate*.45)continue; // visual marker; native rejects
+      const w=2*Math.PI*b.frequencyHz/sampleRate,c=Math.cos(w);
+      const alpha=Math.sin(w)/(2*b.q),A=Math.pow(10,b.gainDb/40);
+      const scale=1/(1+alpha/A),th=2*Math.PI*hz/sampleRate;
+      const b0=(1+alpha*A)*scale,b1=-2*c*scale,b2=(1-alpha*A)*scale;
+      const a1=b1,a2=(1-alpha/A)*scale;
+      const cos=Math.cos(th),sin=Math.sin(th);
+      const nr=b0+b1*cos+b2*Math.cos(2*th),ni=-b1*sin-b2*Math.sin(2*th);
+      const dr=1+a1*cos+a2*Math.cos(2*th),di=-a1*sin-a2*Math.sin(2*th);
+      mag*=Math.sqrt((nr*nr+ni*ni)/Math.max(1e-28,dr*dr+di*di));
+    }
+    return 20*Math.log10(Math.max(1e-10,mag));
+  }
+  function withSuggestedDelays(s) {
+    validateSystem(s);
+    const estimates=alignment(s);
+    if(estimates.some(x=>x.additionalMs>500))throw new RangeError("alignment delay budget");
+    const dsp={...s.dsp};
+    for(const x of estimates)
+      dsp[x.port]={...dsp[x.port],delayMs:Math.round(x.additionalMs*100)/100};
+    return {...s,revision:s.revision+1,dsp};
+  }
   function withPosition(s,port,x,y) {
     validateSystem(s);
     if (!s.ports.includes(port)) throw new RangeError("unknown speaker");
@@ -196,6 +298,8 @@
   return Object.freeze({
     MAX_WAYS,MAX_DEMO_PORTS,sectionsFor,defaultCutoffs,validateCutoffs,
     demoPorts,createSystem,validateSystem,withWays,withStereo,withCutoff,
-    withPorts,withRoute,withDsp,withPosition,withListener,alignment
+    withPorts,withRoute,withDsp,withPeqBand,withoutPeqBand,
+    crossoverMagnitude,peqMagnitude,withSuggestedDelays,
+    withPosition,withListener,alignment
   });
 });
