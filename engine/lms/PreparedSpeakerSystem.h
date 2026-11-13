@@ -19,10 +19,14 @@ struct VerifiedOutputPort final {
     std::string identity; // exact verified device-native pin, not DEMO/GUI ordinal
     int callbackOrdinal=-1;
 };
+struct ParametricBand final {
+    double frequencyHz=1000.,q=0.70710678118,gainDb=0.;
+};
 struct OutputPatch final {
     std::string outputId,portIdentity;
     int sourceSide=0,section=0;  // section [0,ways); side 0=L/mono, 1=R
     double delayMs=0.,gainDb=0.;
+    std::vector<ParametricBand> peq; // max 8 fully prepared peaking bands
     bool mute=true,limiterEnabled=false;
     double ceilingDbfs=-6.;
     // A host-owned, explicit operator acknowledgement, NOT proof of physical protection.
@@ -70,6 +74,18 @@ struct Biquad final {
         b.b2=b.b0;b.a1=-2.*c*scale;b.a2=(1.-a)*scale;
         return b;
     }
+    static Biquad peak(double sr,double hz,double q,double gainDb) noexcept {
+        constexpr double pi=3.14159265358979323846;
+        const double w=2.*pi*hz/sr,c=std::cos(w),alpha=std::sin(w)/(2.*q);
+        const double A=std::pow(10.,gainDb/40.),scale=1./(1.+alpha/A);
+        Biquad b;
+        b.b0=(1.+alpha*A)*scale;
+        b.b1=-2.*c*scale;
+        b.b2=(1.-alpha*A)*scale;
+        b.a1=b.b1;
+        b.a2=(1.-alpha/A)*scale;
+        return b;
+    }
 };
 
 class PreparedSpeakerSystem final {
@@ -83,6 +99,7 @@ class PreparedSpeakerSystem final {
         float gain=1.f,ceiling=1.f;
         bool mute=true,limit=false;
         double delaySamples=0.;
+        std::vector<Biquad> eq;
         std::vector<float> ring;
         std::size_t write=0;
         [[nodiscard]] float delay(float sample) noexcept {
@@ -154,6 +171,9 @@ public:
                 result.fault=SpeakerPlanFault::invalidPort;return result;
             }
         }
+        if(req.outputs.size()>req.verifiedPorts.size()){
+            result.fault=SpeakerPlanFault::invalidPort;return result;
+        }
         std::unordered_set<std::string> logical;
         std::unordered_set<std::string> physical;
         std::size_t totalRing=0;
@@ -177,6 +197,17 @@ public:
                !std::isfinite(p.ceilingDbfs)||p.ceilingDbfs< -60.||p.ceilingDbfs>0.){
                 result.fault=SpeakerPlanFault::invalidOutputDsp;return result;
             }
+            if(p.peq.size()>8){
+                result.fault=SpeakerPlanFault::invalidOutputDsp;return result;
+            }
+            for(const auto& band:p.peq)
+                if(!std::isfinite(band.frequencyHz)||band.frequencyHz<20.||
+                   band.frequencyHz>=req.sampleRate*.45||
+                   !std::isfinite(band.q)||band.q<.1||band.q>18.||
+                   !std::isfinite(band.gainDb)||band.gainDb< -18.||
+                   band.gainDb>18.){
+                    result.fault=SpeakerPlanFault::invalidOutputDsp;return result;
+                }
             if(!p.mute&&(!p.confirmedSpeakerProfile||!p.limiterEnabled)){
                 result.fault=SpeakerPlanFault::unconfirmedSpeaker;return result;
             }
@@ -224,6 +255,10 @@ public:
                 d.mute=p.mute;d.limit=p.limiterEnabled;
                 d.ceiling=static_cast<float>(std::pow(10.,p.ceilingDbfs/20.));
                 d.delaySamples=p.delayMs*req.sampleRate/1000.;
+                d.eq.reserve(p.peq.size());
+                for(const auto& band:p.peq)
+                    d.eq.push_back(Biquad::peak(req.sampleRate,band.frequencyHz,
+                                                band.q,band.gainDb));
                 if(d.delaySamples>0.)
                     d.ring.resize(static_cast<std::size_t>(std::ceil(d.delaySamples))+3);
                 next->destinations_.push_back(std::move(d));
@@ -252,6 +287,7 @@ public:
         for(const auto& d:destinations_)
             if(d.physical<0||d.physical>=physicalCount||!output[d.physical])
                 return false;
+        if(destinations_.empty())return true; // no active physical pins
         for(std::size_t idx=0;idx<sections_.size();++idx){
             auto& s=sections_[idx];
             const float* in=s.side?mainR:mainL;
@@ -269,7 +305,9 @@ public:
             const float* band=scratch_.data()+static_cast<std::size_t>(d.source)*capacity_;
             if(d.mute){std::fill_n(out,frames,0.f);continue;}
             for(int i=0;i<frames;++i){
-                float x=d.delay(band[i])*d.gain;
+                float x=band[i];
+                for(auto& eq:d.eq)x=eq.process(x);
+                x=d.delay(x)*d.gain;
                 if(!std::isfinite(x))x=0.f;
                 // Hard digital peak ceiling is NOT calibrated loudspeaker protection.
                 if(d.limit)x=std::clamp(x,-d.ceiling,d.ceiling);
