@@ -41,7 +41,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("make,render,findTrack,displayMeterDbfs", native)
             self.assertIn("installGraph(channels,main,edges)", native)
             self.assertIn("if(window.__JUCE__?.backend)return true;", native)
-            self.assertIn("consumeField?.({target:g.input,type:'change'})", native)
+            # V60 public pointerup emits exactly one final change. The
+            # native-only handleField seam owns that event/ACK; a second
+            # synthetic callback here would duplicate the release.
+            self.assertEqual(native.count("handleField({target:g.input,type:'change',altKey:!!ev.altKey});"),1)
+            self.assertIn("window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;", native)
+            self.assertNotIn("consumeField?.({target:g.input,type:'change'})", native)
             self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)
