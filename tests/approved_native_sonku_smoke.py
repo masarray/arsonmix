@@ -92,6 +92,24 @@ def exercise(browser,out,width,height):
     editor=page.locator("#mxNativeSonKu")
     editor.wait_for(state="visible",timeout=5000)
     assert editor.locator("#skMap .sk-src").count()==2
+    assert editor.locator("#skMap .sk-speaker-shell").count()==2
+    assert editor.locator("#skMap #skRearArc").count()==1
+    assert editor.locator("#skMap #skFrontArc").count()==1
+    # Painter's ordering is 3D: far rail -> head PNG -> near rail.
+    assert page.evaluate("""() => {
+      const map=document.querySelector('#skMap');
+      const rear=map.querySelector('#skRearArc');
+      const art=map.querySelector('#skListenerArt');
+      const front=map.querySelector('#skFrontArc');
+      return Boolean((rear.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (art.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING));
+    }"""), "Front/back ring painter layering incorrect"
+    # Every rotation input remains an accessible native range, wrapped in
+    # a tactile rotary shell: no browser PCM, no fake processed state.
+    assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
+    for knob in ("skSpeed","skSpread","skMix","skTrim"):
+        assert editor.locator("#"+knob).get_attribute("type")=="range"
+        assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
     assert art.count()==1 and art.get_attribute("href")=="assets/sonku-listener-top.png"
     # Image is actually available inside the assembled native GUI bundle.
@@ -150,38 +168,67 @@ def exercise(browser,out,width,height):
         settings={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
                   "startAzimuthDegrees":float(degrees)}
         accepted_snapshot(page,state,settings)
-        return (
-            float(editor.locator('.sk-src[data-index="0"] .sk-source-bg').get_attribute("cx")),
-            float(editor.locator('.sk-src[data-index="0"] .sk-source-bg').get_attribute("cy"))
-        )
-    x,y=pose(0);assert abs(x-200)<1 and y>270,("FRONT",x,y)
-    x,y=pose(90);assert x<90 and abs(y-165)<1,("RIGHT",x,y)
-    x,y=pose(180);assert abs(x-200)<1 and y<60,("REAR",x,y)
-    x,y=pose(-90);assert x>310 and abs(y-165)<1,("LEFT",x,y)
-    # Actual pointer drag uses physical stage coordinates: screen bottom
-    # means 0° FRONT, not a mirrored/right-facing listener. No simulated
-    # DSP authority: the browser must emit a native settings request.
-    pose(-90)
+        # Acoustic anchor is distinct from the readable icon's display offset.
+        # The offset NEVER alters native azimuth when both sources coincide.
+        nodes=editor.locator('#skMap .sk-src')
+        data=nodes.evaluate_all("""els=>els.map(n=>({
+          ax:Number(n.dataset.acousticX),ay:Number(n.dataset.acousticY),
+          vx:Number(n.dataset.visualX),vy:Number(n.dataset.visualY),
+          value:Number(n.getAttribute('aria-valuenow'))}))""")
+        assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
+        assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
+        assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
+        separation=((data[0]["vx"]-data[1]["vx"])**2+
+                    (data[0]["vy"]-data[1]["vy"])**2)**.5
+        assert separation>=44,("Two studio speakers overlap at zero spread",data)
+        return data[0]["ax"],data[0]["ay"]
+    x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
+    x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
+    x,y=pose(180);assert abs(x-200)<1 and y<100,("REAR",x,y)
+    x,y=pose(-90);assert x>335 and abs(y-174)<1,("LEFT",x,y)
+    # Actual pointer drag is taken from the VISIBLE L speaker at -90,
+    # toward the physical near-ellipse FRONT, not the hidden anchor.
     svg=editor.locator("#skMap").bounding_box()
     assert svg
     def screen(x,y):
         return (svg["x"]+x*svg["width"]/400,
                 svg["y"]+y*svg["height"]/330)
-    sx,sy=screen(320,165)
-    ex,ey=screen(200,285)
+    source=editor.locator('.sk-src[data-index="0"]')
+    sx,sy=screen(float(source.get_attribute("data-visual-x")),
+                 float(source.get_attribute("data-visual-y")))
+    ex,ey=screen(200,257)
     page.mouse.move(sx,sy)
     page.mouse.down()
-    page.mouse.move(ex,ey,steps=9)
+    page.mouse.move(ex,ey,steps=10)
     page.mouse.up()
     dragAction=last_action(page,"nativeSonKuSet")
     assert dragAction["settings"]["moving"] is False
     assert abs(dragAction["settings"]["startAzimuthDegrees"])<5,dragAction
-    # Never confuse successful pointer motion with audio-applied ACK.
     emit(page,"arMixBuiltinSonKuAck",{
         "requestId":dragAction["requestId"],"status":"APPLIED"})
     accepted_snapshot(page,state,{**SETTINGS,"moving":False,
         "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0},
         applied=dragAction["requestId"])
+    # Vertical knob drag must update one typed value and commit once on
+    # pointer release. Pure browser drawing cannot claim DSP APPLIED.
+    knob=editor.locator("#skSpeed").locator("..")
+    box=knob.bounding_box();assert box
+    x=box["x"]+box["width"]*.5;y=box["y"]+box["height"]*.5
+    before=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    page.mouse.move(x,y);page.mouse.down()
+    page.mouse.move(x,y-17,steps=6);page.mouse.up()
+    newactions=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet')")
+    assert len(newactions)==before+1,("Rotary did not commit once",newactions)
+    dialAction=newactions[-1]
+    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":dialAction["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
+        "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
+        applied=dialAction["requestId"])
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
