@@ -26,7 +26,7 @@ assert.match(activation,/for \(auto\* control : \{ getMinimiseButton\(\), getMax
 assert.match(activation,/control->setEnabled \(true\)/);
 assert.doesNotMatch(activation,/startTimer|setAlwaysOnTop|toFront|SetForegroundWindow|engine_/);
 assert.match(chrome,/void paintButton \(juce::Graphics& g, bool over, bool down\) override/);
-assert.match(chrome,/if \(over \|\| down\)/);
+assert.match(chrome,/if \(over \|\| pressed\)/);
 
 assert.match(main, /setUsingNativeTitleBar \(false\)/);
 assert.match(main, /setTitleBarHeight \(31\)/);
@@ -41,8 +41,8 @@ const palette = chrome.slice(chrome.indexOf('static CaptionPalette paletteFor'),
                              chrome.indexOf('static std::unique_ptr<juce::Drawable> load'));
 assert.ok(palette.length > 300, 'native caption must own one state palette');
 assert.match(chrome, /const auto palette = paletteFor \(kind_\)/);
-assert.match(chrome, /down \? palette\.pressedFace : palette\.hoverFace/);
-assert.match(chrome, /down \? palette\.pressedEdge : palette\.hoverEdge/);
+assert.match(chrome, /pressed \? palette\.pressedFace : palette\.hoverFace/);
+assert.match(chrome, /pressed \? palette\.pressedEdge : palette\.hoverEdge/);
 assert.match(palette, /closeButton[\s\S]*?0xff5c3039[\s\S]*?0xffab5864[\s\S]*?0xffef3e50[\s\S]*?0xffff8993/);
 assert.match(palette, /minimiseButton[\s\S]*?0xff244e3a[\s\S]*?0xff4ead7a[\s\S]*?0xff1fb76b[\s\S]*?0xff8be2b4/);
 assert.match(palette, /0xff584929[\s\S]*?0xffbc9544[\s\S]*?0xffe5ae2b[\s\S]*?0xffffdf81/);
