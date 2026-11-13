@@ -355,6 +355,16 @@ function wireGraphCommit(ops,{record=true}={}){
  if(!result.ok){say('ROUTING GUARDIAN: '+result.error+' · graph unchanged');return false;}
  wireEdges=result.edges;nextWireId=result.nextId;
  if(selectedWireEdgeId!==null&&!wireEdges.some(e=>e.id===selectedWireEdgeId))selectedWireEdgeId=null;
+ // Every accepted plug/retarget becomes the selected committed EdgeId,
+ // irrespective of click, drag, Bus route choice, Matrix or SOF workflow.
+ // Invalid/canceled operations never touch selection.
+ const accepted=ops.filter(op=>['CONNECT','ROUTE_ONLY','RETARGET'].includes(op.type)).at(-1);
+ if(accepted){
+  const committed=accepted.edgeId!=null?
+   wireEdges.find(e=>e.enabled&&e.id===accepted.edgeId&&e.destId===accepted.destId):
+   wireEdges.find(e=>e.enabled&&e.sourceId===accepted.sourceId&&e.destId===accepted.destId);
+  if(committed)selectedWireEdgeId=committed.id;
+ }
  syncWireOutputProjection();
  if(record)wireWsRecord(before);
  return true;
@@ -904,35 +914,37 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
  wireMotionGeometry.set(key,[x0,y0,x1,y1,limit]);
  return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
 }
-/* V60 tactile patch cable: one short full-span impact OUT -> IN.
-   The physical endpoints stay welded to the socket centers throughout.
-   The packet travels along the full normalized curve in 460ms, then the
-   cable settles in 190ms. No idle animation or graph/PCM writes. */
-const WIRE_IMPACT_TRAVEL_MS=460,WIRE_IMPACT_SETTLE_MS=190;
+/* V61 real cable whip: a short upward flick at the receiving IN socket,
+   travelling back toward the OUT plug with a damped sinusoidal tail.
+   Physical plugs stay welded; amplitude and oscillation decay toward OUT.
+   Only a committed/retargeted cable animates, for a bounded half-second. */
+const WIRE_IMPACT_TRAVEL_MS=330,WIRE_IMPACT_SETTLE_MS=170;
 const WIRE_IMPACT_DURATION_MS=WIRE_IMPACT_TRAVEL_MS+WIRE_IMPACT_SETTLE_MS;
 function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- const sweep=Math.max(0,Math.min(1,elapsedMs/WIRE_IMPACT_TRAVEL_MS));
- // The impulse center actually reaches the receiving plug rather than
- // disappearing halfway through from exponential travel attenuation.
- const center=.035+.93*sweep;
+ const u=Math.max(0,Math.min(1,elapsedMs/WIRE_IMPACT_TRAVEL_MS));
+ // Physical launch occurs at the IN end (t=1), never at OUT (t=0).
+ // Ease-out front makes the receiving plug flick briskly, rather than creep.
+ const front=1-Math.pow(1-u,1.55);
  const settle=Math.max(0,Math.min(1,(elapsedMs-WIRE_IMPACT_TRAVEL_MS)/WIRE_IMPACT_SETTLE_MS));
- const amplitude=15.2*Math.pow(1-settle,2);
+ const fade=Math.pow(1-settle,2);
+ const strength=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*fade;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- for(let i=1;i<=56;i++){
-  const t=i/56,u=1-t;
-  const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
-  const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
-  const dx=6*u*t*(x1-x0),dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
-  const norm=Math.hypot(dx,dy)||1,delta=t-center;
-  // A bounded, springy packet with no seam at the two fixed plugs.
-  // Preserve visible displacement all the way to 96% of cable length.
-  const tether=Math.min(1,t/.035,(1-t)/.035);
-  const packet=Math.exp(-(delta*delta)/(.145*.145));
-  const impulse=amplitude*packet*Math.cos(delta*13-sweep*1.4)*tether;
-  d+=' L '+(x-dy/norm*impulse).toFixed(1)+' '+(y+dx/norm*impulse).toFixed(1);
+ for(let i=1;i<=64;i++){
+  const t=i/64,v=1-t;
+  const x=v*v*v*x0+3*v*v*t*x0+3*v*t*t*x1+t*t*t*x1;
+  const y=v*v*v*y0+3*v*v*t*(y0+c)+3*v*t*t*(y1+c)+t*t*t*y1;
+  const distance=1-t; // distance travelled from IN toward OUT
+  const passed=front-distance; // material behind the advancing wavefront
+  const tether=Math.min(1,t/.025,(1-t)/.025);
+  // Finite causal travelling sine: first lobe moves UP at the IN socket,
+  // trailing lobes alternate and decay over time AND along cable length.
+  const wave=passed>0?
+   -strength*Math.sin(2*Math.PI*passed/.34)*
+   Math.exp(-2.2*passed-1.35*distance)*tether:0;
+  d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
  }
  return d;
 }
@@ -1520,7 +1532,7 @@ function renderWireRouting(){
   }
   const d=wirePathData(x0,y0,x1,y1,sagLimit);
   paths.push('<path class="wire-drag-line" d="'+d+'" stroke="#06151b" stroke-width="6" opacity=".25" fill="none" stroke-linecap="round"/>'+
-   '<path class="wire-drag-line" d="'+d+'" stroke="'+(source?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".82" fill="none" stroke-linecap="round"/>'+
+   '<path class="wire-drag-line is-wire-selected" d="'+d+'" style="--wire-selected-hue:'+(source?.color||'#b5eedb')+'" stroke="'+(source?.color||'#b5eedb')+'" stroke-width="2.4" opacity=".82" fill="none" stroke-linecap="round"/>'+
    (snap?'':'<circle class="wire-floating-plug" cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="7.5" fill="'+(source?.color||'#87dfb8')+'" opacity=".82" stroke="none" pointer-events="none"/>'));
  }
  svg.innerHTML=paths.join('');
@@ -1776,13 +1788,12 @@ function handleField(event){
  else if(field==='pan'){
   let value=Number(el.value);if(!Number.isFinite(value))return;
   value=Math.max(-100,Math.min(100,value));
-  // Hardware-like center detent: capture inside ±7, hold through ±12,
-  // release outside ±12. A finished drag inside ±12 snaps to dead center.
-  // Keyboard arrows remain fine-resolution (bypass sticky detent).
+  // V61 stronger tactile PAN center: capture ±14, hold through ±22,
+  // release inside ±18. Alt bypass and keyboard fine increments remain exact.
   const keyboard=el.dataset.panKeyboard==='true';
   const bypass=!!event.altKey||el.dataset.panAltPointer==='true';
   const latched=el.dataset.panDetent==='true';
-  const range=event.type==='change'?12:latched?12:7;
+  const range=event.type==='change'?18:latched?22:14;
   if(!keyboard&&!bypass&&Math.abs(value)<=range){value=0;el.value='0';}
   el.dataset.panDetent=String(!keyboard&&value===0&&!bypass);
   if(event.type==='change')delete el.dataset.panKeyboard;
@@ -1924,7 +1935,9 @@ window.addEventListener('pointermove',ev=>{
   const g=wireGesture;
   if(!Number.isFinite(ev.clientX)||!Number.isFinite(ev.clientY))return;
   if(!g.active&&Math.hypot(ev.clientX-g.startX,ev.clientY-g.startY)>=(g.movingEdgeId!==null?10:5)){
-   g.active=true;wireHoverId=null; // source selection changes only on an accepted drop
+   g.active=true;wireHoverId=null;
+   if(g.movingEdgeId!==null)selectedWireEdgeId=g.movingEdgeId;
+   // The cable is visually selected while dragging; graph still changes only on accepted drop.
     if(g.movingEdgeId!==null)consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.add('is-replug-origin');
    consoleBody.classList.add('wire-dragging');
    consoleBody.querySelector?.('.strip[data-id="'+g.sourceId+'"] .wire-node-out')?.classList.add('is-drag-origin');
@@ -1959,7 +1972,7 @@ function finishFaderPointer(ev){
      const before=wireWsSnapshot();
      if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)){
       wireWsRecord(before);
-      selectedWireEdgeId=snap?g.movingEdgeId:null;
+      if(!snap)selectedWireEdgeId=null;
      }
     }
    }else{
