@@ -125,6 +125,15 @@ def exercise(browser,out,width,height):
       return Boolean((rear.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
                      (art.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING));
     }"""), "Front/back ring painter layering incorrect"
+    # Painter's algorithm applies to the *speakers*, not only the floor rail.
+    assert page.evaluate("""() => {
+      const map=document.querySelector('#skMap');
+      const far=map.querySelector('#skRearSources');
+      const art=map.querySelector('#skListenerArt');
+      const near=map.querySelector('#skFrontSources');
+      return Boolean((far.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (art.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING));
+    }"""),"Rear speakers are incorrectly rendered in FRONT of the head"
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
@@ -162,6 +171,12 @@ def exercise(browser,out,width,height):
         "()=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').length")
     assert after==count, "Unanswered SonKu readback was overwritten"
     accepted_snapshot(page,state,SETTINGS)
+    # A true visual animation must advance BETWEEN native readbacks.
+    # The old 250ms setInterval was ~4fps despite valid DSP PCM.
+    vx0=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    page.wait_for_timeout(150)
+    vx1=editor.locator('.sk-src[data-index="0"]').get_attribute("data-visual-x")
+    assert abs(float(vx1)-float(vx0))>1.0,("Orbit is frozen between readbacks",vx0,vx1)
     # Close/reopen must use the installed FX rack click, never a private open().
     editor.locator("#skClose").click()
     assert editor.is_hidden()
@@ -202,6 +217,10 @@ def exercise(browser,out,width,height):
         separation=((data[0]["vx"]-data[1]["vx"])**2+
                     (data[0]["vy"]-data[1]["vy"])**2)**.5
         assert separation>=44,("Two studio speakers overlap at zero spread",data)
+        # Source icon is now INSIDE the front or rear SVG paint layer.
+        layer=nodes.first.evaluate("(n)=>n.parentElement.id")
+        expected="skFrontSources" if abs(degrees)<90 else "skRearSources"
+        assert layer==expected,(degrees,layer,expected)
         return data[0]["ax"],data[0]["ay"]
     x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
     x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
@@ -272,8 +291,36 @@ def exercise(browser,out,width,height):
     assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
     assert editor.locator("#skDistance").is_enabled()
     assert editor.locator("#skAmbience").is_enabled()
-    # Programmatic range edit emits real DOM input+change events, just as
-    # an operator gesture does; assertions inspect outgoing native packets.
+    # P0 regression: a 250ms native readback used to reset a held distance
+    # range thumb while dragging. Exercise a REAL mouse hold, issue old
+    # readback in the middle of the gesture, then release exactly once.
+    slider=editor.locator("#skDistance")
+    rect=slider.bounding_box();assert rect
+    sy=rect["y"]+rect["height"]*.5
+    before=page.evaluate(
+        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    page.mouse.move(rect["x"]+rect["width"]*.20,sy)
+    page.mouse.down()
+    page.mouse.move(rect["x"]+rect["width"]*.76,sy,steps=9)
+    held=float(slider.input_value())
+    assert held>3.0,("Distance pointer gesture not effective",held)
+    page.wait_for_timeout(310)
+    accepted_snapshot(page,state,sceneState)
+    assert abs(float(slider.input_value())-held)<.15,(
+        "Native snapshot incorrectly reverted the held range thumb",
+        held,slider.input_value())
+    page.mouse.up()
+    userDistance=last_action(page,"nativeSonKuSet")
+    assert userDistance["settings"]["sourceDistanceMeters"]>3.,userDistance
+    assert page.evaluate(
+      "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")==before+1
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":userDistance["requestId"],"status":"APPLIED"})
+    sceneState={**sceneState,
+                "sourceDistanceMeters":userDistance["settings"]["sourceDistanceMeters"]}
+    accepted_snapshot(page,state,sceneState,applied=userDistance["requestId"])
+    # Programmatic range edit emits native DOM input+change for keyboard /
+    # automation, using the exact same transaction and ACK fences.
     editor.locator("#skDistance").evaluate("""n=>{
       n.value='5.0';n.dispatchEvent(new Event('input',{bubbles:true}));
       n.dispatchEvent(new Event('change',{bubbles:true}));}""")
