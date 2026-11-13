@@ -92,7 +92,7 @@ def exercise(browser, out, width, height):
     # SEND OFF is a scalar against the EXACT existing EdgeId, not topology.
     on.click()
     off = wait_for_intents(page, "SET_SEND_ENABLED", 1)
-    assert off["channelId"] == SOURCE and off["payload"] == {
+    assert off["targetChannelId"] == SOURCE and off["payload"] == {
         "edgeId":SEND,"enabled":False
     }, off
     assert on.get_attribute("aria-pressed") == "true", (
@@ -147,7 +147,7 @@ def exercise(browser, out, width, height):
       el.dispatchEvent(new Event('change',{bubbles:true}));
     }""")
     level = wait_for_intents(page,"SET_WIRE_GAIN",1)
-    assert level["channelId"]==SOURCE
+    assert level["targetChannelId"]==SOURCE
     assert level["payload"]["edgeId"]==SEND
     assert abs(level["payload"]["gainLinear"]-10**(-12/20))<1e-8
     assert intent_list(page,"SET_FADER")==[]
