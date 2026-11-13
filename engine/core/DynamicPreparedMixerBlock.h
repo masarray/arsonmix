@@ -98,7 +98,8 @@ class DynamicPreparedMixerBlock final {
     }
     struct ChannelTarget final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
-        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{}; // AUDIO only
+        std::atomic<float> inputGain{1.f}; // pre-insert digital trim target
+        armix::dsp::RealtimeSlew64 inputApplied{},appliedL{},appliedR{},gate{}; // AUDIO only
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -170,6 +171,16 @@ public:
         // with this fader/PAN target, never four separately loaded controls.
         target.state.store(Word::encode(gains.left,gains.right,old.mute,old.solo),
                            std::memory_order_release);
+        return true;
+    }
+    // Stable-ChannelId digital input gain; one control atomic, 64-sample RT slew.
+    // Not a physical mic-preamp and never a graph recompile on movement.
+    bool setInputGain(ChannelId id,float linear) noexcept {
+        if(!id.value || !std::isfinite(linear) || linear<0.f || linear>16.f)return false;
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end() || lanes_[found->second].role!=ChannelRole::input)
+            return false;
+        channelTargets_[found->second].inputGain.store(linear,std::memory_order_release);
         return true;
     }
     // Canonical physical-pin validation shared by structural preflight and
@@ -592,6 +603,8 @@ public:
             target.state.store(Word::encode(next.lanes_[i].gainL,
                 next.lanes_[i].gainR,rows[i].mute,rows[i].solo),
                 std::memory_order_relaxed);
+            target.inputGain.store(rows[i].inputGainLinear,std::memory_order_relaxed);
+            target.inputApplied.reset(rows[i].inputGainLinear);
             target.appliedL.reset(next.lanes_[i].gainL);
             target.appliedR.reset(next.lanes_[i].gainR);
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
@@ -761,6 +774,17 @@ public:
                 for(int f=0;f<frames;++f){
                     const float v=.5f*(l[f]+r[f]);l[f]=v;r[f]=v;
                 }
+            // True digital input gain occurs before every built-in/vendor FX.
+            // Input-only. BUS/FX returns do not secretly acquire a mic gain.
+            if(lane.role==ChannelRole::input) {
+                auto& inputGain=channelTargets_[i];
+                inputGain.inputApplied.retarget(
+                    inputGain.inputGain.load(std::memory_order_acquire));
+                for(int f=0;f<frames;++f){
+                    const float g=inputGain.inputApplied.next();
+                    l[f]*=g;r[f]*=g;
+                }
+            }
             processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
