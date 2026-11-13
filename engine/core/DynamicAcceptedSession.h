@@ -306,6 +306,15 @@ public:
             return false;
         return accepted_.rememberLiveMix(id,linear,pan);
     }
+    // A real accepted post-source, pre-FX digital gain update. Remembers the
+    // final value without changing graph topology or touching the audio thread.
+    bool setLiveInputGain(std::uint64_t epoch,std::uint64_t graphRevision,
+                          ChannelId id,float linear) noexcept {
+        const auto* row=accepted_.find(id);
+        if(!row || row->role!=ChannelRole::input ||
+           !publisher_.setInputGain(epoch,graphRevision,id,linear))return false;
+        return accepted_.rememberLiveInputGain(id,linear);
+    }
     // The accepted physical patch is canonical too: subsequent Group/FX
     // graph recompiles must preserve the most recently ACKed live SOURCE.
     bool setLivePhysicalSource(std::uint64_t epoch,std::uint64_t graphRevision,
@@ -350,6 +359,20 @@ public:
             source,destination,preFader,linear);
     }
 
+    // Real-time per-EdgeId SEND ON/OFF uses the same prepared PCM graph,
+    // retains remembered gain, and never tears down/recreates its WIRE.
+    bool setLiveSendEnabled(std::uint64_t epoch,std::uint64_t graphRevision,
+                            ChannelId source,std::uint64_t edgeId,bool enabled) noexcept {
+        const auto* row=accepted_.find(source);
+        if(!row || !edgeId)return false;
+        for(const auto& edge:row->sends)
+            if(edge.edgeId==edgeId && !edge.primaryOutput){
+                if(!publisher_.setSendEnabled(epoch,graphRevision,
+                    source,edgeId,enabled,edge.gain))return false;
+                return accepted_.rememberLiveSendEnabled(source,edgeId,enabled);
+            }
+        return false;
+    }
     bool setLiveWireGain(std::uint64_t epoch,std::uint64_t revision,
                          ChannelId source,std::uint64_t edgeId,float gain) noexcept {
         const auto* row=accepted_.find(source);

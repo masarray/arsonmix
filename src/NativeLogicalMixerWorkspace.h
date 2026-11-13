@@ -163,6 +163,18 @@ public:
                 armix::mixer::ProcessingFormat::mono:
                 armix::mixer::ProcessingFormat::stereo;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_INPUT_GAIN") {
+            if(!(number.isDouble() || number.isInt() || number.isInt64()))
+                return bad("INVALID_INPUT_GAIN");
+            const auto db=static_cast<double>(number);
+            if(!std::isfinite(db) || db< -24. || db>24.)
+                return bad("INVALID_INPUT_GAIN");
+            const auto* target=editor_.roster().find(id);
+            if(!target || target->role!=Role::input)
+                return bad("INPUT_GAIN_NOT_APPLICABLE");
+            edit.kind=ChannelEdit::Kind::setInputGain;
+            edit.value=static_cast<float>(std::pow(10.,db/20.));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FADER" || operation=="SET_PAN") {
             if(!(number.isDouble() || number.isInt() || number.isInt64()))
                 return bad("INVALID_CONTROL_VALUE");
@@ -177,6 +189,29 @@ public:
                 edit.kind=ChannelEdit::Kind::setPan;
                 edit.value=static_cast<float>(n);
             }
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_TAP") {
+            const auto edgeVar=payload.getProperty("edgeId",{});
+            std::uint64_t sendId=0;
+            if(!armix::session::parseDecimal(edgeVar,sendId) || !sendId)
+                return bad("INVALID_SEND_TAP_EDGE");
+            const auto tap=payload.getProperty("tap","").toString();
+            if(tap!="PRE_FADER" && tap!="POST_FADER")
+                return bad("INVALID_SEND_TAP_STAGE");
+            edit.kind=ChannelEdit::Kind::setSendTap;
+            edit.sendEdgeId=sendId;
+            edit.preFader=tap=="PRE_FADER";
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_ENABLED") {
+            // Logical/offline operation only: cannot authorize installed PCM.
+            // The authoritative roster retains EdgeId and stored gain/tap.
+            const auto edgeVar=payload.getProperty("edgeId",{});
+            std::uint64_t sendId=0;
+            if(!armix::session::parseDecimal(edgeVar,sendId) || !sendId ||
+               !number.isBool())return bad("INVALID_SEND_ENABLED");
+            edit.kind=ChannelEdit::Kind::setSendEnabled;
+            edit.sendEdgeId=sendId;
+            edit.enabled=static_cast<bool>(number);
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_MUTE" || operation=="SET_SOLO") {
             if(!number.isBool())return bad("INVALID_BOOLEAN_CONTROL");
@@ -341,6 +376,8 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
+            "SET_INPUT_GAIN",
+            "SET_SEND_ENABLED","SET_SEND_TAP",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
@@ -361,6 +398,8 @@ public:
             set(controls,"faderDb",row.faderLinear>0.f?
                 std::max(-60.,20.*std::log10(static_cast<double>(row.faderLinear))):-60.);
             set(controls,"pan",static_cast<double>(row.pan));
+            set(controls,"inputGainDb",20.*std::log10(
+                std::max(1.e-12,static_cast<double>(row.inputGainLinear))));
             set(controls,"mute",row.mute);set(controls,"solo",row.solo);
             set(channel,"controls",controls);
             auto source=object();
@@ -393,10 +432,13 @@ public:
                 set(edge,"edgeId",str(send.edgeId));
                 set(edge,"from",str(row.id.value));
                 set(edge,"to",str(send.destination.value));
-                set(edge,"signalKind","AUDIO");set(edge,"enabled",true);
+                set(edge,"signalKind","AUDIO");set(edge,"enabled",send.enabled);
                 set(edge,"gainLinear",static_cast<double>(send.gain));
                 set(edge,"primaryOutput",send.primaryOutput);
                 set(edge,"tap",send.preFader?"SPLIT_PRE":"POST_FADER");
+                // Explicit native DSP stage. Legacy SPLIT_PRE field stays
+                // compatible; it must not be presented as browser PRE_FX.
+                set(edge,"tapStage",send.preFader?"PRE_FADER":"POST_FADER");
                 edges.add(edge);
                 sends.add(edge);
                 if(send.primaryOutput)set(channel,"primaryOutId",str(send.destination.value));

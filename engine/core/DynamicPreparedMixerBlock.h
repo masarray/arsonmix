@@ -64,7 +64,8 @@ class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
-        bool pre=false,primary=false;
+        bool pre=false,primary=false,enabled=true;
+        std::uint64_t edgeId=0;
     };
     struct Lane final {
         ChannelId id{};
@@ -98,7 +99,8 @@ class DynamicPreparedMixerBlock final {
     }
     struct ChannelTarget final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
-        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{}; // AUDIO only
+        std::atomic<float> inputGain{1.f}; // pre-insert digital trim target
+        armix::dsp::RealtimeSlew64 inputApplied{},appliedL{},appliedR{},gate{}; // AUDIO only
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -121,6 +123,7 @@ class DynamicPreparedMixerBlock final {
         static_assert(std::atomic<float>::is_always_lock_free,
             "Realtime SEND must never enter a hidden blocking atomic path");
         std::atomic<float> gain{1.f};
+        std::atomic<bool> enabled{true};
         armix::dsp::RealtimeSlew64 applied{};
     };
     // O1: immutable lane roster + one lock-free control target per lane.
@@ -170,6 +173,16 @@ public:
         // with this fader/PAN target, never four separately loaded controls.
         target.state.store(Word::encode(gains.left,gains.right,old.mute,old.solo),
                            std::memory_order_release);
+        return true;
+    }
+    // Stable-ChannelId digital input gain; one control atomic, 64-sample RT slew.
+    // Not a physical mic-preamp and never a graph recompile on movement.
+    bool setInputGain(ChannelId id,float linear) noexcept {
+        if(!id.value || !std::isfinite(linear) || linear<0.f || linear>16.f)return false;
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end() || lanes_[found->second].role!=ChannelRole::input)
+            return false;
+        channelTargets_[found->second].inputGain.store(linear,std::memory_order_release);
         return true;
     }
     // Canonical physical-pin validation shared by structural preflight and
@@ -238,10 +251,29 @@ public:
         for(std::size_t e=lane.first;e<lane.last;++e){
             const auto& edge=edges_[e];
             if(lanes_[edge.destination].id==destination &&
-               edge.pre==preFader && !edge.primary) {
+               edge.pre==preFader && !edge.primary &&
+               sendTargets_[e].enabled.load(std::memory_order_acquire)) {
                 sendTargets_[e].gain.store(gain,std::memory_order_release);
                 return true;
             }
+        }
+        return false;
+    }
+    // Live SEND ON/OFF without rebuilding WIRE or VST3 graph. The existing
+    // 64-sample per-edge gain slew creates a click-free transition.
+    bool setSendEnabled(ChannelId source,std::uint64_t edgeId,
+                        bool enabled,float storedGain) noexcept {
+        if(!source.value || !edgeId || !std::isfinite(storedGain) ||
+           storedGain<0.f || storedGain>4.f)return false;
+        const auto found=controlIndex_.find(source.value);
+        if(found==controlIndex_.end())return false;
+        const auto& lane=lanes_[found->second];
+        for(std::size_t e=lane.first;e<lane.last;++e){
+            if(edges_[e].edgeId!=edgeId || edges_[e].primary)continue;
+            auto& target=sendTargets_[e];
+            target.enabled.store(enabled,std::memory_order_release);
+            target.gain.store(enabled?storedGain:0.f,std::memory_order_release);
+            return true;
         }
         return false;
     }
@@ -483,8 +515,8 @@ public:
                     (send.pan>0.f?1.f-send.pan:1.f);
                 const float gr=monoPre?std::sqrt(.5f*(1.f+send.pan)):
                     (send.pan<0.f?1.f+send.pan:1.f);
-                outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
-                                       send.primaryOutput});
+                outgoing[i].push_back({to,gl,gr,send.enabled?send.gain:0.f,
+                                       send.preFader,send.primaryOutput,send.enabled,send.edgeId});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
@@ -592,6 +624,8 @@ public:
             target.state.store(Word::encode(next.lanes_[i].gainL,
                 next.lanes_[i].gainR,rows[i].mute,rows[i].solo),
                 std::memory_order_relaxed);
+            target.inputGain.store(rows[i].inputGainLinear,std::memory_order_relaxed);
+            target.inputApplied.reset(rows[i].inputGainLinear);
             target.appliedL.reset(next.lanes_[i].gainL);
             target.appliedR.reset(next.lanes_[i].gainR);
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
@@ -608,6 +642,7 @@ public:
         for(std::size_t e=0;e<next.edges_.size();++e){
             const float initial=next.edges_[e].initialGain;
             next.sendTargets_[e].gain.store(initial,std::memory_order_relaxed);
+            next.sendTargets_[e].enabled.store(next.edges_[e].enabled,std::memory_order_relaxed);
             next.sendTargets_[e].applied.reset(initial);
         }
         // Recycle the CONTROL compiler's verified stable-ID index instead
@@ -761,6 +796,17 @@ public:
                 for(int f=0;f<frames;++f){
                     const float v=.5f*(l[f]+r[f]);l[f]=v;r[f]=v;
                 }
+            // True digital input gain occurs before every built-in/vendor FX.
+            // Input-only. BUS/FX returns do not secretly acquire a mic gain.
+            if(lane.role==ChannelRole::input) {
+                auto& inputGain=channelTargets_[i];
+                inputGain.inputApplied.retarget(
+                    inputGain.inputGain.load(std::memory_order_acquire));
+                for(int f=0;f<frames;++f){
+                    const float g=inputGain.inputApplied.next();
+                    l[f]*=g;r[f]*=g;
+                }
+            }
             processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.

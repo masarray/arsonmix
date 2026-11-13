@@ -30,6 +30,7 @@ struct ChannelSendRef final {
     float pan=0.f; // send-only balance: PRE mono uses equal-power coefficients
     bool primaryOutput=false; // OUT selector edge, not a parallel SEND
     std::uint64_t edgeId=0; // stable native identity; CONTROL-only assignment
+    bool enabled=true; // independent SEND ON; retain EdgeId/gain/tap when OFF
 };
 struct ChannelStripDefinition final {
     ChannelId id{};
@@ -37,6 +38,7 @@ struct ChannelStripDefinition final {
     ProcessingFormat format=ProcessingFormat::mono;
     std::string name;
     float faderLinear=1.f, pan=0.f;
+    float inputGainLinear=1.f; // digital pre-insert gain, not hardware preamp
     bool mute=false, solo=false;
     // Catalog identifiers ONLY. No vendor processor object is copied or built.
     // The existing audio control thread owns independent VST instance creation.
@@ -59,7 +61,7 @@ struct ChannelEdit final {
     enum class Kind : std::uint8_t {
         add, duplicate, remove, move, rename, setFormat, setFader, setPan,
         setMute, setSolo, addInsertReference, addSendReference, setPrimaryOutput,
-        removeInsertReference, moveInsertReference,
+        removeInsertReference, moveInsertReference, setSendEnabled, setSendTap, setInputGain,
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision
@@ -76,6 +78,7 @@ struct ChannelEdit final {
     bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
     bool connectMainOnCreate=false; // WIRE-first native creation; legacy imports unchanged
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
+    std::uint64_t sendEdgeId=0; // exact parallel send identity for SEND ON/OFF
     std::string text;
 };
 struct ChannelEditResult final {
@@ -118,6 +121,23 @@ public:
         auto& row=channels_[it->second];
         row.faderLinear=gain;row.pan=pan;
         return true;
+    }
+    bool rememberLiveInputGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
+        const auto it=index_.find(id.value);
+        if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
+        channels_[it->second].inputGainLinear=gain;
+        return true;
+    }
+    bool rememberLiveSendEnabled(ChannelId source,std::uint64_t edgeId,bool enabled) noexcept {
+        if(!source.value || !edgeId)return false;
+        const auto it=index_.find(source.value);
+        if(it==index_.end())return false;
+        for(auto& send:channels_[it->second].sends)
+            if(send.edgeId==edgeId && !send.primaryOutput){
+                send.enabled=enabled;return true;
+            }
+        return false;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
@@ -230,6 +250,12 @@ public:
                         result.fault=ChannelEditFault::invalidValue;
                     else it->faderLinear=op.value;
                     break;
+                case ChannelEdit::Kind::setInputGain:
+                    if(it->role!=ChannelRole::input || !std::isfinite(op.value)||
+                       op.value<0.f||op.value>16.f)
+                        result.fault=ChannelEditFault::invalidValue;
+                    else it->inputGainLinear=op.value;
+                    break;
                 case ChannelEdit::Kind::setPan:
                     if(!std::isfinite(op.value)||op.value< -1.f||op.value>1.f)
                         result.fault=ChannelEditFault::invalidValue;
@@ -241,6 +267,19 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
+                case ChannelEdit::Kind::setSendEnabled:
+                case ChannelEdit::Kind::setSendTap: {
+                    const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
+                        [&](const auto& send){return send.edgeId==op.sendEdgeId;});
+                    if(!op.sendEdgeId || edge==it->sends.end())
+                        result.fault=ChannelEditFault::missingEdge;
+                    else if(edge->primaryOutput)
+                        result.fault=ChannelEditFault::invalidAction;
+                    else if(op.kind==ChannelEdit::Kind::setSendEnabled)
+                        edge->enabled=op.enabled;
+                    else edge->preFader=op.preFader; // post-insert PRE, not PRE_FX
+                    break;
+                }
                 case ChannelEdit::Kind::touchDocumentRevision:
                     // Exact stable ChannelId is validated above. Bump the
                     // document revision without fabricating a DSP parameter
@@ -306,6 +345,7 @@ public:
                         primary->gain=1.f;
                         primary->preFader=false;
                         primary->pan=0.f;
+                        primary->enabled=true;
                     } else {
                         if(edges.size()>=budget_.maximumSendsPerChannel) {
                             result.fault=ChannelEditFault::budgetExceeded;break;
@@ -439,6 +479,7 @@ public:
                     // of doubling a parallel SEND in the accepted PCM.
                     target->primaryOutput=true;
                     target->gain=1.f;target->preFader=false;target->pan=0.f;
+                    target->enabled=true;
                     continue;
                 }
             }
@@ -750,6 +791,9 @@ public:
             if(!ch.id.value || ch.id.value==std::numeric_limits<std::uint64_t>::max() ||
                !ids.insert(ch.id.value).second ||
                !std::isfinite(ch.faderLinear) || ch.faderLinear<0.f ||
+               !std::isfinite(ch.inputGainLinear) || ch.inputGainLinear<0.f ||
+               ch.inputGainLinear>16.f ||
+               (ch.role!=ChannelRole::input && ch.inputGainLinear!=1.f) ||
                ch.faderLinear>4.f || !std::isfinite(ch.pan) ||
                ch.pan< -1.f || ch.pan>1.f)return false;
             maxId=std::max(maxId,ch.id.value);
@@ -762,7 +806,8 @@ public:
                    !send.destination.value || send.destination==ch.id ||
                    !edges.insert(send.edgeId).second ||
                    !std::isfinite(send.gain)||send.gain<0.f||send.gain>4.f ||
-                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f)
+                   !std::isfinite(send.pan)||send.pan< -1.f||send.pan>1.f ||
+                   (send.primaryOutput && (!send.enabled || send.preFader)))
                     return false;
                 primary+=send.primaryOutput;
                 maxEdge=std::max(maxEdge,send.edgeId);

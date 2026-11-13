@@ -530,6 +530,7 @@ public:
             set(ch,"format",static_cast<int>(row.format));
             set(ch,"name",juce::String::fromUTF8(row.name.c_str()));
             set(ch,"gain",row.faderLinear);
+            set(ch,"inputGain",row.inputGainLinear);
             set(ch,"pan",row.pan);set(ch,"mute",row.mute);set(ch,"solo",row.solo);
             juce::Array<juce::var> catalogs,sends;
             for(const auto& c:row.insertCatalogIds)
@@ -540,6 +541,7 @@ public:
                 set(e,"to",decimal(s.destination.value));
                 set(e,"gain",s.gain);set(e,"pan",s.pan);
                 set(e,"pre",s.preFader);set(e,"primary",s.primaryOutput);
+                set(e,"enabled",s.enabled);
                 sends.add(e);
             }
             set(ch,"catalogs",juce::var(catalogs));
@@ -679,6 +681,12 @@ public:
             if(!textField(get(ch,"name"),name,96)||
                !real(get(ch,"gain"),n,0.,4.))return false;
             row.name=name.toStdString();row.faderLinear=static_cast<float>(n);
+            // Legacy .smix defaults to unity digital trim without a new FX.
+            const auto trim=get(ch,"inputGain");
+            if(!trim.isVoid()) {
+                if(!real(trim,n,0.,16.))return false;
+                row.inputGainLinear=static_cast<float>(n);
+            }
             if(!real(get(ch,"pan"),n,-1.,1.))return false;
             row.pan=static_cast<float>(n);
             if(!strictBool(get(ch,"mute"),row.mute)||
@@ -703,6 +711,11 @@ public:
                 edge.pan=static_cast<float>(n);
                 if(!strictBool(get(send,"pre"),edge.preFader)||
                    !strictBool(get(send,"primary"),edge.primaryOutput))return false;
+                // Backward compatible: historical .smix has no separate SEND ON.
+                // Missing means ON; an explicitly malformed value fails closed.
+                const auto enabled=get(send,"enabled");
+                if(!enabled.isVoid() && !strictBool(enabled,edge.enabled))return false;
+                if(edge.primaryOutput && !edge.enabled)return false;
                 row.sends.push_back(edge);
             }
             entries.push_back(std::move(row));

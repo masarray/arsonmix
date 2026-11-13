@@ -29,6 +29,169 @@ static ChannelEdit send(ChannelId from,ChannelId to,float gain,bool pre=false) {
     e.id=from;e.target=to;e.value=gain;e.preFader=pre;return e;
 }
 
+// Real PCM SEND ON/OFF: mute one parallel edge without deleting the cable,
+// changing its gain/tap, or affecting the source channel's MAIN contribution.
+static void verifyPerEdgeSendEnablePcm() {
+    constexpr std::uint64_t epoch=9422;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    const std::array<ChannelEdit,3> channels{
+        add(0,ChannelRole::input,"VOICE"),
+        add(1,ChannelRole::fxReturn,"WET",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,channels,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0];
+    const auto wet=a.edit.createdIds[1];
+    const auto main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,3> links{
+        output(voice,main),output(wet,main),send(voice,wet,.5f,true)
+    };
+    req.sources={{voice,0,-1,false}};
+    a=session.edit(1,1,links,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto* row=session.acceptedRoster().find(voice);
+    assert(row && row->sends.size()==2);
+    const auto edge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.destination==wet && !e.primaryOutput;});
+    assert(edge!=row->sends.end() && edge->enabled);
+    const auto edgeId=edge->edgeId;
+    std::array<float,64> input{},l{},r{};input.fill(.5f);
+    const float* pins[]{input.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](int frames=64){
+        return session.render(epoch,pins,1,l.data(),r.data(),frames,false,fx);
+    };
+    assert(render());
+    const float withSend=l[63];
+    assert(withSend>.35f);
+    ChannelEdit off;off.kind=ChannelEdit::Kind::setSendEnabled;
+    off.id=voice;off.sendEdgeId=edgeId;off.enabled=false;
+    const std::array<ChannelEdit,1> disable{off};
+    a=session.edit(2,2,disable,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==3);
+    row=session.acceptedRoster().find(voice);
+    const auto offEdge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(offEdge!=row->sends.end() && !offEdge->enabled &&
+           offEdge->gain==.5f && offEdge->preFader);
+    assert(!session.setLiveParallelSend(epoch,3,voice,wet,true,1.f));
+    assert(render());
+    const float withoutSend=l[63];
+    assert(withoutSend>.1f && withoutSend<withSend);
+    auto on=off;on.enabled=true;
+    const std::array<ChannelEdit,1> enable{on};
+    a=session.edit(3,3,enable,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==4);
+    row=session.acceptedRoster().find(voice);
+    const auto onEdge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(onEdge!=row->sends.end() && onEdge->enabled &&
+           onEdge->gain==.5f && onEdge->preFader);
+    assert(render() && near(l[63],withSend,1e-4f));
+    // Toggle the same EdgeId LIVE without a graph revision or WIRE removal.
+    assert(!session.setLiveSendEnabled(epoch-1,4,voice,edgeId,false));
+    assert(!session.setLiveSendEnabled(epoch,3,voice,edgeId,false));
+    assert(session.setLiveSendEnabled(epoch,4,voice,edgeId,false));
+    assert(session.acceptedGraphRevision()==4);
+    assert(!session.acceptedRoster().find(voice)->sends.back().enabled);
+    const auto* accepted=session.acceptedRouting(epoch,4);
+    assert(accepted);
+    const auto routingEdge=std::find_if(accepted->edges.begin(),accepted->edges.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(routingEdge!=accepted->edges.end() && !routingEdge->enabled);
+    assert(!session.setLiveParallelSend(epoch,4,voice,wet,true,1.f));
+    assert(render(4));
+    const float liveOff=l[3];
+    assert(liveOff>withoutSend && liveOff<withSend);
+    assert(render(60) && near(l[59],withoutSend,1e-4f));
+    assert(session.setLiveSendEnabled(epoch,4,voice,edgeId,true));
+    assert(session.acceptedRoster().find(voice)->sends.back().enabled);
+    assert(render(4) && l[3]>withoutSend && l[3]<withSend);
+    assert(render(60) && near(l[59],withSend,1e-4f));
+    assert(session.acceptedGraphRevision()==4);
+    // PRE_FADER is AFTER FX and BEFORE the source channel fader.
+    // With source fader fully closed, wet PRE remains; POST must go silent.
+    assert(session.setLiveMix(epoch,4,voice,0.f,0.f));
+    assert(render());
+    const float truePre=l[63];
+    assert(truePre>.01f && truePre<withSend);
+    ChannelEdit retap;retap.kind=ChannelEdit::Kind::setSendTap;
+    retap.id=voice;retap.sendEdgeId=edgeId;retap.preFader=false;
+    const std::array<ChannelEdit,1> post{retap};
+    a=session.edit(4,4,post,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==5);
+    row=session.acceptedRoster().find(voice);
+    const auto moved=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(moved!=row->sends.end() && !moved->preFader &&
+           moved->enabled && moved->gain==.5f);
+    assert(render() && near(l[63],0.f,1e-5f));
+    // Reject primary tap edits and keep the accepted revision/audio intact.
+    const auto primary=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.primaryOutput;});
+    assert(primary!=row->sends.end());
+    retap.sendEdgeId=primary->edgeId;retap.preFader=true;
+    const std::array<ChannelEdit,1> illegal{retap};
+    a=session.edit(5,5,illegal,req,epoch,epoch,true);
+    assert(!a.ok() && session.acceptedGraphRevision()==5);
+    assert(render() && near(l[63],0.f,1e-5f));
+    session.unpublish();session.pollRetirement();
+}
+
+// Digital input trim must precede nonlinear FX, with callback-continuous
+// sample smoothing and a stable ChannelId during live parameter changes.
+static void verifyDigitalInputGainBeforeFxPcm() {
+    constexpr std::uint64_t epoch=9442;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=1;req.maxFrames=64;
+    const std::array<ChannelEdit,2> setup{
+        add(0,ChannelRole::input,"MIC"),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo)
+    };
+    auto a=session.edit(0,0,setup,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto mic=a.edit.createdIds[0];
+    const auto main=a.edit.createdIds[1];
+    const std::array<ChannelEdit,1> link{output(mic,main)};
+    req.sources={{mic,0,-1,false}};
+    a=session.edit(1,1,link,req,epoch,epoch,true);
+    assert(a.ok());
+    std::array<float,64> input{},l{},r{};input.fill(.25f);
+    const float* pins[]{input.data()};
+    const auto square=[&](ChannelId ch,float* left,float* right,int n) noexcept {
+        if(ch!=mic)return;
+        for(int i=0;i<n;++i){left[i]*=left[i];right[i]*=right[i];}
+    };
+    const auto render=[&](int frames){
+        return session.render(epoch,pins,1,l.data(),r.data(),frames,false,square);
+    };
+    assert(render(64));
+    const float original=l[63];
+    assert(near(original,.25f*.25f*.70710678f,1e-4f));
+    assert(!session.setLiveInputGain(epoch-1,2,mic,2.f));
+    assert(!session.setLiveInputGain(epoch,1,mic,2.f));
+    assert(!session.setLiveInputGain(epoch,2,main,2.f));
+    assert(!session.setLiveInputGain(epoch,2,mic,17.f));
+    assert(session.setLiveInputGain(epoch,2,mic,2.f));
+    assert(session.acceptedRoster().find(mic)->inputGainLinear==2.f);
+    assert(render(4));
+    assert(l[3]>original && l[3]<original*4.f);
+    assert(render(60));
+    // Gain x2 BEFORE square-law FX gives x4 PCM, not x2 (post-FX bug).
+    assert(near(l[59],original*4.f,1e-4f));
+    // A subsequent graph edit must preserve the accepted input gain.
+    ChannelEdit rename;rename.kind=ChannelEdit::Kind::rename;
+    rename.id=mic;rename.text="MIC NEW NAME";
+    const std::array<ChannelEdit,1> change{rename};
+    a=session.edit(2,2,change,req,epoch,epoch,true);
+    assert(a.ok() && session.acceptedRoster().find(mic)->inputGainLinear==2.f);
+    assert(render(64));
+    assert(near(l[63],original*4.f,1e-4f));
+    session.unpublish();session.pollRetirement();
+}
+
 static void verifyRealtimeSlewAndNativeChannelIdContinuousControls() {
     using armix::dsp::RealtimeSlew64;
     // Sub-64 variable callbacks must not finish a 64-sample gesture in 4
@@ -919,6 +1082,8 @@ int main() {
 
     verifyConsoleWirePrimaryOutputPcm();
     verifyRealtimeSlewAndNativeChannelIdContinuousControls();
+    verifyPerEdgeSendEnablePcm();
+    verifyDigitalInputGainBeforeFxPcm();
     constexpr std::uint64_t epoch=77;
     constexpr float center=.7071067811865475f;
     DynamicAcceptedSession session;
