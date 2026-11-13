@@ -173,7 +173,7 @@ test('Smart Auto Updater uses an independent process and strict release gates', 
   assert.match(native, /getChildFile \("ArSonMixAutoUpdate\.ps1"\)/);
   assert.match(native, /juce::ChildProcess supervisor/);
   assert.match(native, /ARSONMIX_UPDATE_PROBE/);
-  assert.match(native, /GUI_READY/);
+  assert.match(native, /GUI_READY_NO_AUDIO/);
   // JUCE 8.0.15 Uuid::toString() is un-dashed; PS .NET Guid.ToString("D") is dashed.
   assert.match(native, /juce::Uuid \(probe\)\.toDashedString\(\) == probe/);
   assert.doesNotMatch(native, /juce::Uuid \(probe\)\.toString\(\) == probe/);
@@ -315,7 +315,7 @@ test('healthy install, repair and rollback require real EXE SHA, not provenance 
   assert.match(script, /Repair did not restore exact authenticated EXE and source manifest/);
   assert.match(script, /if\(\$upgradeOK -and \(Test-InstalledRelease/);
   assert.match(script, /if\(Test-InstalledRelease \$installedSha\)/);
-  assert.match(script, /GUI_READY' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
+  assert.match(script, /GUI_READY_NO_AUDIO' -and\s*\n\s*\(Test-InstalledRelease \$expectedSha\)/);
   assert.match(script, /Same source with changed EXE accepted/);
   assert.match(smoke, /ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS/);
 });
@@ -403,4 +403,23 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
   assert.match(native, /if \(button < 0\) return/);
   assert.match(native, /lastUpdatePromptedSha_ == candidate/);
   assert.doesNotMatch(updater, /(?:Stop-Process|taskkill|TerminateProcess)/);
+});
+
+test('silent post-install GUI probe cannot automatically arm ASIO or save a user session', () => {
+  const main = read('src/Main.cpp');
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(main, /static bool isAutoUpdateHealthProbe\(\)/);
+  assert.match(main, /if \(updaterProbeMode_ && audioEngineStarted_\)\s*return;/);
+  const guard=main.indexOf('if (updaterProbeMode_)\n            {\n                diagnostics_.record ("UPDATER_GUI_PROBE"');
+  const engine=main.indexOf('startupError_ = engine_.start (saved.get());',guard);
+  assert.ok(guard>0 && engine>guard, 'health probe must bypass engine start');
+  assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
+  assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
+  assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
+  assert.match(updater, /GUI_READY_NO_AUDIO/);
+  assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
+  // Explicit manual Repair mode may still relaunch on request.
+  const afterApply = updater.slice(updater.indexOf('# Post-close supervisor'));
+  assert.doesNotMatch(afterApply, /\[Diagnostics\.Process\]::Start\(\$exe\)/);
 });
