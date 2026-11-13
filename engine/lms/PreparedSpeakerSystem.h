@@ -3,12 +3,14 @@
 // LMS M2 native PCM kernel. Not a second callback, mixer, or device manager.
 // CONTROL: validate/compile/allocate. AUDIO: bounded process only.
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -23,6 +25,19 @@ struct ParametricBand final {
     double frequencyHz=1000.,q=0.70710678118,gainDb=0.;
     bool enabled=true; // same bypass semantics as LMS Output EQ editor
 };
+// CONTROL-origin voltage model. Values are REQUIRED measured/manufacturer data,
+// NOT defaults and NOT a browser checkbox. A validated value set is not proof
+// of hardware calibration and NEVER grants permission to ARM an ASIO pin.
+struct DriverVoltageModel final {
+    std::string profileId;            // external driver/manufacturer reference
+    double dacFullScaleVrms=0.;     // measured DAC sine RMS at digital 0dBFS
+    double amplifierVoltageGain=0.; // measured volts-out / volts-in (linear)
+    double continuousDriverVrms=0.; // manufacturer-derived electrical limit
+    double driverPeakVolts=0.;      // manufacturer-derived instantaneous limit
+    double minimumHighpassHz=0.;   // 0 only when no safety HPF is specified
+    double rmsWindowMs=500.;       // thermal-oriented detector time constant
+    double releaseMs=150.;         // attenuation release, immediate peak attack
+};
 struct OutputPatch final {
     std::string outputId,portIdentity;
     int sourceSide=0,section=0;  // section [0,ways); side 0=L/mono, 1=R
@@ -32,6 +47,7 @@ struct OutputPatch final {
     double ceilingDbfs=-6.;
     // A host-owned, explicit operator acknowledgement, NOT proof of physical protection.
     bool confirmedSpeakerProfile=false;
+    std::optional<DriverVoltageModel> voltageModel; // host CONTROL only
 };
 struct SpeakerSystemRequest final {
     std::uint64_t deviceEpoch=0,graphRevision=0;
@@ -46,7 +62,7 @@ struct SpeakerSystemRequest final {
 enum class SpeakerPlanFault : std::uint8_t {
     none,invalidEpoch,invalidFormat,invalidCrossover,invalidPort,
     duplicatePort,invalidRoute,invalidOutputDsp,unconfirmedSpeaker,
-    scratchBudget,preparationFailed
+    scratchBudget,preparationFailed,invalidVoltageModel
 };
 struct SpeakerPrepareResult final {
     SpeakerPlanFault fault=SpeakerPlanFault::none;
@@ -90,6 +106,14 @@ struct Biquad final {
 };
 
 class PreparedSpeakerSystem final {
+public:
+    struct OutputProtectionReadback final {
+        bool voltageModelPrepared=false; // calibration has NOT been proven
+        float gainReductionDb=0.f;
+        float preLimitRmsDigital=0.f;
+        float outputPeakDigital=0.f;
+    };
+private:
     struct Section final {
         int side=0,way=0;
         std::array<Biquad,2> hp{},lp{};
@@ -98,8 +122,12 @@ class PreparedSpeakerSystem final {
     struct Destination final {
         int source=0,physical=0;
         float gain=1.f,ceiling=1.f,polarity=1.f;
-        bool mute=true,limit=false;
+        bool mute=true,limit=false,voltageMode=false,safetyHpf=false;
+        float voltagePeakDigital=1.f,voltageRmsDigital=1.f;
+        float attenuation=1.f;
+        double rmsPower=0.,rmsCoefficient=0.,releaseCoefficient=0.;
         double delaySamples=0.;
+        std::array<Biquad,2> safetyHp{};
         std::vector<Biquad> eq;
         std::vector<float> ring;
         std::size_t write=0;
@@ -122,6 +150,9 @@ class PreparedSpeakerSystem final {
     std::vector<Section> sections_;
     std::vector<Destination> destinations_;
     std::vector<float> scratch_;
+    // Separate lock-free telemetry storage; all writes are AUDIO, CONTROL
+    // only samples atomic values. No vectors/heap or locking in process().
+    std::unique_ptr<std::atomic<float>[]> lastGrDb_,lastRms_,lastPeak_;
     std::size_t usedBytes_=0;
 public:
     PreparedSpeakerSystem()=default;
@@ -134,6 +165,16 @@ public:
     [[nodiscard]] std::size_t destinationCount() const noexcept{return destinations_.size();}
     [[nodiscard]] std::uint64_t epoch() const noexcept{return epoch_;}
     [[nodiscard]] std::uint64_t revision() const noexcept{return revision_;}
+    [[nodiscard]] bool outputProtectionReadback(std::size_t index,
+                                    OutputProtectionReadback& out) const noexcept {
+        if(index>=destinations_.size()||!lastGrDb_||!lastRms_||!lastPeak_)
+            return false;
+        out.voltageModelPrepared=destinations_[index].voltageMode;
+        out.gainReductionDb=lastGrDb_[index].load(std::memory_order_acquire);
+        out.preLimitRmsDigital=lastRms_[index].load(std::memory_order_acquire);
+        out.outputPeakDigital=lastPeak_[index].load(std::memory_order_acquire);
+        return true;
+    }
 
     // A rejected candidate NEVER changes the prior accepted snapshot.
     static SpeakerPrepareResult prepare(const SpeakerSystemRequest& req,
@@ -211,6 +252,33 @@ public:
                     result.fault=SpeakerPlanFault::invalidOutputDsp;return result;
                 }
             totalEq+=p.peq.size();
+            if(p.voltageModel) {
+                const auto& m=*p.voltageModel;
+                const auto safe=[](double v,double lo,double hi) noexcept {
+                    return std::isfinite(v)&&v>=lo&&v<=hi;
+                };
+                // A full measured-voltage model is all-or-nothing. A
+                // partial/malformed profile cannot be treated as calibrated.
+                if(m.profileId.empty()||m.profileId.size()>128||
+                   !safe(m.dacFullScaleVrms,.1,50.)||
+                   !safe(m.amplifierVoltageGain,1.,1000.)||
+                   !safe(m.continuousDriverVrms,.01,10000.)||
+                   !safe(m.driverPeakVolts,.01,20000.)||
+                   !safe(m.minimumHighpassHz,0.,req.sampleRate*.45)||
+                   (m.minimumHighpassHz!=0. && m.minimumHighpassHz<20.)||
+                   !safe(m.rmsWindowMs,10.,30000.)||
+                   !safe(m.releaseMs,5.,10000.)) {
+                    result.fault=SpeakerPlanFault::invalidVoltageModel;return result;
+                }
+                const double normalization=std::sqrt(2.)*
+                    m.dacFullScaleVrms*m.amplifierVoltageGain;
+                const double peak=m.driverPeakVolts/normalization;
+                const double rms=m.continuousDriverVrms/normalization;
+                if(!safe(peak,1.e-7,1.)||!safe(rms,1.e-7,1.)||
+                   m.driverPeakVolts<m.continuousDriverVrms) {
+                    result.fault=SpeakerPlanFault::invalidVoltageModel;return result;
+                }
+            }
             if(!p.mute&&(!p.confirmedSpeakerProfile||!p.limiterEnabled)){
                 result.fault=SpeakerPlanFault::unconfirmedSpeaker;return result;
             }
@@ -223,10 +291,14 @@ public:
         }
         const auto sections=static_cast<std::size_t>(req.ways)*(req.stereo?2U:1U);
         const auto maxFloats=req.scratchBudgetBytes/sizeof(float);
+        const auto totalSamples=sections*static_cast<std::size_t>(req.maxFrames);
+        const auto floatBytes=(totalRing+totalSamples)*sizeof(float);
+        const auto telemetryBytes=req.outputs.size()*3U*sizeof(std::atomic<float>);
         if(sections>maxFloats/static_cast<std::size_t>(req.maxFrames)||
-           totalRing>maxFloats-sections*static_cast<std::size_t>(req.maxFrames)||
-           totalEq*sizeof(Biquad)>req.scratchBudgetBytes-
-                (totalRing+sections*static_cast<std::size_t>(req.maxFrames))*sizeof(float)){
+           totalRing>maxFloats-totalSamples||
+           floatBytes>req.scratchBudgetBytes||
+           telemetryBytes>req.scratchBudgetBytes-floatBytes||
+           totalEq*sizeof(Biquad)>req.scratchBudgetBytes-floatBytes-telemetryBytes){
             result.fault=SpeakerPlanFault::scratchBudget;return result;
         }
             auto next=std::make_unique<PreparedSpeakerSystem>();
@@ -249,6 +321,16 @@ public:
                 next->sections_.push_back(s);
               }
             next->destinations_.reserve(req.outputs.size());
+            if(!req.outputs.empty()) {
+                next->lastGrDb_=std::make_unique<std::atomic<float>[]>(req.outputs.size());
+                next->lastRms_=std::make_unique<std::atomic<float>[]>(req.outputs.size());
+                next->lastPeak_=std::make_unique<std::atomic<float>[]>(req.outputs.size());
+                for(std::size_t i=0;i<req.outputs.size();++i) {
+                    next->lastGrDb_[i].store(0.f,std::memory_order_relaxed);
+                    next->lastRms_[i].store(0.f,std::memory_order_relaxed);
+                    next->lastPeak_[i].store(0.f,std::memory_order_relaxed);
+                }
+            }
             for(const auto& p:req.outputs){
                 Destination d;
                 const auto pin=std::find_if(req.verifiedPorts.begin(),req.verifiedPorts.end(),
@@ -259,6 +341,21 @@ public:
                 d.mute=p.mute;d.limit=p.limiterEnabled;
                 d.polarity=p.polarityInverted?-1.f:1.f;
                 d.ceiling=static_cast<float>(std::pow(10.,p.ceilingDbfs/20.));
+                if(p.voltageModel) {
+                    const auto& m=*p.voltageModel;
+                    const double norm=std::sqrt(2.)*m.dacFullScaleVrms*
+                        m.amplifierVoltageGain;
+                    d.voltageMode=true;
+                    d.voltagePeakDigital=static_cast<float>(m.driverPeakVolts/norm);
+                    d.voltageRmsDigital=static_cast<float>(m.continuousDriverVrms/norm);
+                    d.rmsCoefficient=std::exp(-1000./(m.rmsWindowMs*req.sampleRate));
+                    d.releaseCoefficient=std::exp(-1000./(m.releaseMs*req.sampleRate));
+                    if(m.minimumHighpassHz>0.) {
+                        d.safetyHpf=true;
+                        d.safetyHp[0]=d.safetyHp[1]=Biquad::make(
+                            req.sampleRate,m.minimumHighpassHz,true);
+                    }
+                }
                 d.delaySamples=p.delayMs*req.sampleRate/1000.;
                 d.eq.reserve(p.peq.size());
                 for(const auto& band:p.peq)
@@ -272,6 +369,7 @@ public:
             next->usedBytes_=next->scratch_.size()*sizeof(float);
             for(const auto& d:next->destinations_)
                 next->usedBytes_+=d.ring.size()*sizeof(float)+d.eq.size()*sizeof(Biquad);
+            next->usedBytes_+=req.outputs.size()*3U*sizeof(std::atomic<float>);
             result.scratchBytes=next->usedBytes_;
             accepted=std::move(next);
             return result;
@@ -306,19 +404,61 @@ public:
                 band[i]=std::isfinite(x)?x:0.f;
             }
         }
-        for(auto& d:destinations_){
+        for(std::size_t destIndex=0;destIndex<destinations_.size();++destIndex){
+            auto& d=destinations_[destIndex];
             float* out=output[d.physical];
             const float* band=scratch_.data()+static_cast<std::size_t>(d.source)*capacity_;
-            if(d.mute){std::fill_n(out,frames,0.f);continue;}
+            if(d.mute){
+                std::fill_n(out,frames,0.f);
+                lastGrDb_[destIndex].store(0.f,std::memory_order_release);
+                lastRms_[destIndex].store(0.f,std::memory_order_release);
+                lastPeak_[destIndex].store(0.f,std::memory_order_release);
+                continue;
+            }
+            float worstAttenuation=1.f,outputPeak=0.f;
             for(int i=0;i<frames;++i){
                 float x=band[i];
+                if(d.safetyHpf)for(auto& hp:d.safetyHp)x=hp.process(x);
                 for(auto& eq:d.eq)x=eq.process(x);
                 x=d.delay(x)*d.gain*d.polarity;
                 if(!std::isfinite(x))x=0.f;
-                // Hard digital peak ceiling is NOT calibrated loudspeaker protection.
+                if(d.limit && d.voltageMode) {
+                    // Zero-latency SAMPLE-PEAK control + windowed input RMS.
+                    // Explicitly not oversampled true peak or a speaker FAT.
+                    const double power=static_cast<double>(x)*x;
+                    d.rmsPower=d.rmsCoefficient*d.rmsPower+
+                        (1.-d.rmsCoefficient)*power;
+                    const float rms=static_cast<float>(std::sqrt(std::max(0.,d.rmsPower)));
+                    float wanted=1.f;
+                    const float ax=std::abs(x);
+                    if(ax>d.voltagePeakDigital)
+                        wanted=std::min(wanted,d.voltagePeakDigital/ax);
+                    if(rms>d.voltageRmsDigital)
+                        wanted=std::min(wanted,d.voltageRmsDigital/rms);
+                    // Immediate reduction protects a known sample peak;
+                    // exponential recovery avoids gain-pumping on release.
+                    if(wanted<d.attenuation)d.attenuation=wanted;
+                    else d.attenuation=static_cast<float>(
+                        d.releaseCoefficient*d.attenuation+
+                        (1.-d.releaseCoefficient)*wanted);
+                    x*=d.attenuation;
+                    worstAttenuation=std::min(worstAttenuation,d.attenuation);
+                    // Last-resort SAMPLE-peak fence; intersample peaks and
+                    // thermal/excursion limits are NOT certified here.
+                    x=std::clamp(x,-d.voltagePeakDigital,d.voltagePeakDigital);
+                }
+                // Legacy dBFS ceiling remains only a digital fallback.
                 if(d.limit)x=std::clamp(x,-d.ceiling,d.ceiling);
                 out[i]=x;
+                outputPeak=std::max(outputPeak,std::abs(x));
             }
+            const float gr=worstAttenuation<1.f?
+                -20.f*std::log10(std::max(worstAttenuation,1.e-9f)):0.f;
+            lastGrDb_[destIndex].store(gr,std::memory_order_release);
+            lastRms_[destIndex].store(d.voltageMode?
+                static_cast<float>(std::sqrt(std::max(0.,d.rmsPower))):0.f,
+                std::memory_order_release);
+            lastPeak_[destIndex].store(outputPeak,std::memory_order_release);
         }
         return true;
     }
