@@ -32,6 +32,9 @@ reverseRoom=read("sonku-v2-room-orbit-ccw-2x.wav",960000)
 reverseSquare=read("sonku-v2-square-orbit-ccw-2x.wav",960000)
 glue=read("sonku-v3-square-glue-cw-2x.wav",960000)
 airy=read("sonku-v3-square-airy-cw-2x.wav",960000)
+musicBase=read("sonku-musical-square-base-2x.wav",960000)
+musicGlue=read("sonku-musical-square-glue-2x.wav",960000)
+musicAiry=read("sonku-musical-square-airy-2x.wav",960000)
 # Baseline V1 and candidate V2 are deliberately non-identical on same noise.
 # Room must affect later samples, not fake position on the direct sound.
 difference=sum(abs(int(a)-int(b)) for a,b in
@@ -53,6 +56,13 @@ for name,candidate in (("glue",glue),("airy",airy)):
     assert fdnDelta>1500,("FDN stage produced identical PCM",name,fdnDelta)
 distinct=sum(abs(int(a)-int(b)) for a,b in zip(glue[400000:550000],airy[400000:550000]))
 assert distinct>1500,("FDN Studio Glue and Airy Chamber matched exactly",distinct)
+for name,variant in (("glue",musicGlue),("airy",musicAiry)):
+    delta=sum(abs(int(a)-int(b)) for a,b in
+              zip(variant[300000:540000],musicBase[300000:540000]))
+    assert delta>1000,("Musical FDN did not alter original tones",name,delta)
+musicDistinct=sum(abs(int(a)-int(b)) for a,b in
+                  zip(musicGlue[300000:540000],musicAiry[300000:540000]))
+assert musicDistinct>1000,("Musical presets sound identical",musicDistinct)
 # +90° (second reference segment) has a distinct binaural response.
 section=single[120000*2:120000*4]
 left=sum(abs(section[i]) for i in range(0,len(section),2))
