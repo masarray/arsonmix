@@ -283,21 +283,31 @@ private:
     }
     void loadArt() {
 #if defined(ARMIX_GFX_EMBED_PNG_SKINS)
-        amp_=juce::ImageFileFormat::loadFrom(
-            BinaryData::ampheadclassa_png,
-            static_cast<std::size_t>(BinaryData::ampheadclassa_pngSize));
-        cab_=juce::ImageFileFormat::loadFrom(
-            BinaryData::cabinetdual12_png,
-            static_cast<std::size_t>(BinaryData::cabinetdual12_pngSize));
-        gate_=juce::ImageFileFormat::loadFrom(
-            BinaryData::pedalgate_png,
-            static_cast<std::size_t>(BinaryData::pedalgate_pngSize));
-        pedal_=juce::ImageFileFormat::loadFrom(
-            BinaryData::pedaloverdrive_png,
-            static_cast<std::size_t>(BinaryData::pedaloverdrive_pngSize));
-        knob_=juce::ImageFileFormat::loadFrom(
-            BinaryData::knobbrushedmetal_png,
-            static_cast<std::size_t>(BinaryData::knobbrushedmetal_pngSize));
+        // JUCE Image uses reference-counted image storage. Decoding 5 PNGs
+        // on every floating editor reopen is avoidable startup work; the
+        // first UI creation populates this thread-safe function-local cache
+        // and later editors only share image handles. No audio-thread IO.
+        static const std::array<juce::Image,5> skins=[] {
+            return std::array<juce::Image,5>{
+                juce::ImageFileFormat::loadFrom(
+                    BinaryData::ampheadclassa_png,
+                    static_cast<std::size_t>(BinaryData::ampheadclassa_pngSize)),
+                juce::ImageFileFormat::loadFrom(
+                    BinaryData::cabinetdual12_png,
+                    static_cast<std::size_t>(BinaryData::cabinetdual12_pngSize)),
+                juce::ImageFileFormat::loadFrom(
+                    BinaryData::pedalgate_png,
+                    static_cast<std::size_t>(BinaryData::pedalgate_pngSize)),
+                juce::ImageFileFormat::loadFrom(
+                    BinaryData::pedaloverdrive_png,
+                    static_cast<std::size_t>(BinaryData::pedaloverdrive_pngSize)),
+                juce::ImageFileFormat::loadFrom(
+                    BinaryData::knobbrushedmetal_png,
+                    static_cast<std::size_t>(BinaryData::knobbrushedmetal_pngSize))
+            };
+        }();
+        amp_=skins[0];cab_=skins[1];gate_=skins[2];
+        pedal_=skins[3];knob_=skins[4];
 #endif
     }
     std::size_t activeControlCount() const noexcept {
