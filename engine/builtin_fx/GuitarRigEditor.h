@@ -242,17 +242,17 @@ private:
     void loadArt() {
 #if defined(ARMIX_GFX_EMBED_PNG_SKINS)
         amp_=juce::ImageFileFormat::loadFrom(
-            BinaryData::amp_head_class_a_png,
-            static_cast<std::size_t>(BinaryData::amp_head_class_a_pngSize));
+            BinaryData::ampheadclassa_png,
+            static_cast<std::size_t>(BinaryData::ampheadclassa_pngSize));
         cab_=juce::ImageFileFormat::loadFrom(
-            BinaryData::cabinet_dual_12_png,
-            static_cast<std::size_t>(BinaryData::cabinet_dual_12_pngSize));
+            BinaryData::cabinetdual12_png,
+            static_cast<std::size_t>(BinaryData::cabinetdual12_pngSize));
         pedal_=juce::ImageFileFormat::loadFrom(
-            BinaryData::pedal_overdrive_png,
-            static_cast<std::size_t>(BinaryData::pedal_overdrive_pngSize));
+            BinaryData::pedaloverdrive_png,
+            static_cast<std::size_t>(BinaryData::pedaloverdrive_pngSize));
         knob_=juce::ImageFileFormat::loadFrom(
-            BinaryData::knob_brushed_metal_png,
-            static_cast<std::size_t>(BinaryData::knob_brushed_metal_pngSize));
+            BinaryData::knobbrushedmetal_png,
+            static_cast<std::size_t>(BinaryData::knobbrushedmetal_pngSize));
 #endif
     }
     std::size_t activeControlCount() const noexcept {
