@@ -3,6 +3,7 @@
 #include "SonKuMeasuredHrir.h"
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
+#include "SonKuStereoIntegrity.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -73,7 +74,8 @@ public:
         distanceSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.030)));
         bassSlew_=static_cast<float>(1.-std::exp(-2.*3.14159265358979323846*180./rate));
         limiterRelease_=static_cast<float>(1./(rate*0.080));
-        if(!room_.prepare(rate)||!reverb_.prepare(rate))return false;
+        if(!room_.prepare(rate)||!reverb_.prepare(rate)||
+           !integrity_.prepare(rate))return false;
         reset();
         ready_=true;
         // Re-publish a saved active scene after device restart, but do NOT
@@ -100,6 +102,7 @@ public:
         haveKernel_=false;
         room_.reset();
         reverb_.reset();
+        integrity_.reset();
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -181,6 +184,13 @@ public:
             }
             const float x0=std::isfinite(left[i])?left[i]:0.f;
             const float x1=std::isfinite(right[i])?right[i]:0.f;
+            // Preserve strong anti-correlated music side energy without
+            // collapsing it into the two virtual mono HRTF sources. The
+            // independent guard has no hidden UI state or new audio bus.
+            const float preservedSide=integrity_.preservedSide(x0,x1);
+            // At native spatialMix=0 the dry input stays bit-exact.
+            // At ordinary positively-correlated stereo the guard is zero.
+            const float sideRescue=.65f*smoothedMix_*smoothedTrim_*preservedSide;
             history_[0][write_]=x0;
             history_[1][write_]=x1;
             float ears[2]{0.f,0.f};
@@ -213,13 +223,13 @@ public:
                 // ROOM OFF and gain <= unity. Newly boosted GAIN > unity
                 // uses the protected branch below even with ROOM OFF.
                 if(distanceGain==1.f) {
-                    left[i]=dryLevel*x0+legacyBinauralLevel*(ears[0]+reflection.left+late.left);
-                    right[i]=dryLevel*x1+legacyBinauralLevel*(ears[1]+reflection.right+late.right);
+                    left[i]=dryLevel*x0+legacyBinauralLevel*(ears[0]+reflection.left+late.left)+sideRescue;
+                    right[i]=dryLevel*x1+legacyBinauralLevel*(ears[1]+reflection.right+late.right)-sideRescue;
                 } else {
                     left[i]=dryLevel*x0+legacyBinauralLevel*
-                        (distanceGain*ears[0]+reflection.left+late.left);
+                        (distanceGain*ears[0]+reflection.left+late.left)+sideRescue;
                     right[i]=dryLevel*x1+legacyBinauralLevel*
-                        (distanceGain*ears[1]+reflection.right+late.right);
+                        (distanceGain*ears[1]+reflection.right+late.right)-sideRescue;
                 }
             } else {
                 // Slew gain changes per sample; a typed 1.6→8 m edit must
@@ -263,9 +273,9 @@ public:
                 // When ROOM OFF is reselected after a native scene, the
                 // additional wet presence smoothly decays with its own engine.
                 float outL=smoothedTrim_*
-                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL);
+                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL)+sideRescue;
                 float outR=smoothedTrim_*
-                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR);
+                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR)-sideRescue;
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -335,6 +345,7 @@ private:
     Settings settings_{};
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};
+    SonKuStereoIntegrity integrity_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
