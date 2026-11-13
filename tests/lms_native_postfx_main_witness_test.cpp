@@ -195,6 +195,16 @@ int main() {
         p.mute=true;p.confirmedSpeakerProfile=false;
         p.limiterEnabled=false;p.ceilingDbfs=0.;
     }
+    // Host CONTROL-only voltage model. Never from a GUI limiter checkbox.
+    DriverVoltageModel measured;
+    measured.profileId="TEST-MEASUREMENT-NOT-PHYSICAL-FAT";
+    measured.dacFullScaleVrms=2.;
+    measured.amplifierVoltageGain=30.;
+    measured.continuousDriverVrms=6.;
+    measured.driverPeakVolts=14.;
+    measured.rmsWindowMs=80.;
+    measured.releaseMs=70.;
+    settings.outputs[0].voltageModel=measured; // only LOW-L section
     const auto ack=native.acceptSpeakerDraft(settings,physical,main,0);
     assert(ack.ok()&&!ack.hardwareApplied);
     auto diag=native.speakerDiagnosticReadback(epoch,1);
@@ -224,7 +234,17 @@ int main() {
     // The low-frequency steady source flows only into the two LOW sections,
     // and their levels follow post-master gain instead of pre-master PCM.
     assert(diag.isolatedOutputPeaks[0].first==4);
-    assert(diag.isolatedOutputPeaks[0].second>.15f);
+    assert(diag.isolatedOutputPeaks[0].second>.055f);
+    assert(diag.isolatedOutputPeaks[0].second<.09f); // measured RMS-driven GR
+    assert(diag.outputProtection.size()==8);
+    assert(diag.outputProtection[0].callbackOrdinal==4);
+    assert(diag.outputProtection[0].voltageModelPrepared);
+    assert(diag.outputProtection[0].gainReductionDb>6.f);
+    assert(diag.outputProtection[0].preLimitRmsDigital>.15f);
+    assert(diag.outputProtection[0].outputPeakDigital<.09f);
+    assert(diag.outputProtection[1].callbackOrdinal==5);
+    assert(!diag.outputProtection[1].voltageModelPrepared);
+    assert(diag.outputProtection[1].gainReductionDb==0.f);
     assert(diag.isolatedOutputPeaks[4].first==8);
     assert(diag.isolatedOutputPeaks[4].second>.035f);
     assert(diag.isolatedOutputPeaks[3].second<.02f);
