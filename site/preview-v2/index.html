@@ -987,33 +987,47 @@ function kickWireSpring(sourceId,destId){
    noninteractive cable jacket falls and reels back to its real OUT jack.
    Own overlay SVG is independent of the canonical routing/PCM projection.
    A canceled drag cannot call this effect. Reduced-motion skips it. */
-const WIRE_RETRACT_FALL_MS=320,WIRE_RETRACT_HANG_MS=150,WIRE_RETRACT_REEL_MS=660;
-const WIRE_RETRACT_MS=WIRE_RETRACT_FALL_MS+WIRE_RETRACT_HANG_MS+WIRE_RETRACT_REEL_MS;
+/* V64 unplug/reel: the OUT socket is the ONLY impulse source.
+   Unplug removes routing immediately; this detached SVG is visual only.
+   The free plug is pulled straight home while a damped traveling sine
+   starts at OUT and crosses the shortening, naturally slack cable.
+   No falling, hanging pause, constant wobble or phantom input edge. */
+const WIRE_RETRACT_MS=900;
 let wireRetractToken=0,wireRetractOverlay=null;
 function stopWireRetraction(){
  ++wireRetractToken;
  wireRetractOverlay?.remove();wireRetractOverlay=null;
 }
-// Deterministic three-phase cable physics: first the free plug falls while
-// staying at its released X, then a fully slack cable HANGS without reeling.
-// Only after the visible pause does the reel pull the plug to the fixed OUT.
-function wireRetractPose(x0,y0,rx,ry,drop,elapsedMs){
- const falling=Math.max(0,Math.min(1,elapsedMs/WIRE_RETRACT_FALL_MS));
- const fallEase=falling*falling*(3-2*falling);
- const reelT=Math.max(0,Math.min(1,
-  (elapsedMs-WIRE_RETRACT_FALL_MS-WIRE_RETRACT_HANG_MS)/WIRE_RETRACT_REEL_MS));
- const pull=1-Math.pow(1-reelT,2.15);
- const remaining=1-pull;
- const x=x0+(rx-x0)*remaining;
- const y=y0+(ry-y0+drop*fallEase)*remaining;
- const baseSag=Math.min(48,Math.max(12,Math.abs(rx-x0)*.25));
- const hangSag=Math.min(105,Math.max(58,43+Math.abs(rx-x0)*.19));
- const sag=(baseSag*(1-fallEase)+hangSag*fallEase)*remaining;
- // Gentle trailing ripple while the reel pulls, never while freely falling
- // or paused; both endpoints retain exactly their physical positions.
- const wave=5.2*Math.sin(Math.PI*reelT)*Math.pow(remaining,.55)*
-  Math.min(1,Math.abs(rx-x0)/125);
- return {x,y,sag,wave,reelT,phase:reelT>0?'reel':falling<1?'fall':'hang'};
+function wireRetractPose(x0,y0,rx,ry,elapsedMs){
+ const p=Math.max(0,Math.min(1,elapsedMs/WIRE_RETRACT_MS));
+ // Continuous winch acceleration/deceleration without a waiting/fall stage.
+ const pull=p*p*(3-2*p),remaining=1-pull;
+ const x=x0+(rx-x0)*remaining,y=y0+(ry-y0)*remaining;
+ const chord=Math.hypot(rx-x0,ry-y0);
+ // Loose but restrained curve shrinks with available cable length.
+ const sag=Math.min(48,Math.max(11,Math.sqrt(chord)*2.1))*Math.pow(remaining,.86);
+ // Propagation from OUT (t=0) toward the moving free plug (t=1).
+ const front=1-Math.pow(1-Math.min(1,p/.76),1.3);
+ const amplitude=Math.min(13,Math.max(5,Math.sqrt(chord)*.76))*
+  Math.pow(remaining,.62)*Math.min(1,p/.08);
+ return {x,y,remaining,sag,front,amplitude,phase:'reel'};
+}
+function wireRetractPathData(x0,y0,rx,ry,elapsedMs){
+ const pose=wireRetractPose(x0,y0,rx,ry,elapsedMs);
+ let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
+ for(let i=1;i<=64;i++){
+  const t=i/64;
+  const x=x0+(pose.x-x0)*t;
+  // Gravity creates gentle static slack, not a falling plug trajectory.
+  const y=y0+(pose.y-y0)*t+pose.sag*Math.sin(Math.PI*t);
+  const passed=pose.front-t; // positive only AFTER OUT-origin front passes
+  const anchor=Math.min(1,t/.035,(1-t)/.035);
+  const wave=passed>0?
+   -pose.amplitude*Math.sin(2*Math.PI*passed/.39)*
+   Math.exp(-1.8*passed-1.45*t)*anchor:0;
+  d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
+ }
+ return {d,pose};
 }
 function startWireRetraction(sourceId,releasePoint){
  stopWireRetraction();
@@ -1026,15 +1040,11 @@ function startWireRetraction(sourceId,releasePoint){
  const x0=jack.left-vp.left+jack.width*.5,y0=jack.top-vp.top+jack.height*.5;
  const rx=Math.max(2,Math.min(vp.width-2,releasePoint.x-vp.left));
  const ry=Math.max(2,Math.min(vp.height-2,releasePoint.y-vp.top));
- const drop=Math.max(20,Math.min(vp.height-ry-25,
-  Math.min(100,68+Math.abs(rx-x0)*.07)));
  const svgNS='http://www.w3.org/2000/svg';
  const svg=document.createElementNS(svgNS,'svg');
  svg.id='wireRetractLayer';svg.classList.add('routing-wire-overlay');
  svg.dataset.wireRetract=String(sourceId);
  svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
- // V62 clipped everything below the SEND bay after only ~48px: a limp
- // hanging cable was therefore impossible to see. Clip only to viewport.
  svg.style.clipPath='none';
  svg.style.pointerEvents='none';svg.style.zIndex='4';svg.style.filter='none';
  const mk=(tag,attrs)=>{
@@ -1059,25 +1069,16 @@ function startWireRetraction(sourceId,releasePoint){
   }
   if(began===null)began=now;
   const elapsed=Math.min(WIRE_RETRACT_MS,Math.max(0,now-began));
-  const pose=wireRetractPose(x0,y0,rx,ry,drop,elapsed);
-  svg.dataset.wirePhase=pose.phase;
-  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
-  for(let i=1;i<=40;i++){
-   const t=i/40;
-   const bow=Math.sin(Math.PI*t);
-   const x=x0+(pose.x-x0)*t;
-   const curl=pose.wave*bow*Math.sin(2*Math.PI*((1-t)*1.2-pose.reelT*1.7));
-   const y=y0+(pose.y-y0)*t+pose.sag*bow+curl;
-   d+=' L '+x.toFixed(1)+' '+y.toFixed(1);
-  }
-  shadow.setAttribute('d',d);jacket.setAttribute('d',d);
-  plug.setAttribute('cx',pose.x.toFixed(1));
-  plug.setAttribute('cy',pose.y.toFixed(1));
-  plug.setAttribute('r',Math.max(0,5.2*(1-pose.reelT)).toFixed(2));
+  const shape=wireRetractPathData(x0,y0,rx,ry,elapsed);
+  svg.dataset.wirePhase=shape.pose.phase;
+  shadow.setAttribute('d',shape.d);jacket.setAttribute('d',shape.d);
+  plug.setAttribute('cx',shape.pose.x.toFixed(1));
+  plug.setAttribute('cy',shape.pose.y.toFixed(1));
+  plug.setAttribute('r',Math.max(0,5.2*Math.pow(shape.pose.remaining,.6)).toFixed(2));
   if(elapsed<WIRE_RETRACT_MS)requestAnimationFrame(step);
-  else stopWireRetraction(); // no phantom WIRE or hit area after reel-in
+  else stopWireRetraction(); // no ghost cable or hitbox
  }
- // Paint immediately after accepted REMOVE (no blank intermediate frame).
+ // Paint immediately after accepted REMOVE; no missing frame.
  step(performance.now());
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
