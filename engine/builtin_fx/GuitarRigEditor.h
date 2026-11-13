@@ -45,23 +45,32 @@ public:
         // the restored tone: opening another editor must not display stale
         // accepted settings from the previous window.
         processor_.serviceCompletions();
-        draft_=processor_.acceptedProgram();
+        selectedBank_=processor_.activeBank();
+        bankDrafts_[0]=processor_.acceptedBankProgram(0);
+        bankDrafts_[1]=processor_.acceptedBankProgram(1);
+        draft_=bankDrafts_[selectedBank_];
         accepted_=draft_;
         loadArt();
         knobsLook_.image=knob_;
         setSize(1060,640);
-        preset_.addItem("Clean Studio",1);
-        preset_.addItem("Warm Blues",2);
-        preset_.addItem("Vintage Crunch",3);
-        preset_.addItem("Modern Lead",4);
+        for(std::size_t i=0;i<armix::guitarfx::factoryToneNames.size();++i)
+            preset_.addItem(armix::guitarfx::factoryToneNames[i],
+                            static_cast<int>(i)+1);
         preset_.addItem("Custom / saved state",5);
-        selectedPreset_=matchPreset(draft_);
+        selectedPreset_=armix::guitarfx::identifyFactoryTone(draft_);
         preset_.setSelectedId(selectedPreset_?selectedPreset_:5,
                               juce::dontSendNotification);
         preset_.onChange=[this]{choosePreset(preset_.getSelectedId());};
         addAndMakeVisible(preset_);
+        for(std::size_t i=0;i<2;++i){
+            bankButtons_[i].setButtonText(i==0?"A":"B");
+            bankButtons_[i].onClick=[this,i] {
+                requestBank(static_cast<std::uint8_t>(i));
+            };
+            addAndMakeVisible(bankButtons_[i]);
+        }
         for(std::size_t i=0;i<4;++i){
-            library_[i].setButtonText(presetNames_[i]);
+            library_[i].setButtonText(armix::guitarfx::factoryToneNames[i]);
             library_[i].onClick=[this,i]{
                 const int id=static_cast<int>(i)+1;
                 preset_.setSelectedId(id,juce::dontSendNotification);
@@ -203,6 +212,8 @@ public:
     }
     void resized() override {
         preset_.setBounds(getWidth()-280,16,258,33);
+        bankButtons_[0].setBounds(getWidth()-384,18,43,30);
+        bankButtons_[1].setBounds(getWidth()-337,18,43,30);
         status_.setBounds(16,getHeight()-105,175,46);
         for(std::size_t i=0;i<4;++i){
             library_[i].setBounds(18,216+static_cast<int>(i)*54,168,43);
@@ -230,17 +241,23 @@ private:
         const auto serial=processor_.observedBlockSerial();
         nowMs_=juce::Time::getMillisecondCounter();
         if(serial!=lastSerial_){lastSerial_=serial;lastBlockMs_=nowMs_;}
+        if(requestedBank_>=0&&!dirty_&&!waitingId_) {
+            const auto next=static_cast<std::uint8_t>(requestedBank_);
+            requestedBank_=-1;
+            activateBank(next);
+        }
         if(dirty_&&!waitingId_&&processor_.isReady()&&serial>0 &&
            nowMs_-lastBlockMs_<900u) {
             const auto id=processor_.nextRequestId();
-            if(id && processor_.queueProgram(draft_,id)){
+            if(id && processor_.queueProgram(draft_,id,selectedBank_)){
                 waitingId_=id;dirty_=false;
             }
         }
         juce::String message;
         if(waitingId_)message="APPLYING  ·  awaiting PCM ACK";
-        else if(dirty_)message="PENDING  ·  no live PCM";
+        else if(dirty_)message="PENDING  ·  tone not yet accepted";
         else message=(nowMs_-lastBlockMs_<900)?"DSP ACCEPTED":"DSP OFFLINE";
+        if(requestedBank_>=0)message="A/B SWITCH QUEUED";
         status_.setText(message,juce::dontSendNotification);
         repaint();
     }
@@ -268,6 +285,11 @@ private:
     }
     void refreshWidgets(){
         refreshing_=true;
+        for(std::size_t i=0;i<2;++i){
+            bankButtons_[i].setColour(juce::TextButton::buttonColourId,
+                i==selectedBank_?juce::Colour::fromRGB(119,79,40):
+                                 juce::Colour::fromRGB(43,49,55));
+        }
         for(std::size_t i=0;i<4;++i){
             library_[i].setColour(juce::TextButton::buttonColourId,
                 selectedPreset_==static_cast<int>(i)+1?
@@ -285,42 +307,38 @@ private:
         }
         refreshing_=false;
     }
-    static int matchPreset(const Program& p) noexcept {
-        if(!armix::guitarfx::GuitarRigCore::supportsProgram(p))return 0;
-        if(p.blocks[1].enabled){
-            if(p.blocks[2].values[0]==0.43f &&
-               p.blocks[1].values[0]==0.22f)return 2;
-            if(p.blocks[2].values[0]==0.62f &&
-               p.blocks[1].values[0]==0.45f)return 3;
-            if(p.blocks[2].values[0]==0.91f &&
-               p.blocks[1].values[0]==0.73f)return 4;
-            return 0;
-        }
-        return p.blocks[2].values[0]==0.20f?1:0;
-    }
     void markCustom() {
+        bankDrafts_[selectedBank_]=draft_;
         selectedPreset_=0;
         preset_.setSelectedId(5,juce::dontSendNotification);
     }
+    // Tone snapshots are processor-owned and serialized in GRX1 v2;
+    // switching does NOT silently change to a different rack insert.
+    // If the current bank is still pending, defer instead of discarding it.
+    void requestBank(std::uint8_t target) {
+        if(target>1)return;
+        if(target==selectedBank_){requestedBank_=-1;return;}
+        if(dirty_||waitingId_) {
+            requestedBank_=static_cast<int>(target);
+            return;
+        }
+        activateBank(target);
+    }
+    void activateBank(std::uint8_t target) {
+        selectedBank_=target;
+        draft_=bankDrafts_[target];
+        selectedPreset_=armix::guitarfx::identifyFactoryTone(draft_);
+        preset_.setSelectedId(selectedPreset_?selectedPreset_:5,
+                              juce::dontSendNotification);
+        dirty_=true;
+        refreshWidgets();
+        repaint();
+    }
     void choosePreset(int id){
         if(id<1||id>4)return;
-        Program next=armix::guitarfx::GuitarRigCore::startingProgram();
-        const auto level=static_cast<std::size_t>(2);
-        switch(id){
-          case 1:next.blocks[level].values[0]=0.20f;break;
-          case 2:next.blocks[level].values[0]=0.43f;
-                 next.blocks[1].enabled=true;
-                 next.blocks[1].values[0]=0.22f;break;
-          case 3:next.blocks[level].values[0]=0.62f;
-                 next.blocks[1].enabled=true;
-                 next.blocks[1].values[0]=0.45f;break;
-          case 4:next.blocks[level].values[0]=0.91f;
-                 next.blocks[1].enabled=true;
-                 next.blocks[1].values[0]=0.73f;break;
-        }
-        if(armix::guitarfx::validate(next)!=armix::guitarfx::ProgramError::none)
-            return;
-        draft_=next;
+        draft_=armix::guitarfx::factoryTone(
+            static_cast<std::size_t>(id-1));
+        bankDrafts_[selectedBank_]=draft_;
         selectedPreset_=id;
         dirty_=true;
         refreshWidgets();repaint();
@@ -332,16 +350,18 @@ private:
     juce::Label status_;
     std::array<juce::TextButton,4> focusButtons_{};
     std::array<juce::TextButton,4> library_{};
+    std::array<juce::TextButton,2> bankButtons_{};
     std::array<juce::TextButton,4> power_{};
     std::array<juce::Slider,3> sliders_{};
     Program draft_{},accepted_{};
+    std::array<Program,2> bankDrafts_{};
+    std::uint8_t selectedBank_=0;
+    int requestedBank_=-1;
     std::size_t focus_=2;
     std::uint64_t waitingId_=0,lastSerial_=0;
     juce::uint32 nowMs_=0,lastBlockMs_=0;
     int selectedPreset_=1;
     bool refreshing_=false,dirty_=false;
-    static constexpr std::array<const char*,4> presetNames_{
-        "Clean Studio","Warm Blues","Vintage Crunch","Modern Lead"};
     static constexpr std::array<const char*,4> names_{
         "GATE","OVERDRIVE","AMPLIFIER","CABINET"};
     static constexpr std::array<std::array<const char*,3>,4> controlNames_{{
