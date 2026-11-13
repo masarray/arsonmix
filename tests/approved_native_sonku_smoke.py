@@ -437,6 +437,31 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
+    # Every remaining SonKu rotary (4/4 total) is tested with INPUT ALONE,
+    # not a synthetic input+change pair that could hide release-only audio.
+    sceneState={**sceneState,"spacePreset":0}
+    for control,value,key in [
+        ("skSpeed",18.0,"revolutionSeconds"),
+        ("skSpread",45,"stereoSpreadDegrees"),
+        ("skMix",65,"spatialMix"),
+        ("skTrim",3.0,"outputTrim"),
+    ]:
+        before=command_count()
+        editor.locator("#"+control).evaluate("""(n,v)=>{
+            n.value=String(v);
+            n.dispatchEvent(new Event('input',{bubbles:true}));
+        }""",value)
+        page.wait_for_timeout(58)
+        assert command_count()==before+1,(control,"no native edit on input")
+        cmd=last_action(page,"nativeSonKuSet")
+        assert cmd["settings"][key]!=sceneState[key],(control,cmd)
+        sceneState={**sceneState,key:cmd["settings"][key]}
+        applied_settings(cmd,sceneState)
+        # Committing an already-applied value must not create a duplicate
+        # SPSC native edit.
+        editor.locator("#"+control).evaluate(
+            "n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
+        assert command_count()==before+1,(control,"duplicate final edit")
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
