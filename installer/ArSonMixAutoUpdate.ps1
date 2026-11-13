@@ -359,7 +359,7 @@ function Launch-WithHealth([string]$expectedSha) {
         do {
             if($process.HasExited){return $false}
             if(Test-Path -LiteralPath $marker -PathType Leaf) {
-                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY' -and
+                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY_NO_AUDIO' -and
                    (Test-InstalledRelease $expectedSha)) {
                     Start-Sleep -Seconds 2
                     $process.Refresh()
@@ -803,9 +803,9 @@ try {
         $state.retryAfterUtc=[DateTime]::UtcNow.AddMinutes(30).ToString('o')
         Write-State $state
         Log-Result ('INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT '+$new.tag_name)
-        try {[Diagnostics.Process]::Start($exe) | Out-Null} catch {
-            Log-Result 'PREVIOUS_EXE_RELAUNCH_FAILED'
-        }
+        # Do not surprise the operator by restarting audible audio after Quit.
+        # The previous verified EXE remains available on next deliberate launch.
+        Log-Result 'PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH'
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.
@@ -818,7 +818,7 @@ try {
     Write-State $state
     if($actualSha -ceq $installedSha) {
         Log-Result ('INSTALLER_FAILED_PREVIOUS_VERSION_RETAINED '+$new.tag_name)
-        [Diagnostics.Process]::Start($exe) | Out-Null
+        # A failed post-exit update must not auto-start an audible mixer.
         exit 0
     }
     foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
@@ -840,7 +840,7 @@ try {
             $state.phase='rolled-back'
             Write-State $state
             Log-Result ('ROLLED_BACK '+$new.tag_name)
-            [Diagnostics.Process]::Start($exe) | Out-Null
+            # Restored version is ready for the next deliberate user launch.
             exit 0
         }
     }
