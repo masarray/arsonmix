@@ -25,8 +25,11 @@ struct Settings {
     // HRTF-only. All other scenes are optional and OFF unless selected.
     int spacePreset = 0;  // 0=OFF, 1=Square 7.2, 2=Chamber 14.4, 3=Large 28.8
     float sourceDistanceMeters = 1.6f;
-    float roomAmount = 0.f;
-    float ambience = 0.f;
+    // Stored while OFF so the first selected scene is immediately audible
+    // and turning ROOM off/on remembers the previous wet preference.
+    // spacePreset=0 still guarantees identical legacy HRTF-only PCM.
+    float roomAmount = .55f;
+    float ambience = .30f;
 };
 inline bool valid(const Settings& s) noexcept {
     return std::isfinite(s.startAzimuthDegrees) &&
