@@ -47,3 +47,15 @@ CI covers 44.1/48k causal delay, measured ear mirror, finite output,
 legacy-default, rejection of active switching, off-silence, and
 existing full source PCM/music integrity tests. Do not claim dearVR
 quality merely from a synthetic regression or static source IR.
+
+## P2 objective and CPU evidence additions
+The same native offline renderer emits four 2s 48k/16bit WAVs:
+FRONT/REAR x legacy light vs measured image-HRIR early reflections,
+all on the identical original harmonic test input and exact direct
+KEMAR. The Python evidence writer verifies direct PCM is byte-equal
+before reflections, output finite/in-range, reflection difference
+nonzero, and records directional-vs-light ear RMS and sample peaks.
+These are **objective DSP differences**, not proof of perceived distance,
+color or externalization. The informational runner benchmark compares
+48k/128 3-second native wall-clock and callback p99 using the same
+source and block size for light vs full measured reflections.

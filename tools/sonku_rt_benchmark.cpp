@@ -19,10 +19,13 @@ struct Result {
 };
 template<std::size_t block>
 Result measure(double rate,float amount,float late=0.f,
-               const armix::sonku::SonKuRoomGeometry* geometry=nullptr){
+               const armix::sonku::SonKuRoomGeometry* geometry=nullptr,
+               bool directional=false){
     using namespace armix::sonku;
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate))throw std::runtime_error("unsupported sample rate");
+    if(directional && !dsp.setDirectionalEarlyReflectionsHrir(true))
+        throw std::runtime_error("directional room not prepared");
     Settings s{};s.moving=true;s.revolutionSeconds=10.f;
     s.spatialMix=1.f;s.stereoSpreadDegrees=60.f;
     if(!dsp.setSettings(s)||
@@ -111,6 +114,14 @@ int main(){
             report<256>(rate);
             report<512>(rate);
         }
+        const auto light=measure<128>(48000.,.55f);
+        const auto reflected=measure<128>(48000.,.55f,0.f,nullptr,true);
+        std::cout<<std::fixed<<std::setprecision(3)
+          <<"SONKU_P2_CPU rate=48000 block=128 light_ms="<<light.milliseconds
+          <<" measured_hrir_ms="<<reflected.milliseconds
+          <<" measured_over_light="<<reflected.milliseconds/light.milliseconds
+          <<" measured_p99us="<<reflected.p99us
+          <<" NOTE=offline_not_ASIO\n";
     }catch(const std::exception& e){
         std::cerr<<"SONKU CPU BENCH FAIL: "<<e.what()<<"\n";
         return 1;

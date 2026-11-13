@@ -353,6 +353,57 @@ std::vector<std::uint8_t> musicSplitBandProof() {
     }
     return output;
 }
+// P2: exact same original synthetic harmonics and direct KEMAR PCM;
+// ONLY the wall reflections switch from simple ITD/ILD to image-HRIR.
+std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured) {
+    SonKuSpatialCore dsp;
+    if(!dsp.prepare(rate) ||
+       (measured && !dsp.setDirectionalEarlyReflectionsHrir(true)) ||
+       !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square) ||
+       !dsp.setEarlyReflectionsAmount(.55f))
+        throw std::runtime_error("SonKu P2 preparation failed");
+    Settings s=fixed(static_cast<float>(azimuth));
+    s.outputTrim=.65f;s.stereoSpreadDegrees=0.f;
+    if(!dsp.setSettings(s))throw std::runtime_error("P2 source invalid");
+    constexpr int total=rate*2;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> pcm;
+    pcm.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock) {
+        const int n=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<n;++i) {
+            const int f=at+i;
+            const float t=static_cast<float>(f)/rate;
+            const float env=std::clamp(
+                std::min(f,total-1-f)/static_cast<float>(rate/30),0.f,1.f);
+            const float x=env*(.065f*std::sin(2.f*pi*165.f*t)+
+                .045f*std::sin(2.f*pi*660.f*t)+
+                .028f*std::sin(2.f*pi*2200.f*t)+
+                .018f*std::sin(2.f*pi*4700.f*t));
+            l[i]=r[i]=x;
+        }
+        dsp.process(l.data(),r.data(),n);
+        for(int i=0;i<n;++i)appendStereo(pcm,l[i],r[i]);
+    }
+    return pcm;
+}
+void writeDirectionalRoomAudio(const std::filesystem::path& dir) {
+    for(int azimuth:{0,180}) {
+        const std::string direction=azimuth==0?"front":"rear";
+        writeWav(dir/("sonku-p2-light-"+direction+".wav"),
+            directionalRoomAudio(azimuth,false));
+        writeWav(dir/("sonku-p2-directional-"+direction+".wav"),
+            directionalRoomAudio(azimuth,true));
+    }
+    std::ofstream guide(dir/"P2-HEADPHONE-LISTENING.txt");
+    if(!guide)throw std::runtime_error("Missing P2 guide output");
+    guide<<"Four 2s SonKu A/B WAVs: identical original synth source.\\n"
+         <<"FRONT / REAR; compare light ER vs measured directional ER.\\n"
+         <<"Unmodified direct KEMAR, same output trim and room amount.\\n"
+         <<"Headphones only, safe playback gain, no OS spatial enhancer.\\n"
+         <<"These audio files are NOT subjective externalization proof.\\n";
+}
 // Shared by the whole listening package and the fast PR-scoped integrity
 // experiment. No expensive 20-second room renders in the new fast lane.
 void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
@@ -384,13 +435,20 @@ void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
 }
 int main(int argc,char** argv){
     try{
-        if(argc!=2 && !(argc==3 && std::string(argv[2])=="--music-integrity-only"))
+        if(argc!=2 && !(argc==3 &&
+            (std::string(argv[2])=="--music-integrity-only" ||
+             std::string(argv[2])=="--directional-er-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
         if(argc==3){
-            writeMusicIntegrityEvidence(dir);
-            std::cout<<"Music-integrity 6x headphone A/B WAV PASS\n";
+            if(std::string(argv[2])=="--directional-er-only") {
+                writeDirectionalRoomAudio(dir);
+                std::cout<<"P2 directional room 4 WAV rendered\n";
+            } else {
+                writeMusicIntegrityEvidence(dir);
+                std::cout<<"Music-integrity 6x headphone A/B WAV PASS\n";
+            }
             return 0;
         }
         constexpr std::array<int,4> reference{0,90,180,-90};
