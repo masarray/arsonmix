@@ -141,6 +141,39 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f,
         throw std::runtime_error("Two turns do not close acoustic orbit");
     return result;
 }
+// Native anti-phase stereo proof using three original harmonics, not
+// copyrighted music or an imitation of a proprietary dearVR recording.
+// Equal LEVEL, timing, HRTF and 0-degree stereo spread across all variants;
+// only one input channel's polarity differs.
+std::vector<std::uint8_t> musicIntegrityProof(float azimuth,bool inverted) {
+    SonKuSpatialCore dsp;
+    if(!dsp.prepare(rate)||
+       !dsp.setSettings(fixed(azimuth)))
+        throw std::runtime_error("Music integrity fixture not prepared");
+    constexpr int total=rate*4;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> audio;
+    audio.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock){
+        const int count=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<count;++i){
+            const int n=at+i;
+            const float t=static_cast<float>(n)/rate;
+            const float env=std::clamp(
+                std::min(n,total-1-n)/static_cast<float>(rate/30),0.f,1.f);
+            const float x=env*(.13f*std::sin(2.f*pi*220.f*t)+
+                               .08f*std::sin(2.f*pi*330.f*t)+
+                               .045f*std::sin(2.f*pi*660.f*t));
+            l[static_cast<std::size_t>(i)]=x;
+            r[static_cast<std::size_t>(i)]=inverted?-x:x;
+        }
+        dsp.process(l.data(),r.data(),count);
+        for(int i=0;i<count;++i)appendStereo(audio,l[i],r[i]);
+    }
+    return audio;
+}
+
 // Original 20-second plucked-tone motif (20 half-second events, repeated on
 // both revolutions). Synthesized here rather than using protected recordings.
 // This deliberately exposes metallic late-tail coloration hidden by noise tests.
@@ -268,7 +301,13 @@ void notes(const std::filesystem::path& directory,
       <<"decay programs = 0.78 / 1.28 / 2.05 s. NOT volume-normalized.\n"
       <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
       <<"direct path time-of-flight, or higher-order wall reflections.\n"
-      <<"Offline candidates only, NO native GUI/session/product release.\n";
+      <<"P0 MUSIC INTEGRITY measured native stereo comparison:\\n"
+       <<"sonku-music-positive-front.wav = reference coherent stereo.\\n"
+       <<"sonku-music-anti-phase-front.wav = L=-R at FRONT 0 deg.\\n"
+       <<"sonku-music-anti-phase-rear.wav = L=-R at REAR 180 deg.\\n"
+       <<"Same original 3-tone source, level, 4s clock, 0 spread and HRIR.\\n"
+       <<"Headphone listening only; preservation is NOT externalization proof.\\n"
+       <<"Offline candidates only, NO native GUI/session/product release.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
     key<<"OPEN ONLY AFTER LISTENING. Exact 2.5-second trial windows:\n";
@@ -349,6 +388,12 @@ int main(int argc,char** argv){
         emitScene("sonku-m4-musical-chamber-far-2x.wav",2,5.f);
         emitScene("sonku-m4-musical-large-near-2x.wav",3,1.6f);
         emitScene("sonku-m4-musical-large-far-2x.wav",3,8.f);
+        writeWav(dir/"sonku-music-positive-front.wav",
+                 musicIntegrityProof(0.f,false));
+        writeWav(dir/"sonku-music-anti-phase-front.wav",
+                 musicIntegrityProof(0.f,true));
+        writeWav(dir/"sonku-music-anti-phase-rear.wav",
+                 musicIntegrityProof(180.f,true));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
