@@ -18,6 +18,9 @@ $local=$env:LOCALAPPDATA
 if([string]::IsNullOrWhiteSpace($local)){exit 0}
 $root=Join-Path $local 'ArSonMix\Updates'
 $statePath=Join-Path $root 'state.json'
+# Consent is a usability acknowledgement, never a cryptographic trust boundary.
+# The worker independently verifies both published installers before execution.
+$approvalPath=Join-Path $root 'approved.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
@@ -669,6 +672,23 @@ try {
        -not (Test-StagedAsset $oldPath $state.previousAsset)) {
         Fail 'Offline staged install/rollback bytes not verified'
     }
+    # A published upgrade must be acknowledged once by the user in the
+    # lightweight GUI prompt. A missing/stale/corrupt token defers installation,
+    # without breaking mixer startup or forcing an active audio session closed.
+    # Same-release binary repair is separate and does not require this consent.
+    if($state.operation -ceq 'upgrade') {
+        $approval=$null
+        if(Test-Path -LiteralPath $approvalPath -PathType Leaf) {
+            try {$approval=Read-Json $approvalPath} catch { }
+        }
+        if($null -eq $approval -or
+           [string]$approval.candidateSha -cne [string]$state.candidateSha -or
+           [string]$approval.previousSha -cne [string]$state.previousSha -or
+           [string]$approval.candidateTag -cne [string]$state.candidateTag) {
+            Log-Result 'UPDATE_WAITING_FOR_USER_OK'
+            exit 0
+        }
+    }
     # Re-query public release to reject a revoked or replaced candidate.
     # No network is needed *during* live audio; if offline on close, defer.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
@@ -744,6 +764,7 @@ try {
         $state.blockedTag=''
         Write-State $state
         Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
+        Remove-Item -LiteralPath $approvalPath -Force -ErrorAction SilentlyContinue
         Clear-StagedVendorFiles $state
         exit 0
     }
