@@ -123,7 +123,7 @@
     validateSystem(s);
     requireInteger(index,0,s.ways-2,"cutoff index");
     const next=s.cutoffsHz.slice();
-    next[index]=requireNumber(hz,MIN_HZ,MAX_HZ,"cutoff hz");
+    next[index]=requireNumber(hz,MIN_HZ,MAX_HZ,"crossover frequency");
     validateCutoffs(next,s.ways);
     return {...s, revision:s.revision+1, cutoffsHz:next};
   }
