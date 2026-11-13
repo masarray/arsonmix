@@ -66,6 +66,7 @@ public:
             lastCompletion_={stale.requestId,stale.program,false,stale.bank};
         }
         fadeLeft_=0;
+        fullyBypassed_=false;
         ready_=maxBlock>=16&&maxBlock<=8192&&
                core_.prepare(sampleRate,accepted_);
         rate_=ready_?sampleRate:0.;
@@ -114,13 +115,25 @@ public:
     void processBlock(juce::AudioBuffer<double>& pcm,juce::MidiBuffer&) override {
         pcm.clear(); // No silently unprocessed double-precision guitar output.
     }
+    void onRealtimeBypass(bool /*requested*/,bool fully) noexcept override {
+        // The host calls this from the SINGLE callback before either its wet
+        // processBlock or its fully-bypassed CPU-saving fast path. A Guitar FX
+        // crossfade must not wait forever for PCM that is deliberately skipped.
+        fullyBypassed_=fully;
+        if(fully)fadeLeft_=0;
+    }
     void consumeRealtimeEdits() noexcept override {
         Edit next{};
         if(!ready_||fadeLeft_>0||!completed_.canPush()||!queued_.pop(next))return;
         // An immutable program is prepared by CONTROL before publication.
-        beforeSwitch_=core_;
+        // Reuse compatible delay/envelope history; unmodified filters are
+        // not restarted cold every time the player adjusts a small knob.
+        // Once fully bypassed, processBlock is intentionally skipped by the
+        // host: install the new state without a crossfade that cannot finish.
+        if(!fullyBypassed_)beforeSwitch_=core_;
+        (void)next.prepared.inheritCompatibleHistory(core_);
         core_=next.prepared;
-        fadeLeft_=crossfadeFrames;
+        fadeLeft_=fullyBypassed_?0:crossfadeFrames;
         (void)completed_.push({next.requestId,next.program,true,next.bank});
     }
 
@@ -295,6 +308,7 @@ private:
     std::atomic<std::uint32_t> pending_{0};
     std::uint64_t requestSerial_=0; // CONTROL only
     int fadeLeft_=0; // audio-owned
+    bool fullyBypassed_=false; // AUDIO callback only, host bypass hint
     armix::guitarfx::Program accepted_=
         armix::guitarfx::GuitarRigCore::startingProgram();
     std::array<armix::guitarfx::Program,2> bankPrograms_{{
