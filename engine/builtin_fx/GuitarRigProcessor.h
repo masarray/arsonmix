@@ -36,7 +36,7 @@ public:
       : juce::AudioProcessor(BusesProperties()
           .withInput("Input",juce::AudioChannelSet::stereo(),true)
           .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
-        setLatencySamples(armix::guitarfx::GuitarRigCore::cabinetLatencySamples);
+        setLatencySamples(armix::guitarfx::GuitarRigCore::processingLatencySamples);
     }
     const juce::String getName() const override {return "Guitar FX Rig";}
     bool acceptsMidi() const override {return false;}

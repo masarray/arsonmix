@@ -202,7 +202,7 @@ public:
         }
         if(focus_==3){
             g.setFont(juce::Font(juce::FontOptions(12.f)));
-            g.drawText("ORIGINAL 65-TAP CABINET FIR  ·  32-SAMPLE DSP PDC",
+            g.drawText("65-TAP CABINET FIR · 32-SAMPLE CAB / 48-SAMPLE FX PDC",
                        305,495,570,29,juce::Justification::centred);
         }
         g.setColour(juce::Colour::fromRGB(51,57,65));

@@ -165,7 +165,7 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(!guitar->prepare(16000.,128,nullptr,0));
     auto live=guitar->prepare(48000.,128,nullptr,0);
     assert(live && live->getName()=="Guitar FX Rig");
-    assert(live->getLatencySamples()==32);
+    assert(live->getLatencySamples()==48);
     auto* guitarTyped=dynamic_cast<armix::builtin_fx::GuitarRigProcessor*>(live.get());
     assert(guitarTyped && guitarTyped->isReady());
     juce::MemoryBlock snapshot;
@@ -173,7 +173,7 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(snapshot.getSize()==12u+2u*4u+2u*4u*44u); // two durable banks
     auto restored=guitar->prepare(44100.,128,
         snapshot.getData(),static_cast<int>(snapshot.getSize()));
-    assert(restored && restored->getLatencySamples()==32);
+    assert(restored && restored->getLatencySamples()==48);
     auto broken=snapshot;
     // Corrupt active-bank index; the whole restore must fail closed.
     broken[8]=0xff;broken[9]=0xff;broken[10]=0xff;broken[11]=0xff;
@@ -353,7 +353,7 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(!guitarTyped->lastCompletion().applied);
     assert(guitarTyped->pendingProgramChanges()==0);
     assert(guitarTyped->acceptedProgram().blocks[2].values[0]==0.78f);
-    assert(guitarTyped->getLatencySamples()==32);
+    assert(guitarTyped->getLatencySamples()==48);
 
     // Two accepted live edits must never interrupt a 128-frame crossfade:
     // a second intent waits in the queue until the first transition ends.
