@@ -4,6 +4,7 @@
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
+#include <juce_events/juce_events.h>
 #include <array>
 #include <cstdio>
 int main(int argc,char** argv) {
@@ -21,6 +22,15 @@ int main(int argc,char** argv) {
     window.setContentNonOwned(&editor,true);
     window.setTopLeftPosition(40,40);
     window.setVisible(true);
+    // JUCE Button::triggerClick is asynchronous. A snapshot taken before the
+    // MessageManager pumps would silently capture the SAME selected device
+    // for every requested focus and incorrectly mark all images "successful".
+    // This previously happened; never regress to static-identical screenshots.
+    auto flushGui=[] {
+        auto* mm=juce::MessageManager::getInstance();
+        return mm!=nullptr && mm->runDispatchLoopUntil(120);
+    };
+    if(!flushGui())return 13;
     if(window.getPeer()==nullptr || editor.getPeer()==nullptr) {
         std::fprintf(stderr,"NATIVE_WINDOW_PEER_MISSING: screenshot is not qualified\n");
         return 3;
@@ -45,14 +55,14 @@ int main(int argc,char** argv) {
                 editor.getChildComponent(i))) {
                 if(button->getButtonText()==name) {
                     button->triggerClick();
-                    return true;
+                    return flushGui();
                 }
             }
         }
         return false;
     };
     const auto screenshot=[&](const char* name) {
-        if(!save(name)) {
+        if(!flushGui()||!save(name)) {
             std::fprintf(stderr,"NATIVE_SNAPSHOT_FAILED: %s\n",name);
             return false;
         }
@@ -71,7 +81,7 @@ int main(int argc,char** argv) {
                 editor.getChildComponent(i))) {
             if(button->getTooltip()=="Toggle GATE") {
                 button->triggerClick();
-                switched=true;
+                switched=flushGui();
                 break;
             }
         }
@@ -85,8 +95,8 @@ int main(int argc,char** argv) {
     // A/B is the real native bank switch, not an image-only cosmetic change.
     if(!click("B")||!screenshot("09-bank-b"))return 11;
     editor.setSize(1060,640);
-    if(!click("A")||!screenshot("10-bank-a"))return 12;
+    if(!click("A")||!screenshot("10-bank-a-request-queued"))return 12;
     window.setVisible(false);
-    std::puts("NATIVE_JUCE_WINDOW_CAPTURE_SET=PASS (requires visual review)");
+    std::puts("NATIVE_JUCE_WINDOW_CAPTURE_SET=PASS (requires different-pixel proof)");
     return 0;
 }
