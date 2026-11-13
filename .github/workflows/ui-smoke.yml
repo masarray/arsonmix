@@ -209,6 +209,11 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Actual native picker insert, ACK/readback, editor open, UI controls
         run: python tests/approved_native_sonku_smoke.py
+      # Same Chromium installation and same native-only GUI assembler.
+      # Fast scoped SOF qualification runs on the existing SonKu integration
+      # job (zero additional browser runners and zero Windows recompiles).
+      - name: Native SOF PRE/POST, SEND ON, EdgeId gain and ACK/readback Chromium
+        run: python tests/approved_native_sof_chromium_smoke.py
       - name: Render original 8D-SonKu headphone candidate through exact native HRTF
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-listening
@@ -228,6 +233,14 @@ jobs:
         with:
           name: ArSonMix-SonKu-Editor-${{ github.run_id }}
           path: arsonmix-sonku-editor-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Keep native SOF accepted-state desktop and narrow screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SOF-PCM-Bridge-${{ github.run_id }}
+          path: arsonmix-native-sof-*.png
           if-no-files-found: ignore
           retention-days: 7
 
