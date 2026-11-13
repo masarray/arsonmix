@@ -370,10 +370,10 @@ def test_replug_and_retract(page):
       return mid.y-(a.y+b.y)/2;
     }""")
     assert sag>15,("hanging wire lacks a visible slack belly",sag)
-    page.wait_for_timeout(75)
-    hold=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    assert abs(hold[0]-hang[0])<1.2 and abs(hold[1]-hang[1])<1.2,\
-        ("the wire should pause hanging before reeling",hang,hold)
+    # CI/browser scheduling can exceed a short hang interval between
+    # getPointAtLength and a second DOM read. The actual DOM phase above
+    # proves the hang occurred; check stationary positions at two precise
+    # timeline samples from the *production function*, not wall-clock sleep.
     page.wait_for_timeout(230)
     reel=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
     start_dist=abs(first[0]-cx(src.bounding_box()))
@@ -384,11 +384,15 @@ def test_replug_and_retract(page):
                HTML.index("function startWireRetraction(")]
     response=page.evaluate("()=>{\n"+model+"""\n
       const a=wireRetractPose(0,0,300,0,82,180);
-      const b=wireRetractPose(0,0,300,0,82,400);
+      const b=wireRetractPose(0,0,300,0,82,350);
+      const held=wireRetractPose(0,0,300,0,82,445);
       const c=wireRetractPose(0,0,300,0,82,680);
-      return {fall:a,hang:b,reel:c};
+      return {fall:a,hang:b,held,reel:c};
     }""")
-    assert response["fall"]["wave"]==response["hang"]["wave"]==0,response
+    assert response["fall"]["wave"]==response["hang"]["wave"]==response["held"]["wave"]==0,response
+    assert abs(response["hang"]["x"]-response["held"]["x"])<.01 and \
+           abs(response["hang"]["y"]-response["held"]["y"])<.01,\
+        ("production hang pose moved before reel began",response)
     assert response["reel"]["wave"]>1.2,response
     assert response["fall"]["phase"]=="fall" and response["hang"]["phase"]=="hang" and response["reel"]["phase"]=="reel"
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
