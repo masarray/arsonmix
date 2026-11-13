@@ -45,15 +45,22 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override {return "Studio Guitar";}
     void changeProgramName(int,const juce::String&) override {}
-    // Dedicated WebView2 editor comes only with accepted controls/readback.
-    // Do not advertise a JUCE vendor editor which has not been implemented.
-    bool hasEditor() const override {return false;}
-    juce::AudioProcessorEditor* createEditor() override {return nullptr;}
+    // Uses existing generic FX editor ownership from the host. Its original
+    // hardware PNGs are linked only into the production application.
+    bool hasEditor() const override {return true;}
+    juce::AudioProcessorEditor* createEditor() override;
     bool isBusesLayoutSupported(const BusesLayout& layout) const override {
         return layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo() &&
                layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double sampleRate,int maxBlock) override {
+        // Host only calls prepare while detached/quiescent. Drain accepted
+        // completions before retuning the program to the NEW sample rate.
+        serviceCompletions();
+        Edit stale{};
+        while(queued_.pop(stale))
+            lastCompletion_={stale.requestId,stale.program,false};
+        fadeLeft_=0;
         ready_=maxBlock>=16&&maxBlock<=8192&&
                core_.prepare(sampleRate,accepted_);
         rate_=ready_?sampleRate:0.;
@@ -110,6 +117,12 @@ public:
 
     // SINGLE message-thread producer; reject malformed programs before
     // touching the live DSP. No DSP compilation in processBlock.
+    std::uint64_t nextRequestId() noexcept {
+        // CONTROL only. Preserve exact monotonic identity across editor
+        // close/reopen; never use zero as a potentially valid ACK.
+        return requestSerial_<std::numeric_limits<std::uint64_t>::max()?
+               ++requestSerial_:0;
+    }
     bool queueProgram(const armix::guitarfx::Program& program,
                       std::uint64_t requestId) noexcept {
         if(!ready_||!requestId||!std::isfinite(rate_)||
@@ -226,6 +239,7 @@ private:
     FxSpsc<Edit,4> queued_{};
     FxSpsc<Completion,4> completed_{};
     Completion lastCompletion_{};
+    std::uint64_t requestSerial_=0; // CONTROL only
     int fadeLeft_=0; // audio-owned
     armix::guitarfx::Program accepted_=
         armix::guitarfx::GuitarRigCore::startingProgram();
