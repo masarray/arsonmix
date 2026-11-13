@@ -927,20 +927,23 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- // V67: keep short jumper cables energetic instead of suppressing their
- // response to 27%. Length interpolates smoothly into the approved V62
- // long-cable wave. Both socket endpoints remain mathematically pinned.
+ // V67: add energy ONLY on short patch cables, not on the two-channel
+ // and long spans already visually approved. The small-span guard prevents
+ // the shortest jumper from behaving like a loose full-length cable.
  const length01=Math.max(0,Math.min(1,(chord-95)/300));
  const longMix=length01*length01*(3-2*length01);
- const travel=310+210*longMix;
- const width=.58-.22*longMix; // readable curl even across adjacent strips
+ const short01=Math.max(0,Math.min(1,(chord-100)/200));
+ const shortBoost=1-short01*short01*(3-2*short01);
+ const tinyGuard=Math.pow(Math.min(1,chord/115),1.7);
+ const travel=360+160*longMix-50*shortBoost;
+ const width=.65-.29*longMix-.07*shortBoost;
  const u=Math.max(0,Math.min(1,elapsedMs/travel));
  const front=1-Math.pow(1-u,1.45);
  const settle=Math.max(0,Math.min(1,(elapsedMs-travel)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
  const amplitude=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*
-  (.74+.26*longMix)*fade;
- const spatialDamping=.95+1.95*longMix; // retain V62 damping on long spans
+  (.27+.73*longMix+.58*shortBoost*tinyGuard)*fade;
+ const spatialDamping=2.9-1.8*shortBoost; // V62 unchanged at >=300px
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64,v=1-t;
