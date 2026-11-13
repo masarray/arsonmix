@@ -2965,7 +2965,7 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",1);
+        reply->setProperty("schemaVersion",2);
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             const auto s=processor->acceptedSettings();
@@ -2977,6 +2977,10 @@ private:
             values->setProperty("outputTrim",s.outputTrim);
             values->setProperty("moving",s.moving);
             values->setProperty("clockwise",s.clockwise);
+            values->setProperty("spacePreset",s.spacePreset);
+            values->setProperty("sourceDistanceMeters",s.sourceDistanceMeters);
+            values->setProperty("roomAmount",s.roomAmount);
+            values->setProperty("ambience",s.ambience);
             reply->setProperty("settings",juce::var(values.release()));
             reply->setProperty("observedAzimuthDegrees",
                 processor->observedAzimuthDegrees());
@@ -4605,9 +4609,25 @@ private:
                 moving.isBool()&&clockwise.isBool();
             if(parameters){settings.moving=static_cast<bool>(moving);
                            settings.clockwise=static_cast<bool>(clockwise);}
+            // Optional v2 fields preserve legacy v1 clients and old sessions.
+            // Typed native intent remains bounded and validated before SPSC.
+            const auto preset=values.getProperty("spacePreset",{});
+            bool acousticParameters=true;
+            if(!preset.isVoid()){
+                if(!preset.isInt())acousticParameters=false;
+                else settings.spacePreset=static_cast<int>(preset);
+            }
+            const auto optionalNumber=[&](const char* key,float& target) {
+                if(values.getProperty(key,{}).isVoid())return true;
+                return number(key,target);
+            };
+            acousticParameters=acousticParameters &&
+                optionalNumber("sourceDistanceMeters",settings.sourceDistanceMeters) &&
+                optionalNumber("roomAmount",settings.roomAmount) &&
+                optionalNumber("ambience",settings.ambience);
             const auto numeric=fxRequest.sequence("sonku-");
             bool queued=false;
-            if(p&&numeric&&parameters&&armix::sonku::valid(settings) &&
+            if(p&&numeric&&parameters&&acousticParameters&&armix::sonku::valid(settings) &&
                !pendingNativeSonKu_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
                !engine_.independentClockActive()) {
                 queued=p->queueSettings(settings,numeric);
