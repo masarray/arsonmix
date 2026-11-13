@@ -105,8 +105,28 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
  '<button class="fast-effect" type="button" data-fast-native-harmony="1"><span class="fast-effect-title">Harmonice</span><span class="fast-effect-kind">Native · 3–5 voices · live pitch</span></button>':'';
  const throwBuiltin=!q||['vocal throw','throw','delay','echo','phrase','concert','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-throw="1"><span class="fast-effect-title">ArSon Vocal Throw</span><span class="fast-effect-kind">Native · phrase-aware concert echo</span></button>':'';
- const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin?'<div class="fast-fx-category">BUILT-IN FX</div>':'')+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin;
- plugEl('fastResults').innerHTML=builtin+'<div class="fast-fx-category">VST3 PLUGINS</div>'+(list.length?list.map(p=>"""
+ // The quick picker previously hard-coded ONLY four buttons and then put
+ // every new native processor under "VST3 PLUGINS". This made Guitar FX
+ // invisible in the actual first-screen BUILT-IN FX group, despite a valid
+ // registry, bridge catalog, and green source-level tests. Keep four existing
+ // specialized editor buttons and discover all additional JUCE built-ins from
+ // the authoritative installed native catalog instead of adding another stub.
+ const specializedIds=new Set([
+  'armix.builtin.channel-eq.v1',
+  'armix.builtin.channel-compressor.v1',
+  'armix.builtin.arson-harmony.v1',
+  'armix.builtin.vocal-throw.v1'
+ ]);
+ const nativeExtra=list.filter(p=>p.format==='Native' &&
+  p.id.startsWith('armix.builtin.')&&!specializedIds.has(p.id)).map(p=>
+  '<button class="fast-effect" type="button" data-fast-id="'+escapeHtml(p.id)+'"><span class="fast-effect-title">'+escapeHtml(p.name)+'</span><span class="fast-effect-kind">Native · '+escapeHtml(p.category)+'</span></button>'
+ ).join('');
+ const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin||nativeExtra?
+  '<div class="fast-fx-category">BUILT-IN FX</div>':'')+
+  nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin;
+ // Native processors are not VST3 files: do not duplicate them under VST3.
+ const vstItems=list.filter(p=>p.format!=='Native');
+ plugEl('fastResults').innerHTML=builtin+'<div class="fast-fx-category">VST3 PLUGINS</div>'+(vstItems.length?vstItems.map(p=>"""
 PICKER_END=""").join(''):'<div class="fast-empty">No matching effects</div>';"""
 PICKER_END_NEW=""").join(''):'<div class="fast-empty">No matching effects</div>');"""
 PICKER_CLICK=" const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);"
