@@ -127,7 +127,7 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  const rollbackStart=html.indexOf(" rollbackNativeWireInspector(rows){");
  const rollbackEnd=html.indexOf(" syncVerifiedM4Wires(rows,ids){",rollbackStart);
  assert.ok(rollbackStart>0&&rollbackEnd>rollbackStart,"native rollback method installed exactly once");
- const method=html.slice(rollbackStart,rollbackEnd).trim().replace(/,\\s*$/,"");
+ const method=html.slice(rollbackStart,rollbackEnd).trim().replace(/,\s*$/,"");
  const rollback=vm.runInNewContext("({"+method+"})",scope);
  assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
  assert.equal(inspectorGain.value,"-6","failed native intent restores accepted gain without replacing the focused input");
@@ -140,7 +140,7 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
  assert.equal(inspectorGain.disabled,true);
  assert.equal(readout.textContent,"SEND UNAVAILABLE");
- assert.match(bridge,/rollbackNativeWireInspector\\?\\.\\(nativeWireGainReadback\\(state.current\\)\\)/,
+ assert.match(bridge,/rollbackNativeWireInspector\?\.\(nativeWireGainReadback\(state.current\)\)/,
   "native control failure must invoke the same compiled inspector rollback");
 });
 
