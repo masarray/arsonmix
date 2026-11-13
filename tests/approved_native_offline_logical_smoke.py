@@ -138,9 +138,27 @@ def main():
         # Genuine native GFX must be exposed before any asynchronous VST
         # discovery. The static fallback is validated against the same
         # catalog ID compiled into the GuitarRigProcessor.
+        def assert_guitar_in_builtin_group():
+            # Regression for real installed 03ba6ecc screenshot: the picker
+            # hardcoded four BUILT-IN FX buttons and placed Guitar FX under
+            # VST3 PLUGINS, potentially below the visible scroll viewport.
+            assert page.locator("#fastResults").evaluate("""root=>{
+                const guitar=root.querySelector('[data-fast-id="armix.builtin.guitar-rig.v1"]');
+                const headings=[...root.querySelectorAll('.fast-fx-category')];
+                if(!guitar||headings.length<2)return false;
+                return headings[0].textContent.trim()==='BUILT-IN FX' &&
+                    headings[1].textContent.trim()==='VST3 PLUGINS' &&
+                    !!(headings[0].compareDocumentPosition(guitar)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                    !!(guitar.compareDocumentPosition(headings[1])&Node.DOCUMENT_POSITION_FOLLOWING);
+            }"""), "Guitar FX must be inside first BUILT-IN FX group, not VST3"
+            assert page.locator(
+                '#fastResults [data-fast-id="armix.builtin.guitar-rig.v1"]').count()==1, (
+                "Guitar FX should be shown once, not duplicated in VST3")
+
         rack.locator('[data-action="openPlugin"][data-slot="2"]').click()
         assert page.locator('[data-fast-id="armix.builtin.guitar-rig.v1"]').is_visible(), (
             "Guitar FX missing at first native picker open")
+        assert_guitar_in_builtin_group()
         page.locator("#fastClose").click()
         emit(page, "arMixCatalog", {"items": [], "builtIns": [
             {"id": "armix.builtin.fixture.v1", "name": "Fixture processor", "category": "Utility"},
@@ -154,6 +172,7 @@ def main():
         assert page.locator('[data-fast-id="armix.builtin.hidden.v1"]').count() == 0
         guitar=page.locator('[data-fast-id="armix.builtin.guitar-rig.v1"]')
         assert guitar.is_visible(), "Guitar FX Rig missing from user-facing FX picker"
+        assert_guitar_in_builtin_group() # actual host arMixCatalog refresh retains BUILT-IN placement
         search=page.locator("#fastSearch")
         search.fill("guitar")
         assert guitar.is_visible(), "Guitar FX Rig must be searchable by name/category"

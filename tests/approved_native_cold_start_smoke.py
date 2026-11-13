@@ -51,11 +51,25 @@ def main():
             assert not page.evaluate('()=>window.__nativeIntents.length')
             # Built-in JUCE DSP must be discoverable before ANY third-party
             # VST3 catalog response. The native host never inserts demo FX.
-            for native_id in ('armix.builtin.channel-eq.v1',
-                              'armix.builtin.channel-compressor.v1',
-                              'armix.builtin.arson-harmony.v1'):
-                assert page.locator('#fastResults [data-fast-id="'+native_id+'"]').count()==1, (
-                    'Compiled native FX missing from cold-start picker: '+native_id)
+            # The first BUILT-IN FX group has specialized native controls
+            # for established processors, plus registry-driven Guitar FX.
+            # Do not accidentally require duplicate native catalog buttons
+            # under the VST3 PLUGINS section (the old broken behavior).
+            for selector in ('[data-fast-native-eq]',
+                             '[data-fast-native-comp]',
+                             '[data-fast-native-harmony]',
+                             '[data-fast-id="armix.builtin.guitar-rig.v1"]'):
+                assert page.locator('#fastResults '+selector).count()==1, (
+                    'Compiled native FX missing from first cold-start picker: '+selector)
+            assert page.locator('#fastResults').evaluate("""root=>{
+                const guitar=root.querySelector('[data-fast-id="armix.builtin.guitar-rig.v1"]');
+                const headings=[...root.querySelectorAll('.fast-fx-category')];
+                if(!guitar||headings.length<2)return false;
+                return headings[0].textContent.trim()==='BUILT-IN FX' &&
+                    headings[1].textContent.trim()==='VST3 PLUGINS' &&
+                    !!(headings[0].compareDocumentPosition(guitar)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                    !!(guitar.compareDocumentPosition(headings[1])&Node.DOCUMENT_POSITION_FOLLOWING);
+            }"""), "Guitar FX is not in the first BUILT-IN FX section"
             # Output-only playback is a REAL Audio I/O choice, not a hidden
             # capture prerequisite. Verify native intent/ACK on the approved
             # assembled Windows GUI at every supported viewport.

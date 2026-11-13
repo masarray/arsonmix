@@ -28,6 +28,21 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('src="assets/mixer-native-vocal-throw.js?v=throw-1"'),1)
         self.assertEqual(self.assembled.count('data-fast-native-throw="1"'),1)
 
+    def test_additional_native_registry_fx_are_first_class_builtins(self):
+        # Source-level guard for the owner's actual Windows FAT screenshot:
+        # hardcoded EQ/Comp/Harmony/Throw were visible in BUILT-IN FX while
+        # catalog-driven Guitar FX was incorrectly below VST3 PLUGINS.
+        self.assertIn("const nativeExtra=list.filter(p=>p.format==='Native'",self.assembled)
+        self.assertIn("p.id.startsWith('armix.builtin.')",self.assembled)
+        self.assertIn("nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin",self.assembled)
+        self.assertIn("const vstItems=list.filter(p=>p.format!=='Native');",self.assembled)
+        self.assertIn("(vstItems.length?vstItems.map(p=>",self.assembled)
+        # New effects use standard catalog id insertion; no visual-only
+        # Guitar button and no fifth bespoke native FX branch are invented.
+        self.assertIn('data-fast-id="'+
+                      "'+escapeHtml(p.id)+'"+'"',self.assembled)
+        self.assertNotIn('data-fast-native-guitar',self.assembled)
+
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
         self.assertNotIn("__ARMIX_NATIVE_M2__",self.assembled)
