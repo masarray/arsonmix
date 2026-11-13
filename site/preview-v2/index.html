@@ -458,7 +458,8 @@ function replugWireEdge(sourceId,oldDestId,nextDestId){
   {type:'RETARGET',sourceId,edgeId:edge.id,destId:nextDestId};
  if(!wireGraphCommit([op],{record:false}))return false;
  wireAnchorId=nextDestId;render();
- if(nextDestId!==null&&nextDestId!==master.id)kickWireSpring(sourceId,nextDestId);
+ // A receiver relocation must kick AFTER its new source-focused SVG exists.
+ // The pointerup coordinator owns that visual effect, not graph admission.
  say('WIRE '+(nextDestId===null?'unplugged':'replugged')+' · edge '+edge.id+' · reference only');
  return true;
 }
@@ -914,11 +915,10 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
  wireMotionGeometry.set(key,[x0,y0,x1,y1,limit]);
  return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
 }
-/* V61 real cable whip: a short upward flick at the receiving IN socket,
-   travelling back toward the OUT plug with a damped sinusoidal tail.
-   Physical plugs stay welded; amplitude and oscillation decay toward OUT.
-   Only a committed/retargeted cable animates, for a bounded half-second. */
-const WIRE_IMPACT_TRAVEL_MS=330,WIRE_IMPACT_SETTLE_MS=170;
+/* V62 damped cable whip: receiving IN flicks upward first, then the sine
+   travels toward OUT at a readable tempo with much stronger end damping.
+   No background oscillator, no per-frame DOM rebuild, both plugs stay fixed. */
+const WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160;
 const WIRE_IMPACT_DURATION_MS=WIRE_IMPACT_TRAVEL_MS+WIRE_IMPACT_SETTLE_MS;
 function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
@@ -927,7 +927,7 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const u=Math.max(0,Math.min(1,elapsedMs/WIRE_IMPACT_TRAVEL_MS));
  // Physical launch occurs at the IN end (t=1), never at OUT (t=0).
  // Ease-out front makes the receiving plug flick briskly, rather than creep.
- const front=1-Math.pow(1-u,1.55);
+ const front=1-Math.pow(1-u,1.45);
  const settle=Math.max(0,Math.min(1,(elapsedMs-WIRE_IMPACT_TRAVEL_MS)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
  const strength=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*fade;
@@ -942,8 +942,8 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
   // Finite causal travelling sine: first lobe moves UP at the IN socket,
   // trailing lobes alternate and decay over time AND along cable length.
   const wave=passed>0?
-   -strength*Math.sin(2*Math.PI*passed/.34)*
-   Math.exp(-2.2*passed-1.35*distance)*tether:0;
+   -strength*Math.sin(2*Math.PI*passed/.36)*
+   Math.exp(-2.1*passed-2.9*distance)*tether:0;
   d+=' L '+x.toFixed(1)+' '+(y+wave).toFixed(1);
  }
  return d;
@@ -976,6 +976,84 @@ function kickWireSpring(sourceId,destId){
  }
  paint(wireImpactPathData(...geometry,0));
  requestAnimationFrame(step);
+}
+/* V62 physically unplugged WIRE: graph REMOVE happens first, then a
+   noninteractive cable jacket falls and reels back to its real OUT jack.
+   Own overlay SVG is independent of the canonical routing/PCM projection.
+   A canceled drag cannot call this effect. Reduced-motion skips it. */
+const WIRE_RETRACT_MS=690;
+let wireRetractToken=0,wireRetractOverlay=null;
+function stopWireRetraction(){
+ ++wireRetractToken;
+ wireRetractOverlay?.remove();wireRetractOverlay=null;
+}
+function startWireRetraction(sourceId,releasePoint){
+ stopWireRetraction();
+ if(document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;
+ const viewport=document.getElementById('viewport'),base=document.getElementById('wireLayer');
+ const out=viewport?.querySelector('.strip[data-id="'+sourceId+'"] .wire-node-out');
+ const source=wireSourceTrack(sourceId),vp=viewport?.getBoundingClientRect?.();
+ const jack=wireJackRect(out);
+ if(!source||!vp?.width||!vp.height||!jack?.width||!releasePoint)return;
+ const x0=jack.left-vp.left+jack.width*.5,y0=jack.top-vp.top+jack.height*.5;
+ const rx=Math.max(2,Math.min(vp.width-2,releasePoint.x-vp.left));
+ const ry=Math.max(2,Math.min(vp.height-2,releasePoint.y-vp.top));
+ const svgNS='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(svgNS,'svg');
+ svg.id='wireRetractLayer';svg.classList.add('routing-wire-overlay');
+ svg.dataset.wireRetract=String(sourceId);
+ svg.setAttribute('viewBox','0 0 '+vp.width+' '+vp.height);
+ // Permit a short visible gravity drop beneath the normal WIRE bay,
+ // while retaining the original horizontally clipped channel viewport.
+ const bay=out.closest('.send-section')?.getBoundingClientRect?.();
+ if(bay)svg.style.clipPath='inset('+Math.max(0,bay.top-vp.top-5)+'px 0px '+
+  Math.max(0,vp.bottom-bay.bottom-48)+'px 0px)';
+ svg.style.pointerEvents='none';svg.style.zIndex='4';svg.style.filter='none';
+ const mk=(tag,attrs)=>{
+  const el=document.createElementNS(svgNS,tag);
+  for(const [key,value] of Object.entries(attrs))el.setAttribute(key,String(value));
+  svg.appendChild(el);return el;
+ };
+ const shadow=mk('path',{'data-wire-retract-shadow':'true',fill:'none',
+  stroke:'#07151a','stroke-width':5.4,'stroke-linecap':'round',opacity:.5});
+ const jacket=mk('path',{'data-wire-retract-jacket':'true',fill:'none',
+  stroke:source.color||'#8be0ff','stroke-width':3.45,
+  'stroke-linecap':'round',opacity:.96});
+ const plug=mk('circle',{'data-wire-retract-plug':'true',fill:source.color||'#8be0ff',
+  stroke:'#102b36','stroke-width':1.2,r:5.2});
+ viewport.appendChild(svg);wireRetractOverlay=svg;
+ const token=wireRetractToken;
+ let began=null;
+ function step(now){
+  if(token!==wireRetractToken||!svg.isConnected)return;
+  if(document.hidden||window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){
+   stopWireRetraction();return;
+  }
+  if(began===null)began=now;
+  const p=Math.min(1,(now-began)/WIRE_RETRACT_MS);
+  const falling=Math.min(1,p/.29);
+  const reel=p<=.29?0:(p-.29)/.71;
+  const pull=1-Math.pow(1-reel,2.4);
+  const remaining=1-pull;
+  const x=x0+(rx-x0)*remaining;
+  const y=y0+(ry-y0)*remaining+26*falling*falling*remaining+
+   7*Math.sin(Math.PI*reel)*remaining;
+  const len=Math.hypot(x-x0,y-y0);
+  const sag=Math.min(43,len*.44)*(1-.45*pull);
+  const dx=x-x0;
+  const d='M '+x0.toFixed(1)+' '+y0.toFixed(1)+
+   ' C '+(x0+dx*.04).toFixed(1)+' '+(y0+sag).toFixed(1)+
+   ', '+(x-dx*.09).toFixed(1)+' '+(y+sag).toFixed(1)+
+   ', '+x.toFixed(1)+' '+y.toFixed(1);
+  shadow.setAttribute('d',d);jacket.setAttribute('d',d);
+  plug.setAttribute('cx',x.toFixed(1));plug.setAttribute('cy',y.toFixed(1));
+  plug.setAttribute('r',Math.max(0,5.2*remaining).toFixed(2));
+  if(p<1)requestAnimationFrame(step);
+  else stopWireRetraction(); // no ghost cable or hitbox after collapse
+ }
+ // Paint the first detached frame before returning from pointerup; this
+ // avoids a blank frame while the old committed path has been removed.
+ step(performance.now());
 }
 /* V23 Smart Wire: visible lit socket means preview is center-snapped and
    mouseup accepts that exact candidate. Moving away releases attraction;
@@ -1951,6 +2029,7 @@ window.addEventListener('pointermove',ev=>{
 function finishFaderPointer(ev){
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){
   const g=wireGesture;
+  let retractRequest=null,replugRequest=null;
   const snap=g.active?wireSnapTarget({x:ev.clientX,y:ev.clientY},g.sourceId,g.originDestId,'release'):null;
   wireGesture=null;setWireSnapTarget(null);
   consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');
@@ -1972,8 +2051,14 @@ function finishFaderPointer(ev){
      const before=wireWsSnapshot();
      if(replugWireEdge(g.sourceId,g.originDestId,snap?.track.id??null)){
       wireWsRecord(before);
-      if(!snap)selectedWireEdgeId=null;
-      else selectTrack(wireSourceTrack(g.sourceId)); // reveal accepted selected cable
+      if(!snap){
+       selectedWireEdgeId=null;
+       retractRequest={sourceId:g.sourceId,point:{x:ev.clientX,y:ev.clientY}};
+      }else{
+       selectTrack(wireSourceTrack(g.sourceId)); // reveal accepted selected cable
+       if(snap.track.id!==g.originDestId&&snap.track.id!==master.id)
+        replugRequest={sourceId:g.sourceId,destId:snap.track.id};
+      }
      }
     }
    }else{
@@ -1986,7 +2071,12 @@ function finishFaderPointer(ev){
       selectTrack(source); // a successful OUT drag reveals its selected cable
     }else say('WIRE drop canceled · release in destination WIRE bay (graph unchanged)');
    }
-   renderWireRouting();wireSuppressClick=true;
+   renderWireRouting();
+   // The relinked SVG did not exist during graph admission. Start its wave
+   // only after final focused render, with the accepted destination geometry.
+   if(replugRequest)kickWireSpring(replugRequest.sourceId,replugRequest.destId);
+   if(retractRequest)startWireRetraction(retractRequest.sourceId,retractRequest.point);
+   wireSuppressClick=true;
   }else if(g.sourceId){wireSuppressClick=false;}
   return;
  }
