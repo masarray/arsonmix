@@ -38,7 +38,7 @@ def assert_ownership():
     # Restore only the immutable CSS owner; the live page may legitimately
     # evolve after V26 (WIRE/FX) without changing hardware key source bytes.
     # Still verifies every V26 owner fingerprint and V25 migrated material.
-    from css_v26_restore import restore_owner,manifest as v26_manifest
+    from css_v26_restore import restore_owner,historical_v26_owner,manifest as v26_manifest
     from css_v25_restore import manifest as v25_manifest
     original_v25_key=restore_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"])
     v30=v25_manifest()["movedCss"]
