@@ -1,6 +1,6 @@
 """Install a pinned PRE-v7 ArSonMix GUI into the public Pages archive route.
 
-The *source* is built separately from the exact last pre-Harmonice-v7 commit.
+The *source* is built separately from the last approved commit before the v7 mixer key redesign.
 This script never compiles that historical GUI with current CSS/JS: it only
 copies a previously validated old /preview/ directory into /preview-prod/.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 PINNED_SHA = "09022ef0f227ca2a40a0c2f62c619a31395c8dac"
 ARCHIVE_ROUTE = "/preview-prod/"
 OLD_SPRITE = "mute-solo-pfl-56x37.png"
-NEW_SPRITE = "harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
+NEW_SPRITE = "mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"
 
 
 def publish(frozen_preview: Path, pages_root: Path) -> Path:
@@ -34,8 +34,8 @@ def publish(frozen_preview: Path, pages_root: Path) -> Path:
         raise ValueError("Historical PRE-v7 UI DOM is not the expected MUTE/SOLO/PFL version")
     if not (frozen_preview / "assets" / OLD_SPRITE).is_file():
         raise ValueError("Historical MUTE/SOLO/PFL PNG atlas missing")
-    if (frozen_preview / "assets" / NEW_SPRITE).exists():
-        raise ValueError("New Harmonice buttons leaked into pre-v7 snapshot")
+    if any((frozen_preview / "assets").glob("*-thin-flat-v[789]-*.png")):
+        raise ValueError("New mixer key sprites leaked into pre-v7 snapshot")
     if not (live / "index.html").is_file():
         raise ValueError("Canonical latest /preview/ must be built independently first")
     if not (live / "assets" / NEW_SPRITE).is_file():

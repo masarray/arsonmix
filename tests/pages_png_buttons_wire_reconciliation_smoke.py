@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 REFERENCE=ROOT/"site/preview-v2"
 OWNER=ROOT/"site/preview-buttons/assets"
 SPECIAL=("mixer-control-keys.css","mixer-control-keys.js")
-SPRITE="harmonice-thin-flat-v9-approved-off-shadow-57x30.png"
+SPRITE="mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"
 
 
 def verify_bundle(dist):
@@ -52,7 +52,7 @@ def verify_bundle(dist):
     # byte identity against this build's generated public root, not unrelated
     # developer-local files or an older locked GUI reference.
     favicons={"favicon.ico","favicon-16x16.png","favicon-32x32.png"}
-    expected=canonical|{SPRITE,"harmonice-thin-flat-v9-pfl-font-matched-57x30.png","arsonmix-approved-runtime.css"}|favicons
+    expected=canonical|{SPRITE,"mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png","arsonmix-approved-runtime.css"}|favicons
     assert published==expected,("asset set drift",published^expected)
     for name in favicons:
         assert (generated/"assets"/name).read_bytes()==(dist/name).read_bytes(),name
@@ -124,7 +124,7 @@ def verify_browser(dist):
             assert page.locator("#clearCue").is_hidden()
             assert page.locator("#master .strip.master .mx-hw-row button").count()==2
             for b in off:
-                asset="harmonice-thin-flat-v9-pfl-font-matched-57x30.png" if b["kind"]=="pfl" else SPRITE
+                asset="mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png" if b["kind"]=="pfl" else SPRITE
                 assert asset in b["bg"],b
                 assert b["body"]=="rgba(0, 0, 0, 0)" and b["shadow"]=="none",b
                 assert b["transform"]=="none",b
@@ -174,7 +174,7 @@ def main():
             cwd=ROOT,check=True,capture_output=True,text=True)
         verify_bundle(dist)
         verify_browser(dist)
-    print("PASS: Harmonice v9 MAIN/SOF MUTE-SOLO-PFL PNG, no MASTER PFL, preserved WIRE")
+    print("PASS: v9 mixer MAIN/SOF MUTE-SOLO-PFL PNG, no MASTER PFL, preserved WIRE")
 
 if __name__=="__main__":
     main()

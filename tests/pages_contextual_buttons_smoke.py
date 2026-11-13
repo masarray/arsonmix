@@ -120,7 +120,7 @@ def main():
         assert (assets/SCRIPT).read_bytes()==(ROOT/'site/preview-v2/assets'/SCRIPT).read_bytes()
         png_src=ROOT/'site/preview-buttons/assets'
         png_pub=assets
-        for file in ('mixer-control-keys.css','mixer-control-keys.js','harmonice-thin-flat-v9-approved-off-shadow-57x30.png'):
+        for file in ('mixer-control-keys.css','mixer-control-keys.js','mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png'):
             assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)

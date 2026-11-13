@@ -9,9 +9,9 @@ mixer **and** in Sends on Faders.
 ## Approved PNG, unchanged
 
 - Original MUTE/SOLO/PRE/POST 228 x 90 approved asset remains byte-identical:
-  `site/preview-buttons/assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png`
+  `site/preview-buttons/assets/mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png`
 - Approved 114 x 30 PFL OFF/ON FontMatched RGBA sprite remains byte-identical:
-  `site/preview-buttons/assets/harmonice-thin-flat-v9-pfl-font-matched-57x30.png`
+  `site/preview-buttons/assets/mixer-keys-thin-flat-v9-pfl-font-matched-57x30.png`
 - PFL sprite SHA256: `1ede18534fa678461ebcb1a100a61170700d75048b11607600cf09d9de8872fd`.
 - The sole physical key owner is `mixer-control-keys.css`; no CSS substitute
   for PNG, new glow, new button geometry, independent renderer, or extra skin.
