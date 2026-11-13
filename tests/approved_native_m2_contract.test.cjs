@@ -56,6 +56,7 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  const parallel={id:42,sourceId:1,destId:3,kind:"send",mode:"send",
   nativeTap:"POST_FADER",levelDb:-6,enabled:true};
  const panel={hidden:false,innerHTML:""},readout={textContent:"-6 dB"};
+ const inspectorGain={value:"-12",dataset:{wsGain:"42"},disabled:false};
  const observed=[];
  const gain=input=>input?.dataset?.wsGain!==undefined?input:null;
  const tap=input=>input?.dataset?.wsTap!==undefined?input:null;
@@ -66,6 +67,7 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
      get hidden(){return panel.hidden},set hidden(v){panel.hidden=v},
      get innerHTML(){return panel.innerHTML},set innerHTML(v){panel.innerHTML=v}};
     if(id==="wireWsGainText")return readout;
+    if(id==="wireWsGain")return inspectorGain;
     return null;
   }},
   window:{__JUCE__:{backend:{}},__ARMIX_NATIVE_M2__:{
@@ -119,6 +121,27 @@ test("WIRE inspector controls PRIMARY BUS and PARALLEL MAIN by actual EdgeId, wi
  assert.match(observed[2],/awaiting accepted native PCM readback/);
  assert.equal(primary.levelDb,0);
  assert.equal(parallel.levelDb,-6,"reference WIRE graph never becomes native routing owner");
+ // Execute the native compiled rollback method rather than a mock. It must
+ // repair the same focused DOM control from the latest accepted PCM readback.
+ // Rejection has no new snapshot: the original level remains -6, not -12.
+ const rollbackStart=html.indexOf(" rollbackNativeWireInspector(rows){");
+ const rollbackEnd=html.indexOf(" syncVerifiedM4Wires(rows,ids){",rollbackStart);
+ assert.ok(rollbackStart>0&&rollbackEnd>rollbackStart,"native rollback method installed exactly once");
+ const method=html.slice(rollbackStart,rollbackEnd).trim().replace(/,\s*$/,"");
+ const rollback=vm.runInNewContext("({"+method+"})",scope);
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
+ assert.equal(inspectorGain.value,"-6","failed native intent restores accepted gain without replacing the focused input");
+ assert.equal(readout.textContent,"UNCHANGED · -6 dB","LCD cannot remain PENDING after a rejected gain");
+ assert.equal(parallel.levelDb,-6,"no browser graph edit or optimistic audio state");
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),false,
+  "idempotent failure reconciliation must not repaint a settled LCD");
+ // A stale EdgeId cannot silently roll back or write a different route.
+ inspectorGain.dataset.wsGain="41";readout.textContent="PENDING · -8 dB";
+ assert.equal(rollback.rollbackNativeWireInspector([{id:42,levelDb:-6}]),true);
+ assert.equal(inspectorGain.disabled,true);
+ assert.equal(readout.textContent,"SEND UNAVAILABLE");
+ assert.match(bridge,/rollbackNativeWireInspector\?\.\(nativeWireGainReadback\(state.current\)\)/,
+  "native control failure must invoke the same compiled inspector rollback");
 });
 
 test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and accepted readback",()=>{
