@@ -4,13 +4,16 @@
 "use strict";
 const ID="armix.builtin.8d-sonku.v1";
 const defaults=()=>({startAzimuthDegrees:0,revolutionSeconds:12,
- stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true});
+ stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true,
+ roomAmount:0,ambienceAmount:0});
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
  Number.isFinite(s.revolutionSeconds)&&s.revolutionSeconds>=.5&&s.revolutionSeconds<=120 &&
  Number.isFinite(s.stereoSpreadDegrees)&&s.stereoSpreadDegrees>=0&&s.stereoSpreadDegrees<=180 &&
  Number.isFinite(s.spatialMix)&&s.spatialMix>=0&&s.spatialMix<=1 &&
  Number.isFinite(s.outputTrim)&&s.outputTrim>=0&&s.outputTrim<=1 &&
+ Number.isFinite(s.roomAmount)&&s.roomAmount>=0&&s.roomAmount<=1 &&
+ Number.isFinite(s.ambienceAmount)&&s.ambienceAmount>=0&&s.ambienceAmount<=1 &&
  typeof s.moving==="boolean"&&typeof s.clockwise==="boolean";
 const backend=()=>window.__JUCE__?.backend;
 const native=()=>typeof backend()?.emitEvent==="function";
@@ -104,6 +107,10 @@ root.innerHTML=[
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPATIAL MIX</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skMix" type="range" min="0" max="100" step="1" value="100" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skMixValue">100%</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">OUTPUT TRIM</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="0" max="100" step="1" value="75" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skTrimValue">75%</output></label>',
+ '</div><div class="sk-space" role="group" aria-label="Room ambience">',
+ '<div class="sk-space-head"><span>SPACE</span><span>SQUARE ROOM · NATIVE PCM</span></div>',
+ '<label class="sk-space-row" for="skRoom"><span>Reflections</span><input id="skRoom" type="range" min="0" max="100" value="0" step="1"/><output id="skRoomValue">OFF</output></label>',
+ '<label class="sk-space-row" for="skAmbience"><span>Ambience</span><input id="skAmbience" type="range" min="0" max="100" value="0" step="1"/><output id="skAmbienceValue">OFF</output></label>',
  '</div><div class="sk-guide">Drag the two monitors on the orbit · knobs: vertical drag, double-click to reset</div>',
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
@@ -141,6 +148,11 @@ function render(){
   const dial=el.closest(".sk-dial");
   dial.style.setProperty("--sk-sweep",(p*270).toFixed(2)+"deg");
   dial.style.setProperty("--sk-needle",(-135+p*270).toFixed(2)+"deg");
+ }
+ for(const [id,value,out] of [["skRoom",s.roomAmount,"skRoomValue"],
+      ["skAmbience",s.ambienceAmount,"skAmbienceValue"]]){
+   $(id).value=String(Math.round(value*100));
+   $(out).textContent=value===0?"OFF":Math.round(value*100)+"%";
  }
  const liveMotion=s.moving&&current&&!pending?observed:
     s.startAzimuthDegrees;
@@ -229,6 +241,14 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;
  if(clock!==null){clearInterval(clock);clock=null;}});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
+for(const [id,key] of [["skRoom","roomAmount"],["skAmbience","ambienceAmount"]]) {
+ const el=$(id);
+ el.addEventListener("input",()=>{
+   const value=Number(el.value)/100;
+   if(Number.isFinite(value)){draft={...draft,[key]:value};render();}
+ });
+ el.addEventListener("change",()=>send({...draft,[key]:Number(el.value)/100}));
+}
 for(const [id,key,convert] of [
  ["skSpeed","revolutionSeconds",v=>v],
  ["skSpread","stereoSpreadDegrees",v=>v],

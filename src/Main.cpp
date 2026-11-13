@@ -2965,7 +2965,7 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",1);
+        reply->setProperty("schemaVersion",2);
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
             const auto s=processor->acceptedSettings();
@@ -2977,6 +2977,8 @@ private:
             values->setProperty("outputTrim",s.outputTrim);
             values->setProperty("moving",s.moving);
             values->setProperty("clockwise",s.clockwise);
+            values->setProperty("roomAmount",s.roomAmount);
+            values->setProperty("ambienceAmount",s.ambienceAmount);
             reply->setProperty("settings",juce::var(values.release()));
             reply->setProperty("observedAzimuthDegrees",
                 processor->observedAzimuthDegrees());
@@ -4602,6 +4604,8 @@ private:
                 number("stereoSpreadDegrees",settings.stereoSpreadDegrees) &&
                 number("spatialMix",settings.spatialMix) &&
                 number("outputTrim",settings.outputTrim) &&
+                number("roomAmount",settings.roomAmount) &&
+                number("ambienceAmount",settings.ambienceAmount) &&
                 moving.isBool()&&clockwise.isBool();
             if(parameters){settings.moving=static_cast<bool>(moving);
                            settings.clockwise=static_cast<bool>(clockwise);}

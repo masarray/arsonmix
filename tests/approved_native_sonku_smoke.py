@@ -21,6 +21,8 @@ SETTINGS={
     "outputTrim":0.75,
     "moving":True,
     "clockwise":True,
+    "roomAmount":0.0,
+    "ambienceAmount":0.0,
 }
 
 def last_action(page,name):
@@ -229,6 +231,30 @@ def exercise(browser,out,width,height):
         "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
         "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
         applied=dialAction["requestId"])
+    # Native SPACE uses the SAME typed edit/ACK/accepted DSP readback
+    # as the existing orbit parameters. It is never a browser-only FX.
+    for which,percent,field in (
+        ("skRoom",45,"roomAmount"),("skAmbience",25,"ambienceAmount")):
+        page.wait_for_timeout(275)
+        editor.locator("#"+which).evaluate("""(el,p) => {
+          el.value=String(p);
+          el.dispatchEvent(new Event('input',{bubbles:true}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+        }""",percent)
+        spaceAction=last_action(page,"nativeSonKuSet")
+        assert abs(spaceAction["settings"][field]-percent/100)<1e-6,spaceAction
+        emit(page,"arMixBuiltinSonKuAck",{
+            "requestId":spaceAction["requestId"],"status":"APPLIED"})
+        acceptedSpace={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
+                       "startAzimuthDegrees":0.0,
+                       "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
+                       "roomAmount":.45,
+                       "ambienceAmount":.25 if field=="ambienceAmount" else 0.0}
+        accepted_snapshot(page,state,acceptedSpace,
+                          applied=spaceAction["requestId"])
+        assert "ACCEPTED" in editor.locator("#skHint").inner_text()
+    assert editor.locator("#skRoomValue").inner_text()=="45%"
+    assert editor.locator("#skAmbienceValue").inner_text()=="25%"
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.

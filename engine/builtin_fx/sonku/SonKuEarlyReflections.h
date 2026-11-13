@@ -43,14 +43,20 @@ public:
         lowpass_.fill(0.f);
         for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
         write_=0;untilGeometry_=0;primed_=false;
-        amount_=0.f;
+        activeFrames_=0;amount_=0.f;
     }
     // Deliberately experimental and OFF by default. Legacy 8/8 direction
     // baseline stays bit-identical. A/B is set on an unpublished/offline core
     // until headphone, CPU and device gates approve native publication.
     bool setAmount(float value) noexcept {
         if(!std::isfinite(value)||value<0.f||value>1.f)return false;
-        if(amountTarget_==0.f&&amount_==0.f&&value>0.f)reset();
+        // O(1) activation: never clear the 2x8192 history on an audio
+        // callback. Mask all reads until they belong to this activation.
+        if(amountTarget_==0.f&&amount_==0.f&&value>0.f) {
+            lowpass_.fill(0.f);
+            for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
+            write_=0;untilGeometry_=0;primed_=false;activeFrames_=0;
+        }
         amountTarget_=value;
         return true;
     }
@@ -127,6 +133,7 @@ public:
             }
         }
         write_=(write_+1)&(ringFrames-1);
+        if(activeFrames_<ringFrames)++activeFrames_;
         --untilGeometry_;
         // Preserve the headroom of the native direct path: no artificial
         // direction-dependent boost at FRONT or REAR.
@@ -147,7 +154,9 @@ private:
         const float fract=bounded-static_cast<float>(integer);
         const int i0=(write_-integer)&(ringFrames-1);
         const int i1=(i0-1)&(ringFrames-1);
-        return history_[source][i0]*(1.f-fract)+history_[source][i1]*fract;
+        const float newer=activeFrames_>=integer ?history_[source][i0]:0.f;
+        const float older=activeFrames_>integer ?history_[source][i1]:0.f;
+        return newer*(1.f-fract)+older*fract;
     }
     void updateGeometry(double azimuth,float spread) noexcept {
         constexpr float pi=3.14159265358979323846f;
@@ -210,7 +219,7 @@ private:
     std::array<float,sourceCount> lowpass_{};
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
-    int write_=0,untilGeometry_=0;
+    int write_=0,untilGeometry_=0,activeFrames_=0;
     SonKuRoomShape shape_=SonKuRoomShape::Rectangular;
     SonKuRoomGeometry geometry_{};
     bool custom_=false,ready_=false,primed_=false;
