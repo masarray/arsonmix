@@ -44,7 +44,10 @@ def assert_ownership():
     v30=v25_manifest()["movedCss"]
     assert original_v25_key.startswith(v30)
     modern_v6=original_v25_key[len(v30):]
-    assert css.endswith(modern_v6),"V6 modern MUTE/SOLO/PFL CSS changed"
+    # Historical V26 source is byte-exact after the *one* verified PFL
+    # runtime correction. No other CSS edit may pass the owner fingerprint.
+    assert 'data-hw-kind="pfl"]{--mx-hw-led:101,210,236}' in css
+    assert historical_v26_owner(css,v26_manifest()["sources"]["mixer-control-keys.css"]).endswith(modern_v6),"V6 modern MUTE/SOLO/PFL CSS changed"
     assert css.count("!important")-modern_v6.count("!important")==83
     assert modern_v6.count("!important")<=14, "V6 key owner priority budget regressed"
 
