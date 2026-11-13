@@ -113,10 +113,32 @@ int main() {
     const auto badQuantum=native.acceptSpeakerDraft(s,p,main,1);
     assert(badQuantum.fault==DynamicNativeSessionPublisher::SpeakerDraftFault::invalidDsp);
     s.maxFrames=256;
+    // A CONTROL-supplied manufacturer/measurement voltage model can be
+    // prepared and revisioned, but it NEVER grants ASIO activation.
+    DriverVoltageModel voltage;
+    voltage.profileId="TEST-ONLY";
+    voltage.dacFullScaleVrms=2.;
+    voltage.amplifierVoltageGain=25.;
+    voltage.continuousDriverVrms=12.;
+    voltage.driverPeakVolts=21.;
+    voltage.minimumHighpassHz=80.;
+    s.outputs[0].voltageModel=voltage;
     // Operator design revision advances ONLY after full validation and prep.
     const auto updated=native.acceptSpeakerDraft(s,p,main,1);
     assert(updated.ok()&&updated.designRevision==2);
     assert(native.speakerDraftReadback(epoch,1)->design.crossoverHz[0]==1800.);
+    const auto* calibratedDraft=native.speakerDraftReadback(epoch,1);
+    assert(calibratedDraft->design.outputs[0].voltageModel.has_value());
+    assert(calibratedDraft->design.outputs[0].voltageModel->profileId=="TEST-ONLY");
+    const auto diagnostic=native.speakerDiagnosticReadback(epoch,1);
+    assert(diagnostic.available && !diagnostic.hardwareApplied &&
+           diagnostic.designRevision==2);
+    s.outputs[0].mute=false;
+    const auto stillNotArmed=native.acceptSpeakerDraft(s,p,main,2);
+    assert(stillNotArmed.fault==DynamicNativeSessionPublisher::SpeakerDraftFault::invalidReservation);
+    assert(stillNotArmed.reservationFault==SpeakerReservationFault::unprotectedOutput);
+    assert(native.speakerDraftReadback(epoch,1)->designRevision==2);
+    s.outputs[0].mute=true;
     assert(!native.speakerDraftReadback(epoch+1,1));
     assert(!native.speakerDraftReadback(epoch,2));
     // Accepted structural PCM revision invalidates ALL previously prepared
