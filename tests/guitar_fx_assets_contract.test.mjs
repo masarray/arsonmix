@@ -244,7 +244,7 @@ test("native bitmap control bounds preserve switch and button proportions",()=>{
    "bank A PNG must not be stretched into a square");
  assert.equal(bankAW,bankBW);assert.equal(bankAH,bankBH);
  assert.equal(bankAY,bankBY);
- assert(bankBX-bankBW > bankAX,
+ assert(bankAX-bankAW > bankBX,
    "A and B bounds must be separated before the preset");
  assert(Math.abs(ratio(powerW,powerH)-200/74)<0.15,
    "module switch PNG must not be squeezed vertically");
