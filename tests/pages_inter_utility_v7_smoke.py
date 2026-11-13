@@ -119,6 +119,9 @@ async def visual(page,width):
     # MUTE is an independent CSS/HTML caption; SOLO/PFL retain SVG masks.
     for k in ('mute','solo','cue'):
       key=row.locator(f'.mx-hw-row button[data-hw-kind="{k}"]')
+      # FX/FORMAT toggles asynchronously re-render this strip; wait for the
+      # post-render DOM instead of sampling a transient detached key.
+      await key.wait_for(state="attached",timeout=6000)
       assert await key.count()==1
       if k=='mute':
         assert await key.locator('.mx-mute-face .mx-mute-legend').inner_text()=='MUTE'
