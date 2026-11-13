@@ -146,6 +146,47 @@ test("native readback must match EVERY output DSP field before VALIDATED",()=>{
   assert.ok(app.root.innerHTML.includes("readback mismatch"),name);
  }
 });
+test("guided DLMS ASIO reassign retains DSP, requires manual pin mapping and readback",()=>{
+ const app=fixture(true);app.open();
+ const id=app.consume("arMixLmsInspect").requestId;
+ app.handlers.arMixLmsInspection(inspection(id));
+ app.click({routePort:"DEMO-01",routeSection:"L:1"});
+ app.click({selectPort:"DEMO-01"});
+ app.change({dsp:"gainDb"},"-7");
+ app.change({dsp:"muted"},"0");
+ assert.ok(app.root.innerHTML.includes("Reassign + keep DSP"));
+ app.click({action:"nativeReassign"});
+ assert.ok(app.root.innerHTML.includes("Review explicit output reassignment"));
+ app.click({action:"confirmReassign"});
+ assert.ok(app.root.innerHTML.includes("Choose at least one explicit"));
+ assert.equal(app.events.filter(e=>e.type==="arMixLmsValidate").length,0);
+ app.change({rebindSource:"DEMO-01"},"ASIO-EXACT-DEVICE/PIN-4");
+ app.click({action:"confirmReassign"});
+ assert.ok(app.root.innerHTML.includes("saved as MUTED draft"));
+ assert.ok(!app.root.innerHTML.includes("Review explicit output reassignment"));
+ assert.equal(app.events.filter(e=>e.type==="arMixLmsValidate").length,0);
+ app.click({action:"nativeValidate"});
+ const sent=app.consume("arMixLmsValidate");
+ assert.equal(sent.design.outputs.length,1);
+ assert.equal(sent.design.outputs[0].portIdentity,"ASIO-EXACT-DEVICE/PIN-4");
+ assert.equal(sent.design.outputs[0].gainDb,-7);
+ assert.equal(sent.design.outputs[0].muted,true);
+ assert.equal(sent.design.applied,false);
+});
+test("DLMS mapping review aborts if a fresh inspection changes device epoch",()=>{
+ const app=fixture(true);app.open();
+ const id=app.consume("arMixLmsInspect").requestId;
+ app.handlers.arMixLmsInspection(inspection(id));
+ app.click({routePort:"DEMO-01",routeSection:"L:1"});
+ app.click({action:"nativeReassign"});
+ assert.ok(app.root.innerHTML.includes("Review explicit output reassignment"));
+ app.click({action:"nativeInspect"});
+ const refresh=app.consume("arMixLmsInspect");
+ app.handlers.arMixLmsInspection(inspection(refresh.requestId,{epoch:"999"}));
+ assert.ok(!app.root.innerHTML.includes("Review explicit output reassignment"));
+ assert.equal(app.events.filter(e=>e.type==="arMixLmsValidate").length,0);
+});
+
 test("native readback cannot validate when hardware is armed",()=>{
  const app=fixture(true);app.open();
  const first=app.consume("arMixLmsInspect");
