@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "SonKuMeasuredHrir.h"
+#include "SonKuEarlyReflections.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -48,6 +49,7 @@ public:
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
         levelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
+        if(!room_.prepare(rate))return false;
         reset();
         ready_=true;
         return true;
@@ -62,6 +64,7 @@ public:
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
         haveKernel_=false;
+        room_.reset();
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
@@ -75,6 +78,11 @@ public:
         return true;
     }
     Settings settings() const noexcept {return settings_;}
+    // A/B-only control pending room's headphone/device qualification.
+    // Legacy live insert remains room-free until product evidence is accepted.
+    bool setEarlyReflectionsAmount(float amount) noexcept {
+        return room_.setAmount(amount);
+    }
     bool ready() const noexcept {return ready_;}
     double azimuthDegrees() const noexcept {return degrees_;}
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
@@ -121,8 +129,11 @@ public:
                 ears[0]+=v0*l0+v1*l1;
                 ears[1]+=v0*r0+v1*r1;
             }
-            left[i]=dryLevel*x0+binauralLevel*ears[0];
-            right[i]=dryLevel*x1+binauralLevel*ears[1];
+            const auto reflection=room_.active()
+                ?room_.process(x0,x1,degrees_,settings_.stereoSpreadDegrees)
+                :SonKuEarlyReflections::Ears{};
+            left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left);
+            right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right);
             if(++write_==taps)write_=0;
             if(step!=0.) {
                 degrees_+=step;
@@ -168,6 +179,7 @@ private:
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     Settings settings_{};
+    SonKuEarlyReflections room_{};
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float filterSlew_=0.f,levelSlew_=0.f;
     double sampleRate_=0.;
