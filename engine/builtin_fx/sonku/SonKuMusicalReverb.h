@@ -12,7 +12,7 @@
 // reflections; no source-following stereo pan is imposed on the reverb tail.
 // These listening-test presets are OFF in the shipping JUCE editor.
 namespace armix::sonku {
-enum class SonKuReverbPreset : std::uint8_t { StudioGlue=0, AiryChamber=1 };
+enum class SonKuReverbPreset : std::uint8_t { StudioGlue=0, AiryChamber=1, LargeRoom=2 };
 
 class SonKuMusicalReverb final {
 public:
@@ -28,6 +28,12 @@ public:
         amountTarget_=0.f;
         preset_=SonKuReverbPreset::StudioGlue;
         configure();
+        // All room-aware coefficients prepared once OFF the PCM callback.
+        prepared_[0]=makeCoefficients(.78f,5900.f);
+        prepared_[1]=makeCoefficients(1.28f,7000.f);
+        prepared_[2]=makeCoefficients(2.05f,6000.f);
+        targetGain_=gain_;targetDamp_=dampCoeff_;
+        realtimeMode_=false;
         reset();
         ready_=true;
         return true;
@@ -35,7 +41,7 @@ public:
     void reset() noexcept {
         for(auto& line:memory_)line.fill(0.f);
         lowpass_.fill(0.f);
-        write_=0;amount_=0.f;
+        write_=0;amount_=0.f;validFrames_=0;
         // The target amount is a CONTROL-side setting and survives resetting
         // host transport/processor so the same program can restart cleanly.
     }
@@ -55,6 +61,24 @@ public:
         configure();
         return true;
     }
+    // Realtime-safe preset/wet update: only POD/table copies, no exponentials,
+    // heap, locks or clearing 128 KiB of delay memory in the audio callback.
+    // A validity horizon ensures no stale tail from a previous OFF period.
+    bool setRealtimeProgram(SonKuReverbPreset preset,float amount) noexcept {
+        if((preset!=SonKuReverbPreset::StudioGlue &&
+            preset!=SonKuReverbPreset::AiryChamber &&
+            preset!=SonKuReverbPreset::LargeRoom)||
+           !std::isfinite(amount)||amount<0.f||amount>1.f)return false;
+        if(!active() && amount>0.f){validFrames_=0;lowpass_.fill(0.f);}
+        const auto& coefficients=prepared_[static_cast<int>(preset)];
+        targetGain_=coefficients.gains;
+        targetDamp_=coefficients.damping;
+        if(!realtimeMode_){gain_=targetGain_;dampCoeff_=targetDamp_;}
+        realtimeMode_=true;
+        preset_=preset;
+        amountTarget_=amount;
+        return true;
+    }
     SonKuReverbPreset preset() const noexcept {return preset_;}
     bool active() const noexcept {return ready_&&(amount_>0.f||amountTarget_>0.f);}
     float targetAmount() const noexcept {return amountTarget_;}
@@ -65,10 +89,13 @@ public:
         const float mid=.5f*(a+b);
         const float side=.5f*(a-b);
         std::array<float,lineCount> y{},mix{};
+        if(realtimeMode_)dampCoeff_+=slew_*(targetDamp_-dampCoeff_);
         for(int i=0;i<lineCount;++i){
             const int index=(write_-delay_[i])&(ringFrames-1);
-            const float sample=memory_[i][index];
+            const float sample=(realtimeMode_&&validFrames_<delay_[i])
+                ?0.f:memory_[i][index];
             lowpass_[i]+=dampCoeff_*(sample-lowpass_[i]);
+            if(realtimeMode_)gain_[i]+=slew_*(targetGain_[i]-gain_[i]);
             y[i]=sample;
             mix[i]=lowpass_[i]*gain_[i];
         }
@@ -96,6 +123,7 @@ public:
                 (mid*inMid[i]+side*inSide[i]);
         }
         write_=(write_+1)&(ringFrames-1);
+        if(realtimeMode_&&validFrames_<ringFrames)++validFrames_;
         amount_+=slew_*(amountTarget_-amount_);
         if(std::abs(amount_-amountTarget_)<1.e-5f)amount_=amountTarget_;
         // Wet-only. The KEMAR direct field and physical reflections retain
@@ -104,6 +132,19 @@ public:
                 .right=wetRight*.23f*amount_};
     }
 private:
+    struct Coefficients {
+        std::array<float,lineCount> gains{};
+        float damping=0.f;
+    };
+    Coefficients makeCoefficients(float rt60,float cutoff) const noexcept {
+        Coefficients prepared{};
+        constexpr float pi=3.14159265358979323846f;
+        prepared.damping=1.f-std::exp(-2.f*pi*cutoff/sampleRate_);
+        for(int i=0;i<lineCount;++i)
+            prepared.gains[i]=std::exp(-6.9077553f*
+                static_cast<float>(delay_[i])/(sampleRate_*rt60));
+        return prepared;
+    }
     void configure() noexcept {
         // Incommensurate lengths at 48k, scaled once at prepare/control side.
         // First late energy arrives ~44 ms: behind earliest image reflections.
@@ -123,11 +164,13 @@ private:
     static_assert((ringFrames&(ringFrames-1))==0);
     std::array<std::array<float,ringFrames>,lineCount> memory_{};
     std::array<float,lineCount> lowpass_{};
-    std::array<float,lineCount> gain_{};
+    std::array<float,lineCount> gain_{},targetGain_{};
+    std::array<Coefficients,3> prepared_{};
     std::array<int,lineCount> delay_{};
-    float sampleRate_=48000.f,dampCoeff_=0.f,slew_=0.f;
+    float sampleRate_=48000.f,dampCoeff_=0.f,targetDamp_=0.f,slew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
-    int write_=0;
+    int write_=0,validFrames_=0;
+    bool realtimeMode_=false;
     SonKuReverbPreset preset_=SonKuReverbPreset::StudioGlue;
     bool ready_=false;
 };
