@@ -37,18 +37,21 @@ root.innerHTML=[
  '<button type="button" id="skClose" class="sk-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
  '<div class="sk-content"><div class="sk-stage">',
  '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-down head and two draggable binaural emitters">',
- '<defs><radialGradient id="skBg"><stop offset="0" stop-color="#1c3345"/><stop offset="1" stop-color="#101b28"/></radialGradient></defs>',
+ '<defs><radialGradient id="skBg" cx="50%" cy="46%" r="72%"><stop offset="0" stop-color="#294252"/><stop offset=".58" stop-color="#142736"/><stop offset="1" stop-color="#0c1926"/></radialGradient>',
+ '<radialGradient id="skAura"><stop offset="0" stop-color="#54bcd9" stop-opacity=".17"/><stop offset="1" stop-color="#54bcd9" stop-opacity="0"/></radialGradient></defs>',
  '<rect width="400" height="330" rx="12" fill="url(#skBg)"/>',
  '<path d="M200 12V316M12 165H388" stroke="#3f5667" stroke-dasharray="3 7" opacity=".65"/>',
- '<circle cx="200" cy="165" r="120" stroke="#75c2ce" stroke-width="1.4" stroke-dasharray="5 5" fill="none"/>',
- '<circle cx="200" cy="165" r="66" stroke="#344f61" fill="none"/>',
+ '<circle cx="200" cy="165" r="118" fill="url(#skAura)"/>',
+ '<circle cx="200" cy="165" r="120" stroke="#78b7c6" stroke-opacity=".66" stroke-width="1.2" stroke-dasharray="4 7" fill="none"/>',
+ '<circle cx="200" cy="165" r="102" stroke="#577b8b" stroke-opacity=".37" stroke-width=".8" fill="none"/>',
+ '<circle cx="200" cy="165" r="66" stroke="#344f61" stroke-opacity=".65" fill="none"/>',
  '<text class="sk-direction" x="200" y="22" text-anchor="middle">REAR</text>',
  '<text class="sk-direction sk-front" x="200" y="320" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="16" y="163">RIGHT</text><text class="sk-direction" x="354" y="163">LEFT</text>',
  '<circle cx="200" cy="165" r="86" fill="#4dd4eb" opacity=".025"/>',
  // Measured top-down blue bust PNG. The visible face points toward bottom FRONT.
  // SVG image stays passive and cannot steal pointer capture from source dots.
- '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="111" y="78" width="178" height="182" preserveAspectRatio="xMidYMid meet" aria-label="Listener facing bottom"/>',
+ '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="107" y="72" width="186" height="190" preserveAspectRatio="xMidYMid meet" aria-label="Listener facing bottom" pointer-events="none"/>',
  '<path d="M194 299L200 306L206 299" fill="none" stroke="#69d4e4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>',
  '<g class="sk-src" data-index="0" tabindex="0" role="slider" aria-label="Left virtual source position" aria-valuemin="-180" aria-valuemax="180">',
  '<circle class="sk-source-bg" cx="200" cy="45" r="16"/><circle class="sk-source-core" cx="200" cy="45" r="5"/>',
@@ -63,7 +66,7 @@ root.innerHTML=[
  '<label>STEREO SPREAD <output id="skSpreadValue">60°</output><input id="skSpread" type="range" min="0" max="180" step="1" value="60"></label>',
  '<label>SPATIAL MIX <output id="skMixValue">100%</output><input id="skMix" type="range" min="0" max="100" step="1" value="100"></label>',
  '<label>OUTPUT TRIM <output id="skTrimValue">75%</output><input id="skTrim" type="range" min="0" max="100" step="1" value="75"></label>',
- '<div class="sk-guide">Drag a source around the listener. Front is below the face; ear-right appears on the left of this top view.</div>',
+ '<div class="sk-guide">Drag L / R to position a source. Front is below the face; anatomical right appears on the left of this top view.</div>',
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
@@ -107,7 +110,7 @@ function render(){
   for(const c of [bg,dot]){c.setAttribute("cx",x.toFixed(2));c.setAttribute("cy",y.toFixed(2));}
   // Keep source captions readable, including directly behind the head.
   label.setAttribute("x",x.toFixed(2));
-  label.setAttribute("y",(y<95?y+28:y-22).toFixed(2));
+  label.setAttribute("y",(y+3.5).toFixed(2));
   g.setAttribute("aria-valuenow",String(Math.round(deg>180?deg-360:deg)));
  }
  $("skMode").textContent=native()?(context()?"NATIVE HRTF":"NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";

@@ -103,6 +103,7 @@ def exercise(browser,out,width,height):
     })"""), "Listener PNG did not load"
     labels=editor.locator("#skMap .sk-direction").all_inner_texts()
     assert labels==["REAR","FRONT","RIGHT","LEFT"],labels
+    assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
     assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
@@ -150,7 +151,30 @@ def exercise(browser,out,width,height):
     x,y=pose(90);assert x<90 and abs(y-165)<1,("RIGHT",x,y)
     x,y=pose(180);assert abs(x-200)<1 and y<60,("REAR",x,y)
     x,y=pose(-90);assert x>310 and abs(y-165)<1,("LEFT",x,y)
-    pose(0)
+    # Actual pointer drag uses physical stage coordinates: screen bottom
+    # means 0° FRONT, not a mirrored/right-facing listener. No simulated
+    # DSP authority: the browser must emit a native settings request.
+    pose(-90)
+    svg=editor.locator("#skMap").bounding_box()
+    assert svg
+    def screen(x,y):
+        return (svg["x"]+x*svg["width"]/400,
+                svg["y"]+y*svg["height"]/330)
+    sx,sy=screen(320,165)
+    ex,ey=screen(200,285)
+    page.mouse.move(sx,sy)
+    page.mouse.down()
+    page.mouse.move(ex,ey,steps=9)
+    page.mouse.up()
+    dragAction=last_action(page,"nativeSonKuSet")
+    assert dragAction["settings"]["moving"] is False
+    assert abs(dragAction["settings"]["startAzimuthDegrees"])<5,dragAction
+    # Never confuse successful pointer motion with audio-applied ACK.
+    emit(page,"arMixBuiltinSonKuAck",{
+        "requestId":dragAction["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0},
+        applied=dragAction["requestId"])
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.

@@ -1215,3 +1215,16 @@
 .mx-sonku .sk-stage .sk-direction{fill:#a7c0cc;letter-spacing:1.1px;font-size:10px;font-weight:600}
 .mx-sonku .sk-stage .sk-front{fill:#78d9e6;font-size:11px}
 .mx-sonku .sk-stage .sk-src{touch-action:none}
+
+/* SonKu top-view polish: lightweight vector stage + passive approved PNG.
+   Keep sprite and CSS in the existing 18-owner GUI, never rotate audio DSP. */
+.mx-sonku .sk-stage svg{background:#0c1926}
+.mx-sonku .sk-listener-art{image-rendering:auto;opacity:.98;pointer-events:none;
+ filter:drop-shadow(0 5px 13px rgba(30,164,206,.2))}
+.mx-sonku .sk-source-bg{stroke-width:1.8;fill:#153d51;fill-opacity:.98;
+ filter:drop-shadow(0 1px 5px rgba(81,207,235,.42))}
+.mx-sonku .sk-right .sk-source-bg{fill:#482c42;filter:drop-shadow(0 1px 5px rgba(227,158,208,.36))}
+.mx-sonku .sk-source-core{display:none}
+.mx-sonku .sk-stage .sk-source-label{fill:#e1faff;font-size:11px;font-weight:600;letter-spacing:0;pointer-events:none}
+.mx-sonku .sk-stage .sk-right .sk-source-label{fill:#ffe4f6}
+.mx-sonku .sk-stage .sk-front{fill:#81e0ed;font-weight:600}
