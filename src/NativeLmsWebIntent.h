@@ -3,6 +3,7 @@
 // Browser -> CONTROL only. Translate a bounded offline speaker DESIGN,
 // never device identity, PCM ownership, hardware arm, or protection authority.
 #include "../engine/lms/NativeSpeakerDeviceBinder.h"
+#include "../engine/core/DynamicNativeSessionPublisher.h"
 #include <juce_core/juce_core.h>
 #include <cmath>
 #include <cstdint>
