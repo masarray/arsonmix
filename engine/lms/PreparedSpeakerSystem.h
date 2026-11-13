@@ -21,13 +21,14 @@ struct VerifiedOutputPort final {
 };
 struct ParametricBand final {
     double frequencyHz=1000.,q=0.70710678118,gainDb=0.;
+    bool enabled=true; // same bypass semantics as LMS Output EQ editor
 };
 struct OutputPatch final {
     std::string outputId,portIdentity;
     int sourceSide=0,section=0;  // section [0,ways); side 0=L/mono, 1=R
     double delayMs=0.,gainDb=0.;
     std::vector<ParametricBand> peq; // max 8 fully prepared peaking bands
-    bool mute=true,limiterEnabled=false;
+    bool mute=true,limiterEnabled=false,polarityInverted=false;
     double ceilingDbfs=-6.;
     // A host-owned, explicit operator acknowledgement, NOT proof of physical protection.
     bool confirmedSpeakerProfile=false;
@@ -96,7 +97,7 @@ class PreparedSpeakerSystem final {
     };
     struct Destination final {
         int source=0,physical=0;
-        float gain=1.f,ceiling=1.f;
+        float gain=1.f,ceiling=1.f,polarity=1.f;
         bool mute=true,limit=false;
         double delaySamples=0.;
         std::vector<Biquad> eq;
@@ -256,12 +257,14 @@ public:
                 d.source=p.sourceSide*req.ways+p.section;
                 d.gain=static_cast<float>(std::pow(10.,p.gainDb/20.));
                 d.mute=p.mute;d.limit=p.limiterEnabled;
+                d.polarity=p.polarityInverted?-1.f:1.f;
                 d.ceiling=static_cast<float>(std::pow(10.,p.ceilingDbfs/20.));
                 d.delaySamples=p.delayMs*req.sampleRate/1000.;
                 d.eq.reserve(p.peq.size());
                 for(const auto& band:p.peq)
-                    d.eq.push_back(Biquad::peak(req.sampleRate,band.frequencyHz,
-                                                band.q,band.gainDb));
+                    if(band.enabled)
+                        d.eq.push_back(Biquad::peak(req.sampleRate,band.frequencyHz,
+                                                    band.q,band.gainDb));
                 if(d.delaySamples>0.)
                     d.ring.resize(static_cast<std::size_t>(std::ceil(d.delaySamples))+3);
                 next->destinations_.push_back(std::move(d));
@@ -310,7 +313,7 @@ public:
             for(int i=0;i<frames;++i){
                 float x=band[i];
                 for(auto& eq:d.eq)x=eq.process(x);
-                x=d.delay(x)*d.gain;
+                x=d.delay(x)*d.gain*d.polarity;
                 if(!std::isfinite(x))x=0.f;
                 // Hard digital peak ceiling is NOT calibrated loudspeaker protection.
                 if(d.limit)x=std::clamp(x,-d.ceiling,d.ceiling);
