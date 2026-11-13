@@ -32,7 +32,7 @@ const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
  window.__ARMIX_NATIVE_M2__?.state?.()?.current;
 const angle=(v)=>((v%360)+360)%360;
-// Top-down listener faces the TOP: FRONT=0°, RIGHT=+90°, REAR=180°,
+// TOP-REAR camera looks toward FRONT (image top): FRONT=0°, RIGHT=+90°, REAR=180°,
 // LEFT=-90°. Presentation-only SVG projection; native HRIR ITD/ILD
 // and audio rotation coordinates NEVER change.
 const STAGE=Object.freeze({x:200,y:174,rx:148,ry:83});
@@ -69,7 +69,7 @@ root.innerHTML=[
  '<span id="skChannel" class="sk-channel"></span>',
  '<button type="button" id="skClose" class="sk-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
  '<div class="sk-content"><div class="sk-stage">',
- '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-down head and two draggable binaural emitters">',
+ '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
  '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263b49"/><stop offset=".65" stop-color="#152533"/><stop offset="1" stop-color="#0a1622"/></radialGradient>',
  '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#7fdae7" stop-opacity=".14"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
  '<linearGradient id="skRail" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#80dce8"/><stop offset="1" stop-color="#355969"/></linearGradient>',
@@ -77,22 +77,22 @@ root.innerHTML=[
  '<rect width="400" height="330" rx="10" fill="url(#skBg)"/>',
  '<ellipse cx="200" cy="174" rx="148" ry="83" fill="url(#skFloor)"/>',
  '<path class="sk-axis" d="M200 79V270 M45 174H355" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
- // Far orbit belongs BEHIND the listener; true perspective elliptical rail.
- '<path id="skRearArc" class="sk-orbit-rear" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
- '<path class="sk-secondary-rail" d="M64 174 A136 70 0 0 0 336 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
+ // FRONT is the far upper orbit, behind head from this top-rear camera.
+ '<path id="skFarArc" class="sk-orbit-far" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
+ '<path class="sk-secondary-rail" d="M336 174 A136 70 0 0 0 64 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
  '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
  // Rear/top-view translucent PNG: back of skull, protruding ears and shoulders.
  // Listener looks toward FRONT at top; native source azimuth is unchanged.
  '<ellipse class="sk-head-shadow" cx="200" cy="246" rx="76" ry="22" fill="#031621" fill-opacity=".27"/>',
- '<g id="skRearSources" class="sk-rear-sources"></g>',
- '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="73" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
- // Near orbit overlays lower bust, forming ONE plausible 3D spatial ring.
- '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
- '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
- // Near-field speaker icons are painted above the bust, with perspective.
- '<g id="skFrontSources" class="sk-front-sources"></g>',
+ '<g id="skFarSources" class="sk-far-sources"></g>',
+ '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
+ // REAR is the near lower orbit, overlaying upper back from this camera.
+ '<path id="skNearArc" class="sk-orbit-near-shadow" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
+ '<path class="sk-orbit-near" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
+ // Paint independent rear/near speakers above the back; far speakers behind head.
+ '<g id="skNearSources" class="sk-near-sources"></g>',
  '<path d="M193 68 L200 60 L207 68" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
  // No circle markers: each emitter is a small raised studio monitor.
  // Offsets at coincident directions are display-only; native azimuth stays equal.
@@ -139,6 +139,10 @@ root.innerHTML=[
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
 const $=id=>root.querySelector("#"+id);
+// Cache fixed SVG node references; only their transforms change at 60fps.
+const speakerNodes=[...root.querySelectorAll("#skMap .sk-src")];
+const speakerTethers=speakerNodes.map(n=>n.querySelector(".sk-tether"));
+const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
@@ -211,27 +215,29 @@ function drawSpeakers(){
  for(let source=0;source<2;++source) {
   const deg=angle(angles[source]);
   const {anchor,visible}=pair[source];
-  const g=root.querySelector('.sk-src[data-index="'+source+'"]');
-  const front=Math.cos(deg*Math.PI/180)>=0;
-  const layer=front?$("skFrontSources"):$("skRearSources");
-  if(g.parentNode!==layer)layer.appendChild(g);
-  // Orthographic stage with light depth scaling: rear behind head, front
-  // above bust. No CSS animation of acoustic coordinates or SVG duplicate.
+  const g=speakerNodes[source];
+  // View-only: positive cosine = far FRONT, negative = near REAR.
+  // Continuous perspective at each side horizon; never change native HRIR angles.
   const depth=Math.cos(deg*Math.PI/180);
-  const scale=(.91+.13*depth).toFixed(3);
+  const near=depth<0;
+  const layer=near?depthLayers.near:depthLayers.far;
+  if(g.parentNode!==layer)layer.appendChild(g);
+  const scale=(.96-.20*depth).toFixed(3); // far .76, side .96, near 1.16
   g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+") scale("+scale+")");
-  g.style.opacity=front?"1":".84";
+  g.style.opacity=(.83-.14*depth).toFixed(3);
+  g.dataset.depth=near?"near":"far";
+  g.dataset.depthFactor=depth.toFixed(4);
   g.dataset.acousticX=anchor.x.toFixed(2);
   g.dataset.acousticY=anchor.y.toFixed(2);
   g.dataset.visualX=visible.x.toFixed(2);
   g.dataset.visualY=visible.y.toFixed(2);
   const deltaX=anchor.x-visible.x,deltaY=anchor.y-visible.y;
-  const leader=g.querySelector(".sk-tether");
+  const leader=speakerTethers[source];
   leader.setAttribute("d","M0 0 L"+deltaX.toFixed(2)+" "+deltaY.toFixed(2));
   leader.style.opacity=Math.hypot(deltaX,deltaY)>4?".65":"0";
   g.setAttribute("aria-valuenow",String(Math.round(deg>180?deg-360:deg)));
   const direction=deg<45||deg>=315?"FRONT":deg<135?"RIGHT":deg<225?"REAR":"LEFT";
-  g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"°");
+  g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"° ("+(near?"near":"far")+" view)");
  }
 }
 // rAF is a VISUAL interpolator, not an audio clock or optimistic DSP ACK.

@@ -114,26 +114,28 @@ def exercise(browser,out,width,height):
     editor.wait_for(state="visible",timeout=5000)
     assert editor.locator("#skMap .sk-src").count()==2
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
-    assert editor.locator("#skMap #skRearArc").count()==1
-    assert editor.locator("#skMap #skFrontArc").count()==1
-    # Painter's ordering is 3D: far rail -> back-facing listener -> near rail.
+    assert editor.locator("#skMap #skFarArc").count()==1
+    assert editor.locator("#skMap #skNearArc").count()==1
+    # Top-rear camera: FRONT/far (upper) is behind head, REAR/near overlays back.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
-      const rear=map.querySelector('#skRearArc');
+      const far=map.querySelector('#skFarArc');
       const art=map.querySelector('#skListenerArt');
-      const front=map.querySelector('#skFrontArc');
-      return Boolean((rear.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING));
+      const near=map.querySelector('#skNearArc');
+      return Boolean((far.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (art.compareDocumentPosition(near) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     far.getAttribute('d').startsWith('M348 174') &&
+                     near.getAttribute('d').startsWith('M52 174'));
     }"""), "Front/back ring painter layering incorrect"
-    # Painter's algorithm applies to the *speakers*, not only the floor rail.
+    # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
-      const far=map.querySelector('#skRearSources');
+      const far=map.querySelector('#skFarSources');
       const art=map.querySelector('#skListenerArt');
-      const near=map.querySelector('#skFrontSources');
+      const near=map.querySelector('#skNearSources');
       return Boolean((far.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
                      (art.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING));
-    }"""),"Rear speakers are incorrectly rendered in FRONT of the head"
+    }"""),"Speaker planes must surround the alpha listener PNG"
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
@@ -213,26 +215,54 @@ def exercise(browser,out,width,height):
         # Acoustic anchor is distinct from the readable icon's display offset.
         # The offset NEVER alters native azimuth when both sources coincide.
         nodes=editor.locator('#skMap .sk-src')
-        data=nodes.evaluate_all("""els=>els.map(n=>({
+        data=nodes.evaluate_all(r"""els=>els.map(n=>({
           ax:Number(n.dataset.acousticX),ay:Number(n.dataset.acousticY),
           vx:Number(n.dataset.visualX),vy:Number(n.dataset.visualY),
-          value:Number(n.getAttribute('aria-valuenow'))}))""")
+          value:Number(n.getAttribute('aria-valuenow')),
+          layer:n.parentElement.id,depth:n.dataset.depth,
+          scale:Number(n.getAttribute('transform').match(/scale\(([^)]+)\)/)?.[1]||0),
+          opacity:Number(n.style.opacity)}))""")
         assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
         assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
         assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
         separation=((data[0]["vx"]-data[1]["vx"])**2+
                     (data[0]["vy"]-data[1]["vy"])**2)**.5
         assert separation>=44,("Two studio speakers overlap at zero spread",data)
-        # Source icon is now INSIDE the front or rear SVG paint layer.
-        layer=nodes.first.evaluate("(n)=>n.parentElement.id")
+        # Independent painter planes alter only visual depth, never HRIR azimuth.
         if degrees in (0,180):
-            expected="skFrontSources" if degrees==0 else "skRearSources"
-            assert layer==expected,(degrees,layer,expected)
-        return data[0]["ax"],data[0]["ay"]
-    x,y=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
-    x,y=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
-    x,y=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
-    x,y=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
+            expected="skFarSources" if degrees==0 else "skNearSources"
+            assert data[0]["layer"]==data[1]["layer"]==expected,(degrees,data)
+        return data[0]["ax"],data[0]["ay"],data[0]
+    x,y,front=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-front-depth-{width}.png")
+    x,y,right=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
+    x,y,rear=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-rear-depth-{width}.png")
+    x,y,left=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
+    assert front["depth"]=="far" and rear["depth"]=="near"
+    assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
+    assert rear["scale"]-front["scale"]>=.39,(front,rear)
+    assert rear["opacity"]>front["opacity"],(front,rear)
+    # At the edge-on horizons: layer swaps while 3D scaling remains continuous.
+    _,_,far_side=pose(89)
+    _,_,near_side=pose(91)
+    assert far_side["depth"]=="far" and near_side["depth"]=="near"
+    assert far_side["layer"]=="skFarSources" and near_side["layer"]=="skNearSources"
+    assert abs(far_side["scale"]-near_side["scale"])<.02,(far_side,near_side)
+    assert abs(far_side["opacity"]-near_side["opacity"])<.02,(far_side,near_side)
+    # L and R belong to independent near/far planes when they straddle 90°.
+    # Native control snapshots are request-correlated; allow a fresh read
+    # instead of reusing the previous consumed requestId (rejected as stale).
+    page.wait_for_timeout(270)
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "startAzimuthDegrees":90.0,"stereoSpreadDegrees":40.0})
+    pair=editor.locator("#skMap .sk-src").evaluate_all(
+        "els=>els.map(n=>({layer:n.parentElement.id,depth:n.dataset.depth}))")
+    assert {v["depth"] for v in pair}=={"far","near"},pair
+    editor.locator("#skMap").screenshot(path=f"arsonmix-sonku-editor-split-depth-{width}.png")
+    page.wait_for_timeout(270)
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+        "startAzimuthDegrees":-90.0,"stereoSpreadDegrees":0.0})
     # All drag paths now STREAM native edits DURING the gesture. A burst
     # must emit only one in-flight command; the most recent sample follows
     # verified ACK+snapshot, not hundreds of SPSC entries or false UI ACKs.
