@@ -252,6 +252,44 @@ static void verifyFirstSoundGuitarProcessor() {
     assert(bypassRig->lastCompletion().requestId==99);
     assert(armix::guitarfx::sameTone(bypassRig->acceptedProgram(),bypassTone));
     assert(bypassRig->observedBlockSerial()==0); // no fake wet PCM claim
+    // A second adjustment while fully bypassed must ACK on the next native
+    // host callback, even though processBlock is not invoked at all.
+    bypassRig->onRealtimeBypass(true,true);
+    auto secondBypassTone=armix::guitarfx::factoryTone(3);
+    assert(bypassRig->queueProgram(secondBypassTone,100,1));
+    bypassRig->consumeRealtimeEdits();
+    assert(bypassRig->stateSnapshotQuiescent());
+    assert(bypassRig->activeBank()==1);
+    assert(bypassRig->pendingProgramChanges()==0);
+    assert(bypassRig->observedBlockSerial()==0);
+    assert(armix::guitarfx::sameTone(
+        bypassRig->acceptedBankProgram(0),bypassTone));
+    assert(armix::guitarfx::sameTone(
+        bypassRig->acceptedBankProgram(1),secondBypassTone));
+    // More severe: wet output starts transitioning, then the host becomes
+    // fully bypassed before all 128 crossfade samples have been rendered.
+    // Its next tone MUST NOT wait forever for skipped wet samples.
+    auto partiallyWet=guitar->prepare(48000.,128,nullptr,0);
+    auto* partiallyWetRig=dynamic_cast<
+        armix::builtin_fx::GuitarRigProcessor*>(partiallyWet.get());
+    assert(partiallyWetRig);
+    juce::AudioBuffer<float> tiny(2,32);
+    tiny.clear();
+    juce::MidiBuffer tinyMidi;
+    assert(partiallyWetRig->queueProgram(bypassTone,1,0));
+    partiallyWet->processBlock(tiny,tinyMidi); // 96 samples of fade remain
+    assert(partiallyWetRig->stateSnapshotQuiescent());
+    partiallyWetRig->onRealtimeBypass(true,true);
+    assert(partiallyWetRig->queueProgram(secondBypassTone,2,1));
+    partiallyWetRig->consumeRealtimeEdits();
+    assert(partiallyWetRig->stateSnapshotQuiescent());
+    assert(partiallyWetRig->activeBank()==1);
+    assert(partiallyWetRig->lastCompletion().requestId==2);
+    // Wet reactivation never resurrects an old transition or fake meter.
+    partiallyWetRig->onRealtimeBypass(false,false);
+    tiny.clear();
+    partiallyWet->processBlock(tiny,tinyMidi);
+    assert(partiallyWetRig->pendingProgramChanges()==0);
     auto edit=guitarTyped->acceptedProgram();
     edit.blocks[2].values[0]=0.78f;
     edit.blocks[1].enabled=true;
