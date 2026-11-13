@@ -104,12 +104,16 @@ std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths,float ro
 }
 std::vector<std::uint8_t> orbit(float roomAmount=0.f,
     armix::sonku::SonKuRoomShape shape=armix::sonku::SonKuRoomShape::Rectangular,
-    bool clockwise=true){
+    bool clockwise=true,float lateAmount=0.f,
+    armix::sonku::SonKuReverbPreset latePreset=
+        armix::sonku::SonKuReverbPreset::StudioGlue){
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
     if(!dsp.setEarlyReflectionsShape(shape)||
-       !dsp.setEarlyReflectionsAmount(roomAmount))
-        throw std::runtime_error("Invalid orbit room configuration");
+       !dsp.setMusicalReverbPreset(latePreset)||
+       !dsp.setEarlyReflectionsAmount(roomAmount)||
+       !dsp.setMusicalReverbAmount(lateAmount))
+        throw std::runtime_error("Invalid orbit acoustic configuration");
     Settings s=fixed(0.f);s.moving=true;s.clockwise=clockwise;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("No 360 orbit");
     const int frames=orbitFrames; // two complete turns on ONE continuous audio clock
@@ -167,6 +171,13 @@ void notes(const std::filesystem::path& directory,
       <<"Square geometry is not a guarantee of circular perception.\n"
       <<"CCW versions contain FRONT>LEFT>REAR>RIGHT>FRONT each 10s.\n"
       <<"Compare direction-reversed tracks to isolate turn-order effects.\n"
+      <<"sonku-v3-square-glue-cw-2x.wav = approved square ROOM plus\n"
+      <<"  subdued stereo 8-line FDN, Studio Glue RT60 ~0.78s.\n"
+      <<"sonku-v3-square-airy-cw-2x.wav = same square ROOM with\n"
+      <<"  more spacious FDN Airy Chamber RT60 ~1.28s.\n"
+      <<"V2 square and V3 candidates share the exact 20s original source,\n"
+      <<"HRTF, four-wall ER, angle clock and output trim.\n"
+      <<"FDN candidate is wet-only and OFF in native plugin by default.\n"
       <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
       <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
       <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
@@ -202,6 +213,12 @@ int main(int argc,char** argv){
                  orbit(.55f,armix::sonku::SonKuRoomShape::Rectangular,false));
         writeWav(dir/"sonku-v2-square-orbit-ccw-2x.wav",
                  orbit(.55f,armix::sonku::SonKuRoomShape::Square,false));
+        writeWav(dir/"sonku-v3-square-glue-cw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,true,.42f,
+                       armix::sonku::SonKuReverbPreset::StudioGlue));
+        writeWav(dir/"sonku-v3-square-airy-cw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,true,.42f,
+                       armix::sonku::SonKuReverbPreset::AiryChamber));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";

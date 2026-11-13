@@ -215,6 +215,8 @@ jobs:
           /tmp/sonku-listening sonku-listening
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_early_reflections_test.cpp -o /tmp/sonku-room-test
           /tmp/sonku-room-test
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_musical_reverb_test.cpp -o /tmp/sonku-fdn-test
+          /tmp/sonku-fdn-test
       - name: SonKu same-runner realtime CPU comparison (informational, not a release pass)
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-rt-bench

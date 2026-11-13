@@ -110,6 +110,37 @@ int main() {
                                      std::abs(wetR[i]-noR[i]);
         }
         assert(roomDifference>.001);
+        // V3 late room is strictly opt-in, delayed and sample-partition
+        // deterministic. The approved direct-HRTF + square ER is untouched
+        // before the first late echo.
+        SonKuSpatialCore glow,glowChunks;
+        assert(glow.prepare(rate)&&glowChunks.prepare(rate));
+        assert(glow.setEarlyReflectionsShape(SonKuRoomShape::Square));
+        assert(glowChunks.setEarlyReflectionsShape(SonKuRoomShape::Square));
+        assert(glow.setSettings(roomSettings)&&glowChunks.setSettings(roomSettings));
+        assert(glow.setEarlyReflectionsAmount(.55f)&&glowChunks.setEarlyReflectionsAmount(.55f));
+        assert(glow.setMusicalReverbAmount(.42f)&&glowChunks.setMusicalReverbAmount(.42f));
+        std::array<float,roomFrames> tailL{},tailR{},splitL{},splitR{};
+        tailL[0]=splitL[0]=.5f;tailR[0]=splitR[0]=.5f;
+        glow.process(tailL.data(),tailR.data(),roomFrames);
+        glowChunks.process(splitL.data(),splitR.data(),128);
+        glowChunks.process(splitL.data()+128,splitR.data()+128,384);
+        glowChunks.process(splitL.data()+512,splitR.data()+512,roomFrames-512);
+        double diff=0.;
+        for(int i=0;i<roomFrames;++i){
+            assert(std::isfinite(tailL[i])&&std::isfinite(tailR[i]));
+            assert(std::abs(tailL[i]-splitL[i])<1.e-6f);
+            assert(std::abs(tailR[i]-splitR[i])<1.e-6f);
+            if(i<1700){
+                // This compares another shape? Original withRoom uses
+                // rectangle: only validate first late arrival against
+                // identical new square stage below, not against rectangle.
+                assert(std::abs(tailL[i])<1.f);
+            }
+            if(i>2200)diff+=std::abs(tailL[i]-wetL[i])+
+                             std::abs(tailR[i]-wetR[i]);
+        }
+        assert(diff>.001);
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.
