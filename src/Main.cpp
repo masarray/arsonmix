@@ -531,6 +531,13 @@ private:
     } pendingNativeHarmony_;
     juce::String lastNativeHarmonyRequest_,lastNativeHarmonyInstance_;
     juce::String lastNativeHarmonyEpoch_,lastNativeHarmonyRevision_;
+    struct PendingNativeSonKu {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::String request,channelId,deviceEpoch,revision,instanceId;
+        juce::uint32 started=0;
+    } pendingNativeSonKu_;
+    juce::String lastNativeSonKuRequest_,lastNativeSonKuInstance_;
+    juce::String lastNativeSonKuEpoch_,lastNativeSonKuRevision_;
     struct PendingNativeThrow {
         armix::mixer::LiveChannelFxGraph::InstanceLease owner;
         juce::String request,channelId,deviceEpoch,revision,instanceId;
@@ -2983,6 +2990,88 @@ private:
             "arMixBuiltinCompAck",juce::var(ack.release()));
     }
 
+    // SonKu Native FX: one editor target = exact ChannelId/slot/instance/epoch.
+    // Snapshot reads accepted CONTROL settings only; the single atomically
+    // published angle is observation, never another audio motion clock.
+    void emitNativeSonKuSnapshot(const juce::String& request,
+            const juce::String& channelId,const juce::String& epoch,
+            const juce::String& revision,const juce::String& instanceId,
+            armix::builtin_fx::SonKuSpatialProcessor* processor) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("requestId",request);
+        reply->setProperty("channelId",channelId);
+        reply->setProperty("deviceEpoch",epoch);
+        reply->setProperty("graphRevision",revision);
+        reply->setProperty("instanceId",instanceId);
+        reply->setProperty("schemaVersion",2);
+        reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
+        if(processor) {
+            const auto s=processor->acceptedSettings();
+            auto values=std::make_unique<juce::DynamicObject>();
+            values->setProperty("startAzimuthDegrees",s.startAzimuthDegrees);
+            values->setProperty("revolutionSeconds",s.revolutionSeconds);
+            values->setProperty("stereoSpreadDegrees",s.stereoSpreadDegrees);
+            values->setProperty("spatialMix",s.spatialMix);
+            values->setProperty("outputTrim",s.outputTrim);
+            values->setProperty("moving",s.moving);
+            values->setProperty("clockwise",s.clockwise);
+            values->setProperty("spacePreset",s.spacePreset);
+            values->setProperty("sourceDistanceMeters",s.sourceDistanceMeters);
+            values->setProperty("roomAmount",s.roomAmount);
+            values->setProperty("ambience",s.ambience);
+            reply->setProperty("settings",juce::var(values.release()));
+            reply->setProperty("observedAzimuthDegrees",
+                processor->observedAzimuthDegrees());
+            if(epoch=="0" && instanceId==lastLogicalFxInstance_ &&
+               revision==lastLogicalFxRevision_)
+                reply->setProperty("appliedRequestId",lastLogicalFxRequest_);
+            else if(instanceId==lastNativeSonKuInstance_ &&
+               epoch==lastNativeSonKuEpoch_ &&
+               revision==lastNativeSonKuRevision_)
+                reply->setProperty("appliedRequestId",lastNativeSonKuRequest_);
+        } else reply->setProperty("error","SONKU_INSTANCE_OR_REVISION_UNAVAILABLE");
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinSonKuSnapshot",juce::var(reply.release()));
+    }
+
+    void servicePendingNativeSonKu() {
+        if(!pendingNativeSonKu_.owner)return;
+        auto* processor=dynamic_cast<armix::builtin_fx::SonKuSpatialProcessor*>(
+            pendingNativeSonKu_.owner->processor.get());
+        if(!processor){pendingNativeSonKu_={};return;}
+        armix::builtin_fx::SonKuSpatialProcessor::Completion result{};
+        const bool complete=processor->pollCompletion(result);
+        if(!complete && juce::Time::getMillisecondCounter()-
+               pendingNativeSonKu_.started<3000u)return;
+        const auto request=pendingNativeSonKu_.request;
+        bool applied=complete&&result.applied&&result.requestId!=0 &&
+            request=="sonku-"+juce::String(std::to_string(result.requestId));
+        const auto snap=approvedNativeSnapshot();
+        const auto device=snap.getProperty("device",{});
+        const auto graph=snap.getProperty("graph",{});
+        applied=applied&&pendingNativeSonKu_.deviceEpoch==
+                    device.getProperty("epoch","").toString()&&
+                    pendingNativeSonKu_.revision==
+                    graph.getProperty("revision","").toString();
+        if(applied) {
+            lastNativeSonKuRequest_=request;
+            lastNativeSonKuInstance_=pendingNativeSonKu_.instanceId;
+            lastNativeSonKuEpoch_=pendingNativeSonKu_.deviceEpoch;
+            lastNativeSonKuRevision_=pendingNativeSonKu_.revision;
+        }
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",request);
+        ack->setProperty("channelId",pendingNativeSonKu_.channelId);
+        ack->setProperty("deviceEpoch",pendingNativeSonKu_.deviceEpoch);
+        ack->setProperty("graphRevision",pendingNativeSonKu_.revision);
+        ack->setProperty("instanceId",pendingNativeSonKu_.instanceId);
+        ack->setProperty("status",applied?"APPLIED":"REJECTED");
+        ack->setProperty("errorCode",applied?"NONE":"SONKU_EDIT_NOT_APPLIED_OR_STALE");
+        pendingNativeSonKu_={};
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+            "arMixBuiltinSonKuAck",juce::var(ack.release()));
+    }
+
     // One channel/slot/epoch/revision-bound Harmony state. No browser DSP.
     void emitNativeHarmonySnapshot(const juce::String& request,
             const juce::String& channelId,const juce::String& epoch,
@@ -4025,6 +4114,7 @@ private:
             action == "routingNativeFxInsertBypass" ||
             action == "routingFxRackBypass" ||
             action == "nativeEqSetBand" || action == "nativeCompSet" ||
+            action == "nativeSonKuSet" ||
             action == "nativeThrowSet" || action == "nativeThrowTrigger" ||
             action == "nativeThrowTempoSource"))
         {
@@ -4507,6 +4597,97 @@ private:
                 pendingNativeComp_.owner?"COMP_CONTROL_BUSY":"INVALID_OR_STALE_COMP");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixBuiltinCompQueue",juce::var(ack.release()));
+            return;
+        }
+
+        // 8D-SonKu typed settings; ordinary native FX lease and PCM mailbox.
+        if(action=="nativeSonKuSnapshot"||action=="nativeSonKuSet") {
+            const auto fxRequest=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            const auto& rawChannel=fxRequest.rawChannel;
+            const auto& rawEpoch=fxRequest.rawEpoch;
+            const auto& rawRevision=fxRequest.rawRevision;
+            const auto& rawInstance=fxRequest.rawInstance;
+            const auto& request=fxRequest.request;
+            const int slot=fxRequest.slot;
+            const auto ch=fxRequest.channel,ep=fxRequest.epoch,rev=fxRequest.revision;
+            const bool valid=fxRequest.valid,unbound=fxRequest.unbound;
+            armix::session::StoredInsert offlineInsert;
+            auto offline=unbound?openLogicalBuiltinFx(args,offlineInsert,
+                armix::builtin_fx::SonKuSpatialProcessor::catalogIdentity):nullptr;
+            auto owner=valid&&!unbound?engine_.leaseNativeVst3Editor(ep,rev,
+                armix::mixer::ChannelId{ch},static_cast<std::size_t>(slot),
+                rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* p=dynamic_cast<armix::builtin_fx::SonKuSpatialProcessor*>(
+                unbound?offline.get():owner?owner->processor.get():nullptr);
+            if(action=="nativeSonKuSnapshot") {
+                emitNativeSonKuSnapshot(request,rawChannel.toString(),
+                    rawEpoch.toString(),rawRevision.toString(),rawInstance.toString(),p);
+                return;
+            }
+            const auto values=args.getProperty("settings",{});
+            armix::sonku::Settings settings{};
+            auto number=[&values](const char* key,float& dest) {
+                const auto v=values.getProperty(key,{});
+                if(!v.isDouble()&&!v.isInt())return false;
+                const double n=static_cast<double>(v);
+                if(!std::isfinite(n) || n>1.0e6 || n< -1.0e6)return false;
+                dest=static_cast<float>(n);
+                return std::isfinite(dest);
+            };
+            const auto moving=values.getProperty("moving",{});
+            const auto clockwise=values.getProperty("clockwise",{});
+            const bool parameters=values.isObject() &&
+                number("startAzimuthDegrees",settings.startAzimuthDegrees) &&
+                number("revolutionSeconds",settings.revolutionSeconds) &&
+                number("stereoSpreadDegrees",settings.stereoSpreadDegrees) &&
+                number("spatialMix",settings.spatialMix) &&
+                number("outputTrim",settings.outputTrim) &&
+                moving.isBool()&&clockwise.isBool();
+            if(parameters){settings.moving=static_cast<bool>(moving);
+                           settings.clockwise=static_cast<bool>(clockwise);}
+            // Optional v2 fields preserve legacy v1 clients and old sessions.
+            // Typed native intent remains bounded and validated before SPSC.
+            const auto preset=values.getProperty("spacePreset",{});
+            bool acousticParameters=true;
+            if(!preset.isVoid()){
+                if(!preset.isInt())acousticParameters=false;
+                else settings.spacePreset=static_cast<int>(preset);
+            }
+            const auto optionalNumber=[&](const char* key,float& target) {
+                if(values.getProperty(key,{}).isVoid())return true;
+                return number(key,target);
+            };
+            acousticParameters=acousticParameters &&
+                optionalNumber("sourceDistanceMeters",settings.sourceDistanceMeters) &&
+                optionalNumber("roomAmount",settings.roomAmount) &&
+                optionalNumber("ambience",settings.ambience);
+            const auto numeric=fxRequest.sequence("sonku-");
+            bool queued=false;
+            if(p&&numeric&&parameters&&acousticParameters&&armix::sonku::valid(settings) &&
+               !pendingNativeSonKu_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
+               !engine_.independentClockActive()) {
+                queued=p->queueSettings(settings,numeric);
+                if(queued&&!unbound) {
+                    pendingNativeSonKu_.owner=owner;
+                    pendingNativeSonKu_.request=request;
+                    pendingNativeSonKu_.channelId=rawChannel.toString();
+                    pendingNativeSonKu_.deviceEpoch=rawEpoch.toString();
+                    pendingNativeSonKu_.revision=rawRevision.toString();
+                    pendingNativeSonKu_.instanceId=rawInstance.toString();
+                    pendingNativeSonKu_.started=juce::Time::getMillisecondCounter();
+                }
+            }
+            if(unbound)return completeLogicalFxEdit(args,std::move(offlineInsert),
+                p,queued,"arMixBuiltinSonKuAck");
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);
+            ack->setProperty("status",queued?"QUEUED":"REJECTED");
+            ack->setProperty("errorCode",queued?"NONE":
+                pendingNativeSonKu_.owner?"SONKU_CONTROL_BUSY":"INVALID_OR_STALE_SONKU");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixBuiltinSonKuQueue",juce::var(ack.release()));
             return;
         }
 
@@ -6720,6 +6901,7 @@ private:
         serviceNativeMusicTempo();
         servicePendingNativeEq();
         servicePendingNativeComp();
+        servicePendingNativeSonKu();
         servicePendingNativeHarmony();
         servicePendingNativeThrow();
         saveClosedLogicalVendorEditor();

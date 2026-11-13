@@ -1277,7 +1277,41 @@ static void verifyExternalOutputPortableIntent() {
     assert(!Codec::decode(Codec::encode(doc),loaded));
 }
 
+static void verifyChannelInputGainSessionRoundtrip() {
+    auto session=makeSession();
+    auto rows=session.roster.channels();
+    rows[0].inputGainLinear=2.f;
+    assert(session.roster.restoreExact(session.acceptedRevision,rows));
+    const auto json=Codec::encode(session);
+    MixerSessionDocument restored;
+    assert(Codec::decode(json,restored));
+    assert(std::abs(restored.roster.find({1})->inputGainLinear-2.f)<1.e-6f);
+    assert(std::abs(restored.roster.find({1})->faderLinear-1.f)<1.e-6f);
+    assert(restored.roster.find({1})->sends[0].edgeId==100);
+    assert(Codec::encode(restored)==json);
+    // Pre-GAIN v1 sessions have no inputGain property; absence means unity
+    // without inventing a new schema or erasing WIRE/VST references.
+    auto old=juce::JSON::parse(json);
+    auto channels=old.getProperty("channels",{});
+    for(auto& item:*channels.getArray())
+        item.getDynamicObject()->removeProperty("inputGain");
+    assert(Codec::decode(juce::JSON::toString(old,false),restored));
+    assert(restored.roster.find({1})->inputGainLinear==1.f);
+    // Present but malformed/off-role input gain cannot be normalized.
+    auto invalid=juce::JSON::parse(json);
+    auto values=invalid.getProperty("channels",{});
+    values.getArray()->getReference(0).getDynamicObject()
+        ->setProperty("inputGain",juce::String("NaN"));
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),restored));
+    invalid=juce::JSON::parse(json);
+    values=invalid.getProperty("channels",{});
+    values.getArray()->getReference(values.getArray()->size()-1)
+        .getDynamicObject()->setProperty("inputGain",2.0);
+    assert(!Codec::decode(juce::JSON::toString(invalid,false),restored));
+}
+
 int main(){
+    verifyChannelInputGainSessionRoundtrip();
     verifyDurableNativeFxPowerIdentity();
     verifyHotkeyDocumentIdentityAndMigration();
     verifyLogicalControlTransactions();
