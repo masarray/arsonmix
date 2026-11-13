@@ -297,7 +297,7 @@ jobs:
           sparse-checkout: |
             engine/builtin_fx/sonku
           sparse-checkout-cone-mode: true
-      - name: Render and numerically compare five native PCM music A/B tracks
+      - name: Render and numerically compare six native PCM music A/B tracks
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-audio
           /tmp/sonku-integrity-audio sonku-integrity-evidence --music-integrity-only

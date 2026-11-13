@@ -122,6 +122,32 @@ def run(baseline_dir: Path, candidate_dir: Path) -> dict:
         "candidateTrebleAmplitude": new_high,
         "bassDifferenceDb": low_delta,
     }
+    # A relative binaural phase measurement is necessary for a signal
+    # that must remain artistically inverted, not silently become mono.
+    def phasor(ear: int) -> complex:
+        start, count, hz = RATE * 2, RATE, 3200
+        re = im = 0.
+        for j in range(count):
+            sample = improved[name][1][2 * (start + j) + ear] / 32768.
+            phase = 2. * math.pi * hz * j / RATE
+            re += sample * math.cos(phase)
+            im -= sample * math.sin(phase)
+        return complex(re, im) * (2. / count)
+
+    cross_phase = phasor(0) * phasor(1).conjugate()
+    interaural_deg = math.degrees(math.atan2(cross_phase.imag, cross_phase.real))
+    assert abs(abs(interaural_deg) - 180.) < 5., (
+        "recovered artistic treble polarity was not retained", interaural_deg)
+    report["mixedPolarityTreble"][name]["interauralPhaseDifferenceDeg"] = interaural_deg
+    # RMS dBFS is measured PCM level, NOT K-weighted LUFS or true-peak.
+    report["mixedPolarityTreble"][name]["candidateRmsDbFS"] = [
+        20. * math.log10(max(rms(improved[name][1], ear), 1e-12))
+        for ear in (0, 1)
+    ]
+    peak = max(abs(v) for v in improved[name][1]) / 32768.
+    report["mixedPolarityTreble"][name]["samplePeakDbFS"] = (
+        20. * math.log10(max(peak, 1e-12))
+    )
     (candidate_dir / "MUSIC-INTEGRITY-OBJECTIVE.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
@@ -137,4 +163,11 @@ if __name__ == "__main__":
     for name, case in result["antiPhase"].items():
         print("SONKU_ANTI_PHASE_RECOVERY", name, "perEarRms",
               [round(v, 5) for v in case["candidateRms"]])
+    for name, case in result["mixedPolarityTreble"].items():
+        print("SONKU_SPLITBAND_TREBLE_3200", name,
+              "baseline", [round(v, 6) for v in case["baselineTrebleAmplitude"]],
+              "candidate", [round(v, 6) for v in case["candidateTrebleAmplitude"]],
+              "bassDeltaDb", [round(v, 4) for v in case["bassDifferenceDb"]],
+              "phaseDeg", round(case["interauralPhaseDifferenceDeg"], 2),
+              "samplePeakDbFS", round(case["samplePeakDbFS"], 2))
     print("PASS SONKU MUSIC INTEGRITY exact baseline-vs-new PCM, 6 WAV, 48k")

@@ -52,3 +52,13 @@ CPU/headphone evidence.
 
 SonKu's frequency-band decision is original experimental
 filter/correlation algebra, not a claim about dearVR internals.
+
+## Verified first-pass GitHub Actions evidence
+
+Following exact digital-silence repair, [Actions #43524526143](https://github.com/masarray/arsonmix/actions/runs/43524526143)
+passes native 44.1/48k source regression, six identical-input baseline/candidate
+WAV pairs, 380 KEMAR spectral checks and runner-local CPU benchmark.
+The sixth 3200Hz note recovered above an objective amplitude gate of
+0.006 while the coherent 220Hz bass changed by less than 0.25dB.
+This is a machine test threshold, not a perceptual listening rating.
+The run's artifact is [#14083314097](https://github.com/masarray/arsonmix/actions/runs/43524526143/artifacts/14083314097).
