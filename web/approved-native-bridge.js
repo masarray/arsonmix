@@ -362,10 +362,23 @@
     if(state?.pending||!current?.admitted)return;
     for(const [edgeId,edit] of pendingWireGains){
       pendingWireGains.delete(edgeId);
-      if(current.identity!==edit.identity)continue; // never replay into a new graph/device
+      if(current.identity!==edit.identity){
+        // A changed device/graph invalidates a deferred edit, but must not
+        // strand its LCD while waiting for a nonexistent ACK.
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue; // never replay into a new graph/device
+      }
       const edge=current.graph.edges.find(e=>e.enabled&&e.edgeId===edgeId&&e.from===edit.source);
-      if(!edge||edge.primaryOutput!==false)continue;
-      if(Math.abs(edge.gainLinear-edit.gain)<.00001)continue;
+      if(!edge||edge.primaryOutput!==false){
+        scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        continue;
+      }
+      if(Math.abs(edge.gainLinear-edit.gain)<.00001){
+        // The accepted PCM gain already equals the requested scalar. Do not
+        // emit a redundant native intent, but DO settle the pending display.
+        scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
+        continue;
+      }
       const result=controller.intent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
       else status("WIRE gain rejected · "+result.error);
