@@ -1474,6 +1474,50 @@ public:
             return "SOURCE: native prepare failed; prior audio kept";
         }
     }
+    // M6 CONTROL only. The outer DEVICE authority, not the WebView, proves
+    // that the present ASIO registration, callback mask, and ALL physical
+    // playback paths are disarmed before validating a loudspeaker draft.
+    // This is NOT hardware Apply and NEVER enables amplifier outputs.
+    LiveDryRoutingLab::SpeakerDraftControlResult validateLmsDesignOffline(
+        const armix::lms::SpeakerSystemRequest& proposed,
+        std::uint64_t expectedDesignRevision) {
+        using AckFault=armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftFault;
+        LiveDryRoutingLab::SpeakerDraftControlResult rejected;
+        rejected.ack.fault=AckFault::staleDeviceOrGraph;
+        if(independent_.active() || !attached_ || !directFence_.permitted() ||
+           !allOutputsDisarmed() || handoff_.busy() ||
+           routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return rejected;
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device || !device->isOpen())return rejected;
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!armix::device::JuceActivePortSnapshot::capture(
+                device,proposed.deviceEpoch,pins,fault) ||
+           !dryRoutingLab_.matchesSessionDevice(pins))
+            return rejected;
+        const auto rate=device->getCurrentSampleRate();
+        if(proposed.sampleRate!=rate ||
+           proposed.activeOutputChannels!=pins.outputCount)return rejected;
+        auto result=dryRoutingLab_.acceptNativeSpeakerDraft(
+            proposed,pins,rate,true,expectedDesignRevision);
+        // Never retain a draft accepted against a transient driver setup.
+        if(deviceManager_.getCurrentAudioDevice()!=device ||
+           !device->isOpen() ||
+           rate!=device->getCurrentSampleRate() ||
+           !allOutputsDisarmed() ||
+           !dryRoutingLab_.matchesSessionDevice(pins)){
+            dryRoutingLab_.revokeNativeSpeakerDraft();
+            result.ack.validatedDraft=false;
+            result.ack.hardwareApplied=false;
+            result.ack.fault=AckFault::staleDeviceOrGraph;
+        }
+        return result;
+    }
+
     // O1 physical External OUT: solely CONTROL, on the already-approved
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
