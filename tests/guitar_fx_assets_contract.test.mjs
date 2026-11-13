@@ -113,3 +113,11 @@ test("bypassed Guitar FX editor may enqueue tone without a live wet meter",()=>{
         editor.includes("processor_.queueProgram(bankDrafts_[target],id,target)"),
         "closing editor must preserve queued native A/B switch");
 });
+
+test("native hardware PNG decoding is cached across editor close/reopen",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ assert(editor.includes("static const std::array<juce::Image,5> skins"),
+        "native editor must not decode all five PNG resources for every window");
+ for(const key of ["amp_","cab_","gate_","pedal_","knob_"])
+  assert(editor.includes(key+"=skins["),key+" shares cached image resource");
+});
