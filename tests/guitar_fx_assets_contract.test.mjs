@@ -76,6 +76,7 @@ test("native JUCE editor uses the generated binary resource identifiers",()=>{
  for(const name of [
    "amp-head-class-a.png",
    "cabinet-dual-12.png",
+   "pedal-gate.png",
    "pedal-overdrive.png",
    "knob-brushed-metal.png"
  ]){
