@@ -116,7 +116,7 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap #skRearArc").count()==1
     assert editor.locator("#skMap #skFrontArc").count()==1
-    # Painter's ordering is 3D: far rail -> head PNG -> near rail.
+    # Painter's ordering is 3D: far rail -> back-facing listener -> near rail.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const rear=map.querySelector('#skRearArc');
@@ -141,21 +141,19 @@ def exercise(browser,out,width,height):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
-    assert art.count()==1 and art.get_attribute("href")=="assets/sonku-listener-top.png"
-    # Image is actually available inside the assembled native GUI bundle.
-    assert page.evaluate("""async () => new Promise(resolve => {
-      const image=new Image();
-      image.onload=()=>resolve(image.naturalWidth>=128 && image.naturalHeight>=128);
-      image.onerror=()=>resolve(false);
-      image.src='assets/sonku-listener-top.png';
-    })"""), "Listener PNG did not load"
+    assert art.count()==1 and "facing top" in art.get_attribute("aria-label")
+    # An original back-of-head vector replaces the physically incorrect
+    # upside-down face PNG. Same SVG is bundled directly into /preview/.
+    assert art.locator("path").count()>=6
+    assert editor.locator("#skMap #skCrown").count()==1
+    assert editor.locator("#skMap #skBackSuit").count()==1
     # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
     # HTMLElement.innerText for these nodes. Read SVG textContent and verify
     # the actual anchors, so front/rear cannot silently flip in the GUI.
     direction=editor.locator("#skMap .sk-direction")
     labels=direction.evaluate_all(
         "(nodes)=>nodes.map(n=>({text:n.textContent.trim(),x:Number(n.getAttribute('x')),y:Number(n.getAttribute('y'))}))")
-    assert [x["text"] for x in labels]==["REAR","FRONT","RIGHT","LEFT"],labels
+    assert [x["text"] for x in labels]==["FRONT","REAR","LEFT","RIGHT"],labels
     assert labels[0]["y"]<60 and labels[1]["y"]>290,labels
     assert labels[2]["x"]<50 and labels[3]["x"]>300,labels
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
@@ -197,8 +195,8 @@ def exercise(browser,out,width,height):
         applied=command["requestId"])
     assert editor.locator("#skMotion").inner_text()=="STATIC"
     assert "ACCEPTED" in editor.locator("#skHint").inner_text()
-    # Verify all four acoustic directions against the human figure:
-    # face points DOWN; anatomical RIGHT appears screen LEFT.
+    # Verify native HRTF azimuth is unchanged while screen orientation
+    # now matches the real user: FRONT=TOP, anatomical RIGHT=SCREEN RIGHT.
     def pose(degrees):
         page.wait_for_timeout(270)
         settings={**SETTINGS,"moving":False,"stereoSpreadDegrees":0.0,
@@ -223,53 +221,75 @@ def exercise(browser,out,width,height):
             expected="skFrontSources" if degrees==0 else "skRearSources"
             assert layer==expected,(degrees,layer,expected)
         return data[0]["ax"],data[0]["ay"]
-    x,y=pose(0);assert abs(x-200)<1 and y>245,("FRONT",x,y)
-    x,y=pose(90);assert x<60 and abs(y-174)<1,("RIGHT",x,y)
-    x,y=pose(180);assert abs(x-200)<1 and y<100,("REAR",x,y)
-    x,y=pose(-90);assert x>335 and abs(y-174)<1,("LEFT",x,y)
-    # Actual pointer drag is taken from the VISIBLE L speaker at -90,
-    # toward the physical near-ellipse FRONT, not the hidden anchor.
+    x,y=pose(0);assert abs(x-200)<1 and y<100,("FRONT",x,y)
+    x,y=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
+    x,y=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
+    x,y=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
+    # All drag paths now STREAM native edits DURING the gesture. A burst
+    # must emit only one in-flight command; the most recent sample follows
+    # verified ACK+snapshot, not hundreds of SPSC entries or false UI ACKs.
+    def command_count():
+        return page.evaluate(
+            "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    def applied_settings(action,settings):
+        emit(page,"arMixBuiltinSonKuAck",{
+            "requestId":action["requestId"],"status":"APPLIED"})
+        accepted_snapshot(page,state,settings,applied=action["requestId"])
     svg=editor.locator("#skMap").bounding_box()
     assert svg
     def screen(x,y):
         return (svg["x"]+x*svg["width"]/400,
                 svg["y"]+y*svg["height"]/330)
+
+    # SVG speaker movement must affect the JUCE PCM route BEFORE mouseup.
+    # FRONT is now visual TOP and acoustic 0°, not bottom.
     source=editor.locator('.sk-src[data-index="0"]')
     sx,sy=screen(float(source.get_attribute("data-visual-x")),
                  float(source.get_attribute("data-visual-y")))
-    ex,ey=screen(200,257)
+    ex,ey=screen(200,91)
+    before=command_count()
     page.mouse.move(sx,sy)
     page.mouse.down()
     page.mouse.move(ex,ey,steps=10)
+    assert command_count()==before+1,"Speaker drag not live / SPSC flooded"
+    first=last_action(page,"nativeSonKuSet")
+    assert first["settings"]["moving"] is False
     page.mouse.up()
+    assert command_count()==before+1,"Unverified sends flooded during drag"
+    applied_settings(first,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,
+        "startAzimuthDegrees":first["settings"]["startAzimuthDegrees"]})
     dragAction=last_action(page,"nativeSonKuSet")
     assert dragAction["settings"]["moving"] is False
     assert abs(dragAction["settings"]["startAzimuthDegrees"])<5,dragAction
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":dragAction["requestId"],"status":"APPLIED"})
-    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
-        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0},
-        applied=dragAction["requestId"])
-    # Vertical knob drag must update one typed value and commit once on
-    # pointer release. Pure browser drawing cannot claim DSP APPLIED.
+    if dragAction["requestId"]!=first["requestId"]:
+        assert command_count()==before+2,"Latest-wins did not coalesce"
+        applied_settings(dragAction,{**SETTINGS,"moving":False,
+            "stereoSpreadDegrees":0.0,"startAzimuthDegrees":
+            dragAction["settings"]["startAzimuthDegrees"]})
+
+    # Same global gesture scheduler handles FOUR rotary knobs (pointer, key).
+    # The original bug sent NOTHING until pointer release.
     knob=editor.locator("#skSpeed").locator("..")
     box=knob.bounding_box();assert box
     x=box["x"]+box["width"]*.5;y=box["y"]+box["height"]*.5
-    before=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    before=command_count()
     page.mouse.move(x,y);page.mouse.down()
-    page.mouse.move(x,y-17,steps=6);page.mouse.up()
-    newactions=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet')")
-    assert len(newactions)==before+1,("Rotary did not commit once",newactions)
-    dialAction=newactions[-1]
-    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":dialAction["requestId"],"status":"APPLIED"})
-    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+    page.mouse.move(x,y-17,steps=6)
+    assert command_count()==before+1,"Rotary does not stream native edit"
+    knobFirst=last_action(page,"nativeSonKuSet")
+    page.mouse.up()
+    assert command_count()==before+1,"Rotary overran single in-flight"
+    firstSettings={**SETTINGS,"moving":False,
         "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
-        "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
-        applied=dialAction["requestId"])
+        "revolutionSeconds":knobFirst["settings"]["revolutionSeconds"]}
+    applied_settings(knobFirst,firstSettings)
+    dialAction=last_action(page,"nativeSonKuSet")
+    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
+    if dialAction["requestId"]!=knobFirst["requestId"]:
+        assert command_count()==before+2
+        applied_settings(dialAction,{**firstSettings,
+            "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]})
     # M4: native SPACE must be an actual typed ACK/readback edit.
     # No browser-only audio, no visual success before PCM applied.
     assert editor.locator(".sk-space-options button").count()==4
@@ -325,34 +345,67 @@ def exercise(browser,out,width,height):
     sceneState={**sceneState,"ambience":.70}
     accepted_snapshot(page,state,sceneState,applied=reverb["requestId"])
     assert editor.locator("#skAmbienceValue").inner_text()=="70%"
-    # P0 regression: a 250ms native readback used to reset a held distance
-    # range thumb while dragging. Exercise a REAL mouse hold, issue old
-    # readback in the middle of the gesture, then release exactly once.
+    # All ROOM sliders are realtime, independent of final pointer release.
+    # Native mock ACK is deliberately withheld while the mouse is moving:
+    # there MUST be one, and only one, SPSC edit in flight.
     slider=editor.locator("#skDistance")
     rect=slider.bounding_box();assert rect
     sy=rect["y"]+rect["height"]*.5
-    before=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    before=command_count()
     page.mouse.move(rect["x"]+rect["width"]*.20,sy)
     page.mouse.down()
-    page.mouse.move(rect["x"]+rect["width"]*.76,sy,steps=9)
+    page.mouse.move(rect["x"]+rect["width"]*.76,sy,steps=12)
     held=float(slider.input_value())
     assert held>3.0,("Distance pointer gesture not effective",held)
+    assert command_count()==before+1,"Distance changed only after release or flooded DSP"
+    distanceFirst=last_action(page,"nativeSonKuSet")
+    assert distanceFirst["settings"]["sourceDistanceMeters"]>=1.6
+    # Simulate a delayed periodic snapshot DURING the gesture: no thumb snap.
     page.wait_for_timeout(310)
     accepted_snapshot(page,state,sceneState)
     assert abs(float(slider.input_value())-held)<.15,(
-        "Native snapshot incorrectly reverted the held range thumb",
+        "Native snapshot incorrectly reverted held range thumb",
         held,slider.input_value())
+    assert editor.locator("#skDistanceValue").inner_text()==f"{held:.1f} m"
     page.mouse.up()
+    assert command_count()==before+1
+    firstState={**sceneState,
+                "sourceDistanceMeters":distanceFirst["settings"]["sourceDistanceMeters"]}
+    applied_settings(distanceFirst,firstState)
     userDistance=last_action(page,"nativeSonKuSet")
     assert userDistance["settings"]["sourceDistanceMeters"]>3.,userDistance
-    assert page.evaluate(
-      "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")==before+1
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":userDistance["requestId"],"status":"APPLIED"})
-    sceneState={**sceneState,
-                "sourceDistanceMeters":userDistance["settings"]["sourceDistanceMeters"]}
-    accepted_snapshot(page,state,sceneState,applied=userDistance["requestId"])
+    if userDistance["requestId"]!=distanceFirst["requestId"]:
+        assert command_count()==before+2,"Latest range edit not coalesced after ACK"
+        sceneState={**sceneState,
+                    "sourceDistanceMeters":userDistance["settings"]["sourceDistanceMeters"]}
+        applied_settings(userDistance,sceneState)
+    else:
+        sceneState=firstState
+    # Verify a burst of 30 values on REVERB sends bounded realtime packets
+    # before a final change. This catches accidental unbounded streaming.
+    before=command_count()
+    editor.locator("#skAmbience").evaluate("""n=>{
+      for(let i=0;i<30;i++){
+        n.value=String(i%2?i*3:30+i);
+        n.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+    }""")
+    page.wait_for_timeout(60)
+    assert command_count()==before+1,"Reverb did not stream / issued uncontrolled edits"
+    one=last_action(page,"nativeSonKuSet")
+    assert one["settings"]["ambience"]!=sceneState["ambience"]
+    # Make a FINAL distinct value while earlier PCM ACK is still pending.
+    editor.locator("#skAmbience").evaluate("""n=>{
+       n.value="71";n.dispatchEvent(new Event('input',{bubbles:true}));
+       n.dispatchEvent(new Event('change',{bubbles:true}));
+    }""")
+    assert command_count()==before+1,"Reverb flooded the native SPSC"
+    applied_settings(one,{**sceneState,"ambience":one["settings"]["ambience"]})
+    finalReverb=last_action(page,"nativeSonKuSet")
+    assert finalReverb["requestId"]!=one["requestId"],"Latest 71% edit lost"
+    assert finalReverb["settings"]["ambience"]==.71
+    sceneState={**sceneState,"ambience":.71}
+    applied_settings(finalReverb,sceneState)
     # Programmatic range edit emits native DOM input+change for keyboard /
     # automation, using the exact same transaction and ACK fences.
     editor.locator("#skDistance").evaluate("""n=>{
@@ -384,6 +437,31 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
+    # Every remaining SonKu rotary (4/4 total) is tested with INPUT ALONE,
+    # not a synthetic input+change pair that could hide release-only audio.
+    sceneState={**sceneState,"spacePreset":0}
+    for control,value,key in [
+        ("skSpeed",18.0,"revolutionSeconds"),
+        ("skSpread",45,"stereoSpreadDegrees"),
+        ("skMix",65,"spatialMix"),
+        ("skTrim",3.0,"outputTrim"),
+    ]:
+        before=command_count()
+        editor.locator("#"+control).evaluate("""(n,v)=>{
+            n.value=String(v);
+            n.dispatchEvent(new Event('input',{bubbles:true}));
+        }""",value)
+        page.wait_for_timeout(58)
+        assert command_count()==before+1,(control,"no native edit on input")
+        cmd=last_action(page,"nativeSonKuSet")
+        assert cmd["settings"][key]!=sceneState[key],(control,cmd)
+        sceneState={**sceneState,key:cmd["settings"][key]}
+        applied_settings(cmd,sceneState)
+        # Committing an already-applied value must not create a duplicate
+        # SPSC native edit.
+        editor.locator("#"+control).evaluate(
+            "n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
+        assert command_count()==before+1,(control,"duplicate final edit")
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.

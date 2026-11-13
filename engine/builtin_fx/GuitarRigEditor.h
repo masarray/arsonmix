@@ -39,12 +39,27 @@ class GuitarRigEditor final : public juce::AudioProcessorEditor,
     struct SkinButtons final : juce::LookAndFeel_V4 {
         juce::Image off,on;
         void drawButtonBackground(juce::Graphics& g,juce::Button& button,
-                                  const juce::Colour&,bool,bool down) override {
+                                  const juce::Colour&,bool hovered,bool down) override {
+            // ON and OFF are pixel-aligned full-frame skins. Hover and
+            // pressed feedback tint the inset face, NEVER the housing
+            // geometry, so even rapid mouse interaction cannot flicker.
             const auto& bitmap=button.getToggleState()?on:off;
             if(bitmap.isValid())g.drawImageWithin(bitmap,0,0,button.getWidth(),
                 button.getHeight(),juce::RectanglePlacement::stretchToFit);
             else juce::LookAndFeel_V4::drawButtonBackground(g,button,
-                juce::Colour::fromRGB(38,42,47),false,down);
+                juce::Colour::fromRGB(38,42,47),hovered,down);
+            if(!button.isEnabled())return;
+            if(hovered||down) {
+                auto face=juce::Rectangle<float>(
+                    6.f,5.f,static_cast<float>(button.getWidth()-12),
+                    static_cast<float>(button.getHeight()-10));
+                if(face.getWidth()>4.f&&face.getHeight()>4.f) {
+                    g.setColour(down?juce::Colours::black.withAlpha(0.20f):
+                        juce::Colour::fromRGB(255,197,116).withAlpha(0.12f));
+                    g.fillRoundedRectangle(face,
+                        std::min(face.getHeight()*0.45f,11.f));
+                }
+            }
         }
     };
 public:
@@ -337,7 +352,7 @@ private:
     }
     void loadArt() {
 #if defined(ARMIX_GFX_EMBED_PNG_SKINS)
-        // JUCE Image uses reference-counted image storage. Decoding 5 PNGs
+        // JUCE Image uses reference-counted image storage. Decoding 12 PNGs
         // on every floating editor reopen is avoidable startup work; the
         // first UI creation populates this thread-safe function-local cache
         // and later editors only share image handles. No audio-thread IO.

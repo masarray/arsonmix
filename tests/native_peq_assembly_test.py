@@ -71,7 +71,13 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertLess(len(png),45000)
         self.assertNotIn("mixer-native-sonku.css",self.assembled)
         sonku=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
-        self.assertIn("assets/sonku-listener-top.png",sonku)
+        # SonKu FRONT-up scene now uses a shaded inline vector back view
+        # rather than displaying the old face PNG upside-down. The legacy
+        # PNG is still packaged for historical/checkpoint builds.
+        self.assertIn('id="skListenerArt"',sonku)
+        self.assertIn('id="skCrown"',sonku)
+        self.assertIn('id="skBackSuit"',sonku)
+        self.assertIn("FRONT</text>",sonku)
         self.assertIn('arMixBuiltinSonKuAck',sonku)
         self.assertIn('nativeSonKuSet',sonku)
         self.assertNotIn("new AudioContext",sonku)
