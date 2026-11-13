@@ -100,3 +100,7 @@ Both L and R studio monitor speakers must remain separately visible and individu
 The editor must feel like a compact hardware-grade audio plugin, with tactile rotary controls and clear numeric readouts, not large web-style cards or anonymous browser sliders. Rotary pointer gestures must be bounded and single-commit; keyboard focus, range semantics and double-click default restoration remain accessible. Do not imitate or redistribute commercial plugin skins.
 
 Acceptance evidence on the real compiled native HTML bundle must cover correct Z-order, actual PNG load, two separately visible monitors at 0° spread, correct four-direction mapping, mouse drag to FRONT, knob edit single native queue/ACK and desktop/narrow screenshots. Do not translate GUI PASS into a claim of verified binaural headphone localization.
+
+
+## 2026-11-13 — perceptual acceptance and UX guardrails
+User reports correct 8/8 blind positions and 4/4 known, but insufficient FRONT/REAR distance and uneven perceived motion. Preserve the correct azimuth signs and build same-input, level-checked original-vs-V2 headphone WAVs first. No extra controls or labels before sound is validated. A future SPACE knob must be compact, discoverable and backed by native typed ACK/readback and compatible session migration; default must remain user-test-proven rather than arbitrary reverb.

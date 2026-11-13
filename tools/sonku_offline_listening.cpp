@@ -21,6 +21,10 @@ constexpr int framesPerBlock=128;
 constexpr int activeFrames=rate*2;
 constexpr int silenceFrames=rate/2;
 constexpr int rampFrames=rate/50; // 20ms, no clicks between labeled probes
+constexpr int orbitSecondsPerTurn=10;
+constexpr int orbitTurns=2;
+constexpr int orbitFrames=rate*orbitSecondsPerTurn*orbitTurns;
+static_assert(orbitFrames==960000);
 using armix::sonku::Settings;
 using armix::sonku::SonKuSpatialCore;
 struct Noise {
@@ -66,9 +70,11 @@ Settings fixed(float azimuth){
     s.stereoSpreadDegrees=0.f;s.spatialMix=1.f;s.outputTrim=.72f;
     return s;
 }
-std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths) {
+std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths,float roomAmount=0.f) {
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
+    if(!dsp.setEarlyReflectionsAmount(roomAmount))
+        throw std::runtime_error("Invalid early room amount");
     std::vector<std::uint8_t> result;
     result.reserve(static_cast<std::size_t>(azimuths.size())*
         (activeFrames+silenceFrames)*4);
@@ -96,12 +102,21 @@ std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths) {
     }
     return result;
 }
-std::vector<std::uint8_t> orbit(){
+std::vector<std::uint8_t> orbit(float roomAmount=0.f,
+    armix::sonku::SonKuRoomShape shape=armix::sonku::SonKuRoomShape::Rectangular,
+    bool clockwise=true,float lateAmount=0.f,
+    armix::sonku::SonKuReverbPreset latePreset=
+        armix::sonku::SonKuReverbPreset::StudioGlue){
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
-    Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
+    if(!dsp.setEarlyReflectionsShape(shape)||
+       !dsp.setMusicalReverbPreset(latePreset)||
+       !dsp.setEarlyReflectionsAmount(roomAmount)||
+       !dsp.setMusicalReverbAmount(lateAmount))
+        throw std::runtime_error("Invalid orbit acoustic configuration");
+    Settings s=fixed(0.f);s.moving=true;s.clockwise=clockwise;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("No 360 orbit");
-    const int frames=rate*10;
+    const int frames=orbitFrames; // two complete turns on ONE continuous audio clock
     std::vector<std::uint8_t> result;
     result.reserve(static_cast<std::size_t>(frames)*4);
     for(int base=0;base<frames;base+=framesPerBlock){
@@ -118,7 +133,64 @@ std::vector<std::uint8_t> orbit(){
         dsp.process(l.data(),r.data(),n);
         for(int i=0;i<n;++i)appendStereo(result,l[i],r[i]);
     }
+    const double finish=dsp.azimuthDegrees();
+    if(std::min(std::abs(finish),std::abs(360.-finish))>.01)
+        throw std::runtime_error("Two turns do not close acoustic orbit");
     return result;
+}
+// Original 20-second plucked-tone motif (20 half-second events, repeated on
+// both revolutions). Synthesized here rather than using protected recordings.
+// This deliberately exposes metallic late-tail coloration hidden by noise tests.
+// It uses the EXACT same SonKuSpatialCore and accepted square early room.
+std::vector<std::uint8_t> musicalOrbit(float lateAmount,
+                                       armix::sonku::SonKuReverbPreset preset){
+    SonKuSpatialCore dsp;
+    if(!dsp.prepare(rate)||
+       !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square)||
+       !dsp.setMusicalReverbPreset(preset)||
+       !dsp.setEarlyReflectionsAmount(.55f)||
+       !dsp.setMusicalReverbAmount(lateAmount))
+        throw std::runtime_error("Invalid original musical test configuration");
+    Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
+    dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("Invalid musical orbit");
+    constexpr std::array<int,20> notes{
+        57,64,60,69,62,65,69,60,64,67,
+        71,67,65,72,69,64,60,67,64,62};
+    std::array<double,notes.size()> frequencies{};
+    for(std::size_t i=0;i<notes.size();++i)
+        frequencies[i]=440.*std::pow(2.,(notes[i]-69.)/12.);
+    constexpr int noteFrames=rate/2;
+    constexpr double pi=3.14159265358979323846;
+    std::vector<std::uint8_t> bytes;
+    bytes.reserve(static_cast<std::size_t>(orbitFrames)*4);
+    for(int base=0;base<orbitFrames;base+=framesPerBlock){
+        const int n=std::min(framesPerBlock,orbitFrames-base);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<n;++i){
+            const int at=base+i;
+            const int note=(at/noteFrames)%static_cast<int>(notes.size());
+            const int position=at%noteFrames;
+            const float t=static_cast<float>(position)/noteFrames;
+            const float attack=std::clamp(position/(rate*.009f),0.f,1.f);
+            const float release=std::clamp(
+                (noteFrames-1-position)/(rate*.030f),0.f,1.f);
+            const float envelope=attack*release*std::exp(-3.2f*t);
+            const double theta=2.*pi*frequencies[static_cast<std::size_t>(note)]*
+                               static_cast<double>(position)/rate;
+            const float tonal=static_cast<float>(
+                std::sin(theta)+.27*std::sin(2.*theta)+
+                .31*std::sin(theta*1.5));
+            const float sample=.115f*envelope*tonal;
+            l[static_cast<std::size_t>(i)]=sample;
+            r[static_cast<std::size_t>(i)]=sample;
+        }
+        dsp.process(l.data(),r.data(),n);
+        for(int i=0;i<n;++i)appendStereo(bytes,l[i],r[i]);
+    }
+    const double last=dsp.azimuthDegrees();
+    if(std::min(std::abs(last),std::abs(360.-last))>.01)
+        throw std::runtime_error("Musical double orbit did not close");
+    return bytes;
 }
 const char* direction(int deg) {
     switch(deg){case 0:return "FRONT";case 90:return "RIGHT";case 180:return "REAR";
@@ -138,10 +210,37 @@ void notes(const std::filesystem::path& directory,
       <<"then 0.5s quiet. Order: FRONT, RIGHT, REAR, LEFT.\n"
       <<"sonku-blind-eight.wav: 8 x 2.5 seconds, balanced two times each.\n"
       <<"Write down FRONT/RIGHT/REAR/LEFT for trials 1..8 before opening KEY.\n"
-      <<"sonku-orbit-cw.wav: 10s one continuous 360deg clockwise orbit,\n"
-      <<"starting at FRONT, acoustic RIGHT on listener's right headphone.\n\n"
+      <<"sonku-orbit-cw-2x.wav: 20s TWO seamless continuous 360deg\n"
+      <<"clockwise turns, 10s each, FRONT at 0/10/20s. No pause at 10s.\n"
+      <<"At 2.5/12.5s RIGHT, 5/15s REAR, 7.5/17.5s LEFT.\n"
+      <<"Acoustic RIGHT is on listener's right headphone.\n\n"
       <<"If front/rear is ambiguous or internalized, note headphones and listener.\n"
-      <<"These are not room reflections, personalized HRTFs or VST3 binaries.\n";
+      <<"Baseline SonKu files have no room reflections (V1).\n"
+      <<"V2 room candidate adds four 1st-order image-source reflections\n"
+      <<"per emitter (6.4x8m fixed room) with bounded ear delays and level.\n"
+      <<"sonku-v2-room-four.wav = A/B against sonku-reference-four.wav.\n"
+      <<"sonku-v2-room-orbit-cw-2x.wav = 6.4 x 8m rectangular room.\n"
+      <<"sonku-v2-square-orbit-cw-2x.wav = 7.2 x 7.2m symmetric room.\n"
+      <<"Both candidates reuse the SAME direct HRTF/noise and 20s clock.\n"
+      <<"Square geometry is not a guarantee of circular perception.\n"
+      <<"CCW versions contain FRONT>LEFT>REAR>RIGHT>FRONT each 10s.\n"
+      <<"Compare direction-reversed tracks to isolate turn-order effects.\n"
+      <<"sonku-v3-square-glue-cw-2x.wav = approved square ROOM plus\n"
+      <<"  subdued stereo 8-line FDN, Studio Glue RT60 ~0.78s.\n"
+      <<"sonku-v3-square-airy-cw-2x.wav = same square ROOM with\n"
+      <<"  more spacious FDN Airy Chamber RT60 ~1.28s.\n"
+      <<"V2 square and V3 candidates share the exact 20s original source,\n"
+      <<"HRTF, four-wall ER, angle clock and output trim.\n"
+      <<"FDN candidate is wet-only and OFF in native plugin by default.\n"
+      <<"sonku-musical-square-base-2x.wav = original synthetic plucks,\n"
+      <<"  approved square ER with NO late reverb.\n"
+      <<"sonku-musical-square-glue-2x.wav = identical plucks with Studio Glue.\n"
+      <<"sonku-musical-square-airy-2x.wav = identical plucks with Airy Chamber.\n"
+      <<"The plucks are ORIGINAL test tones (no copyrighted composition).\n"
+      <<"Use them to judge vocal-like reverb coloration/tail musicality.\n"
+      <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
+      <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
+      <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
     key<<"OPEN ONLY AFTER LISTENING. Exact 2.5-second trial windows:\n";
@@ -159,10 +258,36 @@ int main(int argc,char** argv){
         writeWav(dir/"sonku-reference-four.wav",
             staticProbes({reference.begin(),reference.end()}));
         writeWav(dir/"sonku-blind-eight.wav",staticProbes(blind));
-        writeWav(dir/"sonku-orbit-cw.wav",orbit());
+        writeWav(dir/"sonku-orbit-cw-2x.wav",orbit());
+        // Only the bounded early-reflection stage changes between paired
+        // files. Source, directions, KEMAR HRIR, loudness trim and clock are
+        // identical. Blind front/back listening is the decision gate.
+        writeWav(dir/"sonku-v2-room-four.wav",
+            staticProbes({reference.begin(),reference.end()},.55f));
+        writeWav(dir/"sonku-v2-room-orbit-cw-2x.wav",orbit(.55f));
+        writeWav(dir/"sonku-v2-square-orbit-cw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square));
+        writeWav(dir/"sonku-orbit-ccw-2x.wav",
+                 orbit(0.f,armix::sonku::SonKuRoomShape::Rectangular,false));
+        writeWav(dir/"sonku-v2-room-orbit-ccw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Rectangular,false));
+        writeWav(dir/"sonku-v2-square-orbit-ccw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,false));
+        writeWav(dir/"sonku-v3-square-glue-cw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,true,.42f,
+                       armix::sonku::SonKuReverbPreset::StudioGlue));
+        writeWav(dir/"sonku-v3-square-airy-cw-2x.wav",
+                 orbit(.55f,armix::sonku::SonKuRoomShape::Square,true,.42f,
+                       armix::sonku::SonKuReverbPreset::AiryChamber));
+        writeWav(dir/"sonku-musical-square-base-2x.wav",
+                 musicalOrbit(0.f,armix::sonku::SonKuReverbPreset::StudioGlue));
+        writeWav(dir/"sonku-musical-square-glue-2x.wav",
+                 musicalOrbit(.42f,armix::sonku::SonKuReverbPreset::StudioGlue));
+        writeWav(dir/"sonku-musical-square-airy-2x.wav",
+                 musicalOrbit(.42f,armix::sonku::SonKuReverbPreset::AiryChamber));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
-                 <<"4 labeled + 8 blind directions + one 360 orbit\n";
+                 <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
     }catch(const std::exception& error){
         std::cerr<<"SonKu offline render FAILED: "<<error.what()<<"\n";
         return 1;
