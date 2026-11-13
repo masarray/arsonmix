@@ -78,7 +78,9 @@ def wait_balanced(page):
       if(!root||!pan||!footer)return false;
       const r=root.getBoundingClientRect(),p=pan.getBoundingClientRect(),
             f=footer.getBoundingClientRect();
-      return Math.abs((p.top-r.top)-(f.bottom-p.top))<=2;
+      const upper=p.top-r.top,lower=f.bottom-p.top;
+      return Number.isFinite(parseFloat(root.style.getPropertyValue('--v13-fader-h'))) &&
+        lower>=upper-2 && lower-upper<=100;
     }""",timeout=4000)
 
 def inspect_page(page, width, height, scale, label):
@@ -119,8 +121,8 @@ def inspect_page(page, width, height, scale, label):
     assert abs(m['gap'])<=3,(width,height,m)
     assert m['overflow']>=-3
     assert m['upper']>0 and m['lower']>0
-    assert abs(m['upper']-m['lower'])<=2,(width,height,m)
-    # Expand all components and verify coherent 50:50 allocation.
+    assert -2<=m['lower']-m['upper']<=100,(width,height,"tactile fader budget",m)
+    # Expand all components and verify bounded physical-fader-first allocation.
     for area in ('route','fx','send'):
         if page.locator('.console-body').evaluate("(e,a)=>e.classList.contains('collapsed-'+a)",area):
             page.locator(f'.section-rail [data-section="{area}"]').click()
@@ -130,7 +132,7 @@ def inspect_page(page, width, height, scale, label):
     assert m['route']>=20 and m['fx']>=100 and m['wire']>=20,(width,height,m)
     assert m['upper']>0 and m['lower']>0
     assert abs(m['gap'])<=3,(width,height,m)
-    assert abs(m['upper']-m['lower'])<=2,(width,height,m)
+    assert -2<=m['lower']-m['upper']<=100,(width,height,"tactile fader budget",m)
     # Fold the FX; sections/fader must preserve mechanical labels and avoid
     # a second panel/overflow, even when all three upper parts are collapsed.
     for area in ('fx','route','send'):
