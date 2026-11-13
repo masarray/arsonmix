@@ -102,6 +102,11 @@ def exercise(page,width,height):
 
 
 def test_wire(page):
+    # The SEND bay can be folded by default on the assembled preview.
+    # Use the actual operator rail to reveal the physical sockets.
+    body=page.locator(".console-body")
+    if "collapsed-send" in (body.get_attribute("class") or ""):
+        page.locator('.section-rail [data-section="send"]').click()
     source=page.locator('#tracks .strip[data-id="1"] .wire-node-out')
     target=page.locator('#tracks .strip[data-id="3"] .wire-node-in')
     assert source.count()==target.count()==1
