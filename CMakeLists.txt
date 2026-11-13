@@ -205,6 +205,16 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerRealtimeTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeFourWayStereoZeroCallbackHeap
       COMMAND ARMixSpeakerRealtimeTests)
+  # LMS M6 JUCE WebView control ABI tests: native schema only, no ASIO
+  # endpoint/driver opened, no second audio callback or render.
+  juce_add_console_app(ARMixSpeakerWebIntentTests PRODUCT_NAME "ArSonMix LMS Offline WebView Native Contract")
+  target_sources(ARMixSpeakerWebIntentTests PRIVATE tests/lms_juce_web_intent_test.cpp
+      src/NativeLmsWebIntent.h)
+  target_compile_features(ARMixSpeakerWebIntentTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixSpeakerWebIntentTests PRIVATE
+      juce::juce_core juce::juce_recommended_config_flags)
+  add_test(NAME LMSNativeJuceIntentSchemaAndDisconnectedReadback
+      COMMAND ARMixSpeakerWebIntentTests)
   juce_add_console_app(ARMixFactoryFxRegistryTests PRODUCT_NAME "ArSonMix Factory FX Integrity Tests")
   target_sources(ARMixFactoryFxRegistryTests PRIVATE tests/factory_fx_registry_test.cpp src/FactoryFxRegistry.h)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
