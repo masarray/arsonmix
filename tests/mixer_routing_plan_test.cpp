@@ -1025,7 +1025,10 @@ static void verifyNativeInputGainBeforeFx() {
     create[0].kind=Kind::add;create[0].position=0;
     create[0].role=ChannelRole::input;create[0].text="Mic";
     create[1].kind=Kind::add;create[1].position=1;
-    create[1].role=ChannelRole::main;create[1].text="MAIN";
+    create[1].role=ChannelRole::main;create[1].format=ProcessingFormat::stereo;
+    create[1].text="MAIN";
+    // Preserve the golden microphone equal-power PAN without adding an
+    // unrelated second mono-pan attenuation on the MAIN sink.
     const auto added=roster.edit(0,create);
     assert(added.ok());
     const auto mic=added.createdIds[0],main=added.createdIds[1];
