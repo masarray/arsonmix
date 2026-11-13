@@ -31,7 +31,7 @@ class OperatorConsoleTests(unittest.TestCase):
             self.assertIn('id="densitySelect"',compiled) # stable legacy JS contract, hidden
             self.assertIn('id="densitySelect" class="density-select" hidden',compiled)
             self.assertEqual(compiled.count(CLOSE_ICON),6)
-            self.assertIn("V29 adaptive 50/50 console",chrome)
+            self.assertIn("V60 physical-fader-priority console",chrome)
             self.assertIn("position:fixed;z-index:115;left:8px",chrome)
             self.assertIn("max-height:calc(100dvh - 16px);overflow-y:auto",chrome)
             self.assertEqual(compiled.count('id="channelIdentity"'),1)
