@@ -196,6 +196,8 @@ jobs:
           "$RUNNER_TEMP/armix-lms-pcm"
           g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_synthetic_realtime_budget_test.cpp -o "$RUNNER_TEMP/armix-lms-rt"
           "$RUNNER_TEMP/armix-lms-rt"
+          g++ -std=c++20 -O2 -DNDEBUG -fno-fast-math -Wall -Wextra -Werror tests/lms_native_output_reservation_test.cpp -o "$RUNNER_TEMP/armix-lms-port-guard"
+          "$RUNNER_TEMP/armix-lms-port-guard"
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |
