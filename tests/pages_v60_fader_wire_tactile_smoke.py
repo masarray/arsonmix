@@ -463,7 +463,7 @@ def test_adjacent_wire_whip(page):
       window.__v67AdjacentObserver=new MutationObserver(records=>{
         for(const record of records){
           const el=record.target;
-          if(!el.matches?.('path.wire-outgoing-line[data-cable-key="1-2"]'))continue;
+          if(!el.matches?.('path.wire-outgoing-line[data-cable-key="1-2"],path.wire-incoming-line[data-cable-key="1-2"]'))continue;
           const d=el.getAttribute('d');
           if(d?.includes(' L '))window.__v67AdjacentSamples.push(d);
         }
@@ -471,10 +471,20 @@ def test_adjacent_wire_whip(page):
       window.__v67AdjacentObserver.observe(document.querySelector('#wireLayer'),
         {subtree:true,attributes:true,attributeFilter:['d']});
     }""")
-    source.click()
-    target.click()
-    cable=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-2"]')
-    cable.wait_for(state="attached")
+    # Use an explicit OUT -> IN pointer drag, independent of prior focus
+    # and whether the visible jacket is an incoming or outgoing projection.
+    a=source.bounding_box()
+    b=target.bounding_box()
+    assert a and b
+    sx,sy=a["x"]+a["width"]/2,a["y"]+a["height"]/2
+    tx,ty=b["x"]+b["width"]/2,b["y"]+b["height"]/2
+    page.mouse.move(sx,sy)
+    page.mouse.down()
+    page.mouse.move(tx,ty,steps=10)
+    page.mouse.up()
+    cable=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-2"],#wireLayer path.wire-incoming-line[data-cable-key="1-2"]').first
+    assert cable.count()==1,("adjacent patch missing",page.locator('#wireLayer path[data-cable-key]').evaluate_all(
+        "nodes=>nodes.map(n=>[n.getAttribute('class'),n.dataset.cableKey])"))
     page.wait_for_timeout(780)
     samples=page.evaluate("window.__v67AdjacentSamples")
     assert len(samples)>=5,("adjacent WIRE did not animate in Chromium",len(samples))
