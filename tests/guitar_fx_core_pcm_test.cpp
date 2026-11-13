@@ -251,6 +251,6 @@ int main() {
         std::max(f21000,1.e-12)/f9000);
     assert(std::isfinite(aliasedThirdDb));
     std::cout<<"GFX ALIAS BASELINE [not quality gate] 9k -> 21k: "
-             <<aliasedThirdDb<<" dBc at 48 kHz, CAB bypassed\\n";
+             <<aliasedThirdDb<<" dBc at 48 kHz, CAB bypassed\n";
     return 0;
 }

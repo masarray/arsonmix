@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "GuitarFactoryTones.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
