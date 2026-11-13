@@ -2178,7 +2178,28 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
  if(e.target.closest?.('.wire-gain,.wire-pot')){
   const el=e.target.closest('.wire-pot')?.querySelector('.wire-gain')||e.target.closest('.wire-gain');el.value='0';handleField({target:el,type:'change'});return;
  }
- if(e.target.classList.contains('fader')){t.level=0;refreshStrip(t);say(t.name+' fader reset to 0.0 dB');}
+ const dial=e.target.closest?.('.gain-dial');
+ if(dial){
+  const gain=dial.querySelector('[data-field="trim"]');
+  if(!gain||gain.disabled)return;
+  // Same field path as a knob gesture: native ACK, no UI-only gain mutation.
+  gain.value='0';gain.dispatchEvent(new Event('input',{bubbles:true}));
+  gain.dispatchEvent(new Event('change',{bubbles:true}));
+  if(!window.__JUCE__?.backend)say(t.name+' digital input gain → unity (0.0 dB)');
+  return;
+ }
+ if(e.target.classList.contains('fader')){
+  const send=sofEnabled&&t.kind==='audio';
+  if(send&&!getSofEdge(t)){say('NO SEND · patch one WIRE first');return;}
+  // Never mutate t.level directly: in SOF the physical fader belongs to
+  // the selected EdgeId, not MAIN. Native bridge owns the accepted write.
+  const fader=e.target;
+  if(fader.disabled)return;
+  fader.value='0';fader.dispatchEvent(new Event('input',{bubbles:true}));
+  fader.dispatchEvent(new Event('change',{bubbles:true}));
+  if(!window.__JUCE__?.backend)say(t.name+(send?' SEND':' MAIN')+' fader → 0.0 dB');
+  return;
+ }
  if(e.target.classList.contains('center-pan')){t.pan=0;refreshStrip(t);say(t.name+' pan centered');}
  if(e.target.closest('.footer-label,.strip-identity-top'))openChannelIdentity(t,e.target);
 });
