@@ -352,6 +352,18 @@ int main() {
                    reverberated->prepare(rate)&&combined->prepare(rate));
             assert(reference->setSettings(base)&&reflected->setSettings(first)&&
                    reverberated->setSettings(tail)&&combined->setSettings(both));
+            // Measure the SETTLED room response, not its deliberate 10-30ms
+            // activation fades. Real operator hears the running room after
+            // ACK. Using a t=0 impulse conflates wet attenuation with the
+            // intentional click-preventing fade, falsely failing ER.
+            const int preroll=static_cast<int>(rate/5.);
+            std::vector<float> warmL(preroll,0.f),warmR(preroll,0.f);
+            for(auto* core:{reference.get(),reflected.get(),
+                            reverberated.get(),combined.get()}){
+                std::fill(warmL.begin(),warmL.end(),0.f);
+                std::fill(warmR.begin(),warmR.end(),0.f);
+                core->process(warmL.data(),warmR.data(),preroll);
+            }
             std::vector<float> dryL(n),dryR(n),erL(n),erR(n),
                                rvL(n),rvR(n),allL(n),allR(n);
             dryL[0]=dryR[0]=erL[0]=erR[0]=rvL[0]=rvR[0]=
