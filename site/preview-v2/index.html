@@ -927,9 +927,9 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
  const c=sag*4/3;
- // A short physical patch cable has little slack: scale its displacement,
- // number of visible lobes AND propagation time, continuously with length.
- // Long cables preserve the user-approved V62 520ms whip and end damping.
+ // V67: one-channel patches need a lively visible flex, not a nearly
+ // flat jacket. Keep wavelength/travel length-aware and retain the
+ // approved two-channel+ behaviour without increasing its impulse.
  const length01=Math.max(0,Math.min(1,(chord-95)/300));
  const longMix=length01*length01*(3-2*length01);
  const travel=360+160*longMix;
@@ -938,8 +938,13 @@ function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const front=1-Math.pow(1-u,1.45);
  const settle=Math.max(0,Math.min(1,(elapsedMs-travel)/WIRE_IMPACT_SETTLE_MS));
  const fade=Math.pow(1-settle,2);
+ // The V63 .27 baseline made a one-channel cable visibly lifeless.
+ // Floor its energy near the approved two-channel feel. For a very tiny
+ // span, scale against its actual chord so the curl stays contained.
+ // At >= ~280px the V66 waveform is bit-for-bit unchanged.
+ const shortEnergy=Math.max(.78,.27+.73*longMix)*Math.min(1,chord/120);
  const amplitude=Math.min(22,Math.max(14,Math.sqrt(span)*1.6))*
-  (.27+.73*longMix)*fade;
+  shortEnergy*fade;
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
  for(let i=1;i<=64;i++){
   const t=i/64,v=1-t;
@@ -1021,8 +1026,11 @@ function wireRetractPose(x0,y0,rx,ry,elapsedMs){
  const width=.59-.24*longMix;
  const sag=Math.min(44,Math.max(10,Math.sqrt(chord)*2.1))*
   Math.pow(remaining,.78);
+ // Keep the fast OUT-origin reel lively even for adjacent-channel wires.
+ // At two-channel spans and beyond the V66 motion remains unchanged.
+ const shortEnergy=Math.max(.80,.46+.54*longMix);
  const amplitude=Math.min(32,Math.max(14,Math.sqrt(chord)*1.5))*
-  (.46+.54*longMix)*Math.pow(remaining,.29)*
+  shortEnergy*Math.pow(remaining,.29)*
   Math.min(1,p/.07)*Math.min(1,chord*remaining/55);
  const recoil=amplitude*.13*catchUp*
   Math.sin(2*Math.PI*Math.max(0,p-.19)/.26);
