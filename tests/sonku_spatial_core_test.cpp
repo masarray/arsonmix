@@ -193,6 +193,62 @@ int main() {
             assert(nearEnergy>.01);
             assert(std::abs(farEnergy/nearEnergy-.2)<1.e-5);
         }
+        // M4: real native scene settings must affect the exact PCM core, not
+        // just a visual mock. Old 1.6m/Square HRTF remains the same baseline.
+        {
+            auto reference=std::make_unique<SonKuSpatialCore>();
+            auto scene=std::make_unique<SonKuSpatialCore>();
+            auto partition=std::make_unique<SonKuSpatialCore>();
+            assert(reference->prepare(rate)&&scene->prepare(rate)&&
+                   partition->prepare(rate));
+            Settings live=s;live.moving=false;live.startAzimuthDegrees=0.f;
+            live.spacePreset=2;live.sourceDistanceMeters=5.f;
+            live.roomAmount=.55f;live.ambience=.32f;
+            assert(valid(live));
+            Settings bad=live;bad.spacePreset=1;
+            assert(!valid(bad)); // 5m cannot fit inside 7.2m square
+            bad=live;bad.ambience=std::numeric_limits<float>::quiet_NaN();
+            assert(!valid(bad));
+            bad=live;bad.spacePreset=4;assert(!valid(bad));
+            assert(reference->setSettings(s));
+            assert(scene->setSettings(live)&&partition->setSettings(live));
+            constexpr int n=4096;
+            std::array<float,n> refL{},refR{},a{},b{},chunkL{},chunkR{};
+            for(int i=0;i<n;++i){
+                const float sample=.12f*std::sin(static_cast<float>(i)*.07f);
+                refL[i]=refR[i]=a[i]=b[i]=chunkL[i]=chunkR[i]=sample;
+            }
+            reference->process(refL.data(),refR.data(),n);
+            scene->process(a.data(),b.data(),n);
+            for(int i=0;i<n;i+=128)
+                partition->process(chunkL.data()+i,chunkR.data()+i,128);
+            double delta=0.;
+            for(int i=0;i<n;++i){
+                assert(std::isfinite(a[i])&&std::isfinite(b[i]));
+                assert(std::abs(a[i]-chunkL[i])<1.e-6f);
+                assert(std::abs(b[i]-chunkR[i])<1.e-6f);
+                delta+=std::abs(refL[i]-a[i])+std::abs(refR[i]-b[i]);
+            }
+            assert(delta>.1); // actual accepted-space DSP, not GUI-only
+            // Changing room size in-flight is permitted: all geometry and
+            // FDN coefficients are already bounded, no memory allocation.
+            live.spacePreset=3;live.sourceDistanceMeters=8.f;
+            assert(valid(live)&&scene->setSettings(live));
+            std::array<float,128> transitionL{},transitionR{};
+            transitionL.fill(.13f);transitionR.fill(.13f);
+            scene->process(transitionL.data(),transitionR.data(),128);
+            for(int i=0;i<128;++i)
+                assert(std::isfinite(transitionL[i])&&
+                       std::isfinite(transitionR[i])&&
+                       std::abs(transitionL[i])<1.f&&
+                       std::abs(transitionR[i])<1.f);
+            // Turning SPACE off removes all room+FDN work after smoothing.
+            live.spacePreset=0;assert(scene->setSettings(live));
+            for(int i=0;i<90;++i){
+                transitionL.fill(0.f);transitionR.fill(0.f);
+                scene->process(transitionL.data(),transitionR.data(),128);
+            }
+        }
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.
