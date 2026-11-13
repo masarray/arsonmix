@@ -117,6 +117,9 @@ jobs:
           python tests/native_v60_fader_assembly_contract.py
           python tests/approved_operator_ux_smoke.py
           python scripts/build_ui_css.py --check
+          # Fast source-only CSS owner gate: catch stacking before expensive Chromium.
+          python scripts/check_preview_css_ownership.py
+          python -m unittest discover -s tests -p approved_preview_css_owner_nonregression_test.py -v
           python tests/gui_baseline_lock_test.py
           python tests/brand_icon_contract_test.py
           python tests/brand_package_files_test.py
