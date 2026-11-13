@@ -146,15 +146,18 @@ std::vector<std::uint8_t> orbit(float roomAmount=0.f,
 // This deliberately exposes metallic late-tail coloration hidden by noise tests.
 // It uses the EXACT same SonKuSpatialCore and accepted square early room.
 std::vector<std::uint8_t> musicalOrbit(float lateAmount,
-                                       armix::sonku::SonKuReverbPreset preset){
+                                       armix::sonku::SonKuReverbPreset preset,
+                                       std::optional<Settings> nativeScene=std::nullopt){
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate)||
-       !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square)||
-       !dsp.setMusicalReverbPreset(preset)||
-       !dsp.setEarlyReflectionsAmount(.55f)||
-       !dsp.setMusicalReverbAmount(lateAmount))
+       (!nativeScene &&
+           (!dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square)||
+            !dsp.setMusicalReverbPreset(preset)||
+            !dsp.setEarlyReflectionsAmount(.55f)||
+            !dsp.setMusicalReverbAmount(lateAmount))))
         throw std::runtime_error("Invalid original musical test configuration");
-    Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
+    Settings s=nativeScene.value_or(fixed(0.f));
+    s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("Invalid musical orbit");
     constexpr std::array<int,20> notes{
         57,64,60,69,62,65,69,60,64,67,
@@ -255,6 +258,14 @@ void notes(const std::filesystem::path& directory,
       <<"distance, and separately judge actual level reduction as a cue.\n"
       <<"V4 room tests disable FDN deliberately: the existing 0.78/1.28s\n"
       <<"tail is not calibrated for large halls (no pretend big-hall RT60).\n"
+      <<"M4 musical candidate WAVs use the EXACT native SonKu settings v2:\n"
+      <<"sonku-m4-musical-square-near-2x.wav = 7.2m, 1.6m, 0.30 ambience.\n"
+      <<"sonku-m4-musical-chamber-near-2x.wav = 14.4m, 1.6m.\n"
+      <<"sonku-m4-musical-chamber-far-2x.wav = 14.4m, 5m.\n"
+      <<"sonku-m4-musical-large-near-2x.wav = 28.8m, 1.6m.\n"
+      <<"sonku-m4-musical-large-far-2x.wav = 28.8m, 8m.\n"
+      <<"Same original plucked motif + KEMAR HRTF, same 20s clock;\n"
+      <<"decay programs = 0.78 / 1.28 / 2.05 s. NOT volume-normalized.\n"
       <<"Not simulated: air absorption, floor/ceiling, personalized HRTF,\n"
       <<"direct path time-of-flight, or higher-order wall reflections.\n"
       <<"Offline candidates only, NO native GUI/session/product release.\n";
@@ -323,6 +334,21 @@ int main(int argc,char** argv){
                  orbit(.55f,SonKuRoomShape::Square,true,0.f,
                        SonKuReverbPreset::StudioGlue,
                        SonKuRoomGeometry{28.8f,28.8f,8.f}));
+        // Native scene v2 listening evidence. These use the exact core API
+        // that receives ACKed FX editor settings (no separate reverb engine).
+        auto emitScene=[&](const char* file,int preset,float distance){
+            Settings settings=fixed(0.f);
+            settings.spacePreset=preset;
+            settings.sourceDistanceMeters=distance;
+            settings.roomAmount=.55f;
+            settings.ambience=.30f;
+            writeWav(dir/file,musicalOrbit(0.f,SonKuReverbPreset::StudioGlue,settings));
+        };
+        emitScene("sonku-m4-musical-square-near-2x.wav",1,1.6f);
+        emitScene("sonku-m4-musical-chamber-near-2x.wav",2,1.6f);
+        emitScene("sonku-m4-musical-chamber-far-2x.wav",2,5.f);
+        emitScene("sonku-m4-musical-large-near-2x.wav",3,1.6f);
+        emitScene("sonku-m4-musical-large-far-2x.wav",3,8.f);
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + two uninterrupted 360 turns\n";
