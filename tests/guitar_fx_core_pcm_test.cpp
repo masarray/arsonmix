@@ -61,6 +61,32 @@ int main() {
     assert(std::fabs(l[32]-1.f)<1.e-7f);
     assert(std::fabs(r[32]-1.f)<1.e-7f);
 
+    // The original 65-tap symmetric cabinet FIR must remain linear-phase
+    // after pairwise multiply optimization. Partitioning buffers cannot
+    // change output, history ownership or the 32-sample PDC.
+    auto cabinetOnly=raw;
+    cabinetOnly.blocks[3].enabled=true;
+    for(const double rate:{44100.,48000.,96000.}){
+        assert(core.prepare(rate,cabinetOnly));
+        l.fill(0.f);r.fill(0.f);l[0]=1.f;r[0]=1.f;
+        core.processStereo(l.data(),r.data(),l.size());
+        const auto full=l;
+        for(int i=0;i<GuitarRigCore::cabinetTaps;++i) {
+            const auto left=static_cast<std::size_t>(i);
+            const auto mirror=static_cast<std::size_t>(
+                GuitarRigCore::cabinetTaps-1-i);
+            assert(std::fabs(l[left]-l[mirror])<0.000001f);
+            assert(std::isfinite(l[left]) && l[left]==r[left]);
+        }
+        assert(std::fabs(l[32])>0.02f);
+        core.reset();
+        l.fill(0.f);r.fill(0.f);l[0]=1.f;r[0]=1.f;
+        for(std::size_t offset=0;offset<l.size();offset+=64)
+            core.processStereo(l.data()+offset,r.data()+offset,64);
+        for(std::size_t i=0;i<l.size();++i)
+            assert(std::fabs(l[i]-full[i])<0.000001f);
+    }
+
     // Neither a malformed program nor unimplemented enabled modules may
     // silently claim a valid guitar DSP graph. Previous accepted core remains.
     Program invalid=factory;
