@@ -140,6 +140,45 @@
       positions:Object.fromEntries(ports.map((p,i)=>[p,s.positions[p]||defaultPosition(i)]))
     };
   }
+
+  // Explicit old logical output => inspected physical identity. Never guess
+  // ASIO ordinals. A non-selected tuned/connected output rejects atomically.
+  function reassignVerifiedPorts(s,ports,assignments) {
+    validateSystem(s);
+    if(!Array.isArray(ports)||ports.length<1||ports.length>64||
+       ports.some(p=>typeof p!=="string"||!p.trim()||p.startsWith("DEMO-"))||
+       new Set(ports).size!==ports.length)
+      throw new TypeError("verified port inventory required");
+    if(!assignments||typeof assignments!=="object"||Array.isArray(assignments)||
+       !Object.keys(assignments).length)
+      throw new Error("Choose at least one explicit output assignment");
+    const used=new Set(),routes={},defaults=defaultDsp();
+    const dsp=Object.fromEntries(ports.map(p=>[p,defaultDsp()]));
+    const positions=Object.fromEntries(ports.map((p,i)=>[p,defaultPosition(i)]));
+    for(const [source,target] of Object.entries(assignments)){
+      if(!s.ports.includes(source)||!ports.includes(target))
+        throw new Error("Unknown output in remap");
+      if(used.has(target))throw new Error("Duplicate physical port assignment");
+      used.add(target);
+      dsp[target]={...s.dsp[source],peq:(s.dsp[source].peq||[]).map(b=>({...b})),
+                   muted:true};
+      positions[target]={...s.positions[source]};
+      if(s.routes[source])routes[target]=s.routes[source];
+    }
+    for(const source of s.ports){
+      const p=s.dsp[source],index=s.ports.indexOf(source);
+      const custom=Object.keys(defaults).some(k=>
+        JSON.stringify(p[k])!==JSON.stringify(defaults[k]))||
+        JSON.stringify(s.positions[source])!==JSON.stringify(defaultPosition(index));
+      if((s.routes[source]||custom)&&
+         !Object.prototype.hasOwnProperty.call(assignments,source))
+        throw new Error("Assign "+source+" to preserve its routing, DSP or alignment");
+    }
+    const next={...s,revision:s.revision+1,applied:false,
+      ports:ports.slice(),routes,dsp,positions};
+    validateSystem(next);
+    return next;
+  }
   function withRoute(s,port,section) {
     validateSystem(s);
     if (!s.ports.includes(port)) throw new RangeError("unknown output port");
@@ -298,7 +337,7 @@
   return Object.freeze({
     MAX_WAYS,MAX_DEMO_PORTS,sectionsFor,defaultCutoffs,validateCutoffs,
     demoPorts,createSystem,validateSystem,withWays,withStereo,withCutoff,
-    withPorts,withRoute,withDsp,withPeqBand,withoutPeqBand,
+    withPorts,reassignVerifiedPorts,withRoute,withDsp,withPeqBand,withoutPeqBand,
     crossoverMagnitude,peqMagnitude,withSuggestedDelays,
     withPosition,withListener,alignment
   });

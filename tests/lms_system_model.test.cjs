@@ -61,6 +61,36 @@ test("port discovery changes never silently reuse ordinal pin assignments",()=>{
  assert.throws(()=>M.createSystem({ports:["same","same"]}),/duplicate/);
 });
 
+test("DLMS explicit ASIO reassignment retains tuning, never auto-maps or auto-unmutes",()=>{
+ let s=M.createSystem({ways:2,ports:["DEMO-01","DEMO-02","DEMO-03"]});
+ s=M.withRoute(s,"DEMO-01","L:1");
+ s=M.withDsp(s,"DEMO-01",{gainDb:-8,delayMs:23.5,
+   limiterEnabled:true,limiterThresholdDb:-14,muted:false,polarity:"invert"});
+ s=M.withPeqBand(s,"DEMO-01",0,{frequencyHz:110,q:.9,gainDb:-2});
+ s=M.withPosition(s,"DEMO-01",-5,12);
+ const ports=["ASIO/verified1","ASIO/verified2"];
+ assert.throws(()=>M.reassignVerifiedPorts(s,ports,{}),/Choose at least one/);
+ assert.throws(()=>M.reassignVerifiedPorts(s,ports,{"DEMO-02":ports[0]}),/Assign DEMO-01/);
+ assert.throws(()=>M.reassignVerifiedPorts(s,ports,{"DEMO-01":ports[0],"DEMO-02":ports[0]}),/Duplicate physical/);
+ assert.throws(()=>M.reassignVerifiedPorts(s,ports,{"DEMO-01":"untrusted"}),/Unknown output/);
+ assert.throws(()=>M.reassignVerifiedPorts(s,["DEMO-01"],{"DEMO-01":"DEMO-01"}),/verified port/);
+ const next=M.reassignVerifiedPorts(s,ports,{"DEMO-01":ports[1]});
+ assert.equal(s.routes["DEMO-01"],"L:1");
+ assert.equal(s.dsp["DEMO-01"].muted,false);
+ assert.deepEqual(next.routes,{[ports[1]]:"L:1"});
+ assert.equal(next.dsp[ports[1]].muted,true);
+ assert.equal(next.dsp[ports[1]].gainDb,-8);
+ assert.equal(next.dsp[ports[1]].delayMs,23.5);
+ assert.equal(next.dsp[ports[1]].polarity,"invert");
+ assert.equal(next.dsp[ports[1]].limiterThresholdDb,-14);
+ assert.equal(next.dsp[ports[1]].peq[0].gainDb,-2);
+ assert.equal(next.positions[ports[1]].y,12);
+ assert.deepEqual(next.dsp[ports[0]].peq,[]);
+ assert.equal(next.revision,s.revision+1);
+ assert.equal(next.applied,false);
+ assert.equal(M.validateSystem(next),true);
+});
+
 test("boundaries must be ordered and physically plausible; invalid edit rolls back",()=>{
  const s=M.createSystem({ways:3});
  assert.deepEqual(s.cutoffsHz,[120,2400]);
