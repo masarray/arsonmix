@@ -361,15 +361,20 @@ test('auto apply authenticates the published rollback asset as well as the new r
             source.indexOf("$state.phase='installing'"));
 });
 
-test('updater enumerates GitHub JSON release arrays correctly in Windows PowerShell 5.1', () => {
+test('updater paginates published releases, matching exact legacy source across pages', () => {
   const script=read('installer/ArSonMixAutoUpdate.ps1');
-  assert.doesNotMatch(script, /@\(\s*Invoke-RestMethod -Uri \$api/);
-  for (const name of ['releases','liveReleases']) {
-    assert.match(script, new RegExp('\\$'+name+'=Invoke-RestMethod -Uri \\$api'));
-  }
+  assert.match(script, /function Read-PublishedReleases\(\[hashtable\]\$headers\)/);
+  assert.match(script, /for\(\[int\]\$page=1; \$page -le 10; \$page\+\+\)/);
+  assert.match(script, /\$uri=if\(\$page -eq 1\)\{\$api\}else\{\$api\+'&page='\+\$page\}/);
+  assert.match(script, /\$batch=Invoke-RestMethod -Uri \$uri/);
+  assert.match(script, /\$rows=@\(\$batch\)/);
+  assert.equal(script.split('$releases=Read-PublishedReleases $headers').length - 1, 2);
+  assert.match(script, /\$liveReleases=Read-PublishedReleases \$headers/);
+  assert.match(script, /GitHub release history exceeds 1000 entries/);
   assert.match(script, /foreach\(\$release in \$releases\)/);
   assert.match(script, /foreach\(\$release in \$liveReleases\)/);
 });
+
 test('WebView2 error screen cannot acknowledge healthy GUI; staging retries after 20m', () => {
   const script=read('installer/ArSonMixAutoUpdate.ps1');
   const native=read('src/Main.cpp');
@@ -454,4 +459,17 @@ test('updater notice is nonmodal, dismissal cannot approve and shutdown cleans u
   assert.match(notice, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
   assert.doesNotMatch(notice, /enterModalState|runModalLoop|NativeMessageBox/);
   assert.match(s, /updateNotice_\.reset\(\);\s*#endif\s*window_\.reset\(\)/);
+});
+
+test('updater rechecks both verified installer binaries before execution and rollback', () => {
+  const script=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(script, /function Test-InstallableAssetPair\(/);
+  assert.match(script, /ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS/);
+  const lastCheck=script.indexOf('# Reverify after GitHub re-query');
+  const transition=script.indexOf("$state.phase='installing'",lastCheck);
+  const execution=script.indexOf('$upgradeOK=Run-Installer $newPath',transition);
+  assert.ok(lastCheck>=0 && transition>lastCheck && execution>transition);
+  assert.match(script.slice(lastCheck,transition), /Test-InstallableAssetPair \$newPath \$state.newAsset \$oldPath \$state.previousAsset/);
+  assert.match(script, /if\(-not \(Test-StagedAsset \$oldPath \$oldAsset\)\)/);
+  assert.match(script, /INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED/);
 });
