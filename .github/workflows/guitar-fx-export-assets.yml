@@ -1,0 +1,40 @@
+name: Guitar FX v2 art export — branch-only one shot
+# TEMPORARY: removed after deterministic production PNGs are committed.
+on:
+  push:
+    branches:
+      - feat/guitar-fx-geometry-first-juce-redesign-20261113
+    paths:
+      - 'scripts/build_guitar_fx_layered_assets.mjs'
+      - '.github/workflows/guitar-fx-export-assets.yml'
+permissions:
+  contents: write
+concurrency:
+  group: guitar-art-export
+  cancel-in-progress: true
+jobs:
+  verify-and-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Render and verify exact geometry-v2 RGBA PNGs
+        run: |
+          node --check scripts/build_guitar_fx_layered_assets.mjs
+          node scripts/build_guitar_fx_layered_assets.mjs
+          node --test tests/guitar_fx_assets_contract.test.mjs
+      - name: Commit only changed binary layers to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f -- design-references/guitar-fx/assets/gfx-*.png
+          if git diff --cached --quiet; then
+            echo "No bitmap content changes"
+          else
+            git commit -m "Guitar FX: embed second-pass original hardware material PNG art"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
