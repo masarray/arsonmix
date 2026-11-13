@@ -178,6 +178,17 @@ public:
                 edit.value=static_cast<float>(n);
             }
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_SEND_ENABLED") {
+            // Logical/offline operation only: cannot authorize installed PCM.
+            // The authoritative roster retains EdgeId and stored gain/tap.
+            const auto edgeVar=payload.getProperty("edgeId",{});
+            std::uint64_t sendId=0;
+            if(!armix::session::parseDecimal(edgeVar,sendId) || !sendId ||
+               !number.isBool())return bad("INVALID_SEND_ENABLED");
+            edit.kind=ChannelEdit::Kind::setSendEnabled;
+            edit.sendEdgeId=sendId;
+            edit.enabled=static_cast<bool>(number);
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_MUTE" || operation=="SET_SOLO") {
             if(!number.isBool())return bad("INVALID_BOOLEAN_CONTROL");
             edit.kind=operation=="SET_MUTE"?
@@ -341,6 +352,7 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
+            "SET_SEND_ENABLED",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
@@ -393,7 +405,7 @@ public:
                 set(edge,"edgeId",str(send.edgeId));
                 set(edge,"from",str(row.id.value));
                 set(edge,"to",str(send.destination.value));
-                set(edge,"signalKind","AUDIO");set(edge,"enabled",true);
+                set(edge,"signalKind","AUDIO");set(edge,"enabled",send.enabled);
                 set(edge,"gainLinear",static_cast<double>(send.gain));
                 set(edge,"primaryOutput",send.primaryOutput);
                 set(edge,"tap",send.preFader?"SPLIT_PRE":"POST_FADER");
