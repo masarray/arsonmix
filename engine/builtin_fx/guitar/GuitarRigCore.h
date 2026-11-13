@@ -186,13 +186,23 @@ private:
                 case Module::cabinet: {
                     lane.cabDelay[lane.cabCursor]=sample;
                     if(block.enabled){
+                        // The generated 65-tap linear-phase FIR is
+                        // EXACTLY symmetric. Pair mirrored samples:
+                        // 33 multiplies instead of 65 per sample, with
+                        // identical 32-sample group delay and no heap.
                         float result=0.f;
-                        std::size_t cursor=lane.cabCursor;
-                        for(float tap:ir_){
-                            result+=tap*lane.cabDelay[cursor];
-                            if(cursor==0)cursor=cabinetTaps-1;
-                            else --cursor;
+                        std::size_t lo=lane.cabCursor;
+                        std::size_t hi=lane.cabCursor+1;
+                        if(hi==cabinetTaps)hi=0;
+                        for(std::size_t tap=0;
+                            tap<static_cast<std::size_t>(cabinetLatencySamples);
+                            ++tap) {
+                            result+=ir_[tap]*(
+                                lane.cabDelay[lo]+lane.cabDelay[hi]);
+                            lo=lo==0?cabinetTaps-1:lo-1;
+                            hi=hi+1==cabinetTaps?0:hi+1;
                         }
+                        result+=ir_[cabinetLatencySamples]*lane.cabDelay[lo];
                         sample=result;
                     }else{
                         // Same fixed PDC when CAB bypass is changed offline.
