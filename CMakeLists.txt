@@ -173,6 +173,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
       COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerOutputReservationTests
+      tests/lms_native_output_reservation_test.cpp
+      engine/lms/NativeSpeakerOutputReservation.h
+      engine/lms/PreparedSpeakerSystem.h)
+  target_compile_features(ARMixSpeakerOutputReservationTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeAcceptedChannelIdExclusiveAsioOutputGuard
+      COMMAND ARMixSpeakerOutputReservationTests)
   add_executable(ARMixSpeakerRealtimeTests tests/lms_synthetic_realtime_budget_test.cpp
       engine/lms/PreparedSpeakerSystem.h)
   target_compile_features(ARMixSpeakerRealtimeTests PRIVATE cxx_std_20)
