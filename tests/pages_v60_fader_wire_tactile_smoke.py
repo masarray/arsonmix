@@ -23,8 +23,10 @@ def source_contract():
                  "gesture.unityLatched=true", "if(!ev.altKey&&Math.abs",
                  "handleField({target:g.input,type:'change'",
                  "WIRE_IMPACT_TRAVEL_MS=520,WIRE_IMPACT_SETTLE_MS=160",
-                 "const WIRE_RETRACT_FALL_MS=320,WIRE_RETRACT_HANG_MS=150,WIRE_RETRACT_REEL_MS=660",
-                 "function wireRetractPose(x0,y0,rx,ry,drop,elapsedMs)",
+                 "const WIRE_RETRACT_MS=900",
+                 "function wireRetractPose(x0,y0,rx,ry,elapsedMs)",
+                 "function wireRetractPathData(x0,y0,rx,ry,elapsedMs)",
+                 "const passed=pose.front-t; // positive only AFTER OUT-origin front passes",
                  "svg.style.clipPath='none'",
                  "const width=.65-.29*longMix",
                  "const length01=Math.max(0,Math.min(1,(chord-95)/300))",
@@ -337,9 +339,9 @@ def test_replug_and_retract(page):
     new_jacket=page.locator('#wireLayer path.wire-outgoing-line[data-cable-key="1-5"],#wireLayer path.wire-incoming-line[data-cable-key="1-5"]').first
     assert " C " in new_jacket.get_attribute("d"),"replug must settle to canonical cubic"
 
-    # Pull the receiver out into free space BETWEEN sockets (valid blank
-    # receiving bay), then release. The graph removes immediately; ONLY
-    # the nonpainting visual cable falls and reels back to its real OUT.
+    # Drag receiver to a valid blank WIRE bay. The committed graph REMOVE
+    # is immediate; the detached jacket is visual-only and actively reels
+    # back to OUT. V64 intentionally has NO falling / hanging phase.
     other=page.locator('#tracks .strip[data-id="4"] .wire-node-in')
     t=dst.bounding_box();q=other.bounding_box()
     blank_x=(cx(t)+cx(q))/2
@@ -347,57 +349,62 @@ def test_replug_and_retract(page):
     page.mouse.move(cx(t),cy(t));page.mouse.down()
     page.mouse.move(blank_x,blank_y,steps=12);page.mouse.up()
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0,\
-        "unplug must remove committed graph immediately"
+        "unplug must remove committed edge immediately"
     overlay=page.locator('#wireRetractLayer[data-wire-retract="1"]')
-    assert overlay.count()==1,"accepted unplug must leave transient falling cable"
+    assert overlay.count()==1,"accepted unplug must have transient cable"
+    assert overlay.get_attribute("data-wire-phase")=="reel"
     assert overlay.evaluate("(el)=>getComputedStyle(el).pointerEvents")=="none"
+    jacket=overlay.locator('[data-wire-retract-jacket]')
     plug=overlay.locator('[data-wire-retract-plug]')
     first=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    page.wait_for_timeout(125)
-    dropped=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    assert dropped[1]>first[1]+3,("free plug did not fall",first,dropped)
-    assert abs(dropped[0]-first[0])<1.2,("reel began while the plug was still falling",first,dropped)
-    page.wait_for_timeout(220)
-    hang=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    assert overlay.get_attribute("data-wire-phase")=="hang","no hanging phase"
-    assert hang[1]>first[1]+38 and abs(hang[0]-first[0])<1.2,\
-        ("plug did not remain freely hanging below release",first,hang)
-    assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none",\
-        "the dangling cable is still clipped to the SEND tray"
-    sag=overlay.locator('[data-wire-retract-jacket]').evaluate("""el=>{
-      const length=el.getTotalLength(),mid=el.getPointAtLength(length/2),
-            a=el.getPointAtLength(0),b=el.getPointAtLength(length);
-      return mid.y-(a.y+b.y)/2;
-    }""")
-    assert sag>15,("hanging wire lacks a visible slack belly",sag)
-    # CI/browser scheduling can exceed a short hang interval between
-    # getPointAtLength and a second DOM read. The actual DOM phase above
-    # proves the hang occurred; check stationary positions at two precise
-    # timeline samples from the *production function*, not wall-clock sleep.
-    page.wait_for_timeout(230)
-    reel=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
-    start_dist=abs(first[0]-cx(src.bounding_box()))
-    assert abs(reel[0]-cx(src.bounding_box()))<start_dist*.85,\
-        ("reeling did not draw the plug toward OUT",first,reel)
-    assert overlay.get_attribute("data-wire-phase")=="reel"
-    model=HTML[HTML.index("const WIRE_RETRACT_FALL_MS="):
+    first_path=jacket.get_attribute("d")
+    page.wait_for_timeout(175)
+    moved=plug.evaluate("(el)=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))]")
+    source_x=cx(src.bounding_box())
+    assert abs(moved[0]-source_x)<abs(first[0]-source_x)-3,\
+        ("unplug cable did not begin retracting immediately",first,moved)
+    assert moved[1]<=first[1]+2,("unplug must not drop free plug downward",first,moved)
+    assert jacket.get_attribute("d")!=first_path,"reel never animated the jacket"
+    assert overlay.evaluate("(el)=>getComputedStyle(el).clipPath")=="none"
+
+    # Evaluate the very same committed runtime production math. A wave must
+    # launch near OUT first and only later reach the moving free end. Both
+    # physical endpoints must remain welded to their sockets and the source
+    # of the wave must not reverse into IN->OUT plug-in behavior.
+    model=HTML[HTML.index("const WIRE_RETRACT_MS=900"):
                HTML.index("function startWireRetraction(")]
-    response=page.evaluate("()=>{\n"+model+"""\n
-      const a=wireRetractPose(0,0,300,0,82,180);
-      const b=wireRetractPose(0,0,300,0,82,350);
-      const held=wireRetractPose(0,0,300,0,82,445);
-      const c=wireRetractPose(0,0,300,0,82,680);
-      return {fall:a,hang:b,held,reel:c};
+    physics=page.evaluate("()=>{\n"+model+"""\n
+      const chord=400;
+      const deviation=(ms,i)=>{
+        const {d,pose}=wireRetractPathData(0,0,chord,0,ms);
+        const ys=d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+        const t=i/64;
+        const baseline=pose.sag*Math.sin(Math.PI*t);
+        return ys[2*i+1]-baseline;
+      };
+      const early=wireRetractPathData(0,0,chord,0,145);
+      const middle=wireRetractPathData(0,0,chord,0,570);
+      const finished=wireRetractPathData(0,0,chord,0,WIRE_RETRACT_MS);
+      return {
+        nearOutEarly:deviation(145,8),farEarly:deviation(145,51),
+        farLater:deviation(570,48),sourceAnchor:deviation(145,0),
+        freeAnchor:deviation(145,64),
+        halfwayX:middle.pose.x,earlyX:early.pose.x,
+        completeX:finished.pose.x,completeY:finished.pose.y,
+        startPhase:early.pose.phase,finishAmplitude:finished.pose.amplitude
+      };
     }""")
-    assert response["fall"]["wave"]==response["hang"]["wave"]==response["held"]["wave"]==0,response
-    assert abs(response["hang"]["x"]-response["held"]["x"])<.01 and \
-           abs(response["hang"]["y"]-response["held"]["y"])<.01,\
-        ("production hang pose moved before reel began",response)
-    assert response["reel"]["wave"]>1.2,response
-    assert response["fall"]["phase"]=="fall" and response["hang"]["phase"]=="hang" and response["reel"]["phase"]=="reel"
+    assert physics["nearOutEarly"]< -2,("outgoing whip did not launch at OUT",physics)
+    assert abs(physics["farEarly"])<.4,("wave appears at free end before leaving OUT",physics)
+    assert physics["farLater"]<-.25,("wavy failed to travel toward moving end",physics)
+    assert abs(physics["sourceAnchor"])<.25 and abs(physics["freeAnchor"])<.25,\
+        ("cable path cannot pull physical sockets off anchor",physics)
+    assert 0<physics["halfwayX"]<physics["earlyX"]<400,physics
+    assert abs(physics["completeX"])<.01 and abs(physics["completeY"])<.01,physics
+    assert physics["startPhase"]=="reel" and physics["finishAmplitude"]==0,physics
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
-    page.wait_for_timeout(580)
-    assert page.locator('#wireRetractLayer').count()==0,"retraction left a ghost cable"
+    overlay.wait_for(state="detached",timeout=2500)
+    assert page.locator('#wireRetractLayer').count()==0,"reel left ghost path"
     assert page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="1-5"]').count()==0
     page.evaluate("window.__v62Obs.disconnect()")
 
@@ -425,7 +432,7 @@ def run():
                 page.close()
         finally:
             browser.close()
-    print("PASS V63 Chromium: adaptive 1/2/4-channel waves, real fall-hang-reel with trailing flex, no phantom graph")
+    print("PASS V64 Chromium: accepted plug IN-to-OUT and unplug OUT-to-free-end wave while active reel, no ghost graph")
 
 
 if __name__=="__main__":
