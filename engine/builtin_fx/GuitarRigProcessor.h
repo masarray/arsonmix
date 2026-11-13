@@ -22,11 +22,14 @@ public:
     static constexpr std::uint32_t stateMagic=0x47525831; // GRX1
     static constexpr int stateHeaderBytes=12;
     static constexpr int stateBlockBytes=44;
+    static constexpr int sessionStateVersion=2; // v1 single-tone restore retained
+    static constexpr std::uint8_t useCurrentBank=255;
     static constexpr int crossfadeFrames=128;
     struct Completion {
         std::uint64_t requestId=0;
         armix::guitarfx::Program program{};
         bool applied=false;
+        std::uint8_t bank=0;
     };
 
     GuitarRigProcessor()
@@ -118,7 +121,7 @@ public:
         beforeSwitch_=core_;
         core_=next.prepared;
         fadeLeft_=crossfadeFrames;
-        (void)completed_.push({next.requestId,next.program,true});
+        (void)completed_.push({next.requestId,next.program,true,next.bank});
     }
 
     // SINGLE message-thread producer; reject malformed programs before
@@ -130,13 +133,16 @@ public:
                ++requestSerial_:0;
     }
     bool queueProgram(const armix::guitarfx::Program& program,
-                      std::uint64_t requestId) noexcept {
-        if(!ready_||!requestId||!std::isfinite(rate_)||
+                      std::uint64_t requestId,
+                      std::uint8_t bank=useCurrentBank) noexcept {
+        const auto selected=bank==useCurrentBank?activeBank_:bank;
+        if(selected>1 ||!ready_||!requestId||!std::isfinite(rate_)||
            !armix::guitarfx::GuitarRigCore::supportsProgram(program))
             return false;
         Edit next{};
         next.requestId=requestId;
         next.program=program;
+        next.bank=selected;
         if(!next.prepared.prepare(rate_,program))return false;
         // CONTROL publishes outstanding intent before AUDIO can see a packet.
         // This closes the pop->ACK gap in stateSnapshotQuiescent(); .smix
@@ -151,12 +157,22 @@ public:
     void serviceCompletions() noexcept {
         Completion next{};
         for(int i=0;i<4&&completed_.pop(next);++i) {
-            if(next.applied)accepted_=next.program;
+            if(next.applied) {
+                accepted_=next.program;
+                bankPrograms_[next.bank]=next.program;
+                activeBank_=next.bank;
+            }
             lastCompletion_=next;
             pending_.fetch_sub(1,std::memory_order_release);
         }
     }
     Completion lastCompletion() const noexcept {return lastCompletion_;}
+    std::uint8_t activeBank() const noexcept {return activeBank_;}
+    const armix::guitarfx::Program& acceptedBankProgram(
+            std::uint8_t bank) const noexcept {
+        // CONTROL only; callers must pass 0 or 1.
+        return bankPrograms_[bank<2?bank:0];
+    }
     std::uint32_t pendingProgramChanges() const noexcept {
         return pending_.load(std::memory_order_acquire);
     }
@@ -184,62 +200,79 @@ public:
     }
 
     void getStateInformation(juce::MemoryBlock& destination) override {
-        serviceCompletions(); // CONTROL: completed edits now durable.
-        // Existing FX lease serializes only on CONTROL while quiescent;
-        // this is a portable field-by-field schema, not a memcpy of a struct.
+        serviceCompletions(); // CONTROL only; host holds FX snapshot gate.
+        // GRX1 v2: magic, storage version, active bank, then two bounded
+        // program blocks. Stable field-by-field schema, not struct memcpy.
+        // Legacy v1 single-tone snapshots are accepted below.
         juce::MemoryOutputStream writer(destination,false);
         writer.writeInt(static_cast<int>(stateMagic));
-        writer.writeInt(static_cast<int>(armix::guitarfx::schemaVersion));
-        writer.writeInt(static_cast<int>(accepted_.count));
-        for(std::size_t i=0;i<accepted_.count;++i){
-            const auto& block=accepted_.blocks[i];
-            writer.writeInt(static_cast<int>(block.id));
-            writer.writeInt(static_cast<int>(block.module));
-            writer.writeInt(block.enabled?1:0);
-            for(const float value:block.values)writer.writeFloat(value);
+        writer.writeInt(sessionStateVersion);
+        writer.writeInt(static_cast<int>(activeBank_));
+        for(const auto& bank:bankPrograms_){
+            writer.writeInt(static_cast<int>(bank.count));
+            for(std::size_t i=0;i<bank.count;++i) {
+                const auto& block=bank.blocks[i];
+                writer.writeInt(static_cast<int>(block.id));
+                writer.writeInt(static_cast<int>(block.module));
+                writer.writeInt(block.enabled?1:0);
+                for(float value:block.values)writer.writeFloat(value);
+            }
         }
     }
     bool restoreUnpublishedState(const void* bytes,int length) {
-        if(published_||!bytes||length<stateHeaderBytes||
-           length>stateHeaderBytes+static_cast<int>(armix::guitarfx::maxBlocks)*
-                stateBlockBytes)return false;
+        constexpr int maxBytes=stateHeaderBytes+2*4+
+            2*static_cast<int>(armix::guitarfx::maxBlocks)*stateBlockBytes;
+        if(published_||!bytes||length<stateHeaderBytes||length>maxBytes)
+            return false;
         juce::MemoryInputStream reader(bytes,static_cast<std::size_t>(length),false);
-        if(static_cast<std::uint32_t>(reader.readInt())!=stateMagic ||
-           reader.readInt()!=static_cast<int>(armix::guitarfx::schemaVersion))
+        if(static_cast<std::uint32_t>(reader.readInt())!=stateMagic)
             return false;
-        const int count=reader.readInt();
-        if(count<2||count>static_cast<int>(armix::guitarfx::maxBlocks)||
-           length!=stateHeaderBytes+count*stateBlockBytes)return false;
-        armix::guitarfx::Program candidate{};
-        candidate.count=static_cast<std::uint8_t>(count);
-        for(auto i=0;i<count;++i){
-            auto& b=candidate.blocks[static_cast<std::size_t>(i)];
-            const int rawId=reader.readInt();
-            const int rawType=reader.readInt();
-            const int rawEnabled=reader.readInt();
-            if(rawId<=0 || rawEnabled<0 || rawEnabled>1)return false;
-            b.id=static_cast<std::uint32_t>(rawId);
-            b.module=static_cast<armix::guitarfx::Module>(rawType);
-            b.enabled=rawEnabled!=0;
-            for(auto& value:b.values)value=reader.readFloat();
+        const int storageVersion=reader.readInt();
+        if(storageVersion!=1 && storageVersion!=sessionStateVersion)return false;
+        int selected=0;
+        if(storageVersion==sessionStateVersion) {
+            selected=reader.readInt();
+            if(selected<0||selected>1)return false;
         }
-        if(!reader.isExhausted()||
-           !armix::guitarfx::GuitarRigCore::supportsProgram(candidate))
-            return false;
-        // A future-only module may be stored disabled, but a program that
-        // requires unsupported enabled DSP is never admitted as live audio.
-        for(std::size_t i=0;i<candidate.count;++i)
-            if(candidate.blocks[i].enabled &&
-               !armix::guitarfx::GuitarRigCore::supported(candidate.blocks[i].module))
+        std::array<armix::guitarfx::Program,2> candidateBanks{};
+        int byteCount=storageVersion==1?8:stateHeaderBytes;
+        const int entries=storageVersion==1?1:2;
+        for(int bank=0;bank<entries;++bank){
+            const int count=reader.readInt();
+            byteCount+=4;
+            if(count<2||count>static_cast<int>(armix::guitarfx::maxBlocks))
                 return false;
+            // Reject corrupt sizes before reading any DSP fields.
+            if(length<byteCount+count*stateBlockBytes)return false;
+            auto& candidate=candidateBanks[static_cast<std::size_t>(bank)];
+            candidate.count=static_cast<std::uint8_t>(count);
+            for(int i=0;i<count;++i){
+                auto& block=candidate.blocks[static_cast<std::size_t>(i)];
+                const int rawId=reader.readInt();
+                const int rawType=reader.readInt();
+                const int rawEnabled=reader.readInt();
+                if(rawId<=0||rawEnabled<0||rawEnabled>1)return false;
+                block.id=static_cast<std::uint32_t>(rawId);
+                block.module=static_cast<armix::guitarfx::Module>(rawType);
+                block.enabled=rawEnabled!=0;
+                for(auto& value:block.values)value=reader.readFloat();
+            }
+            byteCount+=count*stateBlockBytes;
+            if(!armix::guitarfx::GuitarRigCore::supportsProgram(candidate))
+                return false;
+        }
+        if(byteCount!=length||!reader.isExhausted())return false;
+        if(storageVersion==1)candidateBanks[1]=candidateBanks[0];
+        const auto& chosen=candidateBanks[static_cast<std::size_t>(selected)];
         if(ready_){
-            // Only before publication, and on CONTROL. Preserve the previous
-            // accepted program and core on any failed restore.
+            // CONTROL and unpublished only. No partial commit on bad state.
             armix::guitarfx::GuitarRigCore replacement{};
-            if(!replacement.prepare(rate_,candidate))return false;
+            if(!replacement.prepare(rate_,chosen))return false;
             core_=replacement;
         }
-        accepted_=candidate;
+        bankPrograms_=candidateBanks;
+        activeBank_=static_cast<std::uint8_t>(selected);
+        accepted_=chosen;
         return true;
     }
     void setStateInformation(const void* data,int size) override {
@@ -250,6 +283,7 @@ private:
         std::uint64_t requestId=0;
         armix::guitarfx::Program program{};
         armix::guitarfx::GuitarRigCore prepared{};
+        std::uint8_t bank=0;
     };
     armix::guitarfx::GuitarRigCore core_{};
     armix::guitarfx::GuitarRigCore beforeSwitch_{};
@@ -263,6 +297,11 @@ private:
     int fadeLeft_=0; // audio-owned
     armix::guitarfx::Program accepted_=
         armix::guitarfx::GuitarRigCore::startingProgram();
+    std::array<armix::guitarfx::Program,2> bankPrograms_{{
+        armix::guitarfx::GuitarRigCore::startingProgram(),
+        armix::guitarfx::GuitarRigCore::startingProgram()
+    }};
+    std::uint8_t activeBank_=0; // CONTROL only, after ACK
     std::atomic<float> inputPeak_{0.f},outputPeak_{0.f};
     std::atomic<std::uint64_t> processedBlocks_{0};
     double rate_=0.;
