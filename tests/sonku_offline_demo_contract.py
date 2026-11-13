@@ -39,6 +39,8 @@ spaciousNear=read("sonku-v4-spacious-near-orbit-cw-2x.wav",960000)
 spaciousFar=read("sonku-v4-spacious-far-orbit-cw-2x.wav",960000,60,10000)
 largeNear=read("sonku-v4-large-near-orbit-cw-2x.wav",960000)
 largeFar=read("sonku-v4-large-far-orbit-cw-2x.wav",960000,40,8000)
+spaciousMusical=read("sonku-v5-spacious-musical-orbit-cw-2x.wav",960000,40,8000)
+largeMusical=read("sonku-v5-large-musical-orbit-cw-2x.wav",960000,30,7000)
 # Same source and identical 20s orbital clock: room width only changes
 # path delay/level; source distance only changes geometric pressure.
 def pcm_delta(a,b):
@@ -47,6 +49,10 @@ assert pcm_delta(spaciousNear,squareOrbit)>1500,"Spacious room is identical to a
 assert pcm_delta(largeNear,spaciousNear)>1500,"Large and spacious room are identical"
 assert pcm_delta(spaciousFar,spaciousNear)>1500,"5m source ignored"
 assert pcm_delta(largeFar,largeNear)>1500,"8m source ignored"
+# In V5 the dry and wet candidates retain identical geometry/source and
+# differ only by the prepared late FDN, rather than a louder artificial hall.
+assert pcm_delta(spaciousMusical,spaciousFar)>700,"Spacious ambience inaudible in PCM"
+assert pcm_delta(largeMusical,largeFar)>700,"Large ambience inaudible in PCM"
 def energy(a):
     return sum(abs(int(x)) for x in a[300000:440000])
 assert .08<energy(spaciousFar)/energy(spaciousNear)<.75,"Unexpected 5m distance pressure"
@@ -89,7 +95,8 @@ assert sum(abs(x) for x in orbit[220000:230000])>1000
 # Verify there is no mute, edit or source reset at the 10s handoff.
 # Stereo interleaved: 48000 samples = 1 second, 2 PCM ints per frame.
 for audio in (orbit,v2orbit,squareOrbit,reverse,reverseRoom,reverseSquare,
-              glue,airy,spaciousNear,spaciousFar,largeNear,largeFar):
+              glue,airy,spaciousNear,spaciousFar,largeNear,largeFar,
+              spaciousMusical,largeMusical):
     for second in (9,10,11,19):
         begin=(second*48000+4000)*2
         assert sum(abs(x) for x in audio[begin:begin+9600])>400,(
