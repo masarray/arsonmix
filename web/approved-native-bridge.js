@@ -407,7 +407,7 @@
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
     const current=controller?.state()?.current,source=nativeIdFor(t);
-    const matches=scope?.tracks?.filter(x=>x.name===scope.sofTarget&&
+    const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
       (x.kind==="bus"||x.kind==="fx"))||[];
     if(!current?.admitted||!source||matches.length!==1)return null;
     const dest=nativeIdFor(matches[0]);
@@ -635,7 +635,7 @@
         const t=scope?.tracks?.find(x=>x.id===tId);
         if(t&&scope?.sofEnabled)scope.refreshStrip?.(t);
       }
-      if(scope?.sofEnabled && local.destId===scope?.tracks?.find(x=>x.name===scope.sofTarget)?.id){
+      if(scope?.sofEnabled && local.destId===scope?.sofTargetId){
         const t=scope?.tracks?.find(x=>x.id===tId);
         const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
         if(t&&slider&&document.activeElement!==slider){
@@ -3839,11 +3839,26 @@
     },
     consumeDoubleClick(event,t) {
       if (!connected)return false;
+      // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
+      // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.classList.contains("fader")){
+        if(scope?.sofEnabled&&t?.kind==="audio"){
+          const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
+          if(!edge||id===undefined||
+             !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
+            status("SOF unity reset unavailable · select one admitted SEND");
+          return true;
+        }
         if((m4ControlIsOwner()&&m4Verified()) ||
            (t?.kind==="master"&&(m4Verified()||nativeMasterReady())))
           sendM4Control(t?.kind==="master"?"masterGain":"faderDb",t,0);
         else intent("SET_FADER",t,{valueDb:0});
+      }
+      else if(event.target.closest?.(".gain-dial")){
+        if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
+          status("INPUT GAIN unity reset requires native PCM admission");
+        else intent("SET_INPUT_GAIN",t,{valueDb:0});
+        return true;
       }
       else if(event.target.classList.contains("center-pan")){
         if(m4ControlIsOwner()&&m4Verified())sendM4Control("pan",t,0);

@@ -34,6 +34,10 @@ def run() -> None:
         assert 'id="gainView"' in source and 'id="fxView"' in source
         assert 'id="mixContext"' in source
         assert "Never auto-patch or remove a WIRE at minimum send level." in source
+        assert "const send=sofEnabled&&t.kind==='audio';" in source, (
+            "Fader reset must inspect active SEND context instead of overwriting MAIN")
+        assert "nativeGainAvailable===true" in source, (
+            "Native input gain should be available only with installed capability")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -62,6 +66,14 @@ def run() -> None:
                     }""")
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
+                    # Double-click must use the same gain parameter path and restore unity.
+                    first.locator(".gain-dial").dblclick()
+                    assert "+0.0 dB" in first.locator(".gain-readout").inner_text()
+                    assert knob.input_value() == "0"
+                    knob.evaluate("""el => {
+                      el.value = '6.5';
+                      el.dispatchEvent(new Event('input', {bubbles:true}));
+                    }""")
 
                     fx.click()
                     assert first.locator(".is-gain-view").count() == 0
@@ -88,11 +100,37 @@ def run() -> None:
                     assert "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in sprite, sprite
                     assert tap.is_disabled()
 
-                    # Keep FX slots/trim values when returning from SENDS.
+                    # SOF target is a stable strip ID, never a BUS display name.
+                    target_select = page.locator("#sofTarget")
+                    initial_id = target_select.input_value()
+                    assert initial_id.isdigit(), (width, initial_id)
+                    expected_name = target_select.locator("option:checked").inner_text()
+                    assert page.locator("#mixContext").inner_text() == "SEND MIX → " + expected_name
+                    assert first.locator(".mx-sof-on-key").get_attribute("aria-pressed") == "false", (
+                        "An absent SEND is not secretly ON")
+
+                    # Returning to MAIN must keep FX/GAIN selection and actual fader mix.
                     page.locator("#sofToggle").click()
                     assert page.locator("#mixContext").inner_text() == "MAIN MIX"
                     gain.click()
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
+
+                    # Rename the selected BUS in the native-style identity card.
+                    # SOF selection must follow its ID, not jump back to Bus A.
+                    page.locator("#viewFilter").select_option("bus")
+                    selected_bus = page.locator('#tracks .strip[data-id="' + initial_id + '"]')
+                    assert selected_bus.count() == 1, (width, initial_id)
+                    selected_bus.locator(".strip-identity-top").dblclick()
+                    page.locator("#identityName").fill("STAGE MONITOR A")
+                    page.locator("#identitySave").click()
+                    assert target_select.input_value() == initial_id
+                    assert target_select.locator("option:checked").inner_text() == "STAGE MONITOR A"
+                    page.locator("#viewFilter").select_option("all")
+                    page.locator("#sofToggle").click()
+                    assert page.locator("#mixContext").inner_text() == "SEND MIX → STAGE MONITOR A"
+                    assert first.locator(".is-sof-view").get_attribute("data-sof-target") == initial_id
+                    page.locator("#sofToggle").click()
+                    gain.click()
 
                     # Every visible cell remains in its strip bounds.
                     geometry = first.locator(".gain-view-body").evaluate("""el => {
