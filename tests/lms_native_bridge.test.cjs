@@ -32,6 +32,12 @@ function fixture(withBackend){
  return {backend,handlers,events,dom,launch,root,click,change,consume,
   open(){dom["launch:click"]()}};
 }
+function nativeProjection(design) {
+ return {...design,outputs:design.outputs.map(x=>({
+  ...x,limiterThresholdDb:x.limiterThresholdDb===null?-6:x.limiterThresholdDb,
+  voltageModelPresent:false
+ }))};
+}
 function inspection(id,{ready=true,outputDisarmed=true,revision="0",
   design=null,epoch="21",graph="42"}={}){
  return {schema:"arsonmix.lms.native-inspection.v1",requestId:id,
@@ -78,6 +84,7 @@ test("native validation requires inspected physical pins, disarmed outputs and l
  assert.equal(sent.design.outputs[0].portIdentity,port);
  assert.equal(sent.design.outputs[0].sourceSide,0);
  assert.equal(sent.design.outputs[0].muted,true);
+ assert.equal(sent.design.outputs[0].limiterThresholdDb,null);
  assert.equal(sent.expectedDesignRevision,"0");
  assert.equal(sent.deviceEpoch,"21");
  assert.equal(sent.graphRevision,"42");
@@ -92,7 +99,7 @@ test("native validation requires inspected physical pins, disarmed outputs and l
  app.handlers.arMixLmsInspection(inspection(refresh.requestId,{
   revision:"1",
   design:{ways:sent.design.ways,stereo:sent.design.stereo,
-    cutoffsHz:sent.design.cutoffsHz,outputs:sent.design.outputs}
+    cutoffsHz:sent.design.cutoffsHz,outputs:nativeProjection(sent.design).outputs}
  }));
  assert.ok(app.root.innerHTML.includes("VALIDATED DRAFT"));
  assert.ok(app.root.innerHTML.includes("hardware NOT applied"));
@@ -108,6 +115,9 @@ test("native readback must match EVERY output DSP field before VALIDATED",()=>{
   ["delay",x=>{x.delayMs=48.25;}],
   ["polarity",x=>{x.polarityInverted=true;}],
   ["limiter",x=>{x.limiterEnabled=true;}],
+  ["digital ceiling",x=>{x.limiterThresholdDb=-17.25;}],
+  ["missing digital ceiling",x=>{delete x.limiterThresholdDb;}],
+  ["unacknowledged voltage profile",x=>{x.voltageModelPresent=true;}],
   ["eq insertion",x=>{x.peq=[{frequencyHz:1000,q:1,gainDb:6,enabled:true}];}],
   ["missing eq",x=>{delete x.peq;}],
   ["missing delay",x=>{delete x.delayMs;}],
@@ -127,7 +137,7 @@ test("native readback must match EVERY output DSP field before VALIDATED",()=>{
    designRevision:"1",errorCode:"NONE"
   });
   const checked=app.consume("arMixLmsInspect");
-  const actual=structuredClone(sent.design);
+  const actual=nativeProjection(structuredClone(sent.design));
   mutate(actual.outputs[0]);
   app.handlers.arMixLmsInspection(inspection(checked.requestId,{
    revision:"1",design:actual
@@ -151,7 +161,7 @@ test("native readback cannot validate when hardware is armed",()=>{
  });
  const checked=app.consume("arMixLmsInspect");
  app.handlers.arMixLmsInspection(inspection(checked.requestId,{
-  revision:"1",design:sent.design,outputDisarmed:false
+  revision:"1",design:nativeProjection(sent.design),outputDisarmed:false
  }));
  assert.ok(!app.root.innerHTML.includes("VALIDATED DRAFT"));
 });

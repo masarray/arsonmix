@@ -131,7 +131,16 @@ inline bool decode(const juce::var& args,OfflineIntent& out) {
             return false;
         row.limiterEnabled=intendsLimiter;
         row.confirmedSpeakerProfile=false;
-        row.ceilingDbfs=-6.; // calibration NOT supplied by the browser
+        // Optional electronic-only DIGITAL ceiling is a fully revisioned
+        // draft value, never proof of voltage / RMS / transducer protection.
+        // Null means the explicit -6 dBFS default, not an inferred profile.
+        const auto ceiling=raw.getProperty("limiterThresholdDb",{});
+        if(ceiling.isVoid())row.ceilingDbfs=-6.;
+        else if(!finiteNumber(ceiling,row.ceilingDbfs) ||
+                row.ceilingDbfs< -60. || row.ceilingDbfs>0.)return false;
+        // A browser cannot furnish trusted manufacturer/measurement models.
+        if(raw.getDynamicObject()->hasProperty(juce::Identifier("voltageModel")))
+            return false;
         const auto eq=raw.getProperty("peq",{});
         const auto* bands=eq.getArray();
         if(!bands||bands->size()>8)return false;
@@ -201,6 +210,8 @@ inline juce::var inspection(const TrustedSpeakerDeviceView& device,
             route->setProperty("delayMs",p.delayMs);
             route->setProperty("polarityInverted",p.polarityInverted);
             route->setProperty("limiterEnabled",p.limiterEnabled);
+            route->setProperty("limiterThresholdDb",p.ceilingDbfs);
+            route->setProperty("voltageModelPresent",p.voltageModel.has_value());
             // Return exactly the bounded parameter values that were prepared
             // by native DSP. The UI verifies these BEFORE claiming VALIDATED.
             juce::Array<juce::var> bands;

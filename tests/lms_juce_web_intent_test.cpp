@@ -31,9 +31,26 @@ int main(){
     assert(accepted.proposed.outputs.size()==1);
     assert(accepted.proposed.outputs[0].polarityInverted);
     assert(accepted.proposed.outputs[0].mute);
+    assert(accepted.proposed.outputs[0].ceilingDbfs==-6.);
+    assert(!accepted.proposed.outputs[0].voltageModel.has_value());
     assert(!accepted.proposed.outputs[0].confirmedSpeakerProfile);
     assert(accepted.proposed.outputs[0].peq.size()==1);
     assert(accepted.proposed.outputs[0].peq[0].enabled);
+    auto withCeiling=juce::JSON::parse(juce::JSON::toString(valid));
+    auto ceilingDesign=withCeiling.getProperty("design",{});
+    auto ceilingRows=ceilingDesign.getProperty("outputs",{});
+    auto& ceilingRow=ceilingRows.getArray()->getReference(0);
+    ceilingRow.getDynamicObject()->setProperty("limiterThresholdDb",-12.5);
+    OfflineIntent ceilingIntent;
+    assert(decode(withCeiling,ceilingIntent));
+    assert(ceilingIntent.proposed.outputs[0].ceilingDbfs==-12.5);
+    ceilingRow.getDynamicObject()->setProperty("limiterThresholdDb",-61.);
+    assert(!decode(withCeiling,ceilingIntent));
+    ceilingRow.getDynamicObject()->setProperty("limiterThresholdDb","-12");
+    assert(!decode(withCeiling,ceilingIntent));
+    ceilingRow.getDynamicObject()->setProperty("limiterThresholdDb",-12.5);
+    ceilingRow.getDynamicObject()->setProperty("voltageModel",true);
+    assert(!decode(withCeiling,ceilingIntent));
     auto reject=[&](const char* key,juce::var value){
         auto changed=juce::JSON::parse(juce::JSON::toString(valid));
         changed.getDynamicObject()->setProperty(key,value);
@@ -83,6 +100,8 @@ int main(){
     assert(row.getProperty("delayMs",{})==juce::var(0.34));
     assert(row.getProperty("polarityInverted",{})==juce::var(true));
     assert(row.getProperty("limiterEnabled",{})==juce::var(false));
+    assert(row.getProperty("limiterThresholdDb",{})==juce::var(-6.));
+    assert(row.getProperty("voltageModelPresent",{})==juce::var(false));
     const auto peq=row.getProperty("peq",{}).getArray();
     assert(peq&&peq->size()==1);
     const auto& eq=peq->getReference(0);

@@ -48,6 +48,7 @@ function proposedOutputs() {
    gainDb:dsp.gainDb,delayMs:dsp.delayMs,
    muted:dsp.muted,polarityInverted:dsp.polarity==="invert",
    limiterEnabled:dsp.limiterEnabled,
+   limiterThresholdDb:dsp.limiterThresholdDb,
    peq:(dsp.peq||[]).map(b=>({
     frequencyHz:b.frequencyHz,q:b.q,gainDb:b.gainDb,enabled:b.enabled
    }))
@@ -106,6 +107,8 @@ function sameNativeReadback(snapshot,pending) {
    x.gainDb===p.gainDb&&x.delayMs===p.delayMs&&
    x.polarityInverted===p.polarityInverted&&
    x.limiterEnabled===p.limiterEnabled&&
+   x.limiterThresholdDb===(p.limiterThresholdDb===null?-6:p.limiterThresholdDb)&&
+   x.voltageModelPresent===false&&
    Array.isArray(x.peq)&&x.peq.length===p.peq.length&&
    p.peq.every((band,i)=>bandEqual(x.peq[i],band))));
 }
@@ -376,7 +379,7 @@ function dspPage() {
     '<div class="lms-field"><label for="lms-thr">Digital threshold (dBFS)</label>'+
     '<input class="lms-number" id="lms-thr" data-dsp="limiterThresholdDb" type="number" min="-60" max="0" step=".1" value="'+
     (p.limiterThresholdDb===null?'':p.limiterThresholdDb)+'" placeholder="Unset"/></div></div>'+
-    '<p class="lms-warn">Digital dBFS is not loudspeaker power or excursion. Native soft-knee/peak/RMS protection, amplifier sensitivity and speaker profiles require field calibration before hardware can ever be armed. No DSP writes or output-enable API exists here.</p>';
+    '<p class="lms-warn">Digital dBFS is not speaker power or excursion. Native sample-peak/RMS voltage modelling runs only in isolated diagnostics; measured DAC, amplifier and driver calibration plus physical FAT are still required. This page cannot arm loudspeakers.</p>';
  }
  return '<div class="lms-grid">'+
   '<section class="lms-panel"><h3>Section destinations <span>Hardware port unavailable</span></h3>'+
