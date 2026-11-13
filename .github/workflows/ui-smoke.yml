@@ -209,6 +209,19 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Actual native picker insert, ACK/readback, editor open, UI controls
         run: python tests/approved_native_sonku_smoke.py
+      - name: Render original 8D-SonKu headphone candidate through exact native HRTF
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-listening
+          /tmp/sonku-listening sonku-listening
+          python tests/sonku_offline_demo_contract.py sonku-listening
+      - name: Publish 8D-SonKu reproducible listening WAVs and blind answer key
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Headphone-Audio-${{ github.run_id }}
+          path: sonku-listening/*
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Keep verified 8D-SonKu editor screenshots
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
