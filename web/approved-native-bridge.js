@@ -407,7 +407,7 @@
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
     const current=controller?.state()?.current,source=nativeIdFor(t);
-    const matches=scope?.tracks?.filter(x=>x.name===scope.sofTarget&&
+    const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
       (x.kind==="bus"||x.kind==="fx"))||[];
     if(!current?.admitted||!source||matches.length!==1)return null;
     const dest=nativeIdFor(matches[0]);
@@ -635,7 +635,7 @@
         const t=scope?.tracks?.find(x=>x.id===tId);
         if(t&&scope?.sofEnabled)scope.refreshStrip?.(t);
       }
-      if(scope?.sofEnabled && local.destId===scope?.tracks?.find(x=>x.name===scope.sofTarget)?.id){
+      if(scope?.sofEnabled && local.destId===scope?.sofTargetId){
         const t=scope?.tracks?.find(x=>x.id===tId);
         const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
         if(t&&slider&&document.activeElement!==slider){
