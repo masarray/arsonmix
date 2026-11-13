@@ -824,13 +824,18 @@
  pointer-events:stroke!important;fill:none!important;stroke:transparent!important;
  stroke-width:12px!important;stroke-linecap:butt!important;cursor:pointer;
 }
+/* Selected WIRE = entire luminous physical jacket, not an outer halo.
+   The transparent hitbox remains nonpainting (including its endpoint gaps). */
 #wireLayer path.wire-interaction-hit.is-wire-selected{
- stroke:rgba(136,217,241,.19)!important;
+ stroke:transparent!important;
 }
 #wireLayer path.wire-incoming-line.is-wire-selected,
 #wireLayer path.wire-outgoing-line.is-wire-selected,
 #wireLayer path.wire-context-line.is-wire-selected{
- stroke-width:3px!important;opacity:1!important;
+ stroke:color-mix(in srgb,var(--wire-selected-hue,#88dfff) 54%,#ffffff 46%)!important;
+ stroke-width:5.6px!important;opacity:1!important;
+ stroke-dasharray:none!important;
+ filter:none!important;
 }
 /* Source selection is temporary intent, while cable connection derives only
    from the committed route model. No phantom lit output without an edge. */
