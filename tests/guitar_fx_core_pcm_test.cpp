@@ -132,6 +132,65 @@ int main() {
     }
     assert(transientDifference>0.0001); // history is materially preserved
 
+    // A professional stereo gate is a LINKED detector, not two competing
+    // channel gates. A quiet L lane must stay at exactly the same gain
+    // reduction as a louder R lane; the processed stereo ratio is preserved.
+    Program gateOnly=factory;
+    gateOnly.blocks[1].enabled=false; // isolate gate from nonlinear stages
+    gateOnly.blocks[2].enabled=false;
+    gateOnly.blocks[3].enabled=false; // same fixed 32-sample dry PDC
+    gateOnly.blocks[0].values[0]=0.5f; // -55 dB
+    gateOnly.blocks[0].values[1]=0.0f;
+    gateOnly.blocks[0].values[2]=0.0f;
+    GuitarRigCore stereoGate{};
+    assert(stereoGate.prepare(48000.,gateOnly));
+    std::array<float,4096> weak{},strong{};
+    weak.fill(0.0008f);strong.fill(0.08f);
+    stereoGate.processStereo(weak.data(),strong.data(),weak.size());
+    for(std::size_t i=512;i<weak.size();++i) {
+        assert(std::isfinite(weak[i])&&std::isfinite(strong[i]));
+        assert(strong[i]>0.07f);
+        assert(std::fabs(weak[i]/strong[i]-0.01f)<0.000002f);
+    }
+    // Hold is truly implemented in DSP. With a threshold of -30 dB and
+    // a quiet sustained tail, the no-hold gate closes while the linked
+    // 120ms hold gate remains open. The release knob changes real audio
+    // attenuation, not merely the appearance of the GUI.
+    gateOnly.blocks[0].values[0]=1.f;
+    auto longHold=gateOnly;
+    longHold.blocks[0].values[1]=1.f;
+    auto slowClose=gateOnly;
+    slowClose.blocks[0].values[2]=1.f;
+    GuitarRigCore noHold{},held{},slow{};
+    assert(noHold.prepare(48000.,gateOnly));
+    assert(held.prepare(48000.,longHold));
+    assert(slow.prepare(48000.,slowClose));
+    std::array<float,256> loudA{},loudB{};
+    loudA.fill(0.1f);loudB.fill(0.1f);
+    for(int block=0;block<12;++block){ // 64ms to establish open gate
+        auto a=loudA,b=loudB;noHold.processStereo(a.data(),b.data(),a.size());
+        a=loudA;b=loudB;held.processStereo(a.data(),b.data(),a.size());
+        a=loudA;b=loudB;slow.processStereo(a.data(),b.data(),a.size());
+    }
+    std::array<float,4096> tailNoHold{},tailHold{},tailSlow{};
+    std::array<float,4096> tailR1{},tailR2{},tailR3{};
+    tailNoHold.fill(0.005f);tailHold.fill(0.005f);tailSlow.fill(0.005f);
+    tailR1=tailNoHold;tailR2=tailHold;tailR3=tailSlow;
+    noHold.processStereo(tailNoHold.data(),tailR1.data(),tailNoHold.size());
+    held.processStereo(tailHold.data(),tailR2.data(),tailHold.size());
+    slow.processStereo(tailSlow.data(),tailR3.data(),tailSlow.size());
+    const auto finalSample=tailNoHold.size()-64u;
+    assert(tailHold[finalSample]>0.004f);
+    assert(tailNoHold[finalSample]<0.0010f);
+    assert(tailSlow[finalSample]>tailNoHold[finalSample]*3.f);
+    assert(tailHold[finalSample]==tailR2[finalSample]);
+    // The normalized control schema remains unchanged: old GRX1 v1
+    // programs with reserved zeros are still valid first-class tones.
+    assert(validate(gateOnly)==ProgramError::none);
+    assert(GuitarRigCore::supportsProgram(gateOnly));
+    assert(validate(longHold)==ProgramError::none);
+    assert(validate(slowClose)==ProgramError::none);
+
     // Neither a malformed program nor unimplemented enabled modules may
     // silently claim a valid guitar DSP graph. Previous accepted core remains.
     Program invalid=factory;
