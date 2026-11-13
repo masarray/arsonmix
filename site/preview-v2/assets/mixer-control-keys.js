@@ -5,7 +5,7 @@
   'use strict';
   const SELECTOR='.console-body .mx-hw-row>button.mx-hw-key';
   const COLORS=Object.freeze({
-    mute:'255,78,90',solo:'255,207,68',cue:'101,210,236'
+    mute:'255,78,90',solo:'255,207,68',pfl:'101,210,236'
   });
   const records=new WeakMap();
   const escapeXml=value=>String(value).replace(/[&<>"']/g,ch=>({
@@ -78,7 +78,7 @@
     if(records.has(button)){if(button.dataset.hwKind!=='mute')render(button);return;}
     const semantic=button.dataset.hwKind;
     if(!Object.hasOwn(COLORS,semantic))return;
-    const legend=({mute:'MUTE',solo:'SOLO',cue:'PFL'})[semantic];
+    const legend=({mute:'MUTE',solo:'SOLO',pfl:'PFL'})[semantic];
     if(!button.hasAttribute('aria-label'))button.setAttribute('aria-label',legend);
     // MUTE uses lightweight DOM + CSS; no SVG, image asset, or resize redraw.
     if(semantic==='mute'){
