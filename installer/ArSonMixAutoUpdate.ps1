@@ -18,6 +18,9 @@ $local=$env:LOCALAPPDATA
 if([string]::IsNullOrWhiteSpace($local)){exit 0}
 $root=Join-Path $local 'ArSonMix\Updates'
 $statePath=Join-Path $root 'state.json'
+# Consent is a usability acknowledgement, never a cryptographic trust boundary.
+# The worker independently verifies both published installers before execution.
+$approvalPath=Join-Path $root 'approved.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
@@ -72,6 +75,31 @@ function Find-Asset([object]$release,[string]$name,[int64]$minBytes) {
     if($items.Count -ne 1){return $null}
     return $items[0]
 }
+# Older approved installations can fall beyond GitHub's first 100 releases.
+# Traverse only bounded pages; fail closed rather than guess the baseline.
+function Read-PublishedReleases([hashtable]$headers) {
+    $result=[Collections.Generic.List[object]]::new()
+    $tags=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    for([int]$page=1; $page -le 10; $page++) {
+        $uri=if($page -eq 1){$api}else{$api+'&page='+$page}
+        $batch=Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 25
+        if($null -eq $batch){Fail 'GitHub returned no release list'}
+        $rows=@($batch)
+        if($rows.Count -gt 100){Fail 'GitHub release page exceeds hard bound'}
+        foreach($release in $rows) {
+            if($null -eq $release -or
+               $null -eq $release.PSObject.Properties['tag_name'] -or
+               [string]::IsNullOrWhiteSpace([string]$release.tag_name) -or
+               -not $tags.Add([string]$release.tag_name)){
+                Fail 'Invalid or duplicated GitHub release page'
+            }
+            $result.Add($release)
+        }
+        if($rows.Count -lt 100){return ,$result.ToArray()}
+    }
+    Fail 'GitHub release history exceeds 1000 entries; defer rather than guess baseline'
+}
+
 function Approved-Installer([object]$release) {
     if($null -eq $release -or $release.draft -or
        [string]$release.target_commitish -cnotmatch '^[a-f0-9]{40}$' -or
@@ -176,6 +204,23 @@ function Should-RetryInstaller([int]$attempts,[bool]$success,[bool]$oldRemains) 
     # throws and must not spawn a second installer while the first runs.
     return (-not $success -and $oldRemains -and $attempts -ge 1 -and $attempts -lt 2)
 }
+function Test-UserApproval([object]$approval,[object]$transaction) {
+    if($null -eq $transaction -or
+       $transaction.operation -cnotin @('repair','upgrade')) {return $false}
+    if($transaction.operation -ceq 'repair'){return $true}
+    # Approval is only a usability gate. It does NOT authenticate publisher.
+    return ($null -ne $approval -and
+        [string]$approval.candidateSha -ceq [string]$transaction.candidateSha -and
+        [string]$approval.previousSha -ceq [string]$transaction.previousSha -and
+        [string]$approval.candidateTag -ceq [string]$transaction.candidateTag)
+}
+
+function Test-InstallableAssetPair([string]$newPath,[object]$newAsset,
+                                   [string]$oldPath,[object]$oldAsset) {
+    return ((Test-StagedAsset $newPath $newAsset) -and
+            (Test-StagedAsset $oldPath $oldAsset))
+}
+
 function Get-InstalledImageStatus([object]$build) {
     try {
         $hash=[string]$build.exeSha256
@@ -270,7 +315,7 @@ function Restore-InstalledRelease([string]$sourceSha) {
     # than trusting local update state as installation authority.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
+    $releases=Read-PublishedReleases $headers
     $sourceRelease=$null
     foreach($release in $releases) {
         if([string]$release.target_commitish -ceq $sourceSha -and
@@ -345,7 +390,7 @@ function Launch-WithHealth([string]$expectedSha) {
         do {
             if($process.HasExited){return $false}
             if(Test-Path -LiteralPath $marker -PathType Leaf) {
-                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY' -and
+                if((Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY_NO_AUDIO' -and
                    (Test-InstalledRelease $expectedSha)) {
                     Start-Sleep -Seconds 2
                     $process.Refresh()
@@ -466,10 +511,58 @@ if($PolicySelfTest) {
         $stored.digest='sha256:'+('0'*64)
         if(Test-CompleteStagedTransaction $transaction){throw 'Corrupted staged transaction reused'}
     } finally {$root=$previousRoot}
+    # Last-mile policy: tamper with EITHER installer, not just the candidate.
+    $pairFolder=Join-Path ([IO.Path]::GetTempPath()) ('ArSonMix-VerifiedPair-'+[guid]::NewGuid().ToString('N'))
+    try {
+        [IO.Directory]::CreateDirectory($pairFolder) | Out-Null
+        $oldSample=Join-Path $pairFolder 'previous.exe'
+        $newSample=Join-Path $pairFolder 'candidate.exe'
+        $known=New-Object byte[] 2097152
+        [IO.File]::WriteAllBytes($oldSample,$known)
+        [IO.File]::WriteAllBytes($newSample,$known)
+        $fingerprint=(Get-FileHash -LiteralPath $newSample -Algorithm SHA256).Hash.ToLowerInvariant()
+        $identity=[pscustomobject]@{size=2097152;digest='sha256:'+$fingerprint}
+        if(-not (Test-InstallableAssetPair $newSample $identity $oldSample $identity)){
+            throw 'Valid pair rejected'
+        }
+        $known[10]=123
+        [IO.File]::WriteAllBytes($oldSample,$known)
+        if(Test-InstallableAssetPair $newSample $identity $oldSample $identity){
+            throw 'Tampered rollback accepted'
+        }
+        [IO.File]::WriteAllBytes($oldSample,(New-Object byte[] 2097152))
+        $known[11]=17
+        [IO.File]::WriteAllBytes($newSample,$known)
+        if(Test-InstallableAssetPair $newSample $identity $oldSample $identity){
+            throw 'Tampered candidate accepted'
+        }
+        Write-Output 'ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS'
+    } finally {
+        Remove-Item -LiteralPath $pairFolder -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if(-not (Should-RetryInstaller 1 $false $true)){throw 'First transient retry rejected'}
     if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
     if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
     if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    # Test same-version repair and exact candidate acknowledgement offline.
+    $transaction=[pscustomobject]@{
+        operation='upgrade';candidateSha=('a'*40);previousSha=('b'*40);
+        candidateTag='v0.5.0-alpha.6'}
+    $goodAck=[pscustomobject]@{
+        candidateSha=('a'*40);previousSha=('b'*40);candidateTag='v0.5.0-alpha.6'}
+    if(-not (Test-UserApproval $goodAck $transaction)) {throw 'Exact update acknowledgement rejected'}
+    if(Test-UserApproval $null $transaction) {throw 'Missing acknowledgement accepted'}
+    $goodAck.candidateSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different release acknowledgement accepted'}
+    $goodAck.candidateSha='a'*40
+    $goodAck.previousSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different baseline acknowledgement accepted'}
+    $goodAck.previousSha='b'*40
+    $goodAck.candidateTag='v0.5.0-alpha.7'
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different version acknowledgement accepted'}
+    $transaction.operation='repair'
+    if(-not (Test-UserApproval $null $transaction)) {throw 'Same-version repair incorrectly gated'}
+    Write-Output 'ARSONMIX_UPDATER_USER_ACK_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
@@ -576,7 +669,7 @@ try {
     Write-State $state
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $releases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
+    $releases=Read-PublishedReleases $headers
     $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     Write-State $state
     $current=$null
@@ -665,15 +758,28 @@ try {
     $oldPath=Join-Path $stage $oldName
     # Validate both independently. Do not build nested arrays here:
     # PowerShell 5.1 pipeline unrolling can flatten the pair boundaries.
-    if(-not (Test-StagedAsset $newPath $state.newAsset) -or
-       -not (Test-StagedAsset $oldPath $state.previousAsset)) {
+    if(-not (Test-InstallableAssetPair $newPath $state.newAsset $oldPath $state.previousAsset)) {
         Fail 'Offline staged install/rollback bytes not verified'
+    }
+    # A published upgrade must be acknowledged once by the user in the
+    # lightweight GUI prompt. A missing/stale/corrupt token defers installation,
+    # without breaking mixer startup or forcing an active audio session closed.
+    # Same-release binary repair is separate and does not require this consent.
+    if($state.operation -ceq 'upgrade') {
+        $approval=$null
+        if(Test-Path -LiteralPath $approvalPath -PathType Leaf) {
+            try {$approval=Read-Json $approvalPath} catch { }
+        }
+        if(-not (Test-UserApproval $approval $state)) {
+            Log-Result 'UPDATE_WAITING_FOR_USER_OK'
+            exit 0
+        }
     }
     # Re-query public release to reject a revoked or replaced candidate.
     # No network is needed *during* live audio; if offline on close, defer.
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
-    $liveReleases=Invoke-RestMethod -Uri $api -Headers $headers -TimeoutSec 25
+    $liveReleases=Read-PublishedReleases $headers
     $approved=$null
     $approvedOld=$null
     foreach($release in $liveReleases) {
@@ -729,6 +835,12 @@ try {
         finally {$process.Dispose()}
     }
     if((Read-Json $provenance).sourceCommit -cne $installedSha) {Log-Result 'DEFER_VERSION_CHANGED';exit 0}
+    # Reverify after GitHub re-query and process-exit waiting, immediately
+    # before Inno touches installed files. Old rollback bytes are included.
+    if(-not (Test-InstallableAssetPair $newPath $state.newAsset $oldPath $state.previousAsset)) {
+        Log-Result 'INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED'
+        exit 0
+    }
     $state.phase='installing'
     $state.installAttempts=[int]$state.installAttempts+1
     Write-State $state
@@ -744,6 +856,7 @@ try {
         $state.blockedTag=''
         Write-State $state
         Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
+        Remove-Item -LiteralPath $approvalPath -Force -ErrorAction SilentlyContinue
         Clear-StagedVendorFiles $state
         exit 0
     }
@@ -755,9 +868,9 @@ try {
         $state.retryAfterUtc=[DateTime]::UtcNow.AddMinutes(30).ToString('o')
         Write-State $state
         Log-Result ('INSTALLER_TRANSIENT_FAILURE_RETRY_NEXT_EXIT '+$new.tag_name)
-        try {[Diagnostics.Process]::Start($exe) | Out-Null} catch {
-            Log-Result 'PREVIOUS_EXE_RELAUNCH_FAILED'
-        }
+        # Do not surprise the operator by restarting audible audio after Quit.
+        # The previous verified EXE remains available on next deliberate launch.
+        Log-Result 'PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH'
         exit 0
     }
     # An installer failure leaves the previous app intact or may be partial.
@@ -770,7 +883,7 @@ try {
     Write-State $state
     if($actualSha -ceq $installedSha) {
         Log-Result ('INSTALLER_FAILED_PREVIOUS_VERSION_RETAINED '+$new.tag_name)
-        [Diagnostics.Process]::Start($exe) | Out-Null
+        # A failed post-exit update must not auto-start an audible mixer.
         exit 0
     }
     foreach($process in [Diagnostics.Process]::GetProcessesByName('ArSonMix')) {
@@ -787,12 +900,15 @@ try {
     }
     # Roll back by running the previously authenticated Inno installer,
     # not by copying arbitrary stale binaries over an installed application.
+    if(-not (Test-StagedAsset $oldPath $oldAsset)){
+        Fail 'Rollback installer modified after verified stage'
+    }
     if(Run-Installer $oldPath) {
         if(Test-InstalledRelease $installedSha) {
             $state.phase='rolled-back'
             Write-State $state
             Log-Result ('ROLLED_BACK '+$new.tag_name)
-            [Diagnostics.Process]::Start($exe) | Out-Null
+            # Restored version is ready for the next deliberate user launch.
             exit 0
         }
     }

@@ -68,7 +68,9 @@ def run() -> None:
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
-                    assert "+0.0 dB" in first.locator(".gain-readout").inner_text()
+                    # The public formatter reserves '+' for strictly
+                    # positive values; gain unity is displayed as 0.0 dB.
+                    assert first.locator(".gain-readout").inner_text().strip() == "0.0 dB"
                     assert knob.input_value() == "0"
                     knob.evaluate("""el => {
                       el.value = '6.5';
@@ -117,7 +119,20 @@ def run() -> None:
 
                     # Rename the selected BUS in the native-style identity card.
                     # SOF selection must follow its ID, not jump back to Bus A.
-                    page.locator("#viewFilter").select_option("bus")
+                    # VIEW & SELECTION was deliberately moved under the
+                    # compact More menu. Exercise its visible operator path;
+                    # do not force a hidden <select> via direct DOM mutation.
+                    def select_visible_channel_filter(value):
+                        menu = page.locator("#moreTools")
+                        choice = page.locator("#viewFilter")
+                        if not choice.is_visible():
+                            menu.locator("summary").click()
+                        assert choice.is_visible(), "More menu must reveal channel filter"
+                        choice.select_option(value)
+                        if menu.evaluate("el=>el.open"):
+                            menu.locator("summary").click()
+
+                    select_visible_channel_filter("bus")
                     selected_bus = page.locator('#tracks .strip[data-id="' + initial_id + '"]')
                     assert selected_bus.count() == 1, (width, initial_id)
                     selected_bus.locator(".strip-identity-top").dblclick()
@@ -125,7 +140,7 @@ def run() -> None:
                     page.locator("#identitySave").click()
                     assert target_select.input_value() == initial_id
                     assert target_select.locator("option:checked").inner_text() == "STAGE MONITOR A"
-                    page.locator("#viewFilter").select_option("all")
+                    select_visible_channel_filter("all")
                     page.locator("#sofToggle").click()
                     assert page.locator("#mixContext").inner_text() == "SEND MIX → STAGE MONITOR A"
                     assert first.locator(".is-sof-view").get_attribute("data-sof-target") == initial_id

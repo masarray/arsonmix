@@ -287,7 +287,12 @@ def main():
                 page.wait_for_function("()=>window.__nativeIntents.length===2")
                 assert page.evaluate("()=>window.__heldWireInput===document.querySelector('#tracks .strip[data-id=\"2\"] .wire-gain')"), "ACK detached held gain control"
                 latest = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert abs(latest["payload"]["gainLinear"] - .001) < 1e-8
+                # Native SOF/WIRE policy defines the bottom -60 dB
+                # detent as -infinity/silence (linear zero), not 0.001.
+                # The exact SEND EdgeId is retained; this is a scalar
+                # mute-level gain, NEVER a graph REMOVE/disconnect.
+                assert latest["payload"]["gainLinear"] == 0, latest
+                assert latest["payload"]["edgeId"] == SEND, latest
                 state["graph"]["edges"][1]["gainLinear"] = latest["payload"]["gainLinear"]
                 ack(page, state, latest)
                 emit(page, "arMixConsoleSnapshot", state)
