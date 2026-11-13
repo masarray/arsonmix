@@ -145,21 +145,16 @@ def exercise(browser,out,width,height):
     assert art.get_attribute("href")=="assets/sonku-listener-top.png"
     # The vertically flipped PNG must actually resolve in the BUILT
     # native /preview/ bundle, and have transparent palette metadata.
-    assert page.evaluate("""async () => {
+    assert page.evaluate("""async () => new Promise(resolve => {
        const image=document.querySelector('#skListenerArt');
        const href=image.getAttribute('href');
-       const asset=await fetch(href);
-       if(!asset.ok)return false;
-       const bytes=new Uint8Array(await asset.arrayBuffer());
-       const sig=[137,80,78,71,13,10,26,10];
-       return sig.every((n,i)=>bytes[i]===n) &&
-         bytes[16]===0&&bytes[17]===0&&bytes[18]===1&&bytes[19]===0 &&
-         bytes[20]===0&&bytes[21]===0&&bytes[22]===1&&bytes[23]===0 &&
-         await new Promise(resolve=>{
-           const im=new Image();im.onload=()=>resolve(im.naturalWidth===256);
-           im.onerror=()=>resolve(false);im.src=href;
-         });
-    }"""),"Flipped transparent PNG missing from native GUI bundle"
+       // file:// origins prohibit fetch(); SVG images still resolve from
+       // the compiled GUI resource. Exercise actual Image.decode instead.
+       const im=new Image();
+       im.onload=()=>resolve(im.naturalWidth===256&&im.naturalHeight===256);
+       im.onerror=()=>resolve(false);
+       im.src=href;
+    })"""),"Flipped transparent PNG missing from native GUI bundle"
     # SVG <text> is not HTML text: Chromium 158 no longer exposes usable
     # HTMLElement.innerText for these nodes. Read SVG textContent and verify
     # the actual anchors, so front/rear cannot silently flip in the GUI.
