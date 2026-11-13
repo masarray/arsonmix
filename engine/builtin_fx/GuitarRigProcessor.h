@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "guitar/GuitarRigCore.h"
+#include "FxSpsc.h"
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <algorithm>
@@ -21,6 +22,12 @@ public:
     static constexpr std::uint32_t stateMagic=0x47525831; // GRX1
     static constexpr int stateHeaderBytes=12;
     static constexpr int stateBlockBytes=44;
+    static constexpr int crossfadeFrames=128;
+    struct Completion {
+        std::uint64_t requestId=0;
+        armix::guitarfx::Program program{};
+        bool applied=false;
+    };
 
     GuitarRigProcessor()
       : juce::AudioProcessor(BusesProperties()
@@ -64,7 +71,23 @@ public:
         float inPeak=0.f;
         for(int i=0;i<samples;++i)
             inPeak=std::max(inPeak,std::max(std::fabs(left[i]),std::fabs(right[i])));
-        core_.processStereo(left,right,static_cast<std::size_t>(samples));
+        // Program switches use both prepared DSP states for at most
+        // 128 samples and crossfade. No heap, lock or preparation on RT.
+        int processed=0;
+        while(processed<samples && fadeLeft_>0) {
+            float newL=left[processed],newR=right[processed];
+            float oldL=newL,oldR=newR;
+            core_.processStereo(&newL,&newR,1);
+            beforeSwitch_.processStereo(&oldL,&oldR,1);
+            const float t=1.f-static_cast<float>(fadeLeft_-1)/
+                              static_cast<float>(crossfadeFrames);
+            left[processed]=oldL*(1.f-t)+newL*t;
+            right[processed]=oldR*(1.f-t)+newR*t;
+            --fadeLeft_;++processed;
+        }
+        if(processed<samples)
+            core_.processStereo(left+processed,right+processed,
+                               static_cast<std::size_t>(samples-processed));
         float outPeak=0.f;
         for(int i=0;i<samples;++i)
             outPeak=std::max(outPeak,std::max(std::fabs(left[i]),std::fabs(right[i])));
@@ -76,12 +99,46 @@ public:
         pcm.clear(); // No silently unprocessed double-precision guitar output.
     }
     void consumeRealtimeEdits() noexcept override {
-        // Live-edit mailbox and readback are an M2 editor milestone.
-        // M1 cannot acknowledge any unimplemented UI parameter mutation.
+        Edit next{};
+        if(!ready_||!completed_.canPush()||!queued_.pop(next))return;
+        // An immutable program is prepared by CONTROL before publication.
+        beforeSwitch_=core_;
+        core_=next.prepared;
+        fadeLeft_=crossfadeFrames;
+        (void)completed_.push({next.requestId,next.program,true});
     }
+
+    // SINGLE message-thread producer; reject malformed programs before
+    // touching the live DSP. No DSP compilation in processBlock.
+    bool queueProgram(const armix::guitarfx::Program& program,
+                      std::uint64_t requestId) noexcept {
+        if(!ready_||!requestId||!std::isfinite(rate_)||
+           armix::guitarfx::validate(program)!=armix::guitarfx::ProgramError::none)
+            return false;
+        Edit next{};
+        next.requestId=requestId;
+        next.program=program;
+        if(!next.prepared.prepare(rate_,program))return false;
+        return queued_.push(next);
+    }
+    // CONTROL-only. Editor timers and Show capture share one reducer.
+    // A pending GUI edit is not accepted until callback completion.
+    void serviceCompletions() noexcept {
+        Completion next{};
+        for(int i=0;i<4&&completed_.pop(next);++i) {
+            if(next.applied)accepted_=next.program;
+            lastCompletion_=next;
+        }
+    }
+    Completion lastCompletion() const noexcept {return lastCompletion_;}
+
     bool isReady() const noexcept {return ready_&&core_.isReady();}
     void sealForRealtime() noexcept override {published_=true;}
-    bool stateSnapshotQuiescent() const noexcept override {return true;}
+    bool stateSnapshotQuiescent() const noexcept override {
+        // CONTROL only: closed editors cannot strand accepted completions.
+        const_cast<GuitarRigProcessor*>(this)->serviceCompletions();
+        return queued_.empty()&&completed_.empty();
+    }
     double acceptedSampleRate() const noexcept {return rate_;}
     const armix::guitarfx::Program& acceptedProgram() const noexcept {
         return accepted_; // CONTROL only, after quiescent state capture.
@@ -97,6 +154,7 @@ public:
     }
 
     void getStateInformation(juce::MemoryBlock& destination) override {
+        serviceCompletions(); // CONTROL: completed edits now durable.
         // Existing FX lease serializes only on CONTROL while quiescent;
         // this is a portable field-by-field schema, not a memcpy of a struct.
         juce::MemoryOutputStream writer(destination,false);
@@ -158,7 +216,17 @@ public:
         (void)restoreUnpublishedState(data,size);
     }
 private:
+    struct Edit {
+        std::uint64_t requestId=0;
+        armix::guitarfx::Program program{};
+        armix::guitarfx::GuitarRigCore prepared{};
+    };
     armix::guitarfx::GuitarRigCore core_{};
+    armix::guitarfx::GuitarRigCore beforeSwitch_{};
+    FxSpsc<Edit,4> queued_{};
+    FxSpsc<Completion,4> completed_{};
+    Completion lastCompletion_{};
+    int fadeLeft_=0; // audio-owned
     armix::guitarfx::Program accepted_=
         armix::guitarfx::GuitarRigCore::startingProgram();
     std::atomic<float> inputPeak_{0.f},outputPeak_{0.f};
