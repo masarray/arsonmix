@@ -32,10 +32,19 @@ void* operator new[](std::size_t n) {
     if(void* p=std::malloc(n?n:1)) return p;
     throw std::bad_alloc();
 }
-void operator delete(void* p) noexcept {std::free(p);}
-void operator delete(void* p,std::size_t) noexcept {std::free(p);}
-void operator delete[](void* p) noexcept {std::free(p);}
-void operator delete[](void* p,std::size_t) noexcept {std::free(p);}
+// Keep the replacement deallocator opaque to GCC's unrelated vector-copy
+// inliner; it falsely diagnoses custom malloc/new pairs as mismatched while
+// the allocation counter still covers ALL global new/new[] calls.
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static void releaseTracked(void* p) noexcept {std::free(p);}
+void operator delete(void* p) noexcept {releaseTracked(p);}
+void operator delete(void* p,std::size_t) noexcept {releaseTracked(p);}
+void operator delete[](void* p) noexcept {releaseTracked(p);}
+void operator delete[](void* p,std::size_t) noexcept {releaseTracked(p);}
 
 static ChannelEdit add(int index,ChannelRole role,const char* name) {
     ChannelEdit e;
