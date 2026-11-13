@@ -105,8 +105,13 @@ NATIVE_EVENT_HOOKS = (
      "}\n"),
     ("scaleTopPct(v,-60,gainMax)",
      "(100.0-faderPercent(v,isSend))"),
-    (" const gain=Math.round((max-(max-min)*frac)*10)/10;\n",
-     " const gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;\n"),
+    (" let gain=Math.round((max-(max-min)*frac)*10)/10;\n",
+     " let gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;\n"),
+    # The native fader has a calibrated logarithmic travel (unity is 77%),
+    # while the public reference uses a linear dB scale. The detent MUST
+    # snap at the visual/PCM unity position of the native tapered curve.
+    (" const unityY=travel.top+travel.height*(max/(max-min));\n",
+     " const unityY=travel.top+travel.height*(1-faderPercent(0,max===6)/100);\n"),
     # Only the compiled Windows WebView gets verified native driver inputs.
     # Public /preview/ continues to show its labeled simulated reference.
     ("const channelOptions=(t,type)=>{\n",
@@ -158,13 +163,10 @@ NATIVE_EVENT_HOOKS = (
     ("function fxNativeTransactionRequired(){\n",
      "function fxNativeTransactionRequired(){\n"
      " if(window.__JUCE__?.backend)return true;\n"),
-    # Source's pointerup clears faderGesture BEFORE the later deferred bridge
-    # listener runs. Dispatch exactly once at the actual gesture commit point.
-    (" const g=faderGesture;faderGesture=null;\n"
-     " g.box.releasePointerCapture?.(ev.pointerId);\n",
-     " const g=faderGesture;faderGesture=null;\n"
-     " g.box.releasePointerCapture?.(ev.pointerId);\n"
-     " if(window.__ARMIX_NATIVE_M2__?.consumeField?.({target:g.input,type:'change'}))return;\n"),
+    # V60 source sends the final change through handleField() exactly once
+    # on pointer release. The existing native-only handleField interception
+    # below/above takes that committed target to the ACK/readback dispatcher.
+    # Do NOT install a second synthetic pointerup native event.
     # Stage B: retain the approved exact V51 portrait meter gradient/peak hold
     # and dBFS calibration. Only elide redundant WebView2 style mutations:
     # these are authoritative native telemetry writes, NOT simulated signal.
