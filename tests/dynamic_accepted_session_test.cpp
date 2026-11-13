@@ -90,6 +90,32 @@ static void verifyPerEdgeSendEnablePcm() {
     assert(onEdge!=row->sends.end() && onEdge->enabled &&
            onEdge->gain==.5f && onEdge->preFader);
     assert(render() && near(l[63],withSend,1e-4f));
+    // PRE_FADER is AFTER FX and BEFORE the source channel fader.
+    // With source fader fully closed, wet PRE remains; POST must go silent.
+    assert(session.setLiveMix(epoch,4,voice,0.f,0.f));
+    assert(render());
+    const float truePre=l[63];
+    assert(truePre>.01f && truePre<withSend);
+    ChannelEdit retap;retap.kind=ChannelEdit::Kind::setSendTap;
+    retap.id=voice;retap.sendEdgeId=edgeId;retap.preFader=false;
+    const std::array<ChannelEdit,1> post{retap};
+    a=session.edit(4,4,post,req,epoch,epoch,true);
+    assert(a.ok() && a.graphRevision==5);
+    row=session.acceptedRoster().find(voice);
+    const auto moved=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(moved!=row->sends.end() && !moved->preFader &&
+           moved->enabled && moved->gain==.5f);
+    assert(render() && near(l[63],0.f,1e-5f));
+    // Reject primary tap edits and keep the accepted revision/audio intact.
+    const auto primary=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.primaryOutput;});
+    assert(primary!=row->sends.end());
+    retap.sendEdgeId=primary->edgeId;retap.preFader=true;
+    const std::array<ChannelEdit,1> illegal{retap};
+    a=session.edit(5,5,illegal,req,epoch,epoch,true);
+    assert(!a.ok() && session.acceptedGraphRevision()==5);
+    assert(render() && near(l[63],0.f,1e-5f));
     session.unpublish();session.pollRetirement();
 }
 
