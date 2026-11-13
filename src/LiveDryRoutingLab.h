@@ -15,6 +15,7 @@
 #include "NativeTopologyEditSafety.h"
 #include "NativeMixerSessionDocument.h"
 #include "../engine/device/JuceActivePortSnapshot.h"
+#include "../engine/lms/NativeSpeakerDeviceBinder.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
 #include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/core/ProductionRenderAudit.h"
@@ -2304,6 +2305,93 @@ public:
             blobs=std::move(staged);
             return {};
         } catch(...) {return "Native graph/VST3 state capture failed";}
+    }
+
+    // M6 CONTROL ONLY: a browser draft NEVER supplies the trusted hardware
+    // mask. Build it here from a fresh JUCE snapshot and the SAME accepted
+    // ChannelId PCM publisher. This method does not arm any speaker.
+    struct SpeakerDraftControlResult final {
+        armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftAck ack{};
+        armix::lms::SpeakerBindFault bindFault=armix::lms::SpeakerBindFault::none;
+    };
+    static std::string speakerNativePortIdentity(
+            const armix::device::JuceActivePortSnapshot& pins,int ordinal) {
+        const int physical=pins.outputPhysicalPort(ordinal);
+        if(physical<0||physical>=pins.outputNames.size() ||
+           pins.outputNames[physical].isEmpty())return {};
+        return pins.typeName.toStdString()+"/"+
+            pins.deviceName.toStdString()+"/"+std::to_string(physical)+"/"+
+            pins.outputNames[physical].toStdString();
+    }
+    SpeakerDraftControlResult acceptNativeSpeakerDraft(
+        const armix::lms::SpeakerSystemRequest& draft,
+        const armix::device::JuceActivePortSnapshot& pins,
+        double currentSampleRate,bool verifiedOutputsDisarmed,
+        std::uint64_t expectedDesignRevision) {
+        SpeakerDraftControlResult reply;
+        using Fault=armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftFault;
+        reply.ack.fault=Fault::staleDeviceOrGraph;
+        // Never use display PIN ids or browser booleans as proof of ASIO.
+        if(!channelIdPhysicalPcmActive() || !ready() ||
+           !matchesSessionDevice(pins) || pins.typeName!="ASIO" ||
+           pins.deviceName.isEmpty() || !verifiedOutputsDisarmed ||
+           !nativeAccepted_.matches(nativePublisher_,draft.deviceEpoch,
+                                    draft.graphRevision) ||
+           !std::isfinite(currentSampleRate) || currentSampleRate<=0. ||
+           pins.epoch!=draft.deviceEpoch || draft.sampleRate!=currentSampleRate)
+            return reply;
+        const auto* accepted=nativePublisher_.acceptedRouting(
+            draft.deviceEpoch,draft.graphRevision);
+        if(!accepted || !accepted->main.value)return reply;
+        const auto& hw=nativeAccepted_.hardware;
+        armix::lms::TrustedSpeakerDeviceView actual;
+        actual.deviceEpoch=pins.epoch;
+        actual.graphRevision=draft.graphRevision;
+        actual.mainChannelId=accepted->main.value;
+        actual.backend=pins.typeName.toStdString();
+        actual.deviceIdentity=pins.typeName.toStdString()+"/"+
+            pins.deviceName.toStdString();
+        actual.sampleRate=currentSampleRate;
+        actual.callbackOutputs=pins.outputCount;
+        actual.mainL=hw.mainL;actual.mainR=hw.mainR;
+        actual.monitorL=hw.monitorEnabled?hw.monitorL:-1;
+        actual.monitorR=hw.monitorEnabled?hw.monitorR:-1;
+        actual.acceptedPcm=true;
+        actual.exactDeviceMask=true; // matchesSessionDevice(pins) above
+        actual.allOutputsDisarmed=verifiedOutputsDisarmed;
+        for(int ordinal=0;ordinal<pins.outputCount;++ordinal){
+            auto identity=speakerNativePortIdentity(pins,ordinal);
+            if(identity.empty())return reply;
+            actual.actualEnabledPorts.push_back({std::move(identity),ordinal});
+        }
+        // Existing channel direct/external hardware lanes are occupied even
+        // when the browser MATRIX does not list those ChannelIds.
+        for(const auto& channel:accepted->channels){
+            const auto [left,right]=nativePublisher_.externalOutput(
+                pins.epoch,draft.graphRevision,channel.id);
+            if(left>=0)actual.otherOccupiedOrdinals.push_back(left);
+            if(right>=0)actual.otherOccupiedOrdinals.push_back(right);
+        }
+        armix::lms::SpeakerBoundDraft bound;
+        const auto boundResult=armix::lms::NativeSpeakerDeviceBinder::bind(
+            draft,actual,accepted->main.value,bound);
+        reply.bindFault=boundResult.fault;
+        if(!boundResult.ok()){
+            reply.ack.fault=Fault::invalidReservation;
+            return reply;
+        }
+        reply.ack=nativePublisher_.acceptSpeakerDraft(
+            bound.verifiedRequest,bound.verifiedInventory,
+            accepted->main,expectedDesignRevision);
+        return reply;
+    }
+    const armix::mixer::DynamicNativeSessionPublisher::SpeakerDraftReadback*
+    nativeSpeakerDraftReadback(std::uint64_t deviceEpoch,
+                               std::uint64_t graphRevision) const noexcept {
+        if(!channelIdPhysicalPcmActive() ||
+           nativeAccepted_.pcmRevision!=graphRevision ||
+           deviceEpoch!=epoch())return nullptr;
+        return nativePublisher_.speakerDraftReadback(deviceEpoch,graphRevision);
     }
 
     // O1 CONTROL: true ASIO physical pin identity -> packed callback ordinal.
