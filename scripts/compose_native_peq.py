@@ -128,8 +128,26 @@ PICKER_RENDER_NEW="""const eqBuiltin=!q||['parametric eq','peq','channel eq','bu
  '<button class="fast-effect" type="button" data-fast-native-throw="1"><span class="fast-effect-title">ArSon Vocal Throw</span><span class="fast-effect-kind">Native · phrase-aware concert echo</span></button>':'';
  const sonkuBuiltin=!q||['8d-sonku','sonku','8d','binaural','spatial','orbit','built-in fx'].some(n=>n.includes(q))?
  '<button class="fast-effect" type="button" data-fast-native-sonku="1"><span class="fast-effect-title">8D-SonKu</span><span class="fast-effect-kind">Native · measured HRTF · 360° spatial orbit</span></button>':'';
- const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin||sonkuBuiltin?'<div class="fast-fx-category">BUILT-IN FX</div>':'')+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin;
- plugEl('fastResults').innerHTML=builtin+'<div class="fast-fx-category">VST3 PLUGINS</div>'+(list.length?list.map(p=>"""
+ // One catalog-driven builtin shelf. Keep the dedicated SonKu editor button
+ // exactly once: it is excluded from generic native catalog items, as are
+ // EQ/Comp/Harmony/Throw which already have specialized editor actions.
+ const specializedIds=new Set([
+  'armix.builtin.channel-eq.v1',
+  'armix.builtin.channel-compressor.v1',
+  'armix.builtin.arson-harmony.v1',
+  'armix.builtin.vocal-throw.v1',
+  'armix.builtin.8d-sonku.v1'
+ ]);
+ const nativeExtra=list.filter(p=>p.format==='Native' &&
+   p.id.startsWith('armix.builtin.')&&!specializedIds.has(p.id)).map(p=>
+  '<button class="fast-effect" type="button" data-fast-id="'+escapeHtml(p.id)+'"><span class="fast-effect-title">'+escapeHtml(p.name)+'</span><span class="fast-effect-kind">Native · '+escapeHtml(p.category)+'</span></button>'
+ ).join('');
+ const builtin=(eqBuiltin||compBuiltin||harmonyBuiltin||throwBuiltin||sonkuBuiltin||nativeExtra?
+  '<div class="fast-fx-category">BUILT-IN FX</div>':'')+
+  nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin;
+ // Native processors must not appear twice or under the VST3 PLUGINS heading.
+ const vstItems=list.filter(p=>p.format!=='Native');
+ plugEl('fastResults').innerHTML=builtin+'<div class="fast-fx-category">VST3 PLUGINS</div>'+(vstItems.length?vstItems.map(p=>"""
 PICKER_END=""").join(''):'<div class="fast-empty">No matching effects</div>';"""
 PICKER_END_NEW=""").join(''):'<div class="fast-empty">No matching effects</div>');"""
 PICKER_CLICK=" const btn=e.target.closest('[data-fast-id]');if(btn)insertCatalogPlugin(btn.dataset.fastId);"

@@ -31,6 +31,21 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertEqual(self.assembled.count('src="assets/mixer-native-sonku.js?v=sonku-1"'),1)
         self.assertEqual(self.assembled.count("function insertChosenNativeSonKu(){"),1)
 
+    def test_catalog_driven_guitar_and_one_specialized_sonku_button(self):
+        # Main #657: use native catalog for newly compiled FX, not a fifth
+        # browser-only Guitar button. Preserve the M4 SonKu specialized editor.
+        self.assertIn("const nativeExtra=list.filter(p=>p.format==='Native'",self.assembled)
+        self.assertIn("p.id.startsWith('armix.builtin.')",self.assembled)
+        self.assertIn("'armix.builtin.8d-sonku.v1'",self.assembled)
+        self.assertIn("nativeExtra+eqBuiltin+compBuiltin+harmonyBuiltin+throwBuiltin+sonkuBuiltin",self.assembled)
+        self.assertIn("const vstItems=list.filter(p=>p.format!=='Native');",self.assembled)
+        self.assertIn("(vstItems.length?vstItems.map(p=>",self.assembled)
+        self.assertIn('data-fast-id="'+
+                      "'+escapeHtml(p.id)+'"+'"',self.assembled)
+        self.assertEqual(self.assembled.count('data-fast-native-sonku="1"'),1)
+        self.assertNotIn('data-fast-native-guitar',self.assembled)
+        self.assertIn("if(b.hasAttribute('data-fast-native-sonku'))",self.assembled)
+
     def test_native_rack_uses_regular_insert_slot(self):
         self.assertIn("host.insert(activeFxTarget)",self.assembled)
         self.assertNotIn("__ARMIX_NATIVE_M2__",self.assembled)
