@@ -407,6 +407,22 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
   assert.doesNotMatch(updater, /(?:Stop-Process|taskkill|TerminateProcess)/);
 });
 
+test('GUI-only updater probe does not strand pre-window WebView2 startup failures', () => {
+  const native = read('src/Main.cpp');
+  const startup = native.slice(native.indexOf('void initialise (const juce::String&) override'),
+                               native.indexOf('void shutdown() override', native.indexOf('void initialise (const juce::String&) override')));
+  const failures = [
+    'Cannot create the browser-cache folder:',
+    'The native browser backend could not be initialized on this machine.'
+  ];
+  for (const message of failures) {
+    const failureAt = startup.indexOf(message);
+    assert.ok(failureAt > 0, message);
+    const preceding = startup.slice(Math.max(0, failureAt - 285), failureAt);
+    assert.match(preceding, /if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*systemRequestedQuit\(\);\s*return;\s*\}/);
+  }
+});
+
 test('silent post-install GUI probe cannot automatically arm ASIO or save a user session', () => {
   const main = read('src/Main.cpp');
   const updater = read('installer/ArSonMixAutoUpdate.ps1');
