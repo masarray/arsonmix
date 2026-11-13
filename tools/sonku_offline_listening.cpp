@@ -327,11 +327,11 @@ void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
     std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
     if(!guide)throw std::runtime_error("Cannot write integrity guide");
     guide<<"All three are original generated 4s tones at matched input level, "
-         <<"same measured KEMAR 0deg elevation and 0deg stereo spread.\\n"
+         <<"same measured KEMAR 0deg elevation and 0deg stereo spread.\n"
          <<"Compare in HEADPHONES at a safe volume. 1: L=R FRONT. "
-         <<"2: L=-R FRONT. 3: L=-R REAR.\\n"
+         <<"2: L=-R FRONT. 3: L=-R REAR.\n"
          <<"Do not infer dearVR parity, natural distance or externalization "
-         <<"from the recovered side tone.\\n";
+         <<"from the recovered side tone.\n";
 }
 int main(int argc,char** argv){
     try{
@@ -341,7 +341,7 @@ int main(int argc,char** argv){
         std::filesystem::create_directories(dir);
         if(argc==3){
             writeMusicIntegrityEvidence(dir);
-            std::cout<<"Music-integrity 3x headphone A/B WAV PASS\\n";
+            std::cout<<"Music-integrity 3x headphone A/B WAV PASS\n";
             return 0;
         }
         constexpr std::array<int,4> reference{0,90,180,-90};
