@@ -162,7 +162,8 @@ test("guided DLMS ASIO reassign retains DSP, requires manual pin mapping and rea
  assert.equal(app.events.filter(e=>e.type==="arMixLmsValidate").length,0);
  app.change({rebindSource:"DEMO-01"},"ASIO-EXACT-DEVICE/PIN-4");
  app.click({action:"confirmReassign"});
- assert.ok(app.root.innerHTML.includes("saved as MUTED draft"),\n   "Reassignment status: "+app.root.innerHTML.slice(0,3800));
+ assert.ok(app.root.innerHTML.includes("saved as MUTED draft"),
+   "Reassignment status: "+app.root.innerHTML.slice(0,3800));
  assert.ok(!app.root.innerHTML.includes("Review explicit output reassignment"));
  assert.equal(app.events.filter(e=>e.type==="arMixLmsValidate").length,0);
  app.click({action:"nativeValidate"});
