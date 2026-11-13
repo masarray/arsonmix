@@ -74,3 +74,9 @@ The measured native output in [Action #43446354590](https://github.com/masarray/
 
 ## Release gate
 This PR changes the **native audio** of a user-installed FX, not just the picture. Do not mark production/dearVR-equivalent, edit README as shipped, or trigger a public Windows installer until source tests, offline A/B, performance telemetry, real Windows WebView2/ASIO/headphone listening and user approval are complete.
+
+## P1.0 frequency-response guard (independent analytical verification)
+
+The current experimental PR additionally includes `tests/sonku_hrir_spectral_audit.cpp`. Its exact licensed MIT KEMAR source-bank coefficients are transformed at 19 roughly one-third-octave centers (125–8000 Hz), five directional anchors (FRONT, 45°, RIGHT, 135°, REAR), both ears and 44.1/48 kHz: **380 deterministic frequency points**. The CSV artifact `KEMAR-SPECTRAL-AUDIT.csv` publishes the magnitude of the original two-offset-HRIR coherent MID versus the central-direction reference. It checks the implemented algebra at full correction: central-frequency response restored without altering the two-source stereo SIDE transfer. This deliberately adds no real-time FFT, convolution, gain boost, GUI slider, CPU callback allocation, or patented Dear Reality coefficients.
+
+This is *frequency-response source analysis*, not proof of perceptual neutrality: temporal coherence is inferred from the existing exact-core WAV/PCM comparison, and moving/partially correlated/room-on real music remains an open listening gate. If any frequency audit fails CI, the PR stays draft rather than bypassing the guard. The output CSV is available within the same scoped SonKu audio Action artifact, so future spectral compensation can be evaluated against actual baseline frequency bins instead of guessed EQ curves.
