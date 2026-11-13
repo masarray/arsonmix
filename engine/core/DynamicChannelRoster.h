@@ -67,7 +67,7 @@ struct ChannelEdit final {
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision,
-        setInputGain
+        setInputGain, setSendEnabled, setSendTap
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -81,6 +81,7 @@ struct ChannelEdit final {
     bool primaryOutput=false; // exclusive OUT edge, independent of parallel SEND
     bool connectMainOnCreate=false; // WIRE-first native creation; legacy imports unchanged
     float sendPan=0.f;      // independent send PAN, never channel fader PAN
+    std::uint64_t sendEdgeId=0; // exact existing parallel EdgeId
     std::string text;
 };
 struct ChannelEditResult final {
@@ -268,6 +269,19 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
+                case ChannelEdit::Kind::setSendEnabled:
+                case ChannelEdit::Kind::setSendTap: {
+                    const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
+                        [&](const auto& send){return send.edgeId==op.sendEdgeId;});
+                    if(!op.sendEdgeId || edge==it->sends.end())
+                        result.fault=ChannelEditFault::missingEdge;
+                    else if(edge->primaryOutput)
+                        result.fault=ChannelEditFault::invalidAction;
+                    else if(op.kind==ChannelEdit::Kind::setSendEnabled)
+                        edge->enabled=op.enabled;
+                    else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
+                    break;
+                }
                 case ChannelEdit::Kind::touchDocumentRevision:
                     // Exact stable ChannelId is validated above. Bump the
                     // document revision without fabricating a DSP parameter
