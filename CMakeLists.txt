@@ -173,6 +173,12 @@ if(BUILD_TESTING)
   target_compile_features(ARMixSpeakerPcmTests PRIVATE cxx_std_20)
   add_test(NAME LMSNativeLR4MultisectionVerifiedOutputsAndDelay
       COMMAND ARMixSpeakerPcmTests)
+  add_executable(ARMixSpeakerDeviceBinderTests
+      tests/lms_verified_device_binder_test.cpp
+      engine/lms/NativeSpeakerDeviceBinder.h)
+  target_compile_features(ARMixSpeakerDeviceBinderTests PRIVATE cxx_std_20)
+  add_test(NAME LMSNativeExactJuceOutputInventoryDiscardBrowserOrdinals
+      COMMAND ARMixSpeakerDeviceBinderTests)
   add_executable(ARMixSpeakerDraftAckReadbackTests
       tests/lms_native_draft_ack_readback_test.cpp
       engine/core/DynamicNativeSessionPublisher.h
