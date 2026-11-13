@@ -27,6 +27,46 @@ function acceptedFixture(){
    tap:"POST",gainLinear:1,enabled:true,signalKind:"AUDIO"}];
  return s;
 }
+test("native PRE_FADER WIRE inspector uses one exact SET_TAP PCM intent and accepted readback",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const preview=read("site/preview-v2/index.html");
+ assert.match(bridge,/function requestNativeTap\(source,edgeId,tap\)/);
+ assert.match(bridge,/ops\[0\]\.type==="MODE"/);
+ assert.match(bridge,/op:"SET_TAP",from:source,edgeId,tap/);
+ assert.match(bridge,/const tap=\["PRE_FADER","POST_FADER"\]\.includes\(edge\.tapStage\)/);
+ assert.match(preview,/edge\.nativeTap==='PRE_FADER'\?'PRE FADER'/);
+ assert.match(preview,/edge\?\.nativeTap==='PRE_FADER'\?'split'/);
+ assert.match(preview,/native\?'PRE FADER':'Pre FX'/);
+ const s=acceptedFixture(),source=s.graph.channels[0].id;
+ const bus={id:"9007199254740999",role:"GROUP",name:"BUS B",processingFormat:"STEREO",
+   controls:{faderDb:0,pan:0,mute:false,solo:false},inserts:[],sends:[]};
+ s.graph.channels.splice(1,0,bus);
+ s.graph.destinations.push({id:bus.id,role:"GROUP"});
+ delete s.graph.channels[0].primaryOutId;
+ s.graph.edges[0]={edgeId:"9223372036854775808",from:source,to:bus.id,
+   tap:"POST_FADER",gainLinear:.5,enabled:true,sendEnabled:true,
+   primaryOutput:false,signalKind:"AUDIO"};
+ const sent=[],c=protocol.createController({emit:(event,payload)=>sent.push({event,payload})});
+ assert.equal(c.onSnapshot(clone(s)),true);
+ const change={op:"SET_TAP",from:source,edgeId:s.graph.edges[0].edgeId,tap:"PRE_FADER"};
+ const t=c.intent("APPLY_WIRE_TRANSACTION",source,{changes:[change]});
+ assert.equal(t.ok,true);
+ assert.deepEqual(sent.at(-1).payload.payload.changes,[change]);
+ assert.equal(c.state().current.graph.edges[0].tap,"POST_FADER");
+ assert.equal(c.onAck({requestId:t.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:s.device.epoch,graphRevision:"6",rosterRevision:"8"}),true);
+ assert.equal(c.state().current.graph.edges[0].tap,"POST_FADER",
+  "ACK alone cannot repaint a PRE_FADER send");
+ const next=clone(s);next.graph.revision="6";next.graph.rosterRevision="8";
+ next.graph.edges[0].tap="PRE_FADER";
+ assert.equal(c.onSnapshot(next),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(c.state().current.graph.edges[0].tap,"PRE_FADER");
+ assert.equal(c.state().current.graph.edges[0].edgeId,change.edgeId);
+ assert.equal(c.state().current.graph.edges[0].gainLinear,.5);
+ assert.equal(c.state().current.graph.edges[0].sendEnabled,true);
+});
+
 test("native input Gain is a separate ChannelId scalar proven only by ACK plus inputGain readback",()=>{
  const s=acceptedFixture(),id=s.graph.channels[0].id;
  s.graph.capabilities.supportedOps.push("SET_INPUT_GAIN");
@@ -1233,6 +1273,25 @@ test("M3 native-only Pages scope performs real bridge projection, fader intent a
  listeners.get("arMixConsoleSnapshot")(gained);
  assert.equal(scope.edges[0].levelDb,-12);
  assert.equal(paints,paintBeforeGain);
+ // WIRE inspector MODE is a legacy visual gesture. It MUST become one
+ // exact native SET_TAP EdgeId transaction; rejection leaves the PCM tap intact.
+ const tapUi=scope.edges[0].id;
+ assert.equal(window.__ARMIX_NATIVE_M2__.consumeWire([{
+   type:"MODE",sourceId:sourceUi,edgeId:tapUi,mode:"split"
+ }]),true);
+ const tapRequest=sent.findLast(x=>x.name==="arMixConsoleIntent").payload;
+ assert.equal(tapRequest.operation,"APPLY_WIRE_TRANSACTION");
+ assert.deepEqual(JSON.parse(JSON.stringify(tapRequest.payload.changes)),[{
+   op:"SET_TAP",from:routed.graph.channels[0].id,
+   edgeId:"9223372036854775810",tap:"PRE_FADER"
+ }]);
+ assert.equal(scope.edges[0].nativeTap,"POST_FADER");
+ listeners.get("arMixConsoleAck")({requestId:tapRequest.requestId,status:"REJECTED",
+   errorCode:"NATIVE_WIRE_TRANSACTION_REJECTED",deviceEpoch:gained.device.epoch,
+   graphRevision:"8",rosterRevision:"8"});
+ assert.equal(window.__ARMIX_NATIVE_M2__.state().pending,null);
+ assert.equal(scope.edges[0].nativeTap,"POST_FADER",
+   "rejected native tap must restore the last accepted PCM stage");
  // OUT uses the same actual INPUT destination as WIRE, not a name-only
  // GROUP lookup. An exclusive route promotes the existing native edge.
  const hooks=window.__ARMIX_NATIVE_M2__,sourceTrack=scope.tracks[0];

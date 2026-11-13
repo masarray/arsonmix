@@ -404,6 +404,29 @@
     else window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return result.ok;
   };
+  // One accepted EdgeId/tap command shared by SOF and the WIRE inspector.
+  // A typed SET_TAP recompiles the existing PCM graph; neither GUI may
+  // repaint PRE/POST until the subsequent independent accepted readback.
+  function requestNativeTap(source,edgeId,tap){
+    const state=controller?.state(),current=state?.current;
+    if(!current?.admitted||current.retained||state.pending||
+       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION")||
+       !source||!edgeId||!["PRE_FADER","POST_FADER"].includes(tap)){
+      status("PRE/POST unavailable · wait for an admitted native WIRE");return false;
+    }
+    const matches=current.graph.edges.filter(e=>e.enabled&&e.edgeId===edgeId&&
+      e.from===source&&e.primaryOutput===false);
+    if(matches.length!==1||!["PRE_FADER","POST_FADER"].includes(matches[0].tap)){
+      status("PRE/POST unavailable · selected send identity changed");return false;
+    }
+    if(matches[0].tap===tap)return true;
+    const result=controller.intent("APPLY_WIRE_TRANSACTION",source,{changes:[{
+      op:"SET_TAP",from:source,edgeId,tap
+    }]});
+    if(!result.ok){status("PRE/POST unchanged · "+result.error);return false;}
+    window.setTimeout(()=>controller?.expire(result.requestId),8000);
+    return true;
+  }
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
     const current=controller?.state()?.current,source=nativeIdFor(t);
@@ -514,10 +537,13 @@
       const isMain=edge.to===accepted.mainChannelId;
       const isPrimary=source?.primaryOutId===edge.to;
       // An independent SEND to MAIN is not the source's primary OUT.
-      const kind=isPrimary?"primary":edge.tap==="SPLIT_PRE"||edge.tap==="SPLIT_POST"?"split":"send";
+      // Explicit native tapStage disambiguates legacy PRE_FX SPLIT_PRE from
+      // real post-FX PRE_FADER. The reference 'split' mode means PRE_FX only.
+      const tap=["PRE_FADER","POST_FADER"].includes(edge.tapStage)?edge.tapStage:edge.tap;
+      const legacySplit=tap==="SPLIT_PRE"||tap==="SPLIT_POST";
+      const kind=isPrimary?"primary":legacySplit?"split":"send";
       const mode=isMain?(isPrimary?"postFader":"send"):kind==="primary"?"routeOnly":
-        kind==="split"?(edge.tap==="SPLIT_PRE"?"splitPre":"splitPost"):
-        edge.tap==="PRE_FADER"?"split":"send";
+        legacySplit?(tap==="SPLIT_PRE"?"splitPre":"splitPost"):"send";
       if (isPrimary && edge.gainLinear!==1) return false;
       const gainDb=isPrimary?0:Math.round(Math.max(-60,Math.min(6,
         edge.gainLinear>0?20*Math.log10(edge.gainLinear):-60))*10)/10;
@@ -526,7 +552,7 @@
       newWireByUi.set(uiId,edge.edgeId);
       newUiByWire.set(edge.edgeId,uiId);
       edges.push({id:uiId,sourceId:src,destId:dst,kind,mode,
-        nativeTap:edge.tap,sendEnabled:edge.sendEnabled!==false,
+        nativeTap:tap,sendEnabled:edge.sendEnabled!==false,
         enabled:true,levelDb:gainDb});
     }
     if (!scope.wireGraph.validateCandidateGraph(nextTracks,nextMaster.id,edges).ok) return false;
@@ -3477,9 +3503,7 @@
           return true;
         }
         const next=target.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
-        intent("APPLY_WIRE_TRANSACTION",t,{changes:[{
-          op:"SET_TAP",from:id,edgeId:target.edgeId,tap:next
-        }]});
+        requestNativeTap(id,target.edgeId,next);
         return true;
       }
       if(action==="sofOn"){
@@ -3646,6 +3670,17 @@
               Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb??0)))/20)}:{})};
         if(!logicalIntent("WIRE_TRANSACTION",from,{changes:[change]}).ok)
           nativeToast("WIRE not saved · previous routing retained");
+        return true;
+      }
+      // The inspector's legacy MODE gesture is only a presentation gesture.
+      // Map it to one real installed PRE_FADER/POST_FADER EdgeId transaction;
+      // never queue/replay it as a startup wire or mutate a demo graph.
+      if(Array.isArray(ops)&&ops.length===1&&ops[0].type==="MODE"){
+        const op=ops[0];
+        const source=nativeByUiId.get(op.sourceId),edgeId=wireByUiId.get(op.edgeId);
+        const tap=op.mode==="split"?"PRE_FADER":
+          op.mode==="send"?"POST_FADER":null;
+        requestNativeTap(source,edgeId,tap);
         return true;
       }
       const state=controller?.state();
