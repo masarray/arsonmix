@@ -225,49 +225,71 @@ def exercise(browser,out,width,height):
     x,y=pose(90);assert x>335 and abs(y-174)<1,("RIGHT",x,y)
     x,y=pose(180);assert abs(x-200)<1 and y>245,("REAR",x,y)
     x,y=pose(-90);assert x<60 and abs(y-174)<1,("LEFT",x,y)
-    # Actual pointer drag is taken from the VISIBLE L speaker at -90,
-    # toward the physical near-ellipse FRONT, not the hidden anchor.
+    # All drag paths now STREAM native edits DURING the gesture. A burst
+    # must emit only one in-flight command; the most recent sample follows
+    # verified ACK+snapshot, not hundreds of SPSC entries or false UI ACKs.
+    def command_count():
+        return page.evaluate(
+            "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    def applied_settings(action,settings):
+        emit(page,"arMixBuiltinSonKuAck",{
+            "requestId":action["requestId"],"status":"APPLIED"})
+        accepted_snapshot(page,state,settings,applied=action["requestId"])
     svg=editor.locator("#skMap").bounding_box()
     assert svg
     def screen(x,y):
         return (svg["x"]+x*svg["width"]/400,
                 svg["y"]+y*svg["height"]/330)
+
+    # SVG speaker movement must affect the JUCE PCM route BEFORE mouseup.
+    # FRONT is now visual TOP and acoustic 0°, not bottom.
     source=editor.locator('.sk-src[data-index="0"]')
     sx,sy=screen(float(source.get_attribute("data-visual-x")),
                  float(source.get_attribute("data-visual-y")))
-    ex,ey=screen(200,257)
+    ex,ey=screen(200,91)
+    before=command_count()
     page.mouse.move(sx,sy)
     page.mouse.down()
     page.mouse.move(ex,ey,steps=10)
+    assert command_count()==before+1,"Speaker drag not live / SPSC flooded"
+    first=last_action(page,"nativeSonKuSet")
+    assert first["settings"]["moving"] is False
     page.mouse.up()
+    assert command_count()==before+1,"Unverified sends flooded during drag"
+    applied_settings(first,{**SETTINGS,"moving":False,
+        "stereoSpreadDegrees":0.0,
+        "startAzimuthDegrees":first["settings"]["startAzimuthDegrees"]})
     dragAction=last_action(page,"nativeSonKuSet")
     assert dragAction["settings"]["moving"] is False
     assert abs(dragAction["settings"]["startAzimuthDegrees"])<5,dragAction
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":dragAction["requestId"],"status":"APPLIED"})
-    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
-        "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0},
-        applied=dragAction["requestId"])
-    # Vertical knob drag must update one typed value and commit once on
-    # pointer release. Pure browser drawing cannot claim DSP APPLIED.
+    if dragAction["requestId"]!=first["requestId"]:
+        assert command_count()==before+2,"Latest-wins did not coalesce"
+        applied_settings(dragAction,{**SETTINGS,"moving":False,
+            "stereoSpreadDegrees":0.0,"startAzimuthDegrees":
+            dragAction["settings"]["startAzimuthDegrees"]})
+
+    # Same global gesture scheduler handles FOUR rotary knobs (pointer, key).
+    # The original bug sent NOTHING until pointer release.
     knob=editor.locator("#skSpeed").locator("..")
     box=knob.bounding_box();assert box
     x=box["x"]+box["width"]*.5;y=box["y"]+box["height"]*.5
-    before=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length")
+    before=command_count()
     page.mouse.move(x,y);page.mouse.down()
-    page.mouse.move(x,y-17,steps=6);page.mouse.up()
-    newactions=page.evaluate(
-        "()=>window.__actions.filter(a=>a.action==='nativeSonKuSet')")
-    assert len(newactions)==before+1,("Rotary did not commit once",newactions)
-    dialAction=newactions[-1]
-    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
-    emit(page,"arMixBuiltinSonKuAck",{
-        "requestId":dialAction["requestId"],"status":"APPLIED"})
-    accepted_snapshot(page,state,{**SETTINGS,"moving":False,
+    page.mouse.move(x,y-17,steps=6)
+    assert command_count()==before+1,"Rotary does not stream native edit"
+    knobFirst=last_action(page,"nativeSonKuSet")
+    page.mouse.up()
+    assert command_count()==before+1,"Rotary overran single in-flight"
+    firstSettings={**SETTINGS,"moving":False,
         "stereoSpreadDegrees":0.0,"startAzimuthDegrees":0.0,
-        "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]},
-        applied=dialAction["requestId"])
+        "revolutionSeconds":knobFirst["settings"]["revolutionSeconds"]}
+    applied_settings(knobFirst,firstSettings)
+    dialAction=last_action(page,"nativeSonKuSet")
+    assert dialAction["settings"]["revolutionSeconds"]>12,dialAction
+    if dialAction["requestId"]!=knobFirst["requestId"]:
+        assert command_count()==before+2
+        applied_settings(dialAction,{**firstSettings,
+            "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]})
     # M4: native SPACE must be an actual typed ACK/readback edit.
     # No browser-only audio, no visual success before PCM applied.
     assert editor.locator(".sk-space-options button").count()==4
