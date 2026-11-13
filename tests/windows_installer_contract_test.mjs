@@ -380,3 +380,24 @@ test('WebView2 error screen cannot acknowledge healthy GUI; staging retries afte
   assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
   assert.match(script, /TotalMinutes -lt 20/);
 });
+
+
+test('acknowledged one-click upgrade is deferred until the exact candidate is approved', () => {
+  const updater = read('installer/ArSonMixAutoUpdate.ps1');
+  const native = read('src/Main.cpp');
+  assert.match(updater, /\$approvalPath=Join-Path \$root 'approved\.json'/);
+  assert.match(updater, /UPDATE_WAITING_FOR_USER_OK/);
+  assert.match(updater, /\$state\.operation -ceq 'upgrade'/);
+  for (const name of ['candidateSha','candidateTag','previousSha'])
+    assert.match(updater, new RegExp('\\$approval\\.'+name+' -cne \\[string\\]\\$state\\.'+name));
+  assert.ok(updater.indexOf('UPDATE_WAITING_FOR_USER_OK') < updater.indexOf("    $state.phase='installing'"),
+    'consent must gate the installer before any replacement');
+  assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
+  assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
+  assert.match(native, /NativeMessageBox::showAsync/);
+  assert.match(native, /withButton \("OK"\)/);
+  assert.match(native, /approved\.json/);
+  assert.match(native, /if \(button < 0\) return/);
+  assert.match(native, /lastUpdatePromptedSha_ == candidate/);
+  assert.doesNotMatch(updater, /(?:Stop-Process|taskkill|TerminateProcess)/);
+});
