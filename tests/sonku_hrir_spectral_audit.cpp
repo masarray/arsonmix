@@ -64,8 +64,8 @@ int main() {
                         const Response correction=center-average;
                         const Response n0=h0+correction,n1=h1+correction;
                         const Response corrected=.5*(n0+n1);
-                        const double baselineDb=db(std::abs(average)/std::max(1.,std::abs(center)));
-                        const double correctedDb=db(std::abs(corrected)/std::max(1.,std::abs(center)));
+                        const double baselineDb=db(std::abs(average)/std::max(1.e-9,std::abs(center)));
+                        const double correctedDb=db(std::abs(corrected)/std::max(1.e-9,std::abs(center)));
                         const double sideError=std::abs((n0-n1)-(h0-h1));
                         expect(std::isfinite(baselineDb)&&std::isfinite(correctedDb),
                                "nonfinite frequency response");
