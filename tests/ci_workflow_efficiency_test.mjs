@@ -70,7 +70,7 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
   assert.match(native, /ctest --test-dir build -C Release --output-on-failure/);
 });
 
-test('Full native/release qualification retains all CTests; isolated Harmonice FAT compiles only its verified targets', () => {
+test('Full native/release qualification retains all CTests; focused vocal harmony FAT compiles only its verified targets', () => {
   assert.match(native, /-DBUILD_TESTING=ON/);
   const fullBuild = native.indexOf('run: cmake --build build --config Release --parallel 2');
   const fullCTest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
@@ -96,7 +96,7 @@ test('Full native/release qualification retains all CTests; isolated Harmonice F
 });
 
 test('focused FAT preflights exact candidate CMake before 10-minute JUCE build', () => {
-  const begin = native.indexOf('- name: Build actual JUCE app and focused Harmonice native tests');
+  const begin = native.indexOf('- name: Build JUCE app and focused vocal harmony, mixer and ASIO tests');
   const end = native.indexOf('- name: Build executable and native RT tests', begin);
   assert.ok(begin >= 0 && end > begin, 'focused build section missing');
   const section = native.slice(begin, end);
@@ -128,7 +128,7 @@ test('focused FAT preflights exact candidate CMake before 10-minute JUCE build',
       target + '\\b', 'm'), 'main CMake missing mandatory '+target);
   }
   const testSection = native.slice(
-    native.indexOf('- name: Test focused Harmonice PCM and ASIO boundary'),
+    native.indexOf('- name: Run focused vocal harmony DSP, mixer PCM and ASIO checks'),
     native.indexOf('- name: Test realtime control primitives'));
   const requiredBlock = testSection.slice(testSection.indexOf('$requiredTests = @('),
     testSection.indexOf(')', testSection.indexOf('$requiredTests = @(')) + 1);
@@ -236,6 +236,9 @@ test('Pages is single guarded downstream publisher, never triggered by PR comple
   assert.match(pages, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(pages, /git ls-remote origin refs\/heads\/main/);
   assert.match(pages, /fetch-depth: 2/);
+  assert.match(pages,/git merge-base --is-ancestor "\$SOURCE_SHA" "\$CURRENT_MAIN"/);
+  assert.match(pages,/git diff --quiet "\$SOURCE_SHA" "\$CURRENT_MAIN" -- \. ':\(exclude\)docs\/\*\*' ':\(exclude\)README\.md'/);
+  assert.match(pages,/Reusing qualified Pages SHA/);
   // The old first-parent only diff gate was unsafe: a docs/CI commit after
   // the GUI commit could suppress the final qualified /preview/ deployment.
   assert.doesNotMatch(pages, /git diff --quiet HEAD\^ HEAD --/);

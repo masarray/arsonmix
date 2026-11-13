@@ -5,7 +5,7 @@ There are **two intentional GitHub Pages routes**, with different roles:
 | Public URL | Role | Source |
 | --- | --- | --- |
 | `/preview/` | Current, qualified mixer GUI. Keeps evolving with `main`. Also owns the matching native WebView2 composition. | Latest `main` |
-| `/preview-prod/` | Frozen, browser-only snapshot of the previous approved GUI **before Harmonice v7 PNG buttons**. Includes MUTE/SOLO/PFL controls and old styling for visual comparison. | Commit `09022ef0f227ca2a40a0c2f62c619a31395c8dac` |
+| `/preview-prod/` | Frozen, browser-only snapshot of the previous approved GUI **before the v7 mixer PNG keys**. Includes MUTE/SOLO/PFL controls and old styling for visual comparison. | Commit `09022ef0f227ca2a40a0c2f62c619a31395c8dac` |
 
 ## Why an immutable source pin
 

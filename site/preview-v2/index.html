@@ -752,33 +752,17 @@ function strip(t){
  code+=sectionFx(t)+sectionSend(t);
  code+='<div class="section pan-section"><span class="pan-icon" title="Pan / Balance">PAN</span><span class="pan-control '+(t.pan===0?'is-centered':'')+'" style="'+panStyle(t.pan)+'"><input class="center-pan" type="range" min="-100" max="100" step="1" value="'+t.pan+'" data-field="pan" title="PAN center detent: capture ±7, hold ±12; release snaps center; double-click resets" aria-label="Channel pan; center detent" aria-valuetext="'+(t.pan===0?'Center':t.pan<0?'Left '+Math.abs(t.pan):'Right '+t.pan)+'"></span><output>'+panLabel(t.pan)+'</output></div>';
 
- // PRE/POST describes the source channel's outgoing parallel WIRE sends
- // only. A direct MAIN wire is not a PRE/POST send and cannot light this key.
- const parallelSends=wireEdges.filter(e=>e.enabled&&e.sourceId===t.id&&e.kind==='send'&&e.destId!==master.id);
- const allSendPost=parallelSends.length>0&&parallelSends.every(e=>e.mode==='send');
- const allSendPre=parallelSends.length>0&&parallelSends.every(e=>e.mode==='split');
- const tapTarget=parallelSends.find(edge=>edge.id===selectedWireEdgeId)||
-  (parallelSends.length===1?parallelSends[0]:null);
- const tapMode=tapTarget?tapTarget.mode:allSendPost?'send':allSendPre?'split':
-  parallelSends.length?'mixed':'idle';
- const nativeTapUnavailable=!!window.__JUCE__?.backend&&!t.nativeTapAvailable;
- // An unpatched channel has a future WIRE default, not an illuminated send.
- // Four dedicated PNG frames avoid CSS-faked lighting: PRE, POST idle, POST
- // routed, MIX (several outgoing SEND edges with different tap positions).
- const tapVisual=nativeTapUnavailable?'idle':
-   parallelSends.length===0?'idle':
-   tapMode==='mixed'?'mixed':tapMode==='split'?'pre':'post';
- const tapText=tapVisual==='mixed'?'MIX':tapVisual==='pre'?'PRE':'POST';
- const tapEditable=!nativeTapUnavailable&&!!tapTarget;
- const tapTitle=nativeTapUnavailable?'PRE/POST unavailable until native WIRE tap ACK; routing unchanged':
-   !parallelSends.length?'NO SEND · connect and select an independent WIRE first':
-   tapMode==='mixed'?'Mixed PRE and POST parallel WIRE sends · select one WIRE before editing':
-   (tapMode==='send'?'POST follows channel fader':'PRE independent before FX')+
-   ' · selected EdgeId '+(tapTarget?.id||'none')+' of '+parallelSends.length+' parallel SEND(s)';
- code+='<div class="section switch-section mx-hw-row" role="group" data-tap-applicable="'+(t.kind!=='master'&&!sofEnabled)+'" aria-label="Channel Mute Solo'+(t.kind==='master'||sofEnabled?'':' and PRE/POST')+'">'
+ // Approved v9 physical row: MUTE / SOLO / PFL on every non-MASTER strip
+ // in MAIN MIX and SOF. Send tap belongs to the selected WIRE EdgeId
+ // inspector (and the contextual SOF send panel), never this key row.
+ const showPfl=t.kind!=='master';
+ const isNative=!!window.__JUCE__?.backend;
+ const pflTitle=isNative?'PFL unavailable · independent native MONITOR L/R not admitted':
+   'PFL · visual audition request only; no monitoring audio in browser preview';
+ code+='<div class="section switch-section mx-hw-row" role="group" data-tap-applicable="false" data-pfl-applicable="'+showPfl+'" aria-label="Channel Mute Solo'+(showPfl?' and PFL':'')+'">'
    +'<button type="button" class="mx-hw-key" data-hw-kind="mute" data-action="mute" title="Mute channel" aria-label="Mute channel" aria-pressed="'+t.mute+'"><span class="mx-hw-fallback">MUTE</span></button>'
    +'<button type="button" class="mx-hw-key" data-hw-kind="solo" data-action="solo" title="Solo channel" aria-label="Solo channel" aria-pressed="'+t.solo+'"><span class="mx-hw-fallback">SOLO</span></button>';
- if(t.kind!=='master'&&!sofEnabled)code+='<button type="button" class="mx-hw-key" data-hw-kind="tap" data-action="tapMode" data-tap-visual="'+tapVisual+'" title="'+escapeHtml(tapTitle)+'" aria-label="'+escapeHtml(t.name+' '+tapTitle)+'" aria-pressed="'+(tapMode==='mixed'&&!nativeTapUnavailable?'mixed':Boolean(parallelSends.length&&tapMode==='send'&&!nativeTapUnavailable))+'" '+(!tapEditable?'disabled':'')+'><span class="mx-hw-fallback">'+tapText+'</span></button>';
+ if(showPfl)code+='<button type="button" class="mx-hw-key" data-hw-kind="pfl" data-action="cue" title="'+escapeHtml(pflTitle)+'" aria-label="'+escapeHtml(t.name+' '+pflTitle)+'" aria-pressed="'+Boolean(t.cue&&!isNative)+'" '+(isNative?'disabled':'')+'><span class="mx-hw-fallback">PFL</span></button>';
  code+='</div>';
   code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
@@ -908,6 +892,7 @@ function toggleSof(force){
  sofEnabled=typeof force==='boolean'?force:!sofEnabled;
  updateSofTargets();
  if(sofEnabled&&!selectedSofDestination()){sofEnabled=false;say('Create a Bus or FX Return to use Sends on Faders');return;}
+ // PFL visual selection remains stable when switching between MAIN and SOF.
  const btn=document.getElementById('sofToggle');btn.classList.toggle('active',sofEnabled);
  btn.setAttribute('aria-pressed',String(sofEnabled));document.querySelector('.console-body').classList.toggle('sends-mode',sofEnabled);
  render();say(sofEnabled?'SENDS ON FADERS: adjusting '+sofTarget+' send levels · main faders protected':'MAIN MIX: faders control primary channel level');
@@ -993,30 +978,35 @@ function wirePathFor(edge,x0,y0,x1,y1,limit){
  wireMotionGeometry.set(key,[x0,y0,x1,y1,limit]);
  return wirePathData(x0,y0,x1,y1,limit,wireMotion.key===key?wireMotion.offset:0);
 }
-/* Socket impact travels backwards along the SAME accepted cable.
-   The two endpoints remain physically pinned; only the accepted SVG path
-   changes for 36 frames. No CSS keyframes, idle RAF or all-cables remount. */
-/* One low-frequency impact travels from receiver toward source, then
-   loses energy. Elapsed time makes 60/120 Hz render the same physical motion. */
+/* V60 tactile patch cable: one short full-span impact OUT -> IN.
+   The physical endpoints stay welded to the socket centers throughout.
+   The packet travels along the full normalized curve in 460ms, then the
+   cable settles in 190ms. No idle animation or graph/PCM writes. */
+const WIRE_IMPACT_TRAVEL_MS=460,WIRE_IMPACT_SETTLE_MS=190;
+const WIRE_IMPACT_DURATION_MS=WIRE_IMPACT_TRAVEL_MS+WIRE_IMPACT_SETTLE_MS;
 function wireImpactPathData(x0,y0,x1,y1,limit,elapsedMs){
  const span=Math.abs(x1-x0),ceiling=Math.max(12,Math.min(100,Number(limit)||72));
  const sag=Math.max(10,Math.min(ceiling,Math.min(ceiling-5,28+Math.sqrt(span)*1.55)));
- const c=sag*4/3,progress=Math.max(0,Math.min(1,elapsedMs/1600));
- // V44 geometric witness: 10.5px produced only 4.17px broad visible jolt
- // against the approved >5px gate. 13.4 restores a gentle >5px packet,
- // still below the retired 13.8px short/fast impulse; 1600ms remains.
- const center=.99-progress*.98,amp=13.4*Math.exp(-progress*3.5);
+ const c=sag*4/3;
+ const sweep=Math.max(0,Math.min(1,elapsedMs/WIRE_IMPACT_TRAVEL_MS));
+ // The impulse center actually reaches the receiving plug rather than
+ // disappearing halfway through from exponential travel attenuation.
+ const center=.035+.93*sweep;
+ const settle=Math.max(0,Math.min(1,(elapsedMs-WIRE_IMPACT_TRAVEL_MS)/WIRE_IMPACT_SETTLE_MS));
+ const amplitude=15.2*Math.pow(1-settle,2);
  let d='M '+x0.toFixed(1)+' '+y0.toFixed(1);
- // Smooth curve samples; zero displacement at both anchored ends.
  for(let i=1;i<=56;i++){
   const t=i/56,u=1-t;
   const x=u*u*u*x0+3*u*u*t*x0+3*u*t*t*x1+t*t*t*x1;
   const y=u*u*u*y0+3*u*u*t*(y0+c)+3*u*t*t*(y1+c)+t*t*t*y1;
   const dx=6*u*t*(x1-x0),dy=3*u*u*c+6*u*t*(y1-y0)+3*t*t*(-c);
   const norm=Math.hypot(dx,dy)||1,delta=t-center;
-  const pulse=amp*Math.exp(-(delta*delta)/(.30*.30))*
-   Math.sin(delta*10-progress*6)*Math.sin(Math.PI*t);
-  d+=' L '+(x-dy/norm*pulse).toFixed(1)+' '+(y+dx/norm*pulse).toFixed(1);
+  // A bounded, springy packet with no seam at the two fixed plugs.
+  // Preserve visible displacement all the way to 96% of cable length.
+  const tether=Math.min(1,t/.035,(1-t)/.035);
+  const packet=Math.exp(-(delta*delta)/(.145*.145));
+  const impulse=amplitude*packet*Math.cos(delta*13-sweep*1.4)*tether;
+  d+=' L '+(x-dy/norm*impulse).toFixed(1)+' '+(y+dx/norm*impulse).toFixed(1);
  }
  return d;
 }
@@ -1041,8 +1031,9 @@ function kickWireSpring(sourceId,destId){
   }
   if(began===null)began=now;
   const elapsed=Math.max(0,now-began);
-  paint(elapsed<1600?wireImpactPathData(...geometry,elapsed):wirePathData(...geometry,0));
-  if(elapsed<1600)requestAnimationFrame(step);
+  paint(elapsed<WIRE_IMPACT_DURATION_MS?
+   wireImpactPathData(...geometry,elapsed):wirePathData(...geometry,0));
+  if(elapsed<WIRE_IMPACT_DURATION_MS)requestAnimationFrame(step);
   else{wireMotion.offset=0;wireMotion.key=null;}
  }
  paint(wireImpactPathData(...geometry,0));
@@ -1616,7 +1607,12 @@ function renderWireRouting(){
    const edge=wireFor(Number(line.dataset.from),Number(line.dataset.to));
    if(!edge||represented.has(edge.id))continue;
    represented.add(edge.id);
-   if(edge.id===selectedWireEdgeId)line.classList.add('is-wire-selected');
+   if(edge.id===selectedWireEdgeId){
+    line.classList.add('is-wire-selected');
+    // The rendered jacket (NOT the transparent click hitbox) gains full
+    // length and a brighter version of its own channel color.
+    line.style.setProperty('--wire-selected-hue',line.getAttribute('stroke')||'#87dbff');
+   }
    const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
    hit.setAttribute('class','wire-interaction-hit'+(edge.id===selectedWireEdgeId?' is-wire-selected':''));
    hit.setAttribute('data-edge-id',String(edge.id));
@@ -1931,12 +1927,21 @@ function handleField(event){
    The 29x62 visual cap center is aligned to this same travel ruler. */
 let faderGesture=null;
 const consoleBody=document.querySelector('.console-body');
+/* Hardware unity detent measures physical distance, never an arbitrary
+   dB band: stable on tall/short rails. Alt bypasses the detent. Keyboard
+   and accessibility arrows retain unquantized 0.1 dB control. */
+const FADER_UNITY_CAPTURE_PX=7,FADER_UNITY_RELEASE_PX=12;
 function setFaderFromPointer(ev,gesture){
  const input=gesture.input,travel=gesture.travel?.getBoundingClientRect?.();
  if(!travel||travel.height<=0)return;
  const max=Number(input.max)||10,min=Number(input.min)||-60;
  const frac=Math.max(0,Math.min(1,(ev.clientY-travel.top)/travel.height));
- const gain=Math.round((max-(max-min)*frac)*10)/10;
+ let gain=Math.round((max-(max-min)*frac)*10)/10;
+ const unityY=travel.top+travel.height*(max/(max-min));
+ const tolerance=gesture.unityLatched?FADER_UNITY_RELEASE_PX:FADER_UNITY_CAPTURE_PX;
+ if(!ev.altKey&&Math.abs(ev.clientY-unityY)<=tolerance){
+  gain=0;gesture.unityLatched=true;
+ }else gesture.unityLatched=false;
  input.value=String(gain);
  handleField({target:input,type:'input',altKey:!!ev.altKey});
 }
@@ -2058,6 +2063,9 @@ function finishFaderPointer(ev){
  if(!faderGesture||ev.pointerId!==faderGesture.pointerId)return;
  setFaderFromPointer(ev,faderGesture);
  const g=faderGesture;faderGesture=null;
+ // A final committed release (including exactly 0 dB) is always delivered
+ // to native ACK/readback and offline session persistence, not only preview.
+ handleField({target:g.input,type:'change',altKey:!!ev.altKey});
  g.box.releasePointerCapture?.(ev.pointerId);
  const t=findTrack(g.input);
  if(t)say(t.name+' fader '+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+' dB');
@@ -2139,33 +2147,23 @@ document.querySelector('.console-body').addEventListener('click',e=>{
   say(t.name+' → '+sofTarget+' · '+(next==='split'?'PRE-FX':'POST-FADER')+' · reference graph');
   return;
  }
- if(a==='tapMode'){
-  if(t.kind==='master')return;
-  // PRE/POST is a structural native DSP tap change, NOT a cosmetic button.
-  // The current native bridge rejects MODE without verified PCM ACK. Never
-  // alter the local presentation in native mode until that capability exists.
-  if(window.__JUCE__?.backend){
-   say('PRE/POST is unavailable for this native graph · routing unchanged');
-   return;
-  }
-  const sends=wireEdges.filter(edge=>edge.enabled&&edge.sourceId===t.id&&edge.kind==='send'&&edge.destId!==master.id);
-  // MIX status is not permission to rewrite all parallel connections.
-  const selected=sends.find(edge=>edge.id===selectedWireEdgeId)||(sends.length===1?sends[0]:null);
-  if(sends.length>1&&!selected){say('Select a specific WIRE before changing its tap');return;}
-  if(!selected){say('NO SEND · patch and select one WIRE before changing its tap');return;}
-  const next=selected.mode==='send'?'split':'send';
-  if(!wireGraphCommit([{type:'MODE',sourceId:t.id,edgeId:selected.id,mode:next}]))return;
-  refreshStrip(t);selectTrack(t);
-  say(t.name+' → '+(tracks.find(x=>x.id===selected.destId)?.name||'BUS')+
-    ' '+(next==='split'?'PRE-FX':'POST-FADER')+
-    ' · one EdgeId only · primary MAIN unchanged · GUI reference');
-  return;
- }
  if(a==='eq')t.eq=!t.eq;
  else if(a==='fxOn'){if(deferNativeFxIntent('FX chain bypass'))return;t.fxOn=!t.fxOn;}
  else if(a==='pre'){t.pre=!t.pre;syncActiveSend(t);}
  else if(a==='sendOn'){say('Legacy SEND disabled; patch via WIRE');return;}
- else if(['mute','solo','cue','mon','phase'].includes(a)){
+ else if(a==='cue'){
+  // Only a browser-reference cue selection; never route to MAIN/audio.
+  if(t.kind==='master'||window.__JUCE__?.backend){
+    say('PFL requires an admitted independent native monitor');
+    return;
+  }
+  t.cue=!t.cue;
+  refreshStrip(t);
+  say(t.name+' PFL '+(t.cue?'selected':'cleared')+' · visual reference only; no monitor audio');
+  return;
+ }
+ else if(['mute','solo','mon','phase'].includes(a)){
+
   t[a]=!t[a];
   if(t.group&&(a==='mute'||a==='solo')){
    tracks.filter(other=>other.group===t.group&&other.id!==t.id).forEach(other=>{other[a]=t[a];refreshStrip(other);});

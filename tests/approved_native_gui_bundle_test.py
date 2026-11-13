@@ -41,7 +41,12 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("make,render,findTrack,displayMeterDbfs", native)
             self.assertIn("installGraph(channels,main,edges)", native)
             self.assertIn("if(window.__JUCE__?.backend)return true;", native)
-            self.assertIn("consumeField?.({target:g.input,type:'change'})", native)
+            # V60 public pointerup emits exactly one final change. The
+            # native-only handleField seam owns that event/ACK; a second
+            # synthetic callback here would duplicate the release.
+            self.assertEqual(native.count("handleField({target:g.input,type:'change',altKey:!!ev.altKey});"),1)
+            self.assertIn("window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;", native)
+            self.assertNotIn("consumeField?.({target:g.input,type:'change'})", native)
             self.assertEqual(manifest["approvedPagesHtmlSha256"], bundle.sha256((source / "index.html").read_bytes()))
             self.assertNotEqual(native, (ROOT / "web/index.html").read_text("utf-8"))
             self.assertIn("approved-native-bridge.js", native)
@@ -99,7 +104,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             for asset in (source / "assets").iterdir():
                 self.assertEqual((out / "assets" / asset.name).read_bytes(), asset.read_bytes(),
                                  "Native /preview/ asset differs: " + asset.name)
-            for name in ("mixer-control-keys.css", "mixer-control-keys.js", "harmonice-thin-flat-v9-approved-off-shadow-57x30.png"):
+            for name in ("mixer-control-keys.css", "mixer-control-keys.js", "mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"):
                 button = (ROOT / "site/preview-buttons/assets" / name).read_bytes()
                 self.assertEqual((out / "assets" / name).read_bytes(), button)
             # Stage D uses ONE compiled CSSOM for both Pages and WebView2.
@@ -121,7 +126,7 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("BinaryData::mixercontrolkeys_css", header)
             self.assertIn("BinaryData::arsonmixapprovedruntime_css", header)
             self.assertIn("BinaryData::mixercontrolkeys_js", header)
-            self.assertIn('"/assets/harmonice-thin-flat-v9-approved-off-shadow-57x30.png"', header)
+            self.assertIn('"/assets/mixer-keys-thin-flat-v9-approved-off-shadow-57x30.png"', header)
             for entry in first["files"]:
                 self.assertEqual(bundle.sha256((a / entry["path"]).read_bytes()), entry["sha256"])
             (a / "index.html").write_text("WRONG GUI", encoding="utf-8")

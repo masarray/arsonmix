@@ -1587,11 +1587,17 @@ test("P0 native hardware IN remains selectable after ChannelId ownership, failed
  assert.equal(sourceCommands()[1].payload.graphRevision,base.graph.revision);
  assert.notEqual(sourceCommands()[1].payload.requestId,id);
 });
-test("M3 Windows bundle owns pointerup fader gesture and fences native FX keyboard reorder",()=>{
+test("M3/V60 Windows bundle dispatches exactly one fader release through native ACK and fences FX reorder",()=>{
  const builder=read("scripts/build_approved_native_gui.py");
+ const preview=read("site/preview-v2/index.html");
  const bridge=read("web/approved-native-bridge.js");
- assert.ok(builder.includes("const g=faderGesture;faderGesture=null;"));
- assert.ok(builder.includes("consumeField?.({target:g.input,type:'change'})"));
+ assert.ok(preview.includes("const g=faderGesture;faderGesture=null;"));
+ assert.equal(preview.split("handleField({target:g.input,type:'change',altKey:!!ev.altKey});").length-1,1);
+ assert.ok(builder.includes("window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;"));
+ assert.ok(!builder.includes("consumeField?.({target:g.input,type:'change'})"),
+   "V60 source already emits the final change; native must not double-publish");
+ assert.ok(builder.includes("faderDbFromTravelPercent(100*(1-frac),max===6)"));
+ assert.ok(builder.includes("faderPercent(0,max===6)/100"));
  assert.ok(builder.includes("function fxNativeTransactionRequired"));
  assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
  assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
