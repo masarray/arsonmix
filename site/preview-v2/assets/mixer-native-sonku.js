@@ -7,13 +7,20 @@ const defaults=()=>({startAzimuthDegrees:0,revolutionSeconds:12,
  stereoSpreadDegrees:60,spatialMix:1,outputTrim:.75,moving:true,clockwise:true,
  spacePreset:0,sourceDistanceMeters:1.6,roomAmount:.55,ambience:.30});
 const normalizeSettings=s=>({...defaults(),...s});
+// Legacy v1/v2 states already persist a LINEAR outputTrim number (0..1).
+// Keep the native JSON key and its meaning intact; the visible GAIN dial
+// now expresses the SAME linear multiplier in dB and can exceed unity.
+// No schema/serialized-bytes migration is necessary.
+const toDb=g=>g>0?Math.max(-24,20*Math.log10(g)):-24;
+const fromDb=db=>Number(Math.pow(10,Number(db)/20).toFixed(6));
+const dbLabel=db=>(db>0?"+":"")+db.toFixed(1)+" dB";
 const roomMaxDistance=[10,3.1,6.7,10];
 const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
  Math.abs(s.startAzimuthDegrees)<=360 &&
  Number.isFinite(s.revolutionSeconds)&&s.revolutionSeconds>=.5&&s.revolutionSeconds<=120 &&
  Number.isFinite(s.stereoSpreadDegrees)&&s.stereoSpreadDegrees>=0&&s.stereoSpreadDegrees<=180 &&
  Number.isFinite(s.spatialMix)&&s.spatialMix>=0&&s.spatialMix<=1 &&
- Number.isFinite(s.outputTrim)&&s.outputTrim>=0&&s.outputTrim<=1 &&
+ Number.isFinite(s.outputTrim)&&s.outputTrim>=0&&s.outputTrim<=4 &&
  typeof s.moving==="boolean"&&typeof s.clockwise==="boolean" &&
  Number.isInteger(s.spacePreset) && s.spacePreset>=0 && s.spacePreset<=3 &&
  Number.isFinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6 &&
@@ -115,7 +122,7 @@ root.innerHTML=[
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPATIAL MIX</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skMix" type="range" min="0" max="100" step="1" value="100" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skMixValue">100%</output></label>',
- '<label class="sk-rotary"><span class="sk-param-name">OUTPUT TRIM</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="0" max="100" step="1" value="75" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skTrimValue">75%</output></label>',
+ '<label class="sk-rotary"><span class="sk-param-name">OUTPUT GAIN</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="-24" max="12" step="0.5" value="-2.5" title="Gain in dB (-24 to +12). Double-click for unity 0 dB."/></span><output id="skTrimValue">-2.5 dB</output></label>',
  '</div><div class="sk-space-panel" aria-label="Room simulation controls">',
  '<div class="sk-space-head"><span>SPACE</span><output id="skSpaceText">DIRECT ONLY</output></div>',
  '<div class="sk-space-options" role="group" aria-label="Room size">',
@@ -125,9 +132,11 @@ root.innerHTML=[
  '<button type="button" data-sk-room="3">LARGE</button></div>',
  '<label class="sk-space-slider" for="skDistance">SOURCE DISTANCE <output id="skDistanceValue">1.6 m</output>',
  '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
- '<label class="sk-space-slider" for="skAmbience">AMBIENCE <output id="skAmbienceValue">30%</output>',
+ '<label class="sk-space-slider" for="skReflections">REFLECTIONS <output id="skReflectionsValue">55%</output>',
+ '<input id="skReflections" type="range" min="0" max="100" step="1" value="55" title="First-wall reflections level, 0 is dry"/></label>',
+ '<label class="sk-space-slider" for="skAmbience">REVERB <output id="skAmbienceValue">30%</output>',
  '<input id="skAmbience" type="range" min="0" max="100" step="1" value="30"/></label>',
- '<div class="sk-space-hint">Reflections + musical room tail · OFF keeps original HRTF</div></div>',
+ '<div class="sk-space-hint">Independent first reflections + diffuse late reverb · OFF = original HRTF</div></div>',
  '<div class="sk-guide">Drag monitors to position · rotary knobs: vertical drag, double-click to reset</div>',
  '</aside></div>',
  '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
@@ -158,7 +167,7 @@ function render(){
  const vals=[["skSpeed",s.revolutionSeconds,"skSpeedValue",s.revolutionSeconds.toFixed(1)+" s"],
   ["skSpread",s.stereoSpreadDegrees,"skSpreadValue",Math.round(s.stereoSpreadDegrees)+"°"],
   ["skMix",s.spatialMix*100,"skMixValue",Math.round(s.spatialMix*100)+"%"],
-  ["skTrim",s.outputTrim*100,"skTrimValue",Math.round(s.outputTrim*100)+"%"]];
+  ["skTrim",toDb(s.outputTrim),"skTrimValue",dbLabel(toDb(s.outputTrim))]];
  for(const [input,value,out,label] of vals){
   const el=$(input);el.value=String(value);$(out).textContent=label;
   const min=Number(el.min),max=Number(el.max);
@@ -184,6 +193,11 @@ function render(){
  $("skDistanceValue").textContent=s.sourceDistanceMeters.toFixed(1)+" m";
  if(!rangeEdits.has("skAmbience"))
   $("skAmbience").value=String(Math.round(s.ambience*100));
+ const reflections=$("skReflections");
+ if(!rangeEdits.has("skReflections"))
+  reflections.value=String(Math.round(s.roomAmount*100));
+ reflections.disabled=s.spacePreset===0;
+ $("skReflectionsValue").textContent=Math.round(s.roomAmount*100)+"%";
  $("skAmbience").disabled=s.spacePreset===0;
  $("skAmbienceValue").textContent=Math.round(s.ambience*100)+"%";
  // Only source placement is animated; knobs and input ranges are NOT
@@ -318,6 +332,7 @@ root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click
 }));
 for(const [id,key,convert] of [
  ["skDistance","sourceDistanceMeters",v=>v],
+ ["skReflections","roomAmount",v=>v/100],
  ["skAmbience","ambience",v=>v/100]]) {
  const slider=$(id);
  // While a range gesture is active, timer-driven native readbacks MUST NOT
@@ -344,7 +359,7 @@ for(const [id,key,convert] of [
  ["skSpeed","revolutionSeconds",v=>v],
  ["skSpread","stereoSpreadDegrees",v=>v],
  ["skMix","spatialMix",v=>v/100],
- ["skTrim","outputTrim",v=>v/100]]) {
+ ["skTrim","outputTrim",v=>fromDb(v)]]) {
  const input=$(id);
  input.addEventListener("input",()=>{const v=Number(input.value);
   if(!Number.isFinite(v))return;draft={...draft,[key]:convert(v)};render();});
@@ -353,7 +368,7 @@ for(const [id,key,convert] of [
 // Control-surface tactile dials. Retain native <input type=range> as the
 // accessible focus/keyboard source; direct pointer motion is vertical and
 // commits exactly once on release (never streams speculative host DSP values).
-for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim",75]]){
+for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim",0]]){
  const input=$(id),dial=input.closest(".sk-dial");
  const min=Number(input.min),max=Number(input.max),step=Number(input.step)||1;
  dial.addEventListener("pointerdown",e=>{

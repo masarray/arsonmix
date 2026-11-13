@@ -18,7 +18,7 @@ struct Settings {
     float revolutionSeconds = 12.f;
     float stereoSpreadDegrees = 60.f;
     float spatialMix = 1.f;           // 1=HRTF; 0=original L/R
-    float outputTrim = 0.75f;         // avoid summing two uncorrelated emitters at unity
+    float outputTrim = 0.75f;         // legacy linear gain, now user-facing GAIN (-24..+12 dB)
     bool moving = true;
     bool clockwise = true;
     // Version-2 persisted, native-ACKed acoustic scene. Zero is legacy
@@ -39,7 +39,7 @@ inline bool valid(const Settings& s) noexcept {
         std::isfinite(s.stereoSpreadDegrees) && s.stereoSpreadDegrees>=0.f &&
         s.stereoSpreadDegrees<=180.f &&
         std::isfinite(s.spatialMix) && s.spatialMix>=0.f && s.spatialMix<=1.f &&
-        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=1.f &&
+        std::isfinite(s.outputTrim) && s.outputTrim>=0.f && s.outputTrim<=4.f &&
         s.spacePreset>=0 && s.spacePreset<=3 &&
         std::isfinite(s.sourceDistanceMeters) && s.sourceDistanceMeters>=1.6f &&
         s.sourceDistanceMeters<=10.f &&
@@ -90,6 +90,8 @@ public:
         smoothedDistanceGain_=1.f;
         smoothedRoomLevel_=1.f;
         smoothedBassShelf_=0.f;
+        smoothedErPresence_=1.f;
+        smoothedTailPresence_=1.f;
         earBass_.fill(0.f);
         limiterGain_=1.f;
         write_=0;
@@ -169,7 +171,10 @@ public:
             if(std::abs(smoothedTrim_-settings_.outputTrim)<1.e-6f)
                 smoothedTrim_=settings_.outputTrim;
             const float dryLevel=1.f-smoothedMix_;
-            const float binauralLevel=0.5f*smoothedMix_*smoothedTrim_;
+            // Preserve HRTF-only stored-state arithmetic exactly; scene ON
+            // uses an actual full-output gain (dry+wet) instead of trim-only.
+            const float legacyBinauralLevel=.5f*smoothedMix_*smoothedTrim_;
+            const float sceneBinauralLevel=.5f*smoothedMix_;
             if(remaining_==0) {
                 updateKernels();
                 remaining_=updateInterval;
@@ -202,16 +207,18 @@ public:
             const auto late=reverb_.active()
                 ?reverb_.process(x0,x1)
                 :SonKuMusicalReverb::Ears{};
-            if(!nativeSpace) {
-                // Preserve byte-for-byte legacy HRIR and offline V2/V3 1/r
-                // until the operator actually enables a native ROOM scene.
+            if(!nativeSpace && settings_.outputTrim<=1.f &&
+               smoothedTrim_<=1.f) {
+                // Preserve byte-for-byte original HRTF/old .smix output for
+                // ROOM OFF and gain <= unity. Newly boosted GAIN > unity
+                // uses the protected branch below even with ROOM OFF.
                 if(distanceGain==1.f) {
-                    left[i]=dryLevel*x0+binauralLevel*(ears[0]+reflection.left+late.left);
-                    right[i]=dryLevel*x1+binauralLevel*(ears[1]+reflection.right+late.right);
+                    left[i]=dryLevel*x0+legacyBinauralLevel*(ears[0]+reflection.left+late.left);
+                    right[i]=dryLevel*x1+legacyBinauralLevel*(ears[1]+reflection.right+late.right);
                 } else {
-                    left[i]=dryLevel*x0+binauralLevel*
+                    left[i]=dryLevel*x0+legacyBinauralLevel*
                         (distanceGain*ears[0]+reflection.left+late.left);
-                    right[i]=dryLevel*x1+binauralLevel*
+                    right[i]=dryLevel*x1+legacyBinauralLevel*
                         (distanceGain*ears[1]+reflection.right+late.right);
                 }
             } else {
@@ -223,10 +230,28 @@ public:
                     ((roomEnabled?1.12f:1.f)-smoothedRoomLevel_);
                 smoothedBassShelf_+=distanceSlew_*
                     ((roomEnabled?0.82f:0.f)-smoothedBassShelf_);
+                // The original experimental return levels were intentionally
+                // near-silent: ER base 0.28 * wall 0.70 * 1/r and diffuse FDN
+                // output 0.23 * amount, followed by another 0.5 * trim.
+                // Scene-only presence curves keep direct/reflected/tail
+                // INDEPENDENT: distance still reduces direct while wall
+                // echoes and the later diffuse field identify the room.
+                // Gain laws are bounded affine maps, zero wet stays EXACT
+                // zero, no exp/pow/alloc on the audio callback.
+                const float targetErPresence=roomEnabled?
+                    1.45f+2.0f*settings_.roomAmount:1.f;
+                const float targetTailPresence=roomEnabled?
+                    2.2f+4.0f*settings_.ambience:1.f;
+                smoothedErPresence_+=distanceSlew_*
+                    (targetErPresence-smoothedErPresence_);
+                smoothedTailPresence_+=distanceSlew_*
+                    (targetTailPresence-smoothedTailPresence_);
                 float spatialL=smoothedDistanceGain_*ears[0]+
-                    reflection.left+late.left;
+                    smoothedErPresence_*reflection.left+
+                    smoothedTailPresence_*late.left;
                 float spatialR=smoothedDistanceGain_*ears[1]+
-                    reflection.right+late.right;
+                    smoothedErPresence_*reflection.right+
+                    smoothedTailPresence_*late.right;
                 // Low-frequency KEMAR response is ~-7..-11 dB below 200Hz.
                 // A gentle bounded *binaural* shelf restores warmth without
                 // mixing dry mono under the HRIR or altering left/right ITD.
@@ -234,8 +259,13 @@ public:
                 earBass_[1]+=bassSlew_*(spatialR-earBass_[1]);
                 spatialL+=smoothedBassShelf_*earBass_[0];
                 spatialR+=smoothedBassShelf_*earBass_[1];
-                float outL=dryLevel*x0+binauralLevel*smoothedRoomLevel_*spatialL;
-                float outR=dryLevel*x1+binauralLevel*smoothedRoomLevel_*spatialR;
+                // GAIN is final full-output gain, not the old wet-only trim.
+                // When ROOM OFF is reselected after a native scene, the
+                // additional wet presence smoothly decays with its own engine.
+                float outL=smoothedTrim_*
+                    (dryLevel*x0+sceneBinauralLevel*smoothedRoomLevel_*spatialL);
+                float outR=smoothedTrim_*
+                    (dryLevel*x1+sceneBinauralLevel*smoothedRoomLevel_*spatialR);
                 // Zero-lookahead *linked* sample-peak safety guard. Quiet
                 // signals are linear; peaks are gently returned below unity
                 // without routing through a second engine or allocating.
@@ -308,6 +338,7 @@ private:
     float smoothedMix_=1.f,smoothedTrim_=0.75f;
     float smoothedDistanceGain_=1.f,smoothedRoomLevel_=1.f;
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
+    float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
     float filterSlew_=0.f,levelSlew_=0.f;
     float distanceSlew_=0.f,bassSlew_=0.f,limiterRelease_=0.f;

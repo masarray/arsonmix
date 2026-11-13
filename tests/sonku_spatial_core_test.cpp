@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 int main() {
     using namespace armix::sonku;
@@ -331,6 +332,84 @@ int main() {
                 for(int i=0;i<block;++i)
                     assert(std::abs(audioL[i])<=.981f &&
                            std::abs(audioR[i])<=.981f);
+            }
+        }
+        // Explicit operator report: early and late are *inaudible* in the
+        // pre-boosted native scene. Assert true independent wet returns and
+        // their tail window; pure UI % changes cannot satisfy this test.
+        {
+            constexpr int n=16384;
+            Settings base=s;base.moving=false;base.startAzimuthDegrees=0.f;
+            base.stereoSpreadDegrees=0.f;base.outputTrim=1.f;
+            base.spacePreset=1;base.sourceDistanceMeters=1.6f;
+            base.roomAmount=0.f;base.ambience=0.f;
+            Settings first=base;first.roomAmount=.55f;
+            Settings tail=base;tail.ambience=.30f;
+            Settings both=first;both.ambience=.30f;
+            auto mk=[](){return std::make_unique<SonKuSpatialCore>();};
+            auto reference=mk(),reflected=mk(),reverberated=mk(),combined=mk();
+            assert(reference->prepare(rate)&&reflected->prepare(rate)&&
+                   reverberated->prepare(rate)&&combined->prepare(rate));
+            assert(reference->setSettings(base)&&reflected->setSettings(first)&&
+                   reverberated->setSettings(tail)&&combined->setSettings(both));
+            // Measure the SETTLED room response, not its deliberate 10-30ms
+            // activation fades. Real operator hears the running room after
+            // ACK. Using a t=0 impulse conflates wet attenuation with the
+            // intentional click-preventing fade, falsely failing ER.
+            const int preroll=static_cast<int>(rate/5.);
+            std::vector<float> warmL(preroll,0.f),warmR(preroll,0.f);
+            for(auto* core:{reference.get(),reflected.get(),
+                            reverberated.get(),combined.get()}){
+                std::fill(warmL.begin(),warmL.end(),0.f);
+                std::fill(warmR.begin(),warmR.end(),0.f);
+                core->process(warmL.data(),warmR.data(),preroll);
+            }
+            std::vector<float> dryL(n),dryR(n),erL(n),erR(n),
+                               rvL(n),rvR(n),allL(n),allR(n);
+            dryL[0]=dryR[0]=erL[0]=erR[0]=rvL[0]=rvR[0]=
+                allL[0]=allR[0]=.40f;
+            reference->process(dryL.data(),dryR.data(),n);
+            reflected->process(erL.data(),erR.data(),n);
+            reverberated->process(rvL.data(),rvR.data(),n);
+            combined->process(allL.data(),allR.data(),n);
+            double direct=0.,erPresence=0.,latePresence=0.,combinedDifference=0.;
+            for(int i=0;i<n;++i){
+                direct+=std::abs(dryL[i])+std::abs(dryR[i]);
+                if(i>=150 && i<2200)
+                    erPresence+=std::abs(erL[i]-dryL[i])+
+                                std::abs(erR[i]-dryR[i]);
+                if(i>=2200 && i<13000)
+                    latePresence+=std::abs(rvL[i]-dryL[i])+
+                                  std::abs(rvR[i]-dryR[i]);
+                combinedDifference+=std::abs(allL[i]-dryL[i])+
+                                    std::abs(allR[i]-dryR[i]);
+                for(const float v:{erL[i],erR[i],rvL[i],rvR[i],allL[i],allR[i]})
+                    assert(std::isfinite(v)&&std::abs(v)<=.981f);
+            }
+            // Wet effects must be sizeable relative to the original measured
+            // binaural first arrival, and independently controllable.
+            assert(direct>.01);
+            assert(erPresence/direct>.035);
+            assert(latePresence/direct>.035);
+            assert(combinedDifference>erPresence*.55);
+            // Gain is not a renamed cap at unity: new saved v2 linear values
+            // >1 are admitted and affect the *output*, including MIX=0.
+            Settings boosted=base;boosted.spacePreset=0;
+            boosted.spatialMix=0.f;boosted.outputTrim=2.f;
+            assert(valid(boosted));
+            Settings invalid=boosted;invalid.outputTrim=4.1f;
+            assert(!valid(invalid));
+            auto gainCore=mk();assert(gainCore->prepare(rate));
+            assert(gainCore->setSettings(boosted));
+            std::array<float,8192> gainL{},gainR{};
+            gainL.fill(.12f);gainR.fill(-.10f);
+            gainCore->process(gainL.data(),gainR.data(),8192);
+            assert(gainL.back()>.22f && gainR.back()<-.18f);
+            gainL.fill(.93f);gainR.fill(-.93f);
+            gainCore->process(gainL.data(),gainR.data(),8192);
+            for(int i=0;i<8192;++i){
+                assert(std::abs(gainL[i])<=.981f);
+                assert(std::abs(gainR[i])<=.981f);
             }
         }
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients

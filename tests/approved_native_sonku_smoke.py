@@ -275,6 +275,9 @@ def exercise(browser,out,width,height):
     assert editor.locator(".sk-space-options button").count()==4
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
+    assert editor.locator("#skReflections").is_disabled()
+    assert editor.locator("#skTrimValue").inner_text().endswith("dB")
+    assert editor.locator("#skTrim").get_attribute("max")=="12"
     editor.locator('[data-sk-room="2"]').click()
     scene=last_action(page,"nativeSonKuSet")
     assert scene["settings"]["spacePreset"]==2,scene
@@ -292,6 +295,36 @@ def exercise(browser,out,width,height):
     assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
     assert editor.locator("#skDistance").is_enabled()
     assert editor.locator("#skAmbience").is_enabled()
+    assert editor.locator("#skReflections").is_enabled()
+    # The 0..100% controls must reach independent native wet parameters,
+    # never only browser-side visual labels. Include a >unity GAIN request
+    # to prove the formerly capped 0..100% trim has genuinely become dB gain.
+    def apply_slider(selector,value,field):
+        editor.locator(selector).evaluate("""(n,v)=>{
+          n.value=String(v);
+          n.dispatchEvent(new Event('input',{bubbles:true}));
+          n.dispatchEvent(new Event('change',{bubbles:true}));
+        }""",value)
+        sent=last_action(page,"nativeSonKuSet")
+        assert field in sent["settings"],sent
+        emit(page,"arMixBuiltinSonKuAck",{
+            "requestId":sent["requestId"],"status":"APPLIED"})
+        return sent
+    gain=apply_slider("#skTrim",6.0,"outputTrim")
+    assert 1.99<gain["settings"]["outputTrim"]<2.0,gain
+    sceneState={**sceneState,"outputTrim":gain["settings"]["outputTrim"]}
+    accepted_snapshot(page,state,sceneState,applied=gain["requestId"])
+    assert "+6.0 dB" in editor.locator("#skTrimValue").inner_text()
+    reflections=apply_slider("#skReflections",85,"roomAmount")
+    assert abs(reflections["settings"]["roomAmount"]-.85)<.001
+    sceneState={**sceneState,"roomAmount":.85}
+    accepted_snapshot(page,state,sceneState,applied=reflections["requestId"])
+    assert editor.locator("#skReflectionsValue").inner_text()=="85%"
+    reverb=apply_slider("#skAmbience",70,"ambience")
+    assert abs(reverb["settings"]["ambience"]-.70)<.001
+    sceneState={**sceneState,"ambience":.70}
+    accepted_snapshot(page,state,sceneState,applied=reverb["requestId"])
+    assert editor.locator("#skAmbienceValue").inner_text()=="70%"
     # P0 regression: a 250ms native readback used to reset a held distance
     # range thumb while dragging. Exercise a REAL mouse hold, issue old
     # readback in the middle of the gesture, then release exactly once.
@@ -350,6 +383,7 @@ def exercise(browser,out,width,height):
                       applied=off["requestId"])
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
+    assert editor.locator("#skReflections").is_disabled()
     bounds=editor.bounding_box()
     assert bounds and bounds["width"]>260 and bounds["width"]<width+2
     # All listener and rendering JS exceptions remain fatal.
