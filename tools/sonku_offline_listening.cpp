@@ -323,6 +323,36 @@ void notes(const std::filesystem::path& directory,
         key<<"Trial "<<i+1<<": "<<direction(blind[i])<<"\n";
 }
 }
+// P1.1 original two-instrument stress fixture: 220Hz coherent bass masks
+// frequency-local inverted 3200Hz treble in a positive full-band correlation.
+std::vector<std::uint8_t> musicSplitBandProof() {
+    SonKuSpatialCore dsp;
+    Settings scene=fixed(0.f);
+    scene.stereoSpreadDegrees=0.f;
+    if(!dsp.prepare(rate)||!dsp.setSettings(scene))
+        throw std::runtime_error("Split-band SonKu fixture not prepared");
+    constexpr int total=rate*4;
+    constexpr float pi=3.14159265358979323846f;
+    std::vector<std::uint8_t> output;
+    output.reserve(static_cast<std::size_t>(total)*4);
+    for(int at=0;at<total;at+=framesPerBlock) {
+        const int count=std::min(framesPerBlock,total-at);
+        std::array<float,framesPerBlock> l{},r{};
+        for(int i=0;i<count;++i) {
+            const int n=at+i;
+            const float env=std::clamp(
+                std::min(n,total-1-n)/static_cast<float>(rate/30),0.f,1.f);
+            const float t=static_cast<float>(n)/rate;
+            const float bass=env*.13f*std::sin(2.f*pi*220.f*t);
+            const float treble=env*.06f*std::sin(2.f*pi*3200.f*t);
+            l[i]=bass+treble;
+            r[i]=bass-treble;
+        }
+        dsp.process(l.data(),r.data(),count);
+        for(int i=0;i<count;++i)appendStereo(output,l[i],r[i]);
+    }
+    return output;
+}
 // Shared by the whole listening package and the fast PR-scoped integrity
 // experiment. No expensive 20-second room renders in the new fast lane.
 void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
@@ -336,6 +366,8 @@ void writeMusicIntegrityEvidence(const std::filesystem::path& dir) {
              musicIntegrityProof(0.f,false,60.f));
     writeWav(dir/"sonku-music-coherent-rear-spread60.wav",
              musicIntegrityProof(180.f,false,60.f));
+    writeWav(dir/"sonku-music-splitband-bass-coherent-treble-inverted.wav",
+             musicSplitBandProof());
     std::ofstream guide(dir/"MUSIC-INTEGRITY-LISTENING.txt");
     if(!guide)throw std::runtime_error("Cannot write integrity guide");
     guide<<"All three are original generated 4s tones at matched input level, "
@@ -355,7 +387,7 @@ int main(int argc,char** argv){
         std::filesystem::create_directories(dir);
         if(argc==3){
             writeMusicIntegrityEvidence(dir);
-            std::cout<<"Music-integrity 5x headphone A/B WAV PASS\n";
+            std::cout<<"Music-integrity 6x headphone A/B WAV PASS\n";
             return 0;
         }
         constexpr std::array<int,4> reference{0,90,180,-90};

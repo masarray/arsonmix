@@ -22,6 +22,7 @@ FILES = (
     "sonku-music-anti-phase-rear.wav",
     "sonku-music-coherent-front-spread60.wav",
     "sonku-music-coherent-rear-spread60.wav",
+    "sonku-music-splitband-bass-coherent-treble-inverted.wav",
 )
 
 
@@ -76,7 +77,8 @@ def run(baseline_dir: Path, candidate_dir: Path) -> dict:
     report = {"baseline": "v0.5.0-alpha.23 native SonKu core",
               "note": "Measured numerical transfer only; headphone externalization unproven",
               "sampleRate": RATE, "frames": FRAMES,
-              "exactCenteredPcm": True, "antiPhase": {}, "coherentMid2kHz": {}}
+              "exactCenteredPcm": True, "antiPhase": {}, "coherentMid2kHz": {},
+              "mixedPolarityTreble": {}}
     # Old filters are identical for L=-R / 0 spread and cancel completely.
     # New guard must preserve actual music energy in *both ears*, not just
     # front/rear labels, despite the native 0.5 wet mix.
@@ -102,6 +104,24 @@ def run(baseline_dir: Path, candidate_dir: Path) -> dict:
             "candidateOverBaseline": factors,
             "increaseDb": [20. * math.log10(x) for x in factors],
         }
+    # Original coherent bass dominates full-band L/R correlation and
+    # should be numerically unchanged by high-frequency protection.
+    name = FILES[5]
+    old_high = [tone_amplitude(base[name][1], ear, 3200) for ear in (0, 1)]
+    new_high = [tone_amplitude(improved[name][1], ear, 3200) for ear in (0, 1)]
+    assert max(old_high) < 0.0002, ("baseline treble should cancel", old_high)
+    assert min(new_high) > 0.006, ("split-band treble not rescued", new_high)
+    assert max(new_high) < 0.1, ("split-band rescue unexpectedly loud", new_high)
+    old_low = [tone_amplitude(base[name][1], ear, 220) for ear in (0, 1)]
+    new_low = [tone_amplitude(improved[name][1], ear, 220) for ear in (0, 1)]
+    low_delta = [20. * math.log10(max(n, 1e-12) / max(b, 1e-12))
+                 for b, n in zip(old_low, new_low)]
+    assert max(map(abs, low_delta)) < .25, ("coherent bass changed", low_delta)
+    report["mixedPolarityTreble"][name] = {
+        "baselineTrebleAmplitude": old_high,
+        "candidateTrebleAmplitude": new_high,
+        "bassDifferenceDb": low_delta,
+    }
     (candidate_dir / "MUSIC-INTEGRITY-OBJECTIVE.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
@@ -117,4 +137,4 @@ if __name__ == "__main__":
     for name, case in result["antiPhase"].items():
         print("SONKU_ANTI_PHASE_RECOVERY", name, "perEarRms",
               [round(v, 5) for v in case["candidateRms"]])
-    print("PASS SONKU MUSIC INTEGRITY exact baseline-vs-new PCM, 5 WAV, 48k")
+    print("PASS SONKU MUSIC INTEGRITY exact baseline-vs-new PCM, 6 WAV, 48k")
