@@ -19,7 +19,7 @@ const pr=(head=sha)=>({
 });
 
 test('owner command parser requires a single bounded command and lowercase SHA',()=>{
-  for(const lane of ['ui','native','fat'])
+  for(const lane of ['ui','native','fat','field'])
     assert.deepEqual(parseMilestoneCommand('/arsonmix-ci '+lane+' '+sha),{lane,sha});
   for(const bad of ['/arsonmix-ci all '+sha,'/arsonmix-ci fat main',
     '/arsonmix-ci fat '+sha+'; rm -rf .','/arsonmix-ci fat '+sha+'\necho unsafe',
@@ -275,7 +275,7 @@ test('CI workflow preserves FAT while deduplicating cheaper native builds and up
   assert.match(wf,/request_pr_number:/);
   assert.match(wf,/inputs\.package_fat && github\.run_id/);
   assert.match(wf,/cancel-in-progress: .*?!inputs\.package_fat/);
-  assert.equal(wf.match(/compression-level: 0/g)?.length,2);
+  assert.equal(wf.match(/compression-level: 0/g)?.length,3);
   assert.match(wf,/Build executable and native RT tests/);
   assert.match(wf,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(wf,/build_verify_windows_installer\.ps1/);
@@ -290,7 +290,8 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
   assert.match(build,/Save completed FAT packages for retryable upload job/);
   assert.match(build,/actions\/cache\/save@v4/);
-  assert.doesNotMatch(build,/actions\/upload-artifact@v4/);
+  assert.equal((build.match(/actions\/upload-artifact@v4/g)||[]).length,1);
+  assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@v4/);
   assert.match(upload,/needs: windows-build/);
   assert.match(upload,/runs-on: windows-2022/);
   assert.match(upload,/actions\/cache\/restore@v4/);
@@ -305,4 +306,22 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.match(build,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(build,/Prove two authentic historical Inno releases upgrade and roll back/);
   assert.match(build,/build_verify_windows_installer\.ps1/);
+});
+
+
+test('field preview dispatches exact source without cancelling native or another PR',async()=>{
+  const request=event('/arsonmix-ci field '+sha);
+  const calls=[];
+  const active=[windowsRun(1,'native',418,sha),windowsRun(2,'field',419,sha)];
+  assert.equal((await performMilestone({event:request,repo,api:checkedApi(active,calls)})).kind,'dispatched');
+  assert.equal(calls.some(call=>call.path.endsWith('/cancel')),false);
+  assert.deepEqual(calls.at(-1).data,{ref:'main',inputs:{
+    expected_sha:sha,package_fat:false,request_pr_number:'418',field_preview:true
+  }});
+  for(const lane of ['field','fat']){
+    const duplicate=[];
+    assert.equal((await performMilestone({event:request,repo,api:checkedApi(
+      [windowsRun(3,lane,418,sha)],duplicate)})).reason,'portable-already-available-or-scheduled');
+    assert.equal(duplicate.some(call=>call.method==='POST'),false);
+  }
 });

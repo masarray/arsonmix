@@ -2,7 +2,7 @@ name: Windows Native VST3 Host
 # Dispatcher uses the reviewed main workflow and checks out the exact PR SHA.
 # The run name is a verifiable deduplication identity (not github.head_sha,
 # which would refer to main for workflow_dispatch on main).
-run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
+run-name: "ArSonMix ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && 'FAT' || github.event_name == 'workflow_dispatch' && inputs.field_preview && 'FIELD' || github.event_name == 'workflow_dispatch' && 'NATIVE' || 'AUTO' }} PR${{ inputs.request_pr_number || '0' }} ${{ inputs.expected_sha || github.sha }}"
 on:
   # Single canonical Windows release producer: main changes to shipped runtime,
   # native C++ or distribution scripts. Historical feature branch pushes are PRs.
@@ -99,6 +99,11 @@ on:
         type: boolean
         required: false
         default: false
+      field_preview:
+        description: "Build the portable app for real Windows testing without the full CTest or installer suite"
+        type: boolean
+        required: false
+        default: false
       focused_harmony_fat:
         description: "Focused Windows FAT for the built-in vocal harmony plugin: full app, plugin DSP, mixer PCM and ASIO checks"
         type: boolean
@@ -120,7 +125,7 @@ concurrency:
   # the same PR share one slot and supersede each other; different PRs never
   # cancel one another. The owner dispatcher separately cancels an obsolete
   # native compile when a FAT request arrives for that same verified PR.
-  group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && github.run_id || github.event_name == 'workflow_dispatch' && inputs.request_pr_number != '' && format('pr-{0}', inputs.request_pr_number) || github.event.pull_request.number || github.ref }}
+  group: windows-vst3-${{ github.event_name == 'workflow_dispatch' && inputs.package_fat && github.run_id || github.event_name == 'workflow_dispatch' && inputs.request_pr_number != '' && format('{0}-pr-{1}', inputs.field_preview && 'field' || 'native', inputs.request_pr_number) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || !inputs.package_fat }}
 
 permissions:
@@ -238,6 +243,7 @@ jobs:
       # Owner-dispatched FAT on an isolated Harmony-only PR can skip
       # compiling unrelated CTest executables, never the actual JUCE GUI.
       # Main/release builds and every generic native milestone remain full.
+      FIELD_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.field_preview && !inputs.package_fat }}
       FOCUSED_HARMONY_FAT: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true && inputs.focused_harmony_fat == true }}
     steps:
       - uses: actions/checkout@v4
@@ -320,7 +326,7 @@ jobs:
         run: >
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           -DJUCE_ROOT="${{ github.workspace }}/third_party/JUCE"
-          -DBUILD_TESTING=ON
+          -DBUILD_TESTING=${{ env.FIELD_PREVIEW == 'true' && 'OFF' || 'ON' }}
           -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/.deps"
       - name: Verify exact ONE approved /preview/ GUI CMake bundle
         run: node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
@@ -398,7 +404,7 @@ jobs:
           Write-Host "HARMONY_FAT_NATIVE_TARGETS=$($targets.Count) SOURCE_SHA=$sourceSha"
 
       - name: Build executable and native RT tests
-        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}
+        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' && env.FIELD_PREVIEW != 'true' }}
         # Full build remains mandatory for main, release and native/full requests.
         run: cmake --build build --config Release --parallel 2
       - name: Run focused vocal harmony DSP, mixer PCM and ASIO checks
@@ -435,27 +441,49 @@ jobs:
           Write-Host "FOCUSED_HARMONY_FAT_CTEST_COUNT=$($requiredTests.Count) FULL_SUITE_NOT_CLAIMED"
           & ctest --test-dir build -C Release --output-on-failure -R $pattern
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build portable Windows field preview
+        if: ${{ env.FIELD_PREVIEW == 'true' }}
+        run: cmake --build build --config Release --parallel 2 --target ARMixConsole
       - name: Test realtime control primitives
-        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' }}
+        if: ${{ env.FOCUSED_HARMONY_FAT != 'true' && env.FIELD_PREVIEW != 'true' }}
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Package verified JUCE GUI for hardware FAT
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
         shell: pwsh
         run: |
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage ONLY legally approved and host-qualified Factory VST3 bundles
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
         shell: pwsh
         run: |
           python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independently verify release ZIP and embedded GUI/engine before upload
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
+        if: ${{ env.FIELD_PREVIEW == 'true' || (github.event_name == 'workflow_dispatch' && inputs.package_fat == true) }}
         shell: pwsh
         run: |
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Mark field preview qualification in package
+        if: ${{ env.FIELD_PREVIEW == 'true' }}
+        shell: pwsh
+        run: |
+          $path = 'dist/BUILD_PROVENANCE.json'
+          $provenance = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          $provenance.fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
+          $provenance | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+          'Portable field preview. Full CTest, installer checks and physical audio qualification are pending.' |
+            Set-Content -LiteralPath 'dist/FIELD-PREVIEW.txt' -Encoding utf8
+      - name: Upload portable Windows field preview
+        if: ${{ env.FIELD_PREVIEW == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-Windows-Field-Preview-${{ inputs.expected_sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
       - name: Install Inno Setup 6 compiler if missing
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.package_fat == true }}
         shell: pwsh
