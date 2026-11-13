@@ -159,6 +159,9 @@ int main() {
     ChannelEdit gain;gain.kind=ChannelEdit::Kind::setFader;
     gain.id=backing;gain.value=.5f;
     settings.push_back(gain);
+    ChannelEdit trim;trim.kind=ChannelEdit::Kind::setInputGain;
+    trim.id=backing;trim.value=2.f;
+    settings.push_back(trim);
     ChannelEdit pan;pan.kind=ChannelEdit::Kind::setPan;
     pan.id=backing;pan.value=-.2f;
     settings.push_back(pan);
@@ -192,7 +195,8 @@ int main() {
     const auto* row=restored.roster().find(backing);
     valid(row && row->format==ProcessingFormat::mono &&
           std::abs(row->faderLinear-.5f)<1.e-6f &&
-          std::abs(row->pan+.2f)<1.e-6f && row->mute && row->solo &&
+          std::abs(row->pan+.2f)<1.e-6f && row->inputGainLinear==2.f &&
+          row->mute && row->solo &&
           row->insertCatalogIds.size()==1 &&
           row->insertCatalogIds.front()=="armix.builtin.channel-compressor.v1");
 
