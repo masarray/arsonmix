@@ -47,6 +47,24 @@ The negative-correlation rescue is separate, not an HRTF surrogate for a physica
 - Fast A/B renderer writes **five** 4s matched level/time original generated tone stems: coherent FRONT/0° spread, anti-phase FRONT/0°, anti-phase REAR/0°, and coherent FRONT/60° and REAR/60°. A pinned baseline from public alpha.23 is compiled beside the candidate (same tools, same source signal), and the test compares exact coherent CENTER PCM, anti-phase RMS and calibrated 2 kHz sine amplitude. One JSON metric report and 10 WAV files (five each) are uploaded. **Headphones only.** No normalization, copyright problem or unlicensed dearVR recordings.
 - The audio developer must not merge to main solely on these mathematical tests. Human listening can reveal audible color, internalized side bed or changes to stereo image; listen to real music.
 
+## Exact baseline-vs-candidate evidence (same-source, same-runner)
+
+**Source base:** approved `main` release ancestor `4a6e47e2905a4aa995f879045a907abee8b1aae5` (public Windows alpha.23 DSP). **Candidate:** this draft PR. The lightweight GitHub Action checks out baseline header sources at the immutable SHA, compiles the *same* offline renderer twice (baseline and candidate), writes 5×4 s unnormalized 48kHz/16-bit stereo WAV per engine and validates both PCM sets with `tests/sonku_music_integrity_comparison.py`. No cross-device/OS capture differences are involved.
+
+The measured native output in [Action #43446354590](https://github.com/masarray/arsonmix/actions/runs/43446354590) (before documentation-only change):
+
+| Test | Candidate versus baseline | Interpretation |
+| --- | --- | --- |
+| Coherent stereo FRONT, 60° spread, 2kHz per ear | **+7.19 dB** | Comb notch reduced at this measured frequency |
+| Coherent stereo REAR, 60° spread, 2kHz per ear | **+11.64 dB** | More severe original rear comb notch reduced |
+| Inverted stereo FRONT, 0° spread | RMS L/R = **0.04922 / 0.04922** | Both ears recovered from effectively zero baseline |
+| Inverted stereo REAR, 0° spread | RMS L/R = **0.04922 / 0.04922** | Both ears recovered from effectively zero baseline |
+| Coherent FRONT, 0° spread | **Byte-exact PCM match** | Previously approved centralized direct HRIR retained |
+
+- C++ non-JUCE native regression at 44.1 and 48kHz passes, with cardinal direction, stereo RMS, exact original central impulse, 2kHz reference response, block partition parity, silence/positive correlation, reset and wet/dry transitions.
+- Same-runner informational CPU at 48k/128 frames: measured 3s simulated DSP time **39.725 ms** HRTF-only, **43.777 ms** ER and **47.276 ms** late room. This is not Windows ASIO CPU/p99/XRUN data. Do not present it as hardware latency.
+- [10 native WAV files and JSON transfer metrics](https://github.com/masarray/arsonmix/actions/runs/43446354590/artifacts/14047729710). All exact baseline and candidate samples share generated input material; do not infer naturalness, equal perceived loudness, individualized HRTF or dearVR parity from the report.
+
 ## Next quality milestones (requires objective + listening evidence)
 
 1. **P1 spectral/music fidelity.** Beyond the new two coherent/antiphase protections, capture ear transfer functions FRONT/45/90/135/REAR and L/R & mid/side energy in 1/3-octave bands, compare dry stereo vs wet binaural at matched level, isolate bass loss, comb notches and late-reverb masking. Develop a *new SonKu* prepared minimum-phase spectral compensation or complementary dry/timbre-control stage, with strict frequency-band and headroom limits and a user-facing quality mode. Verify it improves music without defeating HRIR ITD/ILD. Never extrapolate from one KEMAR listener.
