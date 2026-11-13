@@ -71,14 +71,17 @@ test('native PCM and device changes always use Windows/CTest, never Chromium by 
 });
 
 test('Full native/release qualification retains all CTests; focused vocal harmony FAT compiles only its verified targets', () => {
-  assert.match(native, /-DBUILD_TESTING=ON/);
+  assert.match(native, /-DBUILD_TESTING=\$\{\{ env\.FIELD_PREVIEW == 'true' && 'OFF' \|\| 'ON' \}\}/);
+  assert.match(native, /Build portable Windows field preview[\s\S]*?--target ARMixConsole/);
+  assert.match(native, /FIELD_PREVIEW_FULL_CTEST_NOT_RUN/);
+  assert.match(native, /Upload portable Windows field preview[\s\S]*?name: ArSonMix-Windows-Field-Preview-/);
   const fullBuild = native.indexOf('run: cmake --build build --config Release --parallel 2');
   const fullCTest = native.indexOf('run: ctest --test-dir build -C Release --output-on-failure');
   assert.ok(fullBuild >= 0 && fullCTest > fullBuild,
     'Full CTest still requires the default all-target CMake build');
   assert.match(native, /focused_harmony_fat:/);
   assert.match(native, /FOCUSED_HARMONY_FAT: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.package_fat == true && inputs\.focused_harmony_fat == true \}\}/);
-  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT != 'true' \}\}/);
+  assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT != 'true' && env\.FIELD_PREVIEW != 'true' \}\}/);
   assert.match(native, /if: \$\{\{ env\.FOCUSED_HARMONY_FAT == 'true' \}\}/);
   assert.match(native, /cmake --build build --config Release --parallel 2 --target \$targets/);
   assert.match(native, /'ARMixConsole'/);
@@ -335,4 +338,17 @@ test('CI-only main commits never schedule unqualified full Chromium or Pages wor
   }
   assert.match(pages,/github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(pages,/github\.event\.workflow_run\.event == 'push'/);
+});
+
+test('portable Windows preview metadata is written before release ZIP verification, with no unverified extra files',()=>{
+  const fieldMark=native.indexOf('- name: Mark unqualified field preview BEFORE independent distribution verification');
+  const verify=native.indexOf('- name: Independently verify release ZIP and embedded GUI/engine before upload');
+  const upload=native.indexOf('- name: Upload portable Windows field preview');
+  assert.ok(fieldMark>=0&&fieldMark<verify&&verify<upload,
+    'Exact field-preview provenance must precede final ZIP audit and artifact');
+  assert.match(native,/FIELD_PREVIEW_FULL_CTEST_NOT_RUN/);
+  assert.match(native,/FIELD_PREVIEW_SOURCE_SHA_MISMATCH/);
+  assert.doesNotMatch(native,/FIELD-PREVIEW\.txt/,
+    'Unverified sentinel must not be injected into a strict allowlisted distribution');
+  assert.match(native,/if: \${{ env.FIELD_PREVIEW == 'true' }}/);
 });
