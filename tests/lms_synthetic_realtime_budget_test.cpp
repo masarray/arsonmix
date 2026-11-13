@@ -3,6 +3,9 @@
 #include "../engine/lms/PreparedSpeakerSystem.h"
 #include <array>
 #include <atomic>
+#ifdef NDEBUG
+#undef NDEBUG // Always execute PCM assertions, even in release CTest.
+#endif
 #include <cassert>
 #include <chrono>
 #include <cmath>
