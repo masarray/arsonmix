@@ -278,18 +278,22 @@ int main() {
         ++acceptedRemaining;
     }
     assert(acceptedRemaining>100 && acceptedRemaining<300);
+    // AUDIO-only heap fence: CONTROL readback is explicitly allowed to
+    // allocate result vectors and must not contaminate this accounting.
+    assert(allocations.load(std::memory_order_relaxed)==capturedAllocations);
     auto finalCapture=native.speakerDiagnosticReadback(epoch,1);
     assert(finalCapture.available && !finalCapture.hardwareApplied);
     assert(finalCapture.captureComplete);
     assert(finalCapture.capturedFrames>=finalCapture.captureFrameLimit);
     assert(finalCapture.completedBlocks==220+1+
            static_cast<std::uint64_t>(acceptedRemaining));
+    const auto afterControlReadback=allocations.load(std::memory_order_relaxed);
     for(int repeat=0;repeat<12;++repeat)
         assert(!native.processSpeakerDiagnostic(epoch,1,
             mainL.data(),mainR.data(),Witness::maxFrames));
+    assert(allocations.load(std::memory_order_relaxed)==afterControlReadback);
     assert(native.speakerDiagnosticReadback(epoch,1).completedBlocks==
            finalCapture.completedBlocks);
-    assert(allocations.load(std::memory_order_relaxed)==capturedAllocations);
     for(const auto& pin:driver)
         for(float v:pin)assert(v==.8125f);
     native.revokeSpeakerDraft();
