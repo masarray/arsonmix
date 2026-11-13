@@ -179,6 +179,17 @@ function Should-RetryInstaller([int]$attempts,[bool]$success,[bool]$oldRemains) 
     # throws and must not spawn a second installer while the first runs.
     return (-not $success -and $oldRemains -and $attempts -ge 1 -and $attempts -lt 2)
 }
+function Test-UserApproval([object]$approval,[object]$transaction) {
+    if($null -eq $transaction -or
+       $transaction.operation -cnotin @('repair','upgrade')) {return $false}
+    if($transaction.operation -ceq 'repair'){return $true}
+    # Approval is only a usability gate. It does NOT authenticate publisher.
+    return ($null -ne $approval -and
+        [string]$approval.candidateSha -ceq [string]$transaction.candidateSha -and
+        [string]$approval.previousSha -ceq [string]$transaction.previousSha -and
+        [string]$approval.candidateTag -ceq [string]$transaction.candidateTag)
+}
+
 function Get-InstalledImageStatus([object]$build) {
     try {
         $hash=[string]$build.exeSha256
@@ -473,6 +484,25 @@ if($PolicySelfTest) {
     if(Should-RetryInstaller 2 $false $true){throw 'Repeated installer retry accepted'}
     if(Should-RetryInstaller 1 $false $false){throw 'Missing old version retried'}
     if(Should-RetryInstaller 1 $true $true){throw 'Successful install retried'}
+    # Test same-version repair and exact candidate acknowledgement offline.
+    $transaction=[pscustomobject]@{
+        operation='upgrade';candidateSha=('a'*40);previousSha=('b'*40);
+        candidateTag='v0.5.0-alpha.6'}
+    $goodAck=[pscustomobject]@{
+        candidateSha=('a'*40);previousSha=('b'*40);candidateTag='v0.5.0-alpha.6'}
+    if(-not (Test-UserApproval $goodAck $transaction)) {throw 'Exact update acknowledgement rejected'}
+    if(Test-UserApproval $null $transaction) {throw 'Missing acknowledgement accepted'}
+    $goodAck.candidateSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different release acknowledgement accepted'}
+    $goodAck.candidateSha='a'*40
+    $goodAck.previousSha='c'*40
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different baseline acknowledgement accepted'}
+    $goodAck.previousSha='b'*40
+    $goodAck.candidateTag='v0.5.0-alpha.7'
+    if(Test-UserApproval $goodAck $transaction) {throw 'Different version acknowledgement accepted'}
+    $transaction.operation='repair'
+    if(-not (Test-UserApproval $null $transaction)) {throw 'Same-version repair incorrectly gated'}
+    Write-Output 'ARSONMIX_UPDATER_USER_ACK_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_EXACT_IMAGE_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RETRY_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS'
@@ -681,10 +711,7 @@ try {
         if(Test-Path -LiteralPath $approvalPath -PathType Leaf) {
             try {$approval=Read-Json $approvalPath} catch { }
         }
-        if($null -eq $approval -or
-           [string]$approval.candidateSha -cne [string]$state.candidateSha -or
-           [string]$approval.previousSha -cne [string]$state.previousSha -or
-           [string]$approval.candidateTag -cne [string]$state.candidateTag) {
+        if(-not (Test-UserApproval $approval $state)) {
             Log-Result 'UPDATE_WAITING_FOR_USER_OK'
             exit 0
         }
