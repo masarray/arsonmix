@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/lms/PreparedSpeakerSystem.h"
 #include <array>
+#ifdef NDEBUG
+#undef NDEBUG // Always execute PCM assertions, even in release CTest.
+#endif
 #include <cassert>
 #include <cmath>
 #include <iostream>
