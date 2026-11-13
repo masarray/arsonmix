@@ -122,7 +122,7 @@ public:
         }
         for(std::size_t i=0;i<4;++i){
             library_[i].setButtonText(armix::guitarfx::factoryToneNames[i]);
-            library_[i].setLookAndFeel(&buttonLook_);
+            library_[i].setLookAndFeel(&navLook_);
             library_[i].setClickingTogglesState(false);
             library_[i].onClick=[this,i]{
                 const int id=static_cast<int>(i)+1;
@@ -326,14 +326,14 @@ public:
             c.setBounds(mapBounds({x,y,w,h}));
         };
         put(preset_,783,14,255,31);
-        put(bankButtons_[0],637,17,61,27);
-        put(bankButtons_[1],705,17,61,27);
+        put(bankButtons_[0],618,18,77,22);
+        put(bankButtons_[1],700,18,77,22);
         put(status_,20,596,381,38);
         for(std::size_t i=0;i<4;++i) {
             put(library_[i],204.f+207.f*static_cast<float>(i),542,194,33);
             const float x=216.f+207.f*static_cast<float>(i);
             put(focusButtons_[i],x,79,145,44);
-            put(power_[i],x+150.f,88,49,25);
+            put(power_[i],x+148.f,91,54,20);
         }
         stomp_.setBounds(mapBounds(toArtRect(stompBounds())));
         for(std::size_t i=0;i<3;++i)
