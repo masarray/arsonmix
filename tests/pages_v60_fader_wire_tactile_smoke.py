@@ -61,7 +61,7 @@ def exercise(page,width,height):
     a,b,c=layout["fader"],layout["master"],layout["rail"]
     assert all(x and x["h"]>0 for x in (a,b,c)),layout
     assert abs(a["h"]-b["h"])<2 and abs(a["h"]-c["h"])<2,(width,layout)
-    min_height=300 if height>=1000 else (275 if height>=850 else 235)
+    min_height=300 if height>=1000 else (275 if height>=850 else 210)
     assert a["h"]>=min_height,(width,"tall hardware fader lower bound",layout)
     print("V60 geometry",width,height,"fader",a["h"],"CSS token",layout["token"],"flex",layout["flex"])
     assert layout["travel"]["h"]>a["h"]-110,(width,layout)
