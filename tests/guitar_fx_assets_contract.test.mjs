@@ -92,7 +92,11 @@ test("reopened native editor reduces prior accepted PCM completions before paint
  const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
  const start=editor.indexOf("explicit GuitarRigEditor(");
  const consume=editor.indexOf("processor_.serviceCompletions();",start);
- const accepted=editor.indexOf("draft_=processor_.acceptedProgram();",start);
- assert(start>=0 && consume>start && accepted>consume,
-        "editor must display already acknowledged DSP state after close/reopen");
+ const bankA=editor.indexOf("bankDrafts_[0]=processor_.acceptedBankProgram(0);",start);
+ const bankB=editor.indexOf("bankDrafts_[1]=processor_.acceptedBankProgram(1);",start);
+ const chosen=editor.indexOf("draft_=bankDrafts_[selectedBank_];",start);
+ assert(start>=0 && consume>start && bankA>consume && bankB>bankA &&
+        chosen>bankB,"editor must restore both native A/B snapshots after ACK");
+ assert(editor.includes("processor_.queueProgram(draft_,id,selectedBank_)"),
+        "A/B selection must name the native target bank during control ACK");
 });
