@@ -223,31 +223,63 @@ test("generated ON and OFF PNGs have byte-identical silhouettes and frame pixels
 });
 
 
-test("native bitmap control bounds preserve switch and button proportions",()=>{
- const s=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
- const match=(re,label)=>{
-  const m=s.match(re);
-  assert(m,label+" must have explicit static JUCE bounds");
-  return m.slice(1).map(Number);
- };
- const [bankAX,bankAY,bankAW,bankAH]=match(
-  /bankButtons_\[0\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "bank A bounds");
- const [bankBX,bankBY,bankBW,bankBH]=match(
-  /bankButtons_\[1\]\.setBounds\(getWidth\(\)-([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "bank B bounds");
- const [,powerY,powerW,powerH]=match(
-  /power_\[i\]\.setBounds\(x\+([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)/,
-  "module power bounds");
- const ratio=(w,h)=>w/h;
- assert(Math.abs(ratio(bankAW,bankAH)-280/80)<0.10,
-   "bank A PNG must not be stretched into a square");
- assert.equal(bankAW,bankBW);assert.equal(bankAH,bankBH);
- assert.equal(bankAY,bankBY);
- assert(bankAX-bankAW > bankBX,
-   "A and B bounds must be separated before the preset");
- assert(Math.abs(ratio(powerW,powerH)-200/74)<0.15,
-   "module switch PNG must not be squeezed vertically");
- assert(powerY>=104&&powerY+powerH<=143,
-   "module switch stays within chain button row");
+test("one physical hardware-coordinate manifest drives scaled native paint and JUCE hitboxes",()=>{
+ const manifest=JSON.parse(readFileSync(resolve(root,
+   "design-references/guitar-fx/hardware-layout.json"),"utf8"));
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ const geom=readFileSync(resolve(root,
+   "engine/builtin_fx/guitar/GuitarHardwareGeometry.h"),"utf8");
+ assert.equal(manifest.schemaVersion,2);
+ assert.equal(manifest.scaling,"uniform-contain-and-letterbox");
+ assert.equal(manifest.modules.length,4);
+ assert(geom.includes("inline constexpr Rect logicalStage {218.f,158.f,824.f,366.f}"));
+ assert(editor.includes("armix::guitarfx::art::Viewport::from"));
+ assert(editor.includes("armix::guitarfx::art::centeredControl"));
+ assert(editor.includes("mapBounds(toArtRect(knobBounds(i)))"));
+ assert(editor.includes("mapBounds(toArtRect(stompBounds()))"));
+ assert(!editor.includes("nx=i==0?.31f"),
+        "old percentage guesses must never return");
+ assert(!editor.includes("g.drawImageWithin(panel_"),
+        "avoid the old framed-background effect");
+ for(const m of manifest.modules){
+  assert(geom.includes('"'+m.file+'"'),m.file);
+  assert(geom.includes(m.canvas[0]+","+m.canvas[1]),m.file+" native canvas");
+  for(const [x,y,d] of m.knobCenters)
+   assert(geom.includes("{"+x+","+y+","+d+"}"),m.file+" native anchor "+x);
+  assert.deepEqual(m.controls.length,m.knobCenters.length);
+  for(let i=0;i<m.knobCenters.length;i++){
+   const [x,y,d]=m.knobCenters[i];
+   assert(x-d/2>=0&&x+d/2<=m.canvas[0],m.key+" control X outside body");
+   assert(y-d/2>=0&&y+d/2<=m.canvas[1],m.key+" control Y outside body");
+  }
+ }
+});
+test("new generator is repeatable and makes distinct device materials",async()=>{
+ const {render,SKINS}=await import("../scripts/build_guitar_fx_layered_assets.mjs");
+ const map=new Map(SKINS.map(spec=>[spec[0],spec]));
+ const names=["gfx-amp-head.png","gfx-cabinet.png","gfx-pedal-gate-body.png",
+              "gfx-pedal-drive-body.png"];
+ for(const name of names){
+  assert(map.has(name));
+  const spec=map.get(name);
+  const a=render(spec),b=render(spec);
+  assert.equal(sha256(a),sha256(b),name+" deterministic bytes");
+ }
+ const samples=names.map(n=>sha256(render(map.get(n))));
+ assert.equal(new Set(samples).size,4,"four uniquely authored physical devices");
+ const cmake=readFileSync(resolve(root,"CMakeLists.txt"),"utf8");
+ assert(cmake.includes("option(ARMIX_GUITAR_USE_ARTIST_SOURCE"));
+ assert(cmake.includes("if(ARMIX_GUITAR_USE_ARTIST_SOURCE)"),
+       "rejected historic PNGs must not silently override the new generator");
+});
+test("native control PNGs maintain exact aspect on all chain switches",()=>{
+ const editor=readFileSync(resolve(root,"engine/builtin_fx/GuitarRigEditor.h"),"utf8");
+ assert(editor.includes("put(power_[i],x+148.f,91,54,20);"));
+ assert(editor.includes("put(bankButtons_[0],618,18,77,22);"));
+ assert(editor.includes("put(bankButtons_[1],700,18,77,22);"));
+ assert(editor.includes("put(focusButtons_[i],x,79,145,44);"));
+ assert(editor.includes("setLookAndFeel(&navLook_)"),
+        "signal chain navigation uses quiet vector feedback, no chunky bezel");
+ assert(Math.abs(54/20-200/74)<0.05);
+ assert(Math.abs(77/22-280/80)<0.05);
 });
