@@ -198,7 +198,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || (startsWith(github.head_ref, 'feat/sonku-') && !startsWith(github.head_ref, 'feat/sonku-music-integrity-')) || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -275,6 +275,35 @@ jobs:
             native-wire-gain-*.png
           if-no-files-found: ignore
           retention-days: 7
+
+  sonku-music-integrity-audio:
+    name: SonKu music integrity native WAV/CPU (no Chromium, no Windows packaging)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/sonku-music-integrity-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render exact native anti-phase stereo headphone A/B
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_offline_listening.cpp -o /tmp/sonku-integrity-audio
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --music-integrity-only
+          test -s sonku-integrity-evidence/sonku-music-positive-front.wav
+          test -s sonku-integrity-evidence/sonku-music-anti-phase-front.wav
+          test -s sonku-integrity-evidence/sonku-music-anti-phase-rear.wav
+          python -c "import wave; from pathlib import Path; files=list(Path('sonku-integrity-evidence').glob('*.wav')); assert len(files)==3; [(lambda w: (w.getnchannels()==2 and w.getframerate()==48000 and w.getnframes()==192000) or (_ for _ in ()).throw(ValueError('invalid WAV')))(wave.open(str(p),'rb')) for p in files]"
+      - name: Same-runner informational SonKu native realtime CPU check
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-integrity-cpu
+          /tmp/sonku-integrity-cpu
+      - name: Upload original lossless music-integrity proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-SonKu-Phase-Integrity-${{ github.run_id }}
+          path: sonku-integrity-evidence/*
+          if-no-files-found: ignore
+          retention-days: 14
 
   vocal-throw-preview:
     name: Vocal Delay native editor desktop/mobile Chromium FAT
