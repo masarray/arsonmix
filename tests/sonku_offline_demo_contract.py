@@ -24,6 +24,16 @@ def read(name, frames):
 single=read("sonku-reference-four.wav",4*120000)
 blind=read("sonku-blind-eight.wav",8*120000)
 orbit=read("sonku-orbit-cw.wav",480000)
+v2four=read("sonku-v2-room-four.wav",4*120000)
+v2orbit=read("sonku-v2-room-orbit-cw.wav",480000)
+# Baseline V1 and candidate V2 are deliberately non-identical on same noise.
+# Room must affect later samples, not fake position on the direct sound.
+difference=sum(abs(int(a)-int(b)) for a,b in
+               zip(v2four[70000:200000],single[70000:200000]))
+assert difference>1500,("V2 room candidate did not affect PCM",difference)
+orbitDelta=sum(abs(int(a)-int(b)) for a,b in
+               zip(v2orbit[70000:200000],orbit[70000:200000]))
+assert orbitDelta>1500,("V2 moving room candidate did not affect PCM",orbitDelta)
 # +90° (second reference segment) has a distinct binaural response.
 section=single[120000*2:120000*4]
 left=sum(abs(section[i]) for i in range(0,len(section),2))

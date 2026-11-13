@@ -78,6 +78,38 @@ int main() {
             assert(std::abs(oneR[i]-chunkR[i])<1.e-6f);
         }
         assert(std::abs(whole.azimuthDegrees()-chunked.azimuthDegrees())<1.e-10);
+        // V2 A/B: room OFF is the verified original renderer; room ON
+        // produces only delayed acoustic energy, without modifying first
+        // arrival, direction signs or host buffer partition behavior.
+        constexpr int roomFrames=4096;
+        std::array<float,roomFrames> noL{},noR{},wetL{},wetR{},partL{},partR{};
+        noL[0]=wetL[0]=partL[0]=.5f;
+        noR[0]=wetR[0]=partR[0]=.5f;
+        SonKuSpatialCore noRoom,withRoom,partRoom;
+        assert(noRoom.prepare(rate)&&withRoom.prepare(rate)&&partRoom.prepare(rate));
+        Settings roomSettings=s;roomSettings.startAzimuthDegrees=0.f;
+        assert(noRoom.setSettings(roomSettings)&&withRoom.setSettings(roomSettings)
+               &&partRoom.setSettings(roomSettings));
+        assert(withRoom.setEarlyReflectionsAmount(.55f));
+        assert(partRoom.setEarlyReflectionsAmount(.55f));
+        noRoom.process(noL.data(),noR.data(),roomFrames);
+        withRoom.process(wetL.data(),wetR.data(),roomFrames);
+        partRoom.process(partL.data(),partR.data(),128);
+        partRoom.process(partL.data()+128,partR.data()+128,384);
+        partRoom.process(partL.data()+512,partR.data()+512,roomFrames-512);
+        double roomDifference=0.;
+        for(int i=0;i<roomFrames;++i){
+            assert(std::isfinite(wetL[i])&&std::isfinite(wetR[i]));
+            assert(std::abs(wetL[i]-partL[i])<1.e-6f);
+            assert(std::abs(wetR[i]-partR[i])<1.e-6f);
+            if(i<180){
+                assert(std::abs(wetL[i]-noL[i])<1.e-7f);
+                assert(std::abs(wetR[i]-noR[i])<1.e-7f);
+            }
+            if(i>180)roomDifference+=std::abs(wetL[i]-noL[i])+
+                                     std::abs(wetR[i]-noR[i]);
+        }
+        assert(roomDifference>.001);
         // A hard FRONT->REAR teleport must not replace 560 FIR coefficients
         // at the next 16-sample boundary. Compare the identical dry/PCM
         // history before and immediately after reposition.

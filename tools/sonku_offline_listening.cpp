@@ -66,9 +66,11 @@ Settings fixed(float azimuth){
     s.stereoSpreadDegrees=0.f;s.spatialMix=1.f;s.outputTrim=.72f;
     return s;
 }
-std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths) {
+std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths,float roomAmount=0.f) {
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
+    if(!dsp.setEarlyReflectionsAmount(roomAmount))
+        throw std::runtime_error("Invalid early room amount");
     std::vector<std::uint8_t> result;
     result.reserve(static_cast<std::size_t>(azimuths.size())*
         (activeFrames+silenceFrames)*4);
@@ -96,9 +98,11 @@ std::vector<std::uint8_t> staticProbes(const std::vector<int>& azimuths) {
     }
     return result;
 }
-std::vector<std::uint8_t> orbit(){
+std::vector<std::uint8_t> orbit(float roomAmount=0.f){
     SonKuSpatialCore dsp;Noise noise;
     if(!dsp.prepare(rate))throw std::runtime_error("No 48k HRTF");
+    if(!dsp.setEarlyReflectionsAmount(roomAmount))
+        throw std::runtime_error("Invalid orbit room amount");
     Settings s=fixed(0.f);s.moving=true;s.clockwise=true;s.revolutionSeconds=10.f;
     dsp.reset();if(!dsp.setSettings(s))throw std::runtime_error("No 360 orbit");
     const int frames=rate*10;
@@ -141,7 +145,14 @@ void notes(const std::filesystem::path& directory,
       <<"sonku-orbit-cw.wav: 10s one continuous 360deg clockwise orbit,\n"
       <<"starting at FRONT, acoustic RIGHT on listener's right headphone.\n\n"
       <<"If front/rear is ambiguous or internalized, note headphones and listener.\n"
-      <<"These are not room reflections, personalized HRTFs or VST3 binaries.\n";
+      <<"Baseline SonKu files have no room reflections (V1).\n"
+      <<"V2 room candidate adds four 1st-order image-source reflections\n"
+      <<"per emitter (6.4x8m fixed room) with bounded ear delays and level.\n"
+      <<"sonku-v2-room-four.wav = A/B against sonku-reference-four.wav.\n"
+      <<"sonku-v2-room-orbit-cw.wav = A/B against sonku-orbit-cw.wav.\n"
+      <<"Both comparisons reuse exactly the same source noise and direct HRIR.\n"
+      <<"Do blind-level and externalization evaluation before enabling V2 live.\n"
+      <<"This is NOT full HRIR-convolved reflections, FDN or personalized HRTF.\n";
     std::ofstream key(directory/"BLIND-ANSWER-KEY.txt");
     if(!key)throw std::runtime_error("Cannot write blind answer key");
     key<<"OPEN ONLY AFTER LISTENING. Exact 2.5-second trial windows:\n";
@@ -160,6 +171,12 @@ int main(int argc,char** argv){
             staticProbes({reference.begin(),reference.end()}));
         writeWav(dir/"sonku-blind-eight.wav",staticProbes(blind));
         writeWav(dir/"sonku-orbit-cw.wav",orbit());
+        // Only the bounded early-reflection stage changes between paired
+        // files. Source, directions, KEMAR HRIR, loudness trim and clock are
+        // identical. Blind front/back listening is the decision gate.
+        writeWav(dir/"sonku-v2-room-four.wav",
+            staticProbes({reference.begin(),reference.end()},.55f));
+        writeWav(dir/"sonku-v2-room-orbit-cw.wav",orbit(.55f));
         notes(dir,blind);
         std::cout<<"SonKu listening package PASS: measured native HRTF, "
                  <<"4 labeled + 8 blind directions + one 360 orbit\n";

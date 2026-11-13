@@ -50,7 +50,6 @@ public:
     float targetAmount() const noexcept {return amountTarget_;}
     Ears process(float left,float right,double azimuth,float spread) noexcept {
         if(!active())return {};
-        constexpr std::array<float,2> dummy{}; (void)dummy;
         if(untilGeometry_==0){
             updateGeometry(azimuth,spread);
             untilGeometry_=geometryInterval;
