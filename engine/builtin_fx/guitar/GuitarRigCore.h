@@ -75,11 +75,31 @@ public:
         coeff_=nextCoeff;
         ir_=nextIR;
         lane_={};
+        sampleRate_=rate;
         ready_=true;
         return true;
     }
     void reset() noexcept {lane_={};}
     bool isReady() const noexcept {return ready_;}
+    // AUDIO-only; the prepared program owns its new coefficients/IR, but
+    // compatible running delay/filter/envelope state is inherited from the
+    // outgoing core before the 128-frame transition. No heap, blocking,
+    // preparation or race with the CONTROL-owned prepared object.
+    // This prevents every small knob turn from starting with an empty
+    // cabinet history and cold gate. Old and new DSP run from the SAME
+    // temporal point, rather than crossfading a warm voice into silence.
+    bool inheritCompatibleHistory(const GuitarRigCore& previous) noexcept {
+        if(!ready_||!previous.ready_||
+           sampleRate_!=previous.sampleRate_ ||
+           program_.count!=previous.program_.count)return false;
+        for(std::size_t i=0;i<program_.count;++i) {
+            if(program_.blocks[i].id!=previous.program_.blocks[i].id ||
+               program_.blocks[i].module!=previous.program_.blocks[i].module)
+                return false;
+        }
+        lane_=previous.lane_;
+        return true;
+    }
     const Program& program() const noexcept {return program_;}
     static bool supported(Module m) noexcept {
         return m==Module::gate||m==Module::overdrive||
@@ -229,6 +249,7 @@ private:
     std::array<Coefficients,maxBlocks> coeff_{};
     std::array<float,cabinetTaps> ir_{};
     std::array<ChannelState,2> lane_{};
+    double sampleRate_=0.;
     bool ready_=false;
 };
 } // namespace armix::guitarfx
