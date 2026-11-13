@@ -81,10 +81,14 @@ root.innerHTML=[
  '<text class="sk-direction" x="11" y="149">RIGHT</text><text class="sk-direction" x="352" y="149">LEFT</text>',
  // Image stays a single 128px transparent original: never canvas-generated DSP.
  '<ellipse class="sk-head-shadow" cx="200" cy="206" rx="72" ry="32" fill="#031621" fill-opacity=".3"/>',
+ // Rear source icons are painted BELOW the person's head, not in front of it.
+ '<g id="skRearSources" class="sk-rear-sources"></g>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="107" y="73" width="186" height="190" preserveAspectRatio="xMidYMid meet" aria-label="Listener facing bottom" pointer-events="none"/>',
  // Near orbit overlays lower bust, forming ONE plausible 3D spatial ring.
  '<path id="skFrontArc" class="sk-orbit-front-shadow" d="M348 174 A148 83 0 0 1 52 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
  '<path class="sk-orbit-front" d="M348 174 A148 83 0 0 1 52 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
+ // Near-field speaker icons are painted above the bust, with perspective.
+ '<g id="skFrontSources" class="sk-front-sources"></g>',
  '<path d="M193 283 L200 291 L207 283" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
  // No circle markers: each emitter is a small raised studio monitor.
  // Offsets at coincident directions are display-only; native azimuth stays equal.
@@ -132,7 +136,8 @@ const $=id=>root.querySelector("#"+id);
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- readId="",readSentAt=0,seq=1,clock=null,observed=0,observedAt=0,drag=null,dialDrag=null;
+ readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
+ drag=null,dialDrag=null,rangeEdits=new Set(),visualPhase=0,visualAt=0;
 const context=()=>{
  if(!current||!native())return null;
  const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -172,23 +177,38 @@ function render(){
  const distance=$("skDistance"),max=roomMaxDistance[s.spacePreset];
  distance.max=String(max);
  distance.disabled=s.spacePreset===0;
- distance.value=String(Math.min(max,s.sourceDistanceMeters));
+ // Native readback may arrive while the pointer is held. Never send the
+ // slider thumb back to the last ACK while the operator is editing.
+ if(!rangeEdits.has("skDistance"))
+  distance.value=String(Math.min(max,s.sourceDistanceMeters));
  $("skDistanceValue").textContent=s.sourceDistanceMeters.toFixed(1)+" m";
- $("skAmbience").value=String(Math.round(s.ambience*100));
+ if(!rangeEdits.has("skAmbience"))
+  $("skAmbience").value=String(Math.round(s.ambience*100));
  $("skAmbience").disabled=s.spacePreset===0;
  $("skAmbienceValue").textContent=Math.round(s.ambience*100)+"%";
- const liveMotion=s.moving&&current&&!pending?observed:
-    s.startAzimuthDegrees;
- const phase=native()&&s.moving&&current&&!pending&&observedAt?
-    liveMotion+(performance.now()-observedAt)*.001*
-     (s.clockwise?1:-1)*360/s.revolutionSeconds:liveMotion;
+ // Only source placement is animated; knobs and input ranges are NOT
+ // redrawn at 60 Hz. The native audio callback remains the time authority.
+ drawSpeakers();
+ $("skMode").textContent=native()?(context()?"NATIVE HRTF":"NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
+}
+function drawSpeakers(){
+ const s=draft;
+ const phase=s.moving?visualPhase:s.startAzimuthDegrees;
  const angles=[phase-s.stereoSpreadDegrees/2,phase+s.stereoSpreadDegrees/2];
  const pair=displayPair(angles);
  for(let source=0;source<2;++source) {
   const deg=angle(angles[source]);
   const {anchor,visible}=pair[source];
   const g=root.querySelector('.sk-src[data-index="'+source+'"]');
-  g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+")");
+  const front=Math.cos(deg*Math.PI/180)>=0;
+  const layer=front?$("skFrontSources"):$("skRearSources");
+  if(g.parentNode!==layer)layer.appendChild(g);
+  // Orthographic stage with light depth scaling: rear behind head, front
+  // above bust. No CSS animation of acoustic coordinates or SVG duplicate.
+  const depth=Math.cos(deg*Math.PI/180);
+  const scale=(.91+.13*depth).toFixed(3);
+  g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+") scale("+scale+")");
+  g.style.opacity=front?"1":".84";
   g.dataset.acousticX=anchor.x.toFixed(2);
   g.dataset.acousticY=anchor.y.toFixed(2);
   g.dataset.visualX=visible.x.toFixed(2);
@@ -201,7 +221,6 @@ function render(){
   const direction=deg<45||deg>=315?"FRONT":deg<135?"RIGHT":deg<225?"REAR":"LEFT";
   g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"°");
  }
- $("skMode").textContent=native()?(context()?"NATIVE HRTF":"NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
 }
 function hint(s){$("skHint").textContent=s;}
 function requestSnapshot(force=false){
