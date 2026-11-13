@@ -23,7 +23,10 @@ public:
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
     bool isMidiEffect() const override {return false;}
-    double getTailLengthSeconds() const override {return 0.;}
+    double getTailLengthSeconds() const override {
+        return accepted_.ambienceAmount>0.f?0.78:
+               accepted_.roomAmount>0.f?0.25:0.;
+    }
     int getNumPrograms() override {return 1;}
     int getCurrentProgram() override {return 0;}
     void setCurrentProgram(int) override {}
@@ -80,7 +83,7 @@ public:
     void getStateInformation(juce::MemoryBlock& dest) override {
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x534F4E4B); // SONK
-        out.writeInt(1);
+        out.writeInt(2); // v1 sessions remain readable; v2 adds SPACE
         out.writeFloat(accepted_.startAzimuthDegrees);
         out.writeFloat(accepted_.revolutionSeconds);
         out.writeFloat(accepted_.stereoSpreadDegrees);
@@ -88,11 +91,17 @@ public:
         out.writeFloat(accepted_.outputTrim);
         out.writeByte(accepted_.moving?1:0);
         out.writeByte(accepted_.clockwise?1:0);
+        out.writeFloat(accepted_.roomAmount);
+        out.writeFloat(accepted_.ambienceAmount);
     }
     bool restoreUnpublishedState(const void* data,int size) {
-        if(published_||!data||size!=30||!queue_.empty()||!complete_.empty())return false;
+        if(published_||!data||(size!=30&&size!=38)||
+           !queue_.empty()||!complete_.empty())return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(size),false);
-        if(in.readInt()!=0x534F4E4B||in.readInt()!=1)return false;
+        if(in.readInt()!=0x534F4E4B)return false;
+        const int version=in.readInt();
+        if((version==1&&size!=30)||(version==2&&size!=38)||
+           (version!=1&&version!=2))return false;
         armix::sonku::Settings next{};
         next.startAzimuthDegrees=in.readFloat();
         next.revolutionSeconds=in.readFloat();
@@ -100,10 +109,14 @@ public:
         next.spatialMix=in.readFloat();
         next.outputTrim=in.readFloat();
         const int moving=in.readByte(),clockwise=in.readByte();
-        if(moving>1||clockwise>1||!in.isExhausted())return false;
+        if(moving>1||clockwise>1)return false;
         next.moving=moving!=0;
         next.clockwise=clockwise!=0;
-        if(!armix::sonku::valid(next))return false;
+        if(version==2) {
+            next.roomAmount=in.readFloat();
+            next.ambienceAmount=in.readFloat();
+        }
+        if(!in.isExhausted()||!armix::sonku::valid(next))return false;
         if(ready_&&!core_.setSettings(next))return false;
         accepted_=next;
         return true;
