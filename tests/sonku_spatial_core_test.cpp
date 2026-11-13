@@ -87,18 +87,71 @@ static void verifySonKuMusicIntegrity(double rate) {
             assert(guard.preservedSide(v,.7f*v)==0.f);
         }
         assert(guard.recoveryAmount()==0.f);
+        assert(guard.coherentAmount()>.95f);
         guard.reset();
+        assert(guard.coherentAmount()==0.f);
         for(int i=0;i<8000;++i){
             float v=.4f*std::sin(2.f*pi*160.f*
                 static_cast<float>(i)/static_cast<float>(rate));
             (void)guard.preservedSide(v,-v);
         }
         assert(guard.recoveryAmount()>.95f);
+        assert(guard.coherentAmount()<.01f);
         for(int i=0;i<25000;++i)
             assert(guard.preservedSide(0.f,0.f)==0.f);
         assert(guard.recoveryAmount()<.05f);
+        assert(guard.coherentAmount()<.05f);
         assert(guard.prepare(rate)); // device restart must not remember polarity
         assert(guard.recoveryAmount()==0.f);
+        assert(guard.coherentAmount()==0.f);
+    }
+    // A fully coherent music MID should take one center KEMAR HRIR instead
+    // of the comb-filtered mean of two spatially separated virtual speakers.
+    // This exercises the REAL native FIR in steady state (not a UI pan).
+    {
+        Settings coherent=s;
+        coherent.startAzimuthDegrees=180.f;
+        coherent.stereoSpreadDegrees=60.f;
+        coherent.spatialMix=1.f;
+        coherent.outputTrim=.6f;
+        auto mid=std::make_unique<SonKuSpatialCore>();
+        assert(mid->prepare(rate)&&mid->setSettings(coherent));
+        constexpr int frames=32768;
+        constexpr double frequency=2000.;
+        std::vector<float> left(frames),right(frames);
+        for(int i=0;i<frames;++i)
+            left[i]=right[i]=.04f*static_cast<float>(
+                std::sin(2.*3.14159265358979323846*frequency*i/rate));
+        mid->process(left.data(),right.data(),frames);
+        double sum=0.;
+        for(int i=frames-8192;i<frames;++i)
+            sum+=static_cast<double>(left[i])*left[i];
+        const double observed=std::sqrt(sum/8192.)*std::sqrt(2.);
+        const auto& h=(std::abs(rate-44100.)<.1)?
+            hrir::normal44100:hrir::normal48000;
+        auto response=[&](int azimuth,int ear) {
+            double real=0.,imag=0.;
+            for(int i=0;i<hrir::taps;++i){
+                const double value=h[azimuth/5][ear][i]/32768.;
+                const double phase=2.*3.14159265358979323846*frequency*i/rate;
+                real+=value*std::cos(phase);
+                imag-=value*std::sin(phase);
+            }
+            return std::array<double,2>{real,imag};
+        };
+        const auto center=response(180,0);
+        const double expected=.04*coherent.outputTrim*
+            std::hypot(center[0],center[1]);
+        assert(expected>.005 && observed/expected>.86
+               && observed/expected<1.14);
+        if(std::abs(rate-48000.)<.1){
+            const auto a=response(150,0),b=response(150,1);
+            const double oldMean=.5*std::hypot(a[0]+b[0],a[1]+b[1]);
+            const double newCenter=std::hypot(center[0],center[1]);
+            // Independent frequency-domain HRTF audit: REAR 2kHz old
+            // 60deg coherent stereo comb ~11.6dB, center is much clearer.
+            assert(newCenter>oldMean*2.5);
+        }
     }
     // Mix=0 preserves the source channels as dry, including negative phase.
     {
