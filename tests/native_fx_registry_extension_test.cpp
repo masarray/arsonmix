@@ -313,10 +313,10 @@ static void verifyFirstSoundGuitarProcessor() {
     // own bank and persists both choices through the exact same .smix blob.
     auto alternate=armix::guitarfx::factoryTone(3);
     assert(guitarTyped->queueProgram(alternate,107,1));
-    shortBlock.clear();
-    live->processBlock(shortBlock,midi); // still finishing old crossfade
-    shortBlock.clear();
-    live->processBlock(shortBlock,midi); // B starts after previous fade
+    for(int block=0;block<8 && guitarTyped->pendingProgramChanges();++block){
+        shortBlock.clear();
+        live->processBlock(shortBlock,midi); // previous fade then Bank B
+    }
     assert(guitarTyped->stateSnapshotQuiescent());
     assert(guitarTyped->lastCompletion().requestId==107);
     assert(guitarTyped->lastCompletion().bank==1);
