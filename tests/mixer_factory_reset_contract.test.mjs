@@ -69,8 +69,9 @@ test("emergency CLI reset runs before WebView and only clears mixer data",()=>{
 
 test("native bridge clears stale channel appearance on reset readback",()=>{
   assert.match(bridge,/factoryResetProjectionPending=true/);
-  assert.match(bridge,/t\.color=appearance\?\.color\|\|scope\.colors/);
-  assert.match(bridge,/t\.icon=appearance\?\.icon\|\|/);
+  assert.match(bridge,/t\.color=appearance\.color/);
+  assert.match(bridge,/t\.icon=appearance\.icon/);
+  assert.match(bridge,/factoryVisualSeed\[inputOrdinal-1\]/);
   assert.match(bridge,/factoryResetProjectionPending=false/);
   assert.match(bridge,/ack\?\.operation==="RESET"/);
 });
