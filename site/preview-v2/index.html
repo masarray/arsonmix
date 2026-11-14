@@ -225,9 +225,20 @@ const make=(name,kind,color)=>{
  const id=nextId++;
  return {id,name,kind,color,icon:kind==='master'?'◎':kind==='bus'?'⊞':kind==='fx'?'◉':'♩',group:null,safe:false,format:'stereo',input:'None',output:kind==='master'?'Default Output':'Master',fx:Array(8).fill('None'),slotBypass:Array(8).fill(false),fxOn:true,send:'None',sendOn:false,pre:false,wireTapMode:'send',sendLevel:-6,sendPan:0,activeSend:0,sendSlots:Array.from({length:16},()=>({send:'None',sendOn:false,pre:false,sendLevel:-6,sendPan:0})),eq:true,pan:0,trim:0,mute:false,solo:false,cue:false,mon:false,phase:false,level:0,meterL:0,meterR:0,clip:false,selected:false};
 };
-function init(){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';const migrated=ArSonWireGraph.migrateLegacy(tracks,master.id);
+function init(factoryBlank=false){meterPeakHolds.clear();wireWsOpen=false;wireWsDestinationId=null;wireWsInspect=null;wireWsRemoveConfirm=null;wireWsHistory=[];wireWsPendingBefore=null;wireWsEditBefore=null;const ws=document.getElementById('wireWorkspace');if(ws)ws.hidden=true;const cfg=document.getElementById('wireConfigWindow');if(cfg)cfg.hidden=true;document.getElementById('wireConfigToggle').setAttribute('aria-expanded','false');document.getElementById('wireMode').value='send';nextId=1;nextGroup=1;nextDemoFxId=1;fxDrag=null;fxReorderUndo=null;wireSourceId=1;wireEdges=[];selectedWireEdgeId=null;nextWireId=1;wireMode='send';wireView='focus';wireSourcePinned=false;wireIntent=false;document.getElementById('wireView').value='focus';wireAnchorId=null;wireHoverId=null;wireGesture=null;wireSuppressClick=false;pendingBusRoute=null;const choice=document.getElementById('routeChoice');if(choice)choice.hidden=true;document.getElementById('wireMode').value='send';tracks=INIT.map((name,i)=>{const channel=make(name,'audio',COLORS[i]);channel.icon=DEFAULT_ICONS[i]||'♩';if(/^(Host|Interview|Vocal|Guitar)/.test(name)){channel.format='mono';}return channel;});tracks.push(make('Bus A','bus','#7140b5'));master=make('Master','master','#a04b65');tracks[0].fx[0]='Parametric Equalizer';tracks[1].fx[0]='Dynamics Processing';tracks[3].fx[0]='Studio Reverb';const migrated=ArSonWireGraph.migrateLegacy(tracks,master.id);
 if(!migrated.ok)throw Error('Invalid initial graph: '+migrated.error);
-wireEdges=migrated.edges;nextWireId=migrated.nextId;tracks[0].selected=true;render();}
+wireEdges=migrated.edges;nextWireId=migrated.nextId;
+if(factoryBlank){
+  // Factory reset is NOT the reference demo's initial FX/WIRE preset.
+  // Keep the same strip layout while all input sources, FX and routes clear.
+  tracks.forEach(t=>{
+    t.fx=Array(8).fill('None');t.slotBypass=Array(8).fill(false);
+    t.fxOn=true;t.output='SOURCE ONLY (No Main)';t.input='None';
+    t.trim=0;t.level=0;t.pan=0;t.mute=false;t.solo=false;t.cue=false;
+  });
+  wireEdges=[];nextWireId=1;
+}
+tracks[0].selected=true;render();}
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /* Google Material Icons SVG paths, Apache-2.0. Inline/zero font or network requests. */
 const MATERIAL_PATH=Object.freeze({
@@ -3078,8 +3089,8 @@ document.getElementById('mixerResetConfirm').addEventListener('click',()=>{
  document.getElementById('sofToggle').classList.remove('active');
  document.getElementById('sofToggle').setAttribute('aria-pressed','false');
  document.querySelector('.console-body').classList.remove('sends-mode');
- setDensity('comfort');init();
- say('REFERENCE ONLY · mixer FX, WIRE and scenes cleared. Native reset also clears the automatic .smix session.');
+ setDensity('comfort');init(true);
+ say('REFERENCE ONLY · no FX, no WIRE, no physical inputs. Installed reset also retires the automatic .smix session.');
 });
 
 // Browser-only catalog contract. Only the native host can actually scan or instantiate VST3.
