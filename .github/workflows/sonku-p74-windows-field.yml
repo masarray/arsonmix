@@ -34,6 +34,7 @@ jobs:
           set -euo pipefail
           node --check site/preview-v2/assets/mixer-native-sonku.js
           node tests/sonku_p73_gui_contract_test.js
+          grep -q "'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'" scripts/m3e_fat_evidence_gate.mjs
           python -m unittest discover -s tests -p native_peq_assembly_test.py
       - name: 44.1 and 48 kHz prepared PCM source regression
         run: |
@@ -126,7 +127,7 @@ jobs:
           $p = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
           $sha = (& git rev-parse HEAD).Trim()
           if ($p.sourceCommit -ne $sha) { throw "SONKU_P74_ARTIFACT_SHA_MISMATCH" }
-          $p.fatStatus = 'SONKU_P74_XYZ_FULL_WINDOWS_BUILD_PHYSICAL_ASIO_AND_LISTENING_PENDING'
+          $p.fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
           $p | Add-Member -NotePropertyName sonkuExperiment -NotePropertyValue @{
             enabled = $true
             nativeXYZ = $true
@@ -135,6 +136,7 @@ jobs:
             publicRelease = $false
             physicalAsioQualified = $false
             dearVrPerceptualParityProven = $false
+            qualification = 'SONKU_P74_FULL_JUCE_APP_3_SCOPED_CTEST_PASS_REAL_ASIO_LISTENING_PENDING'
             licenseRedistributionApproval = $false
             mitKemarNoticeSha256 = (Get-FileHash -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Algorithm SHA256).Hash.ToLowerInvariant()
             fieldFatGuideSha256 = (Get-FileHash -LiteralPath docs/SONKU_P74_PHYSICAL_FIELD_FAT_20261114.md -Algorithm SHA256).Hash.ToLowerInvariant()
