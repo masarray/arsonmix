@@ -171,7 +171,7 @@ stereo WAV (PCM16/24 or IEEE float32, 44.1/48k) and writes
 `P82_MusicBed.wav`, `P83_SpeakerPhysical.wav` and
 `P83_SpeakerMusicLF480.wav`, with matching input, trim (.75),
 speaker angle (-30/+30), head yaw (0), distance (1.6m), timebase and
-optional `--room=on` (seven-band? NO: actual P8.2 three-band FDN
+optional `--room=on` (actual P8.2 three-band FDN
 and six-wall early room). It uses the EXACT native SonKuSpatialCore,
 not simulated Javascript/WebAudio. Default `--room=off` isolates
 direct sound first. No tracker, live host routing or VST3 integration.
@@ -200,3 +200,9 @@ The fast Linux CI compiles and smoke-renders an original test WAV,
 uploads three original-source A/B listening files and metrics.
 The sample is deliberately original synthesized material, not
 proprietary music.
+
+Input support also includes common WAVEFORMATEXTENSIBLE PCM/IEEE float
+WAVs from DAWs. WAV PCM32 signed integer is supported; unsupported
+sample rates, compressed WAV and mismatched valid-bits fields fail
+closed. Output is standard IEEE 32-bit float WAV with a `fact` chunk.
+A separate CI smoke exercises extensible float32 input with ROOM OFF.

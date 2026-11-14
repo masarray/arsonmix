@@ -280,7 +280,7 @@ int main(int argc,char** argv){
                 const double next=std::norm(spectrum(trial.l,rate,hz))+
                                   std::norm(spectrum(trial.r,rate,hz));
                 const double delta=10.*std::log10((next+1e-20)/(orig+1e-20));
-                std::printf("P83_MULTIBAND_GATE,%s,%.0f,%.0fHz,delta_dB=%.3f\\n",
+                std::printf("P83_MULTIBAND_GATE,%s,%.0f,%.0fHz,delta_dB=%.3f\n",
                             label,rate,hz,delta);
                 check(std::isfinite(delta)&&delta>=-6.&&delta<=6.,
                       "music LF multiband level must remain within +/-6dB of P8.2");

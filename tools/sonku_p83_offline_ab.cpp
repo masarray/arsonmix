@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Exact SonKuSpatialCore research audition; OFFLINE ONLY, no JUCE device,
 // ASIO, second mixer graph, WebAudio or proprietary music/HRIR content.
-// Stereo RIFF WAV 16/24-bit PCM and 32-bit IEEE float input, 44.1/48k.
+// Stereo RIFF WAV PCM16/24/32, float32, and DAW WAVEFORMATEXTENSIBLE, 44.1/48k.
 // Each output uses the SAME source input, trim, position and room settings.
 // Raw render levels are preserved: use independent loudness matching in FAT.
 #include "../engine/builtin_fx/sonku/SonKuSpatialCore.h"
@@ -61,20 +61,36 @@ static WaveInfo inspect(std::ifstream& f) {
         if(length>size-body)throw std::runtime_error("Truncated WAV chunk");
         if(std::memcmp(head.data(),"fmt ",4)==0) {
             if(hasFmt||length<16)throw std::runtime_error("Invalid fmt chunk");
-            std::array<std::uint8_t,16> fmt{};
-            f.read(reinterpret_cast<char*>(fmt.data()),fmt.size());
+            std::array<std::uint8_t,40> fmt{};
+            const auto count=static_cast<std::streamsize>(length>=40?40:16);
+            f.read(reinterpret_cast<char*>(fmt.data()),count);
             if(!f)throw std::runtime_error("Truncated PCM format");
             w.format=le16(fmt.data());
             const int channels=le16(fmt.data()+2);
             w.rate=static_cast<int>(le32(fmt.data()+4));
             w.align=le16(fmt.data()+12);
             w.bits=le16(fmt.data()+14);
+            if(w.format==0xfffe) {
+                // Microsoft KSDATAFORMAT_SUBTYPE_PCM / _IEEE_FLOAT.
+                // Reject unknown vendor GUID rather than guess sample data.
+                if(length<40 || le16(fmt.data()+16)<22)
+                    throw std::runtime_error("Malformed WAVEFORMATEXTENSIBLE");
+                constexpr std::array<std::uint8_t,12> guidTail{{
+                    0,0,0x10,0,0x80,0,0,0xaa,0,0x38,0x9b,0x71}};
+                if(!std::equal(guidTail.begin(),guidTail.end(),fmt.data()+28))
+                    throw std::runtime_error("Unsupported extensible WAV GUID");
+                const auto sub=le32(fmt.data()+24);
+                const auto valid=le16(fmt.data()+18);
+                if((sub!=1&&sub!=3) || (valid!=0&&valid!=w.bits))
+                    throw std::runtime_error("Unsupported WAV subtype/validBits");
+                w.format=static_cast<int>(sub);
+            }
             if(channels!=2 || (w.rate!=44100&&w.rate!=48000) ||
                (w.format!=1&&w.format!=3) ||
-               !(w.format==1?(w.bits==16||w.bits==24):
+               !(w.format==1?(w.bits==16||w.bits==24||w.bits==32):
                                   (w.bits==32)) ||
                w.align!=2*(w.bits/8))
-                throw std::runtime_error("Supports only stereo PCM16/24 or float32 at 44.1/48k");
+                throw std::runtime_error("Supports stereo PCM16/24/32 or float32 at 44.1/48k");
             hasFmt=true;
         }else if(std::memcmp(head.data(),"data",4)==0) {
             if(hasData)throw std::runtime_error("Multiple WAV data chunks");
@@ -88,7 +104,7 @@ static WaveInfo inspect(std::ifstream& f) {
        dataBytes%static_cast<std::uint64_t>(w.align)!=0)
         throw std::runtime_error("Missing/misaligned PCM data");
     w.frames=dataBytes/static_cast<std::uint64_t>(w.align);
-    if(w.frames>0xFFFFFFFFull/8ull)
+    if(w.frames>(0xFFFFFFFFull-48ull)/8ull)
         throw std::runtime_error("Output exceeds standard 4GB RIFF limit");
     return w;
 }
@@ -105,16 +121,25 @@ static float decode(const std::uint8_t* p,int format,int bits){
         const auto raw=static_cast<int>(le16(p));
         return static_cast<float>(raw>=32768?raw-65536:raw)/32768.f;
     }
-    const auto raw=static_cast<int>(p[0]|(int(p[1])<<8)|(int(p[2])<<16));
-    return static_cast<float>(raw>=0x800000?raw-0x1000000:raw)/8388608.f;
+    if(bits==24) {
+        const auto raw=static_cast<int>(p[0]|(int(p[1])<<8)|(int(p[2])<<16));
+        return static_cast<float>(raw>=0x800000?raw-0x1000000:raw)/8388608.f;
+    }
+    const auto raw=le32(p);
+    const auto sample=raw>=0x80000000u
+        ?static_cast<std::int64_t>(raw)-0x100000000ll
+        :static_cast<std::int64_t>(raw);
+    return static_cast<float>(static_cast<double>(sample)/2147483648.);
 }
 static void beginFloatWav(std::ofstream& f,int rate,std::uint64_t frames){
     const auto n=static_cast<std::uint32_t>(frames*8);
-    f.write("RIFF",4);putLe(f,36+n,4);f.write("WAVE",4);
+    f.write("RIFF",4);putLe(f,48+n,4);f.write("WAVE",4);
     f.write("fmt ",4);putLe(f,16,4);putLe(f,3,2);putLe(f,2,2);
     putLe(f,static_cast<std::uint32_t>(rate),4);
     putLe(f,static_cast<std::uint32_t>(rate*8),4);
     putLe(f,8,2);putLe(f,32,2);
+    // IEEE_FLOAT WAV should have a fact sample-count chunk.
+    f.write("fact",4);putLe(f,4,4);putLe(f,static_cast<std::uint32_t>(frames),4);
     f.write("data",4);putLe(f,n,4);
 }
 static void pushFloat(std::uint8_t* p,float x) {
