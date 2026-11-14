@@ -824,6 +824,9 @@ function bankCapacity(){
  return panel?Math.max(1,Math.min(10,Math.floor((usable+2)/minimum)-1)):10;
 }
 function render(pageOverride){
+ // A bank/mode rebuild destroys the captured dial node. Cancel the preview
+ // before detaching it; never turn a resize into a native GAIN commit.
+ if(gainDialGesture)finishGainDialGesture({pointerId:gainDialGesture.id},true);
  const filter=document.getElementById('viewFilter').value;
  const visible=tracks.filter(t=>filter==='all'||(filter==='solo'?t.solo:t.kind===filter));
  const selector=document.getElementById('bankSelect'),previous=Number(selector.value)||0;
@@ -967,6 +970,8 @@ function setSnapshotSafe(){
 function findTrack(el){const strip=el.closest('.strip');if(!strip)return null;const id=Number(strip.dataset.id);return id===master.id?master:tracks.find(t=>t.id===id);}
 function refreshStrip(t){
  const old=document.querySelector('.strip[data-id="'+t.id+'"]');if(!old)return;
+ if(gainDialGesture?.input?.closest?.('.strip')===old)
+  finishGainDialGesture({pointerId:gainDialGesture.id},true);
  const oldRack=old.querySelector('.fxslot-list'),scroll=oldRack?oldRack.scrollTop:0;
  const temp=document.createElement('div');temp.innerHTML=strip(t);
  const updated=temp.firstElementChild;
@@ -2360,6 +2365,9 @@ function finishGainDialGesture(event,cancel=false){
    // Exact restore, bypass detent; native audio remains unchanged.
    handleField({target:g.input,type:'input',shiftKey:true});
   }
+  // Cancel never emits SET_INPUT_GAIN. If a native ACK timed out while
+  // capturing, repaint from its accepted ChannelId scalar after release.
+  window.__ARMIX_NATIVE_GAIN_RESTORE__?.();
  }else if(g.active&&Number(g.input.value)!==g.start){
   // One physical release -> one accepted native intent, no click-only write.
   handleField({target:g.input,type:'change',
@@ -2369,6 +2377,18 @@ function finishGainDialGesture(event,cancel=false){
 }
 window.addEventListener('pointerup',event=>finishGainDialGesture(event));
 window.addEventListener('pointercancel',event=>finishGainDialGesture(event,true));
+// Capture can be stolen by native overlays, browser chrome or device changes;
+// otherwise gainDragging would remain set and suppress authoritative readback.
+consoleBody.addEventListener('lostpointercapture',event=>{
+ if(gainDialGesture?.id===event.pointerId)finishGainDialGesture(event,true);
+},true);
+window.addEventListener('blur',()=>{
+ if(gainDialGesture)finishGainDialGesture({pointerId:gainDialGesture.id},true);
+});
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden&&gainDialGesture)
+  finishGainDialGesture({pointerId:gainDialGesture.id},true);
+});
 document.querySelector('.console-body').addEventListener('input',handleField);
 document.querySelector('.console-body').addEventListener('change',handleField);
 document.querySelector('.console-body').addEventListener('click',e=>{
