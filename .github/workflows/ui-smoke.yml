@@ -139,6 +139,34 @@ jobs:
       - name: Block incomplete product release only when preparing product review
         if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'integration/product-') }}
         run: node scripts/check_console_puzzle.mjs --release
+  gain-metal-knob-preview:
+    name: GAIN metal knob Chromium FAT (3 viewports)
+    needs: quick
+    # One scoped browser validation for the new photographic GAIN control;
+    # no PCM rebuild, installer or heavyweight generic visual suite.
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/gain-metal-knob-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install one scoped Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Validate approved /preview/ GAIN, FX and SOF at 3 sizes
+        run: python tests/sof_contextual_console_smoke.py
+      - name: Retain rendered operator evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArSonMix-GAIN-Brushed-Metal-${{ github.run_id }}
+          path: arsonmix-gain-knob-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   floating-window-preview:
     name: Modeless floating cards actual Chromium interactions (2 viewports)
     needs: quick
