@@ -177,7 +177,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${ARMIX_BRAND_DIR}/arsonmix-256.png")
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 
-target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
+target_sources(ARMixConsole PRIVATE src/Main.cpp src/LiveAudioEngine.h engine/builtin_fx/HarmonyDsp.h engine/builtin_fx/HarmonyMusicKey.h engine/builtin_fx/ChannelHarmonyProcessor.h engine/builtin_fx/SonKuSpatialProcessor.h engine/builtin_fx/ImerSipProcessor.h engine/builtin_fx/ImerSipDsp.h engine/builtin_fx/ImerSipPhaseSafe.h engine/builtin_fx/sonku/SonKuSpatialCore.h engine/builtin_fx/sonku/SonKuMeasuredHrir.h src/VstOrbitController.h engine/core/MixerRoutingPlan.h engine/core/ChannelRoutingContract.h engine/core/ChannelSendPlan.h engine/core/AuxBusPlan.h engine/core/PreparedMixerBlock.h engine/core/MasterOutputMonoPolicy.h engine/core/LiveChannelFxGraph.h engine/core/PreparedNativeMixerSession.h engine/core/NativeDryRouteCommand.h engine/core/RealtimeRoutePublisher.h engine/device/LiveInputPortRegistry.h src/LiveDryRoutingLab.h engine/core/OrbitPhase.h engine/core/OrbitControlPolicy.h engine/core/OrbitMotion.h engine/core/OrbitDistanceMapping.h engine/core/DearVrPolarPolicy.h src/PluginCatalog.h src/NativeFxParameterHotkey.h src/FactoryFxRegistry.h src/PluginVault.h src/PortableWorkspace.h src/StudioBackup.h src/DiagnosticsRecorder.h src/StereoPan.h src/NativePresetArchive.h src/NativeShowSchema.h src/NativeDryShowRecall.h src/VstBusLayout.h src/LiveGraphHandoff.h src/DiagnosticTone.h engine/core/RealtimeHealthHistogram.h engine/core/CallbackCadenceEvidence.h engine/diagnostics/CrackleEvidenceWindow.h engine/device/AdaptiveClockBridge.h engine/device/AudioProfilePolicy.h engine/device/PeriodCapabilityEvidence.h engine/device/SessionLifecycle.h engine/device/WasapiCapabilityProbe.h engine/device/JuceIndependentClockDevice.h engine/device/LiveSecondaryOutputDevice.h engine/core/LiveOutputRouteGate.h engine/device/ClockBridgeSizing.h engine/device/IndependentStreamFormatFence.h engine/device/DirectRestoreBackoff.h engine/device/IndependentStreamWatchdog.h engine/device/BridgeContinuityGate.h engine/device/EndpointIdentityPolicy.h engine/device/WasapiEndpointIdentityGuard.h engine/device/AsioStartupPolicy.h engine/device/AsioPriorityDeviceManager.h engine/device/JuceActivePortSnapshot.h engine/device/AsioRegistrationPolicy.h engine/device/AsioRegistryIdentityProbe.h engine/device/DirectRouteFence.h)
 # Explicit UTF-8 source decoding: native channel icons are Unicode, and
 # MSVC's machine-specific ANSI source charset corrupts emoji literals.
 # Limit the flag to C++ (not Windows .rc/resource compilation).
@@ -403,20 +403,21 @@ if(BUILD_TESTING)
               SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
           add_test(NAME NativeSonKuP82SixWallThreeBandRoomTimingDecayAndParity
               COMMAND ARMixSonKuP82RoomTests)
-          # Research-only GrandStage: real P8.2 core, separate built-in.
-          # No public installer or SonKu legacy path is modified.
-          add_executable(ARMixGrandStageP0Tests
-              tests/grandstage_p0_music_preservation_test.cpp)
-          target_compile_features(ARMixGrandStageP0Tests PRIVATE cxx_std_20)
-          target_compile_definitions(ARMixGrandStageP0Tests PRIVATE
+          # ImerSip uses the exact P8.2 native PCM, then positive
+          # coherent LF shelf and mono-invariant SIDE HF enhancement.
+          # Expensive JUCE/Windows installer is NOT a source-test dependency.
+          add_executable(ARMixImerSipMusicTests
+              tests/imersip_music_phase_guard_test.cpp)
+          target_compile_features(ARMixImerSipMusicTests PRIVATE cxx_std_20)
+          target_compile_definitions(ARMixImerSipMusicTests PRIVATE
               SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
               SONKU_P71_DIRECT_XYZ_RESEARCH=1
               SONKU_P72_NATIVE_XYZ_RT=1
               SONKU_P75_MUSIC_SAFE_RESEARCH=1
               SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
               SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
-          add_test(NAME GrandStageP82ConcertCinemaMusicAndChunkParity
-              COMMAND ARMixGrandStageP0Tests)
+          add_test(NAME ImerSipP82NoAddedPhaseCancellationBassAndChunkParity
+              COMMAND ARMixImerSipMusicTests)
         endif()
       endif()
     endif()
