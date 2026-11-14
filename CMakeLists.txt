@@ -355,8 +355,13 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixPlayerWaveformTests PRIVATE Threads::Threads)
   add_test(NAME ArSonPlayerM2ProgressiveRealtimeSafeWaveform
       COMMAND ARMixPlayerWaveformTests)
+  add_executable(ARMixPlayerCrossfadeTests tests/player_crossfade_curve_test.cpp)
+  target_compile_features(ARMixPlayerCrossfadeTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM3FiniteEqualPowerCrossfade
+      COMMAND ARMixPlayerCrossfadeTests)
   add_dependencies(ARMixMixerRoutingTests
-      ARMixPlayerShowEditTests ARMixPlayerWaveformTests)
+      ARMixPlayerShowEditTests ARMixPlayerWaveformTests
+      ARMixPlayerCrossfadeTests)
   juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
   target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
   target_link_libraries(ARMixPlayerDecodeTests PRIVATE
