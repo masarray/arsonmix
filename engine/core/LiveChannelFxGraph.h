@@ -313,6 +313,11 @@ public:
     }
     // One atomic rack override per channel. Individual slot bypass flags stay
     // unchanged; ON restores the previous enabled/disabled combination.
+    // Prepared M4 graph and ChannelId owner share a single physical A/B gate.
+    // The pointer is installed before publication and never changed on RT.
+    void bindGlobalRackOverride(const std::atomic<bool>* flag) noexcept {
+        globalRackOverride_=flag;
+    }
     bool setRackBypass(int strip,bool bypass) noexcept {
         if(strip<0||strip>=fxSlots)return false;
         rackBypassed_[strip].store(bypass,std::memory_order_release);
@@ -394,7 +399,9 @@ public:
           (int strip,float* l,float* r,int samples) noexcept {
             if(strip<0||strip>=fxSlots)return;
             const int count=counts_[strip]; // immutable, prepared OFF RT
-            const bool rackOff=rackBypassed_[strip].load(std::memory_order_acquire);
+            const bool rackOff=(globalRackOverride_ &&
+                globalRackOverride_->load(std::memory_order_acquire)) ||
+                rackBypassed_[strip].load(std::memory_order_acquire);
             if(count>0) {
                 for(int slot=0;slot<count;++slot) {
                     auto* instance=processors_[strip][slot].get();
@@ -418,6 +425,7 @@ private:
     FxBank processors_ {};
     std::array<std::uint8_t,fxSlots> counts_ {};
     std::array<std::atomic<bool>,fxSlots> rackBypassed_{}; // CONTROL write; one RT read per lane
+    const std::atomic<bool>* globalRackOverride_=nullptr; // prepared before publication
     int activeInserts_=0;
     int pluginQuantum_=512;
     int mainOutputLeft_=0,mainOutputRight_=1;
