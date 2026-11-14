@@ -4,11 +4,9 @@ name: SonKu P8.3 actual native mixer portable research x64
 # corruption rejection and unpublished/logical FX edit completion.
 # Historical P8.2 physical FAT remains manual; do not launch duplicate
 # full Windows JUCE builds for native P8.3 milestone source edits.
+# Headphone FAT rejected on 2026-11-15: manual opt-in ONLY.
+# Gate LF480 music integrity on SOURCE before allocating Windows runners.
 on:
-  pull_request:
-    types: [opened, reopened, synchronize]
-    paths:
-      - '.github/workflows/sonku-p83-windows-field.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +23,20 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Stop rejected SonKu P8.3 music fidelity BEFORE Windows build
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_physical_speaker_source_test.cpp -o /tmp/p83-music-fidelity
+          /tmp/p83-music-fidelity | tee /tmp/p83-fat.log
+          grep -q '^PASS P8.3 SOURCE FIDELITY:' /tmp/p83-fat.log
       - name: Native JS and source GUI capability checks
         run: |
           set -euo pipefail

@@ -128,3 +128,15 @@ at both 44.1/48k. Any violation MUST FAIL the CI, preventing another
 Additional continuous-spectrum FFT, transient, binaural IACC,
 loudness-matched headphone and human sound-location tests remain
 mandatory. Do not game these gates with auto-gain.
+
+## CI release freeze
+
+The Windows research FAT workflow is now `workflow_dispatch` only.
+Even manual dispatch starts with an actual P8.3 C++ acoustic regression
+gate and refuses a Windows runner unless this source gate passes.
+This prevents repeated, costly full JUCE builds of the rejected DSP.
+The older artifact from 43635510105 remains downloadable as forensic
+evidence but is **NOT approved for monitoring or public release**.
+The CI source-fidelity veto must not be bypassed by modifying a
+threshold simply to make the build green. Subjective owner FAT still
+controls final approval after measurable musical integrity has passed.

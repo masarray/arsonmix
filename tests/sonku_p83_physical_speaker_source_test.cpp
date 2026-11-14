@@ -407,7 +407,7 @@ int main(int argc,char** argv){
               rate,10*std::log10(total(direct)/(total(horizontal)+total(floor)+total(ceiling))),
               10*std::log10(total(direct)/total(late)),
               10*std::log10(total(ceiling)/total(floor)));
-        std::printf("P83_HEADPHONE_FAT_CANDIDATE,%0.f,status=%s,baseline=P82\n",
+        std::printf("P83_HEADPHONE_FAT_CANDIDATE,%.0f,status=%s,baseline=P82\n",
                     rate,musicFidelityAccepted?"SOURCE_FIDELITY_GATE_PASS":
                         "REJECTED_LOW_ENERGY_OR_SPECTRAL_HOLE");
         check(musicFidelityAccepted,
