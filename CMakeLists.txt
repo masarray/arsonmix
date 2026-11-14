@@ -418,6 +418,25 @@ if(BUILD_TESTING)
               SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
           add_test(NAME ImerSipP82NoAddedPhaseCancellationBassAndChunkParity
               COMMAND ARMixImerSipMusicTests)
+          # Compile the actual JUCE plugin adapter with the SAME P8.2
+          # research macro contract, not just the header-only PCM simulation.
+          juce_add_console_app(ARMixImerSipNativeTests
+              PRODUCT_NAME "ImerSip Native JUCE State and PCM")
+          target_sources(ARMixImerSipNativeTests PRIVATE
+              tests/imersip_native_state_test.cpp
+              engine/builtin_fx/ImerSipProcessor.h)
+          target_link_libraries(ARMixImerSipNativeTests PRIVATE
+              juce::juce_audio_processors juce::juce_recommended_config_flags)
+          target_compile_features(ARMixImerSipNativeTests PRIVATE cxx_std_20)
+          target_compile_definitions(ARMixImerSipNativeTests PRIVATE
+              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+              SONKU_P72_NATIVE_XYZ_RT=1
+              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          add_test(NAME ImerSipNativeJuceP82AcceptedStateAckAndRestore
+              COMMAND ARMixImerSipNativeTests)
         endif()
       endif()
     endif()
