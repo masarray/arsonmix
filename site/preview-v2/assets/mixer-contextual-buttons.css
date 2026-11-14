@@ -356,6 +356,16 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}
 
 
+/* M3 transition remains one inline control, not a new player mode. */
+#arsonPlayer .ap-showtools{display:flex;align-items:center;gap:8px;
+ min-height:30px;padding:4px 12px;background:#172830;
+ border-bottom:1px solid #2a4148;font-size:10px;color:#92b5b5}
+#arsonPlayer .ap-showtools select{max-width:138px;padding:4px 6px;
+ background:#1c353e;border:1px solid #3d5c64;border-radius:5px;
+ font-size:10px;color:#cbebdf}
+#arsonPlayer #playerTransitionStatus{margin-left:auto;min-width:0;
+ color:#83d7c4;text-align:right;font-size:10px}
+
 /* Decoder-only peak summary + explicit seek: never streams browser PCM. */
 #arsonPlayer .ap-waveform{display:block;width:100%;height:42px;
  border:1px solid #2c454b;border-radius:5px;background:#1e363e}
