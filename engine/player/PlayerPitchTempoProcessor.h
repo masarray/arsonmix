@@ -64,6 +64,7 @@ public:
             static_cast<float>(controls_.keySemitones),
             8000.f/static_cast<float>(sampleRate_));
         fractionalInput_=0;
+        smoothedTempoPercent_=static_cast<double>(c.tempoPercent);
         prepared_=true;
         return true;
     }
@@ -78,7 +79,10 @@ public:
         } else if(wasActive && !willBeActive) {
             currentSemitones_=0.f;
             primeOnNextProcess_=false;
+            smoothedTempoPercent_=100.;
         }
+        if(!wasActive && willBeActive)
+            smoothedTempoPercent_=100.; // ramp into tempo from neutral
         controls_=c;
         // Mark precisely one boundary. No continuously running smoother:
         // the expensive FFT always remains in the decoder worker.
@@ -88,8 +92,28 @@ public:
     bool active() const noexcept {
         return controls_.keySemitones!=0 || controls_.tempoPercent!=100;
     }
+    double smoothedTempoPercent() const noexcept {
+        return smoothedTempoPercent_;
+    }
     int nextInputFrames(int outputFrames) noexcept {
-        return inputFramesForOutput(outputFrames,controls_,fractionalInput_);
+        if(!prepared_ || outputFrames<=0)return 0;
+        if(active()) {
+            // Tempo rate follows an 80 ms block-independent one-pole
+            // envelope, so changing speed does not instantaneously jump
+            // the time map. The fractional accumulator still ensures
+            // long-run sample-accurate average consumption of decoder PCM.
+            const double alpha=1.-std::exp(
+                -static_cast<double>(outputFrames)/(sampleRate_*0.080));
+            smoothedTempoPercent_+=
+                (controls_.tempoPercent-smoothedTempoPercent_)*alpha;
+            if(std::abs(controls_.tempoPercent-smoothedTempoPercent_)<1e-7)
+                smoothedTempoPercent_=controls_.tempoPercent;
+        } else smoothedTempoPercent_=100.;
+        const double requested=outputFrames*smoothedTempoPercent_/100.
+                               +fractionalInput_;
+        const int frames=static_cast<int>(std::floor(requested));
+        fractionalInput_=requested-frames;
+        return frames;
     }
     // in and out contain TWO separate PCM lanes, each sized for the supplied
     // count. No file IO here. Process is allowed to use heap on this WORKER.
@@ -168,7 +192,8 @@ public:
     }
     void flush(float* const* output,int frames) {
         if(prepared_&&active() && frames>0)
-            stretch_.flush(output,frames,controls_.tempoPercent/100.f);
+            stretch_.flush(output,frames,
+                           static_cast<float>(smoothedTempoPercent_/100.));
     }
 private:
     void primeFromRecentInput() {
@@ -177,7 +202,7 @@ private:
         // the required pre-roll output. All buffers are allocated in prepare().
         const int count=std::clamp(
             static_cast<int>(std::ceil(stretch_.outputSeekLength(
-                static_cast<float>(controls_.tempoPercent)/100.f))),
+                static_cast<float>(smoothedTempoPercent_/100.)))),
             1,historyCapacity_);
         const int available=std::min(historyCount_,count);
         const int missing=count-available;
@@ -216,7 +241,7 @@ private:
     std::array<std::vector<float>,2> history_,prime_;
     int sampleRate_=0,historyCapacity_=0,historyWrite_=0,historyCount_=0;
     Controls controls_{};
-    double fractionalInput_=0;
+    double fractionalInput_=0,smoothedTempoPercent_=100.;
     float currentSemitones_=0.f,mappedSemitones_=0.f;
     std::array<float,2> lastOutput_{},seamCorrection_{};
     int seamLength_=0,seamPosition_=0;
