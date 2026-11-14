@@ -1238,7 +1238,8 @@ public:
             occupiedExternalCh1Fx>0,hw,
             frames,32u*1024u*1024u,
             nativePublisher_.acceptedRevision(),generation,epoch(),
-            true,nativePublisher_,nativeAccepted_,std::move(externalCh1));
+            true,nativePublisher_,nativeAccepted_,std::move(externalCh1),
+            &globalFxBypassed_);
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
             return false; // selected M4 PCM owns the safe fallback
         nativeControlDirty_=false; // fresh accepted legacy/native control baseline
