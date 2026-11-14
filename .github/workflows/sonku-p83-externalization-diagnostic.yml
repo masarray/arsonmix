@@ -1,0 +1,42 @@
+name: SonKu P8.3 externalization gap native diagnosis
+on:
+  pull_request:
+    paths:
+      - 'tests/sonku_p83_*'
+      - 'docs/SONKU_P83_*'
+      - '.github/workflows/sonku-p83-externalization-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p83-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  p83-native-source:
+    name: Native PCM directional gap reproduction (no Windows installer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build exact P8.2 source with direct and room PCM evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            tests/sonku_p83_externalization_gap_diagnostic.cpp \
+            -o /tmp/sonku-p83-gap
+          /tmp/sonku-p83-gap | tee /tmp/sonku-p83-gap.log
+          grep -q '^PASS P8.3 DIAGNOSTIC:' /tmp/sonku-p83-gap.log
+      - name: Record known limitation is not an externalization PASS
+        shell: bash
+        run: |
+          echo "HEAD=${GITHUB_SHA}"
+          echo "EXPECTED_RESULT=P82_HEADLOCKED_SIDE_REPRODUCED"
+          echo "NEXT=real_external_speaker_matrix_then_owner_AB"
+          echo "WARNING=This diagnostic intentionally PASSES when the P8.2 speaker defect is reproduced."
