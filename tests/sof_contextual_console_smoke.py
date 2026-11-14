@@ -188,6 +188,12 @@ def run() -> None:
                     assert geometry["right"] <= geometry["sectionRight"] + 2
                     assert geometry["bottom"] <= geometry["sectionBottom"] + 2
                     assert not errors, (width, errors)
+                    # Actual assembled /preview/ screenshot: one GAIN bank per viewport,
+                    # with static steel caps, green needles/arcs and the left GAIN rail.
+                    page.screenshot(
+                        path=str(ROOT / f"arsonmix-gain-knob-{width}x{height}.png"),
+                        full_page=False,
+                    )
                     page.close()
             finally:
                 browser.close()
