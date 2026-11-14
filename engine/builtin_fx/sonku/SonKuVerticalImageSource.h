@@ -20,9 +20,7 @@ inline bool validHeight(RoomHeight g) noexcept {
         std::isfinite(g.source) && g.room>=2.4f&&g.room<=12.f&&
         g.listener>=.5f&&g.source>=.5f&&
         g.listener<=g.room-.5f&&g.source<=g.room-.5f&&
-        // Until direct elevation HRTF is published, the source is at
-        // listener ear height. Do not claim a true elevated DIRECT source.
-        std::abs(g.source-g.listener)<1.e-4f;
+        true; // P7.1 may admit validated true XYZ source placement.
 }
 inline Arrival image(const RoomHeight g,float horizontalDistance,
                      float azimuthDegrees,Boundary boundary,float sampleRate) noexcept {
@@ -34,14 +32,16 @@ inline Arrival image(const RoomHeight g,float horizontalDistance,
     const float z=boundary==Boundary::Floor
         ?-g.source-g.listener:(2.f*g.room-g.source-g.listener);
     const float path=std::sqrt(x*x+y*y+z*z);
+    const float direct=std::hypot(horizontalDistance,g.source-g.listener);
     return {azimuthDegrees,std::atan2(z,horizontalDistance)*180.f/pi,
-            path,(path-horizontalDistance)*sampleRate/soundSpeed,
+            path,(path-direct)*sampleRate/soundSpeed,
             .28f*.70f*(1.6f/path)};
 }
 inline bool fitsDelayRing(RoomHeight g,float horizontalDistance,
                           float rate,int ringFrames,int firTaps) noexcept {
     if(!validHeight(g)||!std::isfinite(horizontalDistance)||
-       horizontalDistance<1.6f||horizontalDistance>10.f)return false;
+       horizontalDistance<.7f||horizontalDistance>10.f||!std::isfinite(rate)||
+       rate<44099.9f||rate>48000.1f)return false;
     const auto a=image(g,horizontalDistance,0.f,Boundary::Floor,rate);
     const auto b=image(g,horizontalDistance,0.f,Boundary::Ceiling,rate);
     return std::max(a.delaySamples,b.delaySamples)<ringFrames-firTaps-4;

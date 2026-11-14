@@ -11,6 +11,9 @@
 #if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
 #include "SonKuMeasuredHrir3D.h"
 #include "SonKuVerticalImageSource.h"
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+#include "SonKuSourcePlacement3D.h"
+#endif
 #endif
 
 // Bounded first-order image-source room (Allen & Berkley JASA, 1979).
@@ -172,7 +175,11 @@ public:
         if(enabled && profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
            !sixsurface::fitsDelayRing(
                {g.heightMeters,g.listenerHeightMeters,g.sourceHeightMeters},
-               g.distanceMeters,rate_,ringFrames,hrir::taps))return false;
+               (g.distanceMeters!=0.f?
+                 std::sqrt(std::max(0.f,g.distanceMeters*g.distanceMeters-
+                     (g.sourceHeightMeters-g.listenerHeightMeters)*
+                     (g.sourceHeightMeters-g.listenerHeightMeters))):0.f),
+               rate_,ringFrames,hrir::taps))return false;
 #endif
         if(!active() && enabled && amount>0.f){
             validFrames_=0; lowpass_.fill(0.f);
@@ -339,6 +346,17 @@ private:
     void updateGeometry(double azimuth,float spread) noexcept {
         constexpr float pi=3.14159265358979323846f;
         const float sourceDistance=custom_?geometry_.distanceMeters:1.60f;
+        // The existing four-wall path stays bit-exact at equal source/ear
+        // height. Only explicitly enabled research geometry projects true XYZ.
+        float horizontalDistance=sourceDistance,dz=0.f;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+        if(profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+           geometry_.sourceHeightMeters!=geometry_.listenerHeightMeters) {
+            dz=geometry_.sourceHeightMeters-geometry_.listenerHeightMeters;
+            horizontalDistance=std::sqrt(std::max(0.f,
+                sourceDistance*sourceDistance-dz*dz));
+        }
+#endif
         // Preserve the approved 7.2m/1.6m path exactly when custom_ is false.
         // A wider room changes physical image paths, not KEMAR azimuth signs.
         const float halfWidth=custom_?geometry_.widthMeters*.5f:
@@ -354,16 +372,18 @@ private:
             const float degrees=static_cast<float>(azimuth)
                 +(source==0?-.5f:.5f)*spread;
             const float rad=degrees*(pi/180.f);
-            const float sx=sourceDistance*std::sin(rad);
-            const float sy=sourceDistance*std::cos(rad);
+            const float sx=horizontalDistance*std::sin(rad);
+            const float sy=horizontalDistance*std::cos(rad);
             const std::array<std::array<float,2>,wallCount> images{{
                 {{-2.f*halfWidth-sx,sy}},{{2.f*halfWidth-sx,sy}},
                 {{sx,2.f*halfDepth-sy}},{{sx,-2.f*halfDepth-sy}}
             }};
             for(int wall=0;wall<wallCount;++wall){
                 const float x=images[wall][0],y=images[wall][1];
-                const float path=std::sqrt(x*x+y*y);
-                const float directionX=x/path;
+                const float planarPath=std::sqrt(x*x+y*y);
+                const float path=dz!=0.f?
+                    std::hypot(planarPath,dz):planarPath;
+                const float directionX=x/planarPath;
                 const float extra=(path-sourceDistance)*rate_/speedOfSound;
                 // Constant 0.31ms ear baseline makes differential ITD
                 // symmetric while keeping every reflection causal.
@@ -384,6 +404,16 @@ private:
                 if(directionalHrir_){
                     // The IMAGE-source arrival angle, NOT source azimuth.
                     const float dir=std::atan2(x,y)*180.f/pi;
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+                    if(profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+                       dz!=0.f){
+                        hrir3d::interpolate(dir,std::atan2(dz,planarPath)*180.f/pi,
+                                            std::abs(rate_-44100.f)<.1f,
+                                            tap.targetKernel);
+                        if(!primed_)tap.kernel=tap.targetKernel;
+                    }else
+#endif
+                    {
                     const float pos=std::abs(dir)/hrir::spacingDegrees;
                     const int lo=std::clamp(static_cast<int>(pos),0,
                         hrir::directions-1);
@@ -399,6 +429,7 @@ private:
                             tap.targetKernel[ear][k]=value;
                             if(!primed_)tap.kernel[ear][k]=value;
                         }
+                    }
                     }
                 }
                 if(!primed_){
@@ -421,7 +452,7 @@ private:
                     const auto boundary=i==0?sixsurface::Boundary::Floor:
                                                sixsurface::Boundary::Ceiling;
                     const auto arrival=sixsurface::image(
-                        heights,sourceDistance,sourceAz,boundary,rate_);
+                        heights,horizontalDistance,sourceAz,boundary,rate_);
                     auto& p=tap_[source][wallCount+i];
                     // Measured HRIR already contains directional ITD/ILD.
                     // No invented extra ear delay, EQ or pseudo elevation.
