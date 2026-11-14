@@ -108,6 +108,10 @@ public:
            (cueOut>0. && cueOut<=cueIn+0.05) ||
            rateHz_.load(std::memory_order_acquire)<=0 ||
            fading_.load(std::memory_order_acquire))return false;
+        // A previous fade may have ended BETWEEN control ticks. Reclaim
+        // the old decoder before reusing it for NEXT: otherwise service()
+        // can later STOP a freshly preloaded standby and strand the queue.
+        retireCompleted();
         const int inactive=1-active_.load(std::memory_order_acquire);
         const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
         if(preloadedFile_==file && preloadedEpoch_==epoch &&
@@ -142,8 +146,7 @@ public:
     // CONTROL/TIMER only. Returns true only when a NEW crossfade is
     // atomically armed after genuine standby PCM is buffered.
     bool service() {
-        const int old=retired_.exchange(-1,std::memory_order_acq_rel);
-        if(old>=0)decks_[static_cast<std::size_t>(old)].stop();
+        retireCompleted();
         if(!pending_.load(std::memory_order_acquire) ||
            fading_.load(std::memory_order_acquire))return false;
         const int from=active_.load(std::memory_order_acquire);
@@ -212,6 +215,14 @@ public:
         } else fadePosition_.store(advanced,std::memory_order_relaxed);
     }
 private:
+    // CONTROL ONLY. The callback finishes all old-deck reads BEFORE it
+    // publishes retired_; it never blocks on this reset. Calling this at
+    // both the start of service() and preload() prevents stale retirement
+    // from invalidating newly prepared PCM during rapid song changes.
+    void retireCompleted() {
+        const int old=retired_.exchange(-1,std::memory_order_acq_rel);
+        if(old>=0)decks_[static_cast<std::size_t>(old)].stop();
+    }
     std::array<NativePlayerDeck,2> decks_;
     std::array<std::array<float,maxRenderFrames>,2> scratch_{};
     const PlayerCrossfadeCurve fadeCurve_{};
