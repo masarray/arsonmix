@@ -76,6 +76,13 @@ public:
         if(active())return false;
         preset_=value;
         configure();
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        // Inactive/offline preset setter must agree with the native runtime
+        // selector, not silently retain another room's propagation length.
+        predelayActive_=predelayPrevious_=predelayTarget_=
+            preparedPredelay_[static_cast<int>(value)];
+        predelayPending_=-1;predelayRemaining_=0;
+#endif
         return true;
     }
     // Realtime-safe preset/wet update: only POD/table copies, no exponentials,
