@@ -263,6 +263,12 @@ public:
                 next.musicCompatibleLowFrequency=false;
                 next.headYawDegrees=0.f;
             }
+            if(version==5 &&
+               (next.renderMode!=0 && next.renderMode!=3))
+                return false;
+            if(version==5 && next.renderMode==3 &&
+               next.musicCompatibleLowFrequency)
+                return false;
 #endif
         }
 #endif
