@@ -43,7 +43,8 @@ int main(){
         const auto h=sixsurface::RoomHeight{3.2f,1.45f,1.45f};
         assert(sixsurface::validHeight(h));
         assert(!sixsurface::validHeight({2.0f,1.45f,1.45f}));
-        assert(!sixsurface::validHeight({3.2f,1.45f,1.65f}));
+        assert(sixsurface::validHeight({3.2f,1.45f,1.65f}));
+        assert(!sixsurface::validHeight({3.2f,1.45f,2.85f}));
         assert(sixsurface::fitsDelayRing(h,1.6f,rate,8192,140));
         auto floor=sixsurface::image(h,1.6f,0.f,sixsurface::Boundary::Floor,
                                       static_cast<float>(rate));

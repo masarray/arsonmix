@@ -406,7 +406,8 @@ std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
 // Same source and saved user scene, light vs opt-in P2/P3/P4 full KEMAR.
 // Unlike P2 offline setAmount fixtures this exercises native setRealtimeRoom.
 std::vector<std::uint8_t> realtimeRoomAudio(int azimuth,float spread,
-                                             bool directional,bool sixSurface=false){
+                                             bool directional,bool sixSurface=false,
+                                             float directElevation=0.f){
     SonKuSpatialCore dsp;
     auto profile=directional
         ?armix::sonku::SonKuReflectionProfile::DirectionalKemar
@@ -418,6 +419,13 @@ std::vector<std::uint8_t> realtimeRoomAudio(int azimuth,float spread,
 #endif
     if(!dsp.prepare(rate,profile))
         throw std::runtime_error("P6 native profile prepare failed");
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+    if(directElevation!=0.f && !dsp.setResearchDirectElevation(directElevation))
+        throw std::runtime_error("P7.1 room placement rejected");
+#else
+    if(directElevation!=0.f)
+        throw std::runtime_error("P7.1 research is compiled out");
+#endif
     Settings scene=fixed(static_cast<float>(azimuth));
     scene.spacePreset=1;scene.sourceDistanceMeters=1.6f;
     scene.roomAmount=.65f;scene.ambience=.20f;
@@ -495,6 +503,31 @@ void writeP7SixSurfaceAudio(const std::filesystem::path& dir){
          <<"No external normalization, no copied dearVR audio. Headphones\n"
          <<"only; compare at the SAME gain with OS spatial effects disabled.\n"
          <<"Not a proof of natural externalization or preference.\n";
+}
+#endif
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+void writeP71DirectXyzAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string side=azimuth==0?"front":"rear";
+        for(int spread:{0,60}){
+            const std::string name=side+"-spread"+std::to_string(spread);
+            writeWav(dir/("sonku-p71-horizontal-"+name+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true,true,0.f));
+            writeWav(dir/("sonku-p71-up25-"+name+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true,true,25.f));
+            writeWav(dir/("sonku-p71-down25-"+name+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true,true,-25.f));
+        }
+    }
+    std::ofstream guide(dir/"P71-DIRECT-XYZ-HEADPHONE-AB.txt");
+    if(!guide)throw std::runtime_error("P7.1 headphone guide unavailable");
+    guide<<"12 original 3s 48k/16bit stereo WAVs: 4 matched A/B/C scenes.\\n"
+         <<"Horizontal direct=0°, elevated direct +25°, lowered direct -25°.\\n"
+         <<"Actual measured MIT KEMAR DIRECT HRIR and all six first-order room\\n"
+         <<"image sources are geometrically consistent. FRONT/REAR, spread 0/60.\\n"
+         <<"Same independent bass + inverted treble musical source and gain.\\n"
+         <<"No proprietary dearVR data, personalized HRTF or head tracking.\\n"
+         <<"Headphones only, safe playback, disable OS spatial effects.\\n";
 }
 #endif
 void writeP4ContiguousAudio(const std::filesystem::path& dir){
@@ -587,12 +620,20 @@ int main(int argc,char** argv){
              std::string(argv[2])=="--p3-fusion-only" ||
              std::string(argv[2])=="--p4-contiguous-only" ||
              std::string(argv[2])=="--p6-realtime-only" ||
-             std::string(argv[2])=="--p7-six-surface-only")))
+             std::string(argv[2])=="--p7-six-surface-only" ||
+             std::string(argv[2])=="--p71-xyz-direct-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
         if(argc==3){
-            if(std::string(argv[2])=="--p7-six-surface-only") {
+            if(std::string(argv[2])=="--p71-xyz-direct-only") {
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+                writeP71DirectXyzAudio(dir);
+                std::cout<<"P71 direct XYZ 12 measured-Elevation A/B/C WAV rendered\\n";
+#else
+                throw std::runtime_error("P7.1 direct XYZ research not compiled");
+#endif
+            } else if(std::string(argv[2])=="--p7-six-surface-only") {
 #if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
                 writeP7SixSurfaceAudio(dir);
                 std::cout<<"P7 six-surface original 8 WAV rendered\n";
