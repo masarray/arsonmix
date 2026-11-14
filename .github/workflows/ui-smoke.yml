@@ -308,6 +308,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_directional_reflections_test.cpp -o /tmp/sonku-p2-er
           /tmp/sonku-p2-er
+      - name: P3 directional zero-spread fusion PCM and spread-transition regression
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p3_spread_zero_fusion_test.cpp -o /tmp/sonku-p3-fusion-test
+          /tmp/sonku-p3-fusion-test
       - name: P2 original voice-like headphone A/B and numeric PCM comparison
         run: |
           /tmp/sonku-integrity-audio sonku-integrity-evidence --directional-er-only

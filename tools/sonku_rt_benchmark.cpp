@@ -20,14 +20,17 @@ struct Result {
 template<std::size_t block>
 Result measure(double rate,float amount,float late=0.f,
                const armix::sonku::SonKuRoomGeometry* geometry=nullptr,
-               bool directional=false){
+               bool directional=false,float spread=60.f,
+               bool fused=false){
     using namespace armix::sonku;
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate))throw std::runtime_error("unsupported sample rate");
     if(directional && !dsp.setDirectionalEarlyReflectionsHrir(true))
         throw std::runtime_error("directional room not prepared");
+    if(fused && !dsp.setDirectionalZeroSpreadFusion(true))
+        throw std::runtime_error("P3 zero-spread fusion not prepared");
     Settings s{};s.moving=true;s.revolutionSeconds=10.f;
-    s.spatialMix=1.f;s.stereoSpreadDegrees=60.f;
+    s.spatialMix=1.f;s.stereoSpreadDegrees=spread;
     if(!dsp.setSettings(s)||
        (geometry && !dsp.setAcousticRoomGeometry(*geometry))||
        !dsp.setEarlyReflectionsAmount(amount)||
@@ -122,6 +125,20 @@ int main(){
           <<" measured_over_light="<<reflected.milliseconds/light.milliseconds
           <<" measured_p99us="<<reflected.p99us
           <<" NOTE=offline_not_ASIO\n";
+        // Matched 0-degree-source-separation AB: identical input,
+        // floating timing outside callback. Full 140-tap HRTF retained.
+        const auto p2=measure<128>(48000.,.55f,0.f,nullptr,true,0.f,false);
+        const auto p3=measure<128>(48000.,.55f,0.f,nullptr,true,0.f,true);
+        const auto p3Stereo=measure<128>(48000.,.55f,0.f,nullptr,true,60.f,true);
+        std::cout<<std::fixed<<std::setprecision(3)
+          <<"SONKU_P3_CPU rate=48000 block=128 spread=0"
+          <<" p2_ms="<<p2.milliseconds
+          <<" p3_ms="<<p3.milliseconds
+          <<" p2_over_p3="<<p2.milliseconds/p3.milliseconds
+          <<" p2_p99us="<<p2.p99us
+          <<" p3_p99us="<<p3.p99us
+          <<" spread60_no_fusion_ms="<<p3Stereo.milliseconds
+          <<" NOTE=runner_local_not_ASIO\n";
     }catch(const std::exception& e){
         std::cerr<<"SONKU CPU BENCH FAIL: "<<e.what()<<"\n";
         return 1;

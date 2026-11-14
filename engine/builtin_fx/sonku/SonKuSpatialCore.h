@@ -138,6 +138,10 @@ public:
     bool setDirectionalEarlyReflectionsHrir(bool on) noexcept {
         return room_.setDirectionalHrir(on);
     }
+    // P3 offline-only matched-source-direction optimization; no .smix ABI.
+    bool setDirectionalZeroSpreadFusion(bool on) noexcept {
+        return room_.setDirectionalZeroSpreadFusion(on);
+    }
     // Offline M3 distance/large-room acoustic trial. Not a GUI/native ABI.
     bool setAcousticRoomGeometry(const SonKuRoomGeometry& geometry) noexcept {
         return room_.setGeometry(geometry);

@@ -47,16 +47,29 @@ public:
         for(auto& paths:tap_)for(auto& p:paths)p=Tap{};
         write_=0;untilGeometry_=0;primed_=false;validFrames_=0;
         amount_=0.f;
+        fuseEligible_=true;
     }
     // OFFLINE A/B ONLY: existing approved room mode remains bit-exact by
     // default. Reject mode changes while active; no public state/GUI switch.
     bool setDirectionalHrir(bool enabled) noexcept {
         if(active())return false;
         directionalHrir_=enabled;
+        if(!enabled)fastZeroSpread_=false;
+        fuseEligible_=true;
         untilGeometry_=0;primed_=false;
         return true;
     }
     bool directionalHrirEnabled() const noexcept{return directionalHrir_;}
+    // Offline-only P3 exact-linear four-wall source fusion. Valid ONLY
+    // while both emitters share the same direction (spread == 0).
+    // This changes no public settings or live graph authority.
+    bool setDirectionalZeroSpreadFusion(bool enabled) noexcept {
+        if(active() || (enabled && !directionalHrir_))return false;
+        fastZeroSpread_=enabled;
+        fuseEligible_=true;
+        return true;
+    }
+    bool zeroSpreadFusionEnabled() const noexcept{return fastZeroSpread_;}
     // Deliberately experimental and OFF by default. Legacy 8/8 direction
     // baseline stays bit-identical. A/B is set on an unpublished/offline core
     // until headphone, CPU and device gates approve native publication.
@@ -146,8 +159,15 @@ public:
         // Bound shutdown to a finite 10-12 time-constant fade, then
         // restore strict bit-exact OFF/zero CPU on the next callback.
         if(std::abs(amount_-amountTarget_)<1.e-5f)amount_=amountTarget_;
+        // Linearity: for identical source/image direction, FIR(H, xL) +
+        // FIR(H, xR) = FIR(H, xL+xR). Stereo content need not be mono.
+        // Any nonzero spread permanently disarms fusion until reset, so
+        // live spread edits cannot reuse stale second-path filter state.
+        if(fastZeroSpread_ && spread!=0.f)fuseEligible_=false;
+        const bool fused=directionalHrir_ && fastZeroSpread_ &&
+                         fuseEligible_ && spread==0.f;
         Ears output{};
-        for(int s=0;s<sourceCount;++s){
+        for(int s=0;s<(fused?1:sourceCount);++s){
             for(int wall=0;wall<wallCount;++wall){
                 auto& p=tap_[s][wall];
                 p.delayL+=delaySlew_*(p.targetDelayL-p.delayL);
@@ -166,13 +186,30 @@ public:
                     float l=0.f,r=0.f;
                     for(int k=0;k<hrir::taps;++k){
                         const int at=(idx-k)&(ringFrames-1);
-                        const float v=(1.f-frac)*signal[at]+
-                            frac*signal[(at-1)&(ringFrames-1)];
+                        const int prev=(at-1)&(ringFrames-1);
+                        // Fast path replaces TWO identical HRIR convolutions
+                        // by ONE on the sum of the stereo source histories.
+                        // No FIR tap truncation, downsampling or ITD trick.
+                        const float v=fused
+                            ?((1.f-frac)*(signal[at]+history_[1][at])+
+                                frac*(signal[prev]+history_[1][prev]))
+                            :((1.f-frac)*signal[at]+frac*signal[prev]);
                         auto& hL=p.kernel[0][k];
                         auto& hR=p.kernel[1][k];
                         hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
                         hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                        // Advance the skipped source's HRIR coefficients
+                        // identically for a smooth switch if spread changes.
+                        if(fused){
+                            tap_[1][wall].kernel[0][k]=hL;
+                            tap_[1][wall].kernel[1][k]=hR;
+                        }
                         l+=v*hL;r+=v*hR;
+                    }
+                    if(fused){
+                        auto& second=tap_[1][wall];
+                        second.delayL=p.delayL;second.delayR=p.delayR;
+                        second.gainL=p.gainL;second.gainR=p.gainR;
                     }
                     output.left+=p.gainL*l;
                     output.right+=p.gainR*r;
@@ -300,5 +337,6 @@ private:
     SonKuRoomGeometry geometry_{};
     bool custom_=false,ready_=false,primed_=false;
     bool directionalHrir_=false;
+    bool fastZeroSpread_=false,fuseEligible_=true;
 };
 } // namespace armix::sonku
