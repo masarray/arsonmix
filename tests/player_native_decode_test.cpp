@@ -395,7 +395,10 @@ int main() {
             const auto first=loop.snapshot();
             assert(first.mediaPlayed>=48000); // cue IN, not zero
             std::array<float,256> left{},right{};
-            for(int pass=0;pass<2;++pass) {
+            // Deliberately do NOT call service() between fades: a live
+            // operator may queue NEXT immediately on callback completion.
+            // preload() must retire the old decoder before reusing it.
+            for(int pass=0;pass<4;++pass) {
                 assert(loop.preload(longFile,0,100,1.,4.));
                 assert(loop.queueTransition(longFile,0,100,180,1.,4.));
                 bool started=false;
@@ -416,7 +419,6 @@ int main() {
                 }
                 assert(energy>0.01);
                 assert(!loop.transitionActive());
-                loop.service(); // old deck stops outside realtime
                 const auto now=loop.snapshot();
                 assert(now.mediaPlayed>=48000);
                 assert(now.mediaDuration<=4*48000+1);
