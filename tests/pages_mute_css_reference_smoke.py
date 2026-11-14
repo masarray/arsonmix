@@ -78,13 +78,14 @@ async def check_mute(page,width):
     off2=await state()
     assert off2["pressed"]=="false" and off2["faceBg"]==off["faceBg"],off2
     assert off2["lamp"]!="none" and off2["lowerReflection"]=="0",off2
-    # SOLO and PFL are independent from the MUTE material and state.
+    # SOLO still has V6 SVG; PFL is its own semantic button with PNG
+    # material in the compiled /preview/, not a synthetic SVG face here.
     siblings=await page.locator('#tracks .strip[data-id="1"] .mx-hw-row>button').evaluate_all(
        "xs=>xs.map(x=>({action:x.dataset.action,hasSVG:!!x.querySelector('svg.mx-hw-face')}))")
     assert siblings==[
        {"action":"mute","hasSVG":False},
        {"action":"solo","hasSVG":True},
-       {"action":"cue","hasSVG":True},
+       {"action":"cue","hasSVG":False},
     ],siblings
 
 
