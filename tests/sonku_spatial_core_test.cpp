@@ -10,8 +10,218 @@
 #include <limits>
 #include <vector>
 
+// Measurable failure case from the listening report: two equal-angle virtual
+// emitters fed opposite-polarity stereo cancel in each ear HRTF summation.
+// Test the actual native PCM path, not a JS animation or guessed acoustics.
+static void verifySonKuMusicIntegrity(double rate) {
+    using namespace armix::sonku;
+    Settings s{};
+    s.moving=false;s.stereoSpreadDegrees=0.f;s.spatialMix=1.f;
+    s.outputTrim=.75f;s.spacePreset=0;
+    // A perfectly coherent stereo center must remain the exact old measured
+    // impulse, including coefficient, amplitude, phase and callback timing.
+    {
+        auto center=std::make_unique<SonKuSpatialCore>();
+        assert(center->prepare(rate)&&center->setSettings(s));
+        std::array<float,256> l{},r{};
+        l[0]=r[0]=.24f;
+        center->process(l.data(),r.data(),static_cast<int>(l.size()));
+        const auto& h=(std::abs(rate-44100.)<.1)?
+            hrir::normal44100:hrir::normal48000;
+        for(int i=0;i<hrir::taps;++i){
+            const float expectedL=.24f*s.outputTrim*
+                static_cast<float>(h[0][0][i])/32768.f;
+            const float expectedR=.24f*s.outputTrim*
+                static_cast<float>(h[0][1][i])/32768.f;
+            assert(std::abs(l[i]-expectedL)<3.e-6f);
+            assert(std::abs(r[i]-expectedR)<3.e-6f);
+        }
+    }
+    constexpr int n=16384;
+    constexpr float pi=3.14159265358979323846f;
+    for (float angle : {0.f,90.f,180.f,270.f}) {
+        auto whole=std::make_unique<SonKuSpatialCore>();
+        auto partition=std::make_unique<SonKuSpatialCore>();
+        s.startAzimuthDegrees=angle;
+        assert(whole->prepare(rate)&&partition->prepare(rate));
+        assert(whole->setSettings(s)&&partition->setSettings(s));
+        std::vector<float> l(n),r(n),cl(n),cr(n);
+        for(int i=0;i<n;++i){
+            const float v=.33f*std::sin(2.f*pi*220.f*
+                static_cast<float>(i)/static_cast<float>(rate));
+            l[i]=cl[i]=v;
+            r[i]=cr[i]=-v;
+        }
+        whole->process(l.data(),r.data(),n);
+        for(int at=0;at<n;at+=128)
+            partition->process(cl.data()+at,cr.data()+at,
+                               std::min(128,n-at));
+        double leftEnergy=0.,rightEnergy=0.,crossEnergy=0.;
+        for(int i=0;i<n;++i){
+            assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+            assert(std::abs(l[i]-cl[i])<2.e-6f);
+            assert(std::abs(r[i]-cr[i])<2.e-6f);
+            assert(std::abs(l[i])<.98f&&std::abs(r[i])<.98f);
+            if(i>n/2){
+                leftEnergy+=static_cast<double>(l[i])*l[i];
+                rightEnergy+=static_cast<double>(r[i])*r[i];
+                crossEnergy+=static_cast<double>(l[i])*r[i];
+            }
+        }
+        const double rmsL=std::sqrt(leftEnergy/(n/2-1));
+        const double rmsR=std::sqrt(rightEnergy/(n/2-1));
+        // Original SonKu collapses to zero at FRONT/REAR and zero SPREAD.
+        // The phase-aware branch must preserve a musical stereo side signal
+        // without converting it into a mono HRTF object.
+        assert(rmsL>.065&&rmsR>.065);
+        if(angle==0.f||angle==180.f)assert(crossEnergy<0.);
+    }
+    // Mixed stereo without strong anti-correlation never activates recovery:
+    // a mono-correlated signal is not given a phantom second bed.
+    {
+        SonKuStereoIntegrity guard;
+        assert(guard.prepare(rate));
+        for(int i=0;i<8000;++i){
+            float v=.4f*std::sin(2.f*pi*160.f*
+                static_cast<float>(i)/static_cast<float>(rate));
+            assert(guard.preservedSide(v,.7f*v)==0.f);
+        }
+        assert(guard.recoveryAmount()==0.f);
+        assert(guard.coherentAmount()>.95f);
+        guard.reset();
+        assert(guard.coherentAmount()==0.f);
+        for(int i=0;i<8000;++i){
+            float v=.4f*std::sin(2.f*pi*160.f*
+                static_cast<float>(i)/static_cast<float>(rate));
+            (void)guard.preservedSide(v,-v);
+        }
+        assert(guard.recoveryAmount()>.95f);
+        assert(guard.coherentAmount()<.01f);
+        for(int i=0;i<25000;++i)
+            assert(guard.preservedSide(0.f,0.f)==0.f);
+        assert(guard.recoveryAmount()<.05f);
+        assert(guard.coherentAmount()<.05f);
+        assert(guard.prepare(rate)); // device restart must not remember polarity
+        assert(guard.recoveryAmount()==0.f);
+        assert(guard.coherentAmount()==0.f);
+    }
+    // A fully coherent music MID should take one center KEMAR HRIR instead
+    // of the comb-filtered mean of two spatially separated virtual speakers.
+    // This exercises the REAL native FIR in steady state (not a UI pan).
+    {
+        Settings coherent=s;
+        coherent.startAzimuthDegrees=180.f;
+        coherent.stereoSpreadDegrees=60.f;
+        coherent.spatialMix=1.f;
+        coherent.outputTrim=.6f;
+        auto mid=std::make_unique<SonKuSpatialCore>();
+        assert(mid->prepare(rate)&&mid->setSettings(coherent));
+        constexpr int frames=32768;
+        constexpr double frequency=2000.;
+        std::vector<float> left(frames),right(frames);
+        for(int i=0;i<frames;++i)
+            left[i]=right[i]=.04f*static_cast<float>(
+                std::sin(2.*3.14159265358979323846*frequency*i/rate));
+        mid->process(left.data(),right.data(),frames);
+        double sum=0.;
+        for(int i=frames-8192;i<frames;++i)
+            sum+=static_cast<double>(left[i])*left[i];
+        const double observed=std::sqrt(sum/8192.)*std::sqrt(2.);
+        const auto& h=(std::abs(rate-44100.)<.1)?
+            hrir::normal44100:hrir::normal48000;
+        auto response=[&](int azimuth,int ear) {
+            double real=0.,imag=0.;
+            for(int i=0;i<hrir::taps;++i){
+                const double value=h[azimuth/5][ear][i]/32768.;
+                const double phase=2.*3.14159265358979323846*frequency*i/rate;
+                real+=value*std::cos(phase);
+                imag-=value*std::sin(phase);
+            }
+            return std::array<double,2>{real,imag};
+        };
+        const auto center=response(180,0);
+        const double expected=.04*coherent.outputTrim*
+            std::hypot(center[0],center[1]);
+        assert(expected>.005 && observed/expected>.86
+               && observed/expected<1.14);
+        if(std::abs(rate-48000.)<.1){
+            const auto a=response(150,0),b=response(150,1);
+            const double oldMean=.5*std::hypot(a[0]+b[0],a[1]+b[1]);
+            const double newCenter=std::hypot(center[0],center[1]);
+            // Independent frequency-domain HRTF audit: REAR 2kHz old
+            // 60deg coherent stereo comb ~11.6dB, center is much clearer.
+            assert(newCenter>oldMean*2.5);
+        }
+    }
+    // The exact native ROOM ON path uses the SAME phase guard. Live room
+    // reflections and the FDN cannot silently drop the side content, exceed
+    // peak bounds or depend on host block partition. This is actual PCM.
+    {
+        auto live=std::make_unique<SonKuSpatialCore>();
+        auto chunks=std::make_unique<SonKuSpatialCore>();
+        Settings scene=s;
+        scene.startAzimuthDegrees=180.f;
+        scene.stereoSpreadDegrees=0.f;
+        scene.spatialMix=1.f;
+        scene.outputTrim=.65f;
+        scene.spacePreset=2; // 14.4m chamber, 5m source
+        scene.sourceDistanceMeters=5.f;
+        scene.roomAmount=.55f;
+        scene.ambience=.32f;
+        assert(valid(scene));
+        assert(live->prepare(rate)&&chunks->prepare(rate));
+        assert(live->setSettings(scene)&&chunks->setSettings(scene));
+        constexpr int sceneFrames=16384;
+        std::vector<float> l(sceneFrames),r(sceneFrames),
+                           cl(sceneFrames),cr(sceneFrames);
+        for(int i=0;i<sceneFrames;++i) {
+            const float v=.18f*static_cast<float>(
+                std::sin(2.*3.14159265358979323846*440.*i/rate));
+            l[i]=cl[i]=v;r[i]=cr[i]=-v;
+        }
+        live->process(l.data(),r.data(),sceneFrames);
+        for(int at=0;at<sceneFrames;at+=256)
+            chunks->process(cl.data()+at,cr.data()+at,
+                            std::min(256,sceneFrames-at));
+        double leftPower=0.,rightPower=0.;
+        for(int i=0;i<sceneFrames;++i) {
+            assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+            assert(std::abs(l[i]-cl[i])<2.e-6f);
+            assert(std::abs(r[i]-cr[i])<2.e-6f);
+            assert(std::abs(l[i])<.98f&&std::abs(r[i])<.98f);
+            if(i>=sceneFrames/2) {
+                leftPower+=static_cast<double>(l[i])*l[i];
+                rightPower+=static_cast<double>(r[i])*r[i];
+            }
+        }
+        assert(std::sqrt(leftPower/(sceneFrames/2))>.025);
+        assert(std::sqrt(rightPower/(sceneFrames/2))>.025);
+    }
+    // Mix=0 preserves the source channels as dry, including negative phase.
+    {
+        auto dry=std::make_unique<SonKuSpatialCore>();
+        s.spatialMix=0.f;s.startAzimuthDegrees=0.f;
+        assert(dry->prepare(rate)&&dry->setSettings(s));
+        // The original engine intentionally slews MIX edits for de-click;
+        // exact dry identity applies after the accepted transition settles.
+        std::array<float,256> warmL{},warmR{};
+        for(int k=0;k<48;++k)
+            dry->process(warmL.data(),warmR.data(),256);
+        std::array<float,2048> l{},r{};
+        for(int i=0;i<static_cast<int>(l.size());++i){
+            l[i]=.15f*std::sin(i*.017f);r[i]=-l[i];
+        }
+        const auto before=l;
+        dry->process(l.data(),r.data(),static_cast<int>(l.size()));
+        for(int i=0;i<static_cast<int>(l.size());++i){
+            assert(l[i]==before[i]&&r[i]==-before[i]);
+        }
+    }
+}
+
 int main() {
     using namespace armix::sonku;
+    for(double r:{44100.,48000.})verifySonKuMusicIntegrity(r);
     SonKuSpatialCore rejected;
     assert(!rejected.prepare(96000.));
     assert(!rejected.prepare(std::numeric_limits<double>::infinity()));

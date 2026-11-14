@@ -44,6 +44,7 @@
 #include "NativeHotkeyRegistry.h"
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
+#include "SonKuNativeBridgeContract.h"
 #include "NativeDeviceApplyCoordinator.h"
 #if defined(_WIN32)
 #include "../engine/device/WindowsFirstRunEndpointDiscovery.h"
@@ -3030,23 +3031,13 @@ private:
         reply->setProperty("deviceEpoch",epoch);
         reply->setProperty("graphRevision",revision);
         reply->setProperty("instanceId",instanceId);
-        reply->setProperty("schemaVersion",2);
+        reply->setProperty("schemaVersion",
+            armix::builtin_fx::sonku_bridge::schemaVersion());
         reply->setProperty("status",processor?"ACCEPTED":"REJECTED");
         if(processor) {
-            const auto s=processor->acceptedSettings();
-            auto values=std::make_unique<juce::DynamicObject>();
-            values->setProperty("startAzimuthDegrees",s.startAzimuthDegrees);
-            values->setProperty("revolutionSeconds",s.revolutionSeconds);
-            values->setProperty("stereoSpreadDegrees",s.stereoSpreadDegrees);
-            values->setProperty("spatialMix",s.spatialMix);
-            values->setProperty("outputTrim",s.outputTrim);
-            values->setProperty("moving",s.moving);
-            values->setProperty("clockwise",s.clockwise);
-            values->setProperty("spacePreset",s.spacePreset);
-            values->setProperty("sourceDistanceMeters",s.sourceDistanceMeters);
-            values->setProperty("roomAmount",s.roomAmount);
-            values->setProperty("ambience",s.ambience);
-            reply->setProperty("settings",juce::var(values.release()));
+            reply->setProperty("settings",
+                armix::builtin_fx::sonku_bridge::acceptedSettings(
+                    processor->acceptedSettings()));
             reply->setProperty("observedAzimuthDegrees",
                 processor->observedAzimuthDegrees());
             if(epoch=="0" && instanceId==lastLogicalFxInstance_ &&
@@ -5169,46 +5160,12 @@ private:
                     rawEpoch.toString(),rawRevision.toString(),rawInstance.toString(),p);
                 return;
             }
-            const auto values=args.getProperty("settings",{});
             armix::sonku::Settings settings{};
-            auto number=[&values](const char* key,float& dest) {
-                const auto v=values.getProperty(key,{});
-                if(!v.isDouble()&&!v.isInt())return false;
-                const double n=static_cast<double>(v);
-                if(!std::isfinite(n) || n>1.0e6 || n< -1.0e6)return false;
-                dest=static_cast<float>(n);
-                return std::isfinite(dest);
-            };
-            const auto moving=values.getProperty("moving",{});
-            const auto clockwise=values.getProperty("clockwise",{});
-            const bool parameters=values.isObject() &&
-                number("startAzimuthDegrees",settings.startAzimuthDegrees) &&
-                number("revolutionSeconds",settings.revolutionSeconds) &&
-                number("stereoSpreadDegrees",settings.stereoSpreadDegrees) &&
-                number("spatialMix",settings.spatialMix) &&
-                number("outputTrim",settings.outputTrim) &&
-                moving.isBool()&&clockwise.isBool();
-            if(parameters){settings.moving=static_cast<bool>(moving);
-                           settings.clockwise=static_cast<bool>(clockwise);}
-            // Optional v2 fields preserve legacy v1 clients and old sessions.
-            // Typed native intent remains bounded and validated before SPSC.
-            const auto preset=values.getProperty("spacePreset",{});
-            bool acousticParameters=true;
-            if(!preset.isVoid()){
-                if(!preset.isInt())acousticParameters=false;
-                else settings.spacePreset=static_cast<int>(preset);
-            }
-            const auto optionalNumber=[&](const char* key,float& target) {
-                if(values.getProperty(key,{}).isVoid())return true;
-                return number(key,target);
-            };
-            acousticParameters=acousticParameters &&
-                optionalNumber("sourceDistanceMeters",settings.sourceDistanceMeters) &&
-                optionalNumber("roomAmount",settings.roomAmount) &&
-                optionalNumber("ambience",settings.ambience);
+            const bool parameters=armix::builtin_fx::sonku_bridge::decodeSettings(
+                args.getProperty("settings",{}),settings);
             const auto numeric=fxRequest.sequence("sonku-");
             bool queued=false;
-            if(p&&numeric&&parameters&&acousticParameters&&armix::sonku::valid(settings) &&
+            if(p&&numeric&&parameters &&
                !pendingNativeSonKu_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
                !engine_.independentClockActive()) {
                 queued=p->queueSettings(settings,numeric);

@@ -38,7 +38,17 @@ public:
             && layout.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
     }
     void prepareToPlay(double rate,int) override {
-        ready_=core_.prepare(rate);
+        // P6 is opt-in at build time on an unreleased test binary only.
+        // The render profile is immutable across native audio callbacks.
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+        // Only an explicit native experimental build prepares six surfaces.
+        constexpr auto profile=armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch;
+#elif defined(ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT) && ARMIX_SONKU_EXPERIMENTAL_DIRECTIONAL_RT
+        constexpr auto profile=armix::sonku::SonKuReflectionProfile::DirectionalKemar;
+#else
+        constexpr auto profile=armix::sonku::SonKuReflectionProfile::Lightweight;
+#endif
+        ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
         if(ready_)ready_=core_.setSettings(accepted_);
     }
@@ -71,6 +81,9 @@ public:
     }
     armix::sonku::Settings acceptedSettings() const noexcept {return accepted_;}
     bool isReady() const noexcept {return ready_;}
+    armix::sonku::SonKuReflectionProfile preparedReflectionProfile() const noexcept {
+        return core_.preparedReflectionProfile();
+    }
     float observedAzimuthDegrees() const noexcept {
         return observedAzimuthDegrees_.load(std::memory_order_relaxed);
     }
@@ -82,7 +95,11 @@ public:
     void getStateInformation(juce::MemoryBlock& dest) override {
         juce::MemoryOutputStream out(dest,false);
         out.writeInt(0x534F4E4B); // SONK
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+        out.writeInt(3);
+#else
         out.writeInt(2);
+#endif
         out.writeFloat(accepted_.startAzimuthDegrees);
         out.writeFloat(accepted_.revolutionSeconds);
         out.writeFloat(accepted_.stereoSpreadDegrees);
@@ -94,15 +111,30 @@ public:
         out.writeFloat(accepted_.sourceDistanceMeters);
         out.writeFloat(accepted_.roomAmount);
         out.writeFloat(accepted_.ambience);
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+        out.writeFloat(accepted_.directElevationDegrees);
+#endif
     }
     bool restoreUnpublishedState(const void* data,int size) {
-        if(published_||!data||(size!=30&&size!=46)||
+        if(published_||!data||
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+           (size!=30&&size!=46&&size!=50)||
+#else
+           (size!=30&&size!=46)||
+#endif
            !queue_.empty()||!complete_.empty())return false;
         juce::MemoryInputStream in(data,static_cast<std::size_t>(size),false);
         if(in.readInt()!=0x534F4E4B)return false;
         const int version=in.readInt();
-        if((version!=1&&version!=2)||
-           (version==1&&size!=30)||(version==2&&size!=46))return false;
+        if((version!=1&&version!=2
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+             &&version!=3
+#endif
+            ) || (version==1&&size!=30)||(version==2&&size!=46)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+            ||(version==3&&size!=50)
+#endif
+            )return false;
         armix::sonku::Settings next{};
         next.startAzimuthDegrees=in.readFloat();
         next.revolutionSeconds=in.readFloat();
@@ -113,14 +145,18 @@ public:
         if(moving>1||clockwise>1)return false;
         next.moving=moving!=0;
         next.clockwise=clockwise!=0;
-        if(version==2) {
+        if(version>=2) {
             next.spacePreset=in.readInt();
             next.sourceDistanceMeters=in.readFloat();
             next.roomAmount=in.readFloat();
             next.ambience=in.readFloat();
         }
-        // Old v1 .smix restores to HRTF-only. New v2 carries the acoustic
-        // scene, but never allows malformed/partial state into live PCM.
+#if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
+        if(version==3)next.directElevationDegrees=in.readFloat();
+#endif
+        // v1 OFF, v2 original scene; experimental v3 includes direct
+        // elevation, and is rejected by ordinary public v2 builds.
+        // Never accept a partial or malformed native FX state.
         if(!in.isExhausted())return false;
         if(!armix::sonku::valid(next))return false;
         if(ready_&&!core_.setSettings(next))return false;
