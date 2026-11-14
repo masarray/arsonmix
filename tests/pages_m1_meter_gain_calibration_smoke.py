@@ -98,8 +98,19 @@ def geometry(page, density, label):
     gain_values=[10,0,-6,-12,-24,-36,-48,-60]
     vu_values=[0,-6,-12,-18,-24,-36,-48,-60]
     assert len(out["gain"])==8 and len(out["vu"])==8
+    # The single approved Pages/native fader uses a calibrated, monotonic
+    # physical travel taper, NOT the old linear-dB ruler. Derive the expected
+    # positions independently of the UI's faderPercent implementation so a
+    # visible mismatch between tick, pointer and 0 dB detent still fails.
+    taper=[(-60,0),(-48,15),(-36,27),(-24,39),(-12,54),
+           (-6,65),(0,77),(6,92),(10,100)]
+    def fader_top(db):
+        for (lo_db,lo_pct),(hi_db,hi_pct) in zip(taper,taper[1:]):
+            if db<=hi_db:
+                return 100-(lo_pct+(db-lo_db)*(hi_pct-lo_pct)/(hi_db-lo_db))
+        return 0
     for item,db in zip(out["gain"],gain_values):
-        expected=(10-db)/70*100
+        expected=fader_top(db)
         close(item["top"],expected,.03)
         close(item["y"],out["travel"]["y"]+out["travel"]["h"]*expected/100,.8)
     for item,db in zip(out["vu"],vu_values):
