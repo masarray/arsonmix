@@ -157,7 +157,11 @@ public:
         out.writeInt(0x534F4E4B); // SONK
 #if defined(ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT) && ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+        out.writeInt(5); // same 59-byte layout as v4, new P8.4 mode
+#else
         out.writeInt(4);
+#endif
 #else
         out.writeInt(3);
 #endif
@@ -204,6 +208,9 @@ public:
              &&version!=3
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
              &&version!=4
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+             &&version!=5
+#endif
 #endif
 #endif
             ) || (version==1&&size!=30)||(version==2&&size!=46)
@@ -211,6 +218,9 @@ public:
             ||(version==3&&size!=50)
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
             ||(version==4&&size!=59)
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+            ||(version==5&&size!=59)
+#endif
 #endif
 #endif
             )return false;
@@ -237,12 +247,23 @@ public:
         if(version>=3)next.directElevationDegrees=in.readFloat();
 #endif
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
-        if(version==4){
+        if(version>=4){
             next.renderMode=in.readInt();
             const int music=in.readByte();
             if(music!=0&&music!=1)return false;
             next.musicCompatibleLowFrequency=music!=0;
             next.headYawDegrees=in.readFloat();
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P84_NATIVE_RT
+            // Critical headphone FAT v4 backward-safety: old P8.3
+            // physical/mono session must NOT silently restore the
+            // owner-rejected renderer in the new research candidate.
+            // Explicitly migrate old v4 non-P8.2 to golden Music Bed.
+            if(version==4 && next.renderMode!=0){
+                next.renderMode=0;
+                next.musicCompatibleLowFrequency=false;
+                next.headYawDegrees=0.f;
+            }
+#endif
         }
 #endif
         // v1 OFF, v2 original scene; experimental v3 includes direct
