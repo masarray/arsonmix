@@ -84,6 +84,12 @@ public:
     armix::sonku::SonKuReflectionProfile preparedReflectionProfile() const noexcept {
         return core_.preparedReflectionProfile();
     }
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+    // Constant prepared DSP measurement, never a live UI control.
+    float preparedTimbreShelfDb() const noexcept {
+        return core_.p80PreparedShelfDb();
+    }
+#endif
     float observedAzimuthDegrees() const noexcept {
         return observedAzimuthDegrees_.load(std::memory_order_relaxed);
     }
