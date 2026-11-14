@@ -103,6 +103,8 @@ int main(){
        }
        assert(energy>.01&&difference>.1&&early>1e-5);
        assert(!exact->setResearchDirectElevation(0.f)); // never mutate running PCM
+       exact->reset();
+       assert(!exact->setResearchDirectElevation(0.f)); // reset is NOT unpublish
        assert(exact->researchDirectElevation()==elev);
        assert(std::abs(exact->azimuthDegrees()-chunks->azimuthDegrees())<1e-7);
        // Device re-prepare uses the same explicit research placement,

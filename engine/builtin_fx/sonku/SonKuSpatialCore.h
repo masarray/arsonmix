@@ -83,6 +83,9 @@ public:
         // a public host. Downgrading the prepared profile clears it.
         if(profile!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             researchElevationDegrees_=0.f;
+        // Only a *new* DSP prepare re-opens the quiescent research gate.
+        // reset() while an existing audio graph is running must NOT do so.
+        researchPcmStarted_=false;
 #endif
         if(!room_.prepare(rate,profile)||!reverb_.prepare(rate)||
            !integrity_.prepare(rate))return false;
@@ -111,9 +114,6 @@ public:
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
         haveKernel_=false;
         room_.reset();
-#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
-        researchPcmStarted_=false;
-#endif
         reverb_.reset();
         integrity_.reset();
     }
@@ -147,7 +147,7 @@ public:
            room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
             return false;
         xyz::Placement projected{};
-        const float h=settings_.spacePreset==1?3.2f:
+        const float h=settings_.spacePreset<=1?3.2f:
                       settings_.spacePreset==2?4.8f:7.2f;
         if(!xyz::project(settings_.sourceDistanceMeters,degrees,1.45f,h,projected))
             return false;
@@ -355,7 +355,7 @@ private:
     bool applyAcousticSettings(const Settings& s) noexcept {
         const float width=s.spacePreset==1?7.2f:
             s.spacePreset==2?14.4f:28.8f;
-        const float roomHeight=s.spacePreset==1?3.2f:
+        const float roomHeight=s.spacePreset<=1?3.2f:
                                s.spacePreset==2?4.8f:7.2f;
         float sourceHeight=1.45f;
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH

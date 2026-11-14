@@ -70,3 +70,14 @@ with and without the P7.1 macro, for FRONT/REAR, 0°/60°, four-wall/six-surface
 then compares all 8 × 144000 × 2 samples at <= 1 signed-16-bit LSB.
 CPU 1/2/4 insert timing is informational and must demonstrate real
 benefit before shipping any optimization.
+
+### Closure / immutability guarantee
+
+The research edit gate now stays closed after any PCM has run even if
+`reset()` is called. Only `prepare()` may explicitly re-enter an
+unpublished research session, preventing a reset-based concurrent
+control bypass. OFF scene placement uses conservative 3.2 m height
+validation so future selection of SQUARE cannot silently accept an
+impossible elevated source. Physical XYZ editing during playback and
+host ACK remain **not supported** until an explicit realtime architecture
+is approved; this avoids fake editor/control state.

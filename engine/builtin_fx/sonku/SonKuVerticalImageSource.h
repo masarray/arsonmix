@@ -19,8 +19,7 @@ inline bool validHeight(RoomHeight g) noexcept {
     return std::isfinite(g.room)&&std::isfinite(g.listener)&&
         std::isfinite(g.source) && g.room>=2.4f&&g.room<=12.f&&
         g.listener>=.5f&&g.source>=.5f&&
-        g.listener<=g.room-.5f&&g.source<=g.room-.5f&&
-        true; // P7.1 may admit validated true XYZ source placement.
+        g.listener<=g.room-.5f&&g.source<=g.room-.5f;
 }
 inline Arrival image(const RoomHeight g,float horizontalDistance,
                      float azimuthDegrees,Boundary boundary,float sampleRate) noexcept {

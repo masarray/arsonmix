@@ -259,7 +259,9 @@ public:
                     // Zero-filling a 64KiB ring inside the callback is banned.
                     const int freshTaps=realtimeMode_?
                         std::clamp(validFrames_-d,0,hrir::taps):hrir::taps;
+#if !defined(SONKU_P71_DIRECT_XYZ_RESEARCH) || !SONKU_P71_DIRECT_XYZ_RESEARCH
                     const bool warming=freshTaps<hrir::taps;
+#endif
                     // One source of truth for the coefficient slew and ear
                     // FIR arithmetic; only history address selection varies.
                     // Advance kernels even while history is warming.
