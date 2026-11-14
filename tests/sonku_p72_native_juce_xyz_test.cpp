@@ -9,6 +9,7 @@
 #error P7.2 real JUCE test MUST enable native XYZ opt-in
 #endif
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#include "../src/SonKuNativeBridgeContract.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -31,6 +32,39 @@ int main(){
  scene.stereoSpreadDegrees=60.f;scene.outputTrim=.55f;
  scene.moving=false;scene.startAzimuthDegrees=45.f;
  assert(armix::sonku::valid(scene));
+ // EXACT typed JSON accepted by Main.cpp. No UI/runtime magic defaults.
+ using namespace armix::builtin_fx::sonku_bridge;
+ static_assert(schemaVersion()==3);
+ armix::sonku::Settings parsed{};
+ auto json=acceptedSettings(scene);
+ assert(decodeSettings(json,parsed));
+ assert(parsed.spacePreset==scene.spacePreset);
+ assert(parsed.sourceDistanceMeters==scene.sourceDistanceMeters);
+ assert(parsed.directElevationDegrees==0.f);
+ auto olderBrowser=acceptedSettings(scene);
+ olderBrowser.getDynamicObject()->removeProperty("directElevationDegrees");
+ assert(decodeSettings(olderBrowser,parsed));
+ assert(parsed.directElevationDegrees==0.f);
+ auto xyz=acceptedSettings(scene);
+ xyz.getDynamicObject()->setProperty("directElevationDegrees",25.f);
+ assert(decodeSettings(xyz,parsed));
+ assert(parsed.directElevationDegrees==25.f);
+ for(float illegal:{70.f,-41.f,std::numeric_limits<float>::quiet_NaN()}){
+   auto rejected=acceptedSettings(scene);
+   rejected.getDynamicObject()->setProperty("directElevationDegrees",illegal);
+   assert(!decodeSettings(rejected,parsed));
+   assert(parsed.directElevationDegrees==25.f); // fail-atomic parse
+ }
+ auto wrongType=acceptedSettings(scene);
+ wrongType.getDynamicObject()->setProperty("directElevationDegrees","25");
+ assert(!decodeSettings(wrongType,parsed));
+ auto impossible=acceptedSettings(scene);
+ impossible.getDynamicObject()->setProperty("sourceDistanceMeters",10.f);
+ impossible.getDynamicObject()->setProperty("directElevationDegrees",25.f);
+ assert(!decodeSettings(impossible,parsed));
+ auto badFlag=acceptedSettings(scene);
+ badFlag.getDynamicObject()->setProperty("moving",1);
+ assert(!decodeSettings(badFlag,parsed));
  assert(live->queueSettings(scene,1001)&&flat->queueSettings(scene,1001));
  assert(live->acceptedSettings().spacePreset==0);
  juce::AudioBuffer<float> audio(2,128),original(2,128);
