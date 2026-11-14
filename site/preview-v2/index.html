@@ -47,6 +47,7 @@
       <button class="tool" type="button" id="gainView" aria-pressed="false" title="Show digital input gain knobs in the FX rack area">GAIN</button>
       <button class="tool active" type="button" id="fxView" aria-pressed="true" title="Show original channel FX rack">FX RACK</button>
     </div>
+    <button class="tool global-fx-toggle active" type="button" id="globalFxToggle" aria-label="Bypass all mixer FX" aria-pressed="true" title="A/B all channel, BUS, FX return and MAIN inserts without changing individual rack or slot power">ALL FX ON</button>
     <span class="sep"></span>
     <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
     <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
@@ -208,7 +209,7 @@ function savePluginPreferences(){
  }));}catch(error){/* Manager still works without browser storage. */}
 }
 const tracksEl=document.getElementById('tracks'),masterEl=document.getElementById('master'),info=document.getElementById('info');
-let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],stripView="fx",sofEnabled=false,sofTarget="Bus A",sofTargetId=null,wireSourceId=1,wireEdges=[],nextWireId=1,selectedWireEdgeId=null,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
+let nextId=1,nextGroup=1,tracks=[],master,preview=false,meterFrame=0,lastTick=0,clipboard=null,scenes=[],stripView="fx",globalFxOn=true,wireBeforeGain=null,sofEnabled=false,sofTarget="Bus A",sofTargetId=null,wireSourceId=1,wireEdges=[],nextWireId=1,selectedWireEdgeId=null,wireMode='send',wireAnchorId=null,wireHoverId=null,wireGesture=null,wireSuppressClick=false,pendingBusRoute=null,wireView='focus',wireSourcePinned=false,wireIntent=false;
 const clone=x=>JSON.parse(JSON.stringify(x));
 const selection=()=>tracks.concat(master).filter(t=>t.selected);
 const make=(name,kind,color)=>{
@@ -401,9 +402,9 @@ function sectionFx(t){
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
  const first=t.fx.findIndex(x=>x==='None');
  const rows=used.concat(first<0?[]:[{name:'None',i:first}]);
- let out='<div class="section fx-section'+(t.fxOn?'':' is-chain-bypassed')+'" data-fx-chain-enabled="'+Boolean(t.fxOn)+'"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="'+(t.fxOn?'Bypass':'Enable')+' all channel FX" aria-label="'+(t.fxOn?'Bypass':'Enable')+' entire FX chain in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
+ let out='<div class="section fx-section'+(t.fxOn&&globalFxOn?'':' is-chain-bypassed')+'" data-global-fx-enabled="'+Boolean(globalFxOn)+'" data-fx-chain-enabled="'+Boolean(t.fxOn)+'"><div class="subhead"><span class="sym">fx</span><span class="hint">FX '+used.length+'</span><span class="push"></span><button class="mx-util-key" data-util-kind="fx-main" data-action="fxOn" title="'+(t.fxOn?'Bypass':'Enable')+' all channel FX" aria-label="'+(t.fxOn?'Bypass':'Enable')+' entire FX chain in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(t.fxOn)+'">'+materialIcon("power_settings_new")+'</button></div><div class="fxslot-list">';
  for(const {name,i} of rows){
-  out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" data-fx-slot-enabled="'+Boolean(name!=='None'&&!t.slotBypass[i])+'" data-fx-effective="'+Boolean(name!=='None'&&t.fxOn&&!t.slotBypass[i])+'" title="Insert '+(i+1)+' · GUI reference">'+
+  out+='<div class="fxslot-row '+(name==='None'?'is-empty':t.slotBypass[i]?'is-bypassed':'is-active')+'" data-slot="'+i+'" data-insert-id="'+(t.fxInsertIds[i]?.id||'')+'" data-fx-slot-enabled="'+Boolean(name!=='None'&&!t.slotBypass[i])+'" data-fx-effective="'+Boolean(name!=='None'&&globalFxOn&&t.fxOn&&!t.slotBypass[i])+'" title="Insert '+(i+1)+' · GUI reference">'+
    (name==='None'?'<span class="fx-slot-placeholder" aria-hidden="true"></span>':
    '<button class="mx-util-key" data-util-kind="fx-slot" data-action="slotPower" data-slot="'+i+'" title="'+(t.slotBypass[i]?'Enable':'Bypass')+' only insert '+(i+1)+'" aria-label="'+(t.slotBypass[i]?'Enable':'Bypass')+' only FX insert '+(i+1)+' in '+escapeHtml(t.name)+'" aria-pressed="'+Boolean(!t.slotBypass[i])+'">'+materialIcon("power_settings_new")+'</button>');
   out+='<button class="fx-pick '+(name==='None'?'empty':'')+'" data-action="openPlugin" data-slot="'+i+'" aria-label="Choose plugin for '+escapeHtml(t.name)+' insert '+(i+1)+'">'+(name==='None'?'+ Add FX':escapeHtml(name))+'</button>';
@@ -897,6 +898,7 @@ function render(pageOverride){
  }
  const context=document.getElementById('mixContext');
  if(context)context.textContent=sofEnabled?'SEND MIX → '+sofTarget:'MAIN MIX';
+ syncGlobalFxButton();
  masterEl.innerHTML=strip(master);
  document.getElementById('viewport').scrollLeft=0;
  document.getElementById('bankPrev').disabled=count<=1;
@@ -2793,6 +2795,40 @@ document.addEventListener('click',e=>{
 window.addEventListener('blur',()=>{
  if(armedWireSource()&&!wireGesture&&!pendingBusRoute)clearWireIntent();
 });
+
+/* Workspace contract: GAIN makes the WIRE patch bay visible without moving
+   PAN / M-S-PFL / fader. On return to FX, restore the operator's previous
+   WIRE state unless they explicitly changed the rail while in GAIN. */
+function setWireExpansion(expanded){
+ const body=document.querySelector('.console-body');
+ const rail=body?.querySelector('.section-rail [data-section="send"]');
+ if(!body||!rail)return false;
+ body.classList.toggle('collapsed-send',!expanded);
+ rail.classList.toggle('collapsed',!expanded);
+ rail.setAttribute('aria-expanded',String(expanded));
+ rail.setAttribute('aria-pressed',String(expanded));
+ rail.title=expanded?'Collapse WIRE section':'Expand WIRE section';
+ requestAnimationFrame(renderWireRouting);
+ return true;
+}
+function syncGlobalFxButton(){
+ const btn=document.getElementById('globalFxToggle');
+ if(!btn)return;
+ btn.textContent=globalFxOn?'ALL FX ON':'ALL FX OFF';
+ btn.classList.toggle('active',globalFxOn);
+ btn.classList.toggle('is-bypassed',!globalFxOn);
+ btn.setAttribute('aria-pressed',String(globalFxOn));
+ btn.setAttribute('aria-label',globalFxOn?'Bypass all mixer FX':'Enable all mixer FX');
+ btn.title='A/B all channel, BUS, FX return and MAIN inserts; individual slot and rack states are preserved';
+ document.querySelector('.console-body')?.classList.toggle('global-fx-bypassed',!globalFxOn);
+}
+/* Native-only readback hook. A pending JUCE command never paints a false
+   bypass state; the native bridge calls this only with published FX status. */
+window.__ARMIX_SET_GLOBAL_FX_VIEW__=(enabled)=>{
+ if(typeof enabled!=='boolean')return false;
+ if(globalFxOn===enabled){syncGlobalFxButton();return true;}
+ globalFxOn=enabled;render();return true;
+};
 document.querySelector('.section-rail').addEventListener('click',e=>{
  const button=e.target.closest('[data-section]');if(!button)return;
  const name=button.dataset.section,body=document.querySelector('.console-body');
@@ -2800,6 +2836,7 @@ document.querySelector('.section-rail').addEventListener('click',e=>{
   say('Exit Narrow view before expanding '+name.toUpperCase());return;
  }
  const collapsed=body.classList.toggle('collapsed-'+name);
+ if(name==='send'&&stripView==='gain')wireBeforeGain=null; // manual rail decision wins
  button.classList.toggle('collapsed',collapsed);
  button.setAttribute('aria-expanded',String(!collapsed));
  button.setAttribute('aria-pressed',String(!collapsed));
@@ -3025,12 +3062,31 @@ for(const [id,value] of [['gainView','gain'],['fxView','fx']]){
    say('INPUT GAIN unavailable · no channel has an acknowledged native gain stage');
    return;
   }
-  // View selection is presentation-only; the DSP insert chain stays resident.
+  // Changing workspace never edits a plugin or physical WIRE. Only the
+  // presentation section expands/collapses; restore the prior user layout.
+  if(value==='gain'&&stripView!=='gain'){
+   const body=document.querySelector('.console-body');
+   wireBeforeGain=body?.classList.contains('collapsed-send')??null;
+   setWireExpansion(true);
+  }else if(value==='fx'&&stripView==='gain'){
+   if(wireBeforeGain!==null)setWireExpansion(!wireBeforeGain);
+   wireBeforeGain=null;
+  }
   stripView=value;render();
   say(value==='gain'?'Digital INPUT GAIN · each knob follows accepted channel readback':
     'FX RACK · existing inserts preserved');
  });
 }
+document.getElementById('globalFxToggle').addEventListener('click',()=>{
+ if(window.__JUCE__?.backend){
+  if(!window.__ARMIX_NATIVE_GLOBAL_FX__?.toggle?.())
+   say('Global FX unavailable · native PCM or verified readback required');
+  return;
+ }
+ globalFxOn=!globalFxOn;
+ render();
+ say('ALL FX '+(globalFxOn?'ON · individual FX settings restored':'OFF · bypass audition only; presets unchanged'));
+});
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{
  const id=Number(document.getElementById('sofTarget').value);
