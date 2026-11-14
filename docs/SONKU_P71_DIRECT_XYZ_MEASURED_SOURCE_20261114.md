@@ -54,3 +54,19 @@ CI SHA passes, but public feature remains vetoed until actual
 Windows ASIO, performance headroom, author-approved FX/UX workflow,
 .lsmix/.smix persistence and headphone blind tests versus dearVR are
 satisfactory. Do not merge stacked drafts prematurely.
+
+## P7.1 FIR fast-path experiment
+
+A second, macro-gated FIR implementation splits the convolution into
+**valid epoch samples** and **warm-up kernel advancement**. Once the delay
+ring is warm, the full 140-tap reflection convolution does not execute
+the former per-tap stale-history conditional. The filter kernel still
+slews for every tap, including silent warm-up samples, and the exact
+P3 0° stereo fusion/0–60° states remain. This is not truncation,
+interpolation approximation, a hidden adaptive DSP path, or a new mixer.
+
+The scoped native CI compiles the original P7 C++ room WAV fixture twice,
+with and without the P7.1 macro, for FRONT/REAR, 0°/60°, four-wall/six-surface,
+then compares all 8 × 144000 × 2 samples at <= 1 signed-16-bit LSB.
+CPU 1/2/4 insert timing is informational and must demonstrate real
+benefit before shipping any optimization.

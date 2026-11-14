@@ -263,6 +263,33 @@ public:
                     // One source of truth for the coefficient slew and ear
                     // FIR arithmetic; only history address selection varies.
                     // Advance kernels even while history is warming.
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
+                    // P7.1 measured-only hot path. In the overwhelmingly
+                    // common fully warm ring, the 140-tap FIR has NO
+                    // per-tap fresh-history comparison. Warm-up still
+                    // advances ALL filter kernels, but reads no pre-OFF
+                    // samples: zero extra heap, tables, clocks or FIRs.
+                    const auto advance=[&](int k) noexcept {
+                        auto& hL=p.kernel[0][k];
+                        auto& hR=p.kernel[1][k];
+                        hL+=kernelSlew_*(p.targetKernel[0][k]-hL);
+                        hR+=kernelSlew_*(p.targetKernel[1][k]-hR);
+                        if(fused){
+                            tap_[1][wall].kernel[0][k]=hL;
+                            tap_[1][wall].kernel[1][k]=hR;
+                        }
+                        return std::array<float,2>{hL,hR};
+                    };
+                    const auto render=[&](auto&& sample) noexcept {
+                        for(int k=0;k<freshTaps;++k){
+                            const float v=sample(k);
+                            const auto h=advance(k);
+                            l+=v*h[0];r+=v*h[1];
+                        }
+                        for(int k=freshTaps;k<hrir::taps;++k)
+                            (void)advance(k);
+                    };
+#else
                     const auto render=[&](auto&& sample) noexcept {
                         for(int k=0;k<hrir::taps;++k){
                             const float v=(warming && k>=freshTaps)
@@ -278,6 +305,7 @@ public:
                             l+=v*hL;r+=v*hR;
                         }
                     };
+#endif
                     if(fastContiguousHrir_ && idx>=hrir::taps){
                         // For 8052/8192 ring positions the entire 140-tap
                         // window is continuous; no wrap mask inside FIR.

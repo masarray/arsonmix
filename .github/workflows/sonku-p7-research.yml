@@ -62,6 +62,11 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_offline_listening.cpp -o /tmp/p71-render
           /tmp/p71-render sonku-p7-evidence --p71-xyz-direct-only
+      - name: P7.1 fused FIR fast path against exact P7 original WAV reference
+        run: |
+          mkdir -p /tmp/sonku-p71-fir-fast
+          /tmp/p71-render /tmp/sonku-p71-fir-fast --p7-six-surface-only
+          python tests/sonku_p71_fir_parity_audit.py sonku-p7-evidence /tmp/sonku-p71-fir-fast
       - name: P7.1 measure same-source XYZ direct stereo musical integrity / per-ear acoustics
         run: |
           python tests/sonku_p71_xyz_audio_audit.py sonku-p7-evidence
