@@ -7,7 +7,7 @@
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM) && ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
 #include "../engine/builtin_fx/ImerSipProcessor.h"
 #endif
 #include "../engine/core/PreparedMixerBlock.h"
@@ -86,8 +86,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
         "NATIVE_SONKU_PREPARE_EXCEPTION","Saved 8D-SonKu state rejected; graph unchanged",
         prepareNativeBuiltInFx<SonKuSpatialProcessor>},
-#if defined(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM) && ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
-    // Audio path is real SonKu P8.2 plus coherent mono-safe enhancement. Unshipped by default.
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+    // The SAME CMake compile definition controls both the P8.2 DSP and this
+    // native insert registration. Without this invariant a full Windows EXE
+    // builds and DSP tests pass but ImerSip is absent from the FX Picker.
+    // Audio path is real SonKu P8.2 plus coherent mono-safe enhancement.
     NativeBuiltInFx{ImerSipProcessor::catalogIdentity,
         "ImerSip","Spatial",true,44100.,48000.,
         "NATIVE_IMERSIP_HOST_UNAVAILABLE","NATIVE_IMERSIP_DEVICE_CHANGED",
