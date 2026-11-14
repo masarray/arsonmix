@@ -12,6 +12,21 @@ User headphone feedback: P7.4 severe stereo cancellation; P7.5 shrill/prominent 
 - No FFT, allocations, locks, background worker, extra bridge graph, or extra per-insert data movement in the realtime callback. Original KEMAR 140-tap FIR and native JUCE/ACK persist.
 - **Still not a fully spatialized stereo object renderer:** above-crossover stereo SIDE remains a direct width bed. This is a targeted bass/room diagnostic milestone, not completion of P8.1 or P8.2.
 
+## P8.1 measured HRTF tonal calibration (same P8 opt-in)
+
+Observed native P8.0 transfer at 48k, FRONT, ROOM OFF, duplicated mono:
+63Hz 0.670, 125Hz 0.516, 1kHz 0.614, **2kHz 1.521**, 4kHz 1.303 and **8kHz 0.145** relative to original. These data justify the owner's "mid honking, thin/squeaky music" report independently from ASIO buffer correctness.
+
+The independently licensed MIT KEMAR *horizontal* bank was examined: at 48k its geometric mean ear magnitude across all 37 azimuths and 2 ears is 0.677 at 1k, 1.375 at 2k, 0.958 at 4k, 0.261 at 8k. A measured broad 2kHz surplus is real; a simple +bass shelf cannot fix it.
+
+A new `SonKuHrtfTonalCalibration.h` computes a horizontal-bank *common-ear* corrective EQ ONCE at prepare; no FFT/sin/cos/log/alloc on the realtime callback:
+- Presence cut calculated as the measured 2k mean relative to geometric mean of 1k and 4k: capped between 0 and -5.5dB; applied as original RBJ peaking minimum-phase biquad centered at 2.2k, Q 0.85.
+- High-air shelf calculated from only **40%** of the measured 1k-vs-8k deficit, maximum +4dB, at 6.2k. This deliberately does not erase the localized KEMAR high-frequency pinna notch.
+- Same scalar coefficients for both ears on DIRECT HRTF ONLY, preserving frequency-wise interaural amplitude ratio and nearly identical group-delay shift at the two ears. Never equalize dry stereo SIDE, original bass, directional ER or late reverb with this common ear filter.
+- All EQ state is reset on a prepared rebind. Dynamics and plugin state v1/v2/v3 remain unchanged. P7.5/default when P8 flag OFF remains byte-identical.
+
+This is **not** a patented dearVR Clarity algorithm, not a universal headphone correction, not diffuse-field calibration and not a perfect spectral match. Tests now reject a FRONT 2k gain > 1.30 (P8.0 baseline ~1.52), document 8k return, and still require actual music listening.
+
 ## Bench and acceptance
 - `tests/sonku_p80_tonal_room_evidence_test.cpp` records per-signal RMS transfer vs 63/125/250/500/1k/2k/4k/8k at 44.1 and 48k; hard-left and dual-mono; room OFF and ROOM ON impulse energy. It enforces finite, nonclipped samples, dry bypass equivalence, anti-phase energy, width 60° exact anti-phase waveform, room late tail and chunk partition parity.
 - Log the source SHA and compile flags; ensure CTest source fixture and native JUCE adapter share P8 flag. Output metrics from synthetic waves are diagnostic ONLY, not target equalization, no real-music spectral score, no headphone claim.
