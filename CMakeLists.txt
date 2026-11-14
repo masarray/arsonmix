@@ -414,6 +414,40 @@ if(BUILD_TESTING)
               SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
           add_test(NAME NativeSonKuP82SixWallThreeBandRoomTimingDecayAndParity
               COMMAND ARMixSonKuP82RoomTests)
+          if(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT)
+            add_executable(ARMixSonKuP83LiveSourceTests
+                tests/sonku_p83_live_scene_edit_test.cpp)
+            target_compile_features(ARMixSonKuP83LiveSourceTests PRIVATE cxx_std_20)
+            target_compile_definitions(ARMixSonKuP83LiveSourceTests PRIVATE
+                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                SONKU_P72_NATIVE_XYZ_RT=1
+                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1)
+            add_test(NAME NativeSonKuP83RealtimeModeSourceAndMusicIntegrity
+                COMMAND ARMixSonKuP83LiveSourceTests)
+            juce_add_console_app(ARMixSonKuP83NativeTests
+                PRODUCT_NAME "ArSonMix SonKu P83 Native JUCE v4 Tests")
+            target_sources(ARMixSonKuP83NativeTests PRIVATE
+                tests/sonku_p83_native_juce_v4_test.cpp)
+            target_compile_features(ARMixSonKuP83NativeTests PRIVATE cxx_std_20)
+            target_link_libraries(ARMixSonKuP83NativeTests PRIVATE
+                juce::juce_audio_processors juce::juce_recommended_config_flags)
+            target_compile_definitions(ARMixSonKuP83NativeTests PRIVATE
+                ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT=1
+                ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT=1
+                SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+                SONKU_P71_DIRECT_XYZ_RESEARCH=1
+                SONKU_P72_NATIVE_XYZ_RT=1
+                SONKU_P75_MUSIC_SAFE_RESEARCH=1
+                SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+                SONKU_P82_MULTIBAND_ROOM_RESEARCH=1
+                SONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1)
+            add_test(NAME NativeSonKuP83JuceV4AudioAckLegacyRestoreAndHeadYaw
+                COMMAND ARMixSonKuP83NativeTests)
+          endif()
         endif()
       endif()
     endif()
