@@ -177,6 +177,9 @@
  content:"";position:absolute;inset:1px 2px auto;height:5px;
  background:linear-gradient(180deg,#b9ffff14,transparent);pointer-events:none;
 }
+.console-body .strip .gain-view-body:has(.gain-dial input:disabled) .gain-readout{
+ font-size:10px;letter-spacing:0;
+}
 /* The section rail names the visible pane, without changing its collapse action. */
 .console-body.gain-view-active .section-rail .rail-cell.fx .rail-svg-icon{display:none}
 .console-body.gain-view-active .section-rail .rail-cell.fx::after{
