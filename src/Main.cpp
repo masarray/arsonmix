@@ -3360,6 +3360,83 @@ private:
                 juce::var(ack.release()));
     }
 
+    // Mixer-only factory recovery. The native JUCE graph is stopped before
+    // any new callback can see stale FX/WIRE state. The old durable HEAD is
+    // retired first so a crash/reinstall cannot replay a broken session.
+    void resetMixerToFactory() {
+        if(updaterProbeMode_ || mixerSessionWorker_.busy() || nativeShowBusy_ ||
+           studioBackupBusy_ || deviceApply_.busy() || mixerFileDialogOpen_ ||
+           engine_.hasTemporaryDiagnosticDevice())
+            return emitMixerSessionAck("RESET",
+                "Finish mixer IO, device changes and diagnostic playback before reset");
+        if(!audioEngineStarted_)
+            return emitMixerSessionAck("RESET","Mixer startup is still initializing");
+
+        // Never reset a live PA. Hardware monitoring and secondary STREAM
+        // are disarmed before closing FX/editor owners or touching the graph.
+        operatorOutputMuted_=true;
+        autoMainEpoch_=0;
+        engine_.cancelAsioResetMonitorIntent();
+        engine_.setOutputMuted(true);
+        engine_.disconnectSecondaryOutput();
+        stopOrbit();
+        closePluginEditor();
+        logicalVendorEditor_.reset(); // discard uncommitted vendor editor edits
+
+        const auto detachError=armix::session::NativeMixerSessionStore(
+            settingsDirectory()).discardForFactoryReset();
+        if(detachError.isNotEmpty()) {
+            diagnostics_.record("MIXER_FACTORY_RESET_REJECTED",detachError);
+            return emitMixerSessionAck("RESET",detachError);
+        }
+        // Invalidate any queued completion, saved logical editor and
+        // fingerprint. The shutdown checkpoint must never republish old FX.
+        mixerSessionWorker_.finishForShutdown();
+        logicalMixer_.resetForFactory();
+        const auto previousId=mixerSessionId_;
+        if(previousId.isNotEmpty()) {
+            const std::vector<armix::hotkey::Mapping> empty;
+            const auto keysError=hotkeys_.activateSession(previousId,&empty);
+            if(keysError.isNotEmpty())
+                diagnostics_.record("MIXER_FACTORY_HOTKEY_CLEANUP",keysError);
+        }
+        (void)hotkeys_.activateSession({});
+        const auto appearanceError=channelAppearance_.resetForFactory();
+        if(appearanceError.isNotEmpty())
+            diagnostics_.record("MIXER_FACTORY_APPEARANCE_CLEANUP",appearanceError);
+
+        mixerSessionId_.clear();
+        lastMixerSessionFingerprint_.clear();
+        mixerSessionError_.clear();
+        mixerSessionRecoveryPending_=false;
+        mixerSessionStartupInspected_=true;
+        acceptedControlRequests_.clear();
+        // The selected MACHINE audio interface survives. No VST3 catalog,
+        // user FX preset, exported .smix, music, driver or WebView cache is
+        // removed. First-run SOURCE NONE graph is recreated from native code.
+        auto saved=juce::XmlDocument::parse(
+            machineSettingsDirectory().getChildFile("audio-devices.xml"));
+        engine_.devices().removeChangeListener(this);
+        engine_.stop();
+        startupError_=engine_.start(saved.get());
+        engine_.devices().addChangeListener(this);
+        mixerSessionStatus_=startupError_.isEmpty()?
+            "FACTORY_RESET_MUTED":"FACTORY_RESET_NEEDS_AUDIO_SETUP";
+        if(startupError_.isNotEmpty())mixerSessionError_=startupError_;
+        if(appearanceError.isNotEmpty()) {
+            mixerSessionStatus_="FACTORY_RESET_APPEARANCE_WARNING";
+            mixerSessionError_=appearanceError;
+        }
+        diagnostics_.record("MIXER_FACTORY_RESET",
+            mixerSessionStatus_+" | SOURCE NONE / NO FX / NO WIRE / MAIN MUTED");
+        emitApprovedNativeSnapshot();
+        emitMixerSessionAck("RESET");
+        emitNotice(startupError_.isEmpty()
+            ? "Mixer reset to factory defaults. No FX or WIRE; output muted. Select INPUT and verify MAIN before unmuting."
+            : "Saved mixer cleared; audio device needs reconfiguration in Audio I/O: "+startupError_,
+            startupError_.isNotEmpty() || appearanceError.isNotEmpty());
+    }
+
     juce::String resolveMixerSessionCatalog(armix::session::MixerSessionDocument& doc,
                                            bool captureIdentity) {
         for(auto& insert:doc.inserts) {
@@ -4434,6 +4511,14 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        // RESET replies with its own success/failure ACK and remains available
+        // even when the normal PCM topology cannot admit control intents.
+        if(action=="nativeMixerFactoryReset") {
+            if(args.getProperty("confirmation","").toString()!="RESET_MIXER")
+                return emitMixerSessionAck("RESET","Factory reset requires explicit confirmation");
+            resetMixerToFactory();
+            return;
+        }
         if(deviceApply_.busy() && action!="audioDeviceApply")return;
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
