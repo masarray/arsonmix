@@ -3339,7 +3339,13 @@
           return true;
         }
         if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
-          el.value=String(t.trim);
+          const acceptedDb=Number.isFinite(t.trim)?t.trim:0;
+          el.value=String(acceptedDb);
+          el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
+            (acceptedDb*5.625).toFixed(2)+"deg");
+          const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
+          const digits=lcd?.querySelector(".gain-lcd-digits")||lcd;
+          if(digits)digits.textContent=(acceptedDb>0?"+":"")+acceptedDb.toFixed(1)+" dB";
           status("INPUT GAIN rejected · restoring accepted PCM readback");
           controller?.subscribe?.();
         }
