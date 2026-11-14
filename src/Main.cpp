@@ -58,6 +58,7 @@
 #include <vector>
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerShowEditPolicy.h"
+#include "../engine/player/PlayerShowTransitionPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -521,6 +522,7 @@ private:
     PlayerUndoRemove playerUndoRemove_{};
     int playerSelected_=-1,playerCurrent_=-1;
     int playerPendingIndex_=-1; // becomes CURRENT only after native fade ACK
+    juce::File playerPendingQueueFile_; // commit queue ONLY after real PCM ACK
     int playerFadeMilliseconds_=180; // compact optional transition setting
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
@@ -3746,6 +3748,7 @@ private:
         playerTrackSettings_=chosen.controls;
         playerCurrent_=-1;
         playerPendingIndex_=-1;
+        playerPendingQueueFile_={};
         playerSelected_=playerLibrary_.empty()?-1:0;
         playerQueue_.clear();
         playerOutputPendingIndex_=-1;
@@ -4012,15 +4015,44 @@ private:
             if(index<0 || index>=static_cast<int>(playerLibrary_.size()) ||
                playerQueue_.size()>=128)return;
             const auto file=playerLibrary_[static_cast<std::size_t>(index)];
+            if(action=="playerQueueNext" && playerPendingIndex_>=0) {
+                playerError_="NEXT is transitioning; queue changes after ACK";
+                emitPlayerState();return;
+            }
             if(action=="playerQueueNext")
                 playerQueue_.insert(playerQueue_.begin(),file);
             else playerQueue_.push_back(file);
-            emitPlayerState(true);return;
+            // A manually queued NEXT deserves a warm decoder even with
+            // Auto Next OFF. Only CONTROL does file/preload work.
+            if(playerPendingIndex_<0 && !playerQueue_.empty() &&
+               playerCurrent_>=0) {
+                const auto found=std::find(playerLibrary_.begin(),
+                    playerLibrary_.end(),playerQueue_.front());
+                if(found!=playerLibrary_.end()) {
+                    const auto n=static_cast<std::size_t>(
+                        found-playerLibrary_.begin());
+                    const auto preset=playerTrackSettings_[n];
+                    (void)engine_.preloadPlayerMusic(playerQueue_.front(),
+                        preset.key,preset.tempo,preset.cueIn,preset.cueOut);
+                }
+            }
+            playerError_.clear();emitPlayerState(true);return;
         }
-        if(action=="playerQueueRemove") {
-            const int index=static_cast<int>(value);
+        if(action=="playerQueueMove" || action=="playerQueueRemove") {
+            const int index=action=="playerQueueMove"?
+                static_cast<int>(value.getProperty("from",-1)):
+                static_cast<int>(value);
             if(index<0 || index>=static_cast<int>(playerQueue_.size()))return;
-            playerQueue_.erase(playerQueue_.begin()+index);
+            if(playerPendingIndex_>=0) {
+                playerError_="NEXT is transitioning; queue changes after ACK";
+                emitPlayerState();return;
+            }
+            if(action=="playerQueueMove") {
+                const int to=static_cast<int>(value.getProperty("to",-1));
+                if(!armix::player::PlayerShowTransitionPolicy::moveQueued(
+                    playerQueue_,index,to))return;
+            } else playerQueue_.erase(playerQueue_.begin()+index);
+            playerError_.clear();
             emitPlayerState(true);return;
         }
     }
@@ -4324,23 +4356,47 @@ private:
         emitPlayerState(true);
     }
     void playNextMusic() {
-        int next=-1;
-        while(next<0 && !playerQueue_.empty()) {
-            const auto upcoming=playerQueue_.front();
-            playerQueue_.erase(playerQueue_.begin());
-            const auto found=std::find(
-                playerLibrary_.begin(),playerLibrary_.end(),upcoming);
-            if(found!=playerLibrary_.end())
-                next=static_cast<int>(found-playerLibrary_.begin());
+        if(playerPendingIndex_>=0)return; // one in-flight transition
+        int queued=-1;
+        while(!playerQueue_.empty() && queued<0) {
+            const auto found=std::find(playerLibrary_.begin(),
+                playerLibrary_.end(),playerQueue_.front());
+            if(found!=playerLibrary_.end()) {
+                queued=static_cast<int>(found-playerLibrary_.begin());
+            } else playerQueue_.erase(playerQueue_.begin()); // stale only
         }
-        if(next<0)next=armix::player::SetlistPolicy::nextTrack(
+        const int next=armix::player::PlayerShowTransitionPolicy::nextIndex(
             playerCurrent_,playerSelected_,
-            static_cast<int>(playerLibrary_.size()));
+            static_cast<int>(playerLibrary_.size()),queued);
         if(next<0) {
-            playerPendingIndex_=-1;
+            playerPendingQueueFile_={};
             engine_.playerStop();emitPlayerState();return;
         }
-        playerSelected_=next;playSelectedMusic();
+        const auto file=playerLibrary_[static_cast<std::size_t>(next)];
+        playerSelected_=next;
+        // Explicitly queued CURRENT is a repeat request, not a resume.
+        // The standby worker can decode another instance of the same file.
+        if(queued==playerCurrent_ && queued>=0) {
+            const auto control=playerTrackSettings_[static_cast<std::size_t>(next)];
+            if(engine_.queuePlayerTransition(file,control.key,control.tempo,
+                   playerFadeMilliseconds_,control.cueIn,control.cueOut)) {
+                playerPendingIndex_=next;
+                playerPendingQueueFile_=file;
+                playerError_.clear();
+            } else playerError_="Could not prepare queued song repeat";
+            emitPlayerState(true);return;
+        }
+        playSelectedMusic();
+        if(queued>=0 && playerError_.isEmpty()) {
+            if(playerPendingIndex_==next) {
+                playerPendingQueueFile_=file;
+            } else if(playerCurrent_==next) {
+                (void)armix::player::PlayerShowTransitionPolicy::
+                    commitQueuedFront(playerQueue_,file);
+                playerPendingQueueFile_={};
+                emitPlayerState(true);
+            }
+        }
     }
 
     void onAction (const juce::var& args)
@@ -4366,7 +4422,8 @@ private:
            action=="playerDeleteSetlist" || action=="playerRenameSetlist" ||
            action=="playerMoveSong" || action=="playerRemoveSong" ||
            action=="playerUndoRemove" || action=="playerQueueNext" ||
-           action=="playerQueueAppend" || action=="playerQueueRemove")
+           action=="playerQueueAppend" || action=="playerQueueRemove" ||
+           action=="playerQueueMove")
             return playerEditSetlist(action,value);
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerAddFolder")return choosePlayerFolder();
@@ -4465,11 +4522,13 @@ private:
             emitPlayerState();return;
         }
         if(action=="playerPause") {
+            playerPendingQueueFile_={};
             playerPendingIndex_=-1;
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
             playerOutputPendingIndex_=-1;
+            playerPendingQueueFile_={};
             playerPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
@@ -7545,13 +7604,20 @@ private:
                    playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
                     playerCurrent_=playerPendingIndex_;
                     playerSelected_=playerCurrent_;
+                    if(playerPendingQueueFile_!=juce::File{})
+                        (void)armix::player::PlayerShowTransitionPolicy::
+                            commitQueuedFront(playerQueue_,
+                                              playerPendingQueueFile_);
                 }
+                playerPendingQueueFile_={};
                 playerPendingIndex_=-1;
+                playerError_.clear();
                 emitPlayerState(true);
             } else if(playerPendingIndex_>=0 &&
                       engine_.playerTransitionFailed()) {
-                // Standby decoder failure does not interrupt old CURRENT
-                // or claim that a new source has reached the MAIN.
+                // Preserve queued entry on decode error: the performer can
+                // retry. A failed NEXT must not consume the user's setlist.
+                playerPendingQueueFile_={};
                 playerPendingIndex_=-1;
                 playerError_="NEXT could not decode; current song is unchanged";
                 emitPlayerState(true);
