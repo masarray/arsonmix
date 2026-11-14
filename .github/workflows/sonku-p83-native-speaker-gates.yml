@@ -51,15 +51,45 @@ jobs:
             -DSONKU_P75_MUSIC_SAFE_RESEARCH=1
             -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
             -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
-          g++ "\${FLAGS[@]}" tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p82-golden
-          g++ "\${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+          g++ "${FLAGS[@]}" tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p82-golden
+          g++ "${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
             tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p83-default
           /tmp/p82-golden /tmp/p82-golden.raw
           /tmp/p83-default /tmp/p83-default.raw
           cmp /tmp/p82-golden.raw /tmp/p83-default.raw
           sha256sum /tmp/p82-golden.raw /tmp/p83-default.raw
+      - name: Hosted CPU evidence 44.1/48k 64/128/256 1/2/4 inserts (NOT ASIO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_hosted_cpu_benchmark.cpp -o /tmp/p83-bench
+          /tmp/p83-bench | tee /tmp/p83-bench.log
+          grep -q '^P83_HOSTED_CPU,mode=P83' /tmp/p83-bench.log
+      - name: Strict acoustic music gate - reject LF cancellation despite directional PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -F, '
+            /^P83_SPECTRAL,ANTIPHASE,48000,frequency=83Hz/ {split($5,a,"="); bass=a[2]}
+            /^P83_SPECTRAL,ANTIPHASE,48000,frequency=1703Hz/ {split($5,a,"="); mid=a[2]}
+            END {
+              if (bass=="" || mid=="") {print "FAIL P83 MUSIC: missing source spectra"; exit 2}
+              diff=bass-mid
+              printf "P83_MUSIC_GATE,48000,83Hz_minus_1703Hz_relative_to_P82=%.3f dB,minimum=-6 dB\n",diff
+              if(diff < -6) {print "FAIL P83 MUSIC: anti-phase LF loss, candidate veto"; exit 1}
+              print "PASS P83 MUSIC: no significant relative LF null"
+            }
+          ' /tmp/p83-native.log
       - name: Upload exact-source offline research PCM (not human FAT)
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sonku-p83-source-pcm-${{ github.sha }}

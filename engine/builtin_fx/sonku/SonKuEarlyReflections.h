@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include "SonKuMeasuredHrir.h"
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+#include "SonKuP83SpeakerScene.h"
+#endif
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
 #include "SonKuRoomMaterials.h"
 #endif
@@ -509,7 +512,16 @@ private:
                 tap.targetGainR=level*(directionalHrir_?1.f:(1.f+.13f*directionX));
                 if(directionalHrir_){
                     // The IMAGE-source arrival angle, NOT source azimuth.
-                    const float dir=std::atan2(x,y)*180.f/pi-headYawDegrees;
+                    // World room image is fixed; head orientation rotates
+                    // only the ear-relative direction. Wrap BEFORE indexing
+                    // measured 0..180 KEMAR, otherwise yaw 260 clamps to REAR.
+                    const float worldDir=std::atan2(x,y)*180.f/pi;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+                    const float dir=headYawDegrees==0.f?worldDir:
+                        p83::toHead(worldDir,headYawDegrees);
+#else
+                    const float dir=worldDir;
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
                     if(profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
                        dz!=0.f){

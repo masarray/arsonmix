@@ -91,3 +91,19 @@ elevation, spectral level and ear phase at 83, 461, 1703 and 5387 Hz,
 and reconstruction of isolated native wall/late stems. **IACC is not
 perceptual externalization**. CPU p50/p95/p99 and ASIO measurements
 remain a distinct performance milestone, not proven by this source test.
+
+## P8.3 experimental music-integrity rejection (14 November 2026)
+
+48k measured native speaker anti-phase drops 83 Hz by -25.112 dB
+relative to P8.2, but 1703 Hz by only -1.374 dB. The resulting
+LF-versus-mid difference is -23.738 dB; a global trim cannot restore
+this ratio. At 44.1k the similar values are -26.095/-2.113 dB.
+A real symmetric pair of speakers playing opposing polarity can cancel
+bass near a central listener. However, this is still a music-fidelity
+**failure** against the owner's SonKu contract, NOT a successful candidate.
+Keep Music Bed default and do not ship a compensating headphone stereo
+bed as a disguised physical speaker. The CI includes an intentional
+**red LF quality veto** until a physical and musically acceptable solution
+passes. This gate is independent of the native directional source PASS.
+A 44.1/48k, 64/128/256, 1/2/4-insert Linux hosted CPU benchmark is
+also added; neither this benchmark nor a source PASS proves ASIO XRUNs.
