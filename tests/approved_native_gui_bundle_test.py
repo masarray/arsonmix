@@ -22,6 +22,14 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             approved = (source / "index.html").read_text("utf-8")
             native = (out / "index.html").read_text("utf-8")
             self.assertEqual(bundle.public_from_native(native), approved)
+            # Structural parity: route/EXT, fader taper and hardware look are
+            # composed once into published Pages, never inserted as native CSS.
+            self.assertIn("external-out-field", approved)
+            self.assertEqual(approved.count("external-out-field"), native.count("external-out-field"))
+            self.assertIn("FADER_TAPER=Object.freeze", approved)
+            self.assertEqual(approved.count("FADER_TAPER=Object.freeze"), 1)
+            self.assertEqual(native.count("FADER_TAPER=Object.freeze"), 1)
+            self.assertNotIn('data-armix-o1="physical-output"', native)
             self.assertNotIn("__ARMIX_NATIVE_M2__", approved)
             self.assertIn("__ARMIX_NATIVE_M2__", native)
             # Never let a missing ASIO driver or delayed native snapshot

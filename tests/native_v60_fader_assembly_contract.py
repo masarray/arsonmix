@@ -17,11 +17,14 @@ def run():
     public = bundle.accepted_pages_html()
     native = bundle.native_html(public)
     assert bundle.public_from_native(native) == public, "Native Pages not reversible"
-    assert " let gain=Math.round((max-(max-min)*frac)*10)/10;" in public
-    assert " let gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;" in native
-    assert " const unityY=travel.top+travel.height*(max/(max-min));" in public
-    assert " const unityY=travel.top+travel.height*(1-faderPercent(0,max===6)/100);" in native
-    assert "FADER_TAPER=Object.freeze" in native
+    assert "FADER_TAPER=Object.freeze" in public
+    assert public.count("FADER_TAPER=Object.freeze")==1
+    assert native.count("FADER_TAPER=Object.freeze")==1
+    assert " let gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;" in public
+    assert " const unityY=travel.top+travel.height*(1-faderPercent(0,max===6)/100);" in public
+    assert "scaleTopPct(v,-60,gainMax)" not in public
+    assert 'external-out-field' in public and 'external-out-field' in native
+    assert "data-armix-o1" not in native
     assert native.count("handleField({target:g.input,type:'change',altKey:!!ev.altKey});")==1
     assert native.count("if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;}")==1
     assert "consumeField?.({target:g.input,type:'change'})" not in native
