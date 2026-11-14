@@ -4,6 +4,12 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+#if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH
+#error P8.3 speaker research requires the P8.2 material and FDN baseline
+#endif
+#include "SonKuP83SpeakerScene.h"
+#endif
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #include "SonKuHrtfTonalCalibration.h"
 #endif
@@ -172,6 +178,11 @@ public:
     }
     bool setSettings(const Settings& s) noexcept {
         if(!valid(s))return false;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        if(p83Mode_==p83::Mode::SpeakerMonitor &&
+           (s.stereoSpreadDegrees<20.f || s.stereoSpreadDegrees>120.f))
+            return false; // distinct left and right speaker directions
+#endif
 #if defined(SONKU_P72_NATIVE_XYZ_RT) && SONKU_P72_NATIVE_XYZ_RT
         const auto activeProfile=room_.preparedProfile();
         if(activeProfile!=SonKuReflectionProfile::SixSurfaceKemarResearch &&
@@ -209,6 +220,37 @@ public:
         return true;
     }
     Settings settings() const noexcept {return settings_;}
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+    // OFFLINE ONLY: quiescent, before PCM. Native session/GUI/SPSC untouched.
+    bool setResearchRenderMode(p83::Mode mode) noexcept {
+        if(!ready_ || researchPcmStarted_ || !p83::valid(mode) ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch ||
+           (mode==p83::Mode::SpeakerMonitor &&
+             (settings_.stereoSpreadDegrees<20.f ||
+              settings_.stereoSpreadDegrees>120.f)))return false;
+        p83Mode_=mode;
+        reset();
+        return true;
+    }
+    bool setResearchHeadYaw(float yaw) noexcept {
+        if(!ready_ || researchPcmStarted_ || !p83::validYaw(yaw) ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false;
+        p83HeadYaw_=yaw;
+        reset();
+        return true;
+    }
+    // Native PCM evidence: wall bits left,right,front,back,floor,ceiling.
+    bool setResearchEvidence(p83::Stem stem,std::uint8_t wallMask=0x3f) noexcept {
+        if(!ready_ || researchPcmStarted_ || !p83::valid(stem) ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch ||
+           !room_.setResearchWallMask(wallMask))return false;
+        p83Stem_=stem;
+        return true;
+    }
+    p83::Mode researchMode() const noexcept {return p83Mode_;}
+    float researchHeadYaw() const noexcept {return p83HeadYaw_;}
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     // Only quiescent, unpublished *research* cores may change source XYZ.
     // This is intentionally NOT a new FX/state/UI/ACK field. No race with
@@ -289,12 +331,20 @@ public:
 #endif
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        const bool positionedMode=
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
+            p83Mode_!=p83::Mode::MusicBedP82;
+        const bool monoObject=positionedMode && p83Mode_==p83::Mode::MonoObject;
+#else
+        constexpr bool positionedMode=false,monoObject=false;
+#endif
         const float distanceGain=room_.relativeDistanceGain();
         const bool nativeSpace=nativeSpaceEverUsed_;
         const bool roomEnabled=settings_.spacePreset!=0;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
         const bool transparentBass=
-            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch;
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch && !positionedMode;
 #else
         constexpr bool transparentBass=false;
 #endif
@@ -303,7 +353,7 @@ public:
         // through one real measured center HRTF, keep stereo SIDE separated.
         // The original two-emitter renderer is never modified in public builds.
         const bool musicSafe=
-            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch;
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch && !positionedMode;
 #else
         constexpr bool musicSafe=false;
 #endif
@@ -333,13 +383,13 @@ public:
                 remaining_=updateInterval;
             }
             const float x0=std::isfinite(left[i])?left[i]:0.f;
-            const float x1=std::isfinite(right[i])?right[i]:0.f;
+            const float x1=monoObject?0.f:(std::isfinite(right[i])?right[i]:0.f);
             // Preserve strong anti-correlated music side energy without
             // collapsing it into the two virtual mono HRTF sources. The
             // independent guard has no hidden UI state or new audio bus.
             const float inputMid=.5f*(x0+x1);
-            const float preservedSide=musicSafe?.5f*(x0-x1):
-                integrity_.preservedSide(x0,x1);
+            const float preservedSide=positionedMode?0.f:
+                (musicSafe?.5f*(x0-x1):integrity_.preservedSide(x0,x1));
             // P7.5 research: an unconditional, orthogonal L/R side return
             // rather than correlation-gated, time-varying rescue. A centered
             // HRTF cannot annihilate anti-phase stereo. WIDTH changes level
@@ -347,9 +397,9 @@ public:
             // 0° => 0.5x; 60° => 1x; >=90° => 1.25x (bounded).
             const float musicSideWidth=musicSafe?
                 std::min(1.25f,.5f+settings_.stereoSpreadDegrees/120.f):1.f;
-            float sideRescue=musicSafe?
+            float sideRescue=positionedMode?0.f:(musicSafe?
                 smoothedMix_*smoothedTrim_*musicSideWidth*preservedSide:
-                .65f*smoothedMix_*smoothedTrim_*preservedSide;
+                .65f*smoothedMix_*smoothedTrim_*preservedSide);
             float originalLowL=0.f,originalLowR=0.f;
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
             if(transparentBass){
@@ -396,19 +446,29 @@ public:
                 }
             }
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
-            if(transparentBass)
+            if(transparentBass || positionedMode)
                 tonalCalibration_.process(ears[0],ears[1]);
 #endif
-            const auto reflection=room_.active()
+            auto reflection=room_.active()
                 ?room_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1),
-                    degrees_,transparentBass?settings_.stereoSpreadDegrees:
-                        (musicSafe?0.f:settings_.stereoSpreadDegrees))
+                    degrees_,(musicSafe||monoObject)?0.f:settings_.stereoSpreadDegrees
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+                    ,positionedMode?p83HeadYaw_:0.f
+#endif
+                    )
                 :SonKuEarlyReflections::Ears{};
-            const auto late=reverb_.active()
+            auto late=reverb_.active()
                 ?reverb_.process(transparentBass?x0:(musicSafe?inputMid:x0),
                     transparentBass?x1:(musicSafe?inputMid:x1))
                 :SonKuMusicalReverb::Ears{};
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+            if(positionedMode && p83Stem_!=p83::Stem::Combined) {
+                if(p83Stem_!=p83::Stem::Direct)ears[0]=ears[1]=0.f;
+                if(p83Stem_!=p83::Stem::Early)reflection={};
+                if(p83Stem_!=p83::Stem::Late)late={};
+            }
+#endif
             if(!transparentBass && !nativeSpace && settings_.outputTrim<=1.f &&
                smoothedTrim_<=1.f) {
                 // Preserve byte-for-byte original HRTF/old .smix output for
@@ -429,9 +489,9 @@ public:
                 smoothedDistanceGain_+=distanceSlew_*
                     (targetDistance-smoothedDistanceGain_);
                 smoothedRoomLevel_+=distanceSlew_*
-                    ((roomEnabled?1.12f:1.f)-smoothedRoomLevel_);
+                    (((roomEnabled&&!positionedMode)?1.12f:1.f)-smoothedRoomLevel_);
                 smoothedBassShelf_+=distanceSlew_*
-                    ((roomEnabled?0.82f:0.f)-smoothedBassShelf_);
+                    (((roomEnabled&&!positionedMode)?0.82f:0.f)-smoothedBassShelf_);
                 // The original experimental return levels were intentionally
                 // near-silent: ER base 0.28 * wall 0.70 * 1/r and diffuse FDN
                 // output 0.23 * amount, followed by another 0.5 * trim.
@@ -440,9 +500,9 @@ public:
                 // echoes and the later diffuse field identify the room.
                 // Gain laws are bounded affine maps, zero wet stays EXACT
                 // zero, no exp/pow/alloc on the audio callback.
-                const float targetErPresence=roomEnabled?
+                const float targetErPresence=roomEnabled&&!positionedMode?
                     1.45f+2.0f*settings_.roomAmount:1.f;
-                const float targetTailPresence=roomEnabled?
+                const float targetTailPresence=roomEnabled&&!positionedMode?
                     2.2f+4.0f*settings_.ambience:1.f;
                 smoothedErPresence_+=distanceSlew_*
                     (targetErPresence-smoothedErPresence_);
@@ -576,6 +636,25 @@ private:
         }
     }
     void updateKernels() noexcept {
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+        if(p83Mode_!=p83::Mode::MusicBedP82 &&
+           room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
+            // 2x2 measured source-to-ear transfer. No MID center
+            // projection, no headphone SIDE, no coherence-dependent mode.
+            const auto positions=p83::stereo(static_cast<float>(degrees_),
+                settings_.stereoSpreadDegrees,p83HeadYaw_);
+            interpolate(targets_[0],p83Mode_==p83::Mode::MonoObject?
+                p83::toHead(static_cast<float>(degrees_),p83HeadYaw_):
+                positions.leftHead);
+            if(p83Mode_==p83::Mode::SpeakerMonitor)
+                interpolate(targets_[1],positions.rightHead);
+            else
+                for(auto& ear:targets_[1])ear.fill(0.f);
+            if(!haveKernel_)kernels_=targets_;
+            haveKernel_=true;
+            return;
+        }
+#endif
 #if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch) {
             // Control evidence no longer gates musical MID coefficients:
@@ -652,6 +731,11 @@ private:
     bool ready_=false;
     bool haveKernel_=false;
     bool nativeSpaceEverUsed_=false;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+    p83::Mode p83Mode_=p83::Mode::MusicBedP82;
+    p83::Stem p83Stem_=p83::Stem::Combined;
+    float p83HeadYaw_=0.f;
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
     float researchElevationDegrees_=0.f;
     bool researchPcmStarted_=false;
