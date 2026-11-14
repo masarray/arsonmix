@@ -4,6 +4,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+#include "SonKuRoomMaterials.h"
+#endif
 
 // Compact eight-line stereo FDN for musical late ambience. The 8x8 Hadamard
 // feedback matrix is orthogonal (unit-energy): stability depends solely on
@@ -29,6 +32,16 @@ public:
         preset_=SonKuReverbPreset::StudioGlue;
         configure();
         // All room-aware coefficients prepared once OFF the PCM callback.
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        constexpr double pi=3.14159265358979323846;
+        multibandRoom_=true;  // compile-time isolated research-only mode
+        bandLowAlpha_=static_cast<float>(1.-std::exp(-2.*pi*250./rate));
+        bandHighAlpha_=static_cast<float>(1.-std::exp(-2.*pi*4800./rate));
+        for(int room=0;room<3;++room)
+            preparedBands_[room]=prepareBandProgram(static_cast<room82::Family>(room));
+        targetBandGain_=preparedBands_[0].gains;
+        bandGain_=targetBandGain_;
+#endif
         prepared_[0]=makeCoefficients(.78f,5900.f);
         prepared_[1]=makeCoefficients(1.28f,7000.f);
         prepared_[2]=makeCoefficients(2.05f,6000.f);
@@ -41,6 +54,9 @@ public:
     void reset() noexcept {
         for(auto& line:memory_)line.fill(0.f);
         lowpass_.fill(0.f);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        bandLow_.fill(0.f);bandWide_.fill(0.f);
+#endif
         write_=0;amount_=0.f;validFrames_=0;
         // The target amount is a CONTROL-side setting and survives resetting
         // host transport/processor so the same program can restart cleanly.
@@ -69,7 +85,20 @@ public:
             preset!=SonKuReverbPreset::AiryChamber &&
             preset!=SonKuReverbPreset::LargeRoom)||
            !std::isfinite(amount)||amount<0.f||amount>1.f)return false;
-        if(!active() && amount>0.f){validFrames_=0;lowpass_.fill(0.f);}
+        if(!active() && amount>0.f){
+            validFrames_=0;lowpass_.fill(0.f);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+            bandLow_.fill(0.f);bandWide_.fill(0.f);
+#endif
+        }
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        if(multibandRoom_) {
+            // A complete 3-band per-delay RT60 program is precomputed at
+            // prepare. Native SPSC/audio edit only copies fixed POD tables.
+            targetBandGain_=preparedBands_[static_cast<int>(preset)].gains;
+            if(!realtimeMode_)bandGain_=targetBandGain_;
+        }
+#endif
         const auto& coefficients=prepared_[static_cast<int>(preset)];
         targetGain_=coefficients.gains;
         targetDamp_=coefficients.damping;
@@ -94,10 +123,27 @@ public:
             const int index=(write_-delay_[i])&(ringFrames-1);
             const float sample=(realtimeMode_&&validFrames_<delay_[i])
                 ?0.f:memory_[i][index];
-            lowpass_[i]+=dampCoeff_*(sample-lowpass_[i]);
-            if(realtimeMode_)gain_[i]+=slew_*(targetGain_[i]-gain_[i]);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+            if(multibandRoom_) {
+                bandLow_[i]+=bandLowAlpha_*(sample-bandLow_[i]);
+                bandWide_[i]+=bandHighAlpha_*(sample-bandWide_[i]);
+                for(int band=0;band<room82::bands;++band)
+                    bandGain_[band][i]+=slew_*(
+                        targetBandGain_[band][i]-bandGain_[band][i]);
+                const float low=bandLow_[i],wide=bandWide_[i];
+                // A frequency-dependent loop gain models different room
+                // absorption/RT60 for each of the 8 delay lines.
+                mix[i]=low*bandGain_[0][i]+
+                       (wide-low)*bandGain_[1][i]+
+                       (sample-wide)*bandGain_[2][i];
+            }else
+#endif
+            {
+                lowpass_[i]+=dampCoeff_*(sample-lowpass_[i]);
+                if(realtimeMode_)gain_[i]+=slew_*(targetGain_[i]-gain_[i]);
+                mix[i]=lowpass_[i]*gain_[i];
+            }
             y[i]=sample;
-            mix[i]=lowpass_[i]*gain_[i];
         }
         // Fast orthogonal Hadamard transform, three fixed butterfly stages.
         // 8x8 is exactly normalized by 1/sqrt(8) and cannot grow energy.
@@ -136,6 +182,22 @@ private:
         std::array<float,lineCount> gains{};
         float damping=0.f;
     };
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+    struct BandProgram {
+        std::array<std::array<float,lineCount>,room82::bands> gains{};
+        room82::Bands estimatedRt60{};
+    };
+    BandProgram prepareBandProgram(room82::Family family) const noexcept {
+        BandProgram program{};
+        program.estimatedRt60=room82::eyringRt60(family);
+        for(int band=0;band<room82::bands;++band)
+            for(int i=0;i<lineCount;++i)
+                program.gains[band][i]=std::exp(-6.9077553f*
+                    static_cast<float>(delay_[i])/
+                    (sampleRate_*program.estimatedRt60[band]));
+        return program;
+    }
+#endif
     Coefficients makeCoefficients(float rt60,float cutoff) const noexcept {
         Coefficients prepared{};
         constexpr float pi=3.14159265358979323846f;
@@ -164,6 +226,14 @@ private:
     static_assert((ringFrames&(ringFrames-1))==0);
     std::array<std::array<float,ringFrames>,lineCount> memory_{};
     std::array<float,lineCount> lowpass_{};
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+    std::array<float,lineCount> bandLow_{},bandWide_{};
+    std::array<BandProgram,3> preparedBands_{};
+    std::array<std::array<float,lineCount>,room82::bands>
+        bandGain_{},targetBandGain_{};
+    float bandLowAlpha_=0.f,bandHighAlpha_=0.f;
+    bool multibandRoom_=false;
+#endif
     std::array<float,lineCount> gain_{},targetGain_{};
     std::array<Coefficients,3> prepared_{};
     std::array<int,lineCount> delay_{};

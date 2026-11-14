@@ -28,6 +28,15 @@ if(ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS AND
    NOT ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE)
   message(FATAL_ERROR "P8 requires the isolated P7.5 music-safe research profile")
 endif()
+# P8.2 six-wall frequency-dependent material + shared LF/MID/HF late RT60.
+# Separate from the P8.1 listening checkpoint and always OFF publicly.
+option(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM
+       "Enable independently gated P8.2 six-surface 3-band research room"
+       OFF)
+if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM AND
+   NOT ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS)
+  message(FATAL_ERROR "P8.2 room requires P8.1 transparent-bass experiment")
+endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -227,7 +236,8 @@ target_compile_definitions(ARMixConsole PRIVATE
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P71_DIRECT_XYZ_RESEARCH=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT}>:SONKU_P72_NATIVE_XYZ_RT=1>
     $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE}>:SONKU_P75_MUSIC_SAFE_RESEARCH=1>
-    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>)
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P8_TRANSPARENT_BASS}>:SONKU_P80_TRANSPARENT_BASS_RESEARCH=1>
+    $<$<BOOL:${ARMIX_SONKU_EXPERIMENTAL_P82_ROOM}>:SONKU_P82_MULTIBAND_ROOM_RESEARCH=1>)
 if(WIN32)
   # Windows retains its proven ASIO-first / WASAPI / static WebView2 distribution.
   # Never link Windows loader or sound APIs into macOS/Linux builds.
@@ -374,6 +384,26 @@ if(BUILD_TESTING)
             SONKU_P80_TRANSPARENT_BASS_RESEARCH=1)
         add_test(NAME NativeSonKuP80TransparentBassStereoPhaseAndRoomDiagnostic
             COMMAND ARMixSonKuP80TonalEvidenceTests)
+        if(ARMIX_SONKU_EXPERIMENTAL_P82_ROOM)
+          # This is the actual live JUCE SonKu instance, not an offline
+          # room-only approximation. Preserve P8.1 as an unmodified fallback.
+          target_compile_definitions(ARMixSonKuP72NativeTests PRIVATE
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          target_compile_definitions(ARMixSonKuP80TonalEvidenceTests PRIVATE
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          add_executable(ARMixSonKuP82RoomTests
+              tests/sonku_p82_sixsurface_multiband_room_test.cpp)
+          target_compile_features(ARMixSonKuP82RoomTests PRIVATE cxx_std_20)
+          target_compile_definitions(ARMixSonKuP82RoomTests PRIVATE
+              SONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+              SONKU_P71_DIRECT_XYZ_RESEARCH=1
+              SONKU_P72_NATIVE_XYZ_RT=1
+              SONKU_P75_MUSIC_SAFE_RESEARCH=1
+              SONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+              SONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          add_test(NAME NativeSonKuP82SixWallThreeBandRoomTimingDecayAndParity
+              COMMAND ARMixSonKuP82RoomTests)
+        endif()
       endif()
     endif()
   endif()
