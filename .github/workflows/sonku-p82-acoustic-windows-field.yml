@@ -200,7 +200,11 @@ jobs:
             monoCenterPreserved = $true
             p82NativeAdapterTest = 'REQUIRED'
             physicalHeadphoneQualified = $false
-            fullAudioEditorAvailable = $false
+            fullAudioEditorAvailable = $true
+            fullAudioEditorType = 'JUCE_NATIVE_FX_EDITOR_SPSC_AUDIO_APPLIED'
+            directMidSourcePreserved = $true
+            defaultVirtualSpeakerSpreadDegrees = 175
+            sideOnlySpatialRoomReturn = $true
             publicRelease = $false
           } -Force
           $p | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
@@ -210,6 +214,12 @@ jobs:
           & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
+          if (-not $p.imersipResearch.fullAudioEditorAvailable -or
+              -not $p.imersipResearch.directMidSourcePreserved -or
+              $p.imersipResearch.defaultVirtualSpeakerSpreadDegrees -ne 175 -or
+              -not $p.imersipResearch.sideOnlySpatialRoomReturn) {
+            throw 'IMERSIP_V2_GUI_OR_DIRECT_STEREO_CONTRACT_MISSING'
+          }
           if (-not $p.sonkuExperiment.enabled -or
               -not $p.sonkuExperiment.musicSafeStereo -or
               -not $p.sonkuExperiment.p8TransparentBass -or
