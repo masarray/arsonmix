@@ -27,17 +27,22 @@ struct PlayerShowTransitionPolicy final {
     // A late timer check still accepts <=0 remaining for a safe next-song
     // fade-in, and a zero-duration media never auto-transitions.
     static bool armBeforeEnd(double seconds,double duration,
-                             int fadeMilliseconds,
-                             double tickSeconds) noexcept {
+                             int fadeMilliseconds,double tickSeconds,
+                             int tempoPercent=100) noexcept {
         if(!std::isfinite(seconds)||!std::isfinite(duration)||
            !std::isfinite(tickSeconds)||duration<=0. ||
            seconds<0. || fadeMilliseconds<0 ||
            fadeMilliseconds>3000 || tickSeconds<=0. ||
-           tickSeconds>0.5)return false;
+           tickSeconds>0.5 || tempoPercent<80 || tempoPercent>120)
+            return false;
         const double remaining=duration-seconds;
-        const double early=static_cast<double>(fadeMilliseconds)/1000.+
-                           tickSeconds;
-        return remaining<=early && remaining>=-tickSeconds;
+        // The UI clock counts ORIGINAL MEDIA seconds. One real second
+        // consumes tempo/100 source seconds. Ignore this and a 120% song
+        // runs out before its requested fade can finish.
+        const double speed=static_cast<double>(tempoPercent)/100.;
+        const double early=(static_cast<double>(fadeMilliseconds)/1000.+
+                            tickSeconds)*speed;
+        return remaining<=early && remaining>=-tickSeconds*speed;
     }
     // Loop A-B is a rehearsal-only opt-in. Never attempt microscopic
     // segments or a fade longer than the segment: require a real period of
