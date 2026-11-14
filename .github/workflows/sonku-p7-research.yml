@@ -78,6 +78,11 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_p7_cpu.cpp -o /tmp/p71-bench
           /tmp/p71-bench | grep SONKU_P71_CPU | tee sonku-p7-evidence/SONKU-P71-CPU-REPORT.txt
+      - name: P7.1 controlled interleaved old-vs-fast FIR benchmark (informational)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_p71_hotpath_benchmark.cpp -o /tmp/p71-original
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 tools/sonku_p71_hotpath_benchmark.cpp -o /tmp/p71-fast
+          python tests/sonku_p71_interleaved_cpu_audit.py /tmp/p71-original /tmp/p71-fast sonku-p7-evidence
       - name: Upload 8 matched lossless WAV and JSON/CPU evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
