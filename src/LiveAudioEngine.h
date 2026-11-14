@@ -10,7 +10,7 @@
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterLoudness.h"
-#include "../engine/player/NativePlayerDeck.h"
+#include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
@@ -1864,6 +1864,7 @@ public:
         }
         playerChannelId_=result.created;
         playerFile_=file;
+        playerPendingFile_={};
         playerBoundEpoch_=dryRoutingLab_.epoch();
         playerDeck_.load(file,true); // async worker; real PLAYING only after PCM
         // The fresh PLAY gesture itself authorizes same verified output.
@@ -1895,8 +1896,41 @@ public:
         // the decoder worker consumes more/fewer backing-track PCM frames.
         return playerDeck_.setPitchTempo(semitones,percent);
     }
+    // Preloading never touches the native graph or opens another physical
+    // output. Both decoded sources ultimately share PLAYER A ChannelId.
+    bool preloadPlayerMusic(const juce::File& file,int key,int tempo) {
+        if(playerFile_==juce::File{} || file==playerFile_ ||
+           playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+           !directFence_.permitted() ||
+           !dryRoutingLab_.channelIdPhysicalPcmActive())
+            return false;
+        return playerDeck_.preload(file,key,tempo);
+    }
+    bool queuePlayerTransition(const juce::File& file,int key,int tempo,
+                               int fadeMilliseconds=180) {
+        if(playerFile_==juce::File{} || !file.existsAsFile() ||
+           !file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+           playerBoundEpoch_!=dryRoutingLab_.epoch() ||
+           !directFence_.permitted() ||
+           !dryRoutingLab_.channelIdPhysicalPcmActive())
+            return false;
+        if(!playerDeck_.queueTransition(file,key,tempo,fadeMilliseconds))
+            return false;
+        playerPendingFile_=file;
+        return true;
+    }
+    bool servicePlayerTransition() {
+        if(!playerDeck_.service())return false;
+        if(playerPendingFile_!=juce::File{})
+            playerFile_=playerPendingFile_;
+        playerPendingFile_={};
+        return true;
+    }
     void playerPause() noexcept {playerDeck_.pause();}
-    void playerStop() noexcept {playerDeck_.stop();}
+    void playerStop() noexcept {
+        playerPendingFile_={};
+        playerDeck_.stop();
+    }
     bool playerSeekSeconds(double seconds) noexcept {
         return playerFile_!=juce::File{} &&
                playerDeck_.seekSeconds(seconds);
@@ -1917,6 +1951,8 @@ public:
         }
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("state",state);
+        data->setProperty("transitionPending",playerDeck_.transitionPending());
+        data->setProperty("crossfading",playerDeck_.transitionActive());
         data->setProperty("title",status.title);
         data->setProperty("error",status.error);
         data->setProperty("currentSeconds",status.deviceRate>0?
@@ -2801,9 +2837,10 @@ private:
     std::atomic<std::uint64_t> fxMovePendingOrder_ {Graph::canonicalOrder};
     bool attached_ = false;
     juce::AudioBuffer<float> scratch_;
-    armix::player::NativePlayerDeck playerDeck_; // one asynchronous decoder, no device owner
+    armix::player::NativePlayerShowDeck playerDeck_; // A/B workers, ONE mixer PCM source
     armix::mixer::ChannelId playerChannelId_{}; // CONTROL only, native identity
-    juce::File playerFile_; // CONTROL only, last explicitly selected song
+    juce::File playerFile_; // CONTROL only, last active song
+    juce::File playerPendingFile_; // CONTROL only, next decoded song
     std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
     armix::dsp::NativeMasterLoudness masterLoudness_;
