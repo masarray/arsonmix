@@ -55,6 +55,7 @@ public:
         audioSettings_=accepted_;
         modeFade_=1.f;
         modePhase_=ModePhase::Stable;
+        modeTransitionPending_.store(false,std::memory_order_release);
         modeStep_=static_cast<float>(1./(rate*.012));
 #endif
     }
@@ -86,8 +87,10 @@ public:
                 complete_.push({stagedModeEdit_.requestId,
                                 stagedModeEdit_.settings,ok});
                 modePhase_=ModePhase::FadingIn;
-            }else if(modePhase_==ModePhase::FadingIn && modeFade_==1.f)
+            }else if(modePhase_==ModePhase::FadingIn && modeFade_==1.f){
                 modePhase_=ModePhase::Stable;
+                modeTransitionPending_.store(false,std::memory_order_release);
+            }
         }
 #endif
         observedAzimuthDegrees_.store(static_cast<float>(core_.azimuthDegrees()),
@@ -102,11 +105,15 @@ public:
 #endif
         if(!queue_.pop(next))return;
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
-        if(next.settings.renderMode!=audioSettings_.renderMode ||
-           next.settings.musicCompatibleLowFrequency!=
+        // Logical/unpublished FX has NO callback: apply directly so
+        // an offline .smix edit can be saved instead of hanging in fade.
+        if(published_ &&
+           (next.settings.renderMode!=audioSettings_.renderMode ||
+            next.settings.musicCompatibleLowFrequency!=
                 audioSettings_.musicCompatibleLowFrequency ||
-           next.settings.headYawDegrees!=audioSettings_.headYawDegrees){
+            next.settings.headYawDegrees!=audioSettings_.headYawDegrees)){
             stagedModeEdit_=next;
+            modeTransitionPending_.store(true,std::memory_order_release);
             modePhase_=ModePhase::FadingOut;
             return; // ACK only after the actual audio-side mode switch
         }
@@ -138,7 +145,11 @@ public:
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return queue_.empty()&&complete_.empty();
+        return queue_.empty()&&complete_.empty()
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+            && !modeTransitionPending_.load(std::memory_order_acquire)
+#endif
+            ;
     }
     // CONTROL only; state is accepted, not speculative or PCM-owned.
     void getStateInformation(juce::MemoryBlock& dest) override {
@@ -210,7 +221,10 @@ public:
         next.spatialMix=in.readFloat();
         next.outputTrim=in.readFloat();
         const int moving=in.readByte(),clockwise=in.readByte();
-        if(moving>1||clockwise>1)return false;
+        // JUCE readByte() may return a SIGNED char. Reject -1/0xFF,
+        // not just values above 1, for every v1/v2/v3/v4 restoration.
+        if((moving!=0&&moving!=1)||(clockwise!=0&&clockwise!=1))
+            return false;
         next.moving=moving!=0;
         next.clockwise=clockwise!=0;
         if(version>=2) {
@@ -226,7 +240,7 @@ public:
         if(version==4){
             next.renderMode=in.readInt();
             const int music=in.readByte();
-            if(music>1)return false;
+            if(music!=0&&music!=1)return false;
             next.musicCompatibleLowFrequency=music!=0;
             next.headYawDegrees=in.readFloat();
         }
@@ -255,6 +269,7 @@ private:
     Edit stagedModeEdit_{};
     armix::sonku::Settings audioSettings_{};
     ModePhase modePhase_=ModePhase::Stable;
+    std::atomic<bool> modeTransitionPending_{false};
     float modeFade_=1.f,modeStep_=0.f;
 #endif
     bool ready_=false;

@@ -1,5 +1,7 @@
 name: SonKu P8.3 actual native mixer portable research x64
 # Isolated opt-in full JUCE app build; no public installer, tag or release.
+# This exact-head candidate additionally gates signed-byte v4/v1-v3
+# corruption rejection and unpublished/logical FX edit completion.
 # Historical P8.2 physical FAT remains manual; do not launch duplicate
 # full Windows JUCE builds for native P8.3 milestone source edits.
 on:

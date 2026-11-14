@@ -72,3 +72,17 @@ ran \`NativeSonKuP83JuceV4AudioAckLegacyRestoreAndHeadYaw\`,
 passed source/legacy regression tests, verified executable PE/GUI
 resources, and generated an exact source-commit-provenanced portable
 artifact. Unrelated P7.x/P8.0 Windows outputs do not contain P8.3.
+
+## Real Windows candidate gate correction — strict native state bytes
+
+The first full Windows build successfully compiled the actual
+`ARMixConsole` plus P8.3 JUCE test executable, and 7/8 focused tests
+passed. The 8th revealed a real bug: JUCE `readByte()` can return
+signed -1 for corrupt `0xFF`, so a `>1` boolean check accidentally
+accepted it. The v4 and inherited v1-v3 boolean admissions now
+require **exactly 0 or 1**. A dedicated logical/unpublished editor
+test also prevents queued mode edits from awaiting a nonexistent audio
+callback, while published realtime edits require the full 12 ms
+fade-and-audio ACK transaction. State snapshots are now blocked by an
+atomic pending-mode fence during the transition. This corrected
+candidate must pass all 8 Windows CTests before packaging.

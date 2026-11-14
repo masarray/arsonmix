@@ -51,6 +51,7 @@ int main(){
     auto p=std::make_unique<SonKuSpatialProcessor>();
     p->prepareToPlay(48000.,128);
     assert(p->isReady());
+    p->sealForRealtime(); // explicitly published graph: require audio ACK
     assert(p->preparedReflectionProfile()==
         armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch);
     Settings s=p->acceptedSettings();
@@ -84,6 +85,7 @@ int main(){
     assert(!p->pollCompletion(done)); // queued is NEVER applied
     render(*p,0);
     assert(!p->pollCompletion(done)); // fade-out not yet switched
+    assert(!p->stateSnapshotQuiescent()); // staged edit not silently savable
     assert(p->acceptedSettings().renderMode==0);
     assert(complete(*p,101,1));
     assert(p->acceptedSettings().renderMode==2);
@@ -132,6 +134,22 @@ int main(){
     auto* data=static_cast<std::uint8_t*>(corrupt.getData());
     data[54]=0xff;data[55]=0xff;data[56]=0xff;
     assert(!broken->restoreUnpublishedState(corrupt.getData(),59));
+    // The unpublished/logical FX control path has no audio callback.
+    // Mode transition MUST complete immediately there, not await a fade.
+    auto offline=std::make_unique<SonKuSpatialProcessor>();
+    offline->prepareToPlay(48000.,128);
+    assert(offline->queueSettings(s,901));
+    offline->consumeRealtimeEdits();
+    SonKuSpatialProcessor::Completion saved{};
+    assert(offline->pollCompletion(saved)&&saved.applied&&saved.requestId==901);
+    assert(offline->stateSnapshotQuiescent());
+    assert(offline->acceptedSettings().renderMode==0);
+    auto offlineSpeaker=s;offlineSpeaker.renderMode=2;
+    offlineSpeaker.musicCompatibleLowFrequency=true;
+    assert(offline->queueSettings(offlineSpeaker,902));
+    offline->consumeRealtimeEdits(); // no native audio clock available
+    assert(offline->pollCompletion(saved)&&saved.applied&&saved.requestId==902);
+    assert(offline->acceptedSettings().renderMode==2);
     // Exact legacy state shapes are still accepted and upgrade to v4 defaults.
     juce::MemoryBlock v3;
     {juce::MemoryOutputStream out(v3,false);
