@@ -51,7 +51,12 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    s.sourceDistanceMeters*Math.cos(s.directElevationDegrees*Math.PI/180)>=.7 &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)>=.5 &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
-       roomHeights[s.spacePreset]-.5));
+       roomHeights[s.spacePreset]-.5)) &&
+ (s.renderMode===undefined || (
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=2 &&
+    typeof s.musicCompatibleLowFrequency==="boolean" &&
+    Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
+    (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
 const backend=()=>window.__JUCE__?.backend;
 const native=()=>typeof backend()?.emitEvent==="function";
 const snapshot=()=>window.__ARMIX_NATIVE_M2__?.fxEditorState?.()||
@@ -139,6 +144,15 @@ root.innerHTML=[
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">R</text></g>',
  '</svg><div class="sk-stage-caption">HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz</div>',
  '</div><aside class="sk-controls"><div class="sk-control-title">SPATIAL ENGINE <span class="sk-engine-led">HRTF ACTIVE</span></div>',
+ '<div id="skRenderRow" class="sk-render-row" hidden>',
+ '<span class="sk-render-label">RENDER MODE · P8.3 TEST</span>',
+ '<select id="skRenderMode" aria-label="Native SonKu P8.3 renderer">',
+ '<option value="music">MUSIC BED · P8.2</option>',
+ '<option value="mono">MONO OBJECT · LEFT INPUT</option>',
+ '<option value="physical">SPEAKER MONITOR · PHYSICAL</option>',
+ '<option value="musiclf">SPEAKER MONITOR · MUSIC LF</option>',
+ '</select><label class="sk-yaw" for="skHeadYaw">HEAD YAW <output id="skYawValue">0°</output>',
+ '<input id="skHeadYaw" type="range" min="-180" max="180" step="5" value="0"/></label></div>',
  '<div class="sk-buttons"><button type="button" id="skMotion">ORBIT</button><button type="button" id="skDirection">CLOCKWISE</button></div>',
  '<div class="sk-rotary-grid">',
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
@@ -173,7 +187,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -190,6 +204,15 @@ const context=()=>{
 };
 function render(){
  const s=draft;
+ const row=$("skRenderRow");row.hidden=!p83Capable;
+ if(p83Capable){
+  const v=s.renderMode===1?"mono":s.renderMode===2?
+    (s.musicCompatibleLowFrequency?"musiclf":"physical"):"music";
+  $("skRenderMode").value=v;
+  $("skHeadYaw").value=String(s.headYawDegrees);
+  $("skYawValue").textContent=Math.round(s.headYawDegrees)+"°";
+ }
+ speakerNodes[1].style.display=p83Capable&&s.renderMode===1?"none":"";
  $("skMotion").textContent=s.moving?"ORBIT":"STATIC";
  $("skMotion").setAttribute("aria-pressed",String(s.moving));
  $("skDirection").textContent=s.clockwise?"CLOCKWISE":"COUNTER-CW";
@@ -231,13 +254,18 @@ function render(){
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p82MultibandRoom
+ root.querySelector(".sk-stage-caption").textContent=p83Capable&&s.renderMode===2?
+  (s.musicCompatibleLowFrequency?"P8.3 MUSIC LF480 · SOURCE-POSITIONED COMPROMISE":
+    "P8.3 PHYSICAL 2×2 · MEASURED HRIR"):
+  p83Capable&&s.renderMode===1?"P8.3 MONO OBJECT · LEFT INPUT":
+  p82MultibandRoom
   ?"HEADPHONES · P8.2 SIX-WALL 3-BAND ROOM · EXPERIMENT"
   :p8TransparentBass?"HEADPHONES · P8 STEREO BASS + MEASURED 3D HRTF · EXPERIMENT"
   :musicSafeStereo?"HEADPHONES · MEASURED CENTER 3D HRTF + MUSIC SIDE · EXPERIMENT"
   :xyzCapable?"HEADPHONES · MEASURED 3D HRIR · 44.1 / 48 kHz"
   :"HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz";
  $("skSpread").closest("label").querySelector(".sk-param-name").textContent=
+  p83Capable&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
  root.querySelector(".sk-guide").textContent=musicSafeStereo
   ?"Stereo WIDTH adjusts preserved L/R SIDE, not two separately located HRIR emitters"
@@ -255,7 +283,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p82MultibandRoom?"NATIVE P8.2 ROOM · RESEARCH":
+  (p83Capable&&s.renderMode!==0?"NATIVE P8.3 SPEAKERS · RESEARCH":
+   p82MultibandRoom?"NATIVE P8.2 ROOM · RESEARCH":
    p8TransparentBass?"NATIVE P8 ACOUSTICS · RESEARCH":
    musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
   "NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
@@ -331,7 +360,10 @@ function requestSnapshot(force=false){
 // issuing the next. Never fill the DSP SPSC queue with raw pointer events.
 const LIVE_INTERVAL_MS=40;
 const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
- (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees);
+ (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees) &&
+ (!p83Capable || (a.renderMode===b.renderMode &&
+   a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
+   a.headYawDegrees===b.headYawDegrees));
 function send(next,continuous=false){
  if(!valid(next))return false;
  draft={...next};render();
@@ -395,7 +427,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    r.channelId!==c.channelId||r.instanceId!==c.instanceId||
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
- const measured=r.schemaVersion===3 &&
+ const measured=(r.schemaVersion===3 || r.schemaVersion===4) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -403,6 +435,15 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(!valid(incoming))return;
  // Activation happens only after a fully identity-bound native readback.
  xyzCapable=measured;
+ p83Capable=r.schemaVersion===4 && r.p83SpeakerModes===true &&
+   Number.isInteger(incoming.renderMode) &&
+   typeof incoming.musicCompatibleLowFrequency==="boolean" &&
+   Number.isFinite(incoming.headYawDegrees);
+ if(!p83Capable){
+  delete incoming.renderMode;
+  delete incoming.musicCompatibleLowFrequency;
+  delete incoming.headYawDegrees;
+ }
  musicSafeStereo=measured && r.musicSafeStereo===true;
  p8TransparentBass=musicSafeStereo && r.p8TransparentBass===true;
  p82MultibandRoom=p8TransparentBass && r.p82MultibandRoom===true;
@@ -433,6 +474,24 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
  drag=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
  if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
+$("skRenderMode").addEventListener("change",()=>{
+ if(!p83Capable)return;
+ const v=$("skRenderMode").value;
+ const mode=v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
+ const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
+ if(mode!==0){
+  scene.moving=false;
+  scene.startAzimuthDegrees=0;
+  if(mode===2 && (scene.stereoSpreadDegrees<20 ||
+                  scene.stereoSpreadDegrees>120))
+   scene.stereoSpreadDegrees=60;
+ }
+ if(!send(scene))render();
+});
+$("skHeadYaw").addEventListener("change",()=>{
+ if(!p83Capable)return;
+ if(!send({...draft,headYawDegrees:Number($("skHeadYaw").value)}))render();
+});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
@@ -581,7 +640,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;musicSafeStereo=false;p8TransparentBass=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;musicSafeStereo=false;p8TransparentBass=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
