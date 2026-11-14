@@ -10,7 +10,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
 <link rel="stylesheet" href="assets/mixer-console-foundation.css?v=css-owner-v15">
 <link rel="stylesheet" href="assets/mixer-channel-grid.css?v=css-owner-v15">
-<link rel="stylesheet" href="assets/mixer-section-controls.css?v=gain-metal-lcd-v1">
+<link rel="stylesheet" href="assets/mixer-section-controls.css?v=css-owner-v19">
 <link rel="stylesheet" href="assets/mixer-section-layout.css?v=css-owner-v15">
 <link rel="stylesheet" href="assets/mixer-hardware-artwork.css?v=css-owner-v10">
 <link rel="stylesheet" href="assets/mixer-v3-layout-contract.css?v=css-owner-v15">
@@ -336,7 +336,7 @@ function sectionGain(t){
  return '<div class="section fx-section is-gain-view"><div class="subhead">'+
   '<span class="sym">G</span><span class="hint">INPUT GAIN</span></div>'+
   '<div class="gain-view-body"><label class="gain-dial" style="--gain-rotation:'+(value*5.625).toFixed(2)+'deg" title="Digital input gain before FX · native changes require acknowledged PCM">'+
-  '<span class="gain-dial-arc" aria-hidden="true"></span>'+ 
+  '<span class="gain-dial-arc" aria-hidden="true"></span>'+
   '<span class="gain-dial-face" aria-hidden="true"></span>'+
   '<span class="gain-dial-pointer" aria-hidden="true"></span>'+
   '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></label>'+
