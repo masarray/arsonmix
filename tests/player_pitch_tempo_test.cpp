@@ -139,9 +139,11 @@ void testSmoothTempoEdits(int sampleRate) {
     Processor processor;
     assert(processor.prepare(sampleRate,{0,100}));
     constexpr int quantum=512;
+    const int blocks=static_cast<int>(std::ceil(
+        0.8*sampleRate/quantum)); // same 800 ms across every sample rate
     processor.setControls({0,80});
     double prior=100.;
-    for(int block=0;block<48;++block) {
+    for(int block=0;block<blocks;++block) {
         const int read=processor.nextInputFrames(quantum);
         assert(read>0 && read<=quantum);
         const double current=processor.smoothedTempoPercent();
@@ -152,7 +154,7 @@ void testSmoothTempoEdits(int sampleRate) {
     assert(std::abs(prior-80.)<0.05);
     processor.setControls({0,120});
     prior=80.;
-    for(int block=0;block<48;++block) {
+    for(int block=0;block<blocks;++block) {
         const int read=processor.nextInputFrames(quantum);
         assert(read>0 && read<=static_cast<int>(quantum*1.2)+1);
         const double current=processor.smoothedTempoPercent();
