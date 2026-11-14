@@ -30,6 +30,9 @@ jobs:
           g++ $FLAGS tests/sonku_p84_spatial_impulse_evidence_test.cpp -o /tmp/p84-spatial
           /tmp/p84-spatial | tee /tmp/p84-spatial.log
           grep -q '^PASS P84 SPATIAL SOURCE:' /tmp/p84-spatial.log
+          g++ $FLAGS tests/sonku_p84_live_v5_modes_source_test.cpp -o /tmp/p84-live-mode
+          /tmp/p84-live-mode | tee /tmp/p84-live-mode.log
+          grep -q '^PASS P84 V5 NATIVE SOURCE:' /tmp/p84-live-mode.log
       - name: Native JS and source GUI capability checks
         run: |
           set -euo pipefail
@@ -142,6 +145,13 @@ jobs:
           foreach ($test in $required) {
             if ($test -notin $available) { throw "SONKU_P82_MISSING_CTEST:$test" }
           }
+      - name: Fail fast — compile and execute real JUCE v5 state + PCM ACK first
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2 --target ARMixSonKuP84NativeTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build -C Release --output-on-failure -R '^NativeSonKuP84JuceV5AudioAckLegacySafeRestore$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
         shell: pwsh
         run: |
