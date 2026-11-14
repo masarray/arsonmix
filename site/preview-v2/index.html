@@ -2598,7 +2598,7 @@ sendControlSurface.addEventListener('pointercancel',e=>finishSendKnob(e,true));
 const wheelResidue=new WeakMap();
 document.querySelector('.console-body').addEventListener('wheel',e=>{
  if(e.ctrlKey||wireGesture||faderGesture||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
- const target=e.target.closest?.('.wire-pot,.fader-box,input[type="range"]');
+ const target=e.target.closest?.('.wire-pot,.fader-box,.gain-dial,input[type="range"]');
  if(!target)return;
  const input=target.matches?.('input[type="range"]')?target:
   target.querySelector?.('input[type="range"]');
