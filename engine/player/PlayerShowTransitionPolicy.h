@@ -9,6 +9,22 @@
 // Show transport decisions only; deterministic and allocation-free on
 // inspection paths. Never owns JUCE, an audio device, or a DSP callback.
 namespace armix::player {
+// One outstanding Auto Next attempt per logical playback segment. A/B
+// decoders may share numeric generations, so generation XOR is not a valid
+// identity for queued repeats. Only a successful native ACK or explicit
+// operator gesture rearms the next segment; errors do not busy-loop.
+class PlayerAutoAdvanceGate final {
+public:
+    bool claim() noexcept {
+        if(claimed_)return false;
+        claimed_=true;
+        return true;
+    }
+    void rearm() noexcept {claimed_=false;}
+    bool claimed() const noexcept {return claimed_;}
+private:
+    bool claimed_=false; // CONTROL thread only; never touched by RT
+};
 struct PlayerShowTransitionPolicy final {
     // Manual selection/explicit queue always wins over sequential Auto Next.
     // queuedIndex=-1 when there is no valid queued song.
