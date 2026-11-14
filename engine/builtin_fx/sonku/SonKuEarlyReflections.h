@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include "SonKuMeasuredHrir.h"
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+#include "SonKuRoomMaterials.h"
+#endif
 // The full licensed multi-elevation dataset and geometry are excluded from
 // default/public builds at preprocess time: no extra DSP or data cost.
 #if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
@@ -60,6 +63,15 @@ public:
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         rate_=static_cast<float>(rate);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        multibandRoom_=profile==SonKuReflectionProfile::SixSurfaceKemarResearch;
+        // All per-wall material pressure coefficients and crossover poles
+        // are prepared OFF the realtime callback; audio only multiplies.
+        preparedWallPressure_=room82::preparePressure();
+        constexpr double pi=3.14159265358979323846;
+        roomLowAlpha_=static_cast<float>(1.-std::exp(-2.*pi*250./rate));
+        roomHighAlpha_=static_cast<float>(1.-std::exp(-2.*pi*4800./rate));
+#endif
         delaySlew_=static_cast<float>(1.-std::exp(-1./(rate*0.024)));
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.012)));
         amountSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.010)));
@@ -183,6 +195,15 @@ public:
 #endif
         if(!active() && enabled && amount>0.f){
             validFrames_=0; lowpass_.fill(0.f);
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+            // No stale material-filter energy after OFF→ON. Small, fixed
+            // 2-source×6-wall state reset; never clear the 8192-frame ring.
+            if(multibandRoom_)
+                for(auto& source:tap_)for(auto& tap:source) {
+                    tap.bandLowL=tap.bandWideL=0.f;
+                    tap.bandLowR=tap.bandWideR=0.f;
+                }
+#endif
         }
         if(enabled){
             geometry_=g;custom_=true;shape_=SonKuRoomShape::Square;
@@ -219,8 +240,17 @@ public:
         for(int s=0;s<sourceCount;++s){
             // Absorption on the reflected path only; direct measured HRTF
             // stays unchanged. Mild low pass preserves source intelligibility.
-            lowpass_[s]+=.27f*(x[s]-lowpass_[s]);
-            history_[s][write_]=.70f*x[s]+.30f*lowpass_[s];
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+            if(multibandRoom_) {
+                // The material response belongs to EACH directional image
+                // path; old prefilter-before-every-wall loses boundary detail.
+                history_[s][write_]=x[s];
+            }else
+#endif
+            {
+                lowpass_[s]+=.27f*(x[s]-lowpass_[s]);
+                history_[s][write_]=.70f*x[s]+.30f*lowpass_[s];
+            }
         }
         amount_+=amountSlew_*(amountTarget_-amount_);
         // Bound shutdown to a finite 10-12 time-constant fade, then
@@ -336,6 +366,24 @@ public:
                         second.delayL=p.delayL;second.delayR=p.delayR;
                         second.gainL=p.gainL;second.gainR=p.gainR;
                     }
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+                    if(multibandRoom_) {
+                        // Same minimum-phase spectral boundary on BOTH
+                        // measured ears. This preserves HRTF ITD/ILD while
+                        // giving left/front/floor/ceiling distinct materials.
+                        // Bands are LF<250, 250..4800, HF>4800Hz.
+                        const auto bandpass=[&](float sample,
+                            float& low,float& wide) noexcept -> float {
+                            low+=roomLowAlpha_*(sample-low);
+                            wide+=roomHighAlpha_*(sample-wide);
+                            return p.materialPressure[0]*low+
+                                   p.materialPressure[1]*(wide-low)+
+                                   p.materialPressure[2]*(sample-wide);
+                        };
+                        l=bandpass(l,p.bandLowL,p.bandWideL);
+                        r=bandpass(r,p.bandLowR,p.bandWideR);
+                    }
+#endif
                     output.left+=p.gainL*l;
                     output.right+=p.gainR*r;
                 }else{
@@ -360,6 +408,10 @@ private:
         float targetGainL=0.f,targetGainR=0.f;
         using EarBank=std::array<std::array<float,hrir::taps>,2>;
         EarBank kernel{},targetKernel{};
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+        room82::Bands materialPressure{1.f,1.f,1.f};
+        float bandLowL=0.f,bandWideL=0.f,bandLowR=0.f,bandWideR=0.f;
+#endif
     };
     float delayed(int source,float delay) const noexcept {
         // Fractional delay interpolated in a fixed-size power-of-two ring.
@@ -422,9 +474,19 @@ private:
                 // New distance studies use fixed 1.6m acoustic reference:
                 // pressure at a reflected path falls with 1/path. Legacy
                 // calculations are untouched at the accepted radius.
-                const float level=.28f*walls[wall]*
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+                const float wallGain=multibandRoom_?1.f:walls[wall];
+#else
+                const float wallGain=walls[wall];
+#endif
+                const float level=.28f*wallGain*
                                   ((custom_?1.6f:sourceDistance)/path);
                 auto& tap=tap_[source][wall];
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+                if(multibandRoom_)tap.materialPressure=
+                    preparedWallPressure_[room82::index(
+                        room82::familyForWidth(geometry_.widthMeters))][wall];
+#endif
                 tap.targetDelayL=std::clamp(common+(directionalHrir_?0.f:earDelta),1.f,
                                            static_cast<float>(ringFrames-3));
                 tap.targetDelayR=std::clamp(common-(directionalHrir_?0.f:earDelta),1.f,
@@ -484,6 +546,11 @@ private:
                     const auto arrival=sixsurface::image(
                         heights,horizontalDistance,sourceAz,boundary,rate_);
                     auto& p=tap_[source][wallCount+i];
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+                    if(multibandRoom_)p.materialPressure=
+                        preparedWallPressure_[room82::index(
+                            room82::familyForWidth(geometry_.widthMeters))][wallCount+i];
+#endif
                     // Measured HRIR already contains directional ITD/ILD.
                     // No invented extra ear delay, EQ or pseudo elevation.
                     const float delay=std::clamp(arrival.delaySamples,1.f,
@@ -508,6 +575,11 @@ private:
     std::array<std::array<float,ringFrames>,sourceCount> history_{};
     std::array<std::array<Tap,maxWallCount>,sourceCount> tap_{};
     std::array<float,sourceCount> lowpass_{};
+#if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
+    std::array<room82::Surfaces,3> preparedWallPressure_{};
+    float roomLowAlpha_=0.f,roomHighAlpha_=0.f;
+    bool multibandRoom_=false;
+#endif
     using Bank=const std::int16_t (*)[2][hrir::taps];
     Bank hrirBank_=nullptr;
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f,kernelSlew_=0.f;
