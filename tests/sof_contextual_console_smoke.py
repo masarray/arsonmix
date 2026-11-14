@@ -38,6 +38,11 @@ def run() -> None:
             "Fader reset must inspect active SEND context instead of overwriting MAIN")
         assert "nativeGainAvailable===true" in source, (
             "Native input gain should be available only with installed capability")
+        assert "window.__ARMIX_GAIN_UNITY_DETENT__=gainUnityDetent;" in source
+        native_bridge = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
+        assert "window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)" in native_bridge
+        assert 'querySelector(".gain-lcd-digits")||lcd' in native_bridge
+        assert 'querySelector(".gain-lcd-digits")||readout' in native_bridge
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -143,7 +148,8 @@ def run() -> None:
                     # Hardware unity detent: capture ±0.6, hold until ±1.1,
                     # release above that without jitter or modifying whole strip.
                     def set_gain(value, field_type="input"):
-                        knob.evaluate("""([el, val, kind]) => {
+                        knob.evaluate("""(el, args) => {
+                          const [val, kind]=args;
                           el.value=String(val);
                           el.dispatchEvent(new Event(kind,{bubbles:true}));
                         }""", [str(value), field_type])
