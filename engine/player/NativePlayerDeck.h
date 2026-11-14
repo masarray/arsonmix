@@ -27,6 +27,7 @@ public:
     struct Status {
         State state=State::empty;
         std::uint64_t played=0,duration=0,underruns=0,generation=0;
+        std::uint64_t mediaPlayed=0,mediaDuration=0;
         bool outputReady=false;
         juce::String title,error;
         double deviceRate=0;
@@ -60,6 +61,8 @@ public:
         rate_.store(rounded>0?rounded:0,std::memory_order_release);
         const bool selected=hasFile_.load(std::memory_order_acquire);
         played_.store(0,std::memory_order_release);
+        mediaPlayed_.store(0,std::memory_order_release);
+        mediaDuration_.store(0,std::memory_order_release);
         requestedSeekSeconds_.store(cueInSeconds_.load(
             std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
@@ -92,6 +95,8 @@ public:
         }
         hasFile_.store(file!=juce::File{},std::memory_order_release);
         played_.store(0,std::memory_order_release);
+        mediaPlayed_.store(0,std::memory_order_release);
+        mediaDuration_.store(0,std::memory_order_release);
         requestedSeekSeconds_.store(cueInSeconds_.load(
             std::memory_order_acquire),std::memory_order_release);
         error_.store(0,std::memory_order_release);
@@ -139,6 +144,7 @@ public:
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);
+        mediaPlayed_.store(0,std::memory_order_relaxed);
         wake_.notify_one();
     }
     Status snapshot() const {
@@ -146,6 +152,8 @@ public:
         s.state=state_.load(std::memory_order_acquire);
         s.played=played_.load(std::memory_order_relaxed);
         s.duration=length_.load(std::memory_order_relaxed);
+        s.mediaPlayed=mediaPlayed_.load(std::memory_order_relaxed);
+        s.mediaDuration=mediaDuration_.load(std::memory_order_relaxed);
         s.underruns=ring_.underrunFrames();
         s.generation=generation_.load(std::memory_order_acquire);
         s.deviceRate=rate_.load(std::memory_order_acquire);
@@ -197,11 +205,26 @@ public:
         const auto generation=generation_.load(std::memory_order_acquire);
         if(generation!=audioGeneration_) {
             audioGeneration_=generation;
+            mediaFraction_=0.;
             gain_.reset(0.f);
         }
         const auto n=ring_.read(left,right,static_cast<std::size_t>(frames));
         if(n>0) {
             played_.fetch_add(n,std::memory_order_relaxed);
+            // Original media clock is independent of DSP-stretched PCM.
+            // The bounded producer lookahead can make this a small estimate,
+            // but never treats 80% tempo as a 25%-longer source song.
+            const auto control=unpackControls(appliedControls_.load(
+                std::memory_order_relaxed));
+            const double advance=static_cast<double>(n)*
+                control.tempoPercent/100.0+mediaFraction_;
+            const auto mediaFrames=static_cast<std::uint64_t>(
+                std::floor(advance));
+            mediaFraction_=advance-mediaFrames;
+            const auto length=mediaDuration_.load(std::memory_order_relaxed);
+            const auto present=mediaPlayed_.load(std::memory_order_relaxed);
+            mediaPlayed_.store(std::min(length,present+mediaFrames),
+                               std::memory_order_relaxed);
             state_.store(State::playing,std::memory_order_relaxed);
         }
         // A short ramp makes decoder/prebuffer start click-free. RT-owned
@@ -337,6 +360,8 @@ private:
                 std::floor(consumed*100.0/controls.tempoPercent));
             std::uint64_t written=startPlayed;
             played_.store(startPlayed,std::memory_order_release);
+            mediaPlayed_.store(consumed,std::memory_order_release);
+            mediaDuration_.store(sourceTotal,std::memory_order_release);
             // OUT=0 means physical media end. Reader/decoder owns this
             // bound; the audio callback never edits an I/O source.
             const auto readEnd=[&]() -> std::uint64_t {
@@ -410,6 +435,7 @@ private:
                 }
                 consumed+=static_cast<std::uint64_t>(nInput);
                 written+=transferred;
+                mediaDuration_.store(readEnd(),std::memory_order_release);
                 length_.store(estimateTotal(),std::memory_order_release);
                 if(!ready_.load(std::memory_order_relaxed) &&
                    (ring_.bufferedFrames()>=4096 || consumed==sourceTotal)) {
@@ -469,6 +495,7 @@ private:
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
     std::atomic<bool> hasFile_{false}; // lifecycle read: no control mutex
     std::atomic<std::uint64_t> generation_{0},played_{0},length_{0};
+    std::atomic<std::uint64_t> mediaPlayed_{0},mediaDuration_{0};
     std::atomic<std::uint32_t> readers_{0};
     std::atomic<int> rate_{0},error_{0};
     // Packed atomic makes KEY+TEMPO a single coherent command, avoiding
@@ -478,6 +505,7 @@ private:
     std::atomic<State> state_{State::empty};
     armix::dsp::RealtimeSlew64 gain_; // AUDIO only
     std::uint64_t audioGeneration_=0; // AUDIO only, no race with file thread
+    double mediaFraction_=0.; // AUDIO only, fractional original-media frame
     std::mutex wakeMutex_; // only decoding worker
     std::condition_variable wake_; // never accessed by audio callback
     // Construct LAST: workerLoop must never observe unconstructed atomics/
