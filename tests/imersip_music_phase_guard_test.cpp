@@ -96,6 +96,24 @@ void checkFiniteAndChunk(const Stereo& left,const Stereo& other) {
     }
 }
 void verifyDryAndInvalid(double rate) {
+    // The original-source stereo detector precedes the P8.2 NaN sanitizer.
+    // A broken upstream insert must not poison the moving correlation gate.
+    armix::imersip::PhaseSafeEnhancer filter;
+    assert(filter.prepare(rate));
+    Settings normal{};
+    assert(filter.setSettings(normal));
+    filter.reset();
+    for(float badSample:{
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+        std::numeric_limits<float>::max()}) {
+        const float gate=filter.captureGate(badSample,.2f);
+        assert(std::isfinite(gate)&&gate>=0.f&&gate<=1.f);
+        float l=.1f,r=-.07f;
+        filter.process(l,r,gate);
+        assert(std::isfinite(l)&&std::isfinite(r));
+    }
     Settings bad{};
     bad.venue=3;assert(!armix::imersip::valid(bad));
     bad={};bad.bassImpact=std::numeric_limits<float>::quiet_NaN();
