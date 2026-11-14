@@ -406,11 +406,16 @@ std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
 // Same source and saved user scene, light vs opt-in P2/P3/P4 full KEMAR.
 // Unlike P2 offline setAmount fixtures this exercises native setRealtimeRoom.
 std::vector<std::uint8_t> realtimeRoomAudio(int azimuth,float spread,
-                                             bool directional){
+                                             bool directional,bool sixSurface=false){
     SonKuSpatialCore dsp;
-    const auto profile=directional
+    auto profile=directional
         ?armix::sonku::SonKuReflectionProfile::DirectionalKemar
         :armix::sonku::SonKuReflectionProfile::Lightweight;
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+    if(sixSurface)profile=armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch;
+#else
+    if(sixSurface)throw std::runtime_error("P7 source must compile as research only");
+#endif
     if(!dsp.prepare(rate,profile))
         throw std::runtime_error("P6 native profile prepare failed");
     Settings scene=fixed(static_cast<float>(azimuth));
@@ -468,6 +473,30 @@ void writeP6RealtimeAudio(const std::filesystem::path& dir){
          <<"These are numerical/native scene demonstrations, NOT measured\n"
          <<"dearVR externalization or human listener preference scores.\n";
 }
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+void writeP7SixSurfaceAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string side=azimuth==0?"front":"rear";
+        for(int spread:{0,60}){
+            const std::string name=side+"-spread"+std::to_string(spread);
+            writeWav(dir/("sonku-p7-four-wall-"+name+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true,false));
+            writeWav(dir/("sonku-p7-six-surface-"+name+".wav"),
+                realtimeRoomAudio(azimuth,static_cast<float>(spread),true,true));
+        }
+    }
+    std::ofstream guide(dir/"P7-3D-ELEVATION-HEADPHONE-AB.txt");
+    if(!guide)throw std::runtime_error("P7 listening guide file unavailable");
+    guide<<"Eight original 3-second 48k/16-bit matched-source stereo WAVs.\n"
+         <<"P6 four-wall measured horizontal KEMAR versus P7 six-boundary.\n"
+         <<"Source FRONT/REAR at 0/60 degrees stereo SPREAD, native SQUARE.\n"
+         <<"Only physical floor and ceiling image paths and measured vertical\n"
+         <<"KEMAR HRIR are added. Original direct and four walls unchanged.\n"
+         <<"No external normalization, no copied dearVR audio. Headphones\n"
+         <<"only; compare at the SAME gain with OS spatial effects disabled.\n"
+         <<"Not a proof of natural externalization or preference.\n";
+}
+#endif
 void writeP4ContiguousAudio(const std::filesystem::path& dir){
     for(int azimuth:{0,180}){
         const std::string side=azimuth==0?"front":"rear";
@@ -557,12 +586,20 @@ int main(int argc,char** argv){
              std::string(argv[2])=="--directional-er-only" ||
              std::string(argv[2])=="--p3-fusion-only" ||
              std::string(argv[2])=="--p4-contiguous-only" ||
-             std::string(argv[2])=="--p6-realtime-only")))
+             std::string(argv[2])=="--p6-realtime-only" ||
+             std::string(argv[2])=="--p7-six-surface-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
         if(argc==3){
-            if(std::string(argv[2])=="--directional-er-only") {
+            if(std::string(argv[2])=="--p7-six-surface-only") {
+#if defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
+                writeP7SixSurfaceAudio(dir);
+                std::cout<<"P7 six-surface original 8 WAV rendered\n";
+#else
+                throw std::runtime_error("P7 six-surface research not enabled");
+#endif
+            } else if(std::string(argv[2])=="--directional-er-only") {
 #if !defined(SONKU_AB_BASELINE)
                 writeDirectionalRoomAudio(dir);
                 std::cout<<"P2 directional room 4 WAV rendered\n";
