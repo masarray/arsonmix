@@ -416,6 +416,7 @@
         channels.filter(other=>displayNameFor(other)===label).length>1?
           label+" ["+ch.id+"]":label};});
   }
+  let pendingNativeGainIntent=false;
   const intent = (operation,t,payload) => {
     if(logicalView)return logicalIntent(operation,nativeIdFor(t),payload).ok;
     if (!flags.acceptedGraphConnected) {
@@ -664,6 +665,47 @@
         levelDb:Math.round(Math.max(-60,Math.min(6,
           e.gainLinear>0?20*Math.log10(e.gainLinear):-60))*10)/10}));
   }
+  // Paint ONLY an independently accepted ChannelId input scalar. Comparing
+  // the actual DOM as well as the model also repairs a rejected/expired gain
+  // intent whose accepted value did not change (the old gainChanged check
+  // skipped this case). Do no work if presentation is already identical.
+  function paintAcceptedInputGain(t,valueDb){
+    if(!Number.isFinite(valueDb))return;
+    t.trim=valueDb;
+    const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+    const slider=root?.querySelector('input[data-field="trim"]');
+    if(!slider||slider.dataset.gainDragging==="true")return;
+    if(!Number.isFinite(Number(slider.value))||
+       Math.abs(Number(slider.value)-valueDb)>.011)
+      slider.value=String(valueDb);
+    const dial=slider.closest(".gain-dial");
+    const rotation=(valueDb*5.625).toFixed(2)+"deg";
+    if(dial?.style.getPropertyValue("--gain-rotation")!==rotation)
+      dial?.style.setProperty("--gain-rotation",rotation);
+    const digits=root.querySelector(".gain-lcd-digits")||
+      root.querySelector(".gain-readout");
+    const label=(valueDb>0?"+":"")+valueDb.toFixed(1)+" dB";
+    if(digits&&digits.textContent!==label)digits.textContent=label;
+  }
+  function reconcileAcceptedInputGainSnapshot(next){
+    if(!next?.admitted||controller?.state()?.pending?.operation==="SET_INPUT_GAIN")
+      return;
+    for(const ch of next.graph.channels){
+      if(ch.role!=="INPUT"||!Number.isFinite(ch.controls?.inputGainDb)||
+         !next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN"))
+        continue;
+      const uiId=uiByNativeId.get(ch.id);
+      const t=scope?.tracks?.find(track=>track.id===uiId);
+      if(t)paintAcceptedInputGain(t,ch.controls.inputGainDb);
+    }
+  }
+  // The approved GUI may explicitly cancel a drag on focus/capture loss.
+  // Native readback is the sole restore authority; never emit an intent here.
+  window.__ARMIX_NATIVE_GAIN_RESTORE__=()=>{
+    const state=controller?.state();
+    if(state?.current&&!state.pending)
+      reconcileAcceptedInputGainSnapshot(state.current);
+  };
   function projectNativeGraphWithoutFocusLoss(next) {
     // Only identity, order, processing width, source and edges are structural.
     // Rack/slot bypass is applied in-place from independent readback below.
@@ -719,24 +761,8 @@
       const gainAdmitted=next.admitted===true&&ch.role==="INPUT"&&
         next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN")&&
         Number.isFinite(c.inputGainDb);
-      const gainChanged=gainAdmitted&&Math.abs((t.trim??0)-c.inputGainDb)>.011;
       t.nativeGainAvailable=gainAdmitted;
-      if(gainChanged){
-        t.trim=c.inputGainDb;
-        const root=document.querySelector('.strip[data-id="'+t.id+'"]');
-        const slider=root?.querySelector('input[data-field="trim"]');
-        // Focus remains on a knob after a harmless click. Defer readback
-        // only for an intentional, currently active drag; otherwise the
-        // installed native snapshot stays authoritative even while focused.
-        if(slider&&slider.dataset.gainDragging!=='true'){
-          slider.value=String(t.trim);
-          slider.closest(".gain-dial")?.style.setProperty("--gain-rotation",
-            (t.trim*5.625).toFixed(2)+"deg");
-          const readout=root.querySelector(".gain-readout");
-          const digits=readout?.querySelector(".gain-lcd-digits")||readout;
-          if(digits)digits.textContent=(t.trim>=0?"+":"")+t.trim.toFixed(1)+" dB";
-        }
-      }
+      if(gainAdmitted)paintAcceptedInputGain(t,c.inputGainDb);
       const db=c.faderDb,pan=c.pan*100;
       const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
@@ -2902,6 +2928,9 @@
     const signature=next.identity+"|"+JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      // Telemetry-only snapshots should not traverse all channels. But an
+      // expired/rejected edit with unchanged graph values must not strand its
+      // LCD at a speculative value; error status settles that separately.
       finishNativeTrack(next);finishNativeTrackDelete(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -2951,6 +2980,12 @@
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:onNativeReadback,
       onStatus:state=>{
+        const settledGain=pendingNativeGainIntent&&!state.pending;
+        if(settledGain){
+          pendingNativeGainIntent=false;
+          if(state.lastError!=="ACCEPTED_READBACK")
+            reconcileAcceptedInputGainSnapshot(state.current);
+        }
         if(state.lastError==="PENDING_NATIVE_ACK"||state.lastError==="PENDING_ACCEPTED_SNAPSHOT")
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
@@ -2997,7 +3032,11 @@
           // Never destroy an active pointer capture. Once the user releases,
           // restore only the last independently accepted native controls.
           if(flags.acceptedGraphConnected && (scope.activeFaderId??-1)<0){
-            if(!scope.wireGainDragging && !document.activeElement?.matches?.(".strip select,.wire-gain,#wireWsGain"))
+            // A rejected scalar GAIN requires only the accepted LCD/needle
+            // repaint. Do not rebuild strips (or detach another active drag).
+            const activeGain=document.querySelector('input[data-field="trim"][data-gain-dragging="true"]');
+            if(!settledGain&&!activeGain&&!scope.wireGainDragging &&
+               !document.activeElement?.matches?.(".strip select,.wire-gain,#wireWsGain"))
               scope.render?.();
             controller.subscribe();
             if(state.current)paintNativeMeters(state.current);
@@ -3351,6 +3390,8 @@
           if(digits)digits.textContent=(acceptedDb>0?"+":"")+acceptedDb.toFixed(1)+" dB";
           status("INPUT GAIN rejected · restoring accepted PCM readback");
           controller?.subscribe?.();
+        }else if(!logicalView){
+          pendingNativeGainIntent=true;
         }
         return true;
       }

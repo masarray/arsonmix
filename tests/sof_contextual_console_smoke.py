@@ -42,7 +42,8 @@ def run() -> None:
         native_bridge = (ROOT / "web/approved-native-bridge.js").read_text(encoding="utf-8")
         assert "window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)" in native_bridge
         assert 'querySelector(".gain-lcd-digits")||lcd' in native_bridge
-        assert 'querySelector(".gain-lcd-digits")||readout' in native_bridge
+        assert 'function paintAcceptedInputGain(t,valueDb)' in native_bridge
+        assert 'root.querySelector(".gain-lcd-digits")' in native_bridge
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
@@ -253,6 +254,46 @@ def run() -> None:
                     assert float(knob.input_value()) > 3.2
                     page.mouse.up()
                     assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
+                    # Native overlays and OS focus changes may steal capture.
+                    # These must restore the pre-gesture value WITHOUT a change
+                    # event or leaving a gainDragging readback suppressor stuck.
+                    set_gain("6.5")
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    page.evaluate("window.dispatchEvent(new Event('blur'))")
+                    assert knob.input_value() == "6.5", "Blur must cancel speculative GAIN"
+                    assert knob.evaluate(
+                        "el => el.dataset.gainDragging === undefined")
+                    page.mouse.up()
+                    # A synthetic lostcapture here is deliberate: Chromium
+                    # independently verifies the app's recovery handler, without
+                    # depending on the desktop pointer ID's platform-specific value.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    knob_visual.evaluate("""el => el.dispatchEvent(
+                        new PointerEvent('lostpointercapture', {
+                          bubbles:true, pointerId:1
+                        }))""")
+                    assert knob.input_value() == "6.5", "Lost capture must cancel GAIN"
+                    assert knob.evaluate(
+                        "el => el.dataset.gainDragging === undefined")
+                    page.mouse.up()
+                    # A mode switch must retire capture BEFORE replacing the
+                    # strip. Reopening GAIN cannot resurrect preview gain.
+                    page.mouse.move(cx, cy)
+                    page.mouse.down()
+                    page.mouse.move(cx, cy - 20)
+                    assert knob.input_value() != "6.5"
+                    fx.evaluate("el => el.click()")
+                    assert first.locator(".is-gain-view").count() == 0
+                    page.mouse.up()
+                    gain.click()
+                    assert knob.input_value() == "6.5", "Mode switch committed canceled GAIN"
+                    assert first.locator(".gain-readout").inner_text().strip() == "+6.5 dB"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
                     # The public formatter reserves '+' for strictly
