@@ -120,6 +120,7 @@ static double probe(const Sound& a,double rate,double hz){
  return std::norm(L)+std::norm(R);
 }
 int main(){
+ std::setvbuf(stdout,nullptr,_IONBF,0); // retain diagnostic evidence on gate abort
  double broadMax=0,bandMax=0;
  for(double rate:{44100.,48000.})
  for(bool room:{false,true})
