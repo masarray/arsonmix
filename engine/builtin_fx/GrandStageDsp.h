@@ -62,7 +62,13 @@ public:
  && defined(SONKU_P7_MEASURED_ELEVATION_RESEARCH) && SONKU_P7_MEASURED_ELEVATION_RESEARCH
         ready_=core_.prepare(rate,
             armix::sonku::SonKuReflectionProfile::SixSurfaceKemarResearch);
-        if(ready_)ready_=core_.setSettings(sceneFor(settings_));
+        if(ready_) {
+            ready_=core_.setSettings(sceneFor(settings_));
+            // Initial realtime smoothers otherwise retain SonKu's default
+            // moving/full-wet scene for ~8ms even on a pre-restored DRY state.
+            // Reset only during prepare, never during live edits/callback.
+            if(ready_)core_.reset();
+        }
 #endif
         return ready_;
     }
