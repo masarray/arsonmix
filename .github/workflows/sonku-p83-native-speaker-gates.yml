@@ -1,0 +1,170 @@
+name: SonKu P8.3 native physical speaker research PCM
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/sonku/SonKuSpatialCore.h'
+      - 'engine/builtin_fx/sonku/SonKuEarlyReflections.h'
+      - 'engine/builtin_fx/sonku/SonKuP83SpeakerScene.h'
+      - 'engine/builtin_fx/sonku/SonKuP83LowFrequencyTransfer.h'
+      - 'tests/sonku_p83_*'
+      - 'tools/sonku_p83_offline_ab.cpp'
+      - '.github/workflows/sonku-p83-native-speaker-gates.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p83-physical-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-source:
+    name: Native C++ P8.3 source, PCM/stems/no-null and Music Bed invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run original SonKu native source
+        shell: bash
+        run: |
+          set -euo pipefail
+          FLAGS=(-std=c++20 -O2 -Wall -Wextra -Werror -pedantic
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1
+            -DSONKU_P72_NATIVE_XYZ_RT=1
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          g++ "${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_physical_speaker_source_test.cpp -o /tmp/p83-native
+          /tmp/p83-native --wavdir sonku-p83-native-pcm | tee /tmp/p83-native.log
+          grep -q '^PASS P8.3 SOURCE GATES:' /tmp/p83-native.log
+          g++ "${FLAGS[@]}" tests/sonku_p83_externalization_gap_diagnostic.cpp \
+            -o /tmp/p82-gap
+          /tmp/p82-gap | tee /tmp/p82-gap.log
+          grep -q '^PASS P8.3 DIAGNOSTIC:' /tmp/p82-gap.log
+
+      - name: Cross-build exact Music Bed P8.2 raw PCM unchanged by opt-in P8.3 compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          FLAGS=(-std=c++20 -O2 -Wall -Wextra -Werror -pedantic
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1
+            -DSONKU_P72_NATIVE_XYZ_RT=1
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1)
+          g++ "${FLAGS[@]}" tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p82-golden
+          g++ "${FLAGS[@]}" -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_music_bed_byte_parity.cpp -o /tmp/p83-default
+          /tmp/p82-golden /tmp/p82-golden.raw
+          /tmp/p83-default /tmp/p83-default.raw
+          cmp /tmp/p82-golden.raw /tmp/p83-default.raw
+          sha256sum /tmp/p82-golden.raw /tmp/p83-default.raw
+      - name: Hosted CPU evidence 44.1/48k 64/128/256 1/2/4 inserts (NOT ASIO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tests/sonku_p83_hosted_cpu_benchmark.cpp -o /tmp/p83-bench
+          /tmp/p83-bench | tee /tmp/p83-bench.log
+          grep -q '^P83_HOSTED_CPU,mode=P83' /tmp/p83-bench.log
+      - name: Strict multi-band music + LF gate - reject cancellation or overboost
+        shell: bash
+        run: |
+          set -euo pipefail
+          awk -F, '
+            /^P83_SPECTRAL,MUSIC_LF_ANTIPHASE,48000,frequency=83Hz/ {split($5,a,"="); bass=a[2]}
+            /^P83_SPECTRAL,MUSIC_LF_ANTIPHASE,48000,frequency=1703Hz/ {split($5,a,"="); mid=a[2]}
+            END {
+              if (bass=="" || mid=="") {print "FAIL P83 MUSIC: missing source spectra"; exit 2}
+              diff=bass-mid
+              printf "P83_MUSIC_GATE,48000,83Hz_minus_1703Hz_relative_to_P82=%.3f dB,minimum=-6 dB\n",diff
+              if(diff < -6) {print "FAIL P83 MUSIC: opt-in LF safeguard still loses bass"; exit 1}
+              print "PASS P83 MUSIC: opt-in LF guard source fidelity; listening still pending"
+            }
+          ' /tmp/p83-native.log
+          grep -q '^PASS P8.3 MULTIBAND FIDELITY:' /tmp/p83-native.log
+      - name: Build exact SonKu P8.3 offline music A/B utility and smoke real WAV
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+            -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
+            -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
+            -DSONKU_P72_NATIVE_XYZ_RT=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P80_TRANSPARENT_BASS_RESEARCH=1 \
+            -DSONKU_P82_MULTIBAND_ROOM_RESEARCH=1 \
+            -DSONKU_P83_PHYSICAL_SPEAKER_RESEARCH=1 \
+            tools/sonku_p83_offline_ab.cpp -o /tmp/sonku-p83-ab
+          python3 - <<'PY'
+          import math,struct,wave
+          with wave.open('/tmp/sonku-p83-input.wav','wb') as f:
+              f.setnchannels(2); f.setsampwidth(2); f.setframerate(48000)
+              data=bytearray()
+              for i in range(96000):
+                  t=i/48000
+                  x=.13*math.sin(2*math.pi*83*t)+.08*math.sin(2*math.pi*461*t)
+                  y=.07*math.sin(2*math.pi*1703*t)+.05*math.sin(2*math.pi*5387*t)
+                  data+=struct.pack('<hh',round(32767*(x+y)),round(32767*(x-y)))
+              f.writeframes(data)
+          PY
+          /tmp/sonku-p83-ab /tmp/sonku-p83-input.wav sonku-p83-offline-ab --room=on |
+            tee /tmp/p83-ab.log
+          grep -q '^PASS SonKu P8.3 offline A/B:' /tmp/p83-ab.log
+          test -s sonku-p83-offline-ab/P82_MusicBed.wav
+          test -s sonku-p83-offline-ab/P83_SpeakerPhysical.wav
+          test -s sonku-p83-offline-ab/P83_SpeakerMusicLF480.wav
+          python3 - <<'PY'
+          import struct,pathlib
+          for p in pathlib.Path('sonku-p83-offline-ab').glob('*.wav'):
+              b=p.read_bytes()
+              assert b[:4]==b'RIFF' and b[8:12]==b'WAVE' and len(b)>96000*8
+              assert struct.unpack_from('<H',b,20)[0]==3
+              assert struct.unpack_from('<I',b,24)[0]==48000
+              print('PASS OFFLINE_AUDITION_WAV',p,len(b))
+          PY
+      - name: Decode standard DAW WAVEFORMATEXTENSIBLE input, smoke ROOM OFF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import math,struct,pathlib
+          n=24000
+          source=bytearray()
+          for i in range(n):
+              t=i/48000
+              source+=struct.pack('<ff',
+                  .12*math.sin(2*math.pi*83*t),
+                  .09*math.sin(2*math.pi*461*t))
+          subtype=bytes.fromhex('0300000000001000800000aa00389b71')
+          fmt=struct.pack('<HHIIHHHHI',0xfffe,2,48000,48000*8,
+                          8,32,22,32,3)+subtype
+          chunk=b'fmt '+struct.pack('<I',len(fmt))+fmt
+          chunk+=b'data'+struct.pack('<I',len(source))+source
+          pathlib.Path('/tmp/sonku-p83-extensible.wav').write_bytes(
+              b'RIFF'+struct.pack('<I',4+len(chunk))+b'WAVE'+chunk)
+          PY
+          /tmp/sonku-p83-ab /tmp/sonku-p83-extensible.wav \
+            sonku-p83-offline-ab-ext --room=off | tee /tmp/p83-ab-ext.log
+          grep -q '^PASS SonKu P8.3 offline A/B:' /tmp/p83-ab-ext.log
+          test -s sonku-p83-offline-ab-ext/P83_SpeakerMusicLF480.wav
+      - name: Upload exact-source offline research PCM (not human FAT)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonku-p83-source-pcm-${{ github.sha }}
+          path: |
+            sonku-p83-native-pcm/*.wav
+            sonku-p83-offline-ab/*.wav
+            sonku-p83-offline-ab/*.csv
+            sonku-p83-offline-ab-ext/*.wav
+            sonku-p83-offline-ab-ext/*.csv
+          retention-days: 14

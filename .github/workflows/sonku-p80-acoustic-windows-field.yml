@@ -1,20 +1,9 @@
 name: SonKu P8.0 measurable stereo-bass and room native field candidate
 # Isolated opt-in full JUCE app build; no public installer, tag or release.
+# Historical FAT remains reproducible by explicit dispatch only.
+# Never run an expensive full JUCE/Windows candidate on every newer SonKu
+# source edit; current milestone dispatch is specified in AGENTS.md.
 on:
-  pull_request:
-    types: [opened, reopened, synchronize]
-    paths:
-      - '.github/workflows/sonku-p80-acoustic-windows-field.yml'
-      - 'src/Main.cpp'
-      - 'src/SonKuNativeBridgeContract.h'
-      - 'src/LiveAudioEngine.h'
-      - 'engine/builtin_fx/SonKuSpatialProcessor.h'
-      - 'engine/builtin_fx/sonku/**'
-      - 'site/preview-v2/assets/mixer-native-sonku.js'
-      - 'CMakeLists.txt'
-      - 'tests/sonku_p72_*'
-      - 'tests/sonku_p75_*'
-      - 'tests/sonku_p80_*'
   workflow_dispatch:
 permissions:
   contents: read

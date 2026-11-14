@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include "SonKuMeasuredHrir.h"
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+#include "SonKuP83SpeakerScene.h"
+#endif
 #if defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) && SONKU_P82_MULTIBAND_ROOM_RESEARCH
 #include "SonKuRoomMaterials.h"
 #endif
@@ -215,6 +218,13 @@ public:
         untilGeometry_=0;
         return true;
     }
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+    bool setResearchWallMask(std::uint8_t mask) noexcept {
+        if(validFrames_!=0 || (mask & ~0x3fu)!=0u)return false;
+        p83WallMask_=mask;
+        return true;
+    }
+#endif
     float relativeDistanceGain() const noexcept {
         return custom_?1.6f/geometry_.distanceMeters:1.f;
     }
@@ -229,10 +239,11 @@ public:
         return wallCount; // original shipping source optimizes to 4
 #endif
     }
-    Ears process(float left,float right,double azimuth,float spread) noexcept {
+    Ears process(float left,float right,double azimuth,float spread,
+                 float headYawDegrees=0.f) noexcept {
         if(!active())return {};
         if(untilGeometry_==0){
-            updateGeometry(azimuth,spread);
+            updateGeometry(azimuth,spread,headYawDegrees);
             untilGeometry_=geometryInterval;
         }
         const float x[2]{std::isfinite(left)?left:0.f,
@@ -384,8 +395,14 @@ public:
                         r=bandpass(r,p.bandLowR,p.bandWideR);
                     }
 #endif
-                    output.left+=p.gainL*l;
-                    output.right+=p.gainR*r;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+                    if((p83WallMask_ & (1u<<wall))!=0u) {
+#endif
+                        output.left+=p.gainL*l;
+                        output.right+=p.gainR*r;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+                    }
+#endif
                 }else{
                     output.left+=p.gainL*delayed(s,p.delayL);
                     output.right+=p.gainR*delayed(s,p.delayR);
@@ -425,7 +442,7 @@ private:
         const int i1=(i0-1)&(ringFrames-1);
         return history_[source][i0]*(1.f-fract)+history_[source][i1]*fract;
     }
-    void updateGeometry(double azimuth,float spread) noexcept {
+    void updateGeometry(double azimuth,float spread,float headYawDegrees) noexcept {
         constexpr float pi=3.14159265358979323846f;
         const float sourceDistance=custom_?geometry_.distanceMeters:1.60f;
         // The existing four-wall path stays bit-exact at equal source/ear
@@ -495,7 +512,16 @@ private:
                 tap.targetGainR=level*(directionalHrir_?1.f:(1.f+.13f*directionX));
                 if(directionalHrir_){
                     // The IMAGE-source arrival angle, NOT source azimuth.
-                    const float dir=std::atan2(x,y)*180.f/pi;
+                    // World room image is fixed; head orientation rotates
+                    // only the ear-relative direction. Wrap BEFORE indexing
+                    // measured 0..180 KEMAR, otherwise yaw 260 clamps to REAR.
+                    const float worldDir=std::atan2(x,y)*180.f/pi;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+                    const float dir=headYawDegrees==0.f?worldDir:
+                        p83::toHead(worldDir,headYawDegrees);
+#else
+                    const float dir=worldDir;
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
                     if(profile_==SonKuReflectionProfile::SixSurfaceKemarResearch &&
                        dz!=0.f){
@@ -557,7 +583,7 @@ private:
                         static_cast<float>(ringFrames-hrir::taps-3));
                     p.targetDelayL=p.targetDelayR=delay;
                     p.targetGainL=p.targetGainR=arrival.gain;
-                    hrir3d::interpolate(arrival.azimuth,arrival.elevation,
+                    hrir3d::interpolate(arrival.azimuth-headYawDegrees,arrival.elevation,
                                         std::abs(rate_-44100.f)<.1f,
                                         p.targetKernel);
                     if(!primed_){
@@ -592,6 +618,9 @@ private:
     bool directionalHrir_=false;
     bool fastZeroSpread_=false,fuseEligible_=true;
     bool fastContiguousHrir_=false;
+#if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
+    std::uint8_t p83WallMask_=0x3f;
+#endif
     SonKuReflectionProfile profile_=SonKuReflectionProfile::Lightweight;
 };
 } // namespace armix::sonku
