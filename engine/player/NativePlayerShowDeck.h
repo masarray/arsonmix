@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "NativePlayerDeck.h"
+#include "PlayerCrossfadeCurve.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -18,18 +19,7 @@ public:
     using Status=NativePlayerDeck::Status;
     using Controls=PlayerPitchTempoProcessor::Controls;
     static constexpr int maxRenderFrames=8192;
-    static constexpr int fadeTableResolution=1024;
-
-    NativePlayerShowDeck() {
-        constexpr double pi=3.14159265358979323846;
-        for(int i=0;i<=fadeTableResolution;++i) {
-            const double phase=(pi/2)*i/fadeTableResolution;
-            fadeOut_[static_cast<std::size_t>(i)]=
-                static_cast<float>(std::cos(phase));
-            fadeIn_[static_cast<std::size_t>(i)]=
-                static_cast<float>(std::sin(phase));
-        }
-    }
+    NativePlayerShowDeck()=default;
     NativePlayerShowDeck(const NativePlayerShowDeck&)=delete;
     NativePlayerShowDeck& operator=(const NativePlayerShowDeck&)=delete;
 
@@ -205,15 +195,11 @@ public:
         const int total=fadeFrames_.load(std::memory_order_relaxed);
         const int start=fadePosition_.load(std::memory_order_relaxed);
         for(int i=0;i<frames;++i) {
-            const auto index=std::clamp(static_cast<int>(
-                (static_cast<std::int64_t>(start+i)*fadeTableResolution)/
-                std::max(1,total)),0,fadeTableResolution);
-            const auto oldGain=fadeOut_[static_cast<std::size_t>(index)];
-            const auto newGain=fadeIn_[static_cast<std::size_t>(index)];
-            left[i]=scratch_[0][static_cast<std::size_t>(i)]*oldGain
-                    +left[i]*newGain;
-            right[i]=scratch_[1][static_cast<std::size_t>(i)]*oldGain
-                     +right[i]*newGain;
+            const auto gains=fadeCurve_.gains(start+i,total);
+            left[i]=scratch_[0][static_cast<std::size_t>(i)]*gains.oldGain
+                    +left[i]*gains.newGain;
+            right[i]=scratch_[1][static_cast<std::size_t>(i)]*gains.oldGain
+                     +right[i]*gains.newGain;
         }
         const int advanced=start+frames;
         if(advanced>=total) {
@@ -228,7 +214,7 @@ public:
 private:
     std::array<NativePlayerDeck,2> decks_;
     std::array<std::array<float,maxRenderFrames>,2> scratch_{};
-    std::array<float,fadeTableResolution+1> fadeOut_{},fadeIn_{};
+    const PlayerCrossfadeCurve fadeCurve_{};
     std::atomic<int> active_{0},fadeFrom_{0},fadeTo_{1};
     std::atomic<int> fadePosition_{0},fadeFrames_{1},retired_{-1};
     std::atomic<bool> fading_{false};
