@@ -38,15 +38,18 @@ public:
         // not permission to switch outputs or restart playback.
         fading_.store(false,std::memory_order_release);
         retired_.store(-1,std::memory_order_release);
-        rate_=hz;
-        pending_=false;preloadedFile_={};preloadedControls_={};
+        rateHz_.store(static_cast<int>(std::lround(hz)),
+                      std::memory_order_release);
+        deviceEpoch_.fetch_add(1,std::memory_order_acq_rel);
+        pending_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.deviceRate(hz);
     }
     void load(const juce::File& file,bool autoPlay=true) {
         // Explicit new-song load for idle transport, not live NEXT:
         // live transitions always go through queueTransition().
         fading_.store(false,std::memory_order_release);
-        pending_=false;preloadedFile_={};
+        pending_.store(false,std::memory_order_release);
+        preloadedFile_={};
         const int index=active_.load(std::memory_order_acquire);
         decks_[static_cast<std::size_t>(1-index)].stop();
         decks_[static_cast<std::size_t>(index)].load(file,autoPlay);
@@ -58,7 +61,8 @@ public:
             .setPitchTempo(key,tempo);
     }
     bool seekSeconds(double seconds) noexcept {
-        if(fading_.load(std::memory_order_acquire)||pending_)return false;
+        if(fading_.load(std::memory_order_acquire) ||
+           pending_.load(std::memory_order_acquire))return false;
         return decks_[static_cast<std::size_t>(
             active_.load(std::memory_order_acquire))].seekSeconds(seconds);
     }
@@ -72,13 +76,14 @@ public:
             active_.load(std::memory_order_acquire))].play();
     }
     void pause() noexcept {
-        pending_=false;
+        pending_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.pause();
     }
     void stop() noexcept {
         // STOP supersedes all queued transitions and no stale PCM may play
         // after an output/device restart.
-        pending_=false;preloadedFile_={};
+        pending_.store(false,std::memory_order_release);
+        preloadedFile_={};
         fading_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.stop();
     }
@@ -86,7 +91,9 @@ public:
         return decks_[static_cast<std::size_t>(
             active_.load(std::memory_order_acquire))].snapshot();
     }
-    bool transitionPending() const noexcept {return pending_;}
+    bool transitionPending() const noexcept {
+        return pending_.load(std::memory_order_acquire);
+    }
     bool transitionActive() const noexcept {
         return fading_.load(std::memory_order_acquire);
     }
@@ -95,13 +102,15 @@ public:
            !PlayerPitchTempoProcessor::valid({key,tempo}) ||
            fading_.load(std::memory_order_acquire))return false;
         const int inactive=1-active_.load(std::memory_order_acquire);
-        if(preloadedFile_==file &&
+        const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
+        if(preloadedFile_==file && preloadedEpoch_==epoch &&
            preloadedControls_==Controls{key,tempo})return true;
         // Reuse a bounded standby decoder and SPSC FIFO. Repeated NEXT
         // changes supersede old read work through NativePlayerDeck generation.
         auto& standby=decks_[static_cast<std::size_t>(inactive)];
         if(!standby.setPitchTempo(key,tempo))return false;
         preloadedFile_=file;preloadedControls_={key,tempo};
+        preloadedEpoch_=epoch;
         standby.load(file,false);
         return true;
     }
@@ -110,7 +119,7 @@ public:
         if(fading_.load(std::memory_order_acquire))return false;
         if(!preload(file,key,tempo))return false;
         fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
-        pending_=true;
+        pending_.store(true,std::memory_order_release);
         (void)service();
         return true;
     }
@@ -119,12 +128,14 @@ public:
     bool service() {
         const int old=retired_.exchange(-1,std::memory_order_acq_rel);
         if(old>=0)decks_[static_cast<std::size_t>(old)].stop();
-        if(!pending_||fading_.load(std::memory_order_acquire))return false;
+        if(!pending_.load(std::memory_order_acquire) ||
+           fading_.load(std::memory_order_acquire))return false;
         const int from=active_.load(std::memory_order_acquire);
         const int to=1-from;
         const auto standby=decks_[static_cast<std::size_t>(to)].snapshot();
         if(standby.state==NativePlayerDeck::State::error) {
-            pending_=false;preloadedFile_={};
+            pending_.store(false,std::memory_order_release);
+            preloadedFile_={};
             return false;
         }
         if(!standby.outputReady)return false;
@@ -134,11 +145,13 @@ public:
         fadeTo_.store(to,std::memory_order_relaxed);
         fadePosition_.store(0,std::memory_order_relaxed);
         fadeFrames_.store(std::max(1,static_cast<int>(
-            std::lround(rate_*fadeMilliseconds_/1000.))),
+            std::lround(rateHz_.load(std::memory_order_acquire)*
+                        fadeMilliseconds_/1000.))),
             std::memory_order_relaxed);
         fading_.store(true,std::memory_order_release);
         active_.store(to,std::memory_order_release);
-        pending_=false;preloadedFile_={};
+        pending_.store(false,std::memory_order_release);
+        preloadedFile_={};
         return true;
     }
     void pull(float* left,float* right,int frames) noexcept {
@@ -188,8 +201,10 @@ private:
     // CONTROL-only, not borrowed by the realtime callback.
     juce::File preloadedFile_;
     Controls preloadedControls_{};
-    double rate_=0.;
+    std::atomic<int> rateHz_{0};
+    std::atomic<std::uint64_t> deviceEpoch_{0};
+    std::uint64_t preloadedEpoch_=0; // CONTROL only
     int fadeMilliseconds_=180;
-    bool pending_=false;
+    std::atomic<bool> pending_{false};
 };
 } // namespace armix::player
