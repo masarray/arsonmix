@@ -1,0 +1,67 @@
+name: SonKu P7 measured-elevation research (scoped native)
+# Compile licensed multi-elevation KEMAR ONLY in the research tests.
+# Production DSP, GUI, Harmony CI, installer and full JUCE are not touched.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/builtin_fx/sonku/**'
+      - 'tests/sonku_p7_*'
+      - 'tools/sonku_offline_listening.cpp'
+      - 'tools/sonku_p7_cpu.cpp'
+      - '.github/workflows/sonku-p7-research.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sonku-p7-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  six-surface:
+    name: P7 full measured KEMAR, 6 planes, native stereo WAV and CPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Proven P6 LIGHT/default contract and P5 stale-history regression
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p6_realtime_quality_test.cpp -o /tmp/p6
+          /tmp/p6
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p5_room_reactivation_test.cpp -o /tmp/p5
+          /tmp/p5
+      - name: Confirm deterministic MIT bank extractor syntax without network
+        run: python -m py_compile scripts/generate_sonku_measured_hrir3d.py
+      - name: Preserve all prior P0-P4 source audio invariants on unmodified production profile
+        run: |
+          set -euo pipefail
+          for source in sonku_spatial_core_test sonku_multiband_phase_test sonku_directional_reflections_test sonku_p3_spread_zero_fusion_test sonku_p4_contiguous_reflections_test; do
+            g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/${source}.cpp -o "/tmp/${source}"
+            "/tmp/${source}"
+          done
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_hrir_spectral_audit.cpp -o /tmp/sonku-p7-spectral
+          mkdir -p sonku-p7-evidence
+          /tmp/sonku-p7-spectral > sonku-p7-evidence/P7-LEGACY-KEMAR-380-POINTS.csv
+          test "$(($(wc -l < sonku-p7-evidence/P7-LEGACY-KEMAR-380-POINTS.csv)-1))" -eq 380
+      - name: P7 measured 14-elevation KEMAR + native source six-plane PCM
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tests/sonku_p7_six_surface_test.cpp -o /tmp/p7
+          /tmp/p7
+      - name: Four matched P6 four-wall versus P7 six-plane realtime ROOM WAV pairs
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_offline_listening.cpp -o /tmp/p7-render
+          mkdir -p sonku-p7-evidence
+          /tmp/p7-render sonku-p7-evidence --p7-six-surface-only
+          python tests/sonku_p7_six_surface_audio_audit.py sonku-p7-evidence
+      - name: Informational CPU 1/2/4 inserts P6 versus P7 48k/128
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tools/sonku_p7_cpu.cpp -o /tmp/p7-bench
+          /tmp/p7-bench | tee sonku-p7-evidence/SONKU-P7-CPU-REPORT.txt
+      - name: Upload 8 matched lossless WAV and JSON/CPU evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonKu-P7-Measured-Six-Surface-${{ github.run_id }}
+          path: sonku-p7-evidence/*
+          if-no-files-found: ignore
+          retention-days: 14

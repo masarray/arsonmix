@@ -316,7 +316,11 @@ private:
         const float width=s.spacePreset==1?7.2f:
             s.spacePreset==2?14.4f:28.8f;
         const SonKuRoomGeometry geometry{
-            width,width,s.spacePreset? s.sourceDistanceMeters:1.6f};
+            width,width,s.spacePreset? s.sourceDistanceMeters:1.6f,
+            // The P7 research room is 3D; public P6/legacy do not
+            // read the additional height fields.
+            s.spacePreset==1?3.2f:s.spacePreset==2?4.8f:7.2f,
+            1.45f,1.45f};
         const auto preset=s.spacePreset==3?SonKuReverbPreset::LargeRoom:
             s.spacePreset==2?SonKuReverbPreset::AiryChamber:
                              SonKuReverbPreset::StudioGlue;
