@@ -1971,10 +1971,13 @@ public:
         data->setProperty("crossfading",playerDeck_.transitionActive());
         data->setProperty("title",status.title);
         data->setProperty("error",status.error);
+        // Operator seek/IN/OUT always use the ORIGINAL media clock.
+        // Output-frame counters (separately retained on the deck) control
+        // physical end-of-stream and stretch/tempo latency accounting.
         data->setProperty("currentSeconds",status.deviceRate>0?
-            static_cast<double>(status.played)/status.deviceRate:0.0);
+            static_cast<double>(status.mediaPlayed)/status.deviceRate:0.0);
         data->setProperty("durationSeconds",status.deviceRate>0?
-            static_cast<double>(status.duration)/status.deviceRate:0.0);
+            static_cast<double>(status.mediaDuration)/status.deviceRate:0.0);
         data->setProperty("underrunFrames",juce::String(
             static_cast<juce::int64>(status.underruns)));
         data->setProperty("keySemitones",status.keySemitones);
