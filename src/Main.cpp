@@ -500,7 +500,10 @@ private:
     // library/controls so decoder bindings and FX routing do not change.
     // Save/restore swaps complete sets, not two independently mutated arrays.
     std::vector<juce::File> playerLibrary_;
-    struct PlayerTrackSettings {int key=0,tempo=100;};
+    struct PlayerTrackSettings {
+        int key=0,tempo=100;
+        double cueIn=0.,cueOut=0.; // seconds, 0 OUT means media end
+    };
     std::vector<PlayerTrackSettings> playerTrackSettings_;
     struct PlayerSavedSet {
         juce::String name;
@@ -3785,6 +3788,18 @@ private:
                         if(preset.key< -6 || preset.key>6 ||
                            preset.tempo<80 || preset.tempo>120)preset={};
                     }
+                    if(itemVersion>=3) {
+                        const double in=static_cast<double>(
+                            item.getProperty("cueIn",0.0));
+                        const double out=static_cast<double>(
+                            item.getProperty("cueOut",0.0));
+                        // Invalid saved markers never alter native playback.
+                        if(std::isfinite(in) && std::isfinite(out) &&
+                           in>=0. && out>=0. && in<86400. &&
+                           out<86400. && (out==0. || out>in+0.05)) {
+                            preset.cueIn=in;preset.cueOut=out;
+                        }
+                    }
                     destination.files.push_back(source);
                     destination.controls.push_back(preset);
                 }
@@ -3810,7 +3825,7 @@ private:
                     });
                 if(duplicate)continue;
                 PlayerSavedSet next{name,{},{}};
-                parseSongs(source.getProperty("files",{}),2,next);
+                parseSongs(source.getProperty("files",{}),3,next);
                 playerSets_.push_back(std::move(next));
             }
         }
@@ -3841,6 +3856,8 @@ private:
                 entry->setProperty("path",set.files[i].getFullPathName());
                 entry->setProperty("key",set.controls[i].key);
                 entry->setProperty("tempo",set.controls[i].tempo);
+                entry->setProperty("cueIn",set.controls[i].cueIn);
+                entry->setProperty("cueOut",set.controls[i].cueOut);
                 files.add(juce::var(entry.release()));
             }
             object->setProperty("files",juce::var(files));
@@ -4056,6 +4073,8 @@ private:
                 song->setProperty("missing",!playerLibrary_[i].existsAsFile());
                 song->setProperty("keySemitones",playerTrackSettings_[i].key);
                 song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
+                song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
+                song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
                 rows.add(juce::var(song.release()));
             }
             obj->setProperty("tracks",juce::var(rows));
@@ -4276,7 +4295,8 @@ private:
             if(hasCurrent && playerCurrent_!=playerSelected_) {
                 if(engine_.queuePlayerTransition(
                     playerLibrary_[static_cast<std::size_t>(playerSelected_)],
-                    controls.key,controls.tempo,playerFadeMilliseconds_)) {
+                    controls.key,controls.tempo,playerFadeMilliseconds_,
+                    controls.cueIn,controls.cueOut)) {
                     playerPendingIndex_=playerSelected_;
                     playerError_.clear();
                 } else playerError_=
@@ -4289,7 +4309,8 @@ private:
                 emitPlayerState();return;
             }
             const auto error=engine_.loadPlayerMusic(
-                playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
+                playerLibrary_[static_cast<std::size_t>(playerSelected_)],
+                controls.cueIn,controls.cueOut);
             playerError_=error;
             if(error.isEmpty()) {
                 playerPendingIndex_=-1;
@@ -4381,6 +4402,51 @@ private:
             }
             return;
         }
+        if(action=="playerCueIn" || action=="playerCueOut" ||
+           action=="playerCueClear" || action=="playerCueGoIn") {
+            if(playerCurrent_<0 || playerCurrent_>=
+                   static_cast<int>(playerTrackSettings_.size()) ||
+               playerSelected_!=playerCurrent_) {
+                playerError_="Select the playing song to edit its cue";
+                emitPlayerState();return;
+            }
+            auto& cues=playerTrackSettings_[static_cast<std::size_t>(
+                playerCurrent_)];
+            const auto transport=engine_.playerStatus();
+            const double now=static_cast<double>(
+                transport.getProperty("currentSeconds",0.0));
+            const double total=static_cast<double>(
+                transport.getProperty("durationSeconds",0.0));
+            if(action=="playerCueGoIn") {
+                if(!engine_.playerSeekSeconds(cues.cueIn))
+                    playerError_="Unable to jump to song IN marker";
+                else playerError_.clear();
+                emitPlayerState();return;
+            }
+            if(action=="playerCueClear") {
+                cues.cueIn=0.;cues.cueOut=0.;
+            } else if(!std::isfinite(now) || !std::isfinite(total) ||
+                      total<=0. || now<0. || now>=total) {
+                playerError_="Cue position is unavailable";
+                emitPlayerState();return;
+            } else if(action=="playerCueIn") {
+                cues.cueIn=std::floor(now*100.)/100.;
+                if(cues.cueOut>0. && cues.cueOut<=cues.cueIn+0.05)
+                    cues.cueOut=0.;
+            } else {
+                if(now<=cues.cueIn+0.05) {
+                    playerError_="OUT must be after IN";
+                    emitPlayerState();return;
+                }
+                cues.cueOut=std::floor(now*100.)/100.;
+            }
+            if(!engine_.setPlayerCueRange(cues.cueIn,cues.cueOut)) {
+                playerError_="Could not update native song markers";
+                emitPlayerState();return;
+            }
+            playerError_.clear();persistPlayerLibrary();
+            emitPlayerState(true);return;
+        }
         if(action=="playerPlay")return playTransportMusic();
         if(action=="playerSeek") {
             const double seconds=static_cast<double>(value);
@@ -4430,7 +4496,8 @@ private:
                             static_cast<std::size_t>(i)];
                         (void)engine_.preloadPlayerMusic(
                             playerLibrary_[static_cast<std::size_t>(i)],
-                            settings.key,settings.tempo);
+                            settings.key,settings.tempo,
+                            settings.cueIn,settings.cueOut);
                     }
                     emitPlayerState(true);
                 }
@@ -7499,7 +7566,8 @@ private:
                         static_cast<std::size_t>(upcoming)];
                     (void)engine_.preloadPlayerMusic(
                         playerLibrary_[static_cast<std::size_t>(upcoming)],
-                        preset.key,preset.tempo);
+                        preset.key,preset.tempo,
+                        preset.cueIn,preset.cueOut);
                 }
             }
             if(playerAutoNext_ &&
