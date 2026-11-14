@@ -2242,6 +2242,19 @@ public:
         return dryRoutingLab_.bypassNativeInsert(epoch,revision,id,slot,
                                                  token,bypass);
     }
+    // Native global A/B is one DSP atomic, never N per-lane intents. All
+    // processors retain their slot bypass and latency-aligned fade envelopes.
+    bool setGlobalFxBypassed(std::uint64_t epoch,std::uint64_t revision,
+                             bool bypass) noexcept {
+        if(routeReconfiguring_.load(std::memory_order_acquire) ||
+           diagnosticRoute_.load(std::memory_order_acquire)!=
+               armix::diagnostics::Route::normal ||
+           independent_.active())return false;
+        return dryRoutingLab_.setGlobalFxBypassed(epoch,revision,bypass);
+    }
+    bool globalFxBypassed() const noexcept {
+        return dryRoutingLab_.globalFxBypassed();
+    }
     bool bypassNativeFxRack(std::uint64_t epoch,std::uint64_t revision,
             armix::mixer::ChannelId id,bool bypass) noexcept {
         if(routeReconfiguring_.load(std::memory_order_acquire)||
@@ -3069,7 +3082,8 @@ private:
             auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
             auto& bypass=graph.bypassEnvelope[physical];
-            bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
+            bypass.request(dryRoutingLab_.globalFxBypassed() ||
+                           graph.rackBypassed.load(std::memory_order_acquire) ||
                            graph.bypassFlags[physical].load(std::memory_order_acquire));
             const bool blend=bypass.transitioning();
             if(blend)
