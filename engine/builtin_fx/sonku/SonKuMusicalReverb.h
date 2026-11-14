@@ -4,6 +4,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+#include "SonKuP82DiffuseInput.h"
+#endif
 
 // Compact eight-line stereo FDN for musical late ambience. The 8x8 Hadamard
 // feedback matrix is orthogonal (unit-energy): stability depends solely on
@@ -43,6 +46,7 @@ public:
                 widths[k]*sampleRate_/343.f)),1,predelayRing-3);
         predelayActive_=predelayTarget_=predelayPrevious_=preparedPredelay_[0];
         predelayPending_=-1;predelayRemaining_=0;
+        if(!diffuser_.prepare(rate))return false;
 #endif
         realtimeMode_=false;
         reset();
@@ -56,6 +60,7 @@ public:
 #if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
         for(auto& channel:predelayMemory_)channel.fill(0.f);
         predelayWrite_=0;predelayValidFrames_=0;
+        diffuser_.reset();
         predelayActive_=predelayTarget_;predelayPrevious_=predelayTarget_;
         predelayPending_=-1;predelayRemaining_=0;
 #endif
@@ -99,6 +104,7 @@ public:
 #if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
             // Freshness horizon, no 32 KiB RT clear and no stale tail.
             predelayValidFrames_=0;
+            diffuser_.invalidate();
 #endif
         }
 #if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
@@ -179,6 +185,15 @@ public:
 #else
         const float lateMid=mid,lateSide=side;
 #endif
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        // All-pass scattering is unit magnitude: late impulse energy
+        // becomes a dense arrival sequence rather than arriving mainly
+        // inside the six-wall direct-ER time window. No wet multiplier.
+        float diffusedMid=lateMid,diffusedSide=lateSide;
+        diffuser_.process(diffusedMid,diffusedSide);
+#else
+        const float diffusedMid=lateMid,diffusedSide=lateSide;
+#endif
         std::array<float,lineCount> y{},mix{};
         if(realtimeMode_)dampCoeff_+=slew_*(targetDamp_-dampCoeff_);
         for(int i=0;i<lineCount;++i){
@@ -211,7 +226,7 @@ public:
             wetLeft+=y[i]*outL[i];
             wetRight+=y[i]*outR[i];
             memory_[i][write_]=unitary*mix[i]+.26f*
-                (lateMid*inMid[i]+lateSide*inSide[i]);
+                (diffusedMid*inMid[i]+diffusedSide*inSide[i]);
         }
         write_=(write_+1)&(ringFrames-1);
         if(realtimeMode_&&validFrames_<ringFrames)++validFrames_;
@@ -258,6 +273,7 @@ private:
     static constexpr int predelayFadeFrames=512;
     static_assert((predelayRing&(predelayRing-1))==0);
     std::array<std::array<float,predelayRing>,2> predelayMemory_{};
+    p82::LateInputDiffuser diffuser_{};
     std::array<int,3> preparedPredelay_{};
     int predelayWrite_=0,predelayValidFrames_=0;
     int predelayActive_=0,predelayTarget_=0,predelayPrevious_=0;
