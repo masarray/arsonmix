@@ -3393,14 +3393,9 @@ private:
         // fingerprint. The shutdown checkpoint must never republish old FX.
         mixerSessionWorker_.finishForShutdown();
         logicalMixer_.resetForFactory();
-        const auto previousId=mixerSessionId_;
-        if(previousId.isNotEmpty()) {
-            const std::vector<armix::hotkey::Mapping> empty;
-            const auto keysError=hotkeys_.activateSession(previousId,&empty);
-            if(keysError.isNotEmpty())
-                diagnostics_.record("MIXER_FACTORY_HOTKEY_CLEANUP",keysError);
-        }
-        (void)hotkeys_.activateSession({});
+        const auto keysError=hotkeys_.resetMixerMappings();
+        if(keysError.isNotEmpty())
+            diagnostics_.record("MIXER_FACTORY_HOTKEY_CLEANUP",keysError);
         const auto appearanceError=channelAppearance_.resetForFactory();
         if(appearanceError.isNotEmpty())
             diagnostics_.record("MIXER_FACTORY_APPEARANCE_CLEANUP",appearanceError);
@@ -8043,8 +8038,42 @@ public:
             window_->grabKeyboardFocus();
         }
     }
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& commandLine) override
     {
+        // Emergency recovery works even when a VST3 crashes before the UI
+        // becomes usable. Only an explicit exact flag may discard sessions;
+        // installer/update health probes never mutate user state.
+        if(!isAutoUpdateHealthProbe() &&
+           commandLine.trim()=="--reset-mixer") {
+            const auto error=armix::session::NativeMixerSessionStore(
+                settingsDirectory()).discardForFactoryReset();
+            if(error.isNotEmpty()) {
+                juce::NativeMessageBox::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("ArSonMix · Emergency Mixer Reset")
+                        .withMessage(error+"\\n\\nSaved session was not modified.")
+                        .withButton("Close"),
+                    [](int){juce::JUCEApplication::getInstance()->systemRequestedQuit();});
+                return;
+            }
+            armix::appearance::Store appearance(settingsDirectory());
+            const auto appearanceError=appearance.resetForFactory();
+            armix::hotkey::Registry hotkeys(settingsDirectory());
+            const auto hotkeyError=hotkeys.resetMixerMappings();
+            if(appearanceError.isNotEmpty() || hotkeyError.isNotEmpty()) {
+                // HEAD is already retired: never restore a broken mixer
+                // because non-audio cosmetics could not be saved.
+                juce::NativeMessageBox::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle("ArSonMix · Emergency Mixer Reset")
+                        .withMessage("Mixer session cleared. Some extra settings could not be reset: "
+                            +appearanceError+" "+hotkeyError)
+                        .withButton("Continue"),
+                    [](int){});
+            }
+        }
 #if defined(_WIN32)
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
