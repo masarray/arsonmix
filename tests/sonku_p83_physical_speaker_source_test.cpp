@@ -32,7 +32,7 @@ static void check(bool ok,const char* reason) {
 static Render render(double rate,p83::Mode mode,float az,float yaw,
                      bool room,p83::Stem stem,std::uint8_t mask,Input input,
                      int chunk=128,float elevation=0.f,
-                     bool musicLf=false) {
+                     bool musicLf=false,float lfCutoffHz=150.f) {
     auto core=std::make_unique<SonKuSpatialCore>();
     check(core->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch),
           "native six-surface prepare");
@@ -46,6 +46,8 @@ static Render render(double rate,p83::Mode mode,float az,float yaw,
     check(core->setResearchRenderMode(mode),"quiescent render mode admission");
     check(core->setResearchHeadYaw(yaw),"quiescent world/head transform admission");
     check(core->setResearchSpeakerMusicLowFrequency(musicLf),"quiescent music LF policy");
+    check(core->setResearchSpeakerMusicLowFrequencyCutoff(lfCutoffHz),
+          "quiescent LF filter cutoff");
     check(core->setResearchEvidence(stem,mask),"quiescent stem admission");
     const int n=room?24576:8192;
     Render out{std::vector<float>(n),std::vector<float>(n)};
@@ -268,6 +270,23 @@ int main(int argc,char** argv){
         compareSpectrum("ANTIPHASE",rate,before,speakerAnti);
         compareSpectrum("MUSIC_LF_ANTIPHASE",rate,before,lfAnti);
         compareSpectrum("MUSIC_LF_MONO",rate,musicMono,lfMono);
+        // In one native executable, sweep the LF conditioning crossover:
+        // find the lowest cutoff that protects antiphase bass AND lower mids.
+        // No winner selected from a naive single-frequency benchmark.
+        for(float hz:{220.f,350.f,480.f,650.f}) {
+            const auto sweepAnti=render(rate,p83::Mode::SpeakerMonitor,
+                      0,0,false,p83::Stem::Combined,0x3f,
+                      Input::AntiPhase,128,0.f,true,hz);
+            const auto sweepMono=render(rate,p83::Mode::SpeakerMonitor,
+                      0,0,false,p83::Stem::Combined,0x3f,
+                      Input::MonoMusic,128,0.f,true,hz);
+            const auto antiName=std::string("LF_SWEEP_")+
+                std::to_string(static_cast<int>(hz))+"_ANTIPHASE";
+            const auto monoName=std::string("LF_SWEEP_")+
+                std::to_string(static_cast<int>(hz))+"_MONO";
+            compareSpectrum(antiName.c_str(),rate,before,sweepAnti);
+            compareSpectrum(monoName.c_str(),rate,musicMono,sweepMono);
+        }
         const auto lfSmall=render(rate,p83::Mode::SpeakerMonitor,0,0,false,
                     p83::Stem::Combined,0x3f,Input::AntiPhase,64,0.f,true);
         check(exact(lfAnti,lfSmall),"LF 64/128 chunk parity");

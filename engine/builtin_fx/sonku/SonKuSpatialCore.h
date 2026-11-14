@@ -250,6 +250,12 @@ public:
         reset();
         return true;
     }
+    bool setResearchSpeakerMusicLowFrequencyCutoff(float hz) noexcept {
+        if(!ready_||researchPcmStarted_ ||
+           room_.preparedProfile()!=SonKuReflectionProfile::SixSurfaceKemarResearch)
+            return false;
+        return p83LowFrequency_.setCutoff(hz);
+    }
     bool researchSpeakerMusicLowFrequency() const noexcept {
         return p83MusicCompatibleLf_;
     }

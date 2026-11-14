@@ -129,3 +129,15 @@ The source gate compares physical versus music LF anti-phase, correlated,
 hard-L/R, head-yaw and block parity, and records reproducible WAVs.
 The relative -6 dB threshold now checks the opt-in monitoring variant.
 A PASS is only a *tonal source gate*, not proof of externalization.
+
+## Narrow-band regression audit
+
+An initial opt-in 150-Hz direct LF crossover improved 48-kHz anti-phase
+83 Hz from -25.112 dB to -2.849 dB vs P8.2, but 461 Hz remained
+-11.520 dB, and mono 1703 Hz remained -7.207 dB. **Do not claim
+music fidelity PASS from the original 83-Hz-only quality gate.**
+The native source now tests crossover frequencies 150/220/350/480/650 Hz
+on *the same* original input, printing 83/461/1703/5387-Hz
+anti-phase and correlated-mono spectral differences for engineering
+selection. A larger LF substitution harms physical low-mid ITD/ILD;
+select only after reviewing these cross-band measurements.

@@ -19,11 +19,19 @@ class LowFrequencySpeakerTransfer final {
 public:
     bool prepare(double rate) noexcept {
         if(!std::isfinite(rate) || rate<44000. || rate>48100.)return false;
-        alpha_=static_cast<float>(
-            1.-std::exp(-2.*3.14159265358979323846*150./rate));
+        rate_=rate;
+        return setCutoff(cutoff_);
+    }
+    // Called ONLY on prepared, quiescent research cores, not audio callback.
+    bool setCutoff(float hz) noexcept {
+        if(!std::isfinite(hz)||hz<100.f||hz>750.f||rate_<=0.)return false;
+        cutoff_=hz;
+        alpha_=static_cast<float>(1.-std::exp(
+            -2.*3.14159265358979323846*hz/rate_));
         reset();
         return true;
     }
+    float cutoffHz() const noexcept {return cutoff_;}
     void reset() noexcept {
         lowSource_.fill(0.f);
         lowHrtf_.fill(0.f);
@@ -57,7 +65,8 @@ private:
         weights_[index][0]=.5f*(1.f-lean);
         weights_[index][1]=.5f*(1.f+lean);
     }
-    float alpha_=0.f;
+    float alpha_=0.f,cutoff_=150.f;
+    double rate_=0.;
     std::array<float,2> lowSource_{},lowHrtf_{};
     std::array<std::array<float,2>,2> weights_{{{{.92f,.08f}},
                                                {{.08f,.92f}}}};
