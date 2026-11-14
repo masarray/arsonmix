@@ -1,0 +1,30 @@
+name: ArSon Player KEY DSP (focused fast native test)
+on:
+  pull_request:
+    paths:
+      - 'engine/player/PlayerPitchTempoProcessor.h'
+      - 'tests/player_pitch_tempo_test.cpp'
+      - '.github/workflows/player-key-dsp-fast.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arson-player-key-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-key:
+    name: Native stereo KEY/TEMPO and hot-gesture PCM (no JUCE/installer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the standalone real DSP against vendored Signalsmith
+        run: |
+          g++ -std=c++20 -O2 -DNDEBUG -pthread \
+            tests/player_pitch_tempo_test.cpp \
+            -o "$RUNNER_TEMP/arson-player-key-test"
+      - name: Run deterministic stereo, tempo, bypass and 44.1/48/96k gestures
+        run: "$RUNNER_TEMP/arson-player-key-test"
