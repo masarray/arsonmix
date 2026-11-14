@@ -19,7 +19,9 @@ using namespace armix::sonku;
 constexpr double pi=3.141592653589793238462643;
 static constexpr int fs=48000;
 static constexpr float inputLevel=.095f;
-#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+static constexpr const char* mode="P82";
+#elif defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
 static constexpr const char* mode="P80";
 #else
 static constexpr const char* mode="P75";
