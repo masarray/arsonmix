@@ -44,7 +44,9 @@ public:
         gainSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.012)));
         amountSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.010)));
         kernelSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.008)));
-        hrirBank_=(rate==44100.)?hrir::normal44100:hrir::normal48000;
+        // Match the sample-rate tolerance admitted by both native cores; an
+        // ASIO rate close to 44100 must never index the 48k measured HRIR.
+        hrirBank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
         profile_=profile;
         // P6: select the exact P2+P3+P4 kernels before publishing this
         // instance. No runtime transition, heap, mode queue or graph fork.

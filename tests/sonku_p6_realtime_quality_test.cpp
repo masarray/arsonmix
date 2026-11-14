@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <utility>
 
 int main(){
     using namespace armix::sonku;
@@ -80,5 +81,27 @@ int main(){
         assert(full->preparedReflectionProfile()==SonKuReflectionProfile::Lightweight);
         assert(full->settings().spacePreset==1);
     }
-    std::puts("PASS P6 native ROOM profile, 44.1/48k, accepted scene restart, full-KEMAR music and chunk parity");
+    // Both native KEMAR consumers must choose the identical measured bank
+    // for a driver-reported rate within the accepted 0.1-Hz tolerance.
+    for(const auto [nominal,near]:{
+            std::pair<double,double>{44100.,44100.05},
+            std::pair<double,double>{48000.,47999.95}}){
+        auto exact=std::make_unique<SonKuEarlyReflections>();
+        auto candidate=std::make_unique<SonKuEarlyReflections>();
+        assert(exact->prepare(nominal,SonKuReflectionProfile::DirectionalKemar));
+        assert(candidate->prepare(near,SonKuReflectionProfile::DirectionalKemar));
+        const SonKuRoomGeometry g{7.2f,7.2f,1.6f};
+        assert(exact->setRealtimeRoom(g,.55f,true));
+        assert(candidate->setRealtimeRoom(g,.55f,true));
+        double error=0.,signal=0.;
+        for(int i=0;i<4000;++i){
+            const float v=i==0?.35f:0.f;
+            const auto a=exact->process(v,v,45.,60.f);
+            const auto b=candidate->process(v,v,45.,60.f);
+            error+=std::abs(a.left-b.left)+std::abs(a.right-b.right);
+            signal+=std::abs(a.left)+std::abs(a.right);
+        }
+        assert(signal>1.e-4 && error<.005);
+    }
+    std::puts("PASS P6 native ROOM profile, 44.1/48k and tolerance, restart, full-KEMAR music and chunk parity");
 }

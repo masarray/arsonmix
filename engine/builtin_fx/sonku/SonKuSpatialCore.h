@@ -65,7 +65,7 @@ public:
         if(!std::isfinite(rate) || (std::abs(rate-44100.)>.1 &&
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
-        bank_=(std::abs(rate-44100.)<.1)?hrir::normal44100:hrir::normal48000;
+        bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
