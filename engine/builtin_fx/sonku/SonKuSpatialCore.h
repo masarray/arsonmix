@@ -282,6 +282,11 @@ public:
         return timbre_.shelfGainDb();
     }
 #endif
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+    int p82PreparedRoomLatePreDelaySamples() const noexcept {
+        return reverb_.preparedLatePredelaySamples();
+    }
+#endif
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
     // No vector, heap, blocking calls, I/O or filter bank allocation.
     void process(float* left,float* right,int samples) noexcept {
