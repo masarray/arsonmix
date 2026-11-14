@@ -39,6 +39,17 @@ struct PlayerShowTransitionPolicy final {
                            tickSeconds;
         return remaining<=early && remaining>=-tickSeconds;
     }
+    // Loop A-B is a rehearsal-only opt-in. Never attempt microscopic
+    // segments or a fade longer than the segment: require a real period of
+    // audible music and a bounded overlap. CUT uses a 40ms de-click loop.
+    static bool validLoop(double cueIn,double cueOut,
+                          int fadeMilliseconds) noexcept {
+        if(!std::isfinite(cueIn)||!std::isfinite(cueOut)||
+           cueIn<0. || cueOut<=cueIn || cueOut>86400. ||
+           fadeMilliseconds<0 || fadeMilliseconds>3000)return false;
+        const double overlap=std::max(40,fadeMilliseconds)/1000.;
+        return cueOut-cueIn>=std::max(1.5,overlap+0.35);
+    }
     // A queued entry is a logical song ID/path, not a whole-file deletion.
     // Preserve duplicates and current order; UI sends source/target indices.
     template<class T>
