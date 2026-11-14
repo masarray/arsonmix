@@ -193,11 +193,22 @@ public:
                     const int idx=(write_-d)&(ringFrames-1);
                     const auto& signal=history_[s];
                     float l=0.f,r=0.f;
+                    // ROOM may have been OFF for a long time without writing
+                    // new audio into history_. After reactivation never read
+                    // old, pre-OFF samples as new directional reflections.
+                    // The fractional-delay source requires both adjacent
+                    // samples to be from the current activation epoch.
+                    // Zero-filling a 64KiB ring inside the callback is banned.
+                    const int freshTaps=realtimeMode_?
+                        std::clamp(validFrames_-d,0,hrir::taps):hrir::taps;
+                    const bool warming=freshTaps<hrir::taps;
                     // One source of truth for the coefficient slew and ear
                     // FIR arithmetic; only history address selection varies.
+                    // Advance kernels even while history is warming.
                     const auto render=[&](auto&& sample) noexcept {
                         for(int k=0;k<hrir::taps;++k){
-                            const float v=sample(k);
+                            const float v=(warming && k>=freshTaps)
+                                ?0.f:sample(k);
                             auto& hL=p.kernel[0][k];
                             auto& hR=p.kernel[1][k];
                             hL+=kernelSlew_*(p.targetKernel[0][k]-hL);

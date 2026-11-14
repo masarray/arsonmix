@@ -316,6 +316,10 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p4_contiguous_reflections_test.cpp -o /tmp/sonku-p4-regression
           /tmp/sonku-p4-regression
+      - name: P5 ROOM OFF ON fresh-history directional FIR protection
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_p5_room_reactivation_test.cpp -o /tmp/sonku-p5-room
+          /tmp/sonku-p5-room
       - name: P2 original voice-like headphone A/B and numeric PCM comparison
         run: |
           /tmp/sonku-integrity-audio sonku-integrity-evidence --directional-er-only
