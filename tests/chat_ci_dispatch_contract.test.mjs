@@ -123,6 +123,16 @@ test('file-scoped Harmonice FAT is opt-in only with complete, isolated PR file p
   }
   assert.equal(focusedHarmonyFileScope([]),false);
   assert.equal(focusedHarmonyFileScope(['README.md']),false);
+  // An unrelated rack stylesheet or CI-only change must not be treated
+  // as evidence that Vocal Harmony requires a special Windows FAT.
+  assert.equal(focusedHarmonyFileScope([
+    'site/preview-v2/assets/mixer-fx-rack.css']),false);
+  assert.equal(focusedHarmonyFileScope([
+    '.github/workflows/harmony-fast-dsp.yml']),false);
+  assert.equal(focusedHarmonyFileScope([
+    'engine/builtin_fx/ChannelHarmonyProcessor.h']),true);
+  assert.equal(focusedHarmonyFileScope([
+    'engine/player/PlayerPitchTempoProcessor.h']),false);
   const harmonyPr=pr();
   harmonyPr.head.ref='integration/harmonice-lead-ensemble-20261111';
   const calls=[];
