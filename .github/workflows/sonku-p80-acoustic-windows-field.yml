@@ -187,7 +187,7 @@ jobs:
         run: |
           # Standard distribution allowlist was verified above. Field-only notice.
           Copy-Item -LiteralPath docs/THIRD_PARTY_8D_SONKU_HRTF.md -Destination dist/THIRD_PARTY_8D_SONKU_HRTF.md
-          Copy-Item -LiteralPath docs/SONKU_P75_PHYSICAL_AUDIO_FAILURE_FIX_20261114.md -Destination dist/SONKU_P80_FIELD_FAT.md
+          Copy-Item -LiteralPath docs/SONKU_P80_STEREO_BASS_ACOUSTIC_EVIDENCE_20261114.md -Destination dist/SONKU_P80_FIELD_FAT.md
           $p = Get-Content -LiteralPath dist/BUILD_PROVENANCE.json -Raw | ConvertFrom-Json
           $checks = @{
             'THIRD_PARTY_8D_SONKU_HRTF.md' = [string]$p.sonkuExperiment.mitKemarNoticeSha256
