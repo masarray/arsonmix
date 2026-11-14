@@ -526,6 +526,8 @@ private:
     int playerFadeMilliseconds_=180; // compact optional transition setting
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
+    bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
+    std::uint64_t lastLoopAttemptGeneration_=0;
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
     std::uint64_t lastAutoAdvanceGeneration_=0;
     juce::String playerError_;
@@ -3747,6 +3749,8 @@ private:
         playerLibrary_=chosen.files;
         playerTrackSettings_=chosen.controls;
         playerCurrent_=-1;
+        playerLoopCurrent_=false;
+        lastLoopAttemptGeneration_=0;
         playerPendingIndex_=-1;
         playerPendingQueueFile_={};
         playerSelected_=playerLibrary_.empty()?-1:0;
@@ -4064,6 +4068,7 @@ private:
         obj->setProperty("selected",playerSelected_);
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
+        obj->setProperty("loopAB",playerLoopCurrent_);
         obj->setProperty("activeSetlist",playerActiveSet_);
         obj->setProperty("pending",playerPendingIndex_);
         obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
@@ -4325,6 +4330,8 @@ private:
                 (phase=="PLAYING" || phase=="PAUSED" ||
                  phase=="READY" || phase=="ENDED");
             if(hasCurrent && playerCurrent_!=playerSelected_) {
+                playerLoopCurrent_=false; // operator explicitly changes song
+                lastLoopAttemptGeneration_=0;
                 if(engine_.queuePlayerTransition(
                     playerLibrary_[static_cast<std::size_t>(playerSelected_)],
                     controls.key,controls.tempo,playerFadeMilliseconds_,
@@ -4345,6 +4352,8 @@ private:
                 controls.cueIn,controls.cueOut);
             playerError_=error;
             if(error.isEmpty()) {
+                playerLoopCurrent_=false;
+                lastLoopAttemptGeneration_=0;
                 playerPendingIndex_=-1;
                 playerCurrent_=playerSelected_;
                 // A newly native-owned MUSIC ChannelId is visible in the
@@ -4356,7 +4365,10 @@ private:
         emitPlayerState(true);
     }
     void playNextMusic() {
-        if(playerPendingIndex_>=0)return; // one in-flight transition
+        if(playerPendingIndex_>=0)return;
+        // Next is a deliberate escape from rehearsal looping.
+        playerLoopCurrent_=false;
+        lastLoopAttemptGeneration_=0; // one in-flight transition
         int queued=-1;
         while(!playerQueue_.empty() && queued<0) {
             const auto found=std::find(playerLibrary_.begin(),
@@ -4464,6 +4476,31 @@ private:
             }
             return;
         }
+        if(action=="playerLoopToggle") {
+            const bool enable=value.isBool() && static_cast<bool>(value);
+            if(!enable) {
+                playerLoopCurrent_=false;
+                playerError_.clear();
+                emitPlayerState();return;
+            }
+            if(playerPendingIndex_>=0 || playerCurrent_<0 ||
+               playerCurrent_>=static_cast<int>(playerTrackSettings_.size()) ||
+               playerSelected_!=playerCurrent_) {
+                playerError_="Select CURRENT and finish NEXT before enabling loop";
+                emitPlayerState();return;
+            }
+            const auto cue=playerTrackSettings_[
+                static_cast<std::size_t>(playerCurrent_)];
+            if(!armix::player::PlayerShowTransitionPolicy::validLoop(
+                cue.cueIn,cue.cueOut,playerFadeMilliseconds_)) {
+                playerError_="Set IN/OUT at least 1.5 seconds apart for Loop A-B";
+                emitPlayerState();return;
+            }
+            playerLoopCurrent_=true;
+            lastLoopAttemptGeneration_=0;
+            playerError_.clear();
+            emitPlayerState();return;
+        }
         if(action=="playerCueIn" || action=="playerCueOut" ||
            action=="playerCueClear" || action=="playerCueGoIn") {
             if(playerCurrent_<0 || playerCurrent_>=
@@ -4506,6 +4543,10 @@ private:
                 playerError_="Could not update native song markers";
                 emitPlayerState();return;
             }
+            if(playerLoopCurrent_ &&
+               !armix::player::PlayerShowTransitionPolicy::validLoop(
+                   cues.cueIn,cues.cueOut,playerFadeMilliseconds_))
+                playerLoopCurrent_=false;
             playerError_.clear();persistPlayerLibrary();
             emitPlayerState(true);return;
         }
@@ -4527,6 +4568,8 @@ private:
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
+            playerLoopCurrent_=false;
+            lastLoopAttemptGeneration_=0;
             playerOutputPendingIndex_=-1;
             playerPendingQueueFile_={};
             playerPendingIndex_=-1;
@@ -4541,6 +4584,14 @@ private:
             const int ms=static_cast<int>(value);
             if(ms!=0 && ms!=180 && ms!=500 && ms!=1500)return;
             playerFadeMilliseconds_=ms;
+            if(playerLoopCurrent_ && playerCurrent_>=0 &&
+               playerCurrent_<static_cast<int>(playerTrackSettings_.size())) {
+                const auto cue=playerTrackSettings_[
+                    static_cast<std::size_t>(playerCurrent_)];
+                if(!armix::player::PlayerShowTransitionPolicy::validLoop(
+                    cue.cueIn,cue.cueOut,ms))
+                    playerLoopCurrent_=false;
+            }
             persistPlayerLibrary();emitPlayerState();return;
         }
         if(action=="playerSelect" || action=="playerPlayNow") {
@@ -7645,9 +7696,48 @@ private:
                     playerCurrent_,playerSelected_,
                     static_cast<int>(playerLibrary_.size()),
                     queued):-1;
+            // Rehearsal loop has priority over Auto Next and queued
+            // songs, which remain untouched until the operator presses Next.
+            // Reuse the exact M3 standby worker for a click-safe A-B return;
+            // never seek inside the hardware callback.
+            if(playerLoopCurrent_ && activeCurrent &&
+               phase=="PLAYING" && !fading && !preparing &&
+               playerPendingIndex_<0) {
+                const auto loop=playerTrackSettings_[
+                    static_cast<std::size_t>(playerCurrent_)];
+                if(armix::player::PlayerShowTransitionPolicy::validLoop(
+                    loop.cueIn,loop.cueOut,playerFadeMilliseconds_)) {
+                    const auto currentFile=playerLibrary_[
+                        static_cast<std::size_t>(playerCurrent_)];
+                    (void)engine_.preloadPlayerMusic(currentFile,
+                        loop.key,loop.tempo,loop.cueIn,loop.cueOut);
+                    const auto generation=static_cast<std::uint64_t>(
+                        transport.getProperty("generation","0").toString()
+                                 .getLargeIntValue());
+                    const auto position=static_cast<double>(
+                        transport.getProperty("currentSeconds",0.0));
+                    const auto duration=static_cast<double>(
+                        transport.getProperty("durationSeconds",0.0));
+                    const int fade=std::max(40,playerFadeMilliseconds_);
+                    if(generation!=lastLoopAttemptGeneration_ &&
+                       armix::player::PlayerShowTransitionPolicy::
+                           armBeforeEnd(position,duration,fade,0.085)) {
+                        lastLoopAttemptGeneration_=generation;
+                        if(engine_.queuePlayerTransition(currentFile,
+                           loop.key,loop.tempo,fade,loop.cueIn,loop.cueOut)) {
+                            playerPendingIndex_=playerCurrent_;
+                            playerPendingQueueFile_={};
+                            playerError_.clear();
+                        } else {
+                            playerError_="Loop standby failed; original music remains";
+                            playerLoopCurrent_=false;
+                        }
+                    }
+                } else playerLoopCurrent_=false;
+            }
             // Queue is explicit operator intent: warm NEXT even while Auto
             // Next is OFF. Auto alone may prepare the following setlist row.
-            if((playerAutoNext_ || queued>=0) &&
+            if(!playerLoopCurrent_ && (playerAutoNext_ || queued>=0) &&
                phase=="PLAYING" && !fading && !preparing &&
                playerPendingIndex_<0 && upcoming>=0 &&
                (upcoming!=playerCurrent_ || queued>=0)) {
@@ -7658,7 +7748,7 @@ private:
                     preset.key,preset.tempo,
                     preset.cueIn,preset.cueOut);
             }
-            if(playerAutoNext_ && activeCurrent &&
+            if(playerAutoNext_ && !playerLoopCurrent_ && activeCurrent &&
                !fading && !preparing && playerPendingIndex_<0 &&
                upcoming>=0 &&
                (upcoming!=playerCurrent_ || queued>=0) &&
