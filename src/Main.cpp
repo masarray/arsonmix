@@ -4119,20 +4119,20 @@ private:
             }
             obj->setProperty("queue",juce::var(queue));
             if(includeTracks) {
-            juce::Array<juce::var> rows;
-            for(std::size_t i=0;i<playerLibrary_.size();++i) {
-                auto song=std::make_unique<juce::DynamicObject>();
-                song->setProperty("id",static_cast<int>(i));
-                song->setProperty("title",
-                    playerLibrary_[i].getFileNameWithoutExtension());
-                song->setProperty("missing",!playerLibrary_[i].existsAsFile());
-                song->setProperty("keySemitones",playerTrackSettings_[i].key);
-                song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
-                song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
-                song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
-                rows.add(juce::var(song.release()));
-            }
-            obj->setProperty("tracks",juce::var(rows));
+                juce::Array<juce::var> rows;
+                for(std::size_t i=0;i<playerLibrary_.size();++i) {
+                    auto song=std::make_unique<juce::DynamicObject>();
+                    song->setProperty("id",static_cast<int>(i));
+                    song->setProperty("title",
+                        playerLibrary_[i].getFileNameWithoutExtension());
+                    song->setProperty("missing",!playerLibrary_[i].existsAsFile());
+                    song->setProperty("keySemitones",playerTrackSettings_[i].key);
+                    song->setProperty("tempoPercent",playerTrackSettings_[i].tempo);
+                    song->setProperty("cueIn",playerTrackSettings_[i].cueIn);
+                    song->setProperty("cueOut",playerTrackSettings_[i].cueOut);
+                    rows.add(juce::var(song.release()));
+                }
+                obj->setProperty("tracks",juce::var(rows));
             }
         }
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",

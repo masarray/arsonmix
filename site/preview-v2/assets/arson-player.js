@@ -211,6 +211,20 @@
  // Keep the approved scroll list lightweight at all 2,000-song capacities.
  const ROW_HEIGHT=38,OVERSCAN=8;
  let filteredKey="",previousQuery="",previousSetlist=-1,filtered=[];
+ function refreshVisibleTrackStates(){
+   // Do not destroy the existing row on CURRENT/NEXT readback; a native
+   // status ACK between click and dblclick must not lose the gesture or focus.
+   for(const row of list.children){
+     if(row.className!=="ap-songrow")continue;
+     const id=Number(row.dataset.songId),song=model.tracks[id];
+     const choose=row.children[0];
+     choose.dataset.selected=String(id===model.selected);
+     choose.dataset.current=String(id===model.current);
+     choose.setAttribute("aria-selected",String(id===model.selected));
+     choose.children[2].textContent=song?.missing?"Missing":
+       id===model.current?"NOW":id===model.selected?"NEXT":"";
+   }
+ }
  function renderTracks(){
    const query=search.value.trim().toLocaleLowerCase();
    const key=[libraryRevision,model.activeSetlist,query].join("|");
@@ -228,8 +242,11 @@
    const start=Math.max(0,Math.min(filtered.length,
      Math.floor(list.scrollTop/ROW_HEIGHT)-OVERSCAN));
    const end=Math.min(filtered.length,start+visible);
-   const signature=[key,model.selected,model.current,start,end].join("|");
-   if(rendered===signature)return;
+   const signature=[key,start,end].join("|");
+   if(rendered===signature){
+     refreshVisibleTrackStates();
+     return;
+   }
    rendered=signature;
    const songs=filtered.slice(start,end);
    list.replaceChildren();
@@ -249,6 +266,7 @@
    for(const song of songs){
      const row=document.createElement("div");
      row.className="ap-songrow";row.setAttribute("role","listitem");
+     row.dataset.songId=String(song.id);
      row.draggable=native;
      const choose=document.createElement("button");
      choose.type="button";choose.className="ap-song";
@@ -307,6 +325,7 @@
    bottom.style.height=((filtered.length-end)*ROW_HEIGHT)+"px";
    bottom.setAttribute("aria-hidden","true");
    list.append(bottom);
+   refreshVisibleTrackStates();
  }
  function render(){
    const t=model.transport||{};

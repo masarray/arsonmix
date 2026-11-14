@@ -80,11 +80,22 @@ assert.ok(songRows().length<=80);
 const visibleIds=songRows().map(row=>row.children[0].children[0].textContent);
 assert.ok(visibleIds.includes('1401'), 'song 1401 must be in virtual viewport');
 const preserved=list.children;
+const firstButton=songRows()[0].children[0];
 actions.length=0;
 publish({queue,queueRevision:7,setlists:initial.setlists,pending:-1,
          activeSetlist:0,current:0,selected:0});
 assert.strictEqual(list.children,preserved,
   'queue-only snapshot must not rebuild the 2,000-track catalogue');
+publish({selected:1400,current:1399,pending:-1});
+assert.strictEqual(songRows()[0].children[0],firstButton,
+  'CURRENT/NEXT ACK must preserve row/button identity for double-click');
+const selectedRow=songRows().find(row=>row.dataset.songId==='1400');
+assert.equal(selectedRow.children[0].dataset.selected,'true');
+actions.length=0;
+selectedRow.children[0].fire('click');
+selectedRow.children[0].fire('dblclick');
+assert.equal(actions[0].detail.action,'playerSelect');
+assert.equal(actions[1].detail.action,'playerPlayNow');
 
 const data={types:['application/x-arsonmix-queue'],setData(){},getData(){}};
 const prevent=()=>{};
