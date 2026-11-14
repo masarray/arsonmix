@@ -495,9 +495,26 @@ private:
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
-    std::vector<juce::File> playerLibrary_; // one compact default setlist
+    // PlayerShow v3: one active setlist projects into the existing native
+    // library/controls so decoder bindings and FX routing do not change.
+    // Save/restore swaps complete sets, not two independently mutated arrays.
+    std::vector<juce::File> playerLibrary_;
     struct PlayerTrackSettings {int key=0,tempo=100;};
-    std::vector<PlayerTrackSettings> playerTrackSettings_; // parallel stable entry IDs
+    std::vector<PlayerTrackSettings> playerTrackSettings_;
+    struct PlayerSavedSet {
+        juce::String name;
+        std::vector<juce::File> files;
+        std::vector<PlayerTrackSettings> controls;
+    };
+    std::vector<PlayerSavedSet> playerSets_;
+    int playerActiveSet_=0;
+    std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
+    struct PlayerUndoRemove {
+        int set=-1,index=-1;
+        juce::File file;
+        PlayerTrackSettings controls{};
+    };
+    PlayerUndoRemove playerUndoRemove_{};
     int playerSelected_=-1,playerCurrent_=-1;
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
@@ -3704,67 +3721,268 @@ private:
             });
     }
 
-    // One native player, one local setlist, one worker decoder, same JUCE
-    // callback. The WebView may only select songs or send transport intents.
+    // Versioned setlist v3. Song paths remain external and are NEVER moved,
+    // deleted or copied by editing a show. v1/v2 migrate non-destructively.
+    void saveActivePlayerSet() {
+        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
+        if(playerActiveSet_<0 ||
+           playerActiveSet_>=static_cast<int>(playerSets_.size()))
+            playerActiveSet_=0;
+        auto& active=playerSets_[static_cast<std::size_t>(playerActiveSet_)];
+        active.files=playerLibrary_;
+        active.controls=playerTrackSettings_;
+    }
+    void activatePlayerSet(int index) {
+        if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
+        playerActiveSet_=index;
+        const auto& chosen=playerSets_[static_cast<std::size_t>(index)];
+        playerLibrary_=chosen.files;
+        playerTrackSettings_=chosen.controls;
+        playerCurrent_=-1;
+        playerSelected_=playerLibrary_.empty()?-1:0;
+        playerQueue_.clear();
+        playerOutputPendingIndex_=-1;
+        playerUndoRemove_={};
+    }
     void restorePlayerLibrary() {
+        playerSets_.clear();
         const auto file=settingsDirectory().getChildFile("player-library.json");
-        if(!file.existsAsFile())return;
-        auto json=juce::JSON::parse(file.loadFileAsString());
-        const int version=static_cast<int>(json.getProperty("version",0));
-        if(!json.isObject() || (version!=1 && version!=2)) {
-            playerError_="Saved setlist could not be read; music files were not changed";
+        if(!file.existsAsFile()) {
+            playerSets_.push_back({"My Setlist",{},{}});
             return;
         }
-        const auto tracks=json.getProperty("files",{});
-        if(const auto* list=tracks.getArray()) {
-            for(const auto& item:*list) {
-                if(playerLibrary_.size()>=2000)break;
-                if((version==1 && !item.isString()) ||
-                   (version==2 && !item.isObject()))continue;
-                const auto text=version==1?item.toString():
-                    item.getProperty("path","").toString();
-                if(text.isEmpty() || text.length()>4096)continue;
-                const juce::File entry(text);
-                if(!juce::File::isAbsolutePath(text) ||
-                   !entry.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
-                   std::find(playerLibrary_.begin(),playerLibrary_.end(),entry)
-                       !=playerLibrary_.end())
-                    continue;
-                PlayerTrackSettings controls;
-                if(version==2) {
-                    controls.key=static_cast<int>(item.getProperty("key",0));
-                    controls.tempo=static_cast<int>(item.getProperty("tempo",100));
-                    if(controls.key< -6 || controls.key>6 ||
-                       controls.tempo<80 || controls.tempo>120)
-                        controls={}; // corrupt automation cannot alter audio
+        const auto json=juce::JSON::parse(file.loadFileAsString());
+        const int version=static_cast<int>(json.getProperty("version",0));
+        if(!json.isObject() || (version!=1 && version!=2 && version!=3)) {
+            playerSets_.push_back({"My Setlist",{},{}});
+            playerError_="Setlists could not be read; no music files were changed";
+            return;
+        }
+        const auto parseSongs=[&](const juce::var& items,int itemVersion,
+                                  PlayerSavedSet& destination) {
+            if(const auto* list=items.getArray()) {
+                for(const auto& item:*list) {
+                    if(destination.files.size()>=2000)break;
+                    if((itemVersion==1 && !item.isString()) ||
+                       (itemVersion>=2 && !item.isObject()))continue;
+                    const auto path=itemVersion==1?item.toString():
+                        item.getProperty("path","").toString();
+                    if(path.isEmpty() || path.length()>4096 ||
+                       !juce::File::isAbsolutePath(path))continue;
+                    const juce::File source(path);
+                    if(!source.hasFileExtension("wav;mp3;flac;aif;aiff;ogg") ||
+                       std::find(destination.files.begin(),
+                                 destination.files.end(),source)
+                           !=destination.files.end())continue;
+                    PlayerTrackSettings preset;
+                    if(itemVersion>=2) {
+                        preset.key=static_cast<int>(item.getProperty("key",0));
+                        preset.tempo=static_cast<int>(item.getProperty("tempo",100));
+                        if(preset.key< -6 || preset.key>6 ||
+                           preset.tempo<80 || preset.tempo>120)preset={};
+                    }
+                    destination.files.push_back(source);
+                    destination.controls.push_back(preset);
                 }
-                playerLibrary_.push_back(entry);
-                playerTrackSettings_.push_back(controls);
+            }
+        };
+        if(version<=2) {
+            PlayerSavedSet migrated{"My Setlist",{},{}};
+            parseSongs(json.getProperty("files",{}),version,migrated);
+            playerSets_.push_back(std::move(migrated));
+        } else if(const auto* sets=json.getProperty("setlists",{}).getArray()) {
+            for(const auto& source:*sets) {
+                if(playerSets_.size()>=32)break;
+                if(!source.isObject())continue;
+                auto name=source.getProperty("name","").toString().trim();
+                if(name.isEmpty() || name.length()>64)continue;
+                const bool duplicate=std::any_of(
+                    playerSets_.begin(),playerSets_.end(),
+                    [&](const PlayerSavedSet& set) {
+                        return set.name.equalsIgnoreCase(name);
+                    });
+                if(duplicate)continue;
+                PlayerSavedSet next{name,{},{}};
+                parseSongs(source.getProperty("files",{}),2,next);
+                playerSets_.push_back(std::move(next));
             }
         }
+        if(playerSets_.empty())playerSets_.push_back({"My Setlist",{},{}});
+        const int active=version==3?
+            static_cast<int>(json.getProperty("activeSetlist",0)):0;
+        activatePlayerSet(std::clamp(active,0,
+            static_cast<int>(playerSets_.size())-1));
         playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
             static_cast<bool>(json.getProperty("autoNext",false));
-        if(!playerLibrary_.empty())playerSelected_=0;
     }
     void persistPlayerLibrary() {
+        saveActivePlayerSet();
         auto document=std::make_unique<juce::DynamicObject>();
-        document->setProperty("version",2);
+        document->setProperty("version",3);
+        document->setProperty("activeSetlist",playerActiveSet_);
         document->setProperty("autoNext",playerAutoNext_);
-        juce::Array<juce::var> files;
-        for(std::size_t i=0;i<playerLibrary_.size();++i) {
-            auto entry=std::make_unique<juce::DynamicObject>();
-            entry->setProperty("path",playerLibrary_[i].getFullPathName());
-            entry->setProperty("key",playerTrackSettings_[i].key);
-            entry->setProperty("tempo",playerTrackSettings_[i].tempo);
-            files.add(juce::var(entry.release()));
+        juce::Array<juce::var> sets;
+        for(const auto& set:playerSets_) {
+            auto object=std::make_unique<juce::DynamicObject>();
+            object->setProperty("name",set.name);
+            juce::Array<juce::var> files;
+            for(std::size_t i=0;i<set.files.size();++i) {
+                auto entry=std::make_unique<juce::DynamicObject>();
+                entry->setProperty("path",set.files[i].getFullPathName());
+                entry->setProperty("key",set.controls[i].key);
+                entry->setProperty("tempo",set.controls[i].tempo);
+                files.add(juce::var(entry.release()));
+            }
+            object->setProperty("files",juce::var(files));
+            sets.add(juce::var(object.release()));
         }
-        document->setProperty("files",juce::var(files));
+        document->setProperty("setlists",juce::var(sets));
         const auto target=settingsDirectory().getChildFile("player-library.json");
         juce::TemporaryFile staging(target);
         if(!staging.getFile().replaceWithText(
                 juce::JSON::toString(juce::var(document.release()),false)) ||
            !staging.overwriteTargetFileWithTemporary())
-            playerError_="Unable to save setlist; check folder permissions";
+            playerError_="Unable to save setlists; check folder permissions";
+    }
+    bool playerShowMaySwitchSet() {
+        const auto state=engine_.playerStatus().getProperty("state","").toString();
+        if(state=="PLAYING" || state=="PREPARING" || state=="PAUSED") {
+            playerError_="Stop the current song before switching setlists";
+            emitPlayerState();return false;
+        }
+        return !playerFolderBusy_;
+    }
+    void playerEditSetlist(const juce::String& action,const juce::var& value) {
+        if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
+           action=="playerDeleteSetlist") {
+            if(!playerShowMaySwitchSet())return;
+            if(action=="playerNewSetlist") {
+                if(playerSets_.size()>=32) {
+                    playerError_="Maximum 32 setlists";emitPlayerState();return;
+                }
+                saveActivePlayerSet();
+                const int next=static_cast<int>(playerSets_.size())+1;
+                playerSets_.push_back({"Setlist "+juce::String(next),{},{}});
+                engine_.playerStop();
+                activatePlayerSet(static_cast<int>(playerSets_.size())-1);
+            } else {
+                const int index=static_cast<int>(value);
+                if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
+                saveActivePlayerSet();
+                if(action=="playerSelectSetlist") {
+                    engine_.playerStop();activatePlayerSet(index);
+                } else if(playerSets_.size()>1) {
+                    engine_.playerStop();
+                    playerSets_.erase(playerSets_.begin()+index);
+                    activatePlayerSet(std::min(playerActiveSet_,
+                        static_cast<int>(playerSets_.size())-1));
+                } else {
+                    playerError_="Keep at least one setlist";
+                    emitPlayerState();return;
+                }
+            }
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerRenameSetlist") {
+            auto name=value.toString().trim();
+            if(name.isEmpty() || name.length()>64)return;
+            const bool exists=std::any_of(
+                playerSets_.begin(),playerSets_.end(),
+                [&](const PlayerSavedSet& set) {
+                    return set.name.equalsIgnoreCase(name) &&
+                           &set!=&playerSets_[static_cast<std::size_t>(playerActiveSet_)];
+                });
+            if(exists) {
+                playerError_="Setlist name already exists";
+                emitPlayerState();return;
+            }
+            playerSets_[static_cast<std::size_t>(playerActiveSet_)].name=name;
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerMoveSong") {
+            const int from=static_cast<int>(value.getProperty("from",-1));
+            const int to=static_cast<int>(value.getProperty("to",-1));
+            const int count=static_cast<int>(playerLibrary_.size());
+            if(from<0 || to<0 || from>=count || to>=count || from==to)return;
+            auto move=[&](auto& items) {
+                auto item=std::move(items[static_cast<std::size_t>(from)]);
+                items.erase(items.begin()+from);
+                items.insert(items.begin()+to,std::move(item));
+            };
+            move(playerLibrary_);move(playerTrackSettings_);
+            const auto remap=[&](int index) {
+                if(index==from)return to;
+                if(from<to && index>from && index<=to)return index-1;
+                if(from>to && index>=to && index<from)return index+1;
+                return index;
+            };
+            playerSelected_=remap(playerSelected_);
+            playerCurrent_=remap(playerCurrent_);
+            persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerRemoveSong") {
+            const int index=static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerLibrary_.size()))return;
+            if(index==playerCurrent_ &&
+               engine_.playerStatus().getProperty("state","").toString()!="ENDED" &&
+               engine_.playerStatus().getProperty("state","").toString()!="STOPPED") {
+                playerError_="Stop the playing song before removing it";
+                emitPlayerState();return;
+            }
+            playerUndoRemove_={playerActiveSet_,index,
+                playerLibrary_[static_cast<std::size_t>(index)],
+                playerTrackSettings_[static_cast<std::size_t>(index)]};
+            playerQueue_.erase(
+                std::remove(playerQueue_.begin(),playerQueue_.end(),
+                            playerUndoRemove_.file),playerQueue_.end());
+            playerLibrary_.erase(playerLibrary_.begin()+index);
+            playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
+            const auto remap=[&](int old) {
+                return old==index?-1:old>index?old-1:old;
+            };
+            playerCurrent_=remap(playerCurrent_);
+            playerSelected_=remap(playerSelected_);
+            if(playerSelected_<0 && !playerLibrary_.empty())
+                playerSelected_=std::min(index,
+                    static_cast<int>(playerLibrary_.size())-1);
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerUndoRemove") {
+            const auto removed=playerUndoRemove_;
+            if(removed.set!=playerActiveSet_ || removed.index<0)return;
+            if(std::find(playerLibrary_.begin(),playerLibrary_.end(),
+                         removed.file)!=playerLibrary_.end())return;
+            const int index=std::clamp(removed.index,0,
+                static_cast<int>(playerLibrary_.size()));
+            playerLibrary_.insert(playerLibrary_.begin()+index,removed.file);
+            playerTrackSettings_.insert(
+                playerTrackSettings_.begin()+index,removed.controls);
+            if(playerCurrent_>=index)++playerCurrent_;
+            if(playerSelected_>=index)++playerSelected_;
+            playerUndoRemove_={};
+            playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
+            return;
+        }
+        if(action=="playerQueueNext" || action=="playerQueueAppend") {
+            const int index=static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerLibrary_.size()) ||
+               playerQueue_.size()>=128)return;
+            const auto file=playerLibrary_[static_cast<std::size_t>(index)];
+            if(action=="playerQueueNext")
+                playerQueue_.insert(playerQueue_.begin(),file);
+            else playerQueue_.push_back(file);
+            emitPlayerState(true);return;
+        }
+        if(action=="playerQueueRemove") {
+            const int index=static_cast<int>(value);
+            if(index<0 || index>=static_cast<int>(playerQueue_.size()))return;
+            playerQueue_.erase(playerQueue_.begin()+index);
+            emitPlayerState(true);return;
+        }
     }
     void emitPlayerState(bool includeLibrary=false) {
         if(!browser_.loaded)return;
@@ -3774,12 +3992,36 @@ private:
         obj->setProperty("selected",playerSelected_);
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
+        obj->setProperty("activeSetlist",playerActiveSet_);
+        obj->setProperty("canUndoRemove",
+            playerUndoRemove_.set==playerActiveSet_ &&
+            playerUndoRemove_.index>=0);
         obj->setProperty("libraryBusy",playerFolderBusy_);
         obj->setProperty("error",playerError_);
         obj->setProperty("chooseOutput",
             playerError_.containsIgnoreCase("Choose a verified MAIN output") ||
             playerError_.containsIgnoreCase("native mixer is preparing"));
         if(includeLibrary) {
+            juce::Array<juce::var> sets;
+            for(std::size_t i=0;i<playerSets_.size();++i) {
+                auto row=std::make_unique<juce::DynamicObject>();
+                row->setProperty("id",static_cast<int>(i));
+                row->setProperty("name",playerSets_[i].name);
+                row->setProperty("count",static_cast<int>(
+                    static_cast<int>(i)==playerActiveSet_?
+                        playerLibrary_.size():playerSets_[i].files.size()));
+                sets.add(juce::var(row.release()));
+            }
+            obj->setProperty("setlists",juce::var(sets));
+            juce::Array<juce::var> queue;
+            for(std::size_t i=0;i<playerQueue_.size();++i) {
+                auto item=std::make_unique<juce::DynamicObject>();
+                item->setProperty("id",static_cast<int>(i));
+                item->setProperty("title",
+                    playerQueue_[i].getFileNameWithoutExtension());
+                queue.add(juce::var(item.release()));
+            }
+            obj->setProperty("queue",juce::var(queue));
             juce::Array<juce::var> rows;
             for(std::size_t i=0;i<playerLibrary_.size();++i) {
                 auto song=std::make_unique<juce::DynamicObject>();
@@ -4018,7 +4260,16 @@ private:
         emitPlayerState(true);
     }
     void playNextMusic() {
-        const int next=armix::player::SetlistPolicy::nextTrack(
+        int next=-1;
+        while(next<0 && !playerQueue_.empty()) {
+            const auto upcoming=playerQueue_.front();
+            playerQueue_.erase(playerQueue_.begin());
+            const auto found=std::find(
+                playerLibrary_.begin(),playerLibrary_.end(),upcoming);
+            if(found!=playerLibrary_.end())
+                next=static_cast<int>(found-playerLibrary_.begin());
+        }
+        if(next<0)next=armix::player::SetlistPolicy::nextTrack(
             playerCurrent_,playerSelected_,
             static_cast<int>(playerLibrary_.size()));
         if(next<0) {
@@ -4046,6 +4297,12 @@ private:
             action="audioSetup";
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
+        if(action=="playerNewSetlist" || action=="playerSelectSetlist" ||
+           action=="playerDeleteSetlist" || action=="playerRenameSetlist" ||
+           action=="playerMoveSong" || action=="playerRemoveSong" ||
+           action=="playerUndoRemove" || action=="playerQueueNext" ||
+           action=="playerQueueAppend" || action=="playerQueueRemove")
+            return playerEditSetlist(action,value);
         if(action=="playerAdd")return choosePlayerFiles();
         if(action=="playerAddFolder")return choosePlayerFolder();
         if(action=="playerRelink")return choosePlayerRelink();
