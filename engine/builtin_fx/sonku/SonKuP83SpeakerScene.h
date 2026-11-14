@@ -6,11 +6,20 @@
 // Research-only speaker positions are fixed in WORLD, head yaw is separate.
 // No IO, tracker, threads, heap or additional PCM authority.
 namespace armix::sonku::p83 {
-enum class Mode : std::uint8_t { MusicBedP82=0, MonoObject=1, SpeakerMonitor=2 };
+enum class Mode : std::uint8_t {
+    MusicBedP82=0, MonoObject=1, SpeakerMonitor=2,
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+    MusicSpatialP84=3
+#endif
+};
 enum class Stem : std::uint8_t { Combined=0, Direct=1, Early=2, Late=3 };
 inline bool valid(Mode m) noexcept {
     return m==Mode::MusicBedP82 || m==Mode::MonoObject ||
-           m==Mode::SpeakerMonitor;
+           m==Mode::SpeakerMonitor
+#if defined(SONKU_P84_SINGLE_CORE_FUSION_RESEARCH) && SONKU_P84_SINGLE_CORE_FUSION_RESEARCH
+           || m==Mode::MusicSpatialP84
+#endif
+           ;
 }
 inline bool valid(Stem s) noexcept {
     return s==Stem::Combined || s==Stem::Direct ||
