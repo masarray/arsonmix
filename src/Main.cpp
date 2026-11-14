@@ -57,6 +57,7 @@
 #include <functional>
 #include <vector>
 #include "../engine/player/PlayerSetlistPolicy.h"
+#include "../engine/player/PlayerShowEditPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
 #include <juce_core/juce_core.h>
 #include <thread>
@@ -3926,19 +3927,22 @@ private:
             };
             move(playerLibrary_);move(playerTrackSettings_);
             const auto remap=[&](int index) {
-                if(index==from)return to;
-                if(from<to && index>from && index<=to)return index-1;
-                if(from>to && index>=to && index<from)return index+1;
-                return index;
+                return armix::player::PlayerShowEditPolicy::afterMove(
+                    index,from,to,count);
             };
             playerSelected_=remap(playerSelected_);
             playerCurrent_=remap(playerCurrent_);
+            playerPendingIndex_=remap(playerPendingIndex_);
             persistPlayerLibrary();emitPlayerState(true);
             return;
         }
         if(action=="playerRemoveSong") {
             const int index=static_cast<int>(value);
             if(index<0 || index>=static_cast<int>(playerLibrary_.size()))return;
+            if(index==playerPendingIndex_) {
+                playerError_="NEXT is preparing; wait before removing this song";
+                emitPlayerState();return;
+            }
             if(index==playerCurrent_ &&
                engine_.playerStatus().getProperty("state","").toString()!="ENDED" &&
                engine_.playerStatus().getProperty("state","").toString()!="STOPPED") {
@@ -3954,10 +3958,12 @@ private:
             playerLibrary_.erase(playerLibrary_.begin()+index);
             playerTrackSettings_.erase(playerTrackSettings_.begin()+index);
             const auto remap=[&](int old) {
-                return old==index?-1:old>index?old-1:old;
+                return armix::player::PlayerShowEditPolicy::afterRemove(
+                    old,index);
             };
             playerCurrent_=remap(playerCurrent_);
             playerSelected_=remap(playerSelected_);
+            playerPendingIndex_=remap(playerPendingIndex_);
             if(playerSelected_<0 && !playerLibrary_.empty())
                 playerSelected_=std::min(index,
                     static_cast<int>(playerLibrary_.size())-1);
@@ -3974,8 +3980,12 @@ private:
             playerLibrary_.insert(playerLibrary_.begin()+index,removed.file);
             playerTrackSettings_.insert(
                 playerTrackSettings_.begin()+index,removed.controls);
-            if(playerCurrent_>=index)++playerCurrent_;
-            if(playerSelected_>=index)++playerSelected_;
+            playerCurrent_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerCurrent_,index);
+            playerSelected_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerSelected_,index);
+            playerPendingIndex_=armix::player::PlayerShowEditPolicy::afterInsert(
+                playerPendingIndex_,index);
             playerUndoRemove_={};
             playerError_.clear();persistPlayerLibrary();emitPlayerState(true);
             return;
@@ -4306,6 +4316,7 @@ private:
             playerCurrent_,playerSelected_,
             static_cast<int>(playerLibrary_.size()));
         if(next<0) {
+            playerPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
         playerSelected_=next;playSelectedMusic();
@@ -4413,8 +4424,8 @@ private:
                     // with an already-buffered next song.
                     const auto state=engine_.playerStatus().getProperty(
                         "state","").toString();
-                    if(i!=playerCurrent_ && playerCurrent_>=0 &&
-                       state=="PLAYING") {
+                    if(i!=playerCurrent_ && playerPendingIndex_<0 &&
+                       playerCurrent_>=0 && state=="PLAYING") {
                         const auto settings=playerTrackSettings_[
                             static_cast<std::size_t>(i)];
                         (void)engine_.preloadPlayerMusic(
