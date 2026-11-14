@@ -470,6 +470,8 @@ jobs:
         run: python tests/approved_preview_mobile_navigation_smoke.py
       - name: FX rack master bypass preserves each insert state (real Chromium)
         run: python tests/approved_fx_rack_master_power_smoke.py
+      - name: Global FX A/B, PAN extremes and GAIN/WIRE state (real Chromium)
+        run: python tests/pages_global_fx_ab_pan_wire_smoke.py
       - name: Native FX pointer transfer, delete and editor identity
         run: python tests/approved_native_fx_edit_smoke.py
       - name: Native EQ real Chromium SVG gestures, ACK, graph and responsive editor
