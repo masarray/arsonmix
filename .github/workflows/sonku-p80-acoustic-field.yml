@@ -52,7 +52,7 @@ jobs:
             -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 \
             -DSONKU_P71_DIRECT_XYZ_RESEARCH=1 \
             -DSONKU_P72_NATIVE_XYZ_RT=1 \
-            -DSONKU_P80_MUSIC_SAFE_RESEARCH=1 \
+            -DSONKU_P75_MUSIC_SAFE_RESEARCH=1 \
             tests/sonku_p75_stereo_integrity_test.cpp -o /tmp/sonku-p75-music
           /tmp/sonku-p75-music
           # Baseline and measured P8.0 compile the SAME source tree with
@@ -107,9 +107,9 @@ jobs:
         run: |
           $actual = (& git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_SHA -or $actual -notmatch '^[0-9a-f]{40}$') {
-            throw "SONKU_P75_SOURCE_MISMATCH:$actual"
+            throw "SONKU_P80_SOURCE_MISMATCH:$actual"
           }
-          Write-Host "SONKU_P75_EXACT_SOURCE=$actual"
+          Write-Host "SONKU_P80_EXACT_SOURCE=$actual"
       - uses: actions/checkout@v4
         with:
           repository: juce-framework/JUCE
@@ -136,7 +136,7 @@ jobs:
           if ($cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_NATIVE_XYZ_RT:BOOL=ON' -or
               $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_MUSIC_SAFE:BOOL=ON' -or
               $cache -notmatch 'ARMIX_SONKU_EXPERIMENTAL_P80_TIMBRE:BOOL=ON') {
-            throw "SONKU_P75_RESEARCH_NOT_ENABLED"
+            throw "SONKU_P80_RESEARCH_NOT_ENABLED"
           }
           $tests = (& ctest --test-dir build -C Release --show-only=json-v1 | Out-String | ConvertFrom-Json)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -147,7 +147,7 @@ jobs:
                         'NativeSonKuP80MeasuredHrtfTimbreAndChunkParity')
           $available = @($tests.tests | ForEach-Object { $_.name })
           foreach ($test in $required) {
-            if ($test -notin $available) { throw "SONKU_P75_MISSING_CTEST:$test" }
+            if ($test -notin $available) { throw "SONKU_P80_MISSING_CTEST:$test" }
           }
       - name: Compile actual ARMixConsole Windows GUI and focused real JUCE tests
         shell: pwsh
@@ -156,8 +156,8 @@ jobs:
             ARMixConsole ARMixSonKuP72SourceTests ARMixSonKuP72NativeTests ARMixSonKuNativeStateTests ARMixSonKuP75MusicIntegrityTests ARMixSonKuP80MeasuredTimbreTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $exe = 'build/ARMixConsole_artefacts/Release/AR MIX Studio.exe'
-          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "SONKU_P75_NO_GUI_EXE" }
-          if ((Get-Item -LiteralPath $exe).Length -lt 4MB) { throw "SONKU_P75_WRONG_GUI_TARGET" }
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "SONKU_P80_NO_GUI_EXE" }
+          if ((Get-Item -LiteralPath $exe).Length -lt 4MB) { throw "SONKU_P80_WRONG_GUI_TARGET" }
       - name: Scoped native XYZ state, callback ACK and legacy restoration
         shell: pwsh
         run: |
@@ -177,7 +177,7 @@ jobs:
           $path = 'dist/BUILD_PROVENANCE.json'
           $p = Get-Content -LiteralPath $path -Raw -Encoding utf8 | ConvertFrom-Json
           $sha = (& git rev-parse HEAD).Trim()
-          if ($p.sourceCommit -ne $sha) { throw "SONKU_P75_ARTIFACT_SHA_MISMATCH" }
+          if ($p.sourceCommit -ne $sha) { throw "SONKU_P80_ARTIFACT_SHA_MISMATCH" }
           $p.fatStatus = 'FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
           $p | Add-Member -NotePropertyName sonkuExperiment -NotePropertyValue @{
             enabled = $true
@@ -225,10 +225,10 @@ jobs:
             $file = Join-Path dist $item.Key
             if ($item.Value -notmatch '^[0-9a-f]{64}$' -or
                 -not (Test-Path -LiteralPath $file -PathType Leaf)) {
-              throw "SONKU_P75_FIELD_NOTICE_MISSING:$($item.Key)"
+              throw "SONKU_P80_FIELD_NOTICE_MISSING:$($item.Key)"
             }
             $actual = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $item.Value) { throw "SONKU_P75_FIELD_NOTICE_HASH_MISMATCH:$($item.Key)" }
+            if ($actual -ne $item.Value) { throw "SONKU_P80_FIELD_NOTICE_HASH_MISMATCH:$($item.Key)" }
           }
           if (Test-Path -LiteralPath dist/Studio) { throw 'SONKU_FIELD_USER_DATA_MUST_NOT_SHIP' }
           Write-Host 'SONKU_P80_FIELD_READY: GUI EXE + verified MIT notice + FAT guide'
