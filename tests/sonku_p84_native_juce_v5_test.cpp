@@ -171,6 +171,15 @@ int main(){
    assert(dest->acceptedSettings().headYawDegrees==0.f);
   }
  }
+ // Even legacy v4 MusicBed with a stale LF480 toggle must be sanitized
+ // so the new v5 research UI always discovers truthful P8.4 capability.
+ const auto v4GoldenWithLf=legacy(4,0);
+ auto downgrade=std::make_unique<SonKuSpatialProcessor>();
+ downgrade->prepareToPlay(48000.,128);
+ assert(downgrade->restoreUnpublishedState(
+    v4GoldenWithLf.getData(),static_cast<int>(v4GoldenWithLf.getSize())));
+ assert(downgrade->acceptedSettings().renderMode==0);
+ assert(!downgrade->acceptedSettings().musicCompatibleLowFrequency);
  auto broken=std::make_unique<SonKuSpatialProcessor>();
  broken->prepareToPlay(48000.,128);
  assert(!broken->restoreUnpublishedState(snapshot.getData(),58));
