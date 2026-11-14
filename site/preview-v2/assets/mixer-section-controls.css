@@ -109,40 +109,49 @@
  display:flex;flex-direction:column;min-height:0;overflow:hidden;
  background:linear-gradient(180deg,#21343d,#172832);
 }
-/* GAIN is a fixed photographic cap, not a rotating CSS disc. The arc and
-   illuminated needle alone follow the native-ACK-backed --gain-rotation.
-   Ambient + key shadows are static; gestures never animate a blurred surface. */
+/* Compact hardware GAIN: the photographic steel cap and its fixed lift-shadow
+   never rotate. Only the separate LED segments and luminous needle track the
+   existing native-ACK-backed --gain-rotation value. No SVG filters or animation. */
 .console-body .strip .gain-view-body{
  min-height:0;flex:1;display:flex;flex-direction:column;
- justify-content:center;align-items:center;gap:11px;padding:8px 3px 12px;
+ justify-content:center;align-items:center;gap:8px;padding:7px 3px 10px;
 }
 .console-body .strip .gain-dial{
  position:relative;display:block;box-sizing:border-box;
- flex:0 0 auto;width:min(76px,calc(100% - 20px));
+ flex:0 0 auto;width:min(68px,calc(100% - 20px));
  aspect-ratio:1/1;height:auto;min-height:0;border-radius:50%;
  cursor:ns-resize;touch-action:none;isolation:isolate;
 }
 .console-body .strip .gain-dial-face{
- position:absolute;display:block;inset:5px;border-radius:50%;
+ position:absolute;display:block;inset:7px;border-radius:50%;
  background:#45484b url("mixer-gain-knob-brushed-steel.png") center/cover no-repeat;
- /* Compact key + soft ambient shadow establish a raised steel cap. */
- box-shadow:0 1px 2px #000c,0 5px 7px #000a,0 10px 15px #0006;
+ /* One thin PNG edge: no extra heavy CSS bezel. Static contact + lift shadow. */
+ box-shadow:0 2px 3px #000d,0 5px 8px #0009;
  pointer-events:none;
 }
 .console-body .strip .gain-dial-arc{
- position:absolute;inset:-4px;display:block;border-radius:50%;pointer-events:none;
- background:conic-gradient(from 225deg,#436763 0deg 270deg,transparent 270deg 360deg);
- -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));
- mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));
+ position:absolute;inset:1px;display:block;border-radius:50%;pointer-events:none;
+ /* A 5px annular LED track. Conic masks limit it to a 270-degree travel;
+    6-degree bars / 3-degree gaps make 30 discrete hardware-style LEDs. */
+ -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 5.5px),#000 calc(100% - 5px));
+ mask:radial-gradient(farthest-side,transparent calc(100% - 5.5px),#000 calc(100% - 5px));
+}
+.console-body .strip .gain-dial-arc::before,
+.console-body .strip .gain-dial-arc::after{
+ content:"";position:absolute;inset:0;border-radius:50%;
+}
+.console-body .strip .gain-dial-arc::before{
+ background:repeating-conic-gradient(from 225deg,#345349 0deg 6deg,transparent 6deg 9deg);
+ -webkit-mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
+ mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
 }
 .console-body .strip .gain-dial-arc::after{
- content:"";position:absolute;inset:0;
- background:conic-gradient(from 225deg,
-   #44ec91 0deg calc(135deg + var(--gain-rotation,0deg)),
-   transparent 0deg 360deg);
+ background:repeating-conic-gradient(from 225deg,#69ffab 0deg 6deg,transparent 6deg 9deg);
+ -webkit-mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
+ mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
 }
 .console-body .strip .gain-dial-pointer{
- display:block;position:absolute;inset:5px;border-radius:50%;
+ display:block;position:absolute;inset:7px;border-radius:50%;
  transform:rotate(var(--gain-rotation,0deg));pointer-events:none;
 }
 .console-body .strip .gain-dial-pointer::before{
@@ -165,17 +174,14 @@
 .console-body .strip .gain-dial input:disabled{cursor:not-allowed}
 .console-body .strip .gain-readout{
  position:relative;box-sizing:border-box;display:flex;align-items:center;justify-content:center;
- width:min(102px,calc(100% - 10px));max-width:100%;min-height:29px;
- padding:3px 4px;overflow:hidden;border-radius:4px;
- border:1px solid #47646a;background:linear-gradient(180deg,#07191e 0%,#102b31 100%);
- box-shadow:inset 0 2px 4px #000d,inset 0 -1px #41626977,0 1px 0 #7ba9ac22;
- color:#b2ffe0;text-shadow:0 0 5px #51ecab44;
- font:500 13px/19px Consolas,'Lucida Console',monospace;
- font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap;
-}
-.console-body .strip .gain-readout::before{
- content:"";position:absolute;inset:1px 2px auto;height:5px;
- background:linear-gradient(180deg,#b9ffff14,transparent);pointer-events:none;
+ width:min(98px,calc(100% - 10px));max-width:100%;min-height:29px;
+ padding:3px 4px;overflow:hidden;border-radius:3px;
+ /* A true black LCD well, not the previous teal-blue textbox gradient. */
+ border:1px solid #405a4b;background:#020503;
+ box-shadow:inset 0 2px 5px #000,0 1px 0 #9cbda51f;
+ color:#74fda0;text-shadow:0 0 5px #43f78b88;
+ font:600 13px/19px Consolas,'Lucida Console',monospace;
+ font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap;
 }
 .console-body .strip .gain-view-body:has(.gain-dial input:disabled) .gain-readout{
  font-size:10px;letter-spacing:0;
@@ -190,12 +196,12 @@
  color:#b7f2d1;text-shadow:0 0 4px #38ca8a33;
 }
 @media(max-height:680px){
- .console-body .strip .gain-view-body{gap:7px;padding:5px 2px 7px}
- .console-body .strip .gain-dial{width:min(62px,calc(100% - 20px))}
+ .console-body .strip .gain-view-body{gap:6px;padding:5px 2px 7px}
+ .console-body .strip .gain-dial{width:min(59px,calc(100% - 20px))}
  .console-body .strip .gain-readout{min-height:26px;font-size:12px}
 }
 @media(max-height:610px){
- .console-body .strip .gain-dial{width:min(50px,calc(100% - 18px))}
+ .console-body .strip .gain-dial{width:min(49px,calc(100% - 18px))}
  .console-body .strip .gain-view-body{gap:4px;padding:2px 2px 4px}
  .console-body .strip .gain-readout{min-height:22px;font-size:11px;line-height:15px}
 }
