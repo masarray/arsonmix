@@ -2635,6 +2635,25 @@
       controller?.subscribe(); // ACK alone cannot claim LIVE audio
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
+      if(ack?.operation==="RESET") {
+        factoryResetPending=false;
+        const confirm=document.getElementById("mixerResetConfirm");
+        if(confirm)confirm.disabled=false;
+        if(ack.ok!==true) {
+          const error=String(ack.error||"Factory reset rejected");
+          status(error);nativeToast(error);return;
+        }
+        document.getElementById("mixerResetDialog")?.close?.();
+        const state=String(ack.state||"");
+        const message=state==="FACTORY_RESET_NEEDS_AUDIO_SETUP"?
+          "Mixer reset · open Audio I/O to reconnect playback; output muted":
+          state==="FACTORY_RESET_APPEARANCE_WARNING"?
+          "Mixer reset · check saved channel appearance permissions":
+          "Mixer reset · no FX, no WIRE, all inputs disconnected · MAIN muted";
+        status(message);nativeToast(message);
+        controller?.subscribe();
+        return;
+      }
       const save=ack?.operation==="SAVE";
       if(!save&&ack?.operation!=="OPEN")return;
       if(ack.ok!==true){
@@ -4032,6 +4051,28 @@
     event.preventDefault();event.stopImmediatePropagation();
     status("NATIVE G0: physical gain/pan unavailable until engine graph admission");
   },true);
+  // Shared Pages Reset Mixer dialog; native click is intercepted before
+  // the demo reducer and never executes a browser-only graph mutation.
+  let factoryResetPending=false;
+  document.addEventListener("click",event=>{
+    const target=event.target.closest?.("#reset,#mixerResetConfirm");
+    if(!target)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    const dialog=document.getElementById("mixerResetDialog");
+    if(target.id==="reset") {
+      document.getElementById("moreTools").open=false;
+      if(!factoryResetPending)dialog?.showModal?.();
+      return;
+    }
+    if(factoryResetPending)return;
+    if(!dialog?.open)return; // a detached or synthetic confirm is not consent
+    factoryResetPending=true;
+    target.disabled=true;
+    backend.emitEvent("arMixAction",{
+      action:"nativeMixerFactoryReset",confirmation:"RESET_MIXER"
+    });
+    status("Resetting mixer · muting outputs and retiring old session");
+  },true);
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
@@ -4114,7 +4155,6 @@
     paste:"Native channel paste not yet admitted",
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
-    reset:"Demo reset must not erase a live mixer",
     addFx:"Use a verified FX insert slot on an admitted channel"
   });
   function presentNativeOnlyTools(){
