@@ -55,8 +55,9 @@ static void complete(SonKuSpatialProcessor& fx,std::uint64_t id,int seed) {
 }
 static juce::MemoryBlock legacy(int version,int oldMode=2){
  juce::MemoryBlock bytes;
- juce::MemoryOutputStream o(bytes,false);
- o.writeInt(0x534f4e4b);o.writeInt(version);
+ {
+  juce::MemoryOutputStream o(bytes,false);
+  o.writeInt(0x534f4e4b);o.writeInt(version);
  o.writeFloat(0.f);o.writeFloat(12.f);o.writeFloat(60.f);
  o.writeFloat(1.f);o.writeFloat(.75f);
  o.writeByte(0);o.writeByte(1);
@@ -65,9 +66,10 @@ static juce::MemoryBlock legacy(int version,int oldMode=2){
   o.writeFloat(.30f);
  }
  if(version>=3)o.writeFloat(0.f);
- if(version>=4){
-  o.writeInt(oldMode);o.writeByte(1);o.writeFloat(0.f);
- }
+  if(version>=4){
+   o.writeInt(oldMode);o.writeByte(1);o.writeFloat(0.f);
+  }
+ } // MemoryOutputStream must flush byte count before asserting the block.
  assert(bytes.getSize()==static_cast<std::size_t>(
      version==1?30:version==2?46:version==3?50:59));
  return bytes;
