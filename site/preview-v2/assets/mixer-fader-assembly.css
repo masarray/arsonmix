@@ -306,8 +306,10 @@
 .console-body .strip .gain-tick.unity::before{background:#c8eaf2;opacity:1}
 .console-body .strip .gain-tick span{
   /* Shared right edge: +10 / 0 / -12 / -48 read as ONE numeric column. */
-  left:7px;right:0;top:-5.5px;text-align:right;
-  font:500 9px/11px Inter,"Segoe UI",sans-serif!important;
+  /* A 9px label box avoids collisions between the calibrated -24/-36/-48
+     travel marks at 1366x768 while keeping numerals optically centered. */
+  left:7px;right:0;top:-4.5px;text-align:right;
+  font:500 9px/9px Inter,"Segoe UI",sans-serif!important;
   font-variant-numeric:lining-nums tabular-nums!important;letter-spacing:-.03em;
   white-space:nowrap;color:#b9cbd4;text-shadow:none;
 }
