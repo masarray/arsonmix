@@ -58,6 +58,31 @@ def run() -> None:
                     gain.click()
                     assert gain.get_attribute("aria-pressed") == "true"
                     assert first.locator(".is-gain-view").count() == 1
+                    assert page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
+                    assert page.locator(".section-rail .rail-cell.fx").evaluate(
+                        """el => getComputedStyle(el, '::after').content.includes('GAIN')""")
+                    knob_visual = first.locator(".gain-dial")
+                    assert knob_visual.count() == 1
+                    body_size = knob_visual.bounding_box()
+                    assert body_size and 54 <= body_size["width"] <= 78, (width, body_size)
+                    cap = first.locator(".gain-dial-face")
+                    cap_css = cap.evaluate("""el => ({
+                        image: getComputedStyle(el).backgroundImage,
+                        transform: getComputedStyle(el).transform,
+                        shadow: getComputedStyle(el).boxShadow
+                    })""")
+                    assert "mixer-gain-knob-brushed-steel.png" in cap_css["image"]
+                    assert cap_css["transform"] == "none", cap_css
+                    assert cap_css["shadow"] != "none", cap_css
+                    arc = first.locator(".gain-dial-arc")
+                    assert arc.count() == 1
+                    assert "conic-gradient" in arc.evaluate(
+                        "el => getComputedStyle(el, '::after').backgroundImage")
+                    pointer = first.locator(".gain-dial-pointer")
+                    before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
+                    lcd_size = first.locator(".gain-readout").bounding_box()
+                    assert lcd_size and lcd_size["height"] >= 24, (width, lcd_size)
                     knob = first.locator('[data-field="trim"]')
                     assert knob.count() == 1
                     knob.evaluate("""el => {
@@ -66,6 +91,8 @@ def run() -> None:
                     }""")
                     assert "+6.5 dB" in first.locator(".gain-readout").inner_text()
                     assert "6.5" in knob.get_attribute("value") or knob.input_value() == "6.5"
+                    assert pointer.evaluate("el => getComputedStyle(el).transform") != before_turn
+                    assert cap.evaluate("el => getComputedStyle(el).transform") == "none"
                     # Double-click must use the same gain parameter path and restore unity.
                     first.locator(".gain-dial").dblclick()
                     # The public formatter reserves '+' for strictly
@@ -78,6 +105,8 @@ def run() -> None:
                     }""")
 
                     fx.click()
+                    assert not page.locator(".console-body").evaluate(
+                        "el => el.classList.contains('gain-view-active')")
                     assert first.locator(".is-gain-view").count() == 0
                     assert first.locator(".fxslot-list").count() == 1
 
