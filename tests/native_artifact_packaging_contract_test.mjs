@@ -105,11 +105,11 @@ test('independent release gate rejects old self-consistent web hash artifact',()
   }
   assert.match(verify,/scripts\/build_approved_native_gui\.py --out \$approvedGuiDir --verify/);
   assert.match(verify,/APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE/);
-  assert.match(verify,/scripts\\/verify_embedded_gui_resources\\.py --exe \\$exePath --bundle \\$approvedGuiDir --manifest \\$approvedPath/);
+  assert.match(verify,/scripts\/verify_embedded_gui_resources\.py --exe \$exePath --bundle \$approvedGuiDir --manifest \$approvedPath/);
   assert.doesNotMatch(verify,/Test-EmbeddedBytes/);
-  assert.match(embeddedVerifier,/mmap\\.mmap/);
-  assert.match(embeddedVerifier,/image\\.find\\(raw\\)/);
-  assert.match(embeddedVerifier,/hashlib\\.sha256\\(raw\\)/);
+  assert.match(embeddedVerifier,/mmap\.mmap/);
+  assert.match(embeddedVerifier,/image\.find\(raw\)/);
+  assert.match(embeddedVerifier,/hashlib\.sha256\(raw\)/);
   assert.match(verify,/guiCalibration/);
   assert.match(verify,/STABLE|NOT_PRODUCT_READY|NOT_LIVE_PCM/);
   assert.match(verify,/BinaryData::consolenative_html/);
