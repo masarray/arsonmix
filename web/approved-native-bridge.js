@@ -476,6 +476,10 @@
     }
     if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
   }
+  // Preserve the actual reference strip palette/icons for a clean mixer.
+  // Do not mutate or re-create tracks until a verified graph is accepted.
+  const factoryVisualSeed=(scope?.tracks||[]).filter(t=>t.kind==="audio")
+    .map(t=>({color:t.color,icon:t.icon}));
   let factoryResetProjectionPending=false;
   function projection(native) {
     if ((!native?.admitted && !native?.retained && !native?.logical) ||
@@ -505,11 +509,17 @@
       nextNativeByUi.set(t.id,ch.id);
       t.name=displayNameFor(ch);t.kind=kind;
       const appearance=channelPresentation.get(ch.id);
-      // Native projection cannot reuse stale colors/icons after reset or
-      // an appearance file intentionally clears a customization.
-      t.color=appearance?.color||scope.colors[index%scope.colors.length]||"#568ead";
-      t.icon=appearance?.icon||
-        (kind==="master"?"◎":kind==="bus"?"⊞":kind==="fx"?"◉":"♩");
+      // Do not replace reference defaults on ordinary native snapshots.
+      // Once a reset succeeds, clear old custom identity and reuse the
+      // same seeded colors/icons displayed by the initial mixer UI.
+      const defaults=ch.role==="INPUT"?factoryVisualSeed[inputOrdinal-1]:null;
+      if(appearance?.color)t.color=appearance.color;
+      else if(factoryResetProjectionPending)
+        t.color=defaults?.color||scope.colors[index%scope.colors.length]||"#568ead";
+      if(appearance?.icon)t.icon=appearance.icon;
+      else if(factoryResetProjectionPending)
+        t.icon=defaults?.icon||
+          (kind==="master"?"◎":kind==="bus"?"⊞":kind==="fx"?"◉":"♩");
       if(factoryResetProjectionPending){
         t.group=null;t.safe=false;t.cue=false;t.mon=false;t.pre=false;
         t.clip=false;t.selected=false;
