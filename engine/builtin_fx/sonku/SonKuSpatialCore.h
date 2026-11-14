@@ -4,6 +4,12 @@
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+#include "SonKuP80TimbreCalibration.h"
+#if !defined(SONKU_P75_MUSIC_SAFE_RESEARCH) || !SONKU_P75_MUSIC_SAFE_RESEARCH
+#error P8.0 measured timbre requires opt-in P7.5 native music renderer
+#endif
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
 #include "SonKuSourcePlacement3D.h"
 #endif
@@ -91,6 +97,12 @@ public:
                                     std::abs(rate-48000.)>.1))return false;
         sampleRate_=rate;
         bank_=(std::abs(rate-44100.)<=.1)?hrir::normal44100:hrir::normal48000;
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+        // Own measured KEMAR bank, off RT. A stereo-common correction never
+        // changes ITD/ILD, and is explicitly OFF in every public build.
+        if(!timbre_.prepare(rate,bank_,hrir::directions,
+                            hrir::spacingDegrees))return false;
+#endif
         // Prepared control-side: continuous coefficient and gain smoothing
         // without trigonometric/exponential work in the audio callback.
         filterSlew_=static_cast<float>(1.-std::exp(-1./(rate*0.006)));
@@ -138,6 +150,9 @@ public:
         smoothedErPresence_=1.f;
         smoothedTailPresence_=1.f;
         earBass_.fill(0.f);
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+        timbre_.reset();
+#endif
         limiterGain_=1.f;
         write_=0;
         remaining_=0;
@@ -257,6 +272,16 @@ public:
         return room_.preparedProfile();
     }
     double azimuthDegrees() const noexcept {return degrees_;}
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+    // Read-only observed control-side measurements for objective tests;
+    // NOT a live knob or an unversioned host/session field.
+    float p80MeasuredLowMinusMidDb() const noexcept {
+        return timbre_.measuredLowMinusMidDb();
+    }
+    float p80PreparedShelfDb() const noexcept {
+        return timbre_.shelfGainDb();
+    }
+#endif
     // In-place stereo; caller owns valid, non-overlapping L/R PCM pointers.
     // No vector, heap, blocking calls, I/O or filter bank allocation.
     void process(float* left,float* right,int samples) noexcept {
@@ -267,7 +292,16 @@ public:
         const double step=(settings_.moving ?
             (settings_.clockwise?1.:-1.)*360./(sampleRate_*settings_.revolutionSeconds) : 0.);
         const float distanceGain=room_.relativeDistanceGain();
-        const bool nativeSpace=nativeSpaceEverUsed_;
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+        const bool p80Timbre=
+            room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch;
+#else
+        constexpr bool p80Timbre=false;
+#endif
+        // P8.0 routes even ROOM OFF through the same sample-exact scene path
+        // so the measured spectral correction is on BEFORE room activation.
+        // Previous public/legacy paths remain bit-identical.
+        const bool nativeSpace=nativeSpaceEverUsed_||p80Timbre;
         const bool roomEnabled=settings_.spacePreset!=0;
 #if defined(SONKU_P75_MUSIC_SAFE_RESEARCH) && SONKU_P75_MUSIC_SAFE_RESEARCH
         // Field-failure quarantine, opt-in ONLY: spatialize the MUSIC MID
@@ -380,7 +414,7 @@ public:
                 smoothedRoomLevel_+=distanceSlew_*
                     ((roomEnabled?1.12f:1.f)-smoothedRoomLevel_);
                 smoothedBassShelf_+=distanceSlew_*
-                    ((roomEnabled?0.82f:0.f)-smoothedBassShelf_);
+                    ((roomEnabled && !p80Timbre?0.82f:0.f)-smoothedBassShelf_);
                 // The original experimental return levels were intentionally
                 // near-silent: ER base 0.28 * wall 0.70 * 1/r and diffuse FDN
                 // output 0.23 * amount, followed by another 0.5 * trim.
@@ -403,6 +437,14 @@ public:
                 float spatialR=smoothedDistanceGain_*ears[1]+
                     smoothedErPresence_*reflection.right+
                     smoothedTailPresence_*late.right;
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+                if(p80Timbre) {
+                    // Identical low-shelf on *measured* left/right binaural
+                    // field. Excludes direct SIDE rescue; avoids double bass
+                    // correction and preserves stereo anti-phase level.
+                    timbre_.process(spatialL,spatialR);
+                }
+#endif
                 // Low-frequency KEMAR response is ~-7..-11 dB below 200Hz.
                 // A gentle bounded *binaural* shelf restores warmth without
                 // mixing dry mono under the HRIR or altering left/right ITD.
@@ -557,6 +599,9 @@ private:
     float smoothedBassShelf_=0.f,limiterGain_=1.f;
     float smoothedErPresence_=1.f,smoothedTailPresence_=1.f;
     std::array<float,2> earBass_{};
+#if defined(SONKU_P80_MEASURED_TIMBRE_RESEARCH) && SONKU_P80_MEASURED_TIMBRE_RESEARCH
+    p80::MeasuredTimbreCalibration timbre_{};
+#endif
     float filterSlew_=0.f,levelSlew_=0.f;
     float distanceSlew_=0.f,bassSlew_=0.f,limiterRelease_=0.f;
     double sampleRate_=0.;
