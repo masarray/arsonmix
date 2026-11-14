@@ -528,7 +528,7 @@ private:
     bool playerAutoNext_=false;
     bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
-    std::uint64_t lastAutoAdvanceGeneration_=0;
+    armix::player::PlayerAutoAdvanceGate playerAutoAdvanceGate_;
     juce::String playerError_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
@@ -3748,6 +3748,7 @@ private:
         playerLibrary_=chosen.files;
         playerTrackSettings_=chosen.controls;
         playerCurrent_=-1;
+        playerAutoAdvanceGate_.rearm();
         playerLoopCurrent_=false;
         playerPendingIndex_=-1;
         playerPendingQueueFile_={};
@@ -4557,19 +4558,25 @@ private:
             emitPlayerState();return;
         }
         if(action=="playerPause") {
+            playerAutoAdvanceGate_.rearm();
             playerPendingQueueFile_={};
             playerPendingIndex_=-1;
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
+            playerAutoAdvanceGate_.rearm();
             playerLoopCurrent_=false;
             playerOutputPendingIndex_=-1;
             playerPendingQueueFile_={};
             playerPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
-        if(action=="playerNext")return playNextMusic();
+        if(action=="playerNext") {
+            playerAutoAdvanceGate_.rearm(); // explicit user retry
+            return playNextMusic();
+        }
         if(action=="playerAutoNext") {
+            playerAutoAdvanceGate_.rearm();
             playerAutoNext_=value.isBool() && static_cast<bool>(value);
             persistPlayerLibrary();emitPlayerState(true);return;
         }
@@ -4591,6 +4598,8 @@ private:
             const int i=static_cast<int>(value);
             if(i>=0 && i<static_cast<int>(playerLibrary_.size())) {
                 if(i!=playerSelected_)playerOutputPendingIndex_=-1;
+                if(i!=playerSelected_ || action=="playerPlayNow")
+                    playerAutoAdvanceGate_.rearm();
                 playerSelected_=i;
                 if(action=="playerPlayNow")playSelectedMusic();
                 else {
@@ -7649,6 +7658,9 @@ private:
             // Start only a genuinely prepared NEXT and ACK the row identity
             // in the same UI-owner thread. No session/graph mutation here.
             if(engine_.servicePlayerTransition()) {
+                // A native ACK is a NEW logical song/loop epoch even if
+                // standby A/B happen to publish the same generation.
+                playerAutoAdvanceGate_.rearm();
                 if(playerPendingIndex_>=0 &&
                    playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
                     playerCurrent_=playerPendingIndex_;
@@ -7747,14 +7759,11 @@ private:
                upcoming>=0 &&
                (upcoming!=playerCurrent_ || queued>=0) &&
                (phase=="PLAYING" || phase=="ENDED")) {
-                const auto generation=static_cast<std::uint64_t>(
-                    transport.getProperty("generation","0").toString().getLargeIntValue());
-                const auto identity=generation ^
-                    (static_cast<std::uint64_t>(playerCurrent_+1)<<32) ^
-                    (static_cast<std::uint64_t>(playerActiveSet_+1)<<56);
                 // CUT is an end-only switch. Positive fade begins before
                 // EOF, bounded by media remaining + one 12 Hz timer tick.
-                // Never retrigger the same song generation on decoder error.
+                // Failure latches until a user gesture; successful native
+                // ACK rearms the gate for the NEXT logical song, including
+                // consecutive repeats of exactly the same media file.
                 const double position=static_cast<double>(
                     transport.getProperty("currentSeconds",0.0));
                 const double duration=static_cast<double>(
@@ -7764,9 +7773,8 @@ private:
                         position,duration,playerFadeMilliseconds_,0.085,
                         static_cast<int>(transport.getProperty(
                             "tempoPercent",100)));
-                if(identity!=lastAutoAdvanceGeneration_ &&
-                   (preEnd || phase=="ENDED")) {
-                    lastAutoAdvanceGeneration_=identity;
+                if((preEnd || phase=="ENDED") &&
+                   playerAutoAdvanceGate_.claim()) {
                     playNextMusic();
                 }
             }
