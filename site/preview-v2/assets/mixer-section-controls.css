@@ -288,24 +288,33 @@
  line-height:9px!important;
 }
 
-/* Route has four rows in the shared Pages/EXE renderer (title + IN/OUT/EXT).
-   Compact internal spacing rather than clipping the live EXT control or
-   inflating the panel: rail and strip retain their shared 94/91/81px heights. */
+/* One shared four-row route geometry (title + IN/OUT/EXT) for
+   /preview/ and JUCE WebView2. Earlier physical chrome locked the legacy
+   three-row field height at 24px!important; override only expanded routes.
+   Keep rail heights, MAX three hardware destinations, and collapsed
+   23px state unchanged. Geometry budget at comfort: 17 + 3*22 + 3*1
+   + 2*2 = 90px within the 94px route panel. */
 .console-body:not(.collapsed-route) .strip .route-section{
- padding:2px 6px 2px;gap:1px;
+ padding:2px 4px!important;gap:1px;
+}
+.console-body:not(.collapsed-route) .strip .route-field{
+ height:22px!important;min-height:22px!important;flex:0 0 22px!important;
+}
+.console-body[data-density="standard"]:not(.collapsed-route) .strip .route-field{
+ height:21px!important;min-height:21px!important;flex:0 0 21px!important;
 }
 .console-body[data-density="standard"]:not(.collapsed-route) .strip .route-select{
- height:21px;
+ height:21px!important;min-height:21px!important;line-height:19px!important;
 }
 .console-body[data-density="compact"]:not(.collapsed-route) .strip .route-section{
- padding:1px 3px;gap:1px;
+ padding:1px 3px!important;gap:1px;
 }
 .console-body[data-density="compact"]:not(.collapsed-route) .strip .route-top{
- height:15px;min-height:15px;flex-basis:15px;
+ height:15px!important;min-height:15px!important;flex:0 0 15px!important;
 }
 .console-body[data-density="compact"]:not(.collapsed-route) .strip .route-field{
- min-height:18px;
+ height:18px!important;min-height:18px!important;flex:0 0 18px!important;
 }
 .console-body[data-density="compact"]:not(.collapsed-route) .strip .route-select{
- height:18px;
+ height:18px!important;min-height:18px!important;line-height:16px!important;
 }
