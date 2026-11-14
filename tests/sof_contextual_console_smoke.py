@@ -190,8 +190,10 @@ def run() -> None:
                     })""")
                     assert focused_css["width"] == "8px", focused_css
                     assert focused_css["offset"] == "-2px", focused_css
-                    assert "0.078" in focused_css["color"] or (
-                        "0.08" in focused_css["color"]), focused_css
+                    assert focused_css["color"].startswith(
+                        "rgba(142, 189, 203, "), focused_css
+                    focus_alpha=float(focused_css["color"].rsplit(",", 1)[1].strip(" )"))
+                    assert 0.08 <= focus_alpha <= 0.12, focused_css
                     # Strong hysteresis: capture ±1.6, hold until ±3.2.
                     # Keyboard/Shift can deliberately escape the notch.
                     def set_gain(value, field_type="input"):
