@@ -174,6 +174,7 @@ public:
             case 2:s.error="Unsupported or corrupt music format";break;
             case 3:s.error="Audio output not configured";break;
             case 4:s.error="Music pitch/tempo processing failed";break;
+            case 5:s.error="Song IN marker exceeds file duration";break;
             default:break;
         }
         {std::lock_guard<std::mutex> lock(commandMutex_);
@@ -313,6 +314,17 @@ private:
                reader->numChannels<1 || reader->numChannels>2 ||
                reader->lengthInSamples<=0) {
                 error_.store(2,std::memory_order_relaxed);
+                state_.store(State::error,std::memory_order_release);
+                continue;
+            }
+            // A saved cue may belong to an older version of a relinked
+            // file. Never silently clamp IN to the last audio sample and
+            // report a successful (almost silent) playback.
+            const double cueIn=cueInSeconds_.load(std::memory_order_acquire);
+            const double mediaSeconds=static_cast<double>(
+                reader->lengthInSamples)/reader->sampleRate;
+            if(!std::isfinite(cueIn) || cueIn>=mediaSeconds) {
+                error_.store(5,std::memory_order_release);
                 state_.store(State::error,std::memory_order_release);
                 continue;
             }
