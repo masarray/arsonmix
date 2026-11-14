@@ -3,7 +3,7 @@
 
 Calls scripts/build_pages.py to generate the *same* published index.html and
 assets. There is no second HTML/CSS assembler, cloned GUI, or alternate skin.
-A nonvisual bridge JS is the only native-specific addition.
+A nonvisual bridge JS and fail-closed native intent hooks are the only additions.
 """
 from __future__ import annotations
 
@@ -23,21 +23,7 @@ CANONICAL = ROOT / "site" / "preview-v2"
 NATIVE_ADAPTER = ROOT / "web" / "approved-native-bridge.js"
 ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
-                  '<script defer src="assets/approved-native-context-menu.js"></script>\n'
-                  '<style data-armix-o1="physical-output">\n'
-                  '.armix-native-desktop .console-body{--route-h:94px}\n'
-                  '.armix-native-desktop .console-body[data-density="standard"]{--route-h:91px}\n'
-                  '.armix-native-desktop .console-body[data-density="compact"]{--route-h:81px}\n'
-                  '.armix-native-desktop .external-out-field .route-caption{color:#a8d0dd}\n'
-                  '.armix-native-desktop .external-out-field .route-select{border-color:#547685;background:#192a32}\n'
-                  '.armix-native-desktop .external-out-field .route-select[aria-busy="true"]{border-color:#ddb576}\n'
-                  '.armix-native-desktop .external-out-field .route-select[data-status="NEEDS_REMAP"]{color:#d5aa8b}\n'
-                  '.armix-native-desktop .external-out-state{font:500 9px/1.2 system-ui,sans-serif;letter-spacing:.025em;color:#aabdc3}\n'
-                  '.armix-native-desktop .external-out-state[data-status="LIVE"]{color:#9bd3b8}\n'
-                  '.armix-native-desktop .external-out-state[data-status="PENDING"]{color:#e7c081}\n'
-                  '.armix-native-desktop .external-out-state[data-status="MUTED"]{color:#abbcc2}\n'
-                  '.armix-native-desktop .external-out-state[data-status="NEEDS_REMAP"]{color:#e0a18b}\n'
-                  '</style>')
+                  '<script defer src="assets/approved-native-context-menu.js"></script>\n')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
 
 
@@ -70,10 +56,9 @@ def accepted_pages_html() -> str:
         return (build_public_pages(Path(tmp) / "public") / "index.html").read_text("utf-8")
 
 
-# Native-only event seam: the original PUBLIC Pages HTML is byte-for-byte
-# unchanged. Insert five small control hooks ONLY into the generated WebView2
-# HTML at native build time. Every anchor must occur exactly once: no silent
-# breakage if Pages GUI source evolves. No extra layout or simulated PCM.
+# Native-only event seam: preserve the public visual hierarchy and DOM while
+# injecting verified JUCE controls. Every anchor is fail-closed and reversible;
+# no divergent layout, fake PCM, or duplicate HTML skin.
 NATIVE_EVENT_HOOKS = (
     # The mixer shell must remain visible even with zero audio endpoints or
     # before the first accepted roster. Native control intents are still
@@ -81,37 +66,8 @@ NATIVE_EVENT_HOOKS = (
     ("Mixer · Reference Session", "Mixer · Native Session"),
     ("Interactive visual reference. Changes are local to this mockup.", "Preparing native mixer…"),
     ("SIMULATED METERS · NO REAL AUDIO", "NATIVE AUDIO"),
-    # The published /preview/ HTML and its V28 checkpoint are immutable.
-    # Change ONLY the compiled native WebView's operator fader travel law.
-    # The DSP gain remains exact dB -> 10^(dB/20), and the mapping is
-    # invertible at every tick; no new JS audio engine or controller.
-    ("function faderPercent(value,isSend){return rangePct(value,-60,isSend?6:10);}\n",
-     "const FADER_TAPER=Object.freeze([[-60,0],[-48,15],[-36,27],[-24,39],[-12,54],[-6,65],[0,77],[6,92],[10,100]]);\n"
-     "function faderPercent(value,isSend){\n"
-     " if(isSend)return rangePct(value,-60,6);\n"
-     " const db=Math.max(-60,Math.min(10,Number(value)));\n"
-     " for(let i=1;i<FADER_TAPER.length;i++){\n"
-     "  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];\n"
-     "  if(db<=hiDb)return loPct+(db-loDb)*(hiPct-loPct)/(hiDb-loDb);\n"
-     " }return 100;\n"
-     "}\n"
-     "function faderDbFromTravelPercent(percent,isSend){\n"
-     " const p=Math.max(0,Math.min(100,Number(percent)));\n"
-     " if(isSend)return -60+66*p/100;\n"
-     " for(let i=1;i<FADER_TAPER.length;i++){\n"
-     "  const [hiDb,hiPct]=FADER_TAPER[i],[loDb,loPct]=FADER_TAPER[i-1];\n"
-     "  if(p<=hiPct)return loDb+(p-loPct)*(hiDb-loDb)/(hiPct-loPct);\n"
-     " }return 10;\n"
-     "}\n"),
-    ("scaleTopPct(v,-60,gainMax)",
-     "(100.0-faderPercent(v,isSend))"),
-    (" let gain=Math.round((max-(max-min)*frac)*10)/10;\n",
-     " let gain=Math.round(faderDbFromTravelPercent(100*(1-frac),max===6)*10)/10;\n"),
-    # The native fader has a calibrated logarithmic travel (unity is 77%),
-    # while the public reference uses a linear dB scale. The detent MUST
-    # snap at the visual/PCM unity position of the native tapered curve.
-    (" const unityY=travel.top+travel.height*(max/(max-min));\n",
-     " const unityY=travel.top+travel.height*(1-faderPercent(0,max===6)/100);\n"),
+    # Shared UI fader law, tick calibration and detent live in approved Pages;
+    # native keeps EXACTLY the same visual/interaction geometry.
     # Only the compiled Windows WebView gets verified native driver inputs.
     # Public /preview/ continues to show its labeled simulated reference.
     ("const channelOptions=(t,type)=>{\n",
@@ -122,15 +78,6 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
-    (" code+=sectionFx(t)+sectionSend(t);\n",
-     " if(t.kind!=='master'){\n"
-     "  if(!code.endsWith('</div></div>'))throw Error('Native O1 route anchor drift');\n"
-     "  const extRow='<div class=\"route-field external-out-field\"><span class=\"route-caption\">EXT</span>'+\n"
-     "   '<select class=\"route-select\" data-field=\"external\" title=\"Separate post-FX physical ASIO output, internal WIRE unchanged\" aria-label=\"'+escapeHtml(t.name)+' external output\">'+\n"
-     "   option(channelOptions(t,'external'),t.externalOutput||'None')+'</select><span class=\"external-out-state\" aria-label=\"External output status\"></span></div>';\n"
-     "  code=code.slice(0,-6)+extRow+'</div>';\n"
-     " }\n"
-     " code+=sectionFx(t)+sectionSend(t);\n"),
     ("function wireGraphCommit(ops,{record=true}={}){\n",
      "function wireGraphCommit(ops,{record=true}={}){\n"
      " if(window.__JUCE__?.backend){window.__ARMIX_NATIVE_M2__?.consumeWire?.(ops);return false;}\n"),

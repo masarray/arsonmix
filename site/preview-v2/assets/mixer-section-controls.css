@@ -107,7 +107,7 @@
 .console-body .strip .fx-section.is-gain-view,
 .console-body .strip .fx-section.is-sof-view{
  display:flex;flex-direction:column;min-height:0;overflow:hidden;
- background:linear-gradient(180deg,#21343d,#172832);
+ background:linear-gradient(180deg,#1a2b35,#142630);
 }
 /* GAIN is one compact hardware control cluster, not a full-width FX surface.
    Only these visual tokens vary with viewport height; neither the dial's
@@ -149,12 +149,12 @@
  content:"";position:absolute;inset:0;border-radius:50%;
 }
 .console-body .strip .gain-dial-arc::before{
- background:repeating-conic-gradient(from 225deg,#20372f 0deg 6deg,transparent 6deg 9deg);
+ background:repeating-conic-gradient(from 225deg,#2b4148 0deg 6deg,transparent 6deg 9deg);
  -webkit-mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
  mask:conic-gradient(from 225deg,#000 0deg 270deg,transparent 270deg 360deg);
 }
 .console-body .strip .gain-dial-arc::after{
- background:repeating-conic-gradient(from 225deg,#51f4a0 0deg 6deg,transparent 6deg 9deg);
+ background:repeating-conic-gradient(from 225deg,#81b8c6 0deg 6deg,transparent 6deg 9deg);
  -webkit-mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
  mask:conic-gradient(from 225deg,#000 0deg calc(135deg + var(--gain-rotation,0deg)),transparent 0deg 360deg);
 }
@@ -165,13 +165,13 @@
 .console-body .strip .gain-dial-pointer::before{
  content:"";position:absolute;top:8%;left:50%;width:3px;height:23%;
  transform:translateX(-50%);border-radius:3px;
- background:linear-gradient(90deg,#137a47,#deffe5 47%,#4dffa0);
- box-shadow:0 0 2px #9cffc8,0 0 6px #15ef85,0 0 9px #20d77c8c;
+ background:linear-gradient(90deg,#50727e,#e2f1f5 47%,#8ebdcb);
+ box-shadow:0 0 2px #c2dbe1,0 0 4px #6ca7b76b;
 }
 .console-body .strip .gain-dial-pointer::after{
  content:"";position:absolute;top:7%;left:50%;
  width:4px;height:4px;transform:translateX(-50%);border-radius:50%;
- background:#eaffed;box-shadow:0 0 4px 1px #42f9a8;
+ background:#edf6f8;box-shadow:0 0 3px 1px #8ebdcb88;
 }
 .console-body .strip .gain-dial input{
  position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;
@@ -179,7 +179,7 @@
  cursor:ns-resize;writing-mode:vertical-lr;direction:rtl;pointer-events:none;
 }
 .console-body .strip .gain-dial:focus-within{
- outline:8px solid #7ce7ba14;outline-offset:-2px;
+ outline:8px solid #8ebdcb18;outline-offset:-2px;
 }
 .console-body .strip .gain-dial:has(input:disabled){opacity:.55;cursor:not-allowed}
 .console-body .strip .gain-dial input:disabled{cursor:not-allowed}
@@ -189,10 +189,10 @@
  min-height:var(--gain-lcd-height);
  padding:2px 4px;overflow:hidden;border:0;border-radius:5px;
  /* An actual recessed black display: no outlined textbox or luminous rim. */
- background:#020503;
+ background:#050d12;
  box-shadow:inset 0 3px 5px #000f,inset 2px 0 3px #000b,
   inset -2px 0 3px #000b,0 1px 0 #93bba51a;
- color:#74fda0;text-shadow:0 0 5px #43f78b88;
+ color:#a5dae4;text-shadow:0 0 4px #6bafc047;
  font:600 12px/17px Consolas,'Lucida Console',monospace;
  font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap;
 }
@@ -209,7 +209,7 @@
 .console-body.gain-view-active .section-rail .rail-cell.fx .rail-gain-caption{
  display:block;writing-mode:vertical-rl;transform:rotate(180deg);
  font:600 11px/1 'Segoe UI',Arial,sans-serif;letter-spacing:.16em;
- color:#b7f2d1;text-shadow:0 0 4px #38ca8a33;
+ color:#afd6df;text-shadow:0 0 3px #6bafc033;
 }
 @media(max-height:680px){
  .console-body .strip .gain-view-body{
@@ -260,4 +260,52 @@
 }
 @media(max-height:610px){
  .console-body .strip .sof-info small{display:none}
+}
+
+/* Console Visual Harmony: ONE geometry contract for /preview/ and JUCE.
+   The native ASIO EXT field is visible but disabled in the browser reference.
+   Preserve collapsed route precedence and the identical rail/master heights. */
+.console-body:not(.collapsed-route){--route-h:94px!important}
+.console-body[data-density="standard"]:not(.collapsed-route){--route-h:91px!important}
+.console-body[data-density="compact"]:not(.collapsed-route){--route-h:81px!important}
+.console-body .external-out-field .route-caption{color:#8baebc}
+.console-body .external-out-field .route-select{border-color:#3f5966;background:#142731}
+.console-body .external-out-field .route-select:disabled{color:#8398a3;opacity:.72;cursor:not-allowed}
+.console-body .external-out-field .route-select[aria-busy="true"]{border-color:#ddb576}
+.console-body .external-out-field .route-select[data-status="NEEDS_REMAP"]{color:#d5aa8b}
+.console-body .external-out-state{font:500 9px/1.2 system-ui,sans-serif;letter-spacing:.025em;color:#aabdc3}
+.console-body .external-out-state:empty{display:none}
+.console-body .external-out-state[data-status="LIVE"]{color:#9bd3b8}
+.console-body .external-out-state[data-status="PENDING"]{color:#e7c081}
+.console-body .external-out-state[data-status="MUTED"]{color:#abbcc2}
+.console-body .external-out-state[data-status="NEEDS_REMAP"]{color:#e0a18b}
+
+/* Shared physical-taper micro-ruler legibility. Owner-frozen fader/PNG asset
+   remains byte-identical; this narrowly scoped type correction prevents
+   -24/-36/-48 dB ink collisions on 1366x768 without moving hardware ticks. */
+.console-body .strip .fader-section .gain-tick span{
+ top:-4.5px!important;
+ line-height:9px!important;
+}
+
+/* Route has four rows in the shared Pages/EXE renderer (title + IN/OUT/EXT).
+   Compact internal spacing rather than clipping the live EXT control or
+   inflating the panel: rail and strip retain their shared 94/91/81px heights. */
+.console-body:not(.collapsed-route) .strip .route-section{
+ padding:2px 6px 2px;gap:1px;
+}
+.console-body[data-density="standard"]:not(.collapsed-route) .strip .route-select{
+ height:21px;
+}
+.console-body[data-density="compact"]:not(.collapsed-route) .strip .route-section{
+ padding:1px 3px;gap:1px;
+}
+.console-body[data-density="compact"]:not(.collapsed-route) .strip .route-top{
+ height:15px;min-height:15px;flex-basis:15px;
+}
+.console-body[data-density="compact"]:not(.collapsed-route) .strip .route-field{
+ min-height:18px;
+}
+.console-body[data-density="compact"]:not(.collapsed-route) .strip .route-select{
+ height:18px;
 }

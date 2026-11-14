@@ -54,6 +54,16 @@ def run() -> None:
                     page.goto(html.as_uri())
                     first = page.locator('#tracks .strip[data-id="1"]')
                     first.wait_for(timeout=15000)
+                    ext = first.locator('.external-out-field [data-field="external"]')
+                    assert ext.count() == 1 and ext.is_disabled(), (
+                        "Preview must share native EXT geometry without fake hardware access")
+                    route = first.locator(".route-section").bounding_box()
+                    rail = page.locator(".section-rail .rail-cell.route").bounding_box()
+                    assert route and rail and abs(route["height"] - rail["height"]) <= 1, (
+                        "Route rail/strip height must match", width, route, rail)
+                    assert abs(route["height"] - 94) <= 1, (
+                        "Route must reserve same third row as native", width, route)
+                    assert page.locator("#master .external-out-field").count() == 0
                     gain = page.locator("#gainView")
                     fx = page.locator("#fxView")
                     assert gain.get_attribute("aria-pressed") == "false"
@@ -109,7 +119,7 @@ def run() -> None:
                     assert "radial-gradient" in leds["cap"], leds
                     assert "conic-gradient" in leds["inactiveMask"], leds
                     assert "conic-gradient" in leds["activeMask"], leds
-                    assert "rgb(32, 55, 47)" in leds["inactive"], leds
+                    assert "rgb(43, 65, 72)" in leds["inactive"], leds
                     pointer = first.locator(".gain-dial-pointer")
                     before_turn = pointer.evaluate("el => getComputedStyle(el).transform")
                     before_led_mask = arc.evaluate("el => getComputedStyle(el, '::after').maskImage")
@@ -132,9 +142,9 @@ def run() -> None:
                         radius: getComputedStyle(el).borderRadius,
                         shadow: getComputedStyle(el).boxShadow
                     })""")
-                    assert lcd_skin["background"] == "rgb(2, 5, 3)", (width, lcd_skin)
+                    assert lcd_skin["background"] == "rgb(5, 13, 18)", (width, lcd_skin)
                     assert lcd_skin["backgroundImage"] == "none", (width, lcd_skin)
-                    assert lcd_skin["text"] == "rgb(116, 253, 160)", (width, lcd_skin)
+                    assert lcd_skin["text"] == "rgb(165, 218, 228)", (width, lcd_skin)
                     assert lcd_skin["border"] == "0px", (width, lcd_skin)
                     assert lcd_skin["radius"] == "5px", (width, lcd_skin)
                     assert "inset" in lcd_skin["shadow"], (width, lcd_skin)
@@ -180,8 +190,10 @@ def run() -> None:
                     })""")
                     assert focused_css["width"] == "8px", focused_css
                     assert focused_css["offset"] == "-2px", focused_css
-                    assert "0.078" in focused_css["color"] or (
-                        "0.08" in focused_css["color"]), focused_css
+                    assert focused_css["color"].startswith(
+                        "rgba(142, 189, 203, "), focused_css
+                    focus_alpha=float(focused_css["color"].rsplit(",", 1)[1].strip(" )"))
+                    assert 0.08 <= focus_alpha <= 0.12, focused_css
                     # Strong hysteresis: capture ±1.6, hold until ±3.2.
                     # Keyboard/Shift can deliberately escape the notch.
                     def set_gain(value, field_type="input"):

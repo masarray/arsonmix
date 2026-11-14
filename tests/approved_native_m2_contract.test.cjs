@@ -852,10 +852,11 @@ test("P0 typed mono-stereo, PAN detent, fader geometry & FX failure diagnostics"
  const main=read("src/Main.cpp");
  const snapshot=read("integration/ApprovedNativeRuntimeSnapshot.h");
  const nativeBundle=read("scripts/build_approved_native_gui.py");
- assert.match(nativeBundle,/const FADER_TAPER=Object\.freeze/);
- assert.match(nativeBundle,/function faderDbFromTravelPercent\(percent,isSend\)/);
- assert.match(nativeBundle,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
- assert.doesNotMatch(page,/FADER_TAPER/, "public Pages reference remains immutable");
+ assert.match(page,/const FADER_TAPER=Object\.freeze/);
+ assert.match(page,/function faderDbFromTravelPercent\(percent,isSend\)/);
+ assert.match(page,/faderDbFromTravelPercent\(100\*\(1-frac\),max===6\)/);
+ assert.doesNotMatch(nativeBundle,/const FADER_TAPER=Object\.freeze/,
+   "A native-only fader law would break /preview/ parity");
  assert.match(bridge,/function previewNativePan\(t,el,event\)/);
  assert.match(bridge,/const width=event\.type==="change"\?18:latched\?22:14/);
  assert.match(bridge,/readout\.textContent=value===0\?"C"/);
@@ -1772,8 +1773,10 @@ test("M3/V60 Windows bundle dispatches exactly one fader release through native 
  assert.ok(builder.includes("window.__ARMIX_NATIVE_M2__?.consumeField?.(event);return;"));
  assert.ok(!builder.includes("consumeField?.({target:g.input,type:'change'})"),
    "V60 source already emits the final change; native must not double-publish");
- assert.ok(builder.includes("faderDbFromTravelPercent(100*(1-frac),max===6)"));
- assert.ok(builder.includes("faderPercent(0,max===6)/100"));
+ assert.ok(preview.includes("faderDbFromTravelPercent(100*(1-frac),max===6)"));
+ assert.ok(preview.includes("faderPercent(0,max===6)/100"));
+ assert.ok(!builder.includes("const FADER_TAPER=Object.freeze"),
+   "Both visual surfaces must use one Pages taper, not another native renderer");
  assert.ok(builder.includes("function fxNativeTransactionRequired"));
  assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
  assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
@@ -2056,7 +2059,12 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
  assert.match(src,/SHARED with /);
  assert.match(src,/signals SUM/);
- assert.match(builder,/external-out-state/);
+ const page=read("site/preview-v2/index.html");
+ const css=read("site/preview-v2/assets/mixer-section-controls.css");
+ assert.match(page,/external-out-state/);
+ assert.match(css,/external-out-state/);
+ assert.doesNotMatch(builder,/class=\\\"route-field external-out-field/,
+   "Native should never append its own EXT DOM");
 });
 
 test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Monitor click",()=>{
@@ -2081,7 +2089,7 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
 
 test("O2 external OUT never reports LIVE while driver output is muted",()=>{
  const bridge=read("web/approved-native-bridge.js");
- const css=read("scripts/build_approved_native_gui.py");
+ const css=read("site/preview-v2/assets/mixer-section-controls.css");
  assert.match(bridge,/const pcmInstalled=row\?\.status==="LIVE"&&match/);
  assert.match(bridge,/next\?\.device\?\.outputArmed===true\?"LIVE":"MUTED"/);
  assert.match(bridge,/state==="MUTED"\?"ASIO pair connected/);
