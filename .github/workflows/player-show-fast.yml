@@ -11,6 +11,7 @@ on:
       - 'tests/player_show_edit_policy_test.cpp'
       - 'tests/player_waveform_index_test.cpp'
       - 'tests/player_crossfade_curve_test.cpp'
+      - 'tests/player_show_transition_policy_test.cpp'
       - '.github/workflows/player-show-fast.yml'
   workflow_dispatch:
 permissions:
@@ -39,6 +40,10 @@ jobs:
             tests/player_crossfade_curve_test.cpp \
             -o "$RUNNER_TEMP/player-crossfade-test"
           "$RUNNER_TEMP/player-crossfade-test"
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            tests/player_show_transition_policy_test.cpp \
+            -o "$RUNNER_TEMP/player-transition-test"
+          "$RUNNER_TEMP/player-transition-test"
       - name: Parse the actual approved player UI and dynamic assembly
         run: |
           node --check site/preview-v2/assets/arson-player.js
