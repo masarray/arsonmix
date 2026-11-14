@@ -2669,7 +2669,7 @@
           "Mixer reset · open Audio I/O to reconnect playback; output muted":
           state==="FACTORY_RESET_APPEARANCE_WARNING"?
           "Mixer reset · check saved channel appearance permissions":
-          "Mixer reset · no FX, no WIRE, all inputs disconnected · MAIN muted";
+          "Mixer reset · no FX or custom WIRE, all inputs disconnected · MAIN muted";
         status(message);nativeToast(message);
         controller?.subscribe();
         return;
