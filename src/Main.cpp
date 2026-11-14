@@ -516,6 +516,8 @@ private:
     };
     PlayerUndoRemove playerUndoRemove_{};
     int playerSelected_=-1,playerCurrent_=-1;
+    int playerPendingIndex_=-1; // becomes CURRENT only after native fade ACK
+    int playerFadeMilliseconds_=180; // compact optional transition setting
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
@@ -3739,6 +3741,7 @@ private:
         playerLibrary_=chosen.files;
         playerTrackSettings_=chosen.controls;
         playerCurrent_=-1;
+        playerPendingIndex_=-1;
         playerSelected_=playerLibrary_.empty()?-1:0;
         playerQueue_.clear();
         playerOutputPendingIndex_=-1;
@@ -3817,6 +3820,8 @@ private:
             static_cast<int>(playerSets_.size())-1));
         playerAutoNext_=json.getProperty("autoNext",false).isBool() &&
             static_cast<bool>(json.getProperty("autoNext",false));
+        const int fade=static_cast<int>(json.getProperty("crossfadeMs",180));
+        playerFadeMilliseconds_=(fade>=0 && fade<=3000)?fade:180;
     }
     void persistPlayerLibrary() {
         saveActivePlayerSet();
@@ -3824,6 +3829,7 @@ private:
         document->setProperty("version",3);
         document->setProperty("activeSetlist",playerActiveSet_);
         document->setProperty("autoNext",playerAutoNext_);
+        document->setProperty("crossfadeMs",playerFadeMilliseconds_);
         juce::Array<juce::var> sets;
         for(const auto& set:playerSets_) {
             auto object=std::make_unique<juce::DynamicObject>();
@@ -4000,6 +4006,8 @@ private:
         obj->setProperty("current",playerCurrent_);
         obj->setProperty("autoNext",playerAutoNext_);
         obj->setProperty("activeSetlist",playerActiveSet_);
+        obj->setProperty("pending",playerPendingIndex_);
+        obj->setProperty("crossfadeMs",playerFadeMilliseconds_);
         obj->setProperty("canUndoRemove",
             playerUndoRemove_.set==playerActiveSet_ &&
             playerUndoRemove_.index>=0);
@@ -4249,6 +4257,23 @@ private:
             // starts. Never transpose microphone input or alter ASIO clock.
             const auto controls=playerTrackSettings_[
                 static_cast<std::size_t>(playerSelected_)];
+            // An active show never reloads its current decoder mid-song.
+            // Warm the inactive deck and wait for genuine PCM readiness;
+            // the timer publishes the new CURRENT only after fade begins.
+            const bool hasCurrent=playerCurrent_>=0 &&
+                (phase=="PLAYING" || phase=="PAUSED" ||
+                 phase=="READY" || phase=="ENDED");
+            if(hasCurrent && playerCurrent_!=playerSelected_) {
+                if(engine_.queuePlayerTransition(
+                    playerLibrary_[static_cast<std::size_t>(playerSelected_)],
+                    controls.key,controls.tempo,playerFadeMilliseconds_)) {
+                    playerPendingIndex_=playerSelected_;
+                    playerError_.clear();
+                } else playerError_=
+                    "Unable to prepare NEXT on the verified mixer output";
+                emitPlayerState(true);
+                return;
+            }
             if(!engine_.setPlayerPitchTempo(controls.key,controls.tempo)) {
                 playerError_="Invalid KEY or TEMPO settings";
                 emitPlayerState();return;
@@ -4257,6 +4282,7 @@ private:
                 playerLibrary_[static_cast<std::size_t>(playerSelected_)]);
             playerError_=error;
             if(error.isEmpty()) {
+                playerPendingIndex_=-1;
                 playerCurrent_=playerSelected_;
                 // A newly native-owned MUSIC ChannelId is visible in the
                 // authoritative mixer immediately after publisher ACK.
@@ -4361,6 +4387,7 @@ private:
         }
         if(action=="playerStop") {
             playerOutputPendingIndex_=-1;
+            playerPendingIndex_=-1;
             engine_.playerStop();emitPlayerState();return;
         }
         if(action=="playerNext")return playNextMusic();
@@ -4368,13 +4395,34 @@ private:
             playerAutoNext_=value.isBool() && static_cast<bool>(value);
             persistPlayerLibrary();emitPlayerState(true);return;
         }
+        if(action=="playerFadeMs") {
+            const int ms=static_cast<int>(value);
+            if(ms!=0 && ms!=180 && ms!=500 && ms!=1500)return;
+            playerFadeMilliseconds_=ms;
+            persistPlayerLibrary();emitPlayerState();return;
+        }
         if(action=="playerSelect" || action=="playerPlayNow") {
             const int i=static_cast<int>(value);
             if(i>=0 && i<static_cast<int>(playerLibrary_.size())) {
                 if(i!=playerSelected_)playerOutputPendingIndex_=-1;
                 playerSelected_=i;
                 if(action=="playerPlayNow")playSelectedMusic();
-                else emitPlayerState(true);
+                else {
+                    // Selecting NEXT never alters CURRENT. Idle standby
+                    // decode starts now so the performer can advance later
+                    // with an already-buffered next song.
+                    const auto state=engine_.playerStatus().getProperty(
+                        "state","").toString();
+                    if(i!=playerCurrent_ && playerCurrent_>=0 &&
+                       state=="PLAYING") {
+                        const auto settings=playerTrackSettings_[
+                            static_cast<std::size_t>(i)];
+                        (void)engine_.preloadPlayerMusic(
+                            playerLibrary_[static_cast<std::size_t>(i)],
+                            settings.key,settings.tempo);
+                    }
+                    emitPlayerState(true);
+                }
             }
             return;
         }
@@ -7406,13 +7454,52 @@ private:
         if (catalog_.busy() && timerTicks_ % 3 == 0)
             emitScanProgress();
         if(timerTicks_%3==0) {
+            // Start only a genuinely prepared NEXT and ACK the row identity
+            // in the same UI-owner thread. No session/graph mutation here.
+            if(engine_.servicePlayerTransition()) {
+                if(playerPendingIndex_>=0 &&
+                   playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
+                    playerCurrent_=playerPendingIndex_;
+                    playerSelected_=playerCurrent_;
+                }
+                playerPendingIndex_=-1;
+                emitPlayerState(true);
+            }
             const auto transport=engine_.playerStatus();
+            // Keep automatic NEXT warm while current audio is running.
+            // A manually selected/queued NEXT takes precedence.
+            if(playerAutoNext_ &&
+               transport.getProperty("state","").toString()=="PLAYING" &&
+               !static_cast<bool>(transport.getProperty("crossfading",false)) &&
+               !static_cast<bool>(transport.getProperty("transitionPending",false)) &&
+               playerCurrent_>=0) {
+                int upcoming=-1;
+                if(!playerQueue_.empty()) {
+                    const auto found=std::find(playerLibrary_.begin(),
+                        playerLibrary_.end(),playerQueue_.front());
+                    if(found!=playerLibrary_.end())
+                        upcoming=static_cast<int>(found-playerLibrary_.begin());
+                } else if(playerSelected_!=playerCurrent_)
+                    upcoming=playerSelected_;
+                else if(playerCurrent_+1<static_cast<int>(playerLibrary_.size()))
+                    upcoming=playerCurrent_+1;
+                if(upcoming>=0 && upcoming!=playerCurrent_) {
+                    const auto preset=playerTrackSettings_[
+                        static_cast<std::size_t>(upcoming)];
+                    (void)engine_.preloadPlayerMusic(
+                        playerLibrary_[static_cast<std::size_t>(upcoming)],
+                        preset.key,preset.tempo);
+                }
+            }
             if(playerAutoNext_ &&
                transport.getProperty("state","").toString()=="ENDED") {
                 const auto generation=static_cast<std::uint64_t>(
                     transport.getProperty("generation","0").toString().getLargeIntValue());
-                if(generation!=lastAutoAdvanceGeneration_) {
-                    lastAutoAdvanceGeneration_=generation;
+                const auto identity=generation ^
+                    (static_cast<std::uint64_t>(playerCurrent_+1)<<32) ^
+                    (static_cast<std::uint64_t>(playerActiveSet_+1)<<56);
+                if(identity!=lastAutoAdvanceGeneration_) {
+                    lastAutoAdvanceGeneration_=identity;
                     playNextMusic();
                 }
             }
