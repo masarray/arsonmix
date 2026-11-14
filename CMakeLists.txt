@@ -359,9 +359,14 @@ if(BUILD_TESTING)
   target_compile_features(ARMixPlayerCrossfadeTests PRIVATE cxx_std_20)
   add_test(NAME ArSonPlayerM3FiniteEqualPowerCrossfade
       COMMAND ARMixPlayerCrossfadeTests)
+  add_executable(ARMixPlayerShowTransitionTests
+      tests/player_show_transition_policy_test.cpp)
+  target_compile_features(ARMixPlayerShowTransitionTests PRIVATE cxx_std_20)
+  add_test(NAME ArSonPlayerM3TransactionalQueueAndAutoNextDeadline
+      COMMAND ARMixPlayerShowTransitionTests)
   add_dependencies(ARMixMixerRoutingTests
       ARMixPlayerShowEditTests ARMixPlayerWaveformTests
-      ARMixPlayerCrossfadeTests)
+      ARMixPlayerCrossfadeTests ARMixPlayerShowTransitionTests)
   juce_add_console_app(ARMixPlayerDecodeTests PRODUCT_NAME "ArSon Player Native Decoder Integration")
   target_sources(ARMixPlayerDecodeTests PRIVATE tests/player_native_decode_test.cpp)
   target_link_libraries(ARMixPlayerDecodeTests PRIVATE
