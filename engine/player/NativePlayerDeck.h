@@ -390,7 +390,12 @@ private:
                 std::max<std::size_t>(8192,static_cast<std::size_t>(deviceHz/4)));
             while(!obsolete(version) && consumed<readEnd()) {
                 if(ring_.bufferedFrames()>highWater) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                    // A parked/preloaded NEXT has no callback consumer yet.
+                    // Yield longer while standby so a singer browsing the
+                    // setlist does not spin a 333Hz decoder polling loop;
+                    // the 250ms PCM cushion still covers normal Play start.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(
+                        wantedPlay_.load(std::memory_order_acquire)?3:20));
                     continue;
                 }
                 Controls requested=unpackControls(
