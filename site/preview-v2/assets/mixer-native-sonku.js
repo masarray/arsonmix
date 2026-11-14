@@ -53,7 +53,7 @@ const valid=s=>s && Number.isFinite(s.startAzimuthDegrees) &&
    1.45+s.sourceDistanceMeters*Math.sin(s.directElevationDegrees*Math.PI/180)<=
        roomHeights[s.spacePreset]-.5)) &&
  (s.renderMode===undefined || (
-    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=2 &&
+    Number.isInteger(s.renderMode)&&s.renderMode>=0&&s.renderMode<=3 &&
     typeof s.musicCompatibleLowFrequency==="boolean" &&
     Number.isFinite(s.headYawDegrees)&&Math.abs(s.headYawDegrees)<=360 &&
     (s.renderMode!==2 || (s.stereoSpreadDegrees>=20&&s.stereoSpreadDegrees<=120))));
@@ -187,7 +187,7 @@ const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
- xyzCapable=false,p83Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
+ xyzCapable=false,p83Capable=false,p84Capable=false,musicSafeStereo=false,p8TransparentBass=false,p82MultibandRoom=false,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
@@ -204,9 +204,24 @@ const context=()=>{
 };
 function render(){
  const s=draft;
- const row=$("skRenderRow");row.hidden=!p83Capable;
- if(p83Capable){
-  const v=s.renderMode===1?"mono":s.renderMode===2?
+ const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
+ if(p83Capable||p84Capable){
+  const picker=$("skRenderMode");
+  if(p84Capable && picker.dataset.nativeModeSet!=="p84"){
+   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
+    '<option value="clarity">SPATIAL · P8.4 MUSIC FIRST</option>';
+   picker.dataset.nativeModeSet="p84";
+   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.4 HEADPHONE FAT";
+  }else if(p83Capable && picker.dataset.nativeModeSet!=="p83"){
+   picker.innerHTML='<option value="music">MUSIC BED · P8.2</option>'+
+    '<option value="mono">MONO OBJECT · LEFT INPUT</option>'+
+    '<option value="physical">SPEAKER MONITOR · PHYSICAL</option>'+
+    '<option value="musiclf">SPEAKER MONITOR · MUSIC LF</option>';
+   picker.dataset.nativeModeSet="p83";
+   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
+  }
+  const v=p84Capable?(s.renderMode===3?"clarity":"music"):
+    s.renderMode===1?"mono":s.renderMode===2?
     (s.musicCompatibleLowFrequency?"musiclf":"physical"):"music";
   $("skRenderMode").value=v;
   $("skHeadYaw").value=String(s.headYawDegrees);
@@ -254,7 +269,9 @@ function render(){
   if(!rangeEdits.has("skElevation"))elevation.value=String(s.directElevationDegrees);
   $("skElevationValue").textContent=s.directElevationDegrees.toFixed(1)+"°";
  }
- root.querySelector(".sk-stage-caption").textContent=p83Capable&&s.renderMode===2?
+ root.querySelector(".sk-stage-caption").textContent=p84Capable&&s.renderMode===3?
+   "P8.4 FUSED HRIR · MUSIC-FIRST RESEARCH · NOT DEARVR QUALIFIED":
+   p83Capable&&s.renderMode===2?
   (s.musicCompatibleLowFrequency?"P8.3 MUSIC LF480 · SOURCE-POSITIONED COMPROMISE":
     "P8.3 PHYSICAL 2×2 · MEASURED HRIR"):
   p83Capable&&s.renderMode===1?"P8.3 MONO OBJECT · LEFT INPUT":
@@ -265,7 +282,7 @@ function render(){
   :xyzCapable?"HEADPHONES · MEASURED 3D HRIR · 44.1 / 48 kHz"
   :"HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz";
  $("skSpread").closest("label").querySelector(".sk-param-name").textContent=
-  p83Capable&&s.renderMode!==0?"SPEAKER ANGLE":
+  (p83Capable||p84Capable)&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
  root.querySelector(".sk-guide").textContent=musicSafeStereo
   ?"Stereo WIDTH adjusts preserved L/R SIDE, not two separately located HRIR emitters"
@@ -283,7 +300,8 @@ function render(){
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
  $("skMode").textContent=native()?(context()?
-  (p83Capable&&s.renderMode!==0?"NATIVE P8.3 SPEAKERS · RESEARCH":
+  (p84Capable&&s.renderMode===3?"NATIVE P8.4 MUSIC FUSION · TEST":
+    p83Capable&&s.renderMode!==0?"NATIVE P8.3 SPEAKERS · RESEARCH":
    p82MultibandRoom?"NATIVE P8.2 ROOM · RESEARCH":
    p8TransparentBass?"NATIVE P8 ACOUSTICS · RESEARCH":
    musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
@@ -361,7 +379,7 @@ function requestSnapshot(force=false){
 const LIVE_INTERVAL_MS=40;
 const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees) &&
- (!p83Capable || (a.renderMode===b.renderMode &&
+ (!(p83Capable||p84Capable) || (a.renderMode===b.renderMode &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
 function send(next,continuous=false){
@@ -427,7 +445,8 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    r.channelId!==c.channelId||r.instanceId!==c.instanceId||
    String(r.deviceEpoch)!==String(c.deviceEpoch)||
    String(r.graphRevision)!==String(c.graphRevision))return;
- const measured=(r.schemaVersion===3 || r.schemaVersion===4) &&
+ const measured=(r.schemaVersion===3 || r.schemaVersion===4 ||
+   r.schemaVersion===5) &&
    Number.isFinite(r.settings?.directElevationDegrees);
  if(r.schemaVersion!==2&&!measured)return;
  const incoming=normalizeSettings(r.settings);
@@ -439,7 +458,13 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
    Number.isInteger(incoming.renderMode) &&
    typeof incoming.musicCompatibleLowFrequency==="boolean" &&
    Number.isFinite(incoming.headYawDegrees);
- if(!p83Capable){
+ p84Capable=r.schemaVersion===5 && r.p84MusicFusion===true &&
+   Number.isInteger(incoming.renderMode) &&
+   (incoming.renderMode===0||incoming.renderMode===3) &&
+   typeof incoming.musicCompatibleLowFrequency==="boolean" &&
+   incoming.musicCompatibleLowFrequency===false &&
+   Number.isFinite(incoming.headYawDegrees);
+ if(!(p83Capable||p84Capable)){
   delete incoming.renderMode;
   delete incoming.musicCompatibleLowFrequency;
   delete incoming.headYawDegrees;
@@ -475,9 +500,10 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
  if(clock!==null){clearInterval(clock);clock=null;}
  if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
 $("skRenderMode").addEventListener("change",()=>{
- if(!p83Capable)return;
+ if(!(p83Capable||p84Capable))return;
  const v=$("skRenderMode").value;
- const mode=v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
+ const mode=p84Capable?(v==="clarity"?3:0):
+    v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
  const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
  if(mode!==0){
   scene.moving=false;
@@ -489,7 +515,7 @@ $("skRenderMode").addEventListener("change",()=>{
  if(!send(scene))render();
 });
 $("skHeadYaw").addEventListener("change",()=>{
- if(!p83Capable)return;
+ if(!(p83Capable||p84Capable))return;
  if(!send({...draft,headYawDegrees:Number($("skHeadYaw").value)}))render();
 });
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
@@ -640,7 +666,7 @@ const api={
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
   drag=null;rangeEdits.clear();gestureStart.clear();
-  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;musicSafeStereo=false;p8TransparentBass=false;
+  accepted=defaults();draft=defaults();xyzCapable=false;p83Capable=false;p84Capable=false;musicSafeStereo=false;p8TransparentBass=false;
   current={track,slot,instanceId:null};
   const s=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const fx=s?.graph?.channels?.find(x=>x.id===id)?.inserts?.[slot];
