@@ -87,3 +87,9 @@ preflight measured/admitted budget before P7 could be shipped.
 This experiment now additionally tests P5 stale vertical FIR history on
 ROOM ON → OFF while old PCM is present → ON in silence, then a new
 causal impulse, at 44.1 and 48k. Whole engine must remain allocation-free.
+
+Legacy P0–P4 exact native source tests and the original 380-point KEMAR
+spectral audit now also run in P7's *dedicated* Linux gate, with P7
+macro deliberately disabled. That is the negative-control guarantee:
+shipping SonKu HRTF/ROOM/phase invariants cannot be silently changed
+by the experimental elevation implementation.

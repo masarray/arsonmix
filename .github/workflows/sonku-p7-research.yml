@@ -32,6 +32,17 @@ jobs:
           /tmp/p5
       - name: Confirm deterministic MIT bank extractor syntax without network
         run: python -m py_compile scripts/generate_sonku_measured_hrir3d.py
+      - name: Preserve all prior P0-P4 source audio invariants on unmodified production profile
+        run: |
+          set -euo pipefail
+          for source in sonku_spatial_core_test sonku_multiband_phase_test sonku_directional_reflections_test sonku_p3_spread_zero_fusion_test sonku_p4_contiguous_reflections_test; do
+            g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/${source}.cpp -o "/tmp/${source}"
+            "/tmp/${source}"
+          done
+          g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_hrir_spectral_audit.cpp -o /tmp/sonku-p7-spectral
+          mkdir -p sonku-p7-evidence
+          /tmp/sonku-p7-spectral > sonku-p7-evidence/P7-LEGACY-KEMAR-380-POINTS.csv
+          test "$(($(wc -l < sonku-p7-evidence/P7-LEGACY-KEMAR-380-POINTS.csv)-1))" -eq 380
       - name: P7 measured 14-elevation KEMAR + native source six-plane PCM
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic -DSONKU_P7_MEASURED_ELEVATION_RESEARCH=1 tests/sonku_p7_six_surface_test.cpp -o /tmp/p7
