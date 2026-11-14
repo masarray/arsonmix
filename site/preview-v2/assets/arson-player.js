@@ -41,6 +41,8 @@
  $("playerStop").addEventListener("click",()=>send("playerStop"));
  for(const id of ["playerCueIn","playerCueOut","playerCueGoIn","playerCueClear"])
    $(id).addEventListener("click",()=>send(id));
+ $("playerLoopAB").addEventListener("click",()=>
+   send("playerLoopToggle",!Boolean(model.loopAB)));
  const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
  let draggingSeek=false;
  seek.addEventListener("pointerdown",()=>{draggingSeek=true;});
@@ -267,6 +269,13 @@
    $("playerCueOut").disabled=!editable;
    $("playerCueGoIn").disabled=!editable;
    $("playerCueClear").disabled=!editable;
+   const loopBtn=$("playerLoopAB");
+   const loopValid=outPoint>inPoint &&
+     outPoint-inPoint>=Math.max(1.5,
+       Math.max(40,Number(model.crossfadeMs)||0)/1000+.35);
+   loopBtn.disabled=!editable || (!model.loopAB && !loopValid);
+   loopBtn.textContent=model.loopAB?"Loop A–B · On":"Loop A–B";
+   loopBtn.setAttribute("aria-pressed",String(Boolean(model.loopAB)));
    $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
    const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
