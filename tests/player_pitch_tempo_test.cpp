@@ -133,6 +133,38 @@ void testLiveControlTransitions(int sampleRate) {
 // Offline fixed-file QA: a spectral stretcher must receive inputLatency()
 // zero-input frames and then flush outputLatency() frames. Verifies song
 // ending isn't lost after pitch-shifting or time-stretching a full mix.
+// Tempo edits should use a bounded, sample-rate-independent transition
+// instead of hard-switching source consumption from 80% to 120% in one block.
+void testSmoothTempoEdits(int sampleRate) {
+    Processor processor;
+    assert(processor.prepare(sampleRate,{0,100}));
+    constexpr int quantum=512;
+    processor.setControls({0,80});
+    double prior=100.;
+    for(int block=0;block<48;++block) {
+        const int read=processor.nextInputFrames(quantum);
+        assert(read>0 && read<=quantum);
+        const double current=processor.smoothedTempoPercent();
+        assert(current<=prior+1e-7 && current>=80.);
+        if(block==0)assert(current>80. && current<100.);
+        prior=current;
+    }
+    assert(std::abs(prior-80.)<0.05);
+    processor.setControls({0,120});
+    prior=80.;
+    for(int block=0;block<48;++block) {
+        const int read=processor.nextInputFrames(quantum);
+        assert(read>0 && read<=static_cast<int>(quantum*1.2)+1);
+        const double current=processor.smoothedTempoPercent();
+        assert(current>=prior-1e-7 && current<=120.);
+        if(block==0)assert(current>80. && current<120.);
+        prior=current;
+    }
+    assert(std::abs(prior-120.)<0.05);
+    processor.setControls({0,100});
+    assert(processor.nextInputFrames(quantum)==quantum);
+    assert(processor.smoothedTempoPercent()==100.);
+}
 void testNeutralBitExact() {
     Processor processor;
     assert(processor.prepare(48000,{0,100}));
@@ -241,6 +273,9 @@ int main() {
     assert(up.hz>neutral.hz && down.hz<neutral.hz);
     assert(up.ratio>1.24 && down.ratio<.85);
     testNeutralBitExact();
+    testSmoothTempoEdits(44100);
+    testSmoothTempoEdits(48000);
+    testSmoothTempoEdits(96000);
     testLiveControlTransitions(44100);
     testLiveControlTransitions(48000);
     testLiveControlTransitions(96000);
