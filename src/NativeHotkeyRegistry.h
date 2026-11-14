@@ -181,6 +181,21 @@ public:
         registerActive();
         return {};
     }
+    // Reset all mixer-scoped shortcuts while keeping application-wide
+    // PANIC MUTE mappings. Persist before re-registering OS hotkeys.
+    juce::String resetMixerMappings() {
+        auto next=entries_;
+        next.erase(std::remove_if(next.begin(),next.end(),
+            [](const Mapping& m){return m.scope=="SESSION";}),next.end());
+        if(next.size()!=entries_.size() && !save(next))
+            return "HOTKEY_RESET_PERSISTENCE_FAILED";
+        clearRegistrations();
+        entries_=std::move(next);
+        activeSession_.clear();
+        registerActive();
+        return {};
+    }
+
     std::vector<Mapping> sessionEntries() const {
         std::vector<Mapping> result;
         for(const auto& m:entries_)if(m.scope=="SESSION"&&m.sessionId==activeSession_)
