@@ -51,6 +51,18 @@ int main() {
         }
         assert(hit);
     }
+    // Loop A-B is only allowed for real segments, with enough source
+    // material on both sides of the selected equal-power overlap.
+    assert(P::validLoop(12.,16.,180));
+    assert(P::validLoop(0.,2.,1500));
+    assert(P::validLoop(0.,1.5,0));
+    assert(!P::validLoop(2.,2.,180));
+    assert(!P::validLoop(3.,2.,180));
+    assert(!P::validLoop(0.,1.,180));
+    assert(!P::validLoop(0.,1.5,1500));
+    assert(!P::validLoop(0.,4.,3001));
+    assert(!P::validLoop(-1.,4.,500));
+    assert(!P::validLoop(0.,std::numeric_limits<double>::quiet_NaN(),180));
     // Reordering preserves duplicates and avoids accidental queue loss.
     std::vector<std::string> queue={"song-A","song-B","song-A","song-C"};
     assert(!P::moveQueued(queue,-1,2));
