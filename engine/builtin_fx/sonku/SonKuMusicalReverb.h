@@ -33,6 +33,17 @@ public:
         prepared_[1]=makeCoefficients(1.28f,7000.f);
         prepared_[2]=makeCoefficients(2.05f,6000.f);
         targetGain_=gain_;targetDamp_=dampCoeff_;
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        // Sound travels approximately one room width before a diffuse
+        // multi-bounce field becomes dominant. Prepared once, NEVER
+        // evaluate sqrt/pow/trig or allocate on the realtime callback.
+        constexpr std::array<float,3> widths{7.2f,14.4f,28.8f};
+        for(int k=0;k<3;++k)
+            preparedPredelay_[k]=std::clamp(static_cast<int>(std::lround(
+                widths[k]*sampleRate_/343.f)),1,predelayRing-3);
+        predelayActive_=predelayTarget_=predelayPrevious_=preparedPredelay_[0];
+        predelayPending_=-1;predelayRemaining_=0;
+#endif
         realtimeMode_=false;
         reset();
         ready_=true;
@@ -42,6 +53,12 @@ public:
         for(auto& line:memory_)line.fill(0.f);
         lowpass_.fill(0.f);
         write_=0;amount_=0.f;validFrames_=0;
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        for(auto& channel:predelayMemory_)channel.fill(0.f);
+        predelayWrite_=0;predelayValidFrames_=0;
+        predelayActive_=predelayTarget_;predelayPrevious_=predelayTarget_;
+        predelayPending_=-1;predelayRemaining_=0;
+#endif
         // The target amount is a CONTROL-side setting and survives resetting
         // host transport/processor so the same program can restart cleanly.
     }
@@ -69,7 +86,31 @@ public:
             preset!=SonKuReverbPreset::AiryChamber &&
             preset!=SonKuReverbPreset::LargeRoom)||
            !std::isfinite(amount)||amount<0.f||amount>1.f)return false;
-        if(!active() && amount>0.f){validFrames_=0;lowpass_.fill(0.f);}
+        const bool previouslyActive=active();
+        if(!previouslyActive && amount>0.f){
+            validFrames_=0;lowpass_.fill(0.f);
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+            // Freshness horizon, no 32 KiB RT clear and no stale tail.
+            predelayValidFrames_=0;
+#endif
+        }
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        const int desiredDelay=preparedPredelay_[static_cast<int>(preset)];
+        if(!previouslyActive){
+            predelayActive_=predelayPrevious_=predelayTarget_=desiredDelay;
+            predelayRemaining_=0;predelayPending_=-1;
+        }else if(desiredDelay!=predelayTarget_) {
+            if(predelayRemaining_==0){
+                predelayPrevious_=predelayActive_;
+                predelayTarget_=desiredDelay;
+                predelayRemaining_=predelayFadeFrames;
+            }else{
+                // Latest wins without snapping a moving fractional delay;
+                // finish the audible crossfade before starting the next.
+                predelayPending_=desiredDelay;
+            }
+        }
+#endif
         const auto& coefficients=prepared_[static_cast<int>(preset)];
         targetGain_=coefficients.gains;
         targetDamp_=coefficients.damping;
@@ -82,12 +123,51 @@ public:
     SonKuReverbPreset preset() const noexcept {return preset_;}
     bool active() const noexcept {return ready_&&(amount_>0.f||amountTarget_>0.f);}
     float targetAmount() const noexcept {return amountTarget_;}
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+    int preparedLatePredelaySamples() const noexcept {
+        return preparedPredelay_[static_cast<int>(preset_)];
+    }
+#endif
     Ears process(float left,float right) noexcept {
         if(!active())return {};
         const float a=std::isfinite(left)?left:0.f;
         const float b=std::isfinite(right)?right:0.f;
         const float mid=.5f*(a+b);
         const float side=.5f*(a-b);
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+        // Direct and six-wall ER are untouched; only the late FDN input
+        // takes a physically dimensioned diffuse-field propagation delay.
+        auto readDelayed=[&](int d,int channel) noexcept {
+            if(predelayValidFrames_<d)return 0.f;
+            return predelayMemory_[channel][(predelayWrite_-d)&
+                                           (predelayRing-1)];
+        };
+        float lateMid=readDelayed(predelayTarget_,0);
+        float lateSide=readDelayed(predelayTarget_,1);
+        if(predelayRemaining_>0) {
+            const float t=1.f-static_cast<float>(predelayRemaining_)/
+                                         predelayFadeFrames;
+            lateMid=(1.f-t)*readDelayed(predelayPrevious_,0)+t*lateMid;
+            lateSide=(1.f-t)*readDelayed(predelayPrevious_,1)+t*lateSide;
+            --predelayRemaining_;
+            if(predelayRemaining_==0) {
+                predelayActive_=predelayTarget_;
+                if(predelayPending_>=0 &&
+                   predelayPending_!=predelayActive_) {
+                    predelayPrevious_=predelayActive_;
+                    predelayTarget_=predelayPending_;
+                    predelayRemaining_=predelayFadeFrames;
+                }
+                predelayPending_=-1;
+            }
+        }
+        predelayMemory_[0][predelayWrite_]=mid;
+        predelayMemory_[1][predelayWrite_]=side;
+        predelayWrite_=(predelayWrite_+1)&(predelayRing-1);
+        if(predelayValidFrames_<predelayRing)++predelayValidFrames_;
+#else
+        const float lateMid=mid,lateSide=side;
+#endif
         std::array<float,lineCount> y{},mix{};
         if(realtimeMode_)dampCoeff_+=slew_*(targetDamp_-dampCoeff_);
         for(int i=0;i<lineCount;++i){
@@ -120,7 +200,7 @@ public:
             wetLeft+=y[i]*outL[i];
             wetRight+=y[i]*outR[i];
             memory_[i][write_]=unitary*mix[i]+.26f*
-                (mid*inMid[i]+side*inSide[i]);
+                (lateMid*inMid[i]+lateSide*inSide[i]);
         }
         write_=(write_+1)&(ringFrames-1);
         if(realtimeMode_&&validFrames_<ringFrames)++validFrames_;
@@ -162,6 +242,16 @@ private:
         }
     }
     static_assert((ringFrames&(ringFrames-1))==0);
+#if defined(SONKU_P82_GEOMETRIC_LATE_RESEARCH) && SONKU_P82_GEOMETRIC_LATE_RESEARCH
+    static constexpr int predelayRing=4096;
+    static constexpr int predelayFadeFrames=512;
+    static_assert((predelayRing&(predelayRing-1))==0);
+    std::array<std::array<float,predelayRing>,2> predelayMemory_{};
+    std::array<int,3> preparedPredelay_{};
+    int predelayWrite_=0,predelayValidFrames_=0;
+    int predelayActive_=0,predelayTarget_=0,predelayPrevious_=0;
+    int predelayPending_=-1,predelayRemaining_=0;
+#endif
     std::array<std::array<float,ringFrames>,lineCount> memory_{};
     std::array<float,lineCount> lowpass_{};
     std::array<float,lineCount> gain_{},targetGain_{};
