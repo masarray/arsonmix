@@ -357,16 +357,20 @@ std::vector<std::uint8_t> musicSplitBandProof() {
 // P2: exact same original synthetic harmonics and direct KEMAR PCM;
 // ONLY the wall reflections switch from simple ITD/ILD to image-HRIR.
 std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
-                                               bool fused=false) {
+                                               bool fused=false,
+                                               bool contiguous=false,
+                                               float spread=0.f,
+                                               bool independentStereo=false) {
     SonKuSpatialCore dsp;
     if(!dsp.prepare(rate) ||
        (measured && !dsp.setDirectionalEarlyReflectionsHrir(true)) ||
        (fused && !dsp.setDirectionalZeroSpreadFusion(true)) ||
+       (contiguous && !dsp.setDirectionalContiguousHrir(true)) ||
        !dsp.setEarlyReflectionsShape(armix::sonku::SonKuRoomShape::Square) ||
        !dsp.setEarlyReflectionsAmount(.55f))
         throw std::runtime_error("SonKu P2 preparation failed");
     Settings s=fixed(static_cast<float>(azimuth));
-    s.outputTrim=.65f;s.stereoSpreadDegrees=0.f;
+    s.outputTrim=.65f;s.stereoSpreadDegrees=spread;
     if(!dsp.setSettings(s))throw std::runtime_error("P2 source invalid");
     constexpr int total=rate*2;
     constexpr float pi=3.14159265358979323846f;
@@ -384,12 +388,40 @@ std::vector<std::uint8_t> directionalRoomAudio(int azimuth,bool measured,
                 .045f*std::sin(2.f*pi*660.f*t)+
                 .028f*std::sin(2.f*pi*2200.f*t)+
                 .018f*std::sin(2.f*pi*4700.f*t));
-            l[i]=r[i]=x;
+            l[i]=x;
+            // P4 also probes distinct, non-collapsible stereo emitters.
+            // P2/P3 established reference fixture stays unchanged.
+            r[i]=independentStereo?env*(
+                .055f*std::sin(2.f*pi*165.f*t)+
+                .038f*std::sin(2.f*pi*940.f*t)-
+                .025f*std::sin(2.f*pi*2200.f*t)+
+                .016f*std::sin(2.f*pi*5100.f*t)):x;
         }
         dsp.process(l.data(),r.data(),n);
         for(int i=0;i<n;++i)appendStereo(pcm,l[i],r[i]);
     }
     return pcm;
+}
+void writeP4ContiguousAudio(const std::filesystem::path& dir){
+    for(int azimuth:{0,180}){
+        const std::string side=azimuth==0?"front":"rear";
+        for(int spread:{60,120}){
+            const std::string suffix=side+"-spread"+std::to_string(spread);
+            writeWav(dir/("sonku-p4-full-"+suffix+".wav"),
+                directionalRoomAudio(azimuth,true,false,false,
+                                     static_cast<float>(spread),true));
+            writeWav(dir/("sonku-p4-contiguous-"+suffix+".wav"),
+                directionalRoomAudio(azimuth,true,false,true,
+                                     static_cast<float>(spread),true));
+        }
+    }
+    std::ofstream guide(dir/"P4-ORIGINAL-STEREO-REFERENCE.txt");
+    if(!guide)throw std::runtime_error("Missing P4 guide output");
+    guide<<"8 native headphone WAVs: 4 original P2 vs P4 pairs.\n"
+         <<"FRONT and REAR at 60/120 degrees spread; 48kHz 16bit.\n"
+         <<"Original synthesized independent L/R stems with four harmonics.\n"
+         <<"Both renderers use full 140-tap measured KEMAR reflections.\n"
+         <<"Expect byte-identical PCM, not an externalization difference.\n";
 }
 void writeP3FusionAudio(const std::filesystem::path& dir){
     for(int azimuth:{0,180}){
@@ -457,7 +489,8 @@ int main(int argc,char** argv){
         if(argc!=2 && !(argc==3 &&
             (std::string(argv[2])=="--music-integrity-only" ||
              std::string(argv[2])=="--directional-er-only" ||
-             std::string(argv[2])=="--p3-fusion-only")))
+             std::string(argv[2])=="--p3-fusion-only" ||
+             std::string(argv[2])=="--p4-contiguous-only")))
             throw std::runtime_error("Usage: sonku-offline-demo OUTPUT_DIRECTORY [--music-integrity-only]");
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
@@ -468,6 +501,13 @@ int main(int argc,char** argv){
                 std::cout<<"P2 directional room 4 WAV rendered\n";
 #else
                 throw std::runtime_error("P2 directional room only exists in candidate");
+#endif
+            } else if(std::string(argv[2])=="--p4-contiguous-only"){
+#if !defined(SONKU_AB_BASELINE)
+                writeP4ContiguousAudio(dir);
+                std::cout<<"P4 original independent-stereo eight WAV rendered\n";
+#else
+                throw std::runtime_error("P4 research unavailable in alpha.23");
 #endif
             } else if(std::string(argv[2])=="--p3-fusion-only"){
 #if !defined(SONKU_AB_BASELINE)

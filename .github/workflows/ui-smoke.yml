@@ -324,6 +324,10 @@ jobs:
         run: |
           /tmp/sonku-integrity-audio sonku-integrity-evidence --p3-fusion-only
           python tests/sonku_p3_fusion_audio_audit.py sonku-integrity-evidence
+      - name: P4 original independent stereo 60/120 FRONT/REAR PCM identity
+        run: |
+          /tmp/sonku-integrity-audio sonku-integrity-evidence --p4-contiguous-only
+          python tests/sonku_p4_contiguous_audio_audit.py sonku-integrity-evidence
       - name: Broad KEMAR frequency-response integrity audit (44.1k/48k)
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tests/sonku_hrir_spectral_audit.cpp -o /tmp/sonku-hrir-audit

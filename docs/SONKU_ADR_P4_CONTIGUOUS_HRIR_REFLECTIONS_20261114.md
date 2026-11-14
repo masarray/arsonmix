@@ -1,5 +1,5 @@
 # SonKu P4 experiment — contiguous 140-tap reflection HRIR without extra ring
-2026-11-14 · draft PR #674 · offline only; performance unverified pending CI
+2026-11-14 · draft PR #674 · offline only; native 44.1/48k source PCM PASS; hosted CPU measurement provisional
 
 ## Context and research
 The [dearVR PRO 2 official manual](https://files.plugin-alliance.com/products/dearvr-pro-2/dearvr-pro-2_manual.pdf)
@@ -44,3 +44,28 @@ full-core CPU p99. **Reject** and revert opt-in P4 if no convincing
 improvement relative to runner variance, as with previously
 rejected doubled-ring technique (~0.4%).
 No claims of improved front/rear externalization from a CPU edit.
+
+## Native result: 2026-11-14, exact commit 77d1fc9
+
+GitHub Actions [#43536803506](https://github.com/masarray/arsonmix/actions/runs/43536803506):
+P4 44.1/48k, 0/60/120° 140-tap PCM, three ring wraps,
+moving azimuth, independent/correlated/transient audio PASS.
+P0/P1 six 4s baseline A/B PASS, P2 and P3 native regressions
+PASS, and KEMAR 380-point spectral audit PASS.
+For **48k/128/3s, spread 60°**, same-runner isolated core:
+P2 723.042ms vs P4 437.188ms = **1.654×** speedup,
+p99 666.749us vs 470.390us. Spread 0/120° and 44.1k
+showed ratios 1.615–1.657×. Absolute values vary
+substantially across shared Linux CI hosts. Not ASIO proof.
+Unlike the rejected doubled-ring earlier, this method
+needs no additional delay history.
+
+## Additional independent stereo WAV qualification
+Four 2s 48k/16bit original synthetic independent-stereo
+FRONT/REAR x 60°/120° P2 full and P4 contiguous pairs.
+A Python gate checks byte-for-byte identical WAV PCM plus
+nonzero 165/940/2200/4700/5100Hz input components.
+All existing PCM, spectral, motion, ring and CPU checks remain.
+There is no claim of perceptual improvement from a bit-exact
+optimization; its benefit is rendering identical directional
+early reflections with lower callback CPU cost.
