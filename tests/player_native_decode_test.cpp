@@ -496,6 +496,44 @@ int main() {
                 assert(std::isfinite(left[i]) && std::isfinite(right[i]));
             loop.stop();
         }
+        // M5 integration: a pitch-shifted, tempo-stretched real JUCE WAV
+        // must drain BOTH spectral latencies when M4 IN/OUT trims apply.
+        // The media clock and WAV source must remain bounded by cue OUT.
+        {
+            armix::player::NativePlayerDeck cuePitch;
+            cuePitch.deviceRate(48000.0);
+            assert(cuePitch.setCueRange(1.0,1.4));
+            assert(cuePitch.setPitchTempo(3,80));
+            cuePitch.load(longFile,true);
+            for(int attempt=0;attempt<600 &&
+                !cuePitch.isPlayingRequested();++attempt)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            assert(cuePitch.isPlayingRequested());
+            std::array<float,512> l{},r{};
+            double energy=0.,endingEnergy=0.;
+            bool ended=false;
+            for(int block=0;block<800 && !ended;++block) {
+                cuePitch.pull(l.data(),r.data(),512);
+                const auto state=cuePitch.snapshot();
+                assert(state.state!=armix::player::NativePlayerDeck::State::error);
+                for(int i=0;i<512;++i) {
+                    assert(std::isfinite(l[i]) && std::isfinite(r[i]));
+                    energy+=static_cast<double>(l[i])*l[i];
+                    if(state.mediaDuration>0 &&
+                       state.mediaPlayed>=state.mediaDuration)
+                        endingEnergy+=static_cast<double>(l[i])*l[i];
+                }
+                ended=state.state==armix::player::NativePlayerDeck::State::ended;
+                if(!ended)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto last=cuePitch.snapshot();
+            assert(ended && last.played==last.duration);
+            assert(last.mediaDuration>=static_cast<std::uint64_t>(1.39*48000));
+            assert(last.mediaDuration<=static_cast<std::uint64_t>(1.41*48000));
+            assert(last.mediaPlayed<=last.mediaDuration);
+            assert(energy>0.1 && endingEnergy>0.0001);
+        }
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());
