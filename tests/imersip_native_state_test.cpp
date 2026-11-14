@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 #if !defined(SONKU_P82_MULTIBAND_ROOM_RESEARCH) || !SONKU_P82_MULTIBAND_ROOM_RESEARCH
